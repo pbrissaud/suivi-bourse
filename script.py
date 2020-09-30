@@ -14,13 +14,24 @@ while True:
             last_quote = (history.tail(1)['Close'].iloc[0])
             json_body = [
                 {
-                    "measurement": "quotations",
+                    "measurement": "cours",
                     "tags": {
                         "nom": action['nom'],
                         "sector": ticker.info['sector']
                     },
                     "fields": {
                         "price": last_quote
+                    }
+                },
+                {
+                    "measurement": "patrimoine",
+                    "tags": {
+                        "nom": action['nom'],
+                        "sector": ticker.info['sector']
+                    },
+                    "fields": {
+                        "quantite": action['patrimoine']['quantite'],
+                        "prix_revient": action['patrimoine']['prix_revient']
                     }
                 }
             ]

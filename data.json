@@ -1,18 +1,34 @@
 [
   {
     "nom": "Air Liquide",
-    "sigle": "AI.PA"
+    "sigle": "AI.PA",
+    "patrimoine": {
+      "quantite": 3,
+      "prix_revient": 137.57
+    }
   },
   {
     "nom": "Cap Gemini",
-    "sigle": "CAP.PA"
+    "sigle": "CAP.PA",
+    "patrimoine": {
+      "quantite": 2,
+      "prix_revient": 113.19
+    }
   },
   {
     "nom": "LVMH",
-    "sigle": "MC.PA"
+    "sigle": "MC.PA",
+    "patrimoine": {
+      "quantite": 1,
+      "prix_revient": 408.67
+    }
   },
   {
     "nom": "FDJ",
-    "sigle": "FDJ.PA"
+    "sigle": "FDJ.PA",
+    "patrimoine": {
+      "quantite": 51,
+      "prix_revient": 19.5
+    }
   }
 ]
