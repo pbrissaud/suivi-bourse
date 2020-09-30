@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  influxdb:
+    image: "influxdb"
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=bourse
+  grafana:
+    image: "grafana/grafana"
+    ports:
+      - "3000:3000"
