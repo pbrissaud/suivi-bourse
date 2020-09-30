@@ -1,18 +1,18 @@
 [
   {
-    "name": "Air Liquide",
+    "nom": "Air Liquide",
     "sigle": "AI.PA"
   },
   {
-    "name": "Cap Gemini",
+    "nom": "Cap Gemini",
     "sigle": "CAP.PA"
   },
   {
-    "name": "LVMH",
+    "nom": "LVMH",
     "sigle": "MC.PA"
   },
   {
-    "name": "FDJ",
+    "nom": "FDJ",
     "sigle": "FDJ.PA"
   }
 ]
