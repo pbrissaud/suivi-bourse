@@ -12,8 +12,8 @@ class SuiviBourse:
                 host=os.environ['INFLUXDB_HOST'],
                 port=os.environ['INFLUXDB_PORT'],
                 database=os.environ['INFLUXDB_DATABASE'])
-        except ConnectionError:
-            print('Problème de connexion à INfluxBD')
+        except:
+            print('Problème de connexion à InfluxBD')
             exit(1)
 
     def run(self):
