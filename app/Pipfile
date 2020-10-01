@@ -6,9 +6,11 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-ndg-httpsclient = "*"
-pyopenssl = "*"
-pyasn1 = "*"
+yfinance = "*"
+influxdb = "*"
+pandas = "*"
+lxml = "*"
+python-daemon = "*"
 
 [requires]
 python_version = "3.8"

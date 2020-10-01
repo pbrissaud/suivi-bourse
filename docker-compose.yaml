@@ -1,5 +1,11 @@
 version: "3.8"
 services:
+  app:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - ./data:/data
   influxdb:
     image: "influxdb"
     ports:
@@ -10,3 +16,5 @@ services:
     image: "grafana/grafana"
     ports:
       - "3000:3000"
+    volumes:
+      - ./grafana_provisioning:/etc/grafana/provisioning
