@@ -1,4 +1,4 @@
-import json,
+import json
 import os
 import time
 import yfinance as yf
@@ -7,14 +7,10 @@ from influxdb import InfluxDBClient
 
 class SuiviBourse:
     def __init__(self):
-        try:
-            self.influxdbClient = InfluxDBClient(
-                host=os.environ['INFLUXDB_HOST'],
-                port=os.environ['INFLUXDB_PORT'],
-                database=os.environ['INFLUXDB_DATABASE'])
-        except:
-            print('Problème de connexion à InfluxBD')
-            exit(1)
+        self.influxdbClient = InfluxDBClient(
+            host=os.environ['INFLUXDB_HOST'],
+            port=os.environ['INFLUXDB_PORT'],
+            database=os.environ['INFLUXDB_DATABASE'])
 
     def run(self):
         while True:
