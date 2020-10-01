@@ -1,0 +1,44 @@
+stages:
+  - test
+  - build
+
+static-analysis:
+    image: python:3.8
+    stage: test
+    before_script:
+      - python --version
+      - pip install pipenv
+      - cd app
+      - pipenv lock --requirements > requirements.txt
+      - pip install -r requirements.txt
+      - pip install flake8
+    script:
+      - flake8 --max-line-length=120 app/*.py
+
+docker-build-master:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    - docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$CI_REGISTRY_IMAGE"
+    - docker push "$CI_REGISTRY_IMAGE"
+  only:
+    - master
+
+docker-build-release:
+  image: docker:latest
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-release" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  only:
+    - release/*
