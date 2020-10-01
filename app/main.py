@@ -1,4 +1,6 @@
-import json, os, time
+import json,
+import os
+import time
 import yfinance as yf
 from influxdb import InfluxDBClient
 
