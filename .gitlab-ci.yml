@@ -13,7 +13,10 @@ static-analysis:
       - pip install -r requirements.txt
       - pip install flake8
     script:
-      - ls -l
+      - flake8 main.py
+    except:
+      - release/*
+      - feature/*
 
 docker-build-master:
   image: docker:latest
