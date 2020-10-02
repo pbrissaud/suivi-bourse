@@ -15,8 +15,8 @@ static-analysis:
     script:
       - flake8 main.py
     except:
-      - release/*
-      - feature/*
+      - /release\/.*/
+      - /feature\/.*/
 
 docker-build-master:
   image: docker:latest
@@ -44,4 +44,4 @@ docker-build-release:
     - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-release" .
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
   only:
-    - release/*
+    - /release\/.*/
