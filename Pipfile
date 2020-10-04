@@ -9,6 +9,8 @@ verify_ssl = true
 ndg-httpsclient = "*"
 pyopenssl = "*"
 pyasn1 = "*"
+selenium = "*"
+selenium-requests = "*"
 
 [requires]
 python_version = "3.8"
