@@ -23,8 +23,7 @@ class SuiviBourse:
                     json_body = [{
                         "measurement": "cours",
                         "tags": {
-                            "nom": action['nom'],
-                            "sector": ticker.info['sector']
+                            "nom": action['nom']
                         },
                         "fields": {
                             "price": last_quote
@@ -33,7 +32,6 @@ class SuiviBourse:
                         "measurement": "patrimoine",
                         "tags": {
                             "nom": action['nom'],
-                            "sector": ticker.info['sector']
                         },
                         "fields": {
                             "quantite": action['patrimoine']['quantite'],
