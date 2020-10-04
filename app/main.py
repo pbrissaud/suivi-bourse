@@ -32,7 +32,6 @@ class SuiviBourse:
                         "measurement": "patrimoine",
                         "tags": {
                             "nom": action['nom'],
-                            "sector": ticker.info['sector']
                         },
                         "fields": {
                             "quantite": action['patrimoine']['quantite'],
