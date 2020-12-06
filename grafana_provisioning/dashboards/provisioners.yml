@@ -3,6 +3,6 @@ apiVersion: 1
 providers:
   - name: "File Provisioner"
     type: file
-    allowUiUpdates: true
+    allowUiUpdates: false
     options:
       path: /etc/grafana/provisioning/dashboards

@@ -5,6 +5,6 @@ datasources:
     url: http://influxdb:8086
     access: proxy
     database: bourse
-    editable: true
+    editable: false
     jsonData:
       httpMode: GET
