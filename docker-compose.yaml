@@ -9,7 +9,7 @@ services:
       - ./data:/data
   influxdb:
     container_name: suivi-bourse-influxdb
-    image: "influxdb"
+    image: "influxdb:1.8.3"
     ports:
       - "8086:8086"
     environment:

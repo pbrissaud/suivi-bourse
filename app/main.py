@@ -13,34 +13,32 @@ class SuiviBourse:
             database=os.environ['INFLUXDB_DATABASE'])
 
     def run(self):
-        while True:
-            with open('/data/data.json') as data_file:
-                data = json.load(data_file)
-                for action in data:
-                    ticker = yf.Ticker(action['sigle'])
-                    history = ticker.history()
-                    last_quote = (history.tail(1)['Close'].iloc[0])
-                    json_body = [{
-                        "measurement": "cours",
-                        "tags": {
-                            "nom": action['nom']
-                        },
-                        "fields": {
-                            "price": last_quote
-                        }
-                    }, {
-                        "measurement": "patrimoine",
-                        "tags": {
-                            "nom": action['nom'],
-                        },
-                        "fields": {
-                            "quantite": action['patrimoine']['quantite'],
-                            "prix_revient":
-                            action['patrimoine']['prix_revient']
-                        }
-                    }]
-                    self.influxdbClient.write_points(json_body)
-                    time.sleep(10)
+        with open('/data/data.json') as data_file:
+            data = json.load(data_file)
+            for action in data:
+                ticker = yf.Ticker(action['sigle'])
+                history = ticker.history()
+                last_quote = (history.tail(1)['Close'].iloc[0])
+                json_body = [{
+                    "measurement": "cours",
+                    "tags": {
+                        "nom": action['nom']
+                    },
+                    "fields": {
+                        "price": last_quote
+                    }
+                }, {
+                    "measurement": "patrimoine",
+                    "tags": {
+                        "nom": action['nom'],
+                    },
+                    "fields": {
+                        "quantite": action['patrimoine']['quantite'],
+                        "prix_revient": action['patrimoine']['prix_revient']
+                    }
+                }]
+                self.influxdbClient.write_points(json_body)
+                time.sleep(60)
 
 
 if __name__ == "__main__":
