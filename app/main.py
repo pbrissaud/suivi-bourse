@@ -38,7 +38,7 @@ class SuiviBourse:
                     }
                 }]
                 self.influxdbClient.write_points(json_body)
-                time.sleep(10)
+                time.sleep(60)
 
 
 if __name__ == "__main__":
