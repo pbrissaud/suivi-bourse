@@ -38,9 +38,10 @@ class SuiviBourse:
                     }
                 }]
                 self.influxdbClient.write_points(json_body)
-                time.sleep(60)
 
 
 if __name__ == "__main__":
     suivi = SuiviBourse()
-    suivi.run()
+    while True:
+        suivi.run()
+        time.sleep(60)
