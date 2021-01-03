@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import sys
 import yfinance as yf
 from influxdb import InfluxDBClient
 
@@ -13,6 +14,10 @@ class SuiviBourse:
             database=os.environ['INFLUXDB_DATABASE'])
 
     def run(self):
+        try:
+            open('/data/data.json')
+        except FileNotFoundError:
+            sys.exit(1)
         with open('/data/data.json') as data_file:
             data = json.load(data_file)
             for action in data:
