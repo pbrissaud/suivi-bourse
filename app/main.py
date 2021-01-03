@@ -1,7 +1,6 @@
 import json
 import os
 import time
-import sys
 import yfinance as yf
 from influxdb import InfluxDBClient
 
