@@ -10,6 +10,8 @@ class SuiviBourse:
         self.influxHost = os.environ['INFLUXDB_HOST']
         self.influxPort = os.environ['INFLUXDB_PORT']
         self.influxDatabase = os.environ['INFLUXDB_DATABASE']
+        self.influxUser = os.environ['INFLUXDB_USER']
+        self.influxPassword = os.environ['INFLUXDB_PASSWORD']
 
     def run(self):
         try:
@@ -41,6 +43,8 @@ class SuiviBourse:
                     influxdbClient = InfluxDBClient(
                         host=self.influxHost,
                         port=self.influxPort,
+                        user=self.influxUser,
+                        password=self.influxPassword,
                         database=self.influxDatabase)
                     influxdbClient.write_points(json_body)
                     influxdbClient.close()
