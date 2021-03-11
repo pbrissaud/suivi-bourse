@@ -3,13 +3,8 @@ FROM python:3.9
 WORKDIR /usr/src/app
 COPY ./app/ .
 
-RUN pip install pipenv
-RUN pipenv lock --requirements > requirements.txt
-RUN pip install -r requirements.txt
-
-COPY ./patchs_libs/base.py /tmp/base.py
-RUN cp /tmp/base.py /usr/local/lib/python3.8/site-packages/yfinance/base.py
-RUN rm /tmp/base.py
+RUN python3 -m pip install influxdb
+RUN python3 -m pip install yfinance
 
 ENV INFLUXDB_HOST=suivi-bourse-influxdb
 ENV INFLUXDB_PORT=8086
