@@ -50,7 +50,8 @@ class SuiviBourse:
 
 if __name__ == "__main__":
     suivi = SuiviBourse()
+    # If you want to run the app not in Docker, replace next lines with 'suivi.run()' 
     while True:
-        print('suivi.run()')
         suivi.run()
         time.sleep(60)
+
