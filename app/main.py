@@ -11,7 +11,7 @@ class SuiviBourse:
     def __init__(self, argv):
         try:
             opts, _ = getopt.getopt(
-                argv, "hH:P:D:U:P:i:p:", ["help", "host=", "port=", "database=", "username=", "password=", "interval=", "path="]
+                argv, "hH:p:D:U:P:i:c:", ["help", "host=", "port=", "database=", "username=", "password=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
             print(err)
@@ -33,7 +33,7 @@ class SuiviBourse:
                 sys.exit(0)
             elif opt in ("-H", "--host"):
                 influxHost = arg
-            elif opt in ("-P", "--port"):
+            elif opt in ("-p", "--port"):
                 influxPort = arg
             elif opt in ("-D", "--database"):
                 influxDatabase = arg
@@ -43,7 +43,7 @@ class SuiviBourse:
                 influxPassword = arg
             elif opt in ("-i", "--interval"):
                 self.appScrapingInterval = int(arg)
-            elif opt in ("-p", "--path"):
+            elif opt in ("-c", "--config"):
                 self.appDataFilePath = arg
 
         self.influxdbClient = InfluxDBClient(host=influxHost,port=influxPort,database=influxDatabase,username=influxUsername,password=influxPassword)
