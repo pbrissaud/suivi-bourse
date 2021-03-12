@@ -11,21 +11,24 @@ class SuiviBourse:
     def __init__(self, argv):
         try:
             opts, _ = getopt.getopt(
-                argv, "hH:p:D:U:P:i:c:", ["help", "host=", "port=", "database=", "username=", "password=", "interval=", "config="]
+                argv, "hH:p:D:U:P:i:c:", [
+                    "help", "host=", "port=", "database=", "username=", "password=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
             print(err)
             usage()
             sys.exit(2)
-        
+
         influxHost = os.getenv('INFLUXDB_HOST', default='localhost')
         influxPort = os.getenv('INFLUXDB_PORT', default=8086)
         influxDatabase = os.getenv('INFLUXDB_DATABASE', default='bourse')
         influxUsername = ""
         influxPassword = ""
 
-        self.appScrapingInterval = int(os.getenv('APP_SCRAPING_INTERVAL', default=60))
-        self.appDataFilePath = os.getenv('APP_FILE_PATH', default='/data/data.json')
+        self.appScrapingInterval = int(
+            os.getenv('APP_SCRAPING_INTERVAL', default=60))
+        self.appDataFilePath = os.getenv(
+            'APP_FILE_PATH', default='/data/data.json')
 
         for opt, arg in opts:
             if opt in ("-h", "--help"):
@@ -46,12 +49,14 @@ class SuiviBourse:
             elif opt in ("-c", "--config"):
                 self.appDataFilePath = arg
 
-        self.influxdbClient = InfluxDBClient(host=influxHost,port=influxPort,database=influxDatabase,username=influxUsername,password=influxPassword)
-        
+        self.influxdbClient = InfluxDBClient(
+            host=influxHost, port=influxPort, database=influxDatabase, username=influxUsername, password=influxPassword)
+
     def check(self):
         self.influxdbClient.ping()
         if(not os.path.exists(self.appDataFilePath)):
-            raise Exception("File {} doesn't exist !".format(self.appDataFilePath))
+            raise Exception(
+                "File {} doesn't exist !".format(self.appDataFilePath))
 
     def run(self):
         with open(self.appDataFilePath) as data_file:
@@ -100,10 +105,10 @@ def usage():
     print("\nOPTION\t\t\tDESCRIPTION")
     print("-h, --help\t\tShow manual")
     print("-H, --host\t\tInfluxDB Host")
-    print("-p, --port\t\tInfluxDB Port")    
+    print("-p, --port\t\tInfluxDB Port")
     print("-D, --database\t\tInfluxDB Database")
-    print("-U, --username\t\tInfluxDB Username")   
-    print("-P, --password\t\tInfluxDB Password")   
+    print("-U, --username\t\tInfluxDB Username")
+    print("-P, --password\t\tInfluxDB Password")
     print("-i, --interval\t\tApplication Scraping Interval (seconds)")
     print("-c, --config\t\tData file path")
 
@@ -118,9 +123,8 @@ if __name__ == "__main__":
         except Exception as err:
             print("An error has occured: " + str(err))
             error_counter += 1
-            if error_counter >= 5 :
+            if error_counter >= 5:
                 print("5 consecutive errors : Exiting the app")
                 sys.exit(1)
         finally:
             time.sleep(suivi.appScrapingInterval)
-
