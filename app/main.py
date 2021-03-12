@@ -24,7 +24,7 @@ class SuiviBourse:
         influxUsername = ""
         influxPassword = ""
 
-        self.appScrapingInterval = os.getenv('APP_SCRAPING_INTERVAL', default=60)
+        self.appScrapingInterval = int(os.getenv('APP_SCRAPING_INTERVAL', default=60))
         self.appDataFilePath = os.getenv('APP_FILE_PATH', default='/data/data.json')
 
         for opt, arg in opts:
@@ -42,7 +42,7 @@ class SuiviBourse:
             elif opt in ("-P", "--password"):
                 influxPassword = arg
             elif opt in ("-i", "--interval"):
-                self.appScrapingInterval = arg
+                self.appScrapingInterval = int(arg)
             elif opt in ("-p", "--path"):
                 self.appDataFilePath = arg
 
