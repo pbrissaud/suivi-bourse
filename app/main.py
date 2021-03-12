@@ -16,7 +16,7 @@ class SuiviBourse:
         except getopt.GetoptError as err:
             print(err)
             usage()
-            sys.exit(1)
+            sys.exit(2)
         
         influxHost = os.getenv('INFLUXDB_HOST', default='localhost')
         influxPort = os.getenv('INFLUXDB_PORT', default=8086)
@@ -48,39 +48,39 @@ class SuiviBourse:
 
         self.influxdbClient = InfluxDBClient(host=influxHost,port=influxPort,database=influxDatabase,username=influxUsername,password=influxPassword)
         
+    def check(self):
+        self.influxdbClient.ping()
+        if(not os.path.exists(self.appDataFilePath)):
+            raise Exception("Le fichier {} n'existe pas !".format(self.appDataFilePath))
 
     def run(self):
-        try:
-            with open(self.appDataFilePath) as data_file:
-                data = json.load(data_file)
-                for action in data:
-                    ticker = yf.Ticker(action['sigle'])
-                    history = ticker.history()
-                    last_quote = (history.tail(1)['Close'].iloc[0])
-                    json_body = [{
-                        "measurement": "cours",
-                        "tags": {
-                            "nom": action['nom']
-                        },
-                        "fields": {
-                            "price": last_quote
-                        }
-                    }, {
-                        "measurement": "patrimoine",
-                        "tags": {
-                            "nom": action['nom'],
-                        },
-                        "fields": {
-                            "quantite": action['patrimoine']['quantite'],
-                            "prix_revient":
-                            action['patrimoine']['prix_revient']
-                        }
-                    }]
-                    self.influxdbClient.write_points(json_body)
-                    self.influxdbClient.close()
-        except Exception as e:
-            print(e)
-            sys.exit(1)
+        with open(self.appDataFilePath) as data_file:
+            data = json.load(data_file)
+            for action in data:
+                ticker = yf.Ticker(action['sigle'])
+                history = ticker.history()
+                last_quote = (history.tail(1)['Close'].iloc[0])
+                json_body = [{
+                    "measurement": "cours",
+                    "tags": {
+                        "nom": action['nom']
+                    },
+                    "fields": {
+                        "price": last_quote
+                    }
+                }, {
+                    "measurement": "patrimoine",
+                    "tags": {
+                        "nom": action['nom'],
+                    },
+                    "fields": {
+                        "quantite": action['patrimoine']['quantite'],
+                        "prix_revient":
+                        action['patrimoine']['prix_revient']
+                    }
+                }]
+                self.influxdbClient.write_points(json_body)
+                self.influxdbClient.close()
 
 def usage():
     print("usage")
@@ -88,9 +88,20 @@ def usage():
 
 
 if __name__ == "__main__":
+    error_counters = 0
     suivi = SuiviBourse(sys.argv[1:])
     # If you want to run the app not in Docker, replace next lines with 'suivi.run()' 
     while True:
-        suivi.run()
-        time.sleep(suivi.appScrapingInterval)
+        try:
+            suivi.check()
+            suivi.run()
+            error_counters = 0
+        except Exception as err:
+            print("An error has occured: " + str(err))
+            error_counters += 1
+            if error_counters >= 5 :
+                print("5 consecutive errors : Exiting the app")
+                sys.exit(1)
+        finally:
+            time.sleep(suivi.appScrapingInterval)
 
