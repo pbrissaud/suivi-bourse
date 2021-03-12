@@ -83,9 +83,16 @@ class SuiviBourse:
                 self.influxdbClient.close()
 
 def usage():
-    print("usage")
-        
-
+    print("\nUsage: python3 main.py [OPTIONS]")
+    print("\nOPTION\t\t\tDESCRIPTION")
+    print("-h, --help\t\tShow manual")
+    print("-H, --host\t\tInfluxDB Host")
+    print("-p, --port\t\tInfluxDB Port")    
+    print("-D, --database\t\tInfluxDB Database")
+    print("-U, --username\t\tInfluxDB Username")   
+    print("-P, --password\t\tInfluxDB Password")   
+    print("-i, --interval\t\tApplication Scraping Interval (seconds)")
+    print("-c, --config\t\tData file path")
 
 if __name__ == "__main__":
     error_counter = 0
