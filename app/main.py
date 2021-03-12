@@ -92,8 +92,8 @@ class SuiviBourse:
                     },
                     "fields": {
                         "quantity": share['purchase']['quantity'],
-                        "cost_price": share['estate']['cost_price'],
-                        "fee": share['estate']['fee']
+                        "cost_price": share['purchase']['cost_price'],
+                        "fee": share['purchase']['fee']
                     }
                 }
                 ]
