@@ -60,25 +60,38 @@ class SuiviBourse:
                 ticker = yf.Ticker(share['symbol'])
                 history = ticker.history()
                 last_quote = (history.tail(1)['Close'].iloc[0])
-                json_body = [{
-                    "measurement": "cours",
+                json_body = [
+                    {
+                    "measurement": "price",
                     "tags": {
                         "name": share['name']
                     },
                     "fields": {
-                        "price": last_quote
+                        "amount": last_quote
                     }
-                }, {
+                },
+                {
                     "measurement": "estate",
                     "tags": {
                         "name": share['name'],
                     },
                     "fields": {
                         "quantity": share['estate']['quantity'],
-                        "cost_price":
-                        share['estate']['cost_price']
+                        "received_dividend": share['estate']['received_dividend'],
                     }
-                }]
+                },
+                {
+                    "measurement": "purchase",
+                    "tags": {
+                        "name": share['name'],
+                    },
+                    "fields": {
+                        "quantity": share['purchase']['quantity'],
+                        "cost_price": share['estate']['cost_price'],
+                        "fee": share['estate']['fee']
+                    }
+                }
+                ]
                 self.influxdbClient.write_points(json_body)
                 self.influxdbClient.close()
 

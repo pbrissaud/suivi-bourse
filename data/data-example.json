@@ -2,17 +2,14 @@
   {
     "name": "Apple",
     "symbol": "AAPL",
-    "estate": {
+    "purchase": {
       "quantity": 1,
-      "cost_price": 114.09
-    }
-  },
-  {
-    "name": "Tesla",
-    "symbol": "TSLA",
+      "fee": 2,
+      "cost_price": 119.98
+    },
     "estate": {
-      "quantity": 1,
-      "cost_price": 428.93
+      "quantity": 2,
+      "received_dividend": 2.85
     }
   }
 ]
