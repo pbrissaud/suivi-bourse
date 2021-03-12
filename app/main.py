@@ -88,17 +88,17 @@ def usage():
 
 
 if __name__ == "__main__":
-    error_counters = 0
+    error_counter = 0
     suivi = SuiviBourse(sys.argv[1:])
     while True:
         try:
             suivi.check()
             suivi.run()
-            error_counters = 0
+            error_counter = 0
         except Exception as err:
             print("An error has occured: " + str(err))
-            error_counters += 1
-            if error_counters >= 5 :
+            error_counter += 1
+            if error_counter >= 5 :
                 print("5 consecutive errors : Exiting the app")
                 sys.exit(1)
         finally:
