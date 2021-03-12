@@ -90,7 +90,6 @@ def usage():
 if __name__ == "__main__":
     error_counters = 0
     suivi = SuiviBourse(sys.argv[1:])
-    # If you want to run the app not in Docker, replace next lines with 'suivi.run()' 
     while True:
         try:
             suivi.check()
