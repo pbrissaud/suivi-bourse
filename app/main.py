@@ -51,32 +51,32 @@ class SuiviBourse:
     def check(self):
         self.influxdbClient.ping()
         if(not os.path.exists(self.appDataFilePath)):
-            raise Exception("Le fichier {} n'existe pas !".format(self.appDataFilePath))
+            raise Exception("File {} doesn't exist !".format(self.appDataFilePath))
 
     def run(self):
         with open(self.appDataFilePath) as data_file:
             data = json.load(data_file)
-            for action in data:
-                ticker = yf.Ticker(action['sigle'])
+            for share in data:
+                ticker = yf.Ticker(share['symbol'])
                 history = ticker.history()
                 last_quote = (history.tail(1)['Close'].iloc[0])
                 json_body = [{
                     "measurement": "cours",
                     "tags": {
-                        "nom": action['nom']
+                        "nom": share['name']
                     },
                     "fields": {
                         "price": last_quote
                     }
                 }, {
-                    "measurement": "patrimoine",
+                    "measurement": "estate",
                     "tags": {
-                        "nom": action['nom'],
+                        "nom": share['name'],
                     },
                     "fields": {
-                        "quantite": action['patrimoine']['quantite'],
-                        "prix_revient":
-                        action['patrimoine']['prix_revient']
+                        "quantity": share['estate']['quantity'],
+                        "cost_price":
+                        share['estate']['cost_price']
                     }
                 }]
                 self.influxdbClient.write_points(json_body)

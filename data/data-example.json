@@ -1,18 +1,18 @@
 [
   {
-    "nom": "Apple",
-    "sigle": "AAPL",
-    "patrimoine": {
-      "quantite": 1,
-      "prix_revient": 114.09
+    "name": "Apple",
+    "symbol": "AAPL",
+    "estate": {
+      "quantity": 1,
+      "cost_price": 114.09
     }
   },
   {
-    "nom": "Tesla",
-    "sigle": "TSLA",
-    "patrimoine": {
-      "quantite": 1,
-      "prix_revient": 428.93
+    "name": "Tesla",
+    "symbol": "TSLA",
+    "estate": {
+      "quantity": 1,
+      "cost_price": 428.93
     }
   }
 ]
