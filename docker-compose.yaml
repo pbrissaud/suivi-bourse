@@ -8,13 +8,17 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+    environment: 
+      - "INFLUXDB_DATABASE=${INFLUXDB_DATABASE}"
+      - "INFLUXDB_PORT=${INFLUXDB_PORT}"
+      - "INFLUXDB_HOST=${INFLUXDB_HOST}"
   influxdb:
     container_name: suivi-bourse-influxdb
     image: "influxdb:1.8"
     ports:
-      - "8086:8086"
+      - "${INFLUXDB_PORT}:8086"
     environment:
-      - INFLUXDB_DB=bourse
+      - "INFLUXDB_DB=${INFLUXDB_DATABASE}"
   grafana:
     container_name: suivi-bourse-grafana
     image: "grafana/grafana"
