@@ -72,7 +72,7 @@ class SuiviBourse:
                         "name": share['name']
                     },
                     "fields": {
-                        "amount": last_quote
+                        "amount": float(last_quote)
                     }
                 },
                 {
@@ -82,7 +82,7 @@ class SuiviBourse:
                     },
                     "fields": {
                         "quantity": share['estate']['quantity'],
-                        "received_dividend": share['estate']['received_dividend'],
+                        "received_dividend": float(share['estate']['received_dividend']),
                     }
                 },
                 {
@@ -92,8 +92,8 @@ class SuiviBourse:
                     },
                     "fields": {
                         "quantity": share['purchase']['quantity'],
-                        "cost_price": share['purchase']['cost_price'],
-                        "fee": share['purchase']['fee']
+                        "cost_price": float(share['purchase']['cost_price']),
+                        "fee": float(share['purchase']['fee'])
                     }
                 }
                 ]
