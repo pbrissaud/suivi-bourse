@@ -1,26 +1,115 @@
-# Suivi Bourse
 
-Application pour suivre les cours des actions que vous possédez.
+# Stock Share Monitoring
 
-Script python qui récupère les données de l'API yfinance et qui les stocke dans une base InfluxDB. Grafana pour la visualisation des données
+Small app written in Python to monitor the stock shares you own. It uses InfluxDB as TSDB and Yfinance to scrape the price in realtime.  
 
-## Installation
+# Installation
 
-1. Cloner ou télécharger le projet
+You can use docker-compose to install a full stack with InfluxDB and Grafana included or the app in standalone mode.
 
-2. Créer un fichier data.json dans le dossier **data**. Suivez le modèle donné dans le fichier **data-example.json**
+## Full-stack mode (docker-compose)
 
-3. Lancer la stack : `docker-compose up`
+### **Requirements**
+* docker
+* docker-compose 
 
-4. Allez sur http://localhost:3000 (ou l'adresse IP de la machine docker) et connectez-vous :
+1. Clone the project
+    ```bash
+    git clone https://github.com/pbrissaud/suivi-bourse-app.git
+    ```
 
-- login : admin
-- mot de passe : admin
+2. Move to the directory
+    ```bash
+    cd suivi-bourse-app
+    ```
 
-5. Changer le mot de passe **admin**
+3. Copy data/data-example.json to data/data.json
+    ```bash
+    cp data/data-example.json data/data.json
+    ```
 
-6. Allez sur le dashboard **"Suivi Bourse"**
+4. Modify the data/data.json file following the model
+    ```bash
+    vim data/data.json
+    ```
 
-## Reports de bugs / Demandes d'amélioration
+5. Start the stack
+    ```bash
+    docker-compose up
+    ```
 
-N'hésitez pas à créer une issue sur Github !
+6. Connect to Grafana (`http://localhost:3000`) with credentials `admin/admin` (you can change the password right after your first login)
+
+7. Go to dashboard `Stock share monitoring` and see !  
+*NB: for the graph cell you need to wait ~10 min to see something*
+
+## Standalone mode
+
+### **Requirements**
+* Python v3.x  (tested with 3.8 and 3.9)
+* Pip
+* An influxDB database in **1.x** (tested with 1.7 and 1.8) 
+
+1. Clone the project
+    ```bash
+    git clone https://github.com/pbrissaud/suivi-bourse-app.git
+    ```
+
+2. Move to the directory
+    ```bash
+    cd suivi-bourse-app
+    ```
+
+3. Install python dependencies
+    ```bash
+    python3 -m pip install influxdb
+    python3 -m pip install yfinance
+    ```
+
+4. Copy data/data-example.json to anywhere you want and modify it accordings to your needs
+
+5. Create a InfluxDB database (default name is `bourse`)
+    ```bash
+    influx> CREATE DATABSE bourse
+    ```
+    
+6. Run the app 
+    ```bash
+    python3 app/main.py --config <path_to_data_file> 
+    ```
+
+7. You can import the Grafana dashboard (file is located in `grafana-provisionning/dashbaords/suivi-bourse.json`). Care you must have Grafana > 7.4 (using new Time Serie Cell) 
+
+### **CLI Options**
+
+```
+OPTION                  DESCRIPTION
+-h, --help              Show manual
+-H, --host              InfluxDB Host
+-p, --port              InfluxDB Port
+-D, --database          InfluxDB Database
+-U, --username          InfluxDB Username
+-P, --password          InfluxDB Password
+-i, --interval          Application Scraping Interval (seconds)
+-c, --config            Data file path
+```
+
+# Data.json file model
+
+```json
+[
+  {
+    "name": "Apple",                //Name of the stock
+    "symbol": "AAPL",               //Symbol of the stock (see https://finance.yahoo.com to know what you should write)
+    "purchase": {
+      "quantity": 4,                //Sum of purchased shares
+      "fee": 2,                     //Sum of fees 
+      "cost_price": 119.98          //Avg unit price of purchased shares
+    },
+    "estate": {
+      "quantity": 5,                //Sum of owned shares (in case of you got free shares)
+      "received_dividend": 2.85     //Sum of received dividends
+    }
+  }
+]
+```
