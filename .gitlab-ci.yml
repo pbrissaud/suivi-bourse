@@ -6,14 +6,11 @@ static-analysis:
   image: python:3.8
   stage: test
   before_script:
-    - python --version
-    - pip install pipenv
-    - cd app
-    - pipenv lock --requirements > requirements.txt
-    - pip install -r requirements.txt
+    - pip install influxdb
+    - pip install yfinance
     - pip install flake8
   script:
-    - flake8 main.py
+    - flake8 app/main.py
   except:
     - /feature\/.*/
 
