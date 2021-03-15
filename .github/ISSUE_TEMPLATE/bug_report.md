@@ -23,9 +23,9 @@ A clear and concise description of what you expected to happen.
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
 
-**Installation mode:**
-- [] Full-stack
-- [] Standalone
+**Installation mode:** (choose one)
+- [ ] Full-stack
+- [ ] Standalone
 
 **Environnement:**
 Please provide any useful information of your environnement (os, software version, etc ...)
