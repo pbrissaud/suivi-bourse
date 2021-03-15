@@ -12,7 +12,8 @@ class SuiviBourse:
         try:
             opts, _ = getopt.getopt(
                 argv, "hH:p:D:U:P:i:c:", [
-                    "help", "host=", "port=", "database=", "username=", "password=", "interval=", "config="]
+                    "help", "host=", "port=", "database=", "username=",
+                    "password=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
             print(err)
@@ -50,7 +51,8 @@ class SuiviBourse:
                 self.appDataFilePath = arg
 
         self.influxdbClient = InfluxDBClient(
-            host=influxHost, port=influxPort, database=influxDatabase, username=influxUsername, password=influxPassword)
+            host=influxHost, port=influxPort, database=influxDatabase,
+            username=influxUsername, password=influxPassword)
 
     def check(self):
         self.influxdbClient.ping()
@@ -67,38 +69,41 @@ class SuiviBourse:
                 last_quote = (history.tail(1)['Close'].iloc[0])
                 json_body = [
                     {
-                    "measurement": "price",
-                    "tags": {
-                        "name": share['name']
+                        "measurement": "price",
+                        "tags": {
+                            "name": share['name']
+                        },
+                        "fields": {
+                            "amount": float(last_quote)
+                        }
                     },
-                    "fields": {
-                        "amount": float(last_quote)
-                    }
-                },
-                {
-                    "measurement": "estate",
-                    "tags": {
-                        "name": share['name'],
+                    {
+                        "measurement": "estate",
+                        "tags": {
+                            "name": share['name'],
+                        },
+                        "fields": {
+                            "quantity": share['estate']['quantity'],
+                            "received_dividend":
+                                float(share['estate']['received_dividend']),
+                        }
                     },
-                    "fields": {
-                        "quantity": share['estate']['quantity'],
-                        "received_dividend": float(share['estate']['received_dividend']),
+                    {
+                        "measurement": "purchase",
+                        "tags": {
+                            "name": share['name'],
+                        },
+                        "fields": {
+                            "quantity": share['purchase']['quantity'],
+                            "cost_price":
+                                float(share['purchase']['cost_price']),
+                            "fee": float(share['purchase']['fee'])
+                        }
                     }
-                },
-                {
-                    "measurement": "purchase",
-                    "tags": {
-                        "name": share['name'],
-                    },
-                    "fields": {
-                        "quantity": share['purchase']['quantity'],
-                        "cost_price": float(share['purchase']['cost_price']),
-                        "fee": float(share['purchase']['fee'])
-                    }
-                }
                 ]
                 self.influxdbClient.write_points(json_body)
                 self.influxdbClient.close()
+
 
 def usage():
     print("\nUsage: python3 main.py [OPTIONS]")
@@ -111,6 +116,7 @@ def usage():
     print("-P, --password\t\tInfluxDB Password")
     print("-i, --interval\t\tApplication Scraping Interval (seconds)")
     print("-c, --config\t\tData file path")
+
 
 if __name__ == "__main__":
     error_counter = 0
