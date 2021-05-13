@@ -62,8 +62,7 @@ You can use docker-compose to install a full stack with InfluxDB and Grafana inc
 
 3. Install python dependencies
     ```bash
-    python3 -m pip install influxdb
-    python3 -m pip install yfinance
+    python3 -m pip install -r requirements.txt
     ```
 
 4. Copy data/data-example.json to anywhere you want and modify it accordings to your needs
@@ -96,20 +95,6 @@ OPTION                  DESCRIPTION
 
 # Data.json file model
 
-```json
-[
-  {
-    "name": "Apple",                //Name of the stock
-    "symbol": "AAPL",               //Symbol of the stock (see https://finance.yahoo.com to know what you should write)
-    "purchase": {
-      "quantity": 4,                //Sum of purchased shares
-      "fee": 2,                     //Sum of fees 
-      "cost_price": 119.98          //Avg unit price of purchased shares
-    },
-    "estate": {
-      "quantity": 5,                //Sum of owned shares (in case of you got free shares)
-      "received_dividend": 2.85     //Sum of received dividends
-    }
-  }
-]
-```
+* YAML Schema used for validation :  [app/schema.yaml](app/schema.yaml)
+
+* Example : [data/data-example.json](data/data-example.json)
