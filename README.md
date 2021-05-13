@@ -96,3 +96,5 @@ OPTION                  DESCRIPTION
 # Data.json file model
 
 * YAML Schema used for validation :  [app/schema.yaml](app/schema/yaml)
+
+* Example : [data/data-example.json](data/data-example.json)
