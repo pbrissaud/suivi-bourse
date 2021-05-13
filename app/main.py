@@ -127,12 +127,12 @@ if __name__ == "__main__":
         try:
             suivi.check()
             suivi.run()
-            error_counter = 0
         except Exception as err:
             logging.error(str(err))
             error_counter += 1
             if error_counter >= 5:
                 logging.critical("5 consecutive errors : Exiting the app")
                 sys.exit(1)
-        finally:
-            time.sleep(suivi.appScrapingInterval)
+        else:
+            error_counter = 0
+        time.sleep(suivi.appScrapingInterval)
