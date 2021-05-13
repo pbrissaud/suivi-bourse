@@ -18,7 +18,7 @@ class SuiviBourse:
                     "password=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
-            print(err)
+            logging.error(err)
             usage()
             sys.exit(2)
 
