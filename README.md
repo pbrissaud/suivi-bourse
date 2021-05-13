@@ -62,8 +62,7 @@ You can use docker-compose to install a full stack with InfluxDB and Grafana inc
 
 3. Install python dependencies
     ```bash
-    python3 -m pip install influxdb
-    python3 -m pip install yfinance
+    python3 -m pip install -r requirements.txt
     ```
 
 4. Copy data/data-example.json to anywhere you want and modify it accordings to your needs
