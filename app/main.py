@@ -4,8 +4,11 @@ import time
 import sys
 import getopt
 import logging
+import yaml
 import yfinance as yf
 from influxdb import InfluxDBClient
+from cerberus import Validator
+from pathlib import Path
 
 logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 
@@ -56,56 +59,66 @@ class SuiviBourse:
             host=influxHost, port=influxPort, database=influxDatabase,
             username=influxUsername, password=influxPassword)
 
+        with open(Path(__file__).parent / "schema.yaml") as f:
+            self.dataSchema = yaml.load(f, Loader=yaml.FullLoader)
+
     def check(self):
         self.influxdbClient.ping()
         if(not os.path.exists(self.appDataFilePath)):
             raise Exception(
-                "File {} doesn't exist !".format(self.appDataFilePath))
+                "Data file {} doesn't exist !".format(self.appDataFilePath))
+
+    def validate(self, data):
+        v = Validator(self.dataSchema)
+        return v.validate(data), v.errors
 
     def run(self):
         with open(self.appDataFilePath) as data_file:
             data = json.load(data_file)
-            for share in data:
-                ticker = yf.Ticker(share['symbol'])
-                history = ticker.history()
-                last_quote = (history.tail(1)['Close'].iloc[0])
-                json_body = [
-                    {
-                        "measurement": "price",
-                        "tags": {
-                            "name": share['name']
+            is_valid, validation_error = self.validate(data)
+            if is_valid:
+                for share in data['shares']:
+                    ticker = yf.Ticker(share['symbol'])
+                    history = ticker.history()
+                    last_quote = (history.tail(1)['Close'].iloc[0])
+                    json_body = [
+                        {
+                            "measurement": "price",
+                            "tags": {
+                                "name": share['name']
+                            },
+                            "fields": {
+                                "amount": float(last_quote)
+                            }
                         },
-                        "fields": {
-                            "amount": float(last_quote)
-                        }
-                    },
-                    {
-                        "measurement": "estate",
-                        "tags": {
-                            "name": share['name'],
+                        {
+                            "measurement": "estate",
+                            "tags": {
+                                "name": share['name'],
+                            },
+                            "fields": {
+                                "quantity": float(share['estate']['quantity']),
+                                "received_dividend":
+                                    float(share['estate']['received_dividend']),
+                            }
                         },
-                        "fields": {
-                            "quantity": float(share['estate']['quantity']),
-                            "received_dividend":
-                                float(share['estate']['received_dividend']),
+                        {
+                            "measurement": "purchase",
+                            "tags": {
+                                "name": share['name'],
+                            },
+                            "fields": {
+                                "quantity": float(share['purchase']['quantity']),
+                                "cost_price":
+                                    float(share['purchase']['cost_price']),
+                                "fee": float(share['purchase']['fee'])
+                            }
                         }
-                    },
-                    {
-                        "measurement": "purchase",
-                        "tags": {
-                            "name": share['name'],
-                        },
-                        "fields": {
-                            "quantity": float(share['purchase']['quantity']),
-                            "cost_price":
-                                float(share['purchase']['cost_price']),
-                            "fee": float(share['purchase']['fee'])
-                        }
-                    }
-                ]
-                self.influxdbClient.write_points(json_body)
-                self.influxdbClient.close()
-
+                    ]
+                    self.influxdbClient.write_points(json_body)
+                    self.influxdbClient.close()
+            else:
+                raise Exception("Data file isn't valid : {}".format(validation_error))
 
 def usage():
     print("\nUsage: python3 main.py [OPTIONS]")
