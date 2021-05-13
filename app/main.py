@@ -3,9 +3,11 @@ import os
 import time
 import sys
 import getopt
+import logging
 import yfinance as yf
 from influxdb import InfluxDBClient
 
+logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 
 class SuiviBourse:
     def __init__(self, argv):
@@ -127,10 +129,10 @@ if __name__ == "__main__":
             suivi.run()
             error_counter = 0
         except Exception as err:
-            print("An error has occured: " + str(err))
+            logging.error(str(err))
             error_counter += 1
             if error_counter >= 5:
-                print("5 consecutive errors : Exiting the app")
+                logging.critical("5 consecutive errors : Exiting the app")
                 sys.exit(1)
         finally:
             time.sleep(suivi.appScrapingInterval)
