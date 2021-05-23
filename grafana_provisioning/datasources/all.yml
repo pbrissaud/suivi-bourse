@@ -6,5 +6,10 @@ datasources:
     access: proxy
     database: bourse
     editable: false
+    secureJsonData:
+      token: ${INFLUXDB_TOKEN}
     jsonData:
-      httpMode: GET
+      version: Flux
+      organization: ${INFLUXDB_ORG}
+      defaultBucket: ${INFLUXDB_BUCKET}
+      tlsSkipVerify: true

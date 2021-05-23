@@ -1,22 +1,22 @@
 version: "3.8"
 services:
-  app:
-    container_name: suivi-bourse-app
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-    environment: 
-      - "INFLUXDB_DATABASE=${INFLUXDB_DATABASE}"
-      - "INFLUXDB_PORT=${INFLUXDB_PORT}"
-      - "INFLUXDB_HOST=${INFLUXDB_HOST}"
-    depends_on: 
-      - influxdb
+  # app:
+  #   container_name: suivi-bourse-app
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile
+  #   volumes:
+  #     - ./data:/data
+  #   restart: unless-stopped
+  #   environment: 
+  #     - "INFLUXDB_DATABASE=${INFLUXDB_DATABASE}"
+  #     - "INFLUXDB_PORT=${INFLUXDB_PORT}"
+  #     - "INFLUXDB_HOST=${INFLUXDB_HOST}"
+  #   depends_on: 
+  #     - influxdb
   influxdb:
     container_name: suivi-bourse-influxdb
-    image: "influxdb:1.8"
+    image: "influxdb:2.0"
     ports:
       - "${INFLUXDB_PORT}:8086"
     environment:
@@ -33,5 +33,9 @@ services:
       - "3000:3000"
     volumes:
       - ./grafana_provisioning:/etc/grafana/provisioning
+    environment:
+      - "INFLUXDB_TOKEN=${INFLUXDB_TOKEN}"
+      - "INFLUXDB_BUCKET=${INFLUXDB_BUCKET}"
+      - "INFLUXDB_ORG=${INFLUXDB_ORG}"
     depends_on: 
       - influxdb
