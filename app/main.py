@@ -6,9 +6,10 @@ import getopt
 import logging
 import yaml
 import yfinance as yf
-from influxdb import InfluxDBClient
 from cerberus import Validator
 from pathlib import Path
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 logging.basicConfig(format='%(asctime)s %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
 
