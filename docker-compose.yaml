@@ -19,8 +19,6 @@ services:
   influxdb:
     container_name: suivi-bourse-influxdb
     image: "influxdb:2.0"
-    ports:
-      - "${INFLUXDB_PORT}:8086"
     environment:
       - "DOCKER_INFLUXDB_INIT_MODE=setup"
       - "DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USERNAME}"
