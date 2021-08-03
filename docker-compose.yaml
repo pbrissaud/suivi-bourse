@@ -8,25 +8,36 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
-    environment: 
-      - "INFLUXDB_DATABASE=${INFLUXDB_DATABASE}"
-      - "INFLUXDB_PORT=${INFLUXDB_PORT}"
+    environment:
       - "INFLUXDB_HOST=${INFLUXDB_HOST}"
+      - "INFLUXDB_PORT=${INFLUXDB_PORT}"
+      - "INFLUXDB_TOKEN=${INFLUXDB_TOKEN}"
+      - "INFLUXDB_BUCKET=${INFLUXDB_BUCKET}"
+      - "INFLUXDB_ORG=${INFLUXDB_ORG}"
     depends_on: 
       - influxdb
   influxdb:
     container_name: suivi-bourse-influxdb
-    image: "influxdb:1.8"
-    ports:
-      - "${INFLUXDB_PORT}:8086"
+    image: "influxdb:2.0"
+    restart: unless-stopped
     environment:
-      - "INFLUXDB_DB=${INFLUXDB_DATABASE}"
+      - "DOCKER_INFLUXDB_INIT_MODE=setup"
+      - "DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USERNAME}"
+      - "DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}"
+      - "DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}"
+      - "DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}"
+      - "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN}"
   grafana:
     container_name: suivi-bourse-grafana
-    image: "grafana/grafana:7.5.6"
+    image: "grafana/grafana:8.0.6"
+    restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - ./grafana_provisioning:/etc/grafana/provisioning
+    environment:
+      - "INFLUXDB_TOKEN=${INFLUXDB_TOKEN}"
+      - "INFLUXDB_BUCKET=${INFLUXDB_BUCKET}"
+      - "INFLUXDB_ORG=${INFLUXDB_ORG}"
     depends_on: 
       - influxdb
