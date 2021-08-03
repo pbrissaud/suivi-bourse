@@ -18,8 +18,7 @@ class SuiviBourse:
         try:
             opts, _ = getopt.getopt(
                 argv, "hH:p:D:U:P:i:c:", [
-                    "help", "host=", "port=", "database=", "username=",
-                    "password=", "interval=", "config="]
+                    "help", "host=", "port=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
             logging.error(err)
