@@ -17,8 +17,8 @@ class SuiviBourse:
     def __init__(self, argv):
         try:
             opts, _ = getopt.getopt(
-                argv, "hH:p:D:U:P:i:c:", [
-                    "help", "host=", "port=", "interval=", "config="]
+                argv, "hH:p:o:b:i:c:", [
+                    "help", "host=", "port=", "org=", "bucket=", "interval=", "config="]
             )
         except getopt.GetoptError as err:
             logging.error(err)
@@ -46,6 +46,10 @@ class SuiviBourse:
                 influxHost = arg
             elif opt in ("-p", "--port"):
                 influxPort = arg
+            elif opt in ("-o", "--org"):
+                self.influxOrg = arg
+            elif opt in ("-b", "--bucket"):
+                self.influxBucket = arg
             elif opt in ("-i", "--interval"):
                 self.appScrapingInterval = int(arg)
             elif opt in ("-c", "--config"):
@@ -120,6 +124,8 @@ def usage():
     print("-h, --help\t\tShow manual")
     print("-H, --host\t\tInfluxDB Host")
     print("-p, --port\t\tInfluxDB Port")
+    print("-o, --org\t\tInfluxDB Organization")
+    print("-b, --bucket\t\tInfluxDB Bucket")
     print("-i, --interval\t\tApplication Scraping Interval (seconds)")
     print("-c, --config\t\tData file path")
 
