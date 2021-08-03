@@ -47,12 +47,6 @@ class SuiviBourse:
                 influxHost = arg
             elif opt in ("-p", "--port"):
                 influxPort = arg
-            elif opt in ("-D", "--database"):
-                influxDatabase = arg
-            elif opt in ("-U", "--username"):
-                influxUsername = arg
-            elif opt in ("-P", "--password"):
-                influxPassword = arg
             elif opt in ("-i", "--interval"):
                 self.appScrapingInterval = int(arg)
             elif opt in ("-c", "--config"):
@@ -127,9 +121,6 @@ def usage():
     print("-h, --help\t\tShow manual")
     print("-H, --host\t\tInfluxDB Host")
     print("-p, --port\t\tInfluxDB Port")
-    print("-D, --database\t\tInfluxDB Database")
-    print("-U, --username\t\tInfluxDB Username")
-    print("-P, --password\t\tInfluxDB Password")
     print("-i, --interval\t\tApplication Scraping Interval (seconds)")
     print("-c, --config\t\tData file path")
 
