@@ -27,7 +27,7 @@ class SuiviBourse:
             sys.exit(2)
 
         influxHost = os.getenv('INFLUXDB_HOST', default='localhost')
-        influxPort = os.getenv('INFLUXDB_PORT', default=8086)
+        influxPort = os.getenv('INFLUXDB_PORT', default='8086')
         influxToken = os.getenv('INFLUXDB_TOKEN', default='')
         influxProtocol = os.getenv('INFLUXDB_PROTOCOL', default='http')
 
