@@ -1,4 +1,30 @@
 {
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "8.0.6"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -16,8 +42,8 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1,
-  "iteration": 1622326981987,
+  "id": null,
+  "iteration": 1627908085821,
   "links": [],
   "panels": [
     {
@@ -31,13 +57,6 @@
       "id": 2,
       "panels": [],
       "repeat": "share",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
       "title": "$share",
       "type": "row"
     },
@@ -53,12 +72,13 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 25,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "graph": false,
               "legend": false,
-              "tooltip": false
+              "tooltip": false,
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineStyle": {
@@ -70,7 +90,14 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "decimals": 2,
           "mappings": [],
@@ -167,18 +194,11 @@
           "displayMode": "hidden",
           "placement": "bottom"
         },
-        "tooltipOptions": {
+        "tooltip": {
           "mode": "single"
         }
       },
       "pluginVersion": "7.4.2",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
       "targets": [
         {
           "alias": "Share mean price on 5min",
@@ -224,80 +244,6 @@
               "value": "/^$share$/"
             }
           ]
-        },
-        {
-          "groupBy": [
-            {
-              "params": [
-                "$__interval"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "FinalOutput = [\"_field\", \"_time\", \"_value\"]\n\nRawSeries = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nNamedSeries = RawSeries\n  |> map(fn: (r) => ({_value:r._value, _time:r._time, _field:\"Share max price on 5min\"}))\n  |> keep(columns:FinalOutput)\n\nNamedSeries |> yield()",
-          "refId": "max",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "value"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "mean"
-              }
-            ]
-          ],
-          "tags": []
-        },
-        {
-          "groupBy": [
-            {
-              "params": [
-                "$__interval"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "FinalOutput = [\"_field\", \"_time\", \"_value\"]\n\nRawSeries = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)\n\nNamedSeries = RawSeries\n  |> map(fn: (r) => ({_value:r._value, _time:r._time, _field:\"Share min price on 5min\"}))\n  |> keep(columns:FinalOutput)\n\nNamedSeries |> yield()",
-          "refId": "min",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "value"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "mean"
-              }
-            ]
-          ],
-          "tags": []
         }
       ],
       "title": "Share price evolution",
@@ -345,14 +291,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -433,14 +372,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -520,14 +452,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -608,14 +533,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -704,14 +622,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "alias": "actual",
@@ -792,14 +703,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -879,14 +783,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
@@ -975,14 +872,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.5.6",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "alias": "actual_price",
@@ -1023,18 +913,14 @@
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 27,
+  "schemaVersion": 30,
   "style": "dark",
   "tags": [],
   "templating": {
     "list": [
       {
         "allValue": null,
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
-        },
+        "current": {},
         "datasource": "InfluxDB",
         "definition": "import \"influxdata/influxdb/v1\"\n\nv1.measurementTagValues(bucket: \"bourse\", measurement: \"estate\", tag: \"name\")",
         "description": null,
@@ -1051,7 +937,6 @@
         "skipUrlSync": false,
         "sort": 0,
         "tagValuesQuery": "",
-        "tags": [],
         "tagsQuery": "",
         "type": "query",
         "useTags": false
@@ -1066,5 +951,5 @@
   "timezone": "",
   "title": "Stock share monitoring",
   "uid": "yxyFeYUGk",
-  "version": 5
+  "version": 2
 }
