@@ -1,4 +1,30 @@
 {
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "8.0.6"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -16,8 +42,8 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1,
-  "iteration": 1615588395884,
+  "id": null,
+  "iteration": 1627908085821,
   "links": [],
   "panels": [
     {
@@ -31,13 +57,6 @@
       "id": 2,
       "panels": [],
       "repeat": "share",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
       "title": "$share",
       "type": "row"
     },
@@ -53,12 +72,13 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 25,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "graph": false,
               "legend": false,
-              "tooltip": false
+              "tooltip": false,
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineStyle": {
@@ -70,7 +90,14 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "decimals": 2,
           "mappings": [],
@@ -125,6 +152,10 @@
                   "fixedColor": "light-orange",
                   "mode": "fixed"
                 }
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "Share min price on 5min"
               }
             ]
           },
@@ -163,18 +194,11 @@
           "displayMode": "hidden",
           "placement": "bottom"
         },
-        "tooltipOptions": {
+        "tooltip": {
           "mode": "single"
         }
       },
       "pluginVersion": "7.4.2",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
       "targets": [
         {
           "alias": "Share mean price on 5min",
@@ -195,8 +219,9 @@
           "measurement": "price",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "FinalOutput = [\"_field\", \"_time\", \"_value\"]\n\nRawSeries = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nNamedSeries = RawSeries\n  |> map(fn: (r) => ({_value:r._value, _time:r._time, _field:\"Share mean price on 5min\"}))\n  |> keep(columns:FinalOutput)\n\nNamedSeries |> yield()",
           "queryType": "randomWalk",
-          "refId": "A",
+          "refId": "mean",
           "resultFormat": "time_series",
           "select": [
             [
@@ -219,94 +244,6 @@
               "value": "/^$share$/"
             }
           ]
-        },
-        {
-          "alias": "Share max price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "max"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "Share min price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "C",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "min"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
         }
       ],
       "title": "Share price evolution",
@@ -319,7 +256,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -355,20 +291,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "purchase",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -405,7 +335,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "decimals": 2,
           "mappings": [],
           "thresholds": {
@@ -443,20 +372,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "purchase",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -493,7 +416,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -530,20 +452,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "purchase",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"fee\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -580,7 +496,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "decimals": 2,
           "mappings": [],
           "thresholds": {
@@ -618,20 +533,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "price",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -668,7 +577,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "decimals": 2,
           "mappings": [],
           "thresholds": {
@@ -714,14 +622,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "alias": "actual",
@@ -729,6 +630,7 @@
           "measurement": "price",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "actual = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n\ncost = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\njoin(tables: {cost:cost, actual:actual}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual - r._value_cost)\n}))",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -753,58 +655,10 @@
               "value": "/^$share$/"
             }
           ]
-        },
-        {
-          "alias": "purchased",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
         }
       ],
       "title": "Unitary Gain / Loss ",
-      "transformations": [
-        {
-          "id": "calculateField",
-          "options": {
-            "binary": {
-              "left": "actual",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "purchased"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            },
-            "replaceFields": true
-          }
-        }
-      ],
+      "transformations": [],
       "type": "stat"
     },
     {
@@ -814,7 +668,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -850,20 +703,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "estate",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -900,7 +747,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -937,20 +783,14 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "groupBy": [],
           "measurement": "estate",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"received_dividend\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -987,7 +827,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "custom": {},
           "decimals": 2,
           "mappings": [],
           "thresholds": {
@@ -1033,14 +872,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "7.4.3",
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Apple",
-          "value": "Apple"
-        }
-      },
+      "pluginVersion": "8.0.6",
       "targets": [
         {
           "alias": "actual_price",
@@ -1048,6 +880,7 @@
           "measurement": "price",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "cost_price = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\npurchase_quantity = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\npurchase_value = join(tables: {cost_price:cost_price, purchase_quantity:purchase_quantity}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_purchase_quantity * r._value_cost_price)\n}))\n\nprice = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n\nactual_quantity = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\nactual_value = join(tables: {price:price, actual_quantity:actual_quantity}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual_quantity * r._value_price)\n}))\n\ndelta = join(tables: {actual_value:actual_value, purchase_value:purchase_value}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual_value - r._value_purchase_value)\n}))\n\nfees = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"fee\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\ndelta_fees = join(tables: {delta:delta, fees:fees}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_delta - r._value_fees)\n}))\n\ndividend = from(bucket: \"bourse\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"received_dividend\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\njoin(tables: {delta_fees:delta_fees, dividend:dividend}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_delta_fees + r._value_dividend)\n}))",
           "queryType": "randomWalk",
           "refId": "A",
           "resultFormat": "time_series",
@@ -1056,166 +889,6 @@
               {
                 "params": [
                   "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "owned_quantity",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "received_dividend",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "C",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "received_dividend"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "cost_price",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "D",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "fee",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "E",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "fee"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "purchased_quantity",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "F",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
                 ],
                 "type": "field"
               },
@@ -1235,1433 +908,21 @@
         }
       ],
       "title": "Total gain / loss",
-      "transformations": [
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "purchased_amount",
-            "binary": {
-              "left": "purchased_quantity",
-              "operator": "*",
-              "reducer": "sum",
-              "right": "cost_price"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "actual_amount",
-            "binary": {
-              "left": "actual_price",
-              "operator": "*",
-              "reducer": "sum",
-              "right": "owned_quantity"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "A",
-            "binary": {
-              "left": "actual_amount",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "purchased_amount"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "B",
-            "binary": {
-              "left": "A",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "fee"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "binary": {
-              "left": "B",
-              "operator": "+",
-              "reducer": "sum",
-              "right": "received_dividend"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            },
-            "replaceFields": true
-          }
-        }
-      ],
-      "type": "stat"
-    },
-    {
-      "datasource": null,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 13
-      },
-      "id": 15,
-      "panels": [],
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 2,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "title": "$share",
-      "type": "row"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 25,
-            "gradientMode": "none",
-            "hideFrom": {
-              "graph": false,
-              "legend": false,
-              "tooltip": false
-            },
-            "lineInterpolation": "smooth",
-            "lineStyle": {
-              "fill": "solid"
-            },
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": true
-          },
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share mean price on 5min"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 4
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share max price on 5min"
-            },
-            "properties": [
-              {
-                "id": "custom.fillBelowTo",
-                "value": "Share min price on 5min"
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share min price on 5min"
-            },
-            "properties": [
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 14
-      },
-      "id": 16,
-      "options": {
-        "graph": {},
-        "legend": {
-          "calcs": [],
-          "displayMode": "hidden",
-          "placement": "bottom"
-        },
-        "tooltipOptions": {
-          "mode": "single"
-        }
-      },
-      "pluginVersion": "7.4.2",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 4,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "alias": "Share mean price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "mean"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "Share max price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "max"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "Share min price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "hide": false,
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "C",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "min"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Share price evolution",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 14
-      },
-      "id": 17,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 8,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Purchased quantity",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 14
-      },
-      "id": 18,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 9,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Cost price",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 14
-      },
-      "id": 19,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 10,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "fee"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Fees",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 18
-      },
-      "id": 20,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 11,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Actual price",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "#EAB839",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 0.01
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 18
-      },
-      "id": 21,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 12,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "alias": "actual",
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "purchased",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Unitary Gain / Loss ",
-      "transformations": [
-        {
-          "id": "calculateField",
-          "options": {
-            "binary": {
-              "left": "actual",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "purchased"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            },
-            "replaceFields": true
-          }
-        }
-      ],
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 22
-      },
-      "id": 22,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 6,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Owned quantity",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 22
-      },
-      "id": 23,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 13,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "groupBy": [],
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "received_dividend"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Received dividend",
-      "type": "stat"
-    },
-    {
-      "datasource": "InfluxDB",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {},
-          "decimals": 2,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "#EAB839",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 0.01
-              }
-            ]
-          },
-          "unit": "currencyEUR"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 22
-      },
-      "id": 24,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "pluginVersion": "7.4.3",
-      "repeatIteration": 1615588395884,
-      "repeatPanelId": 14,
-      "repeatedByRow": true,
-      "scopedVars": {
-        "share": {
-          "selected": false,
-          "text": "Tesla",
-          "value": "Tesla"
-        }
-      },
-      "targets": [
-        {
-          "alias": "actual_price",
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "owned_quantity",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "B",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "received_dividend",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "C",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "received_dividend"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "cost_price",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "D",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "fee",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "E",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "fee"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        },
-        {
-          "alias": "purchased_quantity",
-          "groupBy": [],
-          "hide": false,
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "queryType": "randomWalk",
-          "refId": "F",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
-        }
-      ],
-      "title": "Total gain / loss",
-      "transformations": [
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "purchased_amount",
-            "binary": {
-              "left": "purchased_quantity",
-              "operator": "*",
-              "reducer": "sum",
-              "right": "cost_price"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "actual_amount",
-            "binary": {
-              "left": "actual_price",
-              "operator": "*",
-              "reducer": "sum",
-              "right": "owned_quantity"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "A",
-            "binary": {
-              "left": "actual_amount",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "purchased_amount"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "B",
-            "binary": {
-              "left": "A",
-              "operator": "-",
-              "reducer": "sum",
-              "right": "fee"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            }
-          }
-        },
-        {
-          "id": "calculateField",
-          "options": {
-            "binary": {
-              "left": "B",
-              "operator": "+",
-              "reducer": "sum",
-              "right": "received_dividend"
-            },
-            "mode": "binary",
-            "reduce": {
-              "reducer": "sum"
-            },
-            "replaceFields": true
-          }
-        }
-      ],
+      "transformations": [],
       "type": "stat"
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 27,
+  "schemaVersion": 30,
   "style": "dark",
   "tags": [],
   "templating": {
     "list": [
       {
         "allValue": null,
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
-        },
+        "current": {},
         "datasource": "InfluxDB",
-        "definition": "SHOW TAG VALUES WITH KEY = \"name\"",
+        "definition": "import \"influxdata/influxdb/v1\"\n\nv1.measurementTagValues(bucket: \"bourse\", measurement: \"estate\", tag: \"name\")",
         "description": null,
         "error": null,
         "hide": 0,
@@ -2670,13 +931,12 @@
         "multi": false,
         "name": "share",
         "options": [],
-        "query": "SHOW TAG VALUES WITH KEY = \"name\"",
+        "query": "import \"influxdata/influxdb/v1\"\n\nv1.measurementTagValues(bucket: \"bourse\", measurement: \"estate\", tag: \"name\")",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
         "tagValuesQuery": "",
-        "tags": [],
         "tagsQuery": "",
         "type": "query",
         "useTags": false
@@ -2691,5 +951,5 @@
   "timezone": "",
   "title": "Stock share monitoring",
   "uid": "yxyFeYUGk",
-  "version": 8
+  "version": 2
 }
