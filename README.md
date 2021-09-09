@@ -48,7 +48,7 @@ You can use docker-compose to install a full stack with InfluxDB and Grafana inc
 ### **Requirements**
 * Python v3.x  (tested with 3.8 and 3.9)
 * Pip
-* An influxDB database in **2.x** (for Influx 1.x, go to tag **2.0**)
+* An fully set up influxDB **2.x** database. Follow the offcial documentation [here](https://docs.influxdata.com/influxdb/v2.0/install/). If you have Influx **1.x**, go to tag **2.0**
 
 1. Clone the project
     ```bash
@@ -68,13 +68,26 @@ You can use docker-compose to install a full stack with InfluxDB and Grafana inc
 4. Copy data/data-example.json to anywhere you want and modify it accordings to your needs
 
 5. Create a InfluxDB bucket (default name is `bourse`)
+   ```bash
+   influx bucket create -n bourse -o <org-name> -r <retention-period-duration>
+   ```
 
-6. Run the app 
+6. Get the bucket id and create a token with read/write permissions on it
+   ```bash
+   influx auth create -o <org-name> --read-bucket <bucket_id> --write-bucket <bucket_id>
+   ```
+
+7. Save the token into the **INFLUXDB_TOKEN** env variable
+   ```bash
+   export INFLUXDB_TOKEN=<token>
+   ``` 
+
+6. Run the app
     ```bash
     python3 app/main.py --config <path_to_data_file> 
     ```
 
-7. You can import the Grafana dashboard (file is located in `grafana-provisionning/dashbaords/suivi-bourse.json`). Care you must have Grafana > 8 (using new Time Serie Cell) 
+7. If you have Grafana 8.x, you can import the dashboard located at the root of the project *grafana-dashboard-external.json* 
 
 ### **CLI Options**
 
