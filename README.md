@@ -3,6 +3,7 @@
 
 Small app written in Python to monitor the stock shares you own. It uses InfluxDB as TSDB and Yfinance to scrape the price in realtime.  
 
+![](assets/screenshot.png)
 # Installation
 
 You can use docker-compose to install a full stack with InfluxDB and Grafana included or the app in standalone mode.
@@ -87,7 +88,7 @@ You can use docker-compose to install a full stack with InfluxDB and Grafana inc
     python3 app/main.py --config <path_to_data_file> 
     ```
 
-7. If you have Grafana 8.x, you can import the dashboard located at the root of the project `grafana-dashboard-external.json`
+7. If you have Grafana 8.x, you can import the dashboard located in the folder assets [`grafana-dashboard-external.json`](assets/grafana-dashboard-external.json)
 
 ### **CLI Options**
 
