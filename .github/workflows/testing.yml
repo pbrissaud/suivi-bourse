@@ -1,0 +1,58 @@
+name: "Tests"
+
+on:
+  push:
+    branches:
+      - master
+      - dev-3.0
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'python' ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v1
+        with:
+          languages: ${{ matrix.language }}
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v1
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v1
+  security-scan:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache vdb
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ github.workspace }}/vdb
+          key: ${{ runner.os }}
+      - name: Scan
+        uses: ShiftLeftSecurity/scan-action@master
+        env:
+          VDB_HOME: ${{ github.workspace }}/vdb
+          WORKSPACE: https://github.com/${{ github.repository }}/blob/${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCAN_AUTO_BUILD: true
+        with:
+          output: reports
+      - name: Upload scan reports
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: shiftleft-scan-reports
+          path: reports
