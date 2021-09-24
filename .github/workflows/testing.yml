@@ -18,7 +18,7 @@ jobs:
         with:
           source: "app/src"
           mypy-options: "--ignore-missing-imports --show-error-codes"
-          pylint-options: ""
+          pylint-options: " "
           isort-options: "-w 100",
           django: false
   analyze:
