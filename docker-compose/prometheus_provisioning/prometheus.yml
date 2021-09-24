@@ -1,5 +1,5 @@
 scrape_configs:
   - job_name: 'suivi-bourse'
-    scrape_interval: '30s'
+    scrape_interval: '120s'
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['app:8081']

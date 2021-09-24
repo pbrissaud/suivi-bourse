@@ -2,7 +2,7 @@ version: "3.8"
 services:
   app:
     container_name: suivi-bourse-app
-    image: "suivi-bourse-app:test"
+    image: "suivi-bourse-app:3.0"
     restart: unless-stopped
     volumes:
       - ./config.yaml:/home/worker/.config/SuiviBourse/config.yaml:ro
@@ -15,8 +15,6 @@ services:
     container_name: suivi-bourse-prom
     image: "prom/prometheus:v2.30.0"
     restart: unless-stopped
-    ports:
-      - "9090:9090"
     volumes:
       - sb_prometheus_data:/prometheus
       - ./prometheus_provisioning:/etc/prometheus/

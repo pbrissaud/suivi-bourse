@@ -3,7 +3,7 @@ shares:
 - name: Apple
   symbol: AAPL
   purchase:
-  quantity: 1
+    quantity: 1
     fee: 2
     cost_price: 119.98
   estate:
