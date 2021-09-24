@@ -14,7 +14,10 @@ reset-config: cmd-exists-yq
 	yq e -i '.scrape_configs[0].static_configs[0].targets[0] = "app:8081"' prometheus_provisioning/prometheus.yml
 
 run: cmd-exists-docker-compose generate-config
-	docker-compose up "${OPTS}"
+	docker-compose up --detach
 
 stop: cmd-exists-docker-compose
 	docker-compose stop
+
+down: cmd-exists-docker-compose
+	docker-compose down
