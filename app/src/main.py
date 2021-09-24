@@ -46,25 +46,30 @@ sb_received_dividend = Gauge(
     "sb_received_dividend",
     ["share_name", "share_symbol"]
 )
-        
+
+
 def reload_config(config):
     for source in config.sources:
         if isinstance(source, confuse.sources.YamlSource):
             source.load()
 
-def expose_metrics():
 
+def expose_metrics():
     reload_config(config)
 
     if not validator.validate({"shares": config['shares'].get()}):
         logger.error('Shares field of the config file is invalid : {}'.format(validator.errors))
-            
+
     for share in config['shares'].get():
-        sb_purchased_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['purchase']['quantity'])
-        sb_purchased_price.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['purchase']['cost_price'])
+        sb_purchased_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(
+            share['purchase']['quantity'])
+        sb_purchased_price.labels(share_name=share['name'], share_symbol=share['symbol']).set(
+            share['purchase']['cost_price'])
         sb_purchased_fee.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['purchase']['fee'])
-        sb_owned_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['estate']['quantity'])
-        sb_received_dividend.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['estate']['received_dividend'])
+        sb_owned_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(
+            share['estate']['quantity'])
+        sb_received_dividend.labels(share_name=share['name'], share_symbol=share['symbol']).set(
+            share['estate']['received_dividend'])
 
         try:
             ticker = yf.Ticker(share['symbol'])
@@ -74,6 +79,7 @@ def expose_metrics():
         except Exception as e:
             logger.error("Error while retrieving data from Yfinance API : {}".format(e))
             pass
+
 
 if __name__ == "__main__":
     logger.info('SuiviBourse is running !')
