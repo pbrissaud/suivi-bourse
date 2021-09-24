@@ -1,15 +1,26 @@
-name: "Tests"
+name: "Lint and test code"
 
 on:
   push:
     branches:
-      - master
-      - dev-3.0
+      - dev-0.3
   pull_request:
     branches:
       - master
 
 jobs:
+  lint:
+    name: "Python Linter"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: sunnysid3up/python-linter@master
+        with:
+          source: "app/src"
+          mypy-options: "--ignore-missing-imports --show-error-codes"
+          pylint-options: ""
+          isort-options: "-w 100",
+          django: false
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
@@ -32,15 +43,15 @@ jobs:
         uses: github/codeql-action/autobuild@v1
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v1
-  security-scan:
-    name: Scan
+  scan:
+    name: Security scans
     runs-on: ubuntu-latest
     steps:
       - name: Scan
         uses: ShiftLeftSecurity/scan-action@master
         with:
           output: reports
-          type: "credscan,python,docker,yaml"
+          type: "credscan,python,dockerfile,yaml"
       - name: Upload scan reports
         uses: actions/upload-artifact@v1.0.0
         with:
