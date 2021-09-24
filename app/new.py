@@ -1,8 +1,9 @@
 import sys
+import os
 import yaml
 import yfinance as yf
+import confuse
 from prometheus_client import start_http_server, Gauge
-from confuse import Configuration, exceptions as confuseExceptions
 from cerberus import Validator
 from pathlib import Path
 from logfmt_logger import getLogger
@@ -46,7 +47,14 @@ sb_received_dividend = Gauge(
     ["share_name", "share_symbol"]
 )
         
+def reload_config(config):
+    for source in config.sources:
+        if isinstance(source, confuse.sources.YamlSource):
+            source.load()
+
 def expose_metrics():
+
+    reload_config(config)
 
     if not validator.validate({"shares": config['shares'].get()}):
         logger.error('Shares field of the config file is invalid : {}'.format(validator.errors))
@@ -71,7 +79,7 @@ if __name__ == "__main__":
     logger.info('SuiviBourse is running !')
 
     # Load config
-    config = Configuration('SuiviBourse', __name__)
+    config = confuse.Configuration('SuiviBourse', __name__)
 
     # Load schema file
     with open(Path(__file__).parent / "schema.yaml") as f:
@@ -80,16 +88,16 @@ if __name__ == "__main__":
 
     try:
         # Start up the server to expose the metrics.
-        start_http_server(config['params']['http_port'].as_number())
+        start_http_server(int(os.getenv('SB_METRICS_PORT', default='8081')))
         # Schedule run the job on startup.
         expose_metrics()
         # Start scheduler
         sched = BlockingScheduler()
-        sched.add_job(expose_metrics, 'interval', seconds=config['params']['scraping_interval'].as_number())
+        sched.add_job(expose_metrics, 'interval', seconds=int(os.getenv('SB_SCRAPING_INTERVAL', default='120')))
         sched.start()
-    except confuseExceptions.NotFoundError as e:
+    except confuse.exceptions.NotFoundError as e:
         logger.critical('Config file unreadable or non-existing field : {}'.format(e))
         sys.exit(1)
-    except confuseExceptions.ConfigTypeError as e:
+    except confuse.exceptions.ConfigTypeError as e:
         logger.critical('Field in config file is invalid : {}'.format(e))
         sys.exit(1)
