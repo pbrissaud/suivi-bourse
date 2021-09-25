@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     # Load schema file
     with open(Path(__file__).parent / "schema.yaml") as f:
-        dataSchema = yaml.safe_load(f, Loader=yaml.FullLoader)
+        dataSchema = yaml.safe_load(f)
     validator = Validator(dataSchema)
 
     try:
