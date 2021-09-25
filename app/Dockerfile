@@ -1,8 +1,10 @@
 FROM python:3 as builder
 
+WORKDIR /usr/src/app
+
 COPY requirements.txt .
 
-RUN pip install --user -r requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
 
 FROM python:3-slim
 

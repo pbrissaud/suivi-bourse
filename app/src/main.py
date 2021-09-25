@@ -78,7 +78,6 @@ def expose_metrics():
             sb_share_price.labels(share_name=share['name'], share_symbol=share['symbol']).set(last_quote)
         except Exception as e:
             logger.error("Error while retrieving data from Yfinance API : {}".format(e))
-            pass
 
 
 if __name__ == "__main__":
@@ -89,7 +88,7 @@ if __name__ == "__main__":
 
     # Load schema file
     with open(Path(__file__).parent / "schema.yaml") as f:
-        dataSchema = yaml.load(f, Loader=yaml.FullLoader)
+        dataSchema = yaml.safe_load(f, Loader=yaml.FullLoader)
     validator = Validator(dataSchema)
 
     try:
