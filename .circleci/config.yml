@@ -21,20 +21,18 @@ jobs:
       - checkout
       - setup_remote_docker
       - run:
-          name: Install dependencies
-          command: |
-            apk add --no-cache py-pip
-            pip install docker-compose
+          name: Build Docker image
+          command: docker build -t suivi-bourse-app app/
       - deploy:
           name: Push application Docker image
           command: |
             docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
-            docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp1:$CIRCLE_SHA1
-            docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp1:$CIRCLE_TAG
-            docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp1:latest
-            docker push $DOCKER_HUB_USER_ID/dockerapp1:$CIRCLE_SHA1
-            docker push $DOCKER_HUB_USER_ID/dockerapp1:$CIRCLE_TAG
-            docker push $DOCKER_HUB_USER_ID/dockerapp1:latest
+            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_SHA1
+            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_TAG
+            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:latest
+            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_SHA1
+            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_TAG
+            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:latest
 
 workflows:
   version: 2
@@ -44,6 +42,6 @@ workflows:
       - docker_build:
           requires:
             - "scan"
-          filters:
-            branches:
-              only: master
+          # filters:
+          #   branches:
+          #     only: master

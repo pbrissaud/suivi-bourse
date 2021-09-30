@@ -3,6 +3,8 @@
 
 [![CodeFactor](https://www.codefactor.io/repository/github/pbrissaud/suivi-bourse/badge)](https://www.codefactor.io/repository/github/pbrissaud/suivi-bourse)
 
+[![CircleCI](https://circleci.com/gh/pbrissaud/suivi-bourse/tree/master.svg?style=svg)](https://circleci.com/gh/pbrissaud/suivi-bourse/tree/master)
+
 Small app written in Python to monitor the stock shares you own. It uses InfluxDB as TSDB and Yfinance to scrape the price in realtime.  
 
 ![](assets/screenshot.png)
