@@ -28,11 +28,14 @@ jobs:
           command: |
             docker login -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
             docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_SHA1}
-            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/:${CIRCLE_TAG}
-            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/:latest
+            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:latest
             docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_SHA1}
-            docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
             docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:latest
+            if [ -n "${CIRCLE_TAG}" ] 
+            then
+              docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
+              docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
+            fi
 
 workflows:
   version: 2
