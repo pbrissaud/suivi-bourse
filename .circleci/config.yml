@@ -26,7 +26,7 @@ jobs:
       - deploy:
           name: Push application Docker image
           command: |
-            docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
+            docker login -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
             docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_SHA1
             docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_TAG
             docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:latest
@@ -39,9 +39,9 @@ workflows:
   scan_and_build:
     jobs:
       - scan
-      - docker_build:
-          requires:
-            - "scan"
+      - docker_build
+          # requires:
+          #   - "scan"
           # filters:
           #   branches:
           #     only: master
