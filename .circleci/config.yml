@@ -43,6 +43,6 @@ workflows:
     jobs:
       - scan
       - docker_build:
-        filters:
-          branches:
-            only: master
+          filters:
+            branches:
+              only: master
