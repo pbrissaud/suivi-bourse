@@ -10,7 +10,7 @@ Cerberus == 1.3.4
 PyYAML == 5.4.1
 
 # app/src/main.py: 5
-confuse == 1.5.0
+confuse == 1.6.0
 
 # app/src/main.py: 9
 logfmt_logger == 0.1.2

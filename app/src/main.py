@@ -48,14 +48,8 @@ sb_received_dividend = Gauge(
 )
 
 
-def reload_config(config):
-    for source in config.sources:
-        if isinstance(source, confuse.sources.YamlSource):
-            source.load()
-
-
 def expose_metrics():
-    reload_config(config)
+    config.reload()
 
     if not validator.validate({"shares": config['shares'].get()}):
         logger.error('Shares field of the config file is invalid : {}'.format(validator.errors))
