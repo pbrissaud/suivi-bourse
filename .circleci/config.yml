@@ -27,12 +27,12 @@ jobs:
           name: Push application Docker image
           command: |
             docker login -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
-            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_SHA1
-            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_TAG
-            docker tag suivi-bourse-app $DOCKER_HUB_USER_ID/suivi-bourse-app:latest
-            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_SHA1
-            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:$CIRCLE_TAG
-            docker push $DOCKER_HUB_USER_ID/suivi-bourse-app:latest
+            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_SHA1}
+            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/:${CIRCLE_TAG}
+            docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/:latest
+            docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_SHA1}
+            docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
+            docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:latest
 
 workflows:
   version: 2
@@ -40,8 +40,3 @@ workflows:
     jobs:
       - scan
       - docker_build
-          # requires:
-          #   - "scan"
-          # filters:
-          #   branches:
-          #     only: master
