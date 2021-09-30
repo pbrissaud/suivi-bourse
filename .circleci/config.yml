@@ -31,7 +31,7 @@ jobs:
             docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:latest
             docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_SHA1}
             docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:latest
-            if [ -n "${CIRCLE_TAG}" ] 
+            if [ -n "${CIRCLE_TAG}" ]
             then
               docker tag suivi-bourse-app ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
               docker push ${DOCKER_HUB_USER_ID}/suivi-bourse-app:${CIRCLE_TAG}
@@ -42,4 +42,7 @@ workflows:
   scan_and_build:
     jobs:
       - scan
-      - docker_build
+      - docker_build:
+        filters:
+          branches:
+            only: master
