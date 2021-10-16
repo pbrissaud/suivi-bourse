@@ -1,0 +1,74 @@
+# Default values for suivi-bourse.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: paulbrissaud/suivi-bourse-app
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+strategyType: Recreate
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8081
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+config:
+  shares:
+  - name: Apple
+    symbol: AAPL
+    purchase:
+      quantity: 1
+      fee: 2
+      cost_price: 119.98
+    estate:
+      quantity: 2
+      received_dividend: 2.85
+
+prometheusOperator:
+  # If true, deploy prometheus operator from Bitnami Charts 
+  deploy: false
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    metricRelabelings: []
+    relabelings: []

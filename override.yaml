@@ -1,0 +1,7 @@
+image:
+  tag: "3c046bebdd32434581e52eb6e63200a386521a96"
+
+prometheusOperator:
+  deploy: true
+  serviceMonitor:
+    enabled: true
