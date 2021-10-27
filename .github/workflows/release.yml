@@ -1,0 +1,30 @@
+name: Release
+on:
+  push:
+    branches:
+      - master
+jobs:
+  bump_version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: '0'
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - uses: BSFishy/pip-action@v1
+        with:
+          packages: |
+            PyYAML
+            semver
+            PyGithub
+    
+      - env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_BRANCH: 'master'
+        run: |
+          python3 utils/bumping.py 
+  
