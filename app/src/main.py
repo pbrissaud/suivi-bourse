@@ -1,13 +1,18 @@
+"""
+SuiviBourse
+Paul Brissaud
+"""
 import sys
 import os
+from pathlib import Path
 import yaml
 import yfinance as yf
-import confuse
+from confuse import Configuration, exceptions as CExceptions
 from prometheus_client import start_http_server, Gauge
 from cerberus import Validator
-from pathlib import Path
 from logfmt_logger import getLogger
 from apscheduler.schedulers.blocking import BlockingScheduler
+from urllib3 import exceptions as UExceptions
 
 logger = getLogger("suivi_bourse")
 
@@ -48,18 +53,23 @@ sb_received_dividend = Gauge(
 )
 
 
-def expose_metrics():
-    config.reload()
+def expose_metrics(configuration: Configuration):
+    """
+    Expose stock share in OpenMetrics format
+    """
+    configuration.reload()
 
-    if not validator.validate({"shares": config['shares'].get()}):
-        logger.error('Shares field of the config file is invalid : {}'.format(validator.errors))
+    if not validator.validate({"shares": configuration['shares'].get()}):
+        logger.error(
+            'Shares field of the config file is invalid : %s', validator.errors)
 
-    for share in config['shares'].get():
+    for share in configuration['shares'].get():
         sb_purchased_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(
             share['purchase']['quantity'])
         sb_purchased_price.labels(share_name=share['name'], share_symbol=share['symbol']).set(
             share['purchase']['cost_price'])
-        sb_purchased_fee.labels(share_name=share['name'], share_symbol=share['symbol']).set(share['purchase']['fee'])
+        sb_purchased_fee.labels(share_name=share['name'], share_symbol=share['symbol']).set(
+            share['purchase']['fee'])
         sb_owned_quantity.labels(share_name=share['name'], share_symbol=share['symbol']).set(
             share['estate']['quantity'])
         sb_received_dividend.labels(share_name=share['name'], share_symbol=share['symbol']).set(
@@ -69,19 +79,24 @@ def expose_metrics():
             ticker = yf.Ticker(share['symbol'])
             history = ticker.history()
             last_quote = (history.tail(1)['Close'].iloc[0])
-            sb_share_price.labels(share_name=share['name'], share_symbol=share['symbol']).set(last_quote)
-        except Exception as e:
-            logger.error("Error while retrieving data from Yfinance API : {}".format(e))
+            sb_share_price.labels(
+                share_name=share['name'], share_symbol=share['symbol']).set(last_quote)
+        except UExceptions.NewConnectionError as connection_exception:
+            logger.error(
+                "Error while retrieving data from Yfinance API : %s", connection_exception)
+        except RuntimeError as runtime_exception:
+            logger.error(
+                "Error while retrieving data from Yfinance API : %s", runtime_exception)
 
 
 if __name__ == "__main__":
     logger.info('SuiviBourse is running !')
 
     # Load config
-    config = confuse.Configuration('SuiviBourse', __name__)
+    config = Configuration('SuiviBourse', __name__)
 
     # Load schema file
-    with open(Path(__file__).parent / "schema.yaml") as f:
+    with open(Path(__file__).parent / "schema.yaml", encoding='UTF-8') as f:
         dataSchema = yaml.safe_load(f)
     validator = Validator(dataSchema)
 
@@ -89,14 +104,17 @@ if __name__ == "__main__":
         # Start up the server to expose the metrics.
         start_http_server(int(os.getenv('SB_METRICS_PORT', default='8081')))
         # Schedule run the job on startup.
-        expose_metrics()
+        expose_metrics(config)
         # Start scheduler
         sched = BlockingScheduler()
-        sched.add_job(expose_metrics, 'interval', seconds=int(os.getenv('SB_SCRAPING_INTERVAL', default='120')))
+        sched.add_job(expose_metrics, 'interval', args=[config], seconds=int(
+            os.getenv('SB_SCRAPING_INTERVAL', default='120')))
         sched.start()
-    except confuse.exceptions.NotFoundError as e:
-        logger.critical('Config file unreadable or non-existing field : {}'.format(e))
+    except CExceptions.NotFoundError as confuse_exception_notfound:
+        logger.critical(
+            'Config file unreadable or non-existing field : %s', confuse_exception_notfound)
         sys.exit(1)
-    except confuse.exceptions.ConfigTypeError as e:
-        logger.critical('Field in config file is invalid : {}'.format(e))
+    except CExceptions.ConfigTypeError as confuse_exception_configtype:
+        logger.critical('Field in config file is invalid : %s',
+                        confuse_exception_configtype)
         sys.exit(1)
