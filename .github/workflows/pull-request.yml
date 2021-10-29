@@ -85,7 +85,7 @@ jobs:
       - name: Change appVersion to the new tag
         uses: mikefarah/yq@master
         with:
-          cmd: yq eval -i '.appVersion = "$GITHUB_SHA"' 'chart/Chart.yml'
+          cmd: yq eval -i '.appVersion = "$GITHUB_SHA"' 'charts/suivi-bourse/Chart.yml'
 
       - name: Run chart-testing (list-changed)
         id: list-changed
