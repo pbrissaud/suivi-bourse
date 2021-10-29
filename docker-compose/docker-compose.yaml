@@ -5,7 +5,7 @@ services:
     image: "suivi-bourse-app:3.0"
     restart: unless-stopped
     volumes:
-      - ./config.yaml:/home/worker/.config/SuiviBourse/config.yaml:ro
+      - ./config.yaml:/root/.config/SuiviBourse/config.yaml:ro
     environment:
       - "SB_METRICS_PORT=${METRICS_PORT}"
       - "SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}"
