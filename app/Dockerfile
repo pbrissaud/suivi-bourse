@@ -12,6 +12,7 @@ COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python
 
 ENV LC_ALL C.UTF-8
 ENV PYTHONPATH=/usr/local/lib/python3.9/site-packages/
+ENV TZ=Europe/Paris
 
 WORKDIR /app
 
