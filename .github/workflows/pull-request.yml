@@ -16,12 +16,11 @@ jobs:
         with:
           python-root-list: "app/src/"
           use-pycodestyle: false
-          use-flake8: false
+          use-pylint: false
           use-black: false
           use-mypy: false
           use-isort: false
-          use-vulture: false
-          extra-pylint-options: --output-format="colorized"
+          extra-flake8-options: "--ignore=E501"
 
   codeql:
     name: Analyze
@@ -44,7 +43,7 @@ jobs:
       uses: github/codeql-action/init@v1
       with:
         languages: ${{ matrix.language }}
-      
+
     - name: Autobuild
       uses: github/codeql-action/autobuild@v1
 
@@ -75,32 +74,41 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@v2.1.0
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            paulbrissaud/suivi-bourse
+          # generate Docker tags based on the following events/attributes
+          tags: |
+            type=ref,event=pr
+
       - name: Build
         uses: docker/build-push-action@v2
         with:
-          context: app/
-          push: false
-          tags: $GITHUB_SHA
+          context: ./app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Change appVersion to the new tag
         uses: mikefarah/yq@master
         with:
-          cmd: yq eval -i '.appVersion = "$GITHUB_SHA"' 'charts/suivi-bourse/Chart.yml'
-
-      - name: Run chart-testing (list-changed)
-        id: list-changed
-        run: |
-          changed=$(ct list-changed)
-          if [[ -n "$changed" ]]; then
-            echo "::set-output name=changed::true"
-          fi
+          cmd: yq eval -i '.appVersion = "pr-${{ github.event.pull_request.number }}"' 'charts/suivi-bourse/Chart.yaml'
 
       - name: Run chart-testing (lint)
-        run: ct lint
+        run: ct lint --charts charts/suivi-bourse --chart-repos bitnami=https://charts.bitnami.com/bitnami
 
       - name: Create kind cluster
         uses: helm/kind-action@v1.2.0
-        if: steps.list-changed.outputs.changed == 'true'
 
       - name: Run chart-testing (install)
-        run: ct install
+        run: ct install --charts charts/suivi-bourse --chart-repos bitnami=https://charts.bitnami.com/bitnami

@@ -11,7 +11,7 @@ import sys
 import re
 from typing import Optional, Tuple
 from semver import VersionInfo
-from github import Github, InputGitAuthor
+from github import Github
 from yaml import dump, safe_load
 from mdutils.mdutils import MdUtils
 from mdutils.fileutils import MarkDownFile
@@ -73,14 +73,14 @@ keyword_detection = list(map(keywords.get,
                              filter(lambda x: x in last_commit.commit.message.upper(), keywords)))
 
 if len(keyword_detection) == 0:
-    logging.warning("No semver keywords detected in last commit... Exiting")
-    sys.exit(0)
+    logging.error("No semver keywords detected in last commit... Exiting")
+    sys.exit(1)
 
 if repo.get_releases().totalCount > 0:
     last_release_tag = repo.get_releases()[0].tag_name
 
     # Get diff commit between last release and last commit on main branch
-    diff = repo.compare(last_release_tag, last_commit.sha).commits[1:]
+    diff = repo.compare(last_release_tag, last_commit.sha).commits
 
     if last_release_tag[0] == "v":
         USE_PREFIX = True
@@ -92,7 +92,7 @@ if repo.get_releases().totalCount > 0:
         last_version, _ = coerce(last_release_tag)
     except ValueError:
         logging.error("Tag name of last release is not in semver format")
-        sys.exit(0)
+        sys.exit(1)
 else:
     USE_PREFIX = False
     last_version = VersionInfo.parse('0.0.0')
@@ -120,43 +120,49 @@ if USE_PREFIX:
 else:
     new_tag = NEW_VERSION
 
+print(NEW_VERSION)
+
 # Get all commit messages from last release and last commit
 diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
 
-# Delete auto commit messages (generated with last release) from list
-generated_commits = ['Update CHANGELOG',
-                     'Update image version in Helm chart',
-                     'Update image version in Docker Compose']
-for message in diff_messages:
-    if message in generated_commits:
-        generated_commits.remove(message)
+# Delete unwanted commit messages from changelog
+unwanted_commits = ['update changelog',
+                     'update image version.*',
+                     'merge branch.*']
+
+temp = '(?:% s)' % '|'.join(unwanted_commits)
+
+for message in list(diff_messages):
+    if re.match(temp, message.strip().lower()):
+        diff_messages.remove(message)
 
 # Update CHANGELOG.md
-changelog = MarkDownFile('CHANGELOG.md')
 changelog_new = MdUtils(file_name='')
 changelog_new.new_header(level=1, title=NEW_VERSION)
 changelog_new.new_list(diff_messages)
 changelog_new.write('  \n')
-changelog.append_end(changelog_new.file_data_text)
+changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
+MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before + changelog_new.file_data_text)
 
-changelog_contents = repo.get_contents("CHANGELOG.md")
-with open('CHANGELOG.md', 'rb') as f:
+changelog_contents = repo.get_contents("/CHANGELOG.md")
+
+with open('/tmp/CHANGELOG.md', 'rb') as f:
     repo.update_file(changelog_contents.path,
                      'Update CHANGELOG',
                      f.read(),
                      changelog_contents.sha)
 
 # Update appVersion in Chart.yaml file
-with open('charts/suivi-bourse/Chart.yml', encoding='UTF-8') as f:
+with open('charts/suivi-bourse/Chart.yaml', encoding='UTF-8') as f:
     chart_file = safe_load(f)
 
 chart_file['appVersion'] = new_tag
 
-with open('charts/suivi-bourse/Chart.yml', 'w', encoding='UTF-8') as f:
+with open('charts/suivi-bourse/Chart.yaml', 'w', encoding='UTF-8') as f:
     dump(chart_file, f)
 
-chart_file_contents = repo.get_contents("charts/suivi-bourse/Chart.yml")
-with open('charts/suivi-bourse/Chart.yml', 'rb', encoding='UTF-8') as f:
+chart_file_contents = repo.get_contents("charts/suivi-bourse/Chart.yaml")
+with open('charts/suivi-bourse/Chart.yaml', 'rb') as f:
     repo.update_file(chart_file_contents.path,
                      'Update image version in Helm chart',
                      f.read(), chart_file_contents.sha)
@@ -168,7 +174,7 @@ with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
 compose_file['services']['app']['image'] = \
     compose_file['services']['app']['image'].split(':', 1)[0] + ":" + new_tag
 
-with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
+with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
     dump(compose_file, f)
 
 compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
@@ -182,6 +188,4 @@ release_note = MdUtils(file_name='')
 release_note.new_list(diff_messages)
 
 repo.create_git_tag_and_release(new_tag, NEW_VERSION, NEW_VERSION, release_note.file_data_text,
-                                last_update_commit['commit'].sha, 'commit',
-                                InputGitAuthor(last_commit.author.name, last_commit.author.email),
-                                False, False)
+                                last_update_commit['commit'].sha, 'commit')
