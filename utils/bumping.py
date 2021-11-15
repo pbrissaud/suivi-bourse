@@ -99,36 +99,46 @@ else:
     first_commit = repo.get_commits().reversed[0]
     diff = repo.compare(first_commit.commit.sha, last_commit.sha).commits
 
+with open('charts/suivi-bourse/Chart.yaml', encoding='UTF-8') as f:
+    chart_file = safe_load(f)
+
+chart_version = VersionInfo.parse(chart_file['version'])
+
 bumping_strength = max(keyword_detection)
 
-NEW_VERSION = last_version
+new_version = last_version
+new_chart_version = chart_version
 
 if bumping_strength == 3:
-    NEW_VERSION = last_version.bump_major()
+    new_version = last_version.bump_major()
+    new_chart_version = chart_version.bump_major()
 
 if bumping_strength == 2:
-    NEW_VERSION = last_version.bump_minor()
+    new_version = last_version.bump_minor()
+    new_chart_version = chart_version.bump_major()
 
 if bumping_strength == 1:
-    NEW_VERSION = last_version.bump_patch()
+    new_version = last_version.bump_patch()
+    new_chart_version = chart_version.bump_major()
 
 # Return new version as string
-NEW_VERSION = str(NEW_VERSION)
+new_version = str(new_version)
 
 if USE_PREFIX:
-    new_tag = 'v' + NEW_VERSION
+    new_tag = 'v' + new_version
 else:
-    new_tag = NEW_VERSION
+    new_tag = new_version
 
-print(NEW_VERSION)
+print(new_version)
 
 # Get all commit messages from last release and last commit
 diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
 
 # Delete unwanted commit messages from changelog
 unwanted_commits = ['update changelog',
-                     'update image version.*',
-                     'merge branch.*']
+                    'update version and appversion in helm chart',
+                    'update image tag in docker compose',
+                    'merge branch.*']
 
 temp = '(?:% s)' % '|'.join(unwanted_commits)
 
@@ -138,36 +148,34 @@ for message in list(diff_messages):
 
 # Update CHANGELOG.md
 changelog_new = MdUtils(file_name='')
-changelog_new.new_header(level=1, title=NEW_VERSION)
+changelog_new.new_header(level=1, title=new_version)
 changelog_new.new_list(diff_messages)
 changelog_new.write('  \n')
 changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
 MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before + changelog_new.file_data_text)
 
 changelog_contents = repo.get_contents("/CHANGELOG.md")
-
+ 
 with open('/tmp/CHANGELOG.md', 'rb') as f:
     repo.update_file(changelog_contents.path,
                      'Update CHANGELOG',
                      f.read(),
                      changelog_contents.sha)
 
-# Update appVersion in Chart.yaml file
-with open('charts/suivi-bourse/Chart.yaml', encoding='UTF-8') as f:
-    chart_file = safe_load(f)
-
+# Update Chart.yaml file
 chart_file['appVersion'] = new_tag
-
+chart_file['version'] = str(new_chart_version)
 with open('charts/suivi-bourse/Chart.yaml', 'w', encoding='UTF-8') as f:
     dump(chart_file, f)
 
 chart_file_contents = repo.get_contents("charts/suivi-bourse/Chart.yaml")
 with open('charts/suivi-bourse/Chart.yaml', 'rb') as f:
     repo.update_file(chart_file_contents.path,
-                     'Update image version in Helm chart',
+                     'Update version and appVersion in Helm Chart',
                      f.read(), chart_file_contents.sha)
 
-# Update image tag in docker-compose.yml file
+
+# Update docker-compose.yml file
 with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
     compose_file = safe_load(f)
 
@@ -180,12 +188,12 @@ with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
 compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
 with open('docker-compose/docker-compose.yaml', 'rb') as f:
     last_update_commit = repo.update_file(compose_file_contents.path,
-                                          'Update image version in Docker Compose',
+                                          'Update image tag in Docker Compose',
                                           f.read(), compose_file_contents.sha)
 
 # Create release
 release_note = MdUtils(file_name='')
 release_note.new_list(diff_messages)
 
-repo.create_git_tag_and_release(new_tag, NEW_VERSION, NEW_VERSION, release_note.file_data_text,
+repo.create_git_tag_and_release(new_tag, new_version, new_version, release_note.file_data_text,
                                 last_update_commit['commit'].sha, 'commit')
