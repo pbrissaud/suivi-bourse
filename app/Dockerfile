@@ -1,22 +1,14 @@
-FROM python:3.9-slim as builder
+FROM python:3.10-slim as builder
 
-ADD requirements.txt .
+COPY requirements.txt /tmp/requirements.txt
 
-RUN pip install --upgrade pip
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-RUN pip install --no-cache-dir -r ./requirements.txt
+RUN useradd --create-home appuser
+WORKDIR /home/appuser
+USER appuser
 
-FROM gcr.io/distroless/python3
-
-COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
-
-ENV LC_ALL C.UTF-8
-ENV PYTHONPATH=/usr/local/lib/python3.9/site-packages/
-ENV TZ=Europe/Paris
-
-WORKDIR /app
-
-ADD ./src /app
+COPY ./src /home/appuser
 
 EXPOSE 8081
 
