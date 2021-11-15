@@ -1,0 +1,23 @@
+{{- if .Values.grafanaOperator.grafanaDatasource.enabled }}
+apiVersion: integreatly.org/v1alpha1
+kind: GrafanaDataSource
+metadata:
+  name: {{ include "suivi-bourse.fullname" . }}
+  labels:
+    {{- include "suivi-bourse.selectorLabels" . | nindent 6 }}
+  {{- if .Values.grafanaOperator.grafanaDatasource.namespace }}
+  namespace: {{ .Values.grafanaOperator.grafanaDatasource.namespace }}
+  {{- end }}
+spec:
+  name: prometheus.yaml
+  datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: {{ .Values.grafanaOperator.grafanaDatasource.url }}
+      isDefault: false
+      version: 1
+      editable: true
+      jsonData: {{ .Values.grafanaOperator.grafanaDatasource.jsonData | toYaml | nindent 8 }}
+      secureJsonData: {{ .Values.grafanaOperator.grafanaDatasource.secureJsonData | toYaml | nindent 8 }}
+{{- end }}

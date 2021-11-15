@@ -1,5 +1,15 @@
-1. Get the application URL by running these commands:
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suivi-bourse.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
-  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
-  echo "Visit http://127.0.0.1:8081 to use your application"
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8081:$CONTAINER_PORT
+CHART NAME: {{ .Chart.Name }}
+CHART VERSION: {{ .Chart.Version }}
+APP VERSION: {{ .Chart.AppVersion }}
+
+** Please be patient while the chart is being deployed **
+Visit the documentation or open a ticket, if you need help.
+
+{{- if .Values.grafanaOperator.deploy }}
+1. Access to deployed Grafana :
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/grafana-service 3000
+
+2. Get the admin credentials:
+  echo "User: admin"
+  echo "Password: $(kubectl get secret grafana-admin-credentials --namespace {{ .Release.Namespace }} -o jsonpath="{.data.GF_SECURITY_ADMIN_PASSWORD}" | base64 --decode)"
+{{- end }}

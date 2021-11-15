@@ -46,7 +46,7 @@ spec:
               port: metrics
           volumeMounts:
             - name: config-volume
-              mountPath: /home/worker/.config/SuiviBourse
+              mountPath: /home/appuser/.config/SuiviBourse
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:

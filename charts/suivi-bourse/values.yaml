@@ -72,3 +72,41 @@ prometheusOperator:
     interval: 30s
     metricRelabelings: []
     relabelings: []
+
+grafanaOperator:
+  deploy: false
+  grafanaDatasource:
+    enabled: false
+    namespace: ""
+    url: http://prometheus-operated:9090
+    jsonData: {}
+    secureJsonData: {}
+  grafanaDashboard:
+    enabled: false
+    namespace: ""
+
+# Override default kube-prometheus chart values
+kube-prometheus:
+  alertmanager:
+    enabled: false
+  exporters:
+    node-exporter:
+      enabled: false
+    kube-state-metrics:
+      enabled: false
+  kubelet:
+    enabled: false
+  kubeApiServer:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  coreDns:
+    enabled: false
+  kubeProxy:
+    enabled: false
+
+grafana-operator:
+  operator:
+    
