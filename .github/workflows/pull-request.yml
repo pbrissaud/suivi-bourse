@@ -78,7 +78,7 @@ jobs:
         with:
           # list of Docker images to use as base name for tags
           images: |
-            paulbrissaud/suivi-bourse
+            paulbrissaud/suivi-bourse-app
           # generate Docker tags based on the following events/attributes
           tags: |
             type=ref,event=pr
