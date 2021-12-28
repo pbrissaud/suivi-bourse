@@ -13,15 +13,8 @@
 
 # 3.0.0
 
-3.0 Refactor
-- test commit
-- test commit
-- Version 3.0
-- use PAT for the release process
-- Change doc
-- update hugo theme
-- fix image name in build process
-- change url to netlify
-- change releasing system
-3.0
+- Switch to Prometheus as TSBD
+- Docker image is published to Dockerhub
+- Cleaner code
+- Online doc
   
