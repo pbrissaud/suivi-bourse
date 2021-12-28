@@ -1,0 +1,45 @@
+baseURL = 'http://example.org/'
+languageCode = 'en-us'
+title = 'Suivi Bourse'
+theme = 'relearn'
+
+# For search functionality
+[outputs]
+home = [ "HTML", "RSS", "JSON"]
+
+[params]
+  # Change default color scheme with a variant one. Can be empty, "red", "blue", "green".
+  themeVariant = "blue"
+  custom_css = [ "https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap" ]
+
+# English is the default language
+defaultContentLanguage = "en"
+
+[Languages]
+[Languages.en]
+title = "Suivi Bourse"
+weight = 1
+languageName = "English"
+
+[[menu.shortcuts]]
+name = "<i class='far fa-clock'></i> Changelog"
+identifier = "changelog"
+url = "https://github.com/pbrissaud/suivi-bourse/blob/master/CHANGELOG.md"
+weight = 5
+
+[[menu.shortcuts]]
+name = "<i class='fab fa-github'></i> GitHub"
+identifier = "github"
+url = "https://github.com/pbrissaud/suivi-bourse"
+weight = 10
+
+[[menu.shortcuts]]
+name = "<i class='fab fa-docker'></i> DockerHub"
+identifier = "dockerhub"
+url = "https://hub.docker.com/r/paulbrissaud/suivi-bourse-app"
+weight = 20
+
+[[menu.shortcuts]]
+name = "<i class='fas fa-fw fa-bullhorn'></i> Credits"
+url = "/credits"
+weight = 30
