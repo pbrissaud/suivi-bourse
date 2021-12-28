@@ -1,4 +1,4 @@
-baseURL = 'https://suivi-bourse.paulbrissaud.fr'
+baseURL = 'https://suivibourse-docs.netlify.app'
 languageCode = 'en-us'
 title = 'Suivi Bourse'
 theme = 'relearn'

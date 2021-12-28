@@ -9,7 +9,7 @@ Small app written in Python to monitor the stock shares you own. It uses InfluxD
 
 ## Using SuiviBourse
 
-Please visit the [documentation's website](https://suivi-bourse.paulbrissaud.fr) !
+Please visit the [documentation's website](https://suivibourse-docs.netlify.app) !
 
 ## Getting Started
 
@@ -22,7 +22,7 @@ Note: Docker Compose launches a full environnement with a pre-configured Prometh
 * Docker-Compose 
 
 ### 2. Modify config
-Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://suivi-bourse.paulbrissaud.fr/config) of the documentation to know more about writing config file. 
+Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://suivibourse-docs.netlify.app/config) of the documentation to know more about writing config file. 
 
 *Example Config:* 
 ```yaml
