@@ -11,3 +11,12 @@
 - chore: add screenshot
 - Create CHANGELOG
   
+
+# 3.0.0
+
+3.0 Refactor
+- test commit
+- test commit
+- Version 3.0
+- use PAT for the release process
+  
