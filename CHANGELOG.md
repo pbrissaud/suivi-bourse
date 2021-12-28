@@ -20,3 +20,9 @@
 - Version 3.0
 - use PAT for the release process
   
+
+# 3.0.1
+
+- Change doc
+- update hugo theme
+  
