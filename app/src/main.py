@@ -128,10 +128,10 @@ if __name__ == "__main__":
         # Schedule run the job on startup.
         run(shares_validator, config)
         # Start scheduler
-        sched = BlockingScheduler()
-        sched.add_job(run, 'interval', args=[shares_validator, config], seconds=int(
+        scheduler = BlockingScheduler()
+        scheduler.add_job(run, 'interval', args=[shares_validator, config], seconds=int(
             os.getenv('SB_SCRAPING_INTERVAL', default='120')))
-        sched.start()
+        scheduler.start()
     except c_exceptions.NotFoundError as confuse_exception_notfound:
         logger.critical(
             'Config file unreadable or non-existing field : %s', confuse_exception_notfound)
