@@ -27,7 +27,6 @@ If applicable, add screenshots to help explain your problem.
 - [ ] Standalone
 - [ ] Docker 
 - [ ] Docker-Compose
-- [ ] Helm Chart
 
 **Environnement:**
 Please provide any useful information of your environnement (os, software version, etc ...)

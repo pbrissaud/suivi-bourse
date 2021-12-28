@@ -1,6 +1,6 @@
 """
 Version bumping script
-Update changelog, docker image tag in docker-compose and Helm chart and create Github release
+Update changelog, docker image tag in docker-compose and create Github release
 Paul Brissaud
 """
 from __future__ import annotations
@@ -99,27 +99,18 @@ else:
     first_commit = repo.get_commits().reversed[0]
     diff = repo.compare(first_commit.commit.sha, last_commit.sha).commits
 
-with open('charts/suivi-bourse/Chart.yaml', encoding='UTF-8') as f:
-    chart_file = safe_load(f)
-
-chart_version = VersionInfo.parse(chart_file['version'])
-
 bumping_strength = max(keyword_detection)
 
 new_version = last_version
-new_chart_version = chart_version
 
 if bumping_strength == 3:
     new_version = last_version.bump_major()
-    new_chart_version = chart_version.bump_major()
 
 if bumping_strength == 2:
     new_version = last_version.bump_minor()
-    new_chart_version = chart_version.bump_major()
 
 if bumping_strength == 1:
     new_version = last_version.bump_patch()
-    new_chart_version = chart_version.bump_major()
 
 # Return new version as string
 new_version = str(new_version)
@@ -136,7 +127,6 @@ diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
 
 # Delete unwanted commit messages from changelog
 unwanted_commits = ['update changelog',
-                    'update version and appversion in helm chart',
                     'update image tag in docker compose',
                     'merge branch.*']
 
@@ -161,18 +151,6 @@ with open('/tmp/CHANGELOG.md', 'rb') as f:
                      'Update CHANGELOG',
                      f.read(),
                      changelog_contents.sha)
-
-# Update Chart.yaml file
-chart_file['appVersion'] = new_tag
-chart_file['version'] = str(new_chart_version)
-with open('charts/suivi-bourse/Chart.yaml', 'w', encoding='UTF-8') as f:
-    dump(chart_file, f)
-
-chart_file_contents = repo.get_contents("charts/suivi-bourse/Chart.yaml")
-with open('charts/suivi-bourse/Chart.yaml', 'rb') as f:
-    repo.update_file(chart_file_contents.path,
-                     'Update version and appVersion in Helm Chart',
-                     f.read(), chart_file_contents.sha)
 
 
 # Update docker-compose.yml file
