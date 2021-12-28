@@ -1,0 +1,37 @@
+version: "3.8"
+services:
+  app:
+    container_name: suivi-bourse-app
+    image: "paulbrissaud/suivi-bourse-app:dev"
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
+    environment:
+      - "SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}"
+    depends_on:
+      - prometheus
+  prometheus:
+    container_name: suivi-bourse-prom
+    image: "prom/prometheus:v2.32.1"
+    restart: unless-stopped
+    volumes:
+      - sb_prometheus_data:/prometheus
+      - ./prometheus_provisioning:/etc/prometheus/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+  grafana:
+    container_name: suivi-bourse-graf
+    image: "grafana/grafana:8.3.3"
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana_provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+volumes:
+  sb_prometheus_data:
+    driver: local

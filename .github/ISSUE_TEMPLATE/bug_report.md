@@ -24,8 +24,9 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Installation mode:** (choose one)
-- [ ] Full-stack
 - [ ] Standalone
+- [ ] Docker 
+- [ ] Docker-Compose
 
 **Environnement:**
 Please provide any useful information of your environnement (os, software version, etc ...)

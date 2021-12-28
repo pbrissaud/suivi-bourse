@@ -1,110 +1,56 @@
 
 # Stock Share Monitoring
 
+[![CodeFactor](https://www.codefactor.io/repository/github/pbrissaud/suivi-bourse/badge)](https://www.codefactor.io/repository/github/pbrissaud/suivi-bourse)
+
 Small app written in Python to monitor the stock shares you own. It uses InfluxDB as TSDB and Yfinance to scrape the price in realtime.  
 
-![](assets/screenshot.png)
-# Installation
+![](docs/static/screenshot.png)
 
-You can use docker-compose to install a full stack with InfluxDB and Grafana included or the app in standalone mode.
+## Using SuiviBourse
 
-## Full-stack mode (docker-compose)
+Please visit the [documentation's website](https://suivi-bourse.paulbrissaud.fr) !
 
-### **Requirements**
-* docker
-* docker-compose 
+## Getting Started
 
-1. Clone the project
-    ```bash
-    git clone https://github.com/pbrissaud/suivi-bourse-app.git
-    ```
+There are mutiple ways to run the app but **Docker Compose** is the easiest way to begin !
 
-2. Move to the directory
-    ```bash
-    cd suivi-bourse-app
-    ```
+Note: Docker Compose launches a full environnement with a pre-configured Prometheus and Grafana 
 
-3. Copy data/data-example.json to data/data.json
-    ```bash
-    cp data/data-example.json data/data.json
-    ```
+### 1. Install Requirements
+* Docker (>19.03.0)
+* Docker-Compose 
 
-4. Modify the data/data.json file following the model
-    ```bash
-    vim data/data.json
-    ```
+### 2. Modify config
+Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://suivi-bourse.paulbrissaud.fr/config) of the documentation to know more about writing config file. 
 
-5. Start the stack
-    ```bash
-    docker-compose up
-    ```
-
-6. Connect to Grafana (`http://localhost:3000`) with credentials `admin/admin` (you can change the password right after your first login)
-
-7. Go to dashboard `Stock share monitoring` and see !  
-*NB: for the graph cell you need to wait ~10 min to see something*
-
-## Standalone mode
-
-### **Requirements**
-* Python v3.x  (tested with 3.8 and 3.9)
-* Pip
-* An fully set up influxDB **2.x** database. Follow the offcial documentation [here](https://docs.influxdata.com/influxdb/v2.0/install/). If you have Influx **1.x**, go to tag **2.0**
-
-1. Clone the project
-    ```bash
-    git clone https://github.com/pbrissaud/suivi-bourse-app.git
-    ```
-
-2. Move to the directory
-    ```bash
-    cd suivi-bourse-app
-    ```
-
-3. Install python dependencies
-    ```bash
-    python3 -m pip install -r requirements.txt
-    ```
-
-4. Copy data/data-example.json to anywhere you want and modify it accordings to your needs
-
-5. Create a InfluxDB bucket (default name is `bourse`)
-   ```bash
-   influx bucket create -n bourse -o <org-name> -r <retention-period-duration>
-   ```
-
-6. Get the bucket id and create a token with read/write permissions on it
-   ```bash
-   influx auth create -o <org-name> --read-bucket <bucket_id> --write-bucket <bucket_id>
-   ```
-
-7. Save the token into the **INFLUXDB_TOKEN** env variable
-   ```bash
-   export INFLUXDB_TOKEN=<token>
-   ``` 
-
-6. Run the app
-    ```bash
-    python3 app/main.py --config <path_to_data_file> 
-    ```
-
-7. If you have Grafana 8.x, you can import the dashboard located in the folder assets [`grafana-dashboard-external.json`](assets/grafana-dashboard-external.json)
-
-### **CLI Options**
-
-```
-OPTION                  DESCRIPTION
--h, --help              Show manual
--H, --host              InfluxDB Host
--p, --port              InfluxDB Port
--o, --org               InfluxDB Organization
--b, --bucket            InfluxDB Bucket
--i, --interval          Application Scraping Interval (seconds)
--c, --config            Data file path
+*Example Config:* 
+```yaml
+---
+shares:
+- name: Apple
+  symbol: AAPL
+  purchase:
+    quantity: 1
+    fee: 2
+    cost_price: 119.98
+  estate:
+    quantity: 2
+    received_dividend: 2.85
 ```
 
-# Data.json file model
+### 3. Run the stack
+Run the following command in the `docker-compose` folder :
 
-* YAML Schema used for validation :  [app/schema.yaml](app/schema.yaml)
+```bash
+docker-compose up -d
+```
 
-* Example : [data/data-example.json](data/data-example.json)
+### 4. Visit Grafana
+Connect to Grafana (`http://localhost:3000`) with the following credentials:
+* login:  `admin`
+* password: `admin`
+    
+and go to dashboard **Stock share monitoring**
+
+*NB:* please wait ~10m to see all the cells getting filled
