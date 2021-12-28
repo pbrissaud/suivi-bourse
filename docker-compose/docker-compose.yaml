@@ -12,7 +12,7 @@ services:
       - prometheus
   prometheus:
     container_name: suivi-bourse-prom
-    image: "prom/prometheus:v2.31.1"
+    image: "prom/prometheus:v2.32.1"
     restart: unless-stopped
     volumes:
       - sb_prometheus_data:/prometheus
@@ -24,7 +24,7 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
   grafana:
     container_name: suivi-bourse-graf
-    image: "grafana/grafana:8.2.3"
+    image: "grafana/grafana:8.3.3"
     restart: unless-stopped
     ports:
       - "3000:3000"
