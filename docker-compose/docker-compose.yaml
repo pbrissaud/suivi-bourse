@@ -7,7 +7,6 @@ services:
     volumes:
       - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
     environment:
-      - "SB_METRICS_PORT=${METRICS_PORT}"
       - "SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}"
     depends_on:
       - prometheus
