@@ -1,25 +1,26 @@
 {
   "__inputs": [
     {
-      "name": "DS_INFLUXDB",
-      "label": "influxdb",
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
       "description": "",
       "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
     }
   ],
+  "__elements": [],
   "__requires": [
     {
       "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
-      "version": "8.1.2"
+      "version": "8.3.3"
     },
     {
       "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
+      "id": "prometheus",
+      "name": "Prometheus",
       "version": "1.0.0"
     },
     {
@@ -56,14 +57,14 @@
   },
   "description": "Watch the price of the stock shares you own. For more detail : https://github.com/pbrissaud/suivi-bourse-app",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
-  "iteration": 1631198212085,
+  "iteration": 1640722802686,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": null,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -77,30 +78,34 @@
       "type": "row"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "blue",
+            "mode": "fixed"
           },
           "custom": {
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "gradientMode": "hue",
             "hideFrom": {
               "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineInterpolation": "smooth",
+            "lineInterpolation": "linear",
             "lineStyle": {
               "fill": "solid"
             },
-            "lineWidth": 1,
+            "lineWidth": 0,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -121,80 +126,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
               }
             ]
           },
           "unit": "currencyEUR"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share mean price on 5min"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 4
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share max price on 5min"
-            },
-            "properties": [
-              {
-                "id": "custom.fillBelowTo",
-                "value": "Share min price on 5min"
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-orange",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.fillBelowTo",
-                "value": "Share min price on 5min"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Share min price on 5min"
-            },
-            "properties": [
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 12,
@@ -211,62 +150,29 @@
           "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "multi"
         }
       },
       "pluginVersion": "7.4.2",
       "targets": [
         {
-          "alias": "Share mean price on 5min",
-          "groupBy": [
-            {
-              "params": [
-                "5m"
-              ],
-              "type": "time"
-            },
-            {
-              "params": [
-                "null"
-              ],
-              "type": "fill"
-            }
-          ],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "FinalOutput = [\"_field\", \"_time\", \"_value\"]\n\nRawSeries = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n\nNamedSeries = RawSeries\n  |> map(fn: (r) => ({_value:r._value, _time:r._time, _field:\"Share mean price on 5min\"}))\n  |> keep(columns:FinalOutput)\n\nNamedSeries |> yield()",
-          "queryType": "randomWalk",
-          "refId": "mean",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "mean"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_share_price{share_name=\"$share\"}",
+          "format": "time_series",
+          "interval": "2m",
+          "intervalFactor": 10,
+          "legendFormat": "Share price",
+          "refId": "A"
         }
       ],
       "title": "Share price evolution",
       "type": "timeseries"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -277,7 +183,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -307,45 +213,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_purchased_quantity{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Purchased quantity",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -357,7 +243,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -388,45 +274,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "cost_price"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_purchased_price{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Cost price",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -437,7 +303,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -468,45 +334,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "purchase",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"fee\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "fee"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_purchased_fee{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Fees",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -518,7 +364,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -549,45 +395,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_share_price{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Actual price",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -638,39 +464,15 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "alias": "actual",
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "actual = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n\ncost = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\njoin(tables: {cost:cost, actual:actual}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual - r._value_cost)\n}))",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_share_price{share_name=\"$share\"} - sb_purchased_price{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Unitary Gain / Loss ",
@@ -678,7 +480,10 @@
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -689,7 +494,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -719,45 +524,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "quantity"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_owned_quantity{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Owned quantity",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -768,7 +553,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "text",
                 "value": null
               }
             ]
@@ -799,45 +584,25 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "groupBy": [],
-          "measurement": "estate",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"received_dividend\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "received_dividend"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "sb_received_dividend{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Received dividend",
       "type": "stat"
     },
     {
-      "datasource": "${DS_INFLUXDB}",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -888,39 +653,15 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "8.1.2",
+      "pluginVersion": "8.3.3",
       "targets": [
         {
-          "alias": "actual_price",
-          "groupBy": [],
-          "measurement": "price",
-          "orderByTime": "ASC",
-          "policy": "default",
-          "query": "cost_price = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"cost_price\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\npurchase_quantity = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\npurchase_value = join(tables: {cost_price:cost_price, purchase_quantity:purchase_quantity}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_purchase_quantity * r._value_cost_price)\n}))\n\nprice = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"price\")\n  |> filter(fn: (r) => r[\"_field\"] == \"amount\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\")\n  |> last()\n\nactual_quantity = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"quantity\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\nactual_value = join(tables: {price:price, actual_quantity:actual_quantity}, on: [\"_time\", \"_stop\",\"_start\"])\n|> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual_quantity * r._value_price)\n}))\n\ndelta = join(tables: {actual_value:actual_value, purchase_value:purchase_value}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_actual_value - r._value_purchase_value)\n}))\n\nfees = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"purchase\")\n  |> filter(fn: (r) => r[\"_field\"] == \"fee\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\ndelta_fees = join(tables: {delta:delta, fees:fees}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_delta - r._value_fees)\n}))\n\ndividend = from(bucket: \"${bucket}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"estate\")\n  |> filter(fn: (r) => r[\"_field\"] == \"received_dividend\")\n  |> filter(fn: (r) => r[\"name\"] == \"${share}\" )\n  |> last()\n\njoin(tables: {delta_fees:delta_fees, dividend:dividend}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r._value_delta_fees + r._value_dividend)\n}))",
-          "queryType": "randomWalk",
-          "refId": "A",
-          "resultFormat": "time_series",
-          "select": [
-            [
-              {
-                "params": [
-                  "amount"
-                ],
-                "type": "field"
-              },
-              {
-                "params": [],
-                "type": "last"
-              }
-            ]
-          ],
-          "tags": [
-            {
-              "key": "name",
-              "operator": "=~",
-              "value": "/^$share$/"
-            }
-          ]
+          "exemplar": true,
+          "expr": "((sb_owned_quantity{share_name=\"$share\"} * sb_share_price{share_name=\"$share\"}) + sb_received_dividend{share_name=\"$share\"}) - ((sb_purchased_quantity{share_name=\"$share\"} * sb_purchased_price{share_name=\"$share\"}) + sb_purchased_fee{share_name=\"$share\"})",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "title": "Total gain / loss",
@@ -928,46 +669,29 @@
       "type": "stat"
     }
   ],
-  "refresh": "30s",
-  "schemaVersion": 30,
+  "refresh": false,
+  "schemaVersion": 34,
   "style": "dark",
   "tags": [],
   "templating": {
     "list": [
       {
-        "allValue": null,
         "current": {},
-        "datasource": "${DS_INFLUXDB}",
-        "definition": "buckets()",
-        "description": null,
-        "error": null,
-        "hide": 0,
-        "includeAll": false,
-        "label": "Bucket",
-        "multi": false,
-        "name": "bucket",
-        "options": [],
-        "query": "buckets()",
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
-      {
-        "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFLUXDB}",
-        "definition": "import \"influxdata/influxdb/v1\"\n\nv1.measurementTagValues(bucket: \"${bucket}\", measurement: \"estate\", tag: \"name\")",
-        "description": null,
-        "error": null,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values({job=\"suivi-bourse\"},share_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Share",
         "multi": false,
         "name": "share",
         "options": [],
-        "query": "import \"influxdata/influxdb/v1\"\n\nv1.measurementTagValues(bucket: \"${bucket}\", measurement: \"estate\", tag: \"name\")",
+        "query": {
+          "query": "label_values({job=\"suivi-bourse\"},share_name)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -987,5 +711,6 @@
   "timezone": "",
   "title": "Stock share monitoring",
   "uid": "O9_AegInk",
-  "version": 6
+  "version": 17,
+  "weekStart": ""
 }
