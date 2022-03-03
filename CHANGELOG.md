@@ -43,3 +43,8 @@
 - chore(deps): update apscheduler requirement in /app (#20)
 - chore(deps): update yfinance requirement in /app (#18)
   
+
+# 3.0.3
+
+- chore(deps): update urllib3 requirement in /app (#16)
+  
