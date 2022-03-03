@@ -31,3 +31,15 @@
 - Update Checkout action
 - chore(deps): update apscheduler requirement in /app (#20)
   
+
+# 3.0.2
+
+- fix image name in build process
+- change url to netlify
+- change releasing system
+3.0
+- Update README.md
+- Update Checkout action
+- chore(deps): update apscheduler requirement in /app (#20)
+- chore(deps): update yfinance requirement in /app (#18)
+  
