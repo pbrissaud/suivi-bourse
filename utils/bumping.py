@@ -73,8 +73,8 @@ keyword_detection = list(map(keywords.get,
                              filter(lambda x: x in last_commit.commit.message.upper(), keywords)))
 
 if len(keyword_detection) == 0:
-    logging.error("No semver keywords detected in last commit... Exiting")
-    sys.exit(1)
+    logging.warning("No semver keywords detected in last commit... Exiting")
+    sys.exit(0)
 
 if repo.get_releases().totalCount > 0:
     last_release_tag = repo.get_releases()[0].tag_name
