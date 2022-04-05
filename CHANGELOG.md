@@ -48,3 +48,13 @@
 
 - chore(deps): update urllib3 requirement in /app (#16)
   
+
+# 3.1.0
+
+- Add missing python dependencies (#25)
+- chore(deps): bump actions/setup-python from 2 to 3.1.0 (#26)
+- chore(deps): update urllib3 requirement in /app (#24)
+- Update checkout action in CI (#29)
+- Update doc template version (#30)
+- Update Grafana and Prometheus version (#31)
+  
