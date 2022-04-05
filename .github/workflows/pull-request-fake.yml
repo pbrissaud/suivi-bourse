@@ -1,0 +1,23 @@
+name: "PR checks when no change in app folder"
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths-ignore:
+      - 'app/**'
+
+jobs:
+  python-linter:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No lint test required"'
+
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No codeql test required"'
+
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No codeql test required"'
