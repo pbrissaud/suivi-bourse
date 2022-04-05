@@ -8,11 +8,13 @@ on:
 
 jobs:
   python-linter:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - run: 'echo "No lint test required"'
 
   codeql:
+    name: Analyze
     runs-on: ubuntu-latest
     steps:
       - run: 'echo "No codeql test required"'
