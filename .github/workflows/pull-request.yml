@@ -53,6 +53,7 @@ jobs:
       uses: github/codeql-action/analyze@v1
 
   build-image:
+    name: Build image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
