@@ -158,7 +158,7 @@ with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
     compose_file = safe_load(f)
 
 compose_file['services']['app']['image'] = \
-    compose_file['services']['app']['image'].split(':', 1)[0] + ":" + new_tag
+    compose_file['services']['app']['image'].split(':', 1)[0] + ":" + new_version
 
 with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
     dump(compose_file, f)
