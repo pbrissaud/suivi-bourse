@@ -14,7 +14,7 @@ jobs:
       - run: 'echo "No lint test required"'
 
   codeql:
-    name: Analyze
+    name: Analyze (python)
     runs-on: ubuntu-latest
     steps:
       - run: 'echo "No codeql test required"'
