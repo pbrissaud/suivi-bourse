@@ -58,3 +58,13 @@
 - Update doc template version (#30)
 - Update Grafana and Prometheus version (#31)
   
+
+# 3.1.1
+
+- Update pull-request-fake.yml
+- chore(deps): bump actions/setup-python from 3.1.0 to 3.1.1 (#37)
+- Fix image tag in docker-compose
+- Update docker-compose.yaml
+- chore(deps): bump actions/setup-python from 3.1.0 to 3.1.2 (#38)
+- chore(deps): bump github/codeql-action from 1 to 2 (#40)
+  
