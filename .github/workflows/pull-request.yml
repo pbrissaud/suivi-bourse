@@ -87,7 +87,7 @@ jobs:
             type=ref,event=pr
 
       - name: Build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./app
           push: true
