@@ -68,3 +68,13 @@
 - chore(deps): bump actions/setup-python from 3.1.0 to 3.1.2 (#38)
 - chore(deps): bump github/codeql-action from 1 to 2 (#40)
   
+
+# 3.1.2
+
+- chore(deps): bump docker/build-push-action from 2 to 3 (#45)
+- chore(deps): bump docker/setup-qemu-action from 1 to 2 (#44)
+- chore(deps): bump docker/login-action from 1 to 2 (#43)
+- chore(deps): bump docker/metadata-action from 3 to 4 (#42)
+- chore(deps): bump docker/setup-buildx-action from 1 to 2 (#41)
+- chore(deps): update prometheus-client requirement in /app (#36)
+  
