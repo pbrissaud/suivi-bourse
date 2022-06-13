@@ -78,3 +78,8 @@
 - chore(deps): bump docker/setup-buildx-action from 1 to 2 (#41)
 - chore(deps): update prometheus-client requirement in /app (#36)
   
+
+# 3.1.3
+
+- chore(deps): bump actions/setup-python from 3.1.2 to 4.0.0 (#46)
+  
