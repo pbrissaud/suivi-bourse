@@ -13,7 +13,7 @@ You can use **virtualenv** to install and run the app in an isolated environment
 * Windows, Linux or macOS 
 * Python3 (version 3.8, 3.9 and 3.10 are tested)
 
-## Steps
+## Preparing Steps
 
 1. Download the source code of the project from the [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest) and extract it.
 
@@ -23,7 +23,7 @@ python3 -m pip install -r requirements.txt
 ```
 
 3. Write a `config.yaml` (name can't be changed) following the [chapter 3](/config) in **one of the following paths** : 
-    {{< tabs >}}
+    {{< tabs groupId="os" >}}
     {{% tab name="Linux" %}}
 * ~/.config/app/SuiviBourse
 * /etc/app/SuiviBourse
@@ -41,10 +41,79 @@ python3 -m pip install -r requirements.txt
 To know more about config file location, please refer to the [confuse library documentation](https://confuse.readthedocs.io/en/latest/usage.html#search-paths)
 {{% /notice %}}
 
-4. Run the app :
-```Bash
-python3 src/main.py
+## Running the app 
+
+You can simply run the app with the following command inside the project's root folder : 
+```bash
+python3 app/src/main.py 
 ```
+
+However, we recommend chosing between the following methods to run the standalone app in production.
+
+Replace **<installation_path>** with the path of the folder where you download and extract the project folder (see step 1 of [preparing step](#preparing-steps))
+
+{{< tabs groupId="production-method" >}}
+{{% tab name="SystemD (Linux)" %}}
+Almost all versions of Linux come with systemd out of the box, but if your’s didn’t come with it then you can simply install it.
+
+1. Create a user service unit file in `~/.config/systemd/user/suivi-bourse.service`:
+    ```
+    [Unit]
+    Description=SuiviBourse
+
+    [Service]
+    Type=simple
+    Restart=always
+    ExecStart=/usr/bin/python3 <installation_path>/app/src/main.py
+    Environment=PYTHONUNBUFFERED=1
+    SyslogIdentifier=suivi-bourse
+
+    [Install]
+    WantedBy=default.target
+    ```
+
+2. Reload systemd-daemon:
+    ```bash
+    systemctl --user daemon-reload
+    ``` 
+
+3. Enable the service at boot: 
+    ```bash
+    systemctl --user enable suivi-bourse 
+    ```
+
+4. Start the service:
+    ```bash
+    systemctl --user start suivi-bourse
+    ```
+
+You can see the application logs in `/var/log/syslog` and check the status with `systemctl --user status suivi-bourse`
+
+{{% /tab %}}
+{{% tab name="Cron (Linux + MacOS)"%}}
+Using cron and nohup command, you can run the application at boot in foreground:
+
+1. Edit your crontab:
+    ```bash
+    crontab -e
+    ```
+
+2. Add the following line:
+    ```
+    @reboot nohup python3 <installation_path>/app/src/main.py > suivi-bourse.log  
+    ```
+
+3. Run the following command or `reboot` your machine to start the script:
+    ```bash
+    nohup python3 <installation_path>/app/src/main.py > suivi-bourse.log &
+    ```
+
+The application logs path will be `$HOME/suivi-bourse.log`
+
+{{% /tab %}}
+{{% tab name="Windows service"%}}
+I don't have any Windows machine to test it. Open a [Github PR](https://github.com/pbrissaud/suivi-bourse/pulls) to complete this section.
+{{% /tab %}}
 
 ## Environment variables
 
