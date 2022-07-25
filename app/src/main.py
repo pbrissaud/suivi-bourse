@@ -11,12 +11,14 @@ import yaml
 import yfinance as yf
 from apscheduler.schedulers.blocking import BlockingScheduler
 from cerberus import Validator
-from confuse import Configuration, exceptions as c_exceptions
+from confuse import Configuration
 from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 
-logger = getLogger("suivi_bourse", level=os.getenv(
-    'LOG_LEVEL', default='DEBUG'))
+app_logger = getLogger(
+    "suivi_bourse", level=os.getenv('LOG_LEVEL', default='INFO'))
+scheduler_logger = getLogger(
+    "apscheduler.scheduler", level=os.getenv('LOG_LEVEL', default='INFO'))
 
 
 class InvalidConfigFile(Exception):
@@ -97,12 +99,9 @@ class SuiviBourseMetrics:
                 ticker = yf.Ticker(share['symbol'])
                 last_quote = ticker.info['currentPrice']
                 self.sb_share_price.labels(*label_values).set(last_quote)
-            except u_exceptions.NewConnectionError as connection_exception:
-                logger.error(
-                    "Error while retrieving data from Yfinance API : %s", connection_exception)
-            except RuntimeError as runtime_exception:
-                logger.error(
-                    "Error while retrieving data from Yfinance API : %s", runtime_exception)
+            except (u_exceptions.NewConnectionError, RuntimeError):
+                app_logger.error(
+                    "Error while retrieving data from Yfinance API", exc_info=True)
 
     def run(self):
         self.configuration.reload()
@@ -114,7 +113,7 @@ class SuiviBourseMetrics:
 
 
 if __name__ == "__main__":
-    logger.info('SuiviBourse is running !')
+    app_logger.info('SuiviBourse is running !')
 
     # Load config
     config = Configuration('SuiviBourse', __name__)
@@ -137,13 +136,6 @@ if __name__ == "__main__":
         scheduler.add_job(sb_metrics.run, 'interval', seconds=int(
             os.getenv('SB_SCRAPING_INTERVAL', default='120')))
         scheduler.start()
-    except c_exceptions.NotFoundError as confuse_exception_notfound:
-        logger.critical(
-            'Config file unreadable or non-existing field : %s', confuse_exception_notfound)
+    except Exception as e:
+        app_logger.critical('An error occurred', exc_info=True)
         sys.exit(1)
-    except c_exceptions.ConfigTypeError as confuse_exception_configtype:
-        logger.critical('Field in config file is invalid : %s',
-                        confuse_exception_configtype)
-        sys.exit(1)
-    except InvalidConfigFile as invalid_config_exception:
-        logger.error(invalid_config_exception.message)
