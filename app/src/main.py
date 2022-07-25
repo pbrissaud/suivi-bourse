@@ -18,11 +18,14 @@ from urllib3 import exceptions as u_exceptions
 logger = getLogger("suivi_bourse", level=os.getenv(
     'LOG_LEVEL', default='DEBUG'))
 
+
 class InvalidConfigFile(Exception):
-  def __init__(self, errors_):
-      self.errors = errors_
-      self.message = 'Shares field of the config file is invalid :' + str(self.errors)
-      super().__init__(self.message)
+    def __init__(self, errors_):
+        self.errors = errors_
+        self.message = 'Shares field of the config file is invalid :' + \
+            str(self.errors)
+        super().__init__(self.message)
+
 
 class SuiviBourseMetrics:
     def __init__(self, configuration_: Configuration, validator_: Validator):
@@ -105,7 +108,7 @@ class SuiviBourseMetrics:
         self.configuration.reload()
 
         if not self.validate():
-          raise InvalidConfigFile(self.validator.errors)
+            raise InvalidConfigFile(self.validator.errors)
 
         self.expose_metrics()
 
