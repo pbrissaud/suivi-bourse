@@ -74,6 +74,12 @@ class SuiviBourseMetrics:
                 "Sum of received dividend for the share",
                 common_labels
             )
+
+            self.sb_share_info = prometheus_client.Gauge(
+                "sb_share_info",
+                "Share informations as label",
+                common_labels + ['share_currency', 'share_exchange', 'company_logo', 'share_market', 'company_sector']
+            )
         else:
             raise InvalidConfigFile(self.validator.errors)
 
@@ -96,9 +102,11 @@ class SuiviBourseMetrics:
                 *label_values).set(share['estate']['received_dividend'])
 
             try:
-                ticker = yf.Ticker(share['symbol'])
-                last_quote = ticker.info['currentPrice']
+                ticker_info = yf.Ticker(share['symbol']).info
+                last_quote = ticker_info['currentPrice']
                 self.sb_share_price.labels(*label_values).set(last_quote)
+                info_values = label_values + [ticker_info['currency'], ticker_info['exchange'], ticker_info['logo_url'], ticker_info['market'], ticker_info['sector']]
+                self.sb_share_info.labels(*info_values).set(1)
             except (u_exceptions.NewConnectionError, RuntimeError):
                 app_logger.error(
                     "Error while retrieving data from Yfinance API", exc_info=True)
