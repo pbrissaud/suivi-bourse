@@ -2,9 +2,9 @@ name: "Acceptance tests"
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [master]
     paths:
-      - 'app/**'
+      - "app/**"
 
 jobs:
   python-linter:
@@ -35,61 +35,61 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python' ]
+        language: ["python"]
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
-      with:
-        languages: ${{ matrix.language }}
-
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
-
-  build-image:
-    name: Build image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  e2e-test:
+    name: "E2E Test"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: "0"
 
       - uses: actions/setup-python@v4.1.0
         with:
-          python-version: 3.7
+          python-version: "3.x"
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
+      - uses: BSFishy/pip-action@v1
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          requirements: app/requirements.txt
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
+      - uses: BSFishy/pip-action@v1
         with:
-          # list of Docker images to use as base name for tags
-          images: |
-            paulbrissaud/suivi-bourse-app
-          # generate Docker tags based on the following events/attributes
-          tags: |
-            type=ref,event=pr
+          packages: |
+            requests
 
-      - name: Build
-        uses: docker/build-push-action@v3
-        with:
-          context: ./app
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - id: run_tests
+        run: |
+          mkdir -p ~/.config/SuiviBourse
+          cat > ~/.config/SuiviBourse/config.yaml << EOL
+          ---
+          shares:
+          - name: Apple
+            symbol: AAPL
+            purchase:
+              quantity: 1
+              fee: 2
+              cost_price: 119.98
+            estate:
+              quantity: 2
+              received_dividend: 2.85
+          EOL
+          python3 app/src/main.py
+          sleep 20
+          python3 utils/testing.py
