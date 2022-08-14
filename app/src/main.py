@@ -146,6 +146,6 @@ if __name__ == "__main__":
         scheduler.add_job(sb_metrics.run, 'interval', seconds=int(
             os.getenv('SB_SCRAPING_INTERVAL', default='120')))
         scheduler.start()
-    except Exception as e:
+    except Exception:
         app_logger.critical('An error occurred', exc_info=True)
         sys.exit(1)
