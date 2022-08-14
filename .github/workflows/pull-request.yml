@@ -90,6 +90,6 @@ jobs:
               quantity: 2
               received_dividend: 2.85
           EOL
-          python3 app/src/main.py
+          python3 app/src/main.py &
           sleep 20
           python3 utils/testing.py
