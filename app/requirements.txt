@@ -1,8 +1,8 @@
-PyYAML~=6.0
-yfinance~=0.1.74
-APScheduler~=3.9.1
-Cerberus~=1.3.4
-urllib3~=1.26.10
-confuse~=2.0.0
-logfmt-logger~=0.1.2
-prometheus-client~=0.14.1
+APScheduler == 3.9.1
+Cerberus == 1.3.4
+PyYAML == 6.0
+confuse == 2.0.0
+logfmt_logger == 0.1.2
+prometheus_client == 0.14.1
+urllib3 == 1.26.11
+yfinance == 0.1.74
