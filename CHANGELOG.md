@@ -86,7 +86,8 @@
 
 # 3.2.0
 
-- Release 3.2  (#48)
-- Revert "Release 3.2  (#48)" (#61)
-- Release/3.2 (#62)
-  
+- Add some docs (Fix #33, #39)
+- Use Grafana Candlestick panel (Fix #35)
+- Add a new metric sb_share_info to store some useful informations (Fix #55)
+- Refactoring
+- Dependencies update
