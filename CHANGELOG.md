@@ -83,3 +83,10 @@
 
 - chore(deps): bump actions/setup-python from 3.1.2 to 4.0.0 (#46)
   
+
+# 3.2.0
+
+- Release 3.2  (#48)
+- Revert "Release 3.2  (#48)" (#61)
+- Release/3.2 (#62)
+  
