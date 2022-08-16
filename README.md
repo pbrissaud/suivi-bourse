@@ -7,6 +7,8 @@ Small app written in Python to monitor the stock shares you own. It uses Prometh
 
 ## Using SuiviBourse
 
+⚠️Due to a conflict between Hugo version in Netlify image and Hugo theme I use, the doc is not updated to the lastest version. I will do my best to fix this quickly 
+
 Please visit the [documentation's website](https://suivibourse-docs.netlify.app) !
 
 ## Getting Started
