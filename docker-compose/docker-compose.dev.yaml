@@ -4,7 +4,7 @@ services:
     depends_on:
     - prometheus
     environment:
-    - SB_SCRAPING_INTERVAL=20
+    - SB_SCRAPING_INTERVAL=60
     - LOG_LEVEL=DEBUG
     build: ../app
     restart: unless-stopped
@@ -14,7 +14,7 @@ services:
     container_name: suivi-bourse-graf
     depends_on:
     - prometheus
-    image: grafana/grafana:9.0.4
+    image: grafana/grafana:9.0.7
     ports:
     - 3000:3000
     restart: unless-stopped
