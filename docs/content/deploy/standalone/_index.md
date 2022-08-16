@@ -54,9 +54,11 @@ Replace **<installation_path>** with the path of the folder where you download a
 
 {{< tabs groupId="production-method" >}}
 {{% tab name="SystemD (Linux)" %}}
-Almost all versions of Linux come with systemd out of the box, but if your’s didn’t come with it then you can simply install it.
+Almost all versions of Linux come with systemd out of the box, but if your’s didn’t come with it then you can simply install it. You should have a regular, non-root user with sudo privileges configured or access to root user to perform this.
 
-1. Create a user service unit file in `~/.config/systemd/user/suivi-bourse.service`:
+Replace **<user\>** and **<group\>** with the user and the group of the user with whom you ran the step 2.
+
+1. Create a user service unit file in `/etc/systemd/system/suivi-bourse.service`:
     ```
     [Unit]
     Description=SuiviBourse
@@ -65,6 +67,8 @@ Almost all versions of Linux come with systemd out of the box, but if your’s d
     Type=simple
     Restart=always
     ExecStart=/usr/bin/python3 <installation_path>/app/src/main.py
+    User=<user>
+    Group=<group>
     Environment=PYTHONUNBUFFERED=1
     SyslogIdentifier=suivi-bourse
 
@@ -74,20 +78,20 @@ Almost all versions of Linux come with systemd out of the box, but if your’s d
 
 2. Reload systemd-daemon:
     ```bash
-    systemctl --user daemon-reload
+    systemctl daemon-reload
     ``` 
 
 3. Enable the service at boot: 
     ```bash
-    systemctl --user enable suivi-bourse 
+    systemctl enable suivi-bourse 
     ```
 
 4. Start the service:
     ```bash
-    systemctl --user start suivi-bourse
+    systemctl start suivi-bourse
     ```
 
-You can see the application logs in `/var/log/syslog` and check the status with `systemctl --user status suivi-bourse`
+You can see the application logs in `/var/log/syslog` and check the status with `systemctl status suivi-bourse`
 
 {{% /tab %}}
 {{% tab name="Cron (Linux + MacOS)"%}}
