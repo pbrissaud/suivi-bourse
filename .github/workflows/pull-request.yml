@@ -3,8 +3,6 @@ name: "Acceptance tests"
 on:
   pull_request:
     branches: [master]
-    paths:
-      - "app/**"
 
 jobs:
   dco-check:
