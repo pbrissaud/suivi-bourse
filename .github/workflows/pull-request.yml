@@ -3,10 +3,14 @@ name: "Acceptance tests"
 on:
   pull_request:
     branches: [master]
-    paths:
-      - "app/**"
 
 jobs:
+  dco-check:
+    name: DCO Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tisonkun/actions-dco@v1.1
+
   python-linter:
     name: Lint
     runs-on: ubuntu-latest
