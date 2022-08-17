@@ -91,3 +91,9 @@
 - Add a new metric sb_share_info to store some useful informations (Fix #55)
 - Refactoring
 - Dependencies update
+
+# 3.2.1
+
+- Update README.md
+- Change doc framework  (#63)
+  
