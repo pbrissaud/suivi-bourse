@@ -1,0 +1,48 @@
+---
+title: Write a config file
+description: An example on how write the config file
+sidebar_position: 3
+---
+
+The app use a config file written in YAML to describe the actual state of your stock portfolio. For each stock in the list, you must report some informations:
+- The name (you can choose a custom name if your want)
+- The Yahoo! finance stock symbol
+- The purchased quantity
+- The fees when you bought the share(s)
+- The unit price when you bought the share(s)
+- The number of owned shares (different from the purchased_quantity if you got some frees)
+- The dividends you received
+
+:::caution
+The config file has to be named **config.yaml**. To see where it should be located on your filesystem, read the [deployment section](/docs/category/deployment)
+:::
+
+## Use Case
+
+I own some shares, that I want to monitor : 
+* 2 shares of Apple stock (bought one, got the second free)
+* 3 shares of Tesla stocks (bought not in the same time)
+
+Here's the corresponding config file: 
+
+```yaml title="config.yaml"
+shares:
+- name: Apple
+  symbol: AAPL # Yahoo! finance stock symbol
+  purchase:
+    quantity: 1
+    fee: 2 # Fees when I bought the share 
+    cost_price: 119.98  # Value of the share when I bought it 
+  estate:
+    quantity: 2 # Because, I got one free
+    received_dividend: 2.85 # Sum of all received dividend
+- name: Tesla
+  symbol: TLSA
+  purchase:
+    quantity: 3
+    fee: 5.8 # When buying multiple shares, sum of fees
+    cost_price: 856.87  # When buying multiple shares with different price, weighted average
+  estate:
+    quantity: 3
+    received_dividend: 4.57
+```
