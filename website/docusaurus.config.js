@@ -8,7 +8,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 const config = {
   title: 'Suivi Bourse',
   tagline: 'Watches your stock share on Prometheus / Grafana',
-  url: 'https://suivi-bourse.vercel.app',
+  url: 'https://suivi-bourse-docs.vercel.app',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',

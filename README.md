@@ -7,7 +7,7 @@ Small app written in Python to monitor the stock shares you own. It uses Prometh
 
 ## Using SuiviBourse
 
-Please visit the [documentation's website](https://suivi-bourse.vercel.app/docs) !
+Please visit the [documentation's website](https://suivi-bourse-docs.vercel.app/docs) !
 
 ## Getting Started
 
@@ -20,7 +20,7 @@ Note: Docker Compose launches a full environnement with a pre-configured Prometh
 * Docker-Compose 
 
 ### 2. Modify config
-Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://suivi-bourse.vercel.app/docs/intro/config) of the documentation to know more about writing config file. 
+Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://suivi-bourse-docs.vercel.app/docs/intro/config) of the documentation to know more about writing config file. 
 
 *Example Config:* 
 ```yaml
