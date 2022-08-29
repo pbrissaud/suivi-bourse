@@ -3,7 +3,7 @@
 
 Small app written in Python to monitor the stock shares you own. It uses Prometheus as TSDB and Yfinance to scrape the price in realtime.  
 
-![](docs/static/screenshot.png)
+![](website/static/img/screenshot.png)
 
 ## Using SuiviBourse
 
