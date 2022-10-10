@@ -97,3 +97,12 @@
 - Update README.md
 - Change doc framework  (#63)
   
+
+# 3.2.2
+
+- fix broken link in docs
+- update docs url
+- chore(deps): bump urllib3 from 1.26.11 to 1.26.12 in /app (#64)
+- Update README.md
+- chore(deps): bump yfinance from 0.1.74 to 0.1.77 in /app (#65)
+  
