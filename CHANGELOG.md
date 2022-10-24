@@ -106,3 +106,10 @@
 - Update README.md
 - chore(deps): bump yfinance from 0.1.74 to 0.1.77 in /app (#65)
   
+
+# 3.2.3
+
+- chore(deps): bump prometheus-client from 0.14.1 to 0.15.0 in /app (#66)
+- chore(deps): bump actions/setup-python from 4.1.0 to 4.3.0 (#67)
+- chore(deps): bump yfinance from 0.1.77 to 0.1.81 in /app (#68)
+  
