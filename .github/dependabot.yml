@@ -10,6 +10,11 @@ updates:
     directory: "/app"
     schedule:
       interval: "weekly"
+      
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
 
   - package-ecosystem: "docker"
     directory: "/app"
