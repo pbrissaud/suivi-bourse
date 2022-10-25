@@ -113,3 +113,17 @@
 - chore(deps): bump actions/setup-python from 4.1.0 to 4.3.0 (#67)
 - chore(deps): bump yfinance from 0.1.77 to 0.1.81 in /app (#68)
   
+
+# 3.2.4
+
+- Update dependabot.yml
+- chore(deps): add renovate.json (#73)
+- fix(deps): pin dependencies (#74)
+- chore(deps): update grafana/grafana docker tag to v9.2.1 (#75)
+- fix(deps): update docusaurus monorepo to v2.1.0 (#77)
+- fix(deps): update react monorepo to v18 (#81)
+- chore(deps): update actions/checkout action to v3 (#79)
+- Revert "fix(deps): update react monorepo to v18 (#81)"
+- chore(deps): update prom/prometheus docker tag to v2.39.1 (#78)
+- chore(deps): update python docker tag to v3.11 (#82)
+  
