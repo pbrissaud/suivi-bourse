@@ -5,4 +5,4 @@ confuse == 2.0.0
 logfmt_logger == 0.1.2
 prometheus_client == 0.15.0
 urllib3 == 1.26.12
-yfinance == 0.1.81
+yfinance == 0.1.84
