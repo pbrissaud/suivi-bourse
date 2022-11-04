@@ -110,58 +110,58 @@ else:
 
 print(new_version)
 
-# # Get all commit messages from last release and last commit
-# diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
+# Get all commit messages from last release and last commit
+diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
 
-# # Delete unwanted commit messages from changelog
-# unwanted_commits = ['update changelog',
-#                     'update image tag in docker compose',
-#                     'merge branch.*']
+# Delete unwanted commit messages from changelog
+unwanted_commits = ['update changelog',
+                    'update image tag in docker compose',
+                    'merge branch.*']
 
-# temp = '(?:% s)' % '|'.join(unwanted_commits)
+temp = '(?:% s)' % '|'.join(unwanted_commits)
 
-# for message in list(diff_messages):
-#     if re.match(temp, message.strip().lower()):
-#         diff_messages.remove(message)
+for message in list(diff_messages):
+    if re.match(temp, message.strip().lower()):
+        diff_messages.remove(message)
 
-# # Update CHANGELOG.md
-# changelog_new = MdUtils(file_name='')
-# changelog_new.new_header(level=1, title=new_version)
-# changelog_new.new_list(diff_messages)
-# changelog_new.write('  \n')
-# changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
-# MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before +
-#                                                    changelog_new.file_data_text)
+# Update CHANGELOG.md
+changelog_new = MdUtils(file_name='')
+changelog_new.new_header(level=1, title=new_version)
+changelog_new.new_list(diff_messages)
+changelog_new.write('  \n')
+changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
+MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before +
+                                                   changelog_new.file_data_text)
 
-# changelog_contents = repo.get_contents("/CHANGELOG.md")
+changelog_contents = repo.get_contents("/CHANGELOG.md")
 
-# with open('/tmp/CHANGELOG.md', 'rb') as f:
-#     repo.update_file(changelog_contents.path,
-#                      'Update CHANGELOG',
-#                      f.read(),
-#                      changelog_contents.sha)
+with open('/tmp/CHANGELOG.md', 'rb') as f:
+    repo.update_file(changelog_contents.path,
+                     'Update CHANGELOG',
+                     f.read(),
+                     changelog_contents.sha)
 
 
-# # Update docker-compose.yml file
-# with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
-#     compose_file = safe_load(f)
+# Update docker-compose.yml file
+with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
+    compose_file = safe_load(f)
 
-# compose_file['services']['app']['image'] = \
-#     compose_file['services']['app']['image'].split(
-#         ':', 1)[0] + ":" + new_version
+compose_file['services']['app']['image'] = \
+    compose_file['services']['app']['image'].split(
+        ':', 1)[0] + ":" + new_version
 
-# with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
-#     dump(compose_file, f)
+with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
+    dump(compose_file, f)
 
-# compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
-# with open('docker-compose/docker-compose.yaml', 'rb') as f:
-#     last_update_commit = repo.update_file(compose_file_contents.path,
-#                                           'Update image tag in Docker Compose',
-#                                           f.read(), compose_file_contents.sha)
+compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
+with open('docker-compose/docker-compose.yaml', 'rb') as f:
+    last_update_commit = repo.update_file(compose_file_contents.path,
+                                          'Update image tag in Docker Compose',
+                                          f.read(), compose_file_contents.sha)
 
-# # Create release
-# release_note = MdUtils(file_name='')
-# release_note.new_list(diff_messages)
+# Create release
+release_note = MdUtils(file_name='')
+release_note.new_list(diff_messages)
 
-# repo.create_git_tag_and_release(new_tag, new_version, new_version, release_note.file_data_text,
-#                                 last_update_commit['commit'].sha, 'commit')
+repo.create_git_tag_and_release(new_tag, new_version, new_version, release_note.file_data_text,
+                                last_update_commit['commit'].sha, 'commit')
