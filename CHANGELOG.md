@@ -127,3 +127,14 @@
 - chore(deps): update prom/prometheus docker tag to v2.39.1 (#78)
 - chore(deps): update python docker tag to v3.11 (#82)
   
+
+# 3.2.5
+
+- chore(deps): update grafana/grafana docker tag to v9.2.2 (#83)
+- fix(deps): update docusaurus monorepo to v2.2.0 (#85)
+- Better testing procedure (#88)
+- fix releasing workflow
+- chore(deps): update dependency yfinance to v0.1.85 (#84)
+- chore(deps): update grafana/grafana docker tag to v9.2.3 (#87)
+- Release 3.2.4 (#91)
+  
