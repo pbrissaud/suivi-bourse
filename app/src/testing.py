@@ -42,5 +42,5 @@ for family in text_string_to_metric_families(metrics):
     for sample in family.samples:
         if sample.name.startswith('sb_'):
             print(sample.name + ' => ' + str(sample.value))
-            if sample.value == None:
+            if sample.value is None:
                 sys.exit(1)
