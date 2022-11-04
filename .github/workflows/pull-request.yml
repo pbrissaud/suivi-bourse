@@ -1,4 +1,4 @@
-name: "Acceptance tests"
+name: "Pull request process"
 
 on:
   pull_request:
@@ -27,34 +27,6 @@ jobs:
           use-mypy: false
           use-isort: false
           extra-flake8-options: "--ignore=E501"
-
-  codeql:
-    name: Analyze
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ["python"]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
 
   e2e-test:
     name: "E2E Test"
@@ -94,6 +66,22 @@ jobs:
               quantity: 2
               received_dividend: 2.85
           EOL
-          python3 app/src/main.py &
-          sleep 20
-          python3 utils/testing.py
+          python3 app/src/testing.py
+
+  build-docs:
+    name: "Building doc"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get changed files in the docs folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v34
+        with:
+          files: |
+            website/**
+      - name: Build docs if folder changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: |
+          yarn install
+          yarn build
