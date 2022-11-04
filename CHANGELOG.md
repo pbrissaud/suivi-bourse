@@ -138,3 +138,10 @@
 - chore(deps): update grafana/grafana docker tag to v9.2.3 (#87)
 - Release 3.2.4 (#91)
   
+
+# 3.2.6
+
+- change releasing process
+- chore: remove check on workflows
+- chore: remove comments
+  
