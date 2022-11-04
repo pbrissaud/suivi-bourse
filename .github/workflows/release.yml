@@ -1,42 +1,10 @@
 name: Releasing process
 on:
-  pull_request:
-    branches: [master]
-    types: [closed]
+  release:
+    type: [published]
 jobs:
-  new_version:
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    outputs:
-      new_version: ${{ steps.bump_version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: "0"
-
-      - uses: actions/setup-python@v4.3.0
-        with:
-          python-version: "3.x"
-
-      - uses: BSFishy/pip-action@v1
-        with:
-          packages: |
-            PyYAML
-            semver
-            PyGithub
-            mdutils
-
-      - id: bump_version
-        env:
-          GITHUB_TOKEN: "${{ secrets.TOKEN }}"
-          GITHUB_BRANCH: "master"
-        run: |
-          output=$(python3 utils/bumping.py)
-          echo "TAG=$output" >> $GITHUB_OUTPUT
-
   docker:
     if: github.event.pull_request.merged == true
-    needs: new_version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -52,9 +20,9 @@ jobs:
             paulbrissaud/suivi-bourse-app
           # generate Docker tags based on the following events/attributes
           tags: |
-            type=semver,pattern={{version}},value=${{needs.new_version.outputs.TAG}}
-            type=semver,pattern={{major}}.{{minor}},value=${{needs.new_version.outputs.TAG}}
-            type=semver,pattern={{major}},value=${{needs.new_version.outputs.TAG}}
+            type=semver,pattern={{version}},value=${{github.event.release.name}}
+            type=semver,pattern={{major}}.{{minor}},value=${{github.event.release.name}}
+            type=semver,pattern={{major}},value=${{github.event.release.name}}
             type=sha,prefix=
 
       - name: Set up QEMU
@@ -81,7 +49,6 @@ jobs:
   doc:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    needs: new_version
     steps:
       - uses: actions/checkout@v3
         with:

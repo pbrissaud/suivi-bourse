@@ -16,12 +16,6 @@ from yaml import dump, safe_load
 from mdutils.mdutils import MdUtils
 from mdutils.fileutils import MarkDownFile
 
-keywords = {
-    "#MAJOR": 3,
-    "#MINOR": 2,
-    "#PATCH": 1,
-}
-
 
 def coerce(version: str) -> Tuple[VersionInfo | None, Optional[str]]:
     """
@@ -69,12 +63,6 @@ repo = gh.get_repo(os.getenv('GITHUB_REPOSITORY'))
 branch = repo.get_branch(os.getenv('GITHUB_BRANCH', default='master'))
 
 last_commit = branch.commit
-keyword_detection = list(map(keywords.get,
-                             filter(lambda x: x in last_commit.commit.message.upper(), keywords)))
-
-if len(keyword_detection) == 0:
-    logging.warning("No semver keywords detected in last commit... Exiting")
-    sys.exit(0)
 
 if repo.get_releases().totalCount > 0:
     last_release_tag = repo.get_releases()[0].tag_name
@@ -99,17 +87,17 @@ else:
     first_commit = repo.get_commits().reversed[0]
     diff = repo.compare(first_commit.commit.sha, last_commit.sha).commits
 
-bumping_strength = max(keyword_detection)
-
 new_version = last_version
 
-if bumping_strength == 3:
+version_type = sys.argv[1]
+
+if version_type.upper() == "MAJOR":
     new_version = last_version.bump_major()
 
-if bumping_strength == 2:
+if version_type.upper() == "MINOR":
     new_version = last_version.bump_minor()
 
-if bumping_strength == 1:
+if version_type.upper() == "PATCH":
     new_version = last_version.bump_patch()
 
 # Return new version as string
@@ -122,56 +110,58 @@ else:
 
 print(new_version)
 
-# Get all commit messages from last release and last commit
-diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
+# # Get all commit messages from last release and last commit
+# diff_messages = list(map(lambda x: x.commit.message.split('\n', 1)[0], diff))
 
-# Delete unwanted commit messages from changelog
-unwanted_commits = ['update changelog',
-                    'update image tag in docker compose',
-                    'merge branch.*']
+# # Delete unwanted commit messages from changelog
+# unwanted_commits = ['update changelog',
+#                     'update image tag in docker compose',
+#                     'merge branch.*']
 
-temp = '(?:% s)' % '|'.join(unwanted_commits)
+# temp = '(?:% s)' % '|'.join(unwanted_commits)
 
-for message in list(diff_messages):
-    if re.match(temp, message.strip().lower()):
-        diff_messages.remove(message)
+# for message in list(diff_messages):
+#     if re.match(temp, message.strip().lower()):
+#         diff_messages.remove(message)
 
-# Update CHANGELOG.md
-changelog_new = MdUtils(file_name='')
-changelog_new.new_header(level=1, title=new_version)
-changelog_new.new_list(diff_messages)
-changelog_new.write('  \n')
-changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
-MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before + changelog_new.file_data_text)
+# # Update CHANGELOG.md
+# changelog_new = MdUtils(file_name='')
+# changelog_new.new_header(level=1, title=new_version)
+# changelog_new.new_list(diff_messages)
+# changelog_new.write('  \n')
+# changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
+# MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before +
+#                                                    changelog_new.file_data_text)
 
-changelog_contents = repo.get_contents("/CHANGELOG.md")
- 
-with open('/tmp/CHANGELOG.md', 'rb') as f:
-    repo.update_file(changelog_contents.path,
-                     'Update CHANGELOG',
-                     f.read(),
-                     changelog_contents.sha)
+# changelog_contents = repo.get_contents("/CHANGELOG.md")
+
+# with open('/tmp/CHANGELOG.md', 'rb') as f:
+#     repo.update_file(changelog_contents.path,
+#                      'Update CHANGELOG',
+#                      f.read(),
+#                      changelog_contents.sha)
 
 
-# Update docker-compose.yml file
-with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
-    compose_file = safe_load(f)
+# # Update docker-compose.yml file
+# with open('docker-compose/docker-compose.yaml', encoding='UTF-8') as f:
+#     compose_file = safe_load(f)
 
-compose_file['services']['app']['image'] = \
-    compose_file['services']['app']['image'].split(':', 1)[0] + ":" + new_version
+# compose_file['services']['app']['image'] = \
+#     compose_file['services']['app']['image'].split(
+#         ':', 1)[0] + ":" + new_version
 
-with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
-    dump(compose_file, f)
+# with open('docker-compose/docker-compose.yaml', 'w', encoding='UTF-8') as f:
+#     dump(compose_file, f)
 
-compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
-with open('docker-compose/docker-compose.yaml', 'rb') as f:
-    last_update_commit = repo.update_file(compose_file_contents.path,
-                                          'Update image tag in Docker Compose',
-                                          f.read(), compose_file_contents.sha)
+# compose_file_contents = repo.get_contents("docker-compose/docker-compose.yaml")
+# with open('docker-compose/docker-compose.yaml', 'rb') as f:
+#     last_update_commit = repo.update_file(compose_file_contents.path,
+#                                           'Update image tag in Docker Compose',
+#                                           f.read(), compose_file_contents.sha)
 
-# Create release
-release_note = MdUtils(file_name='')
-release_note.new_list(diff_messages)
+# # Create release
+# release_note = MdUtils(file_name='')
+# release_note.new_list(diff_messages)
 
-repo.create_git_tag_and_release(new_tag, new_version, new_version, release_note.file_data_text,
-                                last_update_commit['commit'].sha, 'commit')
+# repo.create_git_tag_and_release(new_tag, new_version, new_version, release_note.file_data_text,
+#                                 last_update_commit['commit'].sha, 'commit')
