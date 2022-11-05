@@ -103,8 +103,10 @@ class SuiviBourseMetrics:
                 *label_values).set(share['estate']['received_dividend'])
 
             try:
-                ticker_info = yf.Ticker(share['symbol']).info
-                last_quote = ticker_info['currentPrice']
+                ticker = yf.Ticker(share['symbol'])
+                ticker_info = ticker.info
+                history = ticker.history()
+                last_quote = (history.tail(1)['Close'].iloc[0])
                 self.sb_share_price.labels(*label_values).set(last_quote)
                 info_values = label_values + [ticker_info['currency'], ticker_info['exchange'],
                                               ticker_info['logo_url'], ticker_info['market'], ticker_info['sector']]
