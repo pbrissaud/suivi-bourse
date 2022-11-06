@@ -108,8 +108,8 @@ class SuiviBourseMetrics:
                 history = ticker.history()
                 last_quote = (history.tail(1)['Close'].iloc[0])
                 self.sb_share_price.labels(*label_values).set(last_quote)
-                info_values = label_values + [ticker_info.get('currency','undefined'), ticker_info.get('exchange','undefined'),
-                                              ticker_info.get('logo_url','undefined'), ticker_info.get('market','undefined'), ticker_info.get('sector', 'undefined')]
+                info_values = label_values + [ticker_info.get('currency', 'undefined'), ticker_info.get('exchange', 'undefined'),
+                                              ticker_info.get('logo_url', 'undefined'), ticker_info.get('market', 'undefined'), ticker_info.get('sector', 'undefined')]
                 self.sb_share_info.labels(*info_values).set(1)
             except (u_exceptions.NewConnectionError, RuntimeError):
                 app_logger.error(
