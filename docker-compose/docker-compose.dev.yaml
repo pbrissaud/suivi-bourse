@@ -28,6 +28,8 @@ services:
     - --web.console.templates=/usr/share/prometheus/consoles
     container_name: suivi-bourse-prom
     image: prom/prometheus:v2.39.1
+    ports:
+    - 9090:9090
     restart: unless-stopped
     volumes:
     - sb_prometheus_data:/prometheus
