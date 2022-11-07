@@ -145,3 +145,8 @@
 - chore: remove check on workflows
 - chore: remove comments
   
+
+# 3.3.0
+
+- Change the way to get the last_quote (#93)
+  
