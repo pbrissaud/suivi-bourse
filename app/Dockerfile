@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11.0-slim
 
 COPY requirements.txt /tmp/requirements.txt
 
