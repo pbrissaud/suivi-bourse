@@ -150,3 +150,17 @@
 
 - Change the way to get the last_quote (#93)
   
+
+# 3.3.1
+
+- chore(deps): update grafana/grafana docker tag to v9.2.4 (#96)
+- chore(deps): update prom/prometheus docker tag to v2.40.0 (#95)
+- chore(deps): bump loader-utils from 2.0.2 to 2.0.3 in /website (#97)
+- chore(deps): update prom/prometheus docker tag to v2.40.1 (#98)
+- chore(deps): bump apscheduler from 3.9.1 to 3.9.1.post1 in /app (#100)
+- chore(deps): update dependency yfinance to v0.1.86 (#101)
+- chore(deps): bump loader-utils from 2.0.3 to 2.0.4 in /website (#102)
+- chore(deps): update dependency yfinance to v0.1.87 (#103)
+- chore(deps): update grafana/grafana docker tag to v9.2.5 (#104)
+- chore(deps): update prom/prometheus docker tag to v2.40.2 (#105)
+  
