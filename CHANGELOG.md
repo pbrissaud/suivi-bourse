@@ -164,3 +164,23 @@
 - chore(deps): update grafana/grafana docker tag to v9.2.5 (#104)
 - chore(deps): update prom/prometheus docker tag to v2.40.2 (#105)
   
+
+# 3.3.2
+
+- chore(deps): update dependency urllib3 to v1.26.13 (#107)
+- chore(deps): update prom/prometheus docker tag to v2.40.3 (#108)
+- chore(deps): update grafana/grafana docker tag to v9.2.6 (#106)
+- chore(deps): update actions/setup-python action to v4.3.1 (#112)
+- chore(deps): update grafana/grafana docker tag to v9.3.1 (#111)
+- chore(deps): update prom/prometheus docker tag to v2.40.5 (#110)
+- chore(deps): update dependency yfinance to v0.1.89 (#114)
+- chore(deps): update prom/prometheus docker tag to v2.40.6 (#113)
+- chore(deps): update dependency yfinance to v0.1.90 (#115)
+- upgrade yfinance
+- upgrade prometheus and grafana
+- upgrade doc libs
+- upgrade docker to python 3.11
+- chore(deps): bump actions/setup-python from 4.3.1 to 4.4.0 (#128)
+- fix(deps): update react monorepo to v18 (#120)
+- chore(deps): update tj-actions/changed-files action to v35 (#122)
+  
