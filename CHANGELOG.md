@@ -184,3 +184,14 @@
 - fix(deps): update react monorepo to v18 (#120)
 - chore(deps): update tj-actions/changed-files action to v35 (#122)
   
+
+# 3.3.3
+
+- chore(deps): update dependency yfinance to v0.2.6 (#131)
+- chore(deps): update grafana/grafana docker tag to v9.3.4 (#136)
+- chore(deps): bump actions/setup-python from 4.4.0 to 4.5.0 (#134)
+- update docs libs
+- update app deps
+- fix yfinance
+- chore(deps): update grafana/grafana docker tag to v9.3.6 (#139)
+  
