@@ -195,3 +195,10 @@
 - fix yfinance
 - chore(deps): update grafana/grafana docker tag to v9.3.6 (#139)
   
+
+# 3.3.4
+
+- Pass to docusaurus 2.30 ; come back to React 17
+- chore(deps): update dependency yfinance to v0.2.9 (#138)
+- chore(deps): update docker/build-push-action action to v4 (#145)
+  
