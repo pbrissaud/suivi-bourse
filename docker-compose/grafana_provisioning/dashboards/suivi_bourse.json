@@ -984,7 +984,7 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(sb_share_info{company_sector=~\"$sector\", share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
+        "definition": "label_values(sb_share_info{share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Share",
@@ -992,7 +992,7 @@
         "name": "share",
         "options": [],
         "query": {
-          "query": "label_values(sb_share_info{company_sector=~\"$sector\", share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
+          "query": "label_values(sb_share_info{share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -1003,37 +1003,6 @@
         "tagsQuery": "",
         "type": "query",
         "useTags": false
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
-        },
-        "definition": "label_values(sb_share_info, company_sector)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Sector",
-        "multi": true,
-        "name": "sector",
-        "options": [],
-        "query": {
-          "query": "label_values(sb_share_info, company_sector)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
       },
       {
         "current": {
