@@ -130,12 +130,12 @@ changelog_new.new_header(level=1, title=new_version)
 changelog_new.new_list(diff_messages)
 changelog_new.write('  \n')
 changelog_before = MdUtils(file_name='').read_md_file(file_name='CHANGELOG.md')
-MarkDownFile('/tmp/CHANGELOG.md').rewrite_all_file(changelog_before +
+MarkDownFile('NEW_CHANGELOG.md').rewrite_all_file(changelog_before +
                                                    changelog_new.file_data_text)
 
 changelog_contents = repo.get_contents("/CHANGELOG.md")
 
-with open('/tmp/CHANGELOG.md', 'rb') as f:
+with open('NEW_CHANGELOG.md', 'rb') as f:
     repo.update_file(changelog_contents.path,
                      'Update CHANGELOG',
                      f.read(),
