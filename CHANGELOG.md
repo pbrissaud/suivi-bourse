@@ -202,3 +202,14 @@
 - chore(deps): update dependency yfinance to v0.2.9 (#138)
 - chore(deps): update docker/build-push-action action to v4 (#145)
   
+
+# 3.4.0
+
+- chore(deps): update dependency apscheduler to v3.10.0 (#146)
+- chore(deps): update prom/prometheus docker tag to v2.42.0 (#147)
+- fix(deps): update docusaurus monorepo to v2.3.1 (#140)
+- chore(deps): bump http-cache-semantics from 4.1.0 to 4.1.1 in /website (#148)
+- chore(deps): bump yfinance from 0.2.9 to 0.2.11 in /app (#150)
+- chore(deps): update dependency yfinance to v0.2.12 (#151)
+- Fix PATH in bumping script
+  
