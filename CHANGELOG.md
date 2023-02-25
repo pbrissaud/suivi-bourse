@@ -225,3 +225,8 @@
 - Fix PATH in bumping script
 - 💥Migrate to Ticker.fast_info
   
+
+# 3.4.1
+
+- switch to github pages
+  
