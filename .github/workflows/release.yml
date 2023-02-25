@@ -2,6 +2,17 @@ name: Releasing process
 on:
   release:
     type: [published]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+  
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -53,10 +64,15 @@ jobs:
           fetch-depth: "0"
       - run: yarn install
         working-directory: website
-      - name: Deploy to Vercel
-        uses: BetaHuhn/deploy-to-vercel-action@v1
+      - run: yarn build
+        working-directory: website
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
         with:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Upload entire repository
+          path: 'website/build'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v1

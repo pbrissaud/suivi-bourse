@@ -5,11 +5,12 @@ const lightCodeTheme = require('prism-react-renderer/themes/github');
 const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
+
 const config = {
   title: 'Suivi Bourse',
   tagline: 'Watches your stock share on Prometheus / Grafana',
-  url: 'https://suivi-bourse-docs.vercel.app',
-  baseUrl: '/',
+  url: `https://${this.organizationName}.github.io`,
+  baseUrl: `/${this.projectName}/`,
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
@@ -37,7 +38,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+            `https://github.com/${this.organizationName}/${this.projectName}/tree/main/`,
         },
         blog: false,
         theme: {
@@ -64,7 +65,7 @@ const config = {
             label: 'Documentation',
           },
           {
-            href: 'https://github.com/pbrissaud/suivi-bourse',
+            href: `https://github.com/${this.organizationName}/${this.projectName}`,
             label: 'GitHub',
             position: 'right',
           },
