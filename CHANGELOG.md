@@ -230,3 +230,8 @@
 
 - switch to github pages
   
+
+# 3.4.2
+
+- fix docusaurus config
+  
