@@ -47,10 +47,10 @@ for family in text_string_to_metric_families(metrics):
                 sys.exit(1)
         if sample.name == 'sb_share_info':
             print('\nlabels:')
-            for k,v in sample.labels.items():
-              print(k + ' => ' + v)
-              if v is None or v == 'undefined':
-                print('Undefined label value : ' + k)
-                sys.exit(1)
-                
+            for k, v in sample.labels.items():
+                print(k + ' => ' + v)
+                if v is None or v == 'undefined':
+                    print('Undefined label value : ' + k)
+                    sys.exit(1)
+
 print('\nAll checks passed !')
