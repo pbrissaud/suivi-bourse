@@ -235,3 +235,19 @@
 
 - fix docusaurus config
   
+
+# 3.4.3
+
+- fix edit url
+- fix linting
+- chore(deps): update grafana/grafana docker tag to v9.4.1 (#152)
+- chore(deps): update dependency apscheduler to v3.10.1 (#154)
+- chore(deps): update grafana/grafana docker tag to v9.4.3 (#153)
+- chore(deps): update dependency urllib3 to v1.26.15 (#156)
+- chore(deps): bump webpack from 5.75.0 to 5.76.1 in /website (#157)
+- chore(deps): update actions/deploy-pages action to v2 (#158)
+- fix(deps): update docusaurus monorepo to v2.4.0 (#163)
+- chore(deps): update grafana/grafana docker tag to v9.4.7 (#162)
+- chore(deps): update dependency yfinance to v0.2.14 (#161)
+- chore(deps): update prom/prometheus docker tag to v2.43.0 (#160)
+  
