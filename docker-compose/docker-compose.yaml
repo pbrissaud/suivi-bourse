@@ -5,7 +5,7 @@ services:
     - prometheus
     environment:
     - SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}
-    image: paulbrissaud/suivi-bourse-app:3.4.3
+    image: paulbrissaud/suivi-bourse-app:3.4.4
     restart: unless-stopped
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
