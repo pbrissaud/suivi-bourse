@@ -251,3 +251,8 @@
 - chore(deps): update dependency yfinance to v0.2.14 (#161)
 - chore(deps): update prom/prometheus docker tag to v2.43.0 (#160)
   
+
+# 3.4.4
+
+- Push docker image to ghcr aswell
+  
