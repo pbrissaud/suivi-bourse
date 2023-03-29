@@ -256,3 +256,9 @@
 
 - Push docker image to ghcr aswell
   
+
+# 3.4.5
+
+- fix: add permission to push to githuh package
+- fix: releasse workflow trigger
+  
