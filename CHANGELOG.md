@@ -262,3 +262,9 @@
 - fix: add permission to push to githuh package
 - fix: releasse workflow trigger
   
+
+# 3.5.0
+
+- Revert to Ticker.info (#173)
+- chore(deps): bump confuse from 2.0.0 to 2.0.1 in /app (#169)
+  
