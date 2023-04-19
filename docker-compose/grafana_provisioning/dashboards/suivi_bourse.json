@@ -79,7 +79,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -145,7 +145,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -211,7 +211,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -265,6 +265,8 @@
             "mode": "fixed"
           },
           "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
@@ -330,8 +332,9 @@
         "includeAllFields": false,
         "legend": {
           "calcs": [],
-          "displayMode": "hidden",
-          "placement": "bottom"
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
         },
         "mode": "candles"
       },
@@ -437,7 +440,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -507,7 +510,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -576,7 +579,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -646,7 +649,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -724,7 +727,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -793,7 +796,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -862,7 +865,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -940,7 +943,7 @@
         "text": {},
         "textMode": "auto"
       },
-      "pluginVersion": "9.0.7",
+      "pluginVersion": "9.4.7",
       "targets": [
         {
           "datasource": {
@@ -968,8 +971,9 @@
       "type": "stat"
     }
   ],
-  "refresh": false,
-  "schemaVersion": 36,
+  "refresh": "",
+  "revision": 1,
+  "schemaVersion": 38,
   "style": "dark",
   "tags": [],
   "templating": {
@@ -984,7 +988,7 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(sb_share_info{share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
+        "definition": "label_values(sb_share_info{quote_type=~\"$quote_type\", share_exchange=~\"$exchange\"},share_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Share",
@@ -992,7 +996,7 @@
         "name": "share",
         "options": [],
         "query": {
-          "query": "label_values(sb_share_info{share_market=~\"$market\", share_exchange=~\"$exchange\"},share_name)",
+          "query": "label_values(sb_share_info{quote_type=~\"$quote_type\", share_exchange=~\"$exchange\"},share_name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -1018,15 +1022,15 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(sb_share_info, share_market)",
+        "definition": "label_values(sb_share_info, quote_type)",
         "hide": 0,
         "includeAll": true,
-        "label": "Market",
+        "label": "Quote Type",
         "multi": true,
-        "name": "market",
+        "name": "quote_type",
         "options": [],
         "query": {
-          "query": "label_values(sb_share_info, share_market)",
+          "query": "label_values(sb_share_info, quote_type)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -1076,6 +1080,6 @@
   "timezone": "",
   "title": "Stock share monitoring",
   "uid": "O9_AegInk",
-  "version": 13,
+  "version": 3,
   "weekStart": ""
 }
