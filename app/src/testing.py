@@ -3,7 +3,6 @@ import requests
 import sys
 import prometheus_client
 import yaml
-import os
 from cerberus import Validator
 from confuse import Configuration
 from pathlib import Path
