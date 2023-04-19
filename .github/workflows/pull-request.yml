@@ -65,6 +65,15 @@ jobs:
             estate:
               quantity: 2
               received_dividend: 2.85
+          - name: Bitcoin
+            symbol: BTC-USD
+            purchase:
+              quantity: 1
+              fee: 2
+              cost_price: 5000
+            estate:
+              quantity: 1
+              received_dividend: 0
           EOL
           python3 app/src/testing.py
 
