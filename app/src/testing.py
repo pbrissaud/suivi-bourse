@@ -20,8 +20,7 @@ shares_validator = Validator(dataSchema)
 
 try:
     # Start up the server to expose the metrics.
-    prometheus_client.start_http_server(
-        int(os.getenv('SB_METRICS_PORT', default='8081')))
+    prometheus_client.start_http_server(8081)
     # Init SuiviBourseMetrics
     sb_metrics = SuiviBourseMetrics(config, shares_validator)
     # Schedule run the job on startup.
