@@ -14,7 +14,7 @@ services:
     container_name: suivi-bourse-graf
     depends_on:
     - prometheus
-    image: grafana/grafana:9.5.1
+    image: grafana/grafana:9.5.3
     ports:
     - 3000:3000
     restart: unless-stopped
