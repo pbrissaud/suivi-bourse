@@ -268,3 +268,26 @@
 - Revert to Ticker.info (#173)
 - chore(deps): bump confuse from 2.0.0 to 2.0.1 in /app (#169)
   
+
+# 3.5.1
+
+- Create CODE_OF_CONDUCT.md
+- Create SECURITY.md
+- Update SECURITY.md
+- chore(deps): bump actions/setup-python from 4.5.0 to 4.6.0 (#175)
+- chore(deps): update grafana/grafana docker tag to v9.5.1 (#177)
+- fix(deps): update docusaurus monorepo to v2.4.1 (#187)
+- chore(deps): update prom/prometheus docker tag to v2.44.0 (#181)
+- chore(deps): update dependency yfinance to v0.2.20 (#196)
+- chore(deps): update grafana/grafana docker tag to v9.5.3 (#195)
+- chore(deps): bump prometheus-client from 0.16.0 to 0.17.0 in /app (#192)
+- chore(deps): update actions/setup-python action to v4.6.1 (#189)
+- chore(deps): bump tj-actions/changed-files from 35 to 36 (#194)
+- chore(deps): update dependency urllib3 to v2 (#178)
+- Update deps for documentation website
+- chore(deps): bump tj-actions/changed-files from 36 to 37 (#206)
+- chore(deps): bump yfinance from 0.2.20 to 0.2.22 in /app (#205)
+- chore(deps): update prom/prometheus docker tag to v2.45.0 (#203)
+- fix(deps): update react monorepo to v18 (#200)
+- chore(deps): update grafana/grafana docker tag to v9.5.5 (#202)
+  
