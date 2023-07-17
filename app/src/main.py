@@ -19,6 +19,8 @@ app_logger = getLogger(
     "suivi_bourse", level=os.getenv('LOG_LEVEL', default='INFO'))
 scheduler_logger = getLogger(
     "apscheduler.scheduler", level=os.getenv('LOG_LEVEL', default='INFO'))
+yfinance_logger = getLogger(
+    "yfinance", level=os.getenv('LOG_LEVEL', default='INFO'))
 
 
 class InvalidConfigFile(Exception):
