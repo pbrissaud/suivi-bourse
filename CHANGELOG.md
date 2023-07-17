@@ -291,3 +291,12 @@
 - fix(deps): update react monorepo to v18 (#200)
 - chore(deps): update grafana/grafana docker tag to v9.5.5 (#202)
   
+
+# 3.5.2
+
+- update python deps
+- update github actions deps
+- fix(deps): update dependency clsx to v2 (#214)
+- chore(deps): bump semver from 5.7.1 to 5.7.2 in /website (#211)
+- update grafana to v10
+  
