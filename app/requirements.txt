@@ -3,6 +3,6 @@ Cerberus == 1.3.4
 PyYAML == 6.0
 confuse == 2.0.1
 logfmt_logger == 0.1.2
-prometheus_client == 0.17.0
-urllib3 ==2.0.3
-yfinance ==0.2.22
+prometheus_client == 0.17.1
+urllib3 == 2.0.3
+yfinance == 0.2.24
