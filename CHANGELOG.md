@@ -300,3 +300,14 @@
 - chore(deps): bump semver from 5.7.1 to 5.7.2 in /website (#211)
 - update grafana to v10
   
+
+# 3.5.3
+
+- use yfinance logger
+- chore(deps): update dependency pyyaml to v6.0.1 (#220)
+- chore(deps): update dependency yfinance to v0.2.25 (#213)
+- fix: app/requirements.txt to reduce vulnerabilities (#221)
+- fix: app/requirements.txt to reduce vulnerabilities (#222)
+- chore(deps): update dependency urllib3 to v2.0.4 (#223)
+- chore(deps): update dependency yfinance to v0.2.26 (#224)
+  
