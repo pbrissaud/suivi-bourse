@@ -1,4 +1,4 @@
-APScheduler ==3.10.1
+APScheduler ==3.10.4
 Cerberus == 1.3.4
 PyYAML ==6.0.1
 confuse == 2.0.1
