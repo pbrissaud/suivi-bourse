@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: ricardochaves/python-lint@v1.4.0
         with:
@@ -33,11 +33,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: "0"
 
-      - uses: actions/setup-python@v4.7.0
+      - uses: actions/setup-python@v4.7.1
         with:
           python-version: "3.x"
 
@@ -81,10 +81,10 @@ jobs:
     name: "Building doc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Get changed files in the docs folder
         id: changed-files-specific
-        uses: tj-actions/changed-files@v37
+        uses: tj-actions/changed-files@v40
         with:
           files: |
             website/**
