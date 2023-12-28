@@ -4,7 +4,7 @@ PyYAML ==6.0.1
 confuse == 2.0.1
 logfmt_logger == 0.1.2
 prometheus_client == 0.17.1
-urllib3 ==2.0.7
+urllib3 ==2.1.0
 yfinance ==0.2.33
 numpy>=1.22.2 # not directly required, pinned by Snyk to avoid a vulnerability
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability
