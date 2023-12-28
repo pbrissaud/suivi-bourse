@@ -311,3 +311,29 @@
 - chore(deps): update dependency urllib3 to v2.0.4 (#223)
 - chore(deps): update dependency yfinance to v0.2.26 (#224)
   
+
+# 3.6.0
+
+- chore(deps): update grafana/grafana docker tag to v10.0.3 (#228)
+- update actions
+- update libs
+- chore(deps): bump yfinance from 0.2.29 to 0.2.30 in /app (#254)
+- Update docusaurus to v3
+- Update GitHub Actions versions
+- chore(deps): update dependency yfinance to v0.2.32 (#264)
+- chore(deps): update python docker tag to v3.12 (#263)
+- chore(deps): bump actions/deploy-pages from 2 to 4 (#298)
+- chore(deps): bump tj-actions/changed-files from 40 to 41 (#297)
+- Enable automerge
+- chore(deps): update actions/setup-python action to v5 (#288)
+- chore(deps): update dependency urllib3 to v2.0.7 [security] (#261)
+- chore(deps): update dependency yfinance to v0.2.33 (#289)
+- chore(deps): update actions/upload-pages-artifact action to v3 (#295)
+- chore(deps): update prom/prometheus docker tag to v2.48.1 (#227)
+- chore(deps): update grafana/grafana docker tag to v10.2.3 (#238)
+- chore(deps): update dependency urllib3 to v2.1.0 (#301)
+- chore(deps): update dependency prometheus_client to v0.19.0 (#285)
+- ci: use cache pip in Github Actions (#302)
+- chore(deps): upgrade yarn dependencies
+- fix(deps): update dependency prism-react-renderer to v2.3.1 (#293)
+  
