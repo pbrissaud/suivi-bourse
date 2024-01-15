@@ -26,7 +26,7 @@ services:
     - --web.console.libraries=/usr/share/prometheus/console_libraries
     - --web.console.templates=/usr/share/prometheus/consoles
     container_name: suivi-bourse-prom
-    image: prom/prometheus:v2.49.0
+    image: prom/prometheus:v2.49.1
     restart: unless-stopped
     volumes:
     - sb_prometheus_data:/prometheus
