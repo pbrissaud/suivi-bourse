@@ -337,3 +337,10 @@
 - chore(deps): upgrade yarn dependencies
 - fix(deps): update dependency prism-react-renderer to v2.3.1 (#293)
   
+
+# 3.6.1
+
+- fix(deps): update dependency clsx to v2.1.0 (#303)
+- fix(deps): update docusaurus monorepo to v3.1.0 (#305)
+- chore(deps): update dependency yfinance to v0.2.35 (#306)
+  
