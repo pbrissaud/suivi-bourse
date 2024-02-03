@@ -344,3 +344,14 @@
 - fix(deps): update docusaurus monorepo to v3.1.0 (#305)
 - chore(deps): update dependency yfinance to v0.2.35 (#306)
   
+
+# 3.6.2
+
+- chore(deps): update prom/prometheus docker tag to v2.49.0 (#307)
+- chore(deps): update prom/prometheus docker tag to v2.49.1 (#308)
+- chore(deps): update tj-actions/changed-files action to v42 (#309)
+- chore(deps): update dependency yfinance to v0.2.36 (#310)
+- chore(deps): update grafana/grafana docker tag to v10.3.1 (#311)
+- fix(deps): update docusaurus monorepo to v3.1.1 (#312)
+- chore(deps): update dependency urllib3 to v2.2.0 (#313)
+  
