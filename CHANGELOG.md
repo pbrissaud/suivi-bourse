@@ -355,3 +355,11 @@
 - fix(deps): update docusaurus monorepo to v3.1.1 (#312)
 - chore(deps): update dependency urllib3 to v2.2.0 (#313)
   
+
+# 3.6.3
+
+- fix(deps): update dependency @mdx-js/react to v3.0.1 (#314)
+- chore(deps): update grafana/grafana docker tag to v10.3.3 (#315)
+- chore(deps): update dependency prometheus_client to v0.20.0 (#316)
+- chore(deps): update dependency urllib3 to v2.2.1 (#317)
+  
