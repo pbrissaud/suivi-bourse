@@ -363,3 +363,10 @@
 - chore(deps): update dependency prometheus_client to v0.20.0 (#316)
 - chore(deps): update dependency urllib3 to v2.2.1 (#317)
   
+
+# 3.6.4
+
+- Mark website folder as documentation
+- chore(deps): update prom/prometheus docker tag to v2.50.0 (#318)
+- chore(deps): update dependency yfinance to v0.2.37 (#319)
+  
