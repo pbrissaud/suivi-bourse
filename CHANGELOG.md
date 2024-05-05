@@ -370,3 +370,27 @@
 - chore(deps): update prom/prometheus docker tag to v2.50.0 (#318)
 - chore(deps): update dependency yfinance to v0.2.37 (#319)
   
+
+# 3.7.0
+
+- chore(deps): update prom/prometheus docker tag to v2.50.1 (#320)
+- chore(deps): update grafana/grafana docker tag to v10.4.0 (#321)
+- chore(deps): update tj-actions/changed-files action to v43 (#322)
+- chore(deps): update prom/prometheus docker tag to v2.51.0 (#324)
+- chore(deps): update grafana/grafana docker tag to v10.4.1 (#325)
+- chore(deps): update actions/setup-python action to v5.1.0 (#327)
+- chore(deps): update prom/prometheus docker tag to v2.51.1 (#330)
+- fix(deps): update docusaurus monorepo to v3.2.0 (#331)
+- chore(deps): update actions/configure-pages action to v5 (#332)
+- chore(deps): update tj-actions/changed-files action to v44 (#329)
+- fix(deps): update docusaurus monorepo to v3.2.1 (#333)
+- chore(deps): update prom/prometheus docker tag to v2.51.2 (#334)
+- chore(deps): update grafana/grafana docker tag to v10.4.2 (#336)
+- chore(deps): update dependency yfinance to v0.2.38 (#337)
+- fix(deps): update dependency clsx to v2.1.1 (#338)
+- fix(deps): update react monorepo to v18.3.0 (#339)
+- fix(deps): update react monorepo to v18.3.1 (#340)
+- fix(deps): update docusaurus monorepo to v3.3.0 (#341)
+- fix(deps): update docusaurus monorepo to v3.3.2 (#342)
+- Small refacto on data flow and error handling (#335)
+  
