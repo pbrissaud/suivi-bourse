@@ -15,12 +15,10 @@ from confuse import Configuration, exceptions as ConfuseExceptions
 from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 
-app_logger = getLogger(
-    "suivi_bourse", level=os.getenv('LOG_LEVEL', default='INFO'))
-scheduler_logger = getLogger(
-    "apscheduler.scheduler", level=os.getenv('LOG_LEVEL', default='INFO'))
-yfinance_logger = getLogger(
-    "yfinance", level=os.getenv('LOG_LEVEL', default='INFO'))
+LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
+app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
+scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
+yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 
 
 class InvalidConfigFile(Exception):
@@ -32,16 +30,20 @@ class InvalidConfigFile(Exception):
 
 
 class SuiviBourseMetrics:
+    """
+    Class for managing and exposing metrics related to stock shares.
+    """
+
     def __init__(self, configuration_: Configuration, validator_: Validator):
-        try:
-            self.configuration = configuration_
-            self.validator = validator_
-            self.shares = configuration_['shares'].get()
-            self.init_metrics()
-        except Exception as e:
-            raise e
+        self.configuration = configuration_
+        self.validator = validator_
+        self.shares = configuration_['shares'].get()
+        self.init_metrics()
 
     def init_metrics(self):
+        """
+        Initialize the Prometheus metrics for tracking stock share information.
+        """
         common_labels = ['share_name', 'share_symbol']
 
         self.sb_share_price = prometheus_client.Gauge(
@@ -86,10 +88,18 @@ class SuiviBourseMetrics:
             common_labels + ['share_currency', 'share_exchange', 'quote_type']
         )
 
-    def validate(self):
+    def validate(self) -> bool:
+        """
+        Validate the configuration for the stock shares.
+        Returns:
+            bool: True if the configuration is valid, False otherwise.
+        """
         return self.validator.validate({"shares": self.shares})
 
     def expose_metrics(self):
+        """
+        Expose the metrics for each stock share.
+        """
         for share in self.shares:
             label_values = [share['name'], share['symbol']]
 
@@ -116,6 +126,9 @@ class SuiviBourseMetrics:
                     "Error while retrieving data from Yfinance API", exc_info=True)
 
     def reload(self):
+        """
+        Reload the configuration and update the stock shares.
+        """
         try:
             self.configuration.reload()
             self.shares = self.configuration['shares'].get()
@@ -124,6 +137,9 @@ class SuiviBourseMetrics:
             raise e
 
     def run(self):
+        """
+        Run the metrics collection process.
+        """
         self.reload()
 
         if not self.validate():
