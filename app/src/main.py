@@ -33,7 +33,7 @@ class InvalidConfigFile(Exception):
 
 class SuiviBourseMetrics:
     def __init__(self, configuration_: Configuration, validator_: Validator):
-        try: 
+        try:
             self.configuration = configuration_
             self.validator = validator_
             self.shares = configuration_['shares'].get()
@@ -114,9 +114,9 @@ class SuiviBourseMetrics:
             except (u_exceptions.NewConnectionError, RuntimeError):
                 app_logger.error(
                     "Error while retrieving data from Yfinance API", exc_info=True)
-                
+
     def reload(self):
-        try: 
+        try:
             self.configuration.reload()
             self.shares = self.configuration['shares'].get()
 
