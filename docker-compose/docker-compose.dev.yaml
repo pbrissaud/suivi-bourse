@@ -8,6 +8,8 @@ services:
     - LOG_LEVEL=DEBUG
     build: ../app
     restart: unless-stopped
+    ports:
+    - 8081:8081
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
   grafana:
