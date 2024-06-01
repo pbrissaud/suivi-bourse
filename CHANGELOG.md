@@ -394,3 +394,12 @@
 - fix(deps): update docusaurus monorepo to v3.3.2 (#342)
 - Small refacto on data flow and error handling (#335)
   
+
+# 3.7.1
+
+- chore(deps): update prom/prometheus docker tag to v2.52.0 (#343)
+- chore(deps): update grafana/grafana docker tag to v10.4.3 (#344)
+- chore(deps): update dependency yfinance to v0.2.40 (#346)
+- fix(deps): update docusaurus monorepo to v3.4.0 (#347)
+- chore(deps): update to grafana v11 (#345)
+  
