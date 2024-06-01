@@ -8,13 +8,15 @@ services:
     - LOG_LEVEL=DEBUG
     build: ../app
     restart: unless-stopped
+    ports:
+    - 8081:8081
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
     - prometheus
-    image: grafana/grafana:10.4.3
+    image: grafana/grafana:11.0.0
     ports:
     - 3000:3000
     restart: unless-stopped
