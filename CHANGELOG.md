@@ -403,3 +403,11 @@
 - fix(deps): update docusaurus monorepo to v3.4.0 (#347)
 - chore(deps): update to grafana v11 (#345)
   
+
+# 3.7.2
+
+- chore(deps): update dependency urllib3 to v2.2.2 (#349)
+- chore(deps): update prom/prometheus docker tag to v2.53.0 (#350)
+- chore(deps): update docker/build-push-action action to v6 (#348)
+- chore(deps): bump ws from 7.5.9 to 7.5.10 in /website (#351)
+  
