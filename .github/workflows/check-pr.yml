@@ -5,6 +5,9 @@ on:
     branches:
       - master
 
+permissions:
+  pull-requests: write
+
 jobs:
   dco-check:
     name: DCO Check
@@ -15,10 +18,8 @@ jobs:
   validate-pr-title:
     name: PR Title Validation
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
       - name: PR Conventional Commit Validation
         uses: ytanikin/PRConventionalCommits@1.2.0
         with:
-          task_types: '["feat","fix", "feat!", "fix!", "refactor!"]'
+          task_types: '["feat","fix", "feat!", "fix!", "refactor!", "deps", "chore"]'
