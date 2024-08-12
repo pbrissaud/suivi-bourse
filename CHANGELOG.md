@@ -96,7 +96,7 @@
 
 - Add some docs (Fix #33, #39)
 - Use Grafana Candlestick panel (Fix #35)
-- Add a new metric sb_share_info to store some useful informations (Fix #55)
+- Add a new metric sb_share_info to store some useful information (Fix #55)
 - Refactoring
 - Dependencies update
 
