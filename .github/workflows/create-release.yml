@@ -1,34 +1,19 @@
 name: "Create a new release"
 on:
   workflow_dispatch:
-    inputs:
-      bumping:
-        description: Bump type (PATCH/MINOR/MAJOR)
-        default: PATCH
-        required: true
+  schedule:
+    - cron: "0 8 1-7 * 6"
+
+permissions:
+  contents: write
+  pull-requests: write
+  
 jobs:
-  bumping:
+  create-release:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: "${{ secrets.TOKEN }}"
       GITHUB_BRANCH: "master"
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: "0"
-
-      - uses: actions/setup-python@v5.1.1
-        with:
-          python-version: "3.x"
-          cache: "pip"
-
-      - uses: BSFishy/pip-action@v1
-        with:
-          packages: |
-            PyYAML
-            semver
-            PyGithub
-            mdutils
-
-      - id: bump_version
-        run: python3 utils/bumping.py ${{ github.event.inputs.bumping }}
+      - uses: googleapis/release-please-action@v4
+        id: release-please
