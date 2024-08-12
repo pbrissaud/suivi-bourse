@@ -1,4 +1,4 @@
-name: "Pull request lint and test"
+name: "Pull request checks"
 on:
   pull_request:
     branches: [master]
