@@ -17,3 +17,5 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         id: release-please
+        with:
+          release-type: simple
