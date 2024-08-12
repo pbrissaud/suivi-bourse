@@ -9,5 +9,8 @@
       "automerge": true
     }
   ],
-  "assignees": ["pbrissaud"]
+  "assignees": ["pbrissaud"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "deps",
+  "semanticCommitScope": "{{parentDir}}"
 }
