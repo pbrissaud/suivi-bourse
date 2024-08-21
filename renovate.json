@@ -3,6 +3,7 @@
   "extends": [
     "config:base"
   ],
+  "ignorePresets": [":semanticPrefixFixDepsChoreOthers"],
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
