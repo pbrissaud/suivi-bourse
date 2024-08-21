@@ -26,7 +26,7 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release-please
         with:
-          release-type: simple
+          config-file: release-please-config.json
     outputs:
       release_created: ${{ steps.release-please.outputs.release_created }}
       tag_name: ${{ steps.release-please.outputs.tag_name }}
