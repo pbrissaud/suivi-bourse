@@ -27,5 +27,8 @@
       "section": "Miscellaneous",
       "hidden": true
     }
-  ]
+  ],
+  "packages": {
+    ".": {}
+  }
 }
