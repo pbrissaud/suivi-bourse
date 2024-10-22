@@ -29,7 +29,7 @@ services:
     - --web.console.libraries=/usr/share/prometheus/console_libraries
     - --web.console.templates=/usr/share/prometheus/consoles
     container_name: suivi-bourse-prom
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus:v2.55.0
     ports:
     - 9090:9090
     restart: unless-stopped
