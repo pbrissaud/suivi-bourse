@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.8.3](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.2...v3.8.3) (2024-12-11)
+
+
+### Dependencies
+
+* **app:** update dependency apscheduler to v3.11.0 ([#399](https://github.com/pbrissaud/suivi-bourse/issues/399)) ([2613ac7](https://github.com/pbrissaud/suivi-bourse/commit/2613ac74678d467de909891d444e4a2c13b8861d))
+* **app:** update dependency prometheus_client to v0.21.1 ([#401](https://github.com/pbrissaud/suivi-bourse/issues/401)) ([873f08a](https://github.com/pbrissaud/suivi-bourse/commit/873f08a1c887dcff15b9f5a9b8cf6a4eac3aa011))
+* **docker-compose:** update grafana/grafana docker tag to v11.4.0 ([#402](https://github.com/pbrissaud/suivi-bourse/issues/402)) ([a480f78](https://github.com/pbrissaud/suivi-bourse/commit/a480f78f09f9792b76e5c7e685f6e563bc41e136))
+* **website:** update dependency prism-react-renderer to v2.4.1 ([#404](https://github.com/pbrissaud/suivi-bourse/issues/404)) ([0a03ac2](https://github.com/pbrissaud/suivi-bourse/commit/0a03ac2d3c57223f55081fa99b1dab8dd2e53f63))
+* **website:** update react monorepo to v19 ([#403](https://github.com/pbrissaud/suivi-bourse/issues/403)) ([088753e](https://github.com/pbrissaud/suivi-bourse/commit/088753ef83ef133d83046754f3e45be7915b0319))
+
 ## [3.8.2](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.1...v3.8.2) (2024-11-22)
 
 
