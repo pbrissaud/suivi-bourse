@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.8.3](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.2...v3.8.3) (2025-01-03)
+
+
+### Dependencies
+
+* **app:** update dependency apscheduler to v3.11.0 ([#399](https://github.com/pbrissaud/suivi-bourse/issues/399)) ([2613ac7](https://github.com/pbrissaud/suivi-bourse/commit/2613ac74678d467de909891d444e4a2c13b8861d))
+* **app:** update dependency cerberus to v1.3.6 ([#407](https://github.com/pbrissaud/suivi-bourse/issues/407)) ([65735ba](https://github.com/pbrissaud/suivi-bourse/commit/65735ba89f12e09622cd9d79d18ba597c52cea2e))
+* **app:** update dependency cerberus to v1.3.7 ([#408](https://github.com/pbrissaud/suivi-bourse/issues/408)) ([404ea9b](https://github.com/pbrissaud/suivi-bourse/commit/404ea9b1e9814fc4443217b4c3895301cbb2dcc9))
+* **app:** update dependency prometheus_client to v0.21.1 ([#401](https://github.com/pbrissaud/suivi-bourse/issues/401)) ([873f08a](https://github.com/pbrissaud/suivi-bourse/commit/873f08a1c887dcff15b9f5a9b8cf6a4eac3aa011))
+* **app:** update dependency urllib3 to v2.3.0 ([#406](https://github.com/pbrissaud/suivi-bourse/issues/406)) ([14a28eb](https://github.com/pbrissaud/suivi-bourse/commit/14a28eb424654315acaf2554bc92714dfe11c10b))
+* **app:** update dependency yfinance to v0.2.51 ([#405](https://github.com/pbrissaud/suivi-bourse/issues/405)) ([8f210d5](https://github.com/pbrissaud/suivi-bourse/commit/8f210d5dc98c1995badae5d35377c49109278ac0))
+* **docker-compose:** update grafana/grafana docker tag to v11.4.0 ([#402](https://github.com/pbrissaud/suivi-bourse/issues/402)) ([a480f78](https://github.com/pbrissaud/suivi-bourse/commit/a480f78f09f9792b76e5c7e685f6e563bc41e136))
+* **website:** update dependency prism-react-renderer to v2.4.1 ([#404](https://github.com/pbrissaud/suivi-bourse/issues/404)) ([0a03ac2](https://github.com/pbrissaud/suivi-bourse/commit/0a03ac2d3c57223f55081fa99b1dab8dd2e53f63))
+* **website:** update docusaurus monorepo to v3.7.0 ([#409](https://github.com/pbrissaud/suivi-bourse/issues/409)) ([324d571](https://github.com/pbrissaud/suivi-bourse/commit/324d571756bc8548d424df10e32ae0b747609423))
+* **website:** update react monorepo to v19 ([#403](https://github.com/pbrissaud/suivi-bourse/issues/403)) ([088753e](https://github.com/pbrissaud/suivi-bourse/commit/088753ef83ef133d83046754f3e45be7915b0319))
+
 ## [3.8.2](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.1...v3.8.2) (2024-11-22)
 
 
