@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.8.3](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.2...v3.8.3) (2025-02-15)
+
+
+### Dependencies
+
+* **app:** update dependency apscheduler to v3.11.0 ([#399](https://github.com/pbrissaud/suivi-bourse/issues/399)) ([2613ac7](https://github.com/pbrissaud/suivi-bourse/commit/2613ac74678d467de909891d444e4a2c13b8861d))
+* **app:** update dependency cerberus to v1.3.6 ([#407](https://github.com/pbrissaud/suivi-bourse/issues/407)) ([65735ba](https://github.com/pbrissaud/suivi-bourse/commit/65735ba89f12e09622cd9d79d18ba597c52cea2e))
+* **app:** update dependency cerberus to v1.3.7 ([#408](https://github.com/pbrissaud/suivi-bourse/issues/408)) ([404ea9b](https://github.com/pbrissaud/suivi-bourse/commit/404ea9b1e9814fc4443217b4c3895301cbb2dcc9))
+* **app:** update dependency prometheus_client to v0.21.1 ([#401](https://github.com/pbrissaud/suivi-bourse/issues/401)) ([873f08a](https://github.com/pbrissaud/suivi-bourse/commit/873f08a1c887dcff15b9f5a9b8cf6a4eac3aa011))
+* **app:** update dependency urllib3 to v2.3.0 ([#406](https://github.com/pbrissaud/suivi-bourse/issues/406)) ([14a28eb](https://github.com/pbrissaud/suivi-bourse/commit/14a28eb424654315acaf2554bc92714dfe11c10b))
+* **app:** update dependency yfinance to v0.2.51 ([#405](https://github.com/pbrissaud/suivi-bourse/issues/405)) ([8f210d5](https://github.com/pbrissaud/suivi-bourse/commit/8f210d5dc98c1995badae5d35377c49109278ac0))
+* **app:** update dependency yfinance to v0.2.52 ([#410](https://github.com/pbrissaud/suivi-bourse/issues/410)) ([24adc9e](https://github.com/pbrissaud/suivi-bourse/commit/24adc9e976957b69fbdadac7abdb93fdd3357da0))
+* **app:** update dependency yfinance to v0.2.53 ([#414](https://github.com/pbrissaud/suivi-bourse/issues/414)) ([12bd70c](https://github.com/pbrissaud/suivi-bourse/commit/12bd70c418a0f19e6831d6f0112c9973c057303b))
+* **docker-compose:** update grafana/grafana docker tag to v11.4.0 ([#402](https://github.com/pbrissaud/suivi-bourse/issues/402)) ([a480f78](https://github.com/pbrissaud/suivi-bourse/commit/a480f78f09f9792b76e5c7e685f6e563bc41e136))
+* **docker-compose:** update grafana/grafana docker tag to v11.5.0 ([#412](https://github.com/pbrissaud/suivi-bourse/issues/412)) ([7f2b109](https://github.com/pbrissaud/suivi-bourse/commit/7f2b109df436c427c39fe7de72878bb70362c17e))
+* **docker-compose:** update grafana/grafana docker tag to v11.5.1 ([#413](https://github.com/pbrissaud/suivi-bourse/issues/413)) ([3431b39](https://github.com/pbrissaud/suivi-bourse/commit/3431b3995b4b7ca84828218ccf5926456c9a52df))
+* **website:** update dependency prism-react-renderer to v2.4.1 ([#404](https://github.com/pbrissaud/suivi-bourse/issues/404)) ([0a03ac2](https://github.com/pbrissaud/suivi-bourse/commit/0a03ac2d3c57223f55081fa99b1dab8dd2e53f63))
+* **website:** update docusaurus monorepo to v3.7.0 ([#409](https://github.com/pbrissaud/suivi-bourse/issues/409)) ([324d571](https://github.com/pbrissaud/suivi-bourse/commit/324d571756bc8548d424df10e32ae0b747609423))
+* **website:** update react monorepo to v19 ([#403](https://github.com/pbrissaud/suivi-bourse/issues/403)) ([088753e](https://github.com/pbrissaud/suivi-bourse/commit/088753ef83ef133d83046754f3e45be7915b0319))
+* **workflows:** update actions/setup-python action to v5.4.0 ([#411](https://github.com/pbrissaud/suivi-bourse/issues/411)) ([10891f3](https://github.com/pbrissaud/suivi-bourse/commit/10891f3a2ab16455c8da61cd07d72a34bd79b896))
+
 ## [3.8.2](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.1...v3.8.2) (2024-11-22)
 
 
