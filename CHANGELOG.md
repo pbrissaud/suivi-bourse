@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.8.4](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.3...v3.8.4) (2025-03-21)
+
+
+### Dependencies
+
+* **app:** update dependency yfinance to v0.2.54 ([#415](https://github.com/pbrissaud/suivi-bourse/issues/415)) ([1af5d94](https://github.com/pbrissaud/suivi-bourse/commit/1af5d945ec5710c9b7309d00e5925703fe643fd4))
+* **app:** update dependency yfinance to v0.2.55 ([#420](https://github.com/pbrissaud/suivi-bourse/issues/420)) ([ccb52a2](https://github.com/pbrissaud/suivi-bourse/commit/ccb52a2244a3accfb669f811d27ac77ca9ccfe7e))
+* **docker-compose:** update grafana/grafana docker tag to v11.5.2 ([#416](https://github.com/pbrissaud/suivi-bourse/issues/416)) ([81b9f5c](https://github.com/pbrissaud/suivi-bourse/commit/81b9f5c3f036600e135a5e12b012197a6ed527da))
+
 ## [3.8.3](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.2...v3.8.3) (2025-02-15)
 
 
