@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.8.5](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.4...v3.8.5) (2025-05-23)
+
+
+### Dependencies
+
+* **app:** update dependency prometheus_client to v0.22.0 ([#436](https://github.com/pbrissaud/suivi-bourse/issues/436)) ([e33c60c](https://github.com/pbrissaud/suivi-bourse/commit/e33c60c5983eff4d66217fb51617630a9f495c1c))
+* **app:** update dependency yfinance to v0.2.56 ([#427](https://github.com/pbrissaud/suivi-bourse/issues/427)) ([89833a5](https://github.com/pbrissaud/suivi-bourse/commit/89833a58f4d1ee911a594e5ffb787708bd6f1c43))
+* **app:** update dependency yfinance to v0.2.57 ([#430](https://github.com/pbrissaud/suivi-bourse/issues/430)) ([95c7072](https://github.com/pbrissaud/suivi-bourse/commit/95c707265a644b6fcec415faea4c91ac17ee974a))
+* **app:** update dependency yfinance to v0.2.58 ([#431](https://github.com/pbrissaud/suivi-bourse/issues/431)) ([e0c3d6f](https://github.com/pbrissaud/suivi-bourse/commit/e0c3d6f1f244b5a212ff59219b50901556d36ab6))
+* **app:** update dependency yfinance to v0.2.59 ([#433](https://github.com/pbrissaud/suivi-bourse/issues/433)) ([beca342](https://github.com/pbrissaud/suivi-bourse/commit/beca34211bf60d260968a746c8138e203e98d2ae))
+* **app:** update dependency yfinance to v0.2.60 ([#434](https://github.com/pbrissaud/suivi-bourse/issues/434)) ([54a02b0](https://github.com/pbrissaud/suivi-bourse/commit/54a02b0684cfcb123b9b0eba58eb8627689e5168))
+* **app:** update dependency yfinance to v0.2.61 ([#435](https://github.com/pbrissaud/suivi-bourse/issues/435)) ([7b9ba37](https://github.com/pbrissaud/suivi-bourse/commit/7b9ba376334f0505f3b9d2ff6b4ee455ca515f80))
+* **docker-compose:** update grafana/grafana docker tag to v11.6.1 ([#426](https://github.com/pbrissaud/suivi-bourse/issues/426)) ([4c0fae2](https://github.com/pbrissaud/suivi-bourse/commit/4c0fae2a46ee8c13daa488595c9a598981c99ba4))
+* **docker-compose:** update grafana/grafana docker tag to v11.6.2 ([#437](https://github.com/pbrissaud/suivi-bourse/issues/437)) ([8611ab8](https://github.com/pbrissaud/suivi-bourse/commit/8611ab8759899ca0ea8766cd64e6bd227433bb74))
+* **workflows:** update actions/setup-python action to v5.6.0 ([#429](https://github.com/pbrissaud/suivi-bourse/issues/429)) ([ed4a715](https://github.com/pbrissaud/suivi-bourse/commit/ed4a715202f241f1460c7f138415657c084123da))
+
 ## [3.8.4](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.3...v3.8.4) (2025-04-10)
 
 
