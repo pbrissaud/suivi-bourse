@@ -32,7 +32,6 @@ services:
     volumes:
     - sb_prometheus_data:/prometheus
     - ./prometheus_provisioning:/etc/prometheus/
-version: '3.8'
 volumes:
   sb_prometheus_data:
     driver: local
