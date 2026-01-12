@@ -4,6 +4,7 @@ Paul Brissaud
 """
 import os
 import sys
+import time
 from pathlib import Path
 
 import prometheus_client
@@ -14,6 +15,7 @@ from cerberus import Validator
 from confuse import Configuration, exceptions as ConfuseExceptions
 from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
+from yfinance.exceptions import YFRateLimitError
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
@@ -96,11 +98,51 @@ class SuiviBourseMetrics:
         """
         return self.validator.validate({"shares": self.shares})
 
+    def _fetch_ticker_data(self, symbol: str, max_retries: int = 3):
+        """
+        Fetch ticker data from yfinance with retry logic for rate limiting.
+
+        Args:
+            symbol: The stock symbol to fetch
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Tuple of (last_quote, info_dict) or (None, None) if fetch fails
+        """
+        for attempt in range(max_retries):
+            try:
+                ticker = yf.Ticker(symbol)
+                ticker_history = ticker.history()
+                last_quote = ticker_history.tail(1)['Close'].iloc[0]
+                info = {
+                    'currency': ticker.info.get('currency', 'undefined'),
+                    'exchange': ticker.info.get('exchange', 'undefined'),
+                    'quoteType': ticker.info.get('quoteType', 'undefined')
+                }
+                return last_quote, info
+            except YFRateLimitError:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** (attempt + 1)
+                    app_logger.warning(
+                        f"Rate limited for {symbol}, retrying in {wait_time}s "
+                        f"(attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    app_logger.error(
+                        f"Rate limited for {symbol}, max retries exceeded")
+                    return None, None
+            except (u_exceptions.NewConnectionError, RuntimeError):
+                app_logger.error(
+                    "Error while retrieving data from Yfinance API",
+                    exc_info=True)
+                return None, None
+        return None, None
+
     def expose_metrics(self):
         """
         Expose the metrics for each stock share.
         """
-        for share in self.shares:
+        for i, share in enumerate(self.shares):
             label_values = [share['name'], share['symbol']]
 
             self.sb_purchased_quantity.labels(
@@ -114,16 +156,15 @@ class SuiviBourseMetrics:
             self.sb_received_dividend.labels(
                 *label_values).set(share['estate']['received_dividend'])
 
-            try:
-                ticker = yf.Ticker(share['symbol'])
-                ticker_history = ticker.history()
-                last_quote = (ticker_history.tail(1)['Close'].iloc[0])
+            last_quote, info = self._fetch_ticker_data(share['symbol'])
+            if last_quote is not None and info is not None:
                 self.sb_share_price.labels(*label_values).set(last_quote)
-                info_values = label_values + [ticker.info.get('currency', 'undefined'), ticker.info.get('exchange', 'undefined'), ticker.info.get('quoteType', 'undefined')]
+                info_values = label_values + [
+                    info['currency'], info['exchange'], info['quoteType']]
                 self.sb_share_info.labels(*info_values).set(1)
-            except (u_exceptions.NewConnectionError, RuntimeError):
-                app_logger.error(
-                    "Error while retrieving data from Yfinance API", exc_info=True)
+
+            if i < len(self.shares) - 1:
+                time.sleep(1)
 
     def reload(self):
         """
