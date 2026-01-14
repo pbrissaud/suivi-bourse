@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.8.6](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.5...v3.8.6) (2026-01-14)
+
+
+### Dependencies
+
+* **app:** update dependency prometheus_client to v0.24.0 ([#487](https://github.com/pbrissaud/suivi-bourse/issues/487)) ([10ae306](https://github.com/pbrissaud/suivi-bourse/commit/10ae30682fc3ed010febb1d1aad15e877d2c87c9))
+* **app:** update dependency prometheus_client to v0.24.1 ([#489](https://github.com/pbrissaud/suivi-bourse/issues/489)) ([5b9bb47](https://github.com/pbrissaud/suivi-bourse/commit/5b9bb470d6cdbc7cf2747e317c6632c7182fc7f2))
+
 ## [3.8.5](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.4...v3.8.5) (2026-01-12)
 
 
