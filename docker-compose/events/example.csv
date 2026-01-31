@@ -1,0 +1,11 @@
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
+2023-06-01,BUY,AAPL,Apple Inc,5,100.00,1.00,,Very early purchase
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
+2024-02-01,BUY,MSFT,Microsoft,5,380.00,2.50,,Initial purchase
+2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,2.40,Q1 2024 dividend
+2024-03-15,DIVIDEND,MSFT,Microsoft,,,,3.00,Q1 2024 dividend
+2024-06-01,GRANT,AAPL,Apple Inc,1,,,,Bonus share
+2024-06-15,BUY,AAPL,Apple Inc,5,175.00,2.00,,Additional purchase
+2024-09-15,SELL,AAPL,Apple Inc,3,190.00,2.00,,Partial sale
+2024-12-01,DIVIDEND,AAPL,Apple Inc,,,,5.00,Q4 2024 dividend
+2025-01-30,DIVIDEND,MSFT,Microsoft,,,,5.00,New dividend

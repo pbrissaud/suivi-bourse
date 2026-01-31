@@ -1,48 +1,211 @@
 ---
-title: Write a config file
-description: An example on how write the config file
+title: Configuration
+description: Configure your stock portfolio
 sidebar_position: 3
 ---
 
-The app use a config file written in YAML to describe the actual state of your stock portfolio. For each stock in the list, you must report some informations:
-- The name (you can choose a custom name if your want)
-- The Yahoo! finance stock symbol
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+SuiviBourse supports two **mutually exclusive** configuration modes:
+
+| Mode | Source | Best for |
+|------|--------|----------|
+| **Manual** | `config.yaml` | Simple portfolios, static configuration |
+| **Events** | `events/*.csv` or `events/*.xlsx` | Transaction history, multiple brokers, evolving portfolios |
+
+:::info Mode Selection Priority
+1. Environment variable `SB_CONFIG_MODE` (`manual` or `events`)
+2. `settings.yaml` → `mode` field
+3. Default: `manual`
+:::
+
+:::caution
+The two modes are **mutually exclusive**. Switching to events mode ignores `config.yaml` entirely. There is no automatic migration between modes.
+:::
+
+---
+
+## Manual Mode
+
+The traditional way to configure SuiviBourse. You describe the current state of your portfolio in a YAML file.
+
+For each stock, you must provide:
+- The name (you can choose a custom name)
+- The Yahoo! Finance stock symbol
 - The purchased quantity
 - The fees when you bought the share(s)
 - The unit price when you bought the share(s)
-- The number of owned shares (different from the purchased_quantity if you got some frees)
+- The number of owned shares (different from purchased_quantity if you got some free)
 - The dividends you received
 
 :::caution
-The config file has to be named **config.yaml**. To see where it should be located on your filesystem, read the [deployment section](/docs/category/deployment)
+The config file must be named **config.yaml**. See the [deployment section](/docs/category/deployment) for the exact location.
 :::
 
-## Use Case
+### Example
 
-I own some shares, that I want to monitor : 
+I own some shares that I want to monitor:
 * 2 shares of Apple stock (bought one, got the second free)
-* 3 shares of Tesla stocks (bought not in the same time)
-
-Here's the corresponding config file: 
+* 3 shares of Tesla stocks (bought at different times)
 
 ```yaml title="config.yaml"
 shares:
 - name: Apple
-  symbol: AAPL # Yahoo! finance stock symbol
+  symbol: AAPL # Yahoo! Finance stock symbol
   purchase:
     quantity: 1
-    fee: 2 # Fees when I bought the share 
-    cost_price: 119.98  # Value of the share when I bought it 
+    fee: 2 # Fees when I bought the share
+    cost_price: 119.98  # Value of the share when I bought it
   estate:
-    quantity: 2 # Because, I got one free
-    received_dividend: 2.85 # Sum of all received dividend
+    quantity: 2 # Because I got one free
+    received_dividend: 2.85 # Sum of all received dividends
 - name: Tesla
-  symbol: TLSA
+  symbol: TSLA
   purchase:
     quantity: 3
     fee: 5.8 # When buying multiple shares, sum of fees
-    cost_price: 856.87  # When buying multiple shares with different price, weighted average
+    cost_price: 856.87  # When buying multiple shares at different prices, weighted average
   estate:
     quantity: 3
     received_dividend: 4.57
 ```
+
+---
+
+## Events Mode
+
+Instead of manually calculating aggregated values, you can import your transaction history. SuiviBourse will automatically compute:
+- Weighted average cost price
+- Total quantities
+- Accumulated dividends
+- Transaction fees
+
+### Setup
+
+Create a `settings.yaml` file and an `events/` directory:
+
+```
+~/.config/SuiviBourse/
+├── settings.yaml
+└── events/
+    ├── 2023.csv
+    ├── 2024.csv
+    └── broker-export.xlsx
+```
+
+```yaml title="settings.yaml"
+mode: events
+events:
+  source: ~/.config/SuiviBourse/events/
+  watch: true  # Optional: immediate reload on file changes
+```
+
+### CSV Format
+
+```csv title="events/2024.csv"
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
+2024-02-01,BUY,MSFT,Microsoft,5,380.00,2.50,,
+2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
+2024-06-01,GRANT,AAPL,Apple Inc,1,,,,Stock split bonus
+2024-09-15,SELL,AAPL,Apple Inc,3,180.00,2.00,,Partial sale
+```
+
+### Columns
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `date` | Yes | ISO format `YYYY-MM-DD` |
+| `event_type` | Yes | `BUY`, `SELL`, `GRANT`, or `DIVIDEND` |
+| `symbol` | Yes | Yahoo! Finance ticker (e.g., `AAPL`, `MSFT`) |
+| `name` | Yes | Display name for the share |
+| `quantity` | For BUY/SELL/GRANT | Number of shares |
+| `unit_price` | For BUY/SELL | Price per share |
+| `fee` | Optional | Transaction fee |
+| `amount` | For DIVIDEND | Dividend amount received |
+| `notes` | Optional | Free text comment |
+
+### Event Types
+
+| Type | Description | Effect on Portfolio |
+|------|-------------|---------------------|
+| `BUY` | Purchase shares | +quantity, recalculates weighted avg price, +fees |
+| `SELL` | Sell shares | -quantity (estate only), +fees |
+| `GRANT` | Free shares (splits, bonus) | +quantity (estate only, no cost impact) |
+| `DIVIDEND` | Receive dividends | +received_dividend |
+
+### Aggregation Rules
+
+#### BUY - Weighted Average Price
+
+When you buy shares at different prices, SuiviBourse computes the weighted average:
+
+```
+new_cost_price = (old_qty × old_price + new_qty × new_price) / total_qty
+```
+
+**Example:**
+- Buy 10 shares at $150 → cost_price = $150
+- Buy 5 shares at $175 → cost_price = (10×150 + 5×175) / 15 = **$158.33**
+
+#### SELL - Quantity Validation
+
+- Only decreases `estate.quantity` (not `purchase.quantity`)
+- Cannot sell more shares than currently owned
+- Sale fees are added to total fees
+- Sale price is recorded but realized gains are not tracked
+
+#### GRANT - Free Shares
+
+- Only increases `estate.quantity`
+- Does not affect `purchase.quantity` or `cost_price`
+- Use for stock splits, employee grants, bonus shares
+
+---
+
+## Key Behaviors
+
+### Event Ordering
+
+Events are **sorted by date** before processing, regardless of:
+- Their order in the file
+- Which file they're in
+
+You can add past events at any time - they will be processed in the correct chronological order.
+
+### Multi-file Support
+
+All `.csv` and `.xlsx` files in the events directory are loaded and merged. Organize by:
+- Year (`2023.csv`, `2024.csv`)
+- Broker (`degiro.csv`, `interactive-brokers.xlsx`)
+- Account (`pea.csv`, `cto.csv`)
+
+### Caching
+
+Ingestion uses **file modification time (mtime)** to detect changes:
+- If no files changed → cached data is reused (no reprocessing)
+- If any file changed → full reload and re-aggregation
+
+### Error Resilience
+
+If event ingestion fails (invalid data, file error):
+- The **previous valid configuration is kept**
+- Price scraping continues normally
+- Errors are logged for debugging
+
+:::tip
+Fix your event files at your own pace - the app won't crash and will pick up corrections on the next ingestion cycle.
+:::
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval in seconds |
+| `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval in seconds |
+| `SB_METRICS_PORT` | `8081` | HTTP server port |
+| `LOG_LEVEL` | `INFO` | Logging level |
