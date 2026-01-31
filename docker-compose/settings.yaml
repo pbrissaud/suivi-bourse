@@ -1,0 +1,9 @@
+# SuiviBourse configuration mode
+# mode: manual - Use traditional config.yaml (default)
+# mode: events - Use event files from events/ directory
+mode: manual
+
+# Events mode settings (only used when mode: events)
+events:
+  source: ~/.config/SuiviBourse/events/
+  watch: true

@@ -5,11 +5,15 @@ services:
     - prometheus
     environment:
     - SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}
+    - SB_INGESTION_INTERVAL=${INGESTION_INTERVAL:-300}
+    - SB_CONFIG_MODE=${SB_CONFIG_MODE:-manual}
     image: ghcr.io/pbrissaud/suivi-bourse-app:latest
     pull_policy: always
     restart: unless-stopped
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
+    - ./events:/home/appuser/.config/SuiviBourse/events:ro
+    - ./settings.yaml:/home/appuser/.config/SuiviBourse/settings.yaml:ro
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
