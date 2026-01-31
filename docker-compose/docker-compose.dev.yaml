@@ -12,6 +12,12 @@ services:
     - 8081:8081
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
+    develop:
+      watch:
+        - action: rebuild
+          path: ../app/src
+        - action: rebuild
+          path: ../app/requirements.txt
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
@@ -22,6 +28,11 @@ services:
     restart: unless-stopped
     volumes:
     - ./grafana_provisioning:/etc/grafana/provisioning
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./grafana_provisioning
+          target: /etc/grafana/provisioning
   prometheus:
     command:
     - --config.file=/etc/prometheus/prometheus.yml
