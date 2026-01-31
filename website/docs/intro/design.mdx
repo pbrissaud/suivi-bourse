@@ -4,10 +4,31 @@ description: App Design
 sidebar_position: 1
 ---
 
-1. The app reads the configuration file describing all the stock share you own 
+1. The app reads the configuration file describing all the stock share you own
 2. Every 120 seconds (this is the default value, it can be changed with env variable), the app calls Yahoo! Finance API to get the current value of all your owned shares
 3. The app exposes the data in OpenMetrics format
 4. Prometheus scrapes this data and stores it
 5. Grafana reads Prometheus to display the data in a dashboard
 
 ![Diagram](/img/diagram.png)
+
+## Exposed Metrics
+
+The app exposes the following Prometheus metrics:
+
+| Metric | Description | Labels |
+|--------|-------------|--------|
+| `sb_share_price` | Current price of the share | `share_name`, `share_symbol` |
+| `sb_purchased_quantity` | Quantity of purchased shares | `share_name`, `share_symbol` |
+| `sb_purchased_price` | Cost price of purchased shares | `share_name`, `share_symbol` |
+| `sb_purchased_fee` | Transaction fees | `share_name`, `share_symbol` |
+| `sb_owned_quantity` | Currently owned quantity | `share_name`, `share_symbol` |
+| `sb_received_dividend` | Total received dividends | `share_name`, `share_symbol` |
+| `sb_share_info` | Share metadata (value always 1) | `share_name`, `share_symbol`, `share_currency`, `share_exchange`, `quote_type` |
+| `sb_dividend_yield` | Dividend yield (%) | `share_name`, `share_symbol` |
+| `sb_pe_ratio` | Price-to-Earnings ratio | `share_name`, `share_symbol` |
+| `sb_market_cap` | Market capitalization | `share_name`, `share_symbol` |
+
+:::note
+Some metrics (`sb_dividend_yield`, `sb_pe_ratio`, `sb_market_cap`) may not be available for all asset types (e.g., cryptocurrencies).
+:::

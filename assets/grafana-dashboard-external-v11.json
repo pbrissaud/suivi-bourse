@@ -54,7 +54,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -122,7 +122,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -313,12 +313,12 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 12,
+        "h": 16,
         "w": 12,
         "x": 0,
         "y": 5
@@ -494,7 +494,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -565,7 +565,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -637,7 +637,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -717,7 +717,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -858,7 +858,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -938,7 +938,7 @@
               }
             ]
           },
-          "unit": "currencyEUR"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -990,6 +990,189 @@
         }
       ],
       "title": "Total gain / loss",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 17
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "exemplar": true,
+          "expr": "sb_dividend_yield{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Dividend Yield",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 17
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "exemplar": true,
+          "expr": "sb_pe_ratio{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "P/E Ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 17
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "exemplar": true,
+          "expr": "sb_market_cap{share_name=\"$share\"}",
+          "instant": true,
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Market Cap",
       "type": "stat"
     }
   ],

@@ -36,12 +36,16 @@ if r.status_code != 200:
 
 metrics = r.text
 
+# Metrics that may not be available for all asset types (e.g., crypto)
+optional_metrics = {'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap'}
+
 print('metrics:')
 for family in text_string_to_metric_families(metrics):
     for sample in family.samples:
         if sample.name.startswith('sb_') and sample.name != 'sb_share_info':
             print(sample.name + ' => ' + str(sample.value))
-            if sample.value is None:
+            if sample.value is None and sample.name not in optional_metrics:
+                print('Required metric has no value: ' + sample.name)
                 sys.exit(1)
         if sample.name == 'sb_share_info':
             print('\nlabels:')

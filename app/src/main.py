@@ -90,6 +90,24 @@ class SuiviBourseMetrics:
             common_labels + ['share_currency', 'share_exchange', 'quote_type']
         )
 
+        self.sb_dividend_yield = prometheus_client.Gauge(
+            "sb_dividend_yield",
+            "Dividend yield percentage of the share",
+            common_labels
+        )
+
+        self.sb_pe_ratio = prometheus_client.Gauge(
+            "sb_pe_ratio",
+            "Price to earnings ratio of the share",
+            common_labels
+        )
+
+        self.sb_market_cap = prometheus_client.Gauge(
+            "sb_market_cap",
+            "Market capitalization of the share",
+            common_labels
+        )
+
     def validate(self) -> bool:
         """
         Validate the configuration for the stock shares.
@@ -114,10 +132,14 @@ class SuiviBourseMetrics:
                 ticker = yf.Ticker(symbol)
                 ticker_history = ticker.history()
                 last_quote = ticker_history.tail(1)['Close'].iloc[0]
+                ticker_info = ticker.info
                 info = {
-                    'currency': ticker.info.get('currency', 'undefined'),
-                    'exchange': ticker.info.get('exchange', 'undefined'),
-                    'quoteType': ticker.info.get('quoteType', 'undefined')
+                    'currency': ticker_info.get('currency', 'undefined'),
+                    'exchange': ticker_info.get('exchange', 'undefined'),
+                    'quoteType': ticker_info.get('quoteType', 'undefined'),
+                    'dividendYield': ticker_info.get('dividendYield'),
+                    'peRatio': ticker_info.get('trailingPE') or ticker_info.get('forwardPE'),
+                    'marketCap': ticker_info.get('marketCap')
                 }
                 return last_quote, info
             except YFRateLimitError:
@@ -162,6 +184,13 @@ class SuiviBourseMetrics:
                 info_values = label_values + [
                     info['currency'], info['exchange'], info['quoteType']]
                 self.sb_share_info.labels(*info_values).set(1)
+
+                if info['dividendYield'] is not None:
+                    self.sb_dividend_yield.labels(*label_values).set(info['dividendYield'] * 100)
+                if info['peRatio'] is not None:
+                    self.sb_pe_ratio.labels(*label_values).set(info['peRatio'])
+                if info['marketCap'] is not None:
+                    self.sb_market_cap.labels(*label_values).set(info['marketCap'])
 
             if i < len(self.shares) - 1:
                 time.sleep(1)
