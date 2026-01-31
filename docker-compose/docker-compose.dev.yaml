@@ -5,13 +5,17 @@ services:
     - prometheus
     environment:
     - SB_SCRAPING_INTERVAL=60
+    - SB_INGESTION_INTERVAL=30
     - LOG_LEVEL=DEBUG
+    - SB_CONFIG_MODE=${SB_CONFIG_MODE:-manual}
     build: ../app
     restart: unless-stopped
     ports:
     - 8081:8081
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
+    - ./events:/home/appuser/.config/SuiviBourse/events:ro
+    - ./settings.yaml:/home/appuser/.config/SuiviBourse/settings.yaml:ro
     develop:
       watch:
         - action: rebuild
@@ -47,6 +51,20 @@ services:
     volumes:
     - sb_prometheus_data:/prometheus
     - ./prometheus_provisioning:/etc/prometheus/
+  docs:
+    container_name: suivi-bourse-docs
+    build: ../website
+    ports:
+    - 4000:80
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ../website/docs
+        - action: rebuild
+          path: ../website/src
+        - action: rebuild
+          path: ../website/docusaurus.config.js
 volumes:
   sb_prometheus_data:
     driver: local
