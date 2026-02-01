@@ -2,16 +2,21 @@ services:
   app:
     container_name: suivi-bourse-app
     depends_on:
-    - prometheus
+      influxdb:
+        condition: service_healthy
     environment:
     - SB_SCRAPING_INTERVAL=60
     - SB_INGESTION_INTERVAL=30
+    - SB_BACKFILL_INTERVAL=30
+    - SB_BACKFILL_DELAY=5
+    - SB_BACKFILL_CHUNK_DAYS=365
     - LOG_LEVEL=DEBUG
-    - SB_CONFIG_MODE=${SB_CONFIG_MODE:-manual}
+    - SB_CONFIG_MODE=${SB_CONFIG_MODE:-events}
+    - INFLUXDB_HOST=http://influxdb:8181
+    - INFLUXDB_DATABASE=${INFLUXDB_DATABASE:-suivi_bourse}
+    # No token needed - auth disabled in dev
     build: ../app
     restart: unless-stopped
-    ports:
-    - 8081:8081
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
     - ./events:/home/appuser/.config/SuiviBourse/events:ro
@@ -25,7 +30,10 @@ services:
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
-    - prometheus
+      influxdb:
+        condition: service_healthy
+    environment:
+    - GF_SECURITY_ADMIN_PASSWORD=admin
     image: grafana/grafana:12.3.2
     ports:
     - 3000:3000
@@ -37,20 +45,27 @@ services:
         - action: sync+restart
           path: ./grafana_provisioning
           target: /etc/grafana/provisioning
-  prometheus:
-    command:
-    - --config.file=/etc/prometheus/prometheus.yml
-    - --storage.tsdb.path=/prometheus
-    - --web.console.libraries=/usr/share/prometheus/console_libraries
-    - --web.console.templates=/usr/share/prometheus/consoles
-    container_name: suivi-bourse-prom
-    image: prom/prometheus:v3.9.1
+  influxdb:
+    container_name: suivi-bourse-influxdb
+    image: influxdb:3-core
+    entrypoint: ["/bin/bash", "/init.sh"]
+    environment:
+    - INFLUXDB3_NODE_ID=suivi-bourse-dev
+    - INFLUXDB3_DATABASE=${INFLUXDB_DATABASE:-suivi_bourse}
+    - INFLUXDB3_DATA_DIR=/var/lib/influxdb3
+    - INFLUXDB3_WITHOUT_AUTH=true
     ports:
-    - 9090:9090
+    - 8181:8181
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     volumes:
-    - sb_prometheus_data:/prometheus
-    - ./prometheus_provisioning:/etc/prometheus/
+    - sb_influxdb_data:/var/lib/influxdb3
+    - ./influxdb3-init.sh:/init.sh:ro
   docs:
     container_name: suivi-bourse-docs
     build: ../website
@@ -66,5 +81,5 @@ services:
         - action: rebuild
           path: ../website/docusaurus.config.js
 volumes:
-  sb_prometheus_data:
+  sb_influxdb_data:
     driver: local

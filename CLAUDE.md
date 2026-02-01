@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuiviBourse is a Python application that monitors stock shares using yfinance for real-time pricing and exposes metrics via Prometheus for visualization in Grafana.
+SuiviBourse is a Python application that monitors stock shares using yfinance for real-time pricing and stores metrics in InfluxDB 3 Core for visualization in Grafana. It supports historical data backfill for viewing past price evolution.
 
 ## Commands
 
@@ -15,7 +15,8 @@ SuiviBourse is a Python application that monitors stock shares using yfinance fo
 pip install -r app/requirements.txt
 
 # Run the app locally (requires config at ~/.config/SuiviBourse/config.yaml or events/)
-python app/src/main.py
+# Also requires INFLUXDB_TOKEN environment variable
+INFLUXDB_TOKEN=your-token python app/src/main.py
 
 # Lint
 flake8 app/src/ --ignore=E501
@@ -37,7 +38,7 @@ yarn build    # Production build
 
 ```bash
 cd docker-compose
-docker-compose up -d              # Full stack: app + Prometheus + Grafana
+docker-compose up -d              # Full stack: app + InfluxDB + Grafana
 docker-compose -f docker-compose.dev.yaml up -d  # Development mode
 
 # Events mode
@@ -48,11 +49,32 @@ SB_CONFIG_MODE=events docker-compose -f docker-compose.dev.yaml up -d
 
 **Main entry point**: `app/src/main.py`
 
-The application runs two independent scheduled jobs:
+The application runs three independent scheduled jobs:
 - **Scraping**: Fetches stock prices from Yahoo Finance (default: every 120s)
 - **Ingestion**: Reloads portfolio events from files (default: every 300s)
+- **Backfill**: Progressively fills historical price data (default: every 60s)
 
-Exposes Prometheus gauges: `sb_share_price`, `sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`, `sb_owned_quantity`, `sb_received_dividend`, `sb_share_info`, `sb_dividend_yield`, `sb_pe_ratio`, `sb_market_cap`
+Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
+
+### Three Independent Schedules
+```
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│     SCRAPING        │  │     INGESTION       │  │     BACKFILL        │
+│   (every 120s)      │  │   (every 300s)      │  │   (every 60s)       │
+│                     │  │                     │  │                     │
+│ • yfinance.Ticker() │  │ • Load events CSV   │  │ • Check gaps        │
+│ • Current prices    │  │ • Recalculate state │  │ • yfinance.history()│
+│ • Write InfluxDB    │  │ • Update shares[]   │  │ • Chunk 1 year/req  │
+│                     │  │                     │  │ • Rate limit 10s    │
+└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
+         │                        │                        │
+         └────────────────────────┼────────────────────────┘
+                                  ▼
+                           ┌─────────────┐
+                           │  InfluxDB 3 │
+                           │  (database) │
+                           └─────────────┘
+```
 
 ## Configuration
 
@@ -179,32 +201,20 @@ Ingestion uses **file modification time (mtime)** to detect changes. If no files
 #### Error Resilience
 If ingestion fails (invalid event, file error), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application.
 
-#### Two Independent Schedules
-```
-┌─────────────────────┐     ┌─────────────────────┐
-│     INGESTION       │     │      SCRAPING       │
-│  (every 300s)       │     │   (every 120s)      │
-│                     │     │                     │
-│  • Load events      │     │  • Fetch prices     │
-│  • Check cache      │     │  • Update metrics   │
-│  • Validate         │     │                     │
-│  • Aggregate        │     │                     │
-└─────────────────────┘     └─────────────────────┘
-         │                           │
-         └───── Independent ─────────┘
-```
-
-An ingestion error **never blocks** price scraping.
-
 ---
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SB_METRICS_PORT` | `8081` | HTTP server port for Prometheus metrics |
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
+| `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
+| `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
+| `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
@@ -215,6 +225,7 @@ An ingestion error **never blocks** price scraping.
 ```
 app/src/
 ├── main.py                 # Entry point, ConfigurationManager, SuiviBourseMetrics
+├── influxdb_writer.py      # InfluxDB 3 client wrapper (SQL queries)
 ├── schema.yaml             # Cerberus validation schema
 └── events/                 # Events module
     ├── __init__.py
@@ -224,6 +235,28 @@ app/src/
     ├── aggregator.py       # Aggregation logic
     └── watcher.py          # File watcher (watchdog)
 ```
+
+## InfluxDB Data Model
+
+**Measurement**: `portfolio_metrics`
+
+| Type | Name | Description |
+|------|------|-------------|
+| Tag | `share_name` | Display name |
+| Tag | `share_symbol` | Yahoo Finance ticker |
+| Tag | `share_currency` | Currency (USD, EUR, etc.) |
+| Tag | `share_exchange` | Exchange (NMS, PAR, etc.) |
+| Tag | `quote_type` | Type (EQUITY, ETF, etc.) |
+| Field | `share_price` | Current/historical price |
+| Field | `purchased_quantity` | Quantity bought |
+| Field | `purchased_price` | Weighted average cost |
+| Field | `purchased_fee` | Total fees |
+| Field | `owned_quantity` | Currently owned |
+| Field | `received_dividend` | Total dividends |
+| Field | `dividend_yield` | Yield percentage |
+| Field | `pe_ratio` | P/E ratio |
+| Field | `market_cap` | Market capitalization |
+| Field | `volume` | Trading volume |
 
 ## Contributing
 
