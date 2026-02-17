@@ -5,7 +5,7 @@ confuse ==2.2.0
 logfmt_logger == 0.1.2
 prometheus_client ==0.24.1
 urllib3 ==2.6.3
-yfinance ==1.1.0
+yfinance ==1.2.0
 openpyxl >=3.1.0
 watchdog >=3.0.0
 numpy>=1.22.2 # not directly required, pinned by Snyk to avoid a vulnerability
