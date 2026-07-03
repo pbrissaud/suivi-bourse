@@ -11,18 +11,19 @@ SuiviBourse is a Python application that monitors stock shares using yfinance fo
 ### Python App (in `app/` directory)
 
 ```bash
-# Install dependencies
-pip install -r app/requirements.txt
+# Dependencies are managed with uv (app/pyproject.toml + app/uv.lock).
+# Install runtime + dev deps into a uv-managed .venv:
+cd app && uv sync
 
 # Run the app locally (requires config at ~/.config/SuiviBourse/config.yaml or events/)
 # Also requires INFLUXDB_TOKEN environment variable
-INFLUXDB_TOKEN=your-token python app/src/main.py
+cd app && INFLUXDB_TOKEN=your-token uv run python src/main.py
 
 # Lint
-flake8 app/src/ --ignore=E501
+cd app && uv run flake8 src/ --ignore=E501
 
-# Run E2E tests (fetches real stock data, requires config file)
-python app/src/testing.py
+# Run tests (unit + E2E, all network-mocked; no config or network required)
+cd app && uv run pytest tests/            # add --cov=src for coverage
 ```
 
 ### Documentation Website (in `website/` directory)

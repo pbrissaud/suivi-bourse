@@ -26,7 +26,9 @@ services:
         - action: rebuild
           path: ../app/src
         - action: rebuild
-          path: ../app/requirements.txt
+          path: ../app/pyproject.toml
+        - action: rebuild
+          path: ../app/uv.lock
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
