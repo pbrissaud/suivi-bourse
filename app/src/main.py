@@ -5,10 +5,11 @@ Paul Brissaud
 import os
 import sys
 import time
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 
+import pandas as pd
 import yaml
 import yfinance as yf
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -295,6 +296,10 @@ class SuiviBourseMetrics:
         # Cache for share info (to avoid repeated API calls during backfill)
         self._share_info_cache: Dict[str, Dict] = {}
 
+        # Track symbols whose backfill has reached the first BUY date, keyed by
+        # that date so an earlier newly-added event re-triggers backfill.
+        self._backfill_complete: Dict[str, datetime] = {}
+
     def validate(self) -> bool:
         """
         Validate the configuration for the stock shares.
@@ -318,6 +323,9 @@ class SuiviBourseMetrics:
             try:
                 ticker = yf.Ticker(symbol)
                 ticker_history = ticker.history()
+                if ticker_history.empty:
+                    app_logger.warning(f"No price history returned for {symbol}")
+                    return None, None
                 last_row = ticker_history.tail(1)
                 last_quote = last_row['Close'].iloc[0]
                 # Get hourly volume instead of daily volume
@@ -334,7 +342,7 @@ class SuiviBourseMetrics:
                     'dividendYield': ticker_info.get('dividendYield'),
                     'peRatio': ticker_info.get('trailingPE') or ticker_info.get('forwardPE'),
                     'marketCap': ticker_info.get('marketCap'),
-                    'volume': int(last_volume) if last_volume is not None else None
+                    'volume': int(last_volume) if pd.notna(last_volume) else None
                 }
                 # Cache the info for backfill use
                 self._share_info_cache[symbol] = info
@@ -395,7 +403,7 @@ class SuiviBourseMetrics:
                         'price_open': row['Open'],
                         'price_high': row['High'],
                         'price_low': row['Low'],
-                        'volume': int(row['Volume']) if 'Volume' in row and row['Volume'] is not None else None
+                        'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
                     })
 
                 return prices
@@ -427,24 +435,36 @@ class SuiviBourseMetrics:
 
             last_quote, info = self._fetch_ticker_data(share_symbol)
 
-            # Write metrics to InfluxDB
-            self.influxdb.write_metrics(
-                share_name=share_name,
-                share_symbol=share_symbol,
-                share_price=last_quote,
-                purchased_quantity=share['purchase']['quantity'],
-                purchased_price=share['purchase']['cost_price'],
-                purchased_fee=share['purchase']['fee'],
-                owned_quantity=share['estate']['quantity'],
-                received_dividend=share['estate']['received_dividend'],
-                share_currency=info['currency'] if info else None,
-                share_exchange=info['exchange'] if info else None,
-                quote_type=info['quoteType'] if info else None,
-                dividend_yield=info['dividendYield'] * 100 if info and info['dividendYield'] else None,
-                pe_ratio=info['peRatio'] if info else None,
-                market_cap=info['marketCap'] if info else None,
-                volume=info['volume'] if info else None
-            )
+            # Skip writing when the fetch failed: writing portfolio fields with
+            # missing currency/exchange/quote_type tags would land them in a
+            # different InfluxDB series than the enriched (tagged) points.
+            if last_quote is None or info is None:
+                app_logger.warning(
+                    f"No data fetched for {share_symbol}, skipping metrics write")
+            else:
+                # Guard the write so a transient InfluxDB error on one share does
+                # not abort the whole scrape cycle and drop the remaining shares.
+                try:
+                    self.influxdb.write_metrics(
+                        share_name=share_name,
+                        share_symbol=share_symbol,
+                        share_price=last_quote,
+                        purchased_quantity=share['purchase']['quantity'],
+                        purchased_price=share['purchase']['cost_price'],
+                        purchased_fee=share['purchase']['fee'],
+                        owned_quantity=share['estate']['quantity'],
+                        received_dividend=share['estate']['received_dividend'],
+                        share_currency=info['currency'],
+                        share_exchange=info['exchange'],
+                        quote_type=info['quoteType'],
+                        dividend_yield=info['dividendYield'] * 100 if info['dividendYield'] is not None else None,
+                        pe_ratio=info['peRatio'],
+                        market_cap=info['marketCap'],
+                        volume=info['volume']
+                    )
+                except Exception as e:
+                    app_logger.error(
+                        f"Failed to write metrics for {share_symbol}: {e}")
 
             if i < len(self.shares) - 1:
                 time.sleep(1)
@@ -514,6 +534,25 @@ class SuiviBourseMetrics:
                 # It's a date object, convert to datetime
                 first_buy_date = datetime.combine(first_buy_date, datetime.min.time(), tzinfo=timezone.utc)
 
+            # Skip symbols already backfilled up to their first BUY date to avoid
+            # refetching the same window every cycle (e.g. a first BUY on a
+            # non-trading day never lets oldest reach it exactly).
+            if self._backfill_complete.get(symbol) == first_buy_date:
+                app_logger.debug(f"Backfill already complete for {symbol}")
+                continue
+
+            # Ensure share info (tags) is available so historical points share the
+            # same series identity as live scrape points. Fetch it if the scrape
+            # job has not populated the cache yet; defer backfill if unavailable.
+            info = self._share_info_cache.get(symbol)
+            if not info:
+                self._fetch_ticker_data(symbol)
+                info = self._share_info_cache.get(symbol)
+            if not info:
+                app_logger.warning(
+                    f"No share info available for {symbol}, deferring backfill")
+                continue
+
             # Get the oldest data point in InfluxDB
             oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol)
 
@@ -525,6 +564,7 @@ class SuiviBourseMetrics:
                     app_logger.debug(
                         f"Backfill complete for {symbol}: "
                         f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
+                    self._backfill_complete[symbol] = first_buy_date
                     continue
 
                 # Need to fetch data before oldest_timestamp
@@ -559,36 +599,45 @@ class SuiviBourseMetrics:
                 app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
                 continue
 
-            if prices:
-                # Enrich price data with portfolio state at each date
-                events = self.config_manager.get_events()
-                if events:
-                    aggregator = EventAggregator()
-                    for price_point in prices:
-                        ts = price_point['timestamp']
-                        # Convert datetime to date for aggregation
-                        point_date = ts.date() if isinstance(ts, datetime) else ts
-                        state = aggregator.aggregate_until_date(events, point_date, symbol)
-                        if state:
-                            price_point['purchased_quantity'] = state['purchase']['quantity']
-                            price_point['purchased_price'] = state['purchase']['cost_price']
-                            price_point['purchased_fee'] = state['purchase']['fee']
-                            price_point['owned_quantity'] = state['estate']['quantity']
-                            price_point['received_dividend'] = state['estate']['received_dividend']
+            if not prices:
+                # Empty window: the fetch succeeded but returned no rows. If we
+                # have already reached the first BUY date there is no earlier
+                # trading data (e.g. the first BUY fell on a weekend/holiday), so
+                # mark the symbol complete to avoid refetching this window forever.
+                if start_date <= first_buy_date:
+                    app_logger.debug(
+                        f"Backfill complete for {symbol}: reached first BUY date "
+                        f"with no earlier trading data")
+                    self._backfill_complete[symbol] = first_buy_date
+                time.sleep(self.backfill_delay)
+                continue
 
-                # Get cached share info for tags
-                info = self._share_info_cache.get(symbol, {})
+            # Enrich price data with portfolio state at each date
+            events = self.config_manager.get_events()
+            if events:
+                aggregator = EventAggregator()
+                for price_point in prices:
+                    ts = price_point['timestamp']
+                    # Convert datetime to date for aggregation
+                    point_date = ts.date() if isinstance(ts, datetime) else ts
+                    state = aggregator.aggregate_until_date(events, point_date, symbol)
+                    if state:
+                        price_point['purchased_quantity'] = state['purchase']['quantity']
+                        price_point['purchased_price'] = state['purchase']['cost_price']
+                        price_point['purchased_fee'] = state['purchase']['fee']
+                        price_point['owned_quantity'] = state['estate']['quantity']
+                        price_point['received_dividend'] = state['estate']['received_dividend']
 
-                # Write to InfluxDB
-                written = self.influxdb.write_historical_prices(
-                    share_name=name,
-                    share_symbol=symbol,
-                    prices=prices,
-                    share_currency=info.get('currency'),
-                    share_exchange=info.get('exchange'),
-                    quote_type=info.get('quoteType')
-                )
-                backfilled_count += written
+            # Write to InfluxDB using the share info resolved earlier in the loop
+            written = self.influxdb.write_historical_prices(
+                share_name=name,
+                share_symbol=symbol,
+                prices=prices,
+                share_currency=info.get('currency'),
+                share_exchange=info.get('exchange'),
+                quote_type=info.get('quoteType')
+            )
+            backfilled_count += written
 
             # Rate limit between symbols
             time.sleep(self.backfill_delay)

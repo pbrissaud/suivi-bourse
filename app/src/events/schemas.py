@@ -3,7 +3,7 @@ Data schemas for the events module.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date  # noqa: F401 — used in the `date: date` field annotation (eager-evaluated on Python <3.14)
 from enum import Enum
 from typing import Optional
 

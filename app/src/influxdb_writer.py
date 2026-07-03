@@ -245,11 +245,13 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
+        # Escape single quotes to keep share_symbol a safe SQL string literal
+        safe_symbol = share_symbol.replace("'", "''")
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
         FROM "{self.MEASUREMENT}"
-        WHERE share_symbol = '{share_symbol}'
+        WHERE share_symbol = '{safe_symbol}'
         ORDER BY time ASC
         LIMIT 1
         """
@@ -286,11 +288,13 @@ class InfluxDBWriter:
         start = date.replace(hour=0, minute=0, second=0, microsecond=0)
         stop = date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
+        # Escape single quotes to keep share_symbol a safe SQL string literal
+        safe_symbol = share_symbol.replace("'", "''")
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT COUNT(*) as count
         FROM "{self.MEASUREMENT}"
-        WHERE share_symbol = '{share_symbol}'
+        WHERE share_symbol = '{safe_symbol}'
           AND time >= '{start.isoformat()}Z'
           AND time <= '{stop.isoformat()}Z'
         """

@@ -2,7 +2,7 @@
 Event aggregator for computing portfolio state from events.
 """
 
-from datetime import date, datetime
+from datetime import date
 from typing import Dict, List, Optional
 
 from .schemas import Event, EventType, ShareState, PurchaseState, EstateState
