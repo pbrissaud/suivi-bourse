@@ -217,6 +217,8 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
+| `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ---
@@ -227,6 +229,7 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 app/src/
 ├── main.py                 # Entry point, ConfigurationManager, SuiviBourseMetrics
 ├── influxdb_writer.py      # InfluxDB 3 client wrapper (SQL queries)
+├── prometheus_exporter.py  # Legacy Prometheus /metrics exporter (sb_* gauges)
 ├── schema.yaml             # Cerberus validation schema
 └── events/                 # Events module
     ├── __init__.py
@@ -236,6 +239,19 @@ app/src/
     ├── aggregator.py       # Aggregation logic
     └── watcher.py          # File watcher (watchdog)
 ```
+
+## Prometheus Metrics (legacy)
+
+For backward compatibility with pre-InfluxDB deployments, the app also exposes a
+Prometheus `/metrics` endpoint (enabled by default, `SB_METRICS_PORT`=8081). It
+runs in parallel with the InfluxDB writer and reflects only the current snapshot
+per share (no historical backfill). Disable it with `SB_PROMETHEUS_ENABLED=false`.
+
+Gauges (prefix `sb_`, labels `share_name`/`share_symbol`): `sb_share_price`,
+`sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`,
+`sb_owned_quantity`, `sb_received_dividend`, `sb_dividend_yield`, `sb_pe_ratio`,
+`sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
+`share_currency`/`share_exchange`/`quote_type`).
 
 ## InfluxDB Data Model
 

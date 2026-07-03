@@ -11,6 +11,7 @@ dependencies = [
     "confuse==2.2.0",
     "logfmt-logger==0.1.2",
     "influxdb3-python>=0.17.0",
+    "prometheus-client>=0.24.0",  # legacy /metrics endpoint (backward compatibility)
     "urllib3==2.6.3",
     "yfinance==1.1.0",
     "pandas>=2.0.0",       # NaN-safe volume handling in main.py (also required by yfinance)

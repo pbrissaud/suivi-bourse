@@ -25,6 +25,7 @@ from events.validator import EventValidationError
 from events.aggregator import AggregationError
 from events.schemas import EventType
 from influxdb_writer import InfluxDBWriter
+from prometheus_exporter import PrometheusExporter
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
@@ -279,7 +280,8 @@ class SuiviBourseMetrics:
 
     def __init__(self, config_manager: ConfigurationManager, validator_: Validator,
                  configuration_: Optional[Configuration] = None,
-                 influxdb_writer: Optional[InfluxDBWriter] = None):
+                 influxdb_writer: Optional[InfluxDBWriter] = None,
+                 prometheus_exporter: Optional[PrometheusExporter] = None):
         self.config_manager = config_manager
         self.configuration = configuration_  # For backward compatibility
         self.validator = validator_
@@ -288,6 +290,13 @@ class SuiviBourseMetrics:
         # InfluxDB writer
         self.influxdb = influxdb_writer or InfluxDBWriter()
         self.influxdb.connect()
+
+        # Prometheus exporter (legacy /metrics endpoint, on by default for
+        # backward compatibility). The HTTP server is started separately.
+        self.prometheus = prometheus_exporter
+        if self.prometheus is None and \
+                os.getenv('SB_PROMETHEUS_ENABLED', 'true').lower() == 'true':
+            self.prometheus = PrometheusExporter()
 
         # Backfill configuration
         self.backfill_delay = int(os.getenv('SB_BACKFILL_DELAY', '10'))
@@ -434,6 +443,15 @@ class SuiviBourseMetrics:
             share_symbol = share['symbol']
 
             last_quote, info = self._fetch_ticker_data(share_symbol)
+
+            # Update the legacy Prometheus gauges independently of the InfluxDB
+            # write so the /metrics endpoint stays populated even if InfluxDB errors.
+            if self.prometheus is not None:
+                try:
+                    self.prometheus.update_share(share, last_quote, info)
+                except Exception as e:
+                    app_logger.error(
+                        f"Failed to update Prometheus metrics for {share_symbol}: {e}")
 
             # Skip writing when the fetch failed: writing portfolio fields with
             # missing currency/exchange/quote_type tags would land them in a
@@ -702,6 +720,12 @@ if __name__ == "__main__":
     try:
         # Init SuiviBourseMetrics (connects to InfluxDB)
         sb_metrics = SuiviBourseMetrics(config_manager, shares_validator)
+        # Expose the legacy Prometheus /metrics endpoint if enabled (default on)
+        if sb_metrics.prometheus is not None:
+            metrics_port = int(os.getenv('SB_METRICS_PORT', default='8081'))
+            sb_metrics.prometheus.start(metrics_port)
+            app_logger.info(
+                f"Prometheus metrics available on :{metrics_port}/metrics")
         # Start file watcher for hot-reload if in events mode
         config_manager.start_watcher(sb_metrics.ingest)
         # Run initial ingestion and scrape on startup

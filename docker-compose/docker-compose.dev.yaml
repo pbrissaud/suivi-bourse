@@ -17,6 +17,8 @@ services:
     # No token needed - auth disabled in dev
     build: ../app
     restart: unless-stopped
+    ports:
+    - 8081:8081  # Prometheus /metrics (legacy)
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
     - ./events:/home/appuser/.config/SuiviBourse/events:ro
