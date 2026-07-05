@@ -1,112 +1,90 @@
 ---
 title: Design
-description: Application architecture
+description: How SuiviBourse works under the hood
 sidebar_position: 1
 ---
 
-## How It Works
+## How it works
 
-1. The app loads your portfolio configuration (from `config.yaml` or event files)
-2. Two independent scheduled jobs run in parallel:
-   - **Scraping**: Fetches current stock prices from Yahoo! Finance
-   - **Ingestion**: Reloads portfolio configuration (with caching)
-3. The app exposes data in OpenMetrics format
-4. Prometheus scrapes this data and stores it
-5. Grafana reads Prometheus to display the data in a dashboard
-
-![Diagram](/img/diagram.png)
-
----
+1. SuiviBourse loads your portfolio from either a `config.yaml` file
+   (**manual mode**) or from CSV/XLSX transaction files (**events mode**).
+2. Three independent scheduled jobs run in parallel:
+   - **Scraping** — fetches current prices from Yahoo! Finance.
+   - **Ingestion** — reloads and re-aggregates your portfolio configuration.
+   - **Backfill** — progressively fills in historical prices (events mode only).
+3. Every data point is written to **InfluxDB 3 Core** in the
+   `portfolio_metrics` measurement.
+4. **Grafana** reads InfluxDB (SQL datasource) to display your portfolio in a
+   ready-made dashboard.
+5. A **legacy Prometheus `/metrics` endpoint** is also exposed for backward
+   compatibility with pre-v4 deployments.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         SuiviBourse                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────────────────┐     ┌─────────────────────┐          │
-│   │     INGESTION       │     │      SCRAPING       │          │
-│   │   (every 300s)      │     │    (every 120s)     │          │
-│   │                     │     │                     │          │
-│   │  • Load config or   │     │  • Fetch prices     │          │
-│   │    event files      │     │    from Yahoo!      │          │
-│   │  • Validate         │     │  • Update metrics   │          │
-│   │  • Aggregate        │     │                     │          │
-│   │  • Cache (mtime)    │     │                     │          │
-│   └──────────┬──────────┘     └──────────┬──────────┘          │
-│              │                           │                      │
-│              └───────────┬───────────────┘                      │
-│                          ▼                                      │
-│              ┌─────────────────────┐                           │
-│              │  Prometheus Metrics │ ◄─── :8081/metrics        │
-│              └─────────────────────┘                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   Prometheus    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │     Grafana     │
-                    └─────────────────┘
+                             SuiviBourse (app)
+┌──────────────────────┬──────────────────────┬──────────────────────┐
+│      SCRAPING        │      INGESTION       │      BACKFILL        │
+│    (every 120s)      │    (every 300s)      │    (every 60s)       │
+│                      │                      │  events mode only    │
+│ • yfinance.Ticker()  │ • Load config or     │ • Find first BUY     │
+│ • Current price,     │   event files        │ • Check oldest point │
+│   volume, P/E, …     │ • Validate           │   in InfluxDB        │
+│ • Write InfluxDB     │ • Aggregate          │ • Fetch 1 chunk of   │
+│ • Update legacy      │ • Cache (by mtime)   │   history (≈1 year)  │
+│   Prometheus gauges  │ • Update shares[]    │ • Enrich + write     │
+└──────────┬───────────┴──────────┬───────────┴──────────┬───────────┘
+           │                      │                       │
+           └──────────────────────┼───────────────────────┘
+                                  ▼
+                        ┌───────────────────┐        ┌──────────────────┐
+                        │  InfluxDB 3 Core  │◄──────►│     Grafana      │
+                        │ portfolio_metrics │  SQL   │    dashboard     │
+                        └───────────────────┘        └──────────────────┘
+                                  ▲
+                                  │ (legacy, snapshot only)
+                        ┌───────────────────┐
+                        │ Prometheus /metrics│  :8081
+                        └───────────────────┘
 ```
 
-### Two Independent Schedules
+## Three independent schedules
 
-The application runs two separate scheduled jobs that operate independently:
+The application runs three separate scheduled jobs that operate independently.
+Because they are decoupled, an error in one never blocks the others.
 
-| Job | Default Interval | Purpose | Error Impact |
-|-----|------------------|---------|--------------|
-| **Scraping** | 120 seconds | Fetch stock prices from Yahoo! Finance | Retries with exponential backoff |
-| **Ingestion** | 300 seconds | Reload portfolio configuration | Keeps previous valid config |
+| Job | Default interval | Env variable | Purpose | Error handling |
+|-----|------------------|--------------|---------|----------------|
+| **Scraping** | 120 s | `SB_SCRAPING_INTERVAL` | Fetch live prices from Yahoo! Finance | Retries with exponential backoff on rate limits |
+| **Ingestion** | 300 s | `SB_INGESTION_INTERVAL` | Reload & re-aggregate the portfolio | Keeps the previous valid configuration |
+| **Backfill** | 60 s | `SB_BACKFILL_INTERVAL` | Fill historical price data (events mode) | Retries the same chunk on the next cycle |
 
-:::tip Why separate schedules?
-- **Ingestion errors don't block scraping**: If your event files have an error, price updates continue with the last valid configuration
-- **Different update frequencies**: Stock prices change constantly, but your portfolio changes rarely
-- **Efficient caching**: Ingestion only reprocesses when files actually change (based on modification time)
+:::tip Why three separate schedules?
+- **Isolation** — if your event files contain an error, price scraping keeps
+  running with the last valid configuration.
+- **Different frequencies** — stock prices change constantly, your portfolio
+  rarely does, and backfill only needs to nibble away at history over time.
+- **Efficient caching** — ingestion only reprocesses when files actually change
+  (based on their modification time).
 :::
 
----
+## Storage & visualization
 
-## Exposed Metrics
+- **InfluxDB 3 Core** is the primary datastore. All live and historical points
+  land in a single measurement, `portfolio_metrics`. See the
+  [InfluxDB data model](/docs/advanced/influxdb) for the full tag/field schema.
+- **Grafana** connects to InfluxDB through its SQL query mode and ships with a
+  provisioned dashboard in the Docker Compose stack.
+- The **legacy Prometheus endpoint** (`:8081/metrics`) still exposes the
+  `sb_*` gauges for the current snapshot of each share. See
+  [Legacy Prometheus endpoint](/docs/advanced/prometheus-legacy).
 
-The app exposes the following Prometheus metrics on `:8081/metrics`:
+## Configuration modes
 
-### Portfolio Metrics
+SuiviBourse supports two **mutually exclusive** configuration modes. See the
+[Configuration](/docs/category/configuration) section for details.
 
-| Metric | Description | Labels |
-|--------|-------------|--------|
-| `sb_purchased_quantity` | Quantity of purchased shares | `share_name`, `share_symbol` |
-| `sb_purchased_price` | Cost price of purchased shares (weighted avg) | `share_name`, `share_symbol` |
-| `sb_purchased_fee` | Total transaction fees | `share_name`, `share_symbol` |
-| `sb_owned_quantity` | Currently owned quantity | `share_name`, `share_symbol` |
-| `sb_received_dividend` | Total received dividends | `share_name`, `share_symbol` |
-
-### Market Data Metrics
-
-| Metric | Description | Labels |
-|--------|-------------|--------|
-| `sb_share_price` | Current market price | `share_name`, `share_symbol` |
-| `sb_share_info` | Share metadata (value always 1) | `share_name`, `share_symbol`, `share_currency`, `share_exchange`, `quote_type` |
-| `sb_dividend_yield` | Dividend yield (%) | `share_name`, `share_symbol` |
-| `sb_pe_ratio` | Price-to-Earnings ratio | `share_name`, `share_symbol` |
-| `sb_market_cap` | Market capitalization | `share_name`, `share_symbol` |
-
-:::note
-Some metrics (`sb_dividend_yield`, `sb_pe_ratio`, `sb_market_cap`) may not be available for all asset types (e.g., ETFs, cryptocurrencies).
-:::
-
----
-
-## Configuration Modes
-
-SuiviBourse supports two configuration modes. See the [Configuration](/docs/intro/config) page for details.
-
-| Mode | Source | Use Case |
+| Mode | Source | Use case |
 |------|--------|----------|
 | **Manual** | `config.yaml` | Simple, static portfolio |
-| **Events** | `events/*.csv`, `*.xlsx` | Transaction history, automatic aggregation |
+| **Events** | `events/*.csv`, `*.xlsx` | Transaction history, automatic aggregation, historical backfill |

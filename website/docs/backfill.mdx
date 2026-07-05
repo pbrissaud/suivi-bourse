@@ -1,0 +1,75 @@
+---
+title: Historical backfill
+description: Reconstruct the full history of your portfolio in InfluxDB
+sidebar_position: 4
+---
+
+Live scraping only records prices from the moment you start the app. **Backfill**
+fills in the past: it fetches historical prices from Yahoo! Finance all the way
+back to your first purchase and writes them to InfluxDB, so Grafana can show the
+full evolution of your portfolio — not just the period since you deployed it.
+
+:::info Events mode only
+Backfill requires knowing *when* you bought each share, which only
+[events mode](/docs/configuration/events-mode) provides. In manual mode the
+backfill job runs but does nothing.
+:::
+
+## How it works
+
+Backfill runs as a third scheduled job (every `SB_BACKFILL_INTERVAL` seconds,
+default `60`). On each cycle, for every share it:
+
+1. Finds the **date of the first `BUY` event** for that symbol — the target to
+   backfill down to.
+2. Reads the **oldest data point** already stored in InfluxDB for that symbol.
+3. If there is a gap, fetches **one chunk** of history going backwards in time
+   (`SB_BACKFILL_CHUNK_DAYS` days, default `365`).
+4. **Enriches** each historical price point with the portfolio state *as of that
+   date* (quantity owned, cost price, cumulative fees and dividends), by
+   replaying the events up to that day.
+5. Writes the enriched points to the `portfolio_metrics` measurement.
+6. Waits `SB_BACKFILL_DELAY` seconds (default `10`) before moving to the next
+   symbol, to stay within Yahoo! Finance rate limits.
+
+Because it only fetches one chunk per symbol per cycle, backfill fills history
+**progressively**. A portfolio with several years of history can take a while to
+be fully reconstructed — this is expected and keeps the app well-behaved with
+Yahoo! Finance.
+
+Once the oldest stored point reaches the first `BUY` date, the symbol is marked
+complete and skipped on subsequent cycles (until a new, earlier event is added).
+
+## Data resolution
+
+Yahoo! Finance only serves intraday history for a limited window, so backfill
+adapts the granularity automatically:
+
+| Age of the data | Interval used |
+|-----------------|---------------|
+| ≤ 729 days ago | Hourly (`1h`) |
+| > 729 days ago | Daily (`1d`) |
+
+Both live and backfilled points include OHLC fields (`price_open`, `price_high`,
+`price_low`) so Grafana can render candlestick panels.
+
+## Tuning
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `SB_BACKFILL_INTERVAL` | `60` | How often a backfill cycle runs (seconds) |
+| `SB_BACKFILL_DELAY` | `10` | Pause between symbols / requests (seconds) — increase if you hit rate limits |
+| `SB_BACKFILL_CHUNK_DAYS` | `365` | How many days of history are fetched per request |
+
+:::tip Rate limiting
+If you see rate-limit warnings in the logs, raise `SB_BACKFILL_DELAY` and/or
+lower `SB_BACKFILL_CHUNK_DAYS`. Backfill retries the same chunk on the next cycle
+with exponential backoff, so it eventually catches up.
+:::
+
+## Resilience
+
+- Backfill never blocks scraping or ingestion — the three jobs are independent.
+- A failed or empty chunk is retried on the next cycle.
+- If the first `BUY` falls on a non-trading day (weekend/holiday) and there is no
+  earlier data, the symbol is marked complete instead of being refetched forever.

@@ -1,45 +1,66 @@
 ---
 title: Docker
-description: Docker installation
+description: Run only the app container against your own InfluxDB
 sidebar_position: 2
 ---
 
-Docker mode only deploys the **SuiviBourse container**. You should install and configure Prometheus and Grafana (or another tools if you want) by yourself to have the stack described in the [Design](/docs/intro/design) section. 
+Docker mode deploys **only the SuiviBourse container**. You are responsible for
+providing an **InfluxDB 3** instance (and, if you want dashboards, Grafana) to
+build the stack described in the [Design](/docs/intro/design) section.
+
+:::tip
+If you don't already run InfluxDB and Grafana, prefer the
+[Docker Compose](/docs/deployment/docker-compose) stack, which wires everything
+together for you.
+:::
 
 ## Requirements
-* Windows, Linux or macOS 
-* Docker (> 19.03)
 
+- Windows, Linux or macOS
+- Docker (> 19.03)
+- A reachable **InfluxDB 3 Core** instance and an API token
 
-## Supported architecture
-* amd64
-* arm64 
+## Supported architectures
 
-If you want more supported architecture, please open a iussue on Github.
+- `amd64`
+- `arm64`
 
-
+If you need another architecture, please open an issue on GitHub.
 
 ## Steps
 
-1. Write a `config.yaml` (name can't be changed) following this [page](/docs/intro/config) wherever you want
+1. Write a `config.yaml` (manual mode) or a `settings.yaml` + `events/`
+   directory (events mode) following the
+   [configuration section](/docs/category/configuration).
 
-2. Run the container (replace **\<config_file_path\>** with the config file path) :
-```Bash
-docker run -p 8081:8081 -v <config_file_path>:/home/appuser/.config/SuiviBourse suivi-bourse-app
+2. Run the container, mounting your configuration into
+   `/home/appuser/.config/SuiviBourse` and pointing it at your InfluxDB:
+
+```bash
+docker run -d \
+  -p 8081:8081 \
+  -v <config_path>:/home/appuser/.config/SuiviBourse \
+  -e INFLUXDB_HOST=http://my-influxdb:8181 \
+  -e INFLUXDB_TOKEN=<your-token> \
+  -e INFLUXDB_DATABASE=suivi_bourse \
+  ghcr.io/pbrissaud/suivi-bourse-app:latest
 ```
+
+Port `8081` exposes the legacy Prometheus `/metrics` endpoint; you can omit the
+`-p` flag if you don't use it.
 
 ## Environment variables
 
-Env variables can be used to override some default parameters : 
+Use the `-e` / `--env` flags to override defaults. The most common ones:
 
-| ENV                  | Description                                                     | Default Value |
-|----------------------|-----------------------------------------------------------------|---------------|
-| SB_SCRAPING_INTERVAL | Interval in seconds where app gets data from Yahoo! Finance API | 120           |
-| LOG_LEVEL            | App log level                                                   | INFO          |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `LOG_LEVEL` | `INFO` | Logging level |
 
-Use the **-e** or **--env** flags to set environment variables in the container.
-
-*Example :*
-```Bash
-docker run -p 8081:8080 -v <config_file_path>:/home/appuser/.config/SuiviBourse -e SB_SCRAPING_INTERVAL=60 suivi-bourse-app
-```
+See the [configuration overview](/docs/configuration/overview#environment-variables)
+for the complete list (ingestion, backfill and legacy Prometheus options).

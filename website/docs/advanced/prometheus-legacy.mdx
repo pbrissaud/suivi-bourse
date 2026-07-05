@@ -1,0 +1,82 @@
+---
+title: Legacy Prometheus endpoint
+description: The backward-compatible /metrics endpoint and how to export it
+sidebar_position: 2
+---
+
+Before v4, SuiviBourse stored its data in **Prometheus**. To keep pre-v4
+deployments working, the app still exposes a Prometheus **`/metrics`** endpoint
+in parallel with the InfluxDB writer.
+
+It is **enabled by default** and reflects only the **current snapshot** of each
+share — there is no historical data or backfill on this endpoint (that lives in
+[InfluxDB](/docs/advanced/influxdb)).
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_PROMETHEUS_ENABLED` | `true` | Expose the `/metrics` endpoint |
+| `SB_METRICS_PORT` | `8081` | TCP port for the endpoint |
+
+To disable it entirely:
+
+```bash
+SB_PROMETHEUS_ENABLED=false
+```
+
+## Exposed gauges
+
+All gauges are prefixed with `sb_` and carry the labels `share_name` and
+`share_symbol`.
+
+| Metric | Description |
+|--------|-------------|
+| `sb_share_price` | Current market price |
+| `sb_purchased_quantity` | Quantity purchased |
+| `sb_purchased_price` | Weighted average cost price |
+| `sb_purchased_fee` | Total fees |
+| `sb_owned_quantity` | Currently owned quantity |
+| `sb_received_dividend` | Total dividends received |
+| `sb_dividend_yield` | Dividend yield (percentage) |
+| `sb_pe_ratio` | Price-to-Earnings ratio |
+| `sb_market_cap` | Market capitalization |
+| `sb_volume` | Trading volume |
+| `sb_share_info` | Always `1`; carries extra labels `share_currency`, `share_exchange`, `quote_type` |
+
+## Scraping with Prometheus
+
+Add a static scrape config pointing at the app:
+
+```yaml title="/etc/prometheus/prometheus.yaml"
+scrape_configs:
+  - job_name: 'suivi-bourse'
+    scrape_interval: '120s'
+    static_configs:
+      - targets: ['localhost:8081']
+```
+
+## Exporting to other databases
+
+Because the endpoint speaks the Prometheus/OpenMetrics format, you can use
+[Telegraf](https://docs.influxdata.com/telegraf/) to forward it to other systems
+(ElasticSearch, InfluxDB v1/v2, MongoDB, …):
+
+```toml
+# Read metrics from the SuiviBourse app
+[[inputs.prometheus]]
+  ## URLs to scrape metrics from
+  urls = ["http://localhost:8081/metrics"]
+
+  ## Metric version 1 or 2
+  metric_version = 1
+
+  ## Optional tag added to every scraped metric
+  url_tag = "suivi-bourse"
+```
+
+:::tip
+For historical data and long-term storage, prefer the native
+[InfluxDB 3 integration](/docs/advanced/influxdb) — the Prometheus endpoint only
+carries the latest snapshot.
+:::

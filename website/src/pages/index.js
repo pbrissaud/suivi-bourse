@@ -34,7 +34,7 @@ export default function Home() {
   return (
     <Layout
       title={`Hello from ${siteConfig.title}`}
-      description="Watches your stock share on Prometheus / Grafana">
+      description="Track your stock portfolio with yfinance, InfluxDB 3 & Grafana">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

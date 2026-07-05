@@ -1,0 +1,86 @@
+---
+title: InfluxDB data model
+description: The portfolio_metrics measurement, tags and fields
+sidebar_position: 1
+---
+
+SuiviBourse writes everything — live scrapes and backfilled history — to a
+single **InfluxDB 3 Core** measurement: **`portfolio_metrics`**. Data is written
+with **second** precision.
+
+## Tags
+
+Tags identify the series and are used to filter/group in Grafana.
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `share_name` | Display name | `Apple` |
+| `share_symbol` | Yahoo! Finance ticker | `AAPL` |
+| `share_currency` | Currency | `USD` |
+| `share_exchange` | Exchange | `NMS`, `PAR` |
+| `quote_type` | Instrument type | `EQUITY`, `ETF` |
+
+:::note
+`share_name` and `share_symbol` are always set. The currency/exchange/quote-type
+tags are only written when the ticker info was successfully fetched, so that
+historical and live points share the same series identity.
+:::
+
+## Fields
+
+| Field | Description |
+|-------|-------------|
+| `share_price` | Current or historical price (Close) |
+| `price_open` | Open price (OHLC, for candlestick panels) |
+| `price_high` | High price (OHLC) |
+| `price_low` | Low price (OHLC) |
+| `purchased_quantity` | Quantity bought |
+| `purchased_price` | Weighted average cost price |
+| `purchased_fee` | Total fees |
+| `owned_quantity` | Quantity currently owned |
+| `received_dividend` | Total dividends received |
+| `dividend_yield` | Dividend yield (percentage) |
+| `pe_ratio` | Price-to-Earnings ratio |
+| `market_cap` | Market capitalization |
+| `volume` | Trading volume |
+
+:::note
+Market fields such as `dividend_yield`, `pe_ratio` and `market_cap` may be
+missing for some instruments (e.g. ETFs or crypto). Fields are only written when
+a value is available.
+:::
+
+## Querying with SQL
+
+InfluxDB 3 is queried with SQL. Grafana uses its InfluxDB datasource in **SQL
+query mode** (`POST`, database `suivi_bourse`). A simple query:
+
+```sql
+SELECT time, share_price
+FROM portfolio_metrics
+WHERE share_symbol = 'AAPL'
+ORDER BY time
+```
+
+Compute the current market value of a position:
+
+```sql
+SELECT time, share_price * owned_quantity AS position_value
+FROM portfolio_metrics
+WHERE share_symbol = 'AAPL'
+ORDER BY time
+```
+
+## Connection
+
+The writer is configured through environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | Database name |
+
+In the [Docker Compose](/docs/deployment/docker-compose) stack, the database is
+created automatically by `influxdb3-init.sh` and the token is provisioned into
+both InfluxDB and the Grafana datasource.

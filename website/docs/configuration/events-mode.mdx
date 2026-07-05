@@ -1,0 +1,198 @@
+---
+title: Events mode
+description: Import your broker transactions from CSV/XLSX and let SuiviBourse aggregate positions
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Instead of manually maintaining aggregated values, events mode lets you import
+your **transaction history**. SuiviBourse reads a list of events
+(`BUY`, `SELL`, `GRANT`, `DIVIDEND`) and automatically computes:
+
+- Weighted average cost price
+- Purchased and owned quantities
+- Accumulated dividends
+- Transaction fees
+
+Events mode is also what unlocks [historical backfill](/docs/backfill): because
+SuiviBourse knows *when* each transaction happened, it can reconstruct the value
+of your portfolio over time.
+
+## Setup
+
+Create a `settings.yaml` file and an `events/` directory:
+
+```
+~/.config/SuiviBourse/
+├── settings.yaml
+└── events/
+    ├── 2023.csv
+    ├── 2024.csv
+    └── broker-export.xlsx
+```
+
+```yaml title="settings.yaml"
+mode: events
+events:
+  source: ~/.config/SuiviBourse/events/
+  watch: true  # Optional: reload immediately when files change
+```
+
+| Setting | Required | Description |
+|---------|----------|-------------|
+| `mode` | Yes | Must be `events` |
+| `events.source` | Yes | Path to a single file **or** a directory of event files |
+| `events.watch` | No | When `true`, a file watcher reloads events immediately on change (default `false`) |
+
+:::tip
+You can also select events mode with the `SB_CONFIG_MODE=events` environment
+variable — it takes priority over `settings.yaml`. See
+[mode selection](/docs/configuration/overview#mode-selection-priority).
+:::
+
+## File format
+
+Both **CSV** and **XLSX** files are supported. Every file must contain a header
+row with (at least) the four required columns.
+
+<Tabs>
+  <TabItem value="csv" label="CSV" default>
+
+```csv title="events/2024.csv"
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
+2024-02-01,BUY,MSFT,Microsoft,5,380.00,2.50,,
+2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
+2024-06-01,GRANT,AAPL,Apple Inc,1,,,,Stock split bonus
+2024-09-15,SELL,AAPL,Apple Inc,3,180.00,2.00,,Partial sale
+```
+
+  </TabItem>
+  <TabItem value="xlsx" label="XLSX">
+
+XLSX files use the same columns as CSV. A few specifics:
+
+- All worksheets in the workbook are read.
+- The first row of each sheet is the header (column names are matched
+  case-insensitively).
+- Empty rows are skipped.
+- Date cells may be real Excel dates or `YYYY-MM-DD` text.
+
+Requires the `openpyxl` library, which is bundled in the Docker image.
+
+  </TabItem>
+</Tabs>
+
+### Columns
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `date` | Yes | ISO format `YYYY-MM-DD` |
+| `event_type` | Yes | `BUY`, `SELL`, `GRANT` or `DIVIDEND` (case-insensitive) |
+| `symbol` | Yes | Yahoo! Finance ticker (e.g. `AAPL`, `MSFT`) |
+| `name` | Yes | Display name for the share |
+| `quantity` | For `BUY` / `SELL` / `GRANT` | Number of shares |
+| `unit_price` | For `BUY` / `SELL` | Price per share |
+| `fee` | Optional | Transaction fee (must be `>= 0`) |
+| `amount` | For `DIVIDEND` | Dividend amount received |
+| `notes` | Optional | Free-text comment (ignored by the app) |
+
+The four required columns must always be present in the header. Empty cells are
+allowed for the columns that don't apply to a given event type.
+
+## Event types
+
+| Type | Required fields | Effect on the portfolio |
+|------|-----------------|-------------------------|
+| `BUY` | `quantity` > 0, `unit_price` > 0 | +purchased quantity, +owned quantity, recomputes the weighted average cost price, +fee |
+| `SELL` | `quantity` > 0, `unit_price` > 0 | −owned quantity, +fee |
+| `GRANT` | `quantity` > 0 | +owned quantity only (free shares) |
+| `DIVIDEND` | `amount` > 0 | +received dividends |
+
+If any event fails validation, the whole ingestion is rejected and the
+**previous valid configuration is kept** — see [Error resilience](#error-resilience).
+
+## Aggregation rules
+
+### BUY — weighted average cost price
+
+When you buy shares at different prices, SuiviBourse computes the weighted
+average cost price:
+
+```
+new_cost_price = (old_qty × old_price + new_qty × new_price) / total_qty
+```
+
+**Example**
+
+- Buy 10 shares at \$150 → `cost_price = 150`
+- Buy 5 shares at \$175 → `cost_price = (10×150 + 5×175) / 15 =` **\$158.33**
+
+A `BUY` increases both `purchase.quantity` and `estate.quantity`, and adds the
+fee to the running total.
+
+### SELL — reduces owned quantity
+
+- Decreases `estate.quantity` (the quantity you currently own).
+- **Does not** change `purchase.quantity` or the cost price.
+- The sale fee is added to the total fees.
+- The sale `unit_price` is recorded on the event but **realized gains are not
+  tracked**.
+
+:::caution Overselling is rejected
+You cannot sell more shares than you currently own at that point in time. Doing
+so raises an aggregation error and the previous valid configuration is kept.
+:::
+
+### GRANT — free shares
+
+- Only increases `estate.quantity`.
+- Does not affect `purchase.quantity` or the cost price.
+- Use it for stock splits, employee grants and bonus shares.
+
+### DIVIDEND — received dividends
+
+- Increases `estate.received_dividend` by `amount`.
+
+## Key behaviours
+
+### Event ordering
+
+Events are **sorted by date** before processing, regardless of:
+
+- their order within a file, and
+- which file they come from.
+
+You can add past events at any time — they are processed in the correct
+chronological order.
+
+### Multi-file support
+
+All `.csv` and `.xlsx` files in the events directory are loaded and merged.
+Organize them however you like:
+
+- by year (`2023.csv`, `2024.csv`)
+- by broker (`degiro.csv`, `interactive-brokers.xlsx`)
+- by account (`pea.csv`, `cto.csv`)
+
+### Caching
+
+Ingestion uses each file's **modification time (mtime)** to detect changes:
+
+- If no file changed → the cached, already-aggregated data is reused.
+- If any file changed → a full reload and re-aggregation happens.
+
+### Error resilience
+
+If ingestion fails (invalid data, file error, overselling, …):
+
+- the **previous valid configuration is kept**,
+- price scraping keeps running normally, and
+- the error is logged for debugging.
+
+:::tip
+Fix your event files at your own pace — the app won't crash and will pick up
+your corrections on the next ingestion cycle (or immediately if `watch: true`).
+:::

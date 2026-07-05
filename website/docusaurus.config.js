@@ -12,11 +12,15 @@ const projectName = 'suivi-bourse';
 
 const config = {
   title: 'Suivi Bourse',
-  tagline: 'Watches your stock share on Prometheus / Grafana',
+  tagline: 'Track your stock portfolio with yfinance, InfluxDB 3 & Grafana',
   url: `https://${organizationName}.github.io`,
   baseUrl: `/${projectName}/`,
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   favicon: 'img/favicon.ico',
 
   // GitHub pages deployment config.
@@ -43,6 +47,23 @@ const config = {
           // Remove this to remove the "edit this page" links.
           editUrl:
             `https://github.com/${organizationName}/${projectName}/tree/master/website/`,
+          // Docs versioning:
+          //  - `current` (the ./docs folder) documents v4 (InfluxDB 3 +
+          //    backfill + events mode) and is served as the default at /docs.
+          //  - `3.x` is the frozen snapshot of the last v3 release
+          //    (Prometheus/Grafana + manual config), served at /docs/v3.
+          lastVersion: 'current',
+          versions: {
+            current: {
+              label: 'v4',
+              path: '',
+            },
+            '3.x': {
+              label: 'v3',
+              path: 'v3',
+              banner: 'unmaintained',
+            },
+          },
         },
         blog: false,
         theme: {
@@ -67,6 +88,11 @@ const config = {
             docId: 'home',
             position: 'left',
             label: 'Documentation',
+          },
+          {
+            type: 'docsVersionDropdown',
+            position: 'right',
+            dropdownActiveClassDisabled: true,
           },
           {
             href: `https://github.com/${organizationName}/${projectName}`,
