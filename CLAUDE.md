@@ -28,11 +28,16 @@ cd app && uv run pytest tests/            # add --cov=src for coverage
 
 ### Documentation Website (in `website/` directory)
 
+Dependencies are managed with pnpm. The docs are versioned: `docs/` holds the
+current **v4** docs (served at `/docs`), `versioned_docs/version-3.x/` holds the
+frozen **v3** docs (served at `/docs/v3`). Use the navbar version selector to
+switch. Snapshot a new version with `pnpm docusaurus docs:version <name>`.
+
 ```bash
 cd website
-yarn install
-yarn start    # Development server
-yarn build    # Production build
+pnpm install
+pnpm start    # Development server
+pnpm build    # Production build (fails on broken links)
 ```
 
 ### Docker Compose (in `docker-compose/` directory)
