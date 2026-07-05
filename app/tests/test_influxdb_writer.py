@@ -233,6 +233,21 @@ def test_write_metrics_no_share_price_omits_ohlc(writer, mock_client_cls):
         assert key not in fields
 
 
+def test_write_metrics_nan_share_price_omits_price_and_ohlc(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+
+    # A NaN close (holiday / partial bar) must never be written as a NaN field.
+    writer.write_metrics(
+        share_name="Apple", share_symbol="AAPL",
+        share_price=float("nan"), purchased_quantity=10,
+    )
+
+    fields = _last_written_record(client)._fields
+    for key in ("share_price", "price_open", "price_high", "price_low"):
+        assert key not in fields
+    assert fields["purchased_quantity"] == 10.0
+
+
 def test_write_metrics_none_fields_are_omitted(writer, mock_client_cls):
     client = mock_client_cls.return_value
 
@@ -437,6 +452,41 @@ def test_write_historical_prices_none_valued_optionals_omitted(writer, mock_clie
     assert fields == {"share_price": 10.0}
 
 
+def test_write_historical_prices_skips_nan_price_rows(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    prices = [
+        {"timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc), "price": 10.0},
+        # NaN close -> row skipped entirely, not written as a NaN point.
+        {"timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc), "price": float("nan")},
+        {"timestamp": datetime(2024, 1, 3, tzinfo=timezone.utc), "price": 12.0},
+    ]
+
+    written = writer.write_historical_prices("Apple", "AAPL", prices)
+
+    assert written == 2
+    records = _last_written_record(client)
+    assert [r._fields["share_price"] for r in records] == [10.0, 12.0]
+
+
+def test_write_historical_prices_nan_ohlc_and_volume_omitted(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    prices = [
+        {
+            "timestamp": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "price": 10.0,
+            "price_open": float("nan"),
+            "price_high": 10.5,
+            "price_low": float("nan"),
+            "volume": float("nan"),
+        }
+    ]
+
+    writer.write_historical_prices("Apple", "AAPL", prices)
+
+    fields = _last_written_record(client)[0]._fields
+    assert fields == {"share_price": 10.0, "price_high": 10.5}
+
+
 def test_write_historical_prices_timestamp_from_data(writer, mock_client_cls):
     client = mock_client_cls.return_value
     ts = datetime(2023, 5, 6, 7, 8, 9, tzinfo=timezone.utc)
@@ -556,6 +606,19 @@ def test_has_data_for_date_query_uses_day_bounds(writer, mock_client_cls):
     # Day is bracketed from 00:00:00 to 23:59:59.
     assert "2024-03-15T00:00:00" in q
     assert "2024-03-15T23:59:59" in q
+
+
+def test_has_data_for_date_timezone_aware_yields_valid_z_literal(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"count": [1]}))
+
+    # A tz-aware input must not produce an invalid '...+00:00Z' timestamp.
+    writer.has_data_for_date("AAPL", datetime(2024, 3, 15, 14, 30, tzinfo=timezone.utc))
+
+    q = _last_query(client)
+    assert "+00:00Z" not in q
+    assert "2024-03-15T00:00:00Z" in q
+    assert "2024-03-15T23:59:59.999999Z" in q
 
 
 # --------------------------------------------------------------------------- #

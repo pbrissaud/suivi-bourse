@@ -337,6 +337,11 @@ class SuiviBourseMetrics:
                     return None, None
                 last_row = ticker_history.tail(1)
                 last_quote = last_row['Close'].iloc[0]
+                # Guard against a NaN close (holiday / partial bar): treat it as
+                # no data so we never write a NaN price to InfluxDB.
+                if pd.isna(last_quote):
+                    app_logger.warning(f"Latest close price is NaN for {symbol}, skipping")
+                    return None, None
                 # Get hourly volume instead of daily volume
                 ticker_history_hourly = ticker.history(period='1d', interval='1h')
                 if not ticker_history_hourly.empty and 'Volume' in ticker_history_hourly.columns:
@@ -402,16 +407,21 @@ class SuiviBourseMetrics:
 
                 prices = []
                 for idx, row in history.iterrows():
+                    # Skip rows without a valid close price (holidays / partial
+                    # bars come back as NaN) so no NaN point reaches InfluxDB.
+                    close = row['Close']
+                    if pd.isna(close):
+                        continue
                     # idx is a pandas Timestamp
                     ts = idx.to_pydatetime()
                     if ts.tzinfo is None:
                         ts = ts.replace(tzinfo=timezone.utc)
                     prices.append({
                         'timestamp': ts,
-                        'price': row['Close'],
-                        'price_open': row['Open'],
-                        'price_high': row['High'],
-                        'price_low': row['Low'],
+                        'price': float(close),
+                        'price_open': float(row['Open']) if pd.notna(row['Open']) else None,
+                        'price_high': float(row['High']) if pd.notna(row['High']) else None,
+                        'price_low': float(row['Low']) if pd.notna(row['Low']) else None,
                         'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
                     })
 
@@ -634,11 +644,18 @@ class SuiviBourseMetrics:
             events = self.config_manager.get_events()
             if events:
                 aggregator = EventAggregator()
+                # Many price points (esp. hourly) share the same calendar day and
+                # thus the same portfolio state; aggregate once per date instead of
+                # replaying all events for every point.
+                state_by_date: Dict = {}
                 for price_point in prices:
                     ts = price_point['timestamp']
                     # Convert datetime to date for aggregation
                     point_date = ts.date() if isinstance(ts, datetime) else ts
-                    state = aggregator.aggregate_until_date(events, point_date, symbol)
+                    if point_date not in state_by_date:
+                        state_by_date[point_date] = aggregator.aggregate_until_date(
+                            events, point_date, symbol)
+                    state = state_by_date[point_date]
                     if state:
                         price_point['purchased_quantity'] = state['purchase']['quantity']
                         price_point['purchased_price'] = state['purchase']['cost_price']

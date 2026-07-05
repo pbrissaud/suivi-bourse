@@ -2,6 +2,7 @@
 InfluxDB Writer Module for SuiviBourse
 Handles writing and reading metrics to/from InfluxDB 3.x
 """
+import math
 import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -11,6 +12,27 @@ from logfmt_logger import getLogger
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
+
+
+def _is_valid_number(value: Any) -> bool:
+    """True when ``value`` is a real number (not None and not NaN).
+
+    yfinance rows can carry NaN (holidays / partial bars); NaN is a float that
+    passes ``is not None`` checks and would otherwise be written as a NaN field.
+    """
+    return value is not None and not (isinstance(value, float) and math.isnan(value))
+
+
+def _utc_z(dt: datetime) -> str:
+    """Format ``dt`` as a UTC ISO-8601 'Z' literal safe for SQL.
+
+    Timezone-aware datetimes are normalized to UTC and stripped of their offset
+    so the appended 'Z' stays valid — ``isoformat()`` alone would otherwise emit
+    ``...+00:00Z`` for aware inputs, which InfluxDB rejects.
+    """
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return f"{dt.isoformat()}Z"
 
 
 class InfluxDBWriter:
@@ -118,8 +140,8 @@ class InfluxDBWriter:
         if quote_type:
             point.tag("quote_type", quote_type)
 
-        # Fields (only set if not None)
-        if share_price is not None:
+        # Fields (only set if a real number; NaN is skipped, never written)
+        if _is_valid_number(share_price):
             point.field("share_price", float(share_price))
             # Also write OHLC fields for candlestick compatibility
             point.field("price_open", float(share_price))
@@ -188,6 +210,13 @@ class InfluxDBWriter:
 
         points = []
         for price_data in prices:
+            # share_price is the mandatory field; skip rows without a valid
+            # (non-NaN) close price instead of writing a NaN data point.
+            price = price_data.get('price')
+            if not _is_valid_number(price):
+                logger.debug(f"Skipping historical point with invalid price for {share_symbol}")
+                continue
+
             point = Point(self.MEASUREMENT)
             point.tag("share_name", share_name)
             point.tag("share_symbol", share_symbol)
@@ -199,16 +228,16 @@ class InfluxDBWriter:
             if quote_type:
                 point.tag("quote_type", quote_type)
 
-            point.field("share_price", float(price_data['price']))
+            point.field("share_price", float(price))
 
-            # Write OHLC fields if available
-            if 'price_open' in price_data and price_data['price_open'] is not None:
+            # Write OHLC / volume fields if present and numeric (NaN skipped)
+            if _is_valid_number(price_data.get('price_open')):
                 point.field("price_open", float(price_data['price_open']))
-            if 'price_high' in price_data and price_data['price_high'] is not None:
+            if _is_valid_number(price_data.get('price_high')):
                 point.field("price_high", float(price_data['price_high']))
-            if 'price_low' in price_data and price_data['price_low'] is not None:
+            if _is_valid_number(price_data.get('price_low')):
                 point.field("price_low", float(price_data['price_low']))
-            if 'volume' in price_data and price_data['volume'] is not None:
+            if _is_valid_number(price_data.get('volume')):
                 point.field("volume", int(price_data['volume']))
 
             # Write portfolio fields if available
@@ -295,8 +324,8 @@ class InfluxDBWriter:
         SELECT COUNT(*) as count
         FROM "{self.MEASUREMENT}"
         WHERE share_symbol = '{safe_symbol}'
-          AND time >= '{start.isoformat()}Z'
-          AND time <= '{stop.isoformat()}Z'
+          AND time >= '{_utc_z(start)}'
+          AND time <= '{_utc_z(stop)}'
         """
 
         try:
