@@ -64,7 +64,8 @@ jobs:
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # pnpm 11.9 requires node:sqlite (Node >= 22.5)
+          node-version: 22
           cache: pnpm
           cache-dependency-path: website/pnpm-lock.yaml
       - name: Build docs if folder changed
