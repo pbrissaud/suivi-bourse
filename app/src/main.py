@@ -663,16 +663,22 @@ class SuiviBourseMetrics:
                         price_point['owned_quantity'] = state['estate']['quantity']
                         price_point['received_dividend'] = state['estate']['received_dividend']
 
-            # Write to InfluxDB using the share info resolved earlier in the loop
-            written = self.influxdb.write_historical_prices(
-                share_name=name,
-                share_symbol=symbol,
-                prices=prices,
-                share_currency=info.get('currency'),
-                share_exchange=info.get('exchange'),
-                quote_type=info.get('quoteType')
-            )
-            backfilled_count += written
+            # Write to InfluxDB using the share info resolved earlier in the loop.
+            # Guard the write like expose_metrics does so a transient InfluxDB
+            # error on one share does not abort backfilling the remaining shares.
+            try:
+                written = self.influxdb.write_historical_prices(
+                    share_name=name,
+                    share_symbol=symbol,
+                    prices=prices,
+                    share_currency=info.get('currency'),
+                    share_exchange=info.get('exchange'),
+                    quote_type=info.get('quoteType')
+                )
+                backfilled_count += written
+            except Exception as e:
+                app_logger.error(
+                    f"Failed to write historical prices for {symbol}: {e}")
 
             # Rate limit between symbols
             time.sleep(self.backfill_delay)
@@ -786,7 +792,7 @@ if __name__ == "__main__":
         app_logger.fatal(f'Configuration error: {e}')
         sys.exit(1)
     except Exception as e:
-        app_logger.fatal('An unexpected error occurred + ' + str(e), exc_info=True)
+        app_logger.fatal(f'An unexpected error occurred: {e}', exc_info=True)
         sys.exit(1)
     finally:
         config_manager.stop_watcher()

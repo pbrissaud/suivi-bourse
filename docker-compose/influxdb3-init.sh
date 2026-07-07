@@ -40,13 +40,22 @@ for i in {1..30}; do
   sleep 1
 done
 
-# Create database if it doesn't exist
+# Create database if it doesn't exist.
+# Only tolerate the "already exists" case; surface any other failure (wrong
+# token, auth required, network) instead of masking it behind a generic message.
 echo "Creating database: $DATABASE"
 if [ -n "$ADMIN_TOKEN" ]; then
-  influxdb3 create database "$DATABASE" --token "$ADMIN_TOKEN" 2>/dev/null || echo "Database already exists"
+  CREATE_OUTPUT=$(influxdb3 create database "$DATABASE" --token "$ADMIN_TOKEN" 2>&1)
 else
-  influxdb3 create database "$DATABASE" 2>/dev/null || echo "Database already exists or auth required"
-fi
+  CREATE_OUTPUT=$(influxdb3 create database "$DATABASE" 2>&1)
+fi || {
+  if echo "$CREATE_OUTPUT" | grep -qi "already exists"; then
+    echo "Database already exists"
+  else
+    echo "Failed to create database: $CREATE_OUTPUT"
+    exit 1
+  fi
+}
 
 echo "============================================"
 echo "InfluxDB 3 initialized"

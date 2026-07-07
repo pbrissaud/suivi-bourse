@@ -372,6 +372,35 @@ def test_backfill_fetches_chunk_when_gap_exists(mock_influx, shares_validator, m
     assert kwargs["share_currency"] == "USD"
 
 
+def test_backfill_write_failure_does_not_abort_remaining_shares(
+        mock_influx, shares_validator, mocker):
+    first_buys = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
+        mock_influx, shares_validator, mode="events",
+        first_buy_dates=first_buys, events=None)
+    metrics._share_info_cache["AAPL"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics._share_info_cache["MSFT"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    mock_influx.get_oldest_timestamp.return_value = datetime(
+        2024, 6, 1, tzinfo=timezone.utc)
+    canned = [{"timestamp": datetime(2024, 3, 1, tzinfo=timezone.utc), "price": 170.0}]
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=canned)
+    # First share's write raises; the loop must still attempt the second one.
+    mock_influx.write_historical_prices.side_effect = [Exception("influx down"), 1]
+
+    # Must not propagate the exception out of the per-share loop.
+    metrics.backfill()
+
+    assert mock_influx.write_historical_prices.call_count == 2
+    symbols_written = [
+        c.kwargs["share_symbol"]
+        for c in mock_influx.write_historical_prices.call_args_list]
+    assert symbols_written == ["AAPL", "MSFT"]
+
+
 def test_backfill_empty_window_marks_complete(mock_influx, shares_validator, mocker):
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
