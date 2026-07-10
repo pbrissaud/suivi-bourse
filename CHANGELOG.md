@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/pbrissaud/suivi-bourse/compare/v4.0.0...v4.0.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **ci:** build release docs with pnpm instead of yarn ([#557](https://github.com/pbrissaud/suivi-bourse/issues/557)) ([e3729f0](https://github.com/pbrissaud/suivi-bourse/commit/e3729f059c141d2494a49c94388f6a628280f8f5))
+
 ## [4.0.0](https://github.com/pbrissaud/suivi-bourse/compare/v3.8.5...v4.0.0) (2026-07-10)
 
 
