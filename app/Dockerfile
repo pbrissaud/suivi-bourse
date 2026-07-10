@@ -1,7 +1,7 @@
 FROM python:3.14-slim
 
 # Bring in the uv binary from its official image (pinned for reproducibility)
-COPY --from=ghcr.io/astral-sh/uv:0.11.9 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/
 
 # Runtime deps only (UV_NO_DEV skips the dev group); compile bytecode; use the
 # base image's Python and never download another one.
