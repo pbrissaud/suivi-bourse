@@ -2,7 +2,8 @@
 Event aggregator for computing portfolio state from events.
 """
 
-from typing import Dict, List
+from datetime import date
+from typing import Dict, List, Optional
 
 from .schemas import Event, EventType, ShareState, PurchaseState, EstateState
 
@@ -122,3 +123,54 @@ class EventAggregator:
         Increases estate.received_dividend.
         """
         state.estate.received_dividend += event.amount
+
+    def aggregate_until_date(
+        self,
+        events: List[Event],
+        target_date: date,
+        symbol: str
+    ) -> Optional[Dict]:
+        """
+        Aggregate events for a specific symbol up to a given date.
+
+        Args:
+            events: List of events sorted by date.
+            target_date: Only process events up to this date (inclusive).
+            symbol: The symbol to aggregate.
+
+        Returns:
+            Share dictionary for the symbol, or None if no events exist.
+        """
+        # Filter events for the symbol up to target_date
+        filtered_events = [
+            e for e in events
+            if e.symbol == symbol and e.date <= target_date
+        ]
+
+        if not filtered_events:
+            return None
+
+        # Create initial state
+        state = ShareState(
+            name=filtered_events[0].name,
+            symbol=symbol,
+            purchase=PurchaseState(),
+            estate=EstateState(),
+        )
+
+        for event in filtered_events:
+            # Update name if provided (use latest name)
+            if event.name:
+                state.name = event.name
+
+            # Process based on event type
+            if event.event_type == EventType.BUY:
+                self._process_buy(state, event)
+            elif event.event_type == EventType.SELL:
+                self._process_sell(state, event)
+            elif event.event_type == EventType.GRANT:
+                self._process_grant(state, event)
+            elif event.event_type == EventType.DIVIDEND:
+                self._process_dividend(state, event)
+
+        return state.to_dict()

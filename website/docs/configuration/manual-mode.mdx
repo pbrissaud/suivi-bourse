@@ -1,0 +1,73 @@
+---
+title: Manual mode
+description: Describe your portfolio in a static config.yaml file
+sidebar_position: 2
+---
+
+Manual mode is the traditional way to configure SuiviBourse. You describe the
+**current state** of your portfolio in a YAML file — SuiviBourse does not
+compute anything for you, it uses the values as-is.
+
+For each stock, you provide:
+
+- The name (you can choose a custom display name)
+- The Yahoo! Finance stock symbol
+- The purchased quantity, fee and unit cost price
+- The number of owned shares (may differ from the purchased quantity if you got
+  some for free)
+- The dividends you received
+
+:::caution
+The file must be named **`config.yaml`**. See the
+[deployment section](/docs/category/deployment) for its exact location.
+:::
+
+## Example
+
+Say you own:
+
+- 2 shares of Apple stock (bought one, got the second for free)
+- 3 shares of Tesla stock (bought at different times)
+
+```yaml title="config.yaml"
+shares:
+- name: Apple
+  symbol: AAPL # Yahoo! Finance stock symbol
+  purchase:
+    quantity: 1
+    fee: 2 # Fee when you bought the share
+    cost_price: 119.98  # Value of the share when you bought it
+  estate:
+    quantity: 2 # Because you got one for free
+    received_dividend: 2.85 # Sum of all received dividends
+- name: Tesla
+  symbol: TSLA
+  purchase:
+    quantity: 3
+    fee: 5.8 # When buying multiple shares, sum of the fees
+    cost_price: 856.87  # When buying at different prices, weighted average
+  estate:
+    quantity: 3
+    received_dividend: 4.57
+```
+
+## Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the share |
+| `symbol` | Yahoo! Finance ticker |
+| `purchase.quantity` | Number of shares you bought |
+| `purchase.fee` | Total transaction fees |
+| `purchase.cost_price` | Unit cost price (weighted average if bought at different prices) |
+| `estate.quantity` | Number of shares you currently own |
+| `estate.received_dividend` | Total dividends received |
+
+All numeric fields must be present and `>= 0`. The full validation schema is
+documented in [Schema validation](/docs/advanced/schema-validation).
+
+:::info No historical backfill in manual mode
+Manual mode only records the current state of your portfolio. If you want
+SuiviBourse to reconstruct the historical evolution of your positions, use
+[events mode](/docs/configuration/events-mode) instead.
+:::

@@ -4,18 +4,20 @@ import styles from './styles.module.css';
 
 const FeatureList = [
   {
-    title: 'Simple to use',
+    title: 'Two ways to configure',
     description: (
       <>
-        Write a small config file to describe your stock portfolio and visualize your data ! 
+        Describe your portfolio in a simple YAML file, or import your broker
+        transactions from CSV/XLSX files and let Suivi Bourse aggregate them.
       </>
     ),
   },
   {
-    title: 'Lightweight and Secure',
+    title: 'Live prices & full history',
     description: (
       <>
-        Suivi Bourse was designed to be run on every machine and following security principes.
+        Fetch live quotes from Yahoo! Finance and backfill historical prices into
+        InfluxDB 3, then visualize everything in a ready-made Grafana dashboard.
       </>
     ),
   },
@@ -23,7 +25,8 @@ const FeatureList = [
     title: 'Deploy everywhere',
     description: (
       <>
-        Run it as system service, docker container or docker-compose on all OS
+        Run it as a system service, a Docker container or a full Docker Compose
+        stack on Linux, macOS and Windows.
       </>
     ),
   },

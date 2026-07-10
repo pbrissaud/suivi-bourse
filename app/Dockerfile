@@ -1,14 +1,27 @@
 FROM python:3.14-slim
 
-COPY requirements.txt /tmp/requirements.txt
+# Bring in the uv binary from its official image (pinned for reproducibility)
+COPY --from=ghcr.io/astral-sh/uv:0.11.9 /uv /uvx /bin/
 
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# Runtime deps only (UV_NO_DEV skips the dev group); compile bytecode; use the
+# base image's Python and never download another one.
+ENV UV_NO_DEV=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# Install dependencies from the lockfile in a cached layer (before copying source)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-install-project
 
 RUN useradd --create-home appuser
 WORKDIR /home/appuser
-USER appuser
-
 COPY ./src /home/appuser
+USER appuser
 
 EXPOSE 8081
 

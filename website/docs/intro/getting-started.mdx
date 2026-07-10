@@ -1,28 +1,41 @@
 ---
 title: Getting Started
-description: Run the app in 5 minutes !
+description: Run the app in 5 minutes!
 sidebar_position: 2
 ---
 
-There are mutiple ways to run the app but **Docker Compose** is the easiest way to begin !
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-To see all the documentation about running the app, visit [deployment section](/docs/category/deployment)
+There are multiple ways to run SuiviBourse, but **Docker Compose** is the
+easiest way to get started — it launches the full stack: the app, a
+pre-configured **InfluxDB 3 Core** and a **Grafana** with a ready-made
+dashboard.
 
+To see every deployment option, visit the
+[deployment section](/docs/category/deployment).
 
-:::info
-Docker Compose launches a full environnement with a pre-configured Prometheus and Grafana 
-:::
+## 1. Install requirements
 
-## 1. Install Requirements
-* Docker (>19.03.0)
-* Docker-Compose 
+- Docker (> 19.03.0)
+- Docker Compose
 
-## 2. Modify config
-Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](/docs/intro/config) of the documentation to know more about writing config file. 
+## 2. Get the project
 
-*Example Config:* 
-```yaml
----
+Download the source code from the
+[latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest),
+extract it, and move into the `docker-compose` folder.
+
+## 3. Configure your portfolio
+
+Choose one of the two configuration modes.
+
+<Tabs>
+  <TabItem value="manual" label="Manual mode" default>
+
+Edit `config.yaml` to describe the current state of your portfolio:
+
+```yaml title="config.yaml"
 shares:
 - name: Apple
   symbol: AAPL
@@ -35,20 +48,61 @@ shares:
     received_dividend: 2.85
 ```
 
+See [Manual mode](/docs/configuration/manual-mode) for the full reference.
 
-## 3. Run the stack
-Run the following command in the `docker-compose` folder :
+  </TabItem>
+  <TabItem value="events" label="Events mode">
 
-```bash
-docker-compose up -d
+Create a `settings.yaml` file and an `events/` directory with your transactions:
+
+```yaml title="settings.yaml"
+mode: events
+events:
+  source: /home/appuser/.config/SuiviBourse/events/
+  watch: true
 ```
 
+```csv title="events/portfolio.csv"
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
+2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
+```
 
-## 4. Visit Grafana
-Connect to Grafana (`http://localhost:3000`) with the following credentials:
-* login:  `admin`
-* password: `admin`
-    
-and go to dashboard **Stock share monitoring**
+Then set the mode in the `.env` file:
 
-*NB:* please wait ~10m to see all the cells getting filled
+```bash title=".env"
+SB_CONFIG_MODE=events
+```
+
+See [Events mode](/docs/configuration/events-mode) for the full CSV format.
+Events mode also unlocks [historical backfill](/docs/backfill).
+
+  </TabItem>
+</Tabs>
+
+## 4. Run the stack
+
+Run the following command in the `docker-compose` folder:
+
+```bash
+docker compose up -d
+```
+
+This starts three containers: `suivi-bourse-app`, `suivi-bourse-influxdb` and
+`suivi-bourse-graf`.
+
+## 5. Visit Grafana
+
+Connect to Grafana at [http://localhost:3000](http://localhost:3000) with:
+
+- login: `admin`
+- password: `admin`
+
+and open the **Stock share monitoring** dashboard.
+
+:::note
+Please wait a few minutes for the first prices to appear. In **events mode**,
+historical data is filled in progressively — the further back your first
+purchase, the longer the full history takes to backfill. See
+[Historical backfill](/docs/backfill) to understand and tune this behaviour.
+:::

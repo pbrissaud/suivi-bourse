@@ -3,6 +3,10 @@ on:
   pull_request:
     branches: [master]
 
+# Least privilege: these jobs only read the checkout; no writes to the repo.
+permissions:
+  contents: read
+
 jobs:
   python-linter:
     name: Lint
@@ -10,6 +14,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: ricardochaves/python-lint@v1.4.0
         with:
@@ -21,70 +27,50 @@ jobs:
           use-isort: false
           extra-flake8-options: "--ignore=E501"
 
-  e2e-test:
-    name: "E2E Test"
+  unit-test:
+    name: "Unit Test"
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: "0"
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6.3.0
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          python-version: "3.x"
-          cache: "pip"
+          enable-cache: true
 
-      - uses: BSFishy/pip-action@v1
-        with:
-          requirements: app/requirements.txt
-
-      - uses: BSFishy/pip-action@v1
-        with:
-          packages: |
-            requests
-
-      - id: run_tests
-        run: |
-          mkdir -p ~/.config/SuiviBourse
-          cat > ~/.config/SuiviBourse/config.yaml << EOL
-          ---
-          shares:
-          - name: Apple
-            symbol: AAPL
-            purchase:
-              quantity: 1
-              fee: 2
-              cost_price: 119.98
-            estate:
-              quantity: 2
-              received_dividend: 2.85
-          - name: Bitcoin
-            symbol: BTC-USD
-            purchase:
-              quantity: 1
-              fee: 2
-              cost_price: 5000
-            estate:
-              quantity: 1
-              received_dividend: 0
-          EOL
-          python3 app/src/testing.py
+      - run: cd app && uv run pytest tests/
 
   build-docs:
     name: "Building doc"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Get changed files in the docs folder
         id: changed-files-specific
         uses: tj-actions/changed-files@v47
         with:
           files: |
             website/**
+      - name: Install pnpm
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - name: Set up Node.js
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          # pnpm 11.9 requires node:sqlite (Node >= 22.5)
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
       - name: Build docs if folder changed
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         working-directory: website
         run: |
-          yarn install
-          yarn build
+          pnpm install --frozen-lockfile
+          pnpm build

@@ -1,0 +1,5 @@
+# pnpm build-script decisions. core-js's postinstall only prints a funding
+# message, so we don't need to run it. Declaring it here stops `pnpm install`
+# from erroring on an undecided ignored build.
+allowBuilds:
+  core-js: false

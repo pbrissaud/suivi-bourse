@@ -34,7 +34,7 @@ See `git help commit`:
 ### Technical Requirements
 
 * Must pass [DCO check](#sign-off-your-work)
-* Must pass CI jobs for linting, security analysis and E2E testing 
+* Must pass CI jobs for linting, security analysis and unit testing 
 
 **You don't need to bump any version number, this will be done automatically once PR merged**
 

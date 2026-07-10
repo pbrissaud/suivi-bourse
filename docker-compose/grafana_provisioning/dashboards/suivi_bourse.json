@@ -31,8 +31,8 @@
   "panels": [
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -47,10 +47,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -67,7 +63,7 @@
       "id": 76,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -85,22 +81,21 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "editorMode": "code",
-          "expr": "sum(sb_purchased_price{share_name=~\"$share\"} * on(share_name) sb_purchased_quantity{share_name=~\"$share\"})",
-          "legendFormat": "Total Investment",
-          "range": true,
-          "refId": "A"
+          "rawSql": "SELECT bucket as time, SUM(investment) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
+      "title": "Total Investment",
       "type": "stat"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -115,10 +110,6 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -135,7 +126,7 @@
       "id": 87,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -153,22 +144,21 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "editorMode": "code",
-          "expr": "sum(sb_share_price{share_name=~\"$share\"} * on(share_name) sb_owned_quantity{share_name=~\"$share\"})",
-          "legendFormat": "Total Valuation",
-          "range": true,
-          "refId": "A"
+          "rawSql": "SELECT bucket as time, SUM(valuation) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(share_price * owned_quantity) as valuation FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
+      "title": "Total Valuation",
       "type": "stat"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
@@ -203,7 +193,7 @@
       "id": 88,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -221,16 +211,15 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "editorMode": "code",
-          "expr": "((sum(sb_share_price{share_name=~\"$share\"} * on(share_name) sb_owned_quantity{share_name=~\"$share\"}) - sum(sb_purchased_price{share_name=~\"$share\"} * on(share_name) sb_purchased_quantity{share_name=~\"$share\"})) + sum(sb_received_dividend{share_name=~\"$share\"})) / sum(sb_purchased_price{share_name=~\"$share\"} * on(share_name) sb_purchased_quantity{share_name=~\"$share\"})",
-          "legendFormat": "Total Performance",
-          "range": true,
-          "refId": "A"
+          "rawSql": "SELECT bucket as time, (SUM(valuation) + SUM(dividends) - SUM(investment)) / NULLIF(SUM(investment), 0) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(share_price * owned_quantity) as valuation, AVG(COALESCE(received_dividend, 0)) as dividends, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
+      "title": "Total Performance",
       "type": "stat"
     },
     {
@@ -261,14 +250,77 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "decimals": 2,
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "id": 4,
+      "options": {
+        "colors": {
+          "down": "red",
+          "flat": "gray",
+          "up": "green"
+        },
+        "fields": {
+          "open": "open",
+          "high": "high",
+          "low": "low",
+          "close": "close"
+        },
+        "includeAllFields": false,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mode": "candles"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "rawSql": "SELECT time, price_open as open, price_high as high, price_low as low, share_price as close FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) ORDER BY time",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Share price evolution",
+      "type": "candlestick"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "fixedColor": "blue",
-            "mode": "fixed"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "custom": {
             "axisBorderShow": false,
@@ -276,33 +328,21 @@
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
             "lineWidth": 1,
-            "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
             }
           },
-          "decimals": 2,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -318,96 +358,53 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 16,
+        "h": 4,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 17
       },
-      "id": 4,
+      "id": 100,
       "options": {
-        "candleStyle": "candles",
-        "colorStrategy": "open-close",
-        "colors": {
-          "down": "red",
-          "up": "green"
-        },
-        "fields": {
-          "close": "close",
-          "high": "max",
-          "low": "min",
-          "open": "open"
-        },
-        "includeAllFields": false,
+        "barRadius": 0,
+        "barWidth": 0.9,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
         "legend": {
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": false
         },
-        "mode": "candles"
+        "orientation": "auto",
+        "showValue": "never",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
-      "pluginVersion": "7.4.2",
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "editorMode": "code",
-          "exemplar": false,
-          "expr": "last_over_time(sb_share_price{share_name=\"$share\"}[$__rate_interval])",
-          "format": "time_series",
-          "interval": "5m",
-          "intervalFactor": 1,
-          "legendFormat": "close",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "max_over_time(sb_share_price{share_name=\"$share\"}[$__rate_interval])",
-          "hide": false,
-          "interval": "5m",
-          "legendFormat": "max",
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "min_over_time(sb_share_price{share_name=\"$share\"}[$__rate_interval])",
-          "hide": false,
-          "interval": "5m",
-          "legendFormat": "min",
-          "range": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "last_over_time(sb_share_price{share_name=\"$share\"}[$__rate_interval] offset $__rate_interval) ",
-          "hide": false,
-          "interval": "5m",
-          "legendFormat": "open",
-          "range": true,
-          "refId": "D"
+          "rawSql": "SELECT DATE_BIN(INTERVAL '1 hour', time) as time, MAX(volume) as volume FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) GROUP BY DATE_BIN(INTERVAL '1 hour', time) ORDER BY time",
+          "refId": "A",
+          "format": "table"
         }
       ],
-      "title": "Share price evolution",
-      "type": "candlestick"
+      "title": "Volume",
+      "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -454,30 +451,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_purchased_quantity{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, purchased_quantity as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Purchased quantity",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -526,30 +515,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_purchased_price{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, purchased_price as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_price IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Cost price",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -597,30 +578,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_purchased_fee{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, purchased_fee as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_fee IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Fees",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -669,30 +642,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_share_price{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, share_price as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Actual price",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -749,30 +714,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_share_price{share_name=\"$share\"} - sb_purchased_price{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, (share_price - purchased_price) as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND purchased_price IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Unitary Gain / Loss ",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -819,30 +776,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_owned_quantity{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, owned_quantity as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND owned_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Owned quantity",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -890,30 +839,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "sb_received_dividend{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, received_dividend as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND received_dividend IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Received dividend",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -970,30 +911,22 @@
       "targets": [
         {
           "datasource": {
-            "0": "P",
-            "1": "r",
-            "2": "o",
-            "3": "m",
-            "4": "e",
-            "5": "t",
-            "6": "h",
-            "7": "e",
-            "8": "u",
-            "9": "s"
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
           },
-          "exemplar": true,
-          "expr": "((sb_owned_quantity{share_name=\"$share\"} * sb_share_price{share_name=\"$share\"}) + sb_received_dividend{share_name=\"$share\"}) - ((sb_purchased_quantity{share_name=\"$share\"} * sb_purchased_price{share_name=\"$share\"}) + sb_purchased_fee{share_name=\"$share\"})",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "rawSql": "SELECT time, ((owned_quantity * share_price) + COALESCE(received_dividend, 0) - (purchased_quantity * purchased_price) - COALESCE(purchased_fee, 0)) as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Total gain / loss",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1041,20 +974,23 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": "Prometheus",
-          "exemplar": true,
-          "expr": "sb_dividend_yield{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "rawSql": "SELECT time, dividend_yield as value FROM portfolio_metrics WHERE share_name = '${share}' AND time >= NOW() - INTERVAL '30 days' AND dividend_yield IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Dividend Yield",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1102,20 +1038,23 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": "Prometheus",
-          "exemplar": true,
-          "expr": "sb_pe_ratio{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "rawSql": "SELECT time, pe_ratio as value FROM portfolio_metrics WHERE share_name = '${share}' AND time >= NOW() - INTERVAL '30 days' AND pe_ratio IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "P/E Ratio",
       "type": "stat"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1163,13 +1102,13 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": "Prometheus",
-          "exemplar": true,
-          "expr": "sb_market_cap{share_name=\"$share\"}",
-          "instant": true,
-          "interval": "",
-          "legendFormat": "",
-          "refId": "A"
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "rawSql": "SELECT time, market_cap as value FROM portfolio_metrics WHERE share_name = '${share}' AND time >= NOW() - INTERVAL '30 days' AND market_cap IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A",
+          "format": "time_series"
         }
       ],
       "title": "Market Cap",
@@ -1185,99 +1124,96 @@
       {
         "current": {
           "selected": false,
+          "text": "InfluxDB",
+          "value": "InfluxDB"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "DS_INFLUXDB",
+        "options": [],
+        "query": "influxdb",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
           "text": "All",
           "value": "$__all"
         },
         "datasource": {
-          "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
         },
-        "definition": "label_values(sb_share_info{quote_type=~\"$quote_type\", share_exchange=~\"$exchange\"},share_name)",
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Share",
         "multi": true,
         "name": "share",
         "options": [],
-        "query": {
-          "query": "label_values(sb_share_info{quote_type=~\"$quote_type\", share_exchange=~\"$exchange\"},share_name)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "SELECT DISTINCT share_name AS __text, share_name AS __value FROM portfolio_metrics WHERE time >= NOW() - INTERVAL '30 days' ORDER BY share_name",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
-        "tagValuesQuery": "",
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
-        },
-        "definition": "label_values(sb_share_info, quote_type)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Quote Type",
-        "multi": true,
-        "name": "quote_type",
-        "options": [],
-        "query": {
-          "query": "label_values(sb_share_info, quote_type)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
         "type": "query"
       },
       {
         "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
-          "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
         },
-        "definition": "label_values(sb_share_info, share_exchange)",
+        "definition": "",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Type",
+        "multi": false,
+        "name": "quote_type",
+        "options": [],
+        "query": "SELECT DISTINCT quote_type AS __text, quote_type AS __value FROM portfolio_metrics WHERE time >= NOW() - INTERVAL '30 days' AND quote_type IS NOT NULL ORDER BY quote_type",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
+        },
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Exchange",
-        "multi": true,
+        "multi": false,
         "name": "exchange",
         "options": [],
-        "query": {
-          "query": "label_values(sb_share_info, share_exchange)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
+        "query": "SELECT DISTINCT share_exchange AS __text, share_exchange AS __value FROM portfolio_metrics WHERE time >= NOW() - INTERVAL '30 days' AND share_exchange IS NOT NULL ORDER BY share_exchange",
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 1,
+        "sort": 0,
         "type": "query"
       }
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-7d",
     "to": "now"
   },
   "timeRangeUpdatedDuringEditOrView": false,
@@ -1285,6 +1221,6 @@
   "timezone": "",
   "title": "Stock share monitoring",
   "uid": "O9_AegInk",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }

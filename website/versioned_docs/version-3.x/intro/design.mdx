@@ -1,0 +1,13 @@
+---
+title: Design
+description: App Design
+sidebar_position: 1
+---
+
+1. The app reads the configuration file describing all the stock share you own 
+2. Every 120 seconds (this is the default value, it can be changed with env variable), the app calls Yahoo! Finance API to get the current value of all your owned shares
+3. The app exposes the data in OpenMetrics format
+4. Prometheus scrapes this data and stores it
+5. Grafana reads Prometheus to display the data in a dashboard
+
+![Diagram](/img/diagram.png)

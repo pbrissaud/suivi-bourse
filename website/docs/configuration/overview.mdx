@@ -1,0 +1,79 @@
+---
+title: Overview
+description: Configuration modes, mode selection and environment variables
+sidebar_position: 1
+---
+
+SuiviBourse supports two **mutually exclusive** configuration modes:
+
+| Mode | Source | Best for |
+|------|--------|----------|
+| **[Manual](/docs/configuration/manual-mode)** | `config.yaml` | Simple portfolios, static configuration |
+| **[Events](/docs/configuration/events-mode)** | `events/*.csv` or `events/*.xlsx` | Transaction history, multiple brokers, evolving portfolios, historical backfill |
+
+:::caution The modes are mutually exclusive
+Switching to events mode ignores `config.yaml` entirely. There is no automatic
+migration between modes.
+:::
+
+## Mode selection priority
+
+SuiviBourse decides which mode to use in this order:
+
+1. The `SB_CONFIG_MODE` environment variable (`manual` or `events`)
+2. The `mode` field in `settings.yaml`
+3. Default: `manual`
+
+## Configuration directory
+
+By default, SuiviBourse looks for its configuration in
+`~/.config/SuiviBourse/`. Inside a container this resolves to
+`/home/appuser/.config/SuiviBourse/`.
+
+```
+~/.config/SuiviBourse/
+├── config.yaml      # Manual mode
+├── settings.yaml    # Events mode selector + options
+└── events/          # Events mode transaction files
+    ├── 2023.csv
+    ├── 2024.csv
+    └── broker-export.xlsx
+```
+
+## Environment variables
+
+All settings can be overridden with environment variables.
+
+### Application
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+### Backfill (events mode)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
+| `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
+| `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history fetched per request |
+
+### InfluxDB 3
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+
+### Legacy Prometheus endpoint
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
+| `SB_METRICS_PORT` | `8081` | Port for the `/metrics` endpoint |
+
+See [Legacy Prometheus endpoint](/docs/advanced/prometheus-legacy) for details.

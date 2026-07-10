@@ -2,14 +2,23 @@ services:
   app:
     container_name: suivi-bourse-app
     depends_on:
-    - prometheus
+      influxdb:
+        condition: service_healthy
     environment:
     - SB_SCRAPING_INTERVAL=${SCRAPING_INTERVAL}
     - SB_INGESTION_INTERVAL=${INGESTION_INTERVAL:-300}
+    - SB_BACKFILL_INTERVAL=${BACKFILL_INTERVAL:-60}
+    - SB_BACKFILL_DELAY=${BACKFILL_DELAY:-10}
+    - SB_BACKFILL_CHUNK_DAYS=${BACKFILL_CHUNK_DAYS:-365}
     - SB_CONFIG_MODE=${SB_CONFIG_MODE:-manual}
+    - INFLUXDB_HOST=http://influxdb:8181
+    - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+    - INFLUXDB_DATABASE=${INFLUXDB_DATABASE:-suivi_bourse}
     image: ghcr.io/pbrissaud/suivi-bourse-app:latest
     pull_policy: always
     restart: unless-stopped
+    ports:
+    - 8081:8081  # Prometheus /metrics (legacy)
     volumes:
     - ./config.yaml:/home/appuser/.config/SuiviBourse/config.yaml:ro
     - ./events:/home/appuser/.config/SuiviBourse/events:ro
@@ -17,25 +26,42 @@ services:
   grafana:
     container_name: suivi-bourse-graf
     depends_on:
-    - prometheus
+      influxdb:
+        condition: service_healthy
+    environment:
+    - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}
     image: grafana/grafana:12.4.5
     ports:
     - 3000:3000
     restart: unless-stopped
     volumes:
     - ./grafana_provisioning:/etc/grafana/provisioning
-  prometheus:
-    command:
-    - --config.file=/etc/prometheus/prometheus.yml
-    - --storage.tsdb.path=/prometheus
-    - --web.console.libraries=/usr/share/prometheus/console_libraries
-    - --web.console.templates=/usr/share/prometheus/consoles
-    container_name: suivi-bourse-prom
-    image: prom/prometheus:v3.13.1
+  influxdb:
+    container_name: suivi-bourse-influxdb
+    image: influxdb:3-core
+    entrypoint: ["/bin/bash", "/init.sh"]
+    environment:
+    - INFLUXDB3_NODE_ID=suivi-bourse
+    - INFLUXDB3_DATABASE=${INFLUXDB_DATABASE:-suivi_bourse}
+    - INFLUXDB3_DATA_DIR=/var/lib/influxdb3
+    - INFLUXDB3_ADMIN_TOKEN_FILE=/run/secrets/admin-token
+    ports:
+    - 8181:8181
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    secrets:
+    - admin-token
     volumes:
-    - sb_prometheus_data:/prometheus
-    - ./prometheus_provisioning:/etc/prometheus/
+    - sb_influxdb_data:/var/lib/influxdb3
+    - ./influxdb3-init.sh:/init.sh:ro
+secrets:
+  admin-token:
+    file: ./influxdb3-token.json
 volumes:
-  sb_prometheus_data:
+  sb_influxdb_data:
     driver: local

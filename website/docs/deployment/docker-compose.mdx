@@ -1,31 +1,39 @@
 ---
 title: Docker Compose
-description: Docker Compose Installation
-sidebar_position: 3
+description: Run the full stack (app + InfluxDB 3 + Grafana)
+sidebar_position: 1
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Docker Compose mode deploys a full environment with a pre-configured Prometheus and Grafana.
+Docker Compose is the recommended way to run SuiviBourse. It deploys the **full
+stack**:
+
+- `suivi-bourse-app` — the application
+- `suivi-bourse-influxdb` — a pre-initialized **InfluxDB 3 Core** instance
+- `suivi-bourse-graf` — a **Grafana** with a provisioned datasource and dashboard
 
 ## Requirements
-* Windows, Linux or macOS
-* Docker (> 19.03)
-* Docker Compose
+
+- Windows, Linux or macOS
+- Docker (> 19.03)
+- Docker Compose
 
 ## Steps
 
-1. Download the source code of the project from the [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest) and extract it.
+1. Download the source code from the
+   [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest)
+   and extract it.
 
-2. Move to the downloaded folder and go to **docker-compose** folder
+2. Move into the **`docker-compose`** folder.
 
 3. Configure your portfolio using one of the two modes:
 
 <Tabs>
-  <TabItem value="manual" label="Manual Mode" default>
+  <TabItem value="manual" label="Manual mode" default>
 
-Edit `config.yaml` file following the [configuration doc](/docs/intro/config#manual-mode):
+Edit `config.yaml` following the [manual mode doc](/docs/configuration/manual-mode):
 
 ```yaml title="config.yaml"
 shares:
@@ -41,18 +49,18 @@ shares:
 ```
 
   </TabItem>
-  <TabItem value="events" label="Events Mode">
+  <TabItem value="events" label="Events mode">
 
 1. Create a `settings.yaml` file:
 
 ```yaml title="settings.yaml"
 mode: events
 events:
-  source: ~/.config/SuiviBourse/events/
+  source: /home/appuser/.config/SuiviBourse/events/
   watch: true
 ```
 
-2. Create an `events/` directory and add your transaction files:
+2. Add your transaction files to the `events/` directory:
 
 ```csv title="events/portfolio.csv"
 date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
@@ -60,13 +68,14 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
 ```
 
-3. Set the environment variable in `.env`:
+3. Select events mode in the `.env` file:
 
 ```bash title=".env"
 SB_CONFIG_MODE=events
 ```
 
-See the [events mode documentation](/docs/intro/config#events-mode) for the full CSV format.
+See the [events mode doc](/docs/configuration/events-mode) for the full CSV
+format and [backfill](/docs/backfill) for historical data.
 
   </TabItem>
 </Tabs>
@@ -74,50 +83,95 @@ See the [events mode documentation](/docs/intro/config#events-mode) for the full
 4. Start the stack:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-## Environment Variables
+## Ports
 
-Edit the **.env** file in the **docker-compose** folder to set environment variables:
+| Service | Port | Purpose |
+|---------|------|---------|
+| Grafana | `3000` | Dashboards (login `admin` / `admin`) |
+| InfluxDB 3 | `8181` | Database HTTP API |
+| App | `8081` | Legacy Prometheus `/metrics` endpoint |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SB_CONFIG_MODE` | Configuration mode (`manual` or `events`) | `manual` |
-| `SB_SCRAPING_INTERVAL` | Price scraping interval in seconds | `120` |
-| `SB_INGESTION_INTERVAL` | Event ingestion interval in seconds | `300` |
-| `LOG_LEVEL` | Application log level | `INFO` |
+## Environment variables
 
-## File Structure
+Edit the **`.env`** file in the `docker-compose` folder:
 
-After setup, your docker-compose folder should look like:
+```bash title=".env"
+SCRAPING_INTERVAL=120
+
+# InfluxDB 3 Configuration
+INFLUXDB_DATABASE=suivi_bourse
+INFLUXDB_TOKEN=apiv3_suivi-bourse-admin-token-for-local-development
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
+| `BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
+| `BACKFILL_DELAY` | `10` | Delay between backfill requests (seconds) |
+| `BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
+| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+| `INFLUXDB_TOKEN` | _(preset)_ | InfluxDB admin token (matches the provisioned token) |
+| `GF_ADMIN_PASSWORD` | `admin` | Grafana admin password |
+
+:::caution InfluxDB token
+The compose stack ships with a **development** admin token
+(`apiv3_suivi-bourse-admin-token-for-local-development`), preconfigured in both
+InfluxDB and the Grafana datasource. **Change it before any non-local use** by
+editing `influxdb3-token.json`, the Grafana datasource under
+`grafana_provisioning/datasources/`, and `INFLUXDB_TOKEN` in `.env`.
+:::
+
+## File structure
+
+After setup, your `docker-compose` folder looks like:
 
 <Tabs>
-  <TabItem value="manual" label="Manual Mode" default>
+  <TabItem value="manual" label="Manual mode" default>
 
 ```
 docker-compose/
 ├── .env
-├── config.yaml          # Your portfolio configuration
+├── config.yaml               # Your portfolio configuration
 ├── docker-compose.yaml
-├── grafana_provisioning/
-└── prometheus_provisioning/
+├── influxdb3-init.sh          # InfluxDB 3 bootstrap (creates the database)
+├── influxdb3-token.json       # InfluxDB admin token (dev default)
+└── grafana_provisioning/
+    ├── datasources/           # InfluxDB SQL datasource
+    └── dashboards/            # "Stock share monitoring" dashboard
 ```
 
   </TabItem>
-  <TabItem value="events" label="Events Mode">
+  <TabItem value="events" label="Events mode">
 
 ```
 docker-compose/
-├── .env                 # Contains SB_CONFIG_MODE=events
-├── settings.yaml        # Mode configuration
-├── events/              # Your transaction files
+├── .env                       # Contains SB_CONFIG_MODE=events
+├── settings.yaml              # Mode configuration
+├── events/                    # Your transaction files
 │   ├── 2023.csv
 │   └── 2024.csv
 ├── docker-compose.yaml
-├── grafana_provisioning/
-└── prometheus_provisioning/
+├── influxdb3-init.sh
+├── influxdb3-token.json
+└── grafana_provisioning/
+    ├── datasources/
+    └── dashboards/
 ```
 
   </TabItem>
 </Tabs>
+
+## Development stack
+
+A `docker-compose.dev.yaml` is also provided. It builds the app image locally,
+runs InfluxDB **without authentication**, enables `DEBUG` logging, and also
+serves this documentation site. It defaults to events mode:
+
+```bash
+docker compose -f docker-compose.dev.yaml up -d
+```
