@@ -38,7 +38,7 @@ services:
         condition: service_healthy
     environment:
     - GF_SECURITY_ADMIN_PASSWORD=admin
-    image: grafana/grafana:12.4.5
+    image: grafana/grafana:13.1.0
     ports:
     - 3000:3000
     restart: unless-stopped
