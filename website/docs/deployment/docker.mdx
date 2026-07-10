@@ -46,6 +46,9 @@ docker run -d \
   ghcr.io/pbrissaud/suivi-bourse-app:latest
 ```
 
+If you set up **events mode** in step 1, also pass `-e SB_CONFIG_MODE=events`
+(it defaults to `manual` and would otherwise ignore your `settings.yaml`).
+
 Port `8081` exposes the legacy Prometheus `/metrics` endpoint; you can omit the
 `-p` flag if you don't use it.
 

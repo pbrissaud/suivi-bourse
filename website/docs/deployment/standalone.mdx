@@ -140,7 +140,7 @@ Using `cron` and `nohup`, you can run the app at boot:
 
 2. Add the following line (adjust the path and token):
     ```
-    @reboot cd <installation_path>/app && INFLUXDB_TOKEN=<your-token> nohup uv run python src/main.py > $HOME/suivi-bourse.log 2>&1 &
+    @reboot cd <installation_path>/app && INFLUXDB_HOST=http://localhost:8181 INFLUXDB_TOKEN=<your-token> nohup uv run python src/main.py > $HOME/suivi-bourse.log 2>&1 &
     ```
 
 The application logs will be written to `$HOME/suivi-bourse.log`.

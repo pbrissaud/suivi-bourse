@@ -84,3 +84,9 @@ The writer is configured through environment variables:
 In the [Docker Compose](/docs/deployment/docker-compose) stack, the database is
 created automatically by `influxdb3-init.sh` and the token is provisioned into
 both InfluxDB and the Grafana datasource.
+
+:::caution Development token
+The provisioned token is a **development** value shipped for zero-config local
+use. Change it before any non-local deployment — see the
+[token note in the Docker Compose guide](/docs/deployment/docker-compose#environment-variables).
+:::
