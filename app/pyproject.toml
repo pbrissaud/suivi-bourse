@@ -8,7 +8,7 @@ dependencies = [
     "APScheduler==3.11.3",
     "Cerberus==1.3.8",
     "PyYAML==6.0.3",
-    "confuse==2.2.0",
+    "confuse==2.2.1",
     "logfmt-logger==0.1.2",
     "influxdb3-python>=0.17.0",
     "prometheus-client==0.25.0",  # legacy /metrics endpoint (backward compatibility)
