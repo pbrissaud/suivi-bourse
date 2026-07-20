@@ -18,8 +18,8 @@ class EventLoaderError(Exception):
 class EventLoader:
     """Loads portfolio events from CSV and XLSX files."""
 
-    REQUIRED_COLUMNS = {'date', 'event_type', 'symbol', 'name'}
-    OPTIONAL_COLUMNS = {'quantity', 'unit_price', 'fee', 'amount', 'notes', 'account'}
+    REQUIRED_COLUMNS = frozenset({'date', 'event_type', 'symbol', 'name'})
+    OPTIONAL_COLUMNS = frozenset({'quantity', 'unit_price', 'fee', 'amount', 'notes', 'account'})
     ALL_COLUMNS = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
 
     def __init__(self, source_path: str):

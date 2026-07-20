@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
 import yaml
@@ -387,9 +387,10 @@ class SuiviBourseMetrics:
         # Cache for share info (to avoid repeated API calls during backfill)
         self._share_info_cache: Dict[str, Dict] = {}
 
-        # Track symbols whose backfill has reached the first BUY date, keyed by
-        # that date so an earlier newly-added event re-triggers backfill.
-        self._backfill_complete: Dict[str, datetime] = {}
+        # Track (symbol, account) pairs whose backfill has reached the first BUY
+        # date, mapped to that date so an earlier newly-added event re-triggers
+        # backfill for that account.
+        self._backfill_complete: Dict[Tuple[str, str], datetime] = {}
 
     def validate(self) -> bool:
         """

@@ -11,6 +11,8 @@ import os
 from prometheus_client import CollectorRegistry, Gauge, start_http_server
 from logfmt_logger import getLogger
 
+from events.schemas import DEFAULT_ACCOUNT
+
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("prometheus_exporter", level=LOG_LEVEL)
 
@@ -86,7 +88,7 @@ class PrometheusExporter:
             last_quote: Latest price, or None if the fetch failed.
             info: Enriched ticker info dict, or None if the fetch failed.
         """
-        account = share.get('account', 'default')
+        account = share.get('account', DEFAULT_ACCOUNT)
         labels = (share['name'], share['symbol'], account)
 
         self.purchased_quantity.labels(*labels).set(share['purchase']['quantity'])

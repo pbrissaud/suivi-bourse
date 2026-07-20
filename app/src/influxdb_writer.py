@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
+from events.schemas import DEFAULT_ACCOUNT
+
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
 
@@ -87,7 +89,7 @@ class InfluxDBWriter:
         self,
         share_name: str,
         share_symbol: str,
-        account: str = "default",
+        account: str = DEFAULT_ACCOUNT,
         share_price: Optional[float] = None,
         purchased_quantity: Optional[float] = None,
         purchased_price: Optional[float] = None,
@@ -133,8 +135,8 @@ class InfluxDBWriter:
         # Tags (always set)
         point.tag("share_name", share_name)
         point.tag("share_symbol", share_symbol)
-        # account is always written (default 'default') so every point carries it
-        point.tag("account", account or "default")
+        # account is always written (default bucket) so every point carries it
+        point.tag("account", account or DEFAULT_ACCOUNT)
 
         # Optional tags
         if share_currency:
@@ -187,7 +189,7 @@ class InfluxDBWriter:
         share_currency: Optional[str] = None,
         share_exchange: Optional[str] = None,
         quote_type: Optional[str] = None,
-        account: str = "default"
+        account: str = DEFAULT_ACCOUNT
     ) -> int:
         """
         Write historical price data to InfluxDB in batch.
@@ -226,7 +228,7 @@ class InfluxDBWriter:
             point = Point(self.MEASUREMENT)
             point.tag("share_name", share_name)
             point.tag("share_symbol", share_symbol)
-            point.tag("account", account or "default")
+            point.tag("account", account or DEFAULT_ACCOUNT)
 
             if share_currency:
                 point.tag("share_currency", share_currency)

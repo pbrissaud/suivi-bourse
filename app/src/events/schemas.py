@@ -9,10 +9,9 @@ from typing import List, Optional, Set
 
 
 # Canonical account bucket used when no accounts are declared (opt-out users) or
-# for points written before the accounts feature existed. The events/aggregation
-# layer and main.py reference this constant; the lower-level InfluxDB writer and
-# Prometheus exporter keep the same literal "default" as a parameter default so
-# they stay decoupled from the events domain.
+# for points written before the accounts feature existed. Single source of truth:
+# the aggregation layer, main.py, the InfluxDB writer and the Prometheus exporter
+# all reference this constant so the tag, the label and the aggregation agree.
 DEFAULT_ACCOUNT = "default"
 
 
