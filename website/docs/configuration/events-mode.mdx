@@ -98,6 +98,7 @@ Requires the `openpyxl` library, which is bundled in the Docker image.
 | `fee` | Optional | Transaction fee (must be `>= 0`) |
 | `amount` | For `DIVIDEND` | Dividend amount received |
 | `notes` | Optional | Free-text comment (ignored by the app) |
+| `account` | Only when [accounts](#accounts-opt-in) are declared | Account `id` this event belongs to |
 
 The four required columns must always be present in the header. Empty cells are
 allowed for the columns that don't apply to a given event type.
@@ -155,6 +156,80 @@ so raises an aggregation error and the previous valid configuration is kept.
 ### DIVIDEND — received dividends
 
 - Increases `estate.received_dividend` by `amount`.
+
+## Accounts (opt-in)
+
+By default every position is tracked in a single implicit account named
+`default`. If you hold the **same share across several accounts** (e.g. a PEA
+and a CTO, or several brokers), you can declare them as first-class accounts so
+each position is tracked — and priced — separately.
+
+This is an **opt-in** feature: it is enabled only by adding an `accounts:` block
+to `settings.yaml`. Without it, nothing changes.
+
+### Declaring accounts
+
+```yaml title="settings.yaml"
+mode: events
+events:
+  source: ~/.config/SuiviBourse/events/
+accounts:
+  - id: PEA          # referenced by the `account` column in your event files
+    type: PEA        # free-form label (PEA, CTO, 401k, …)
+    currency: EUR
+    label: Mon PEA   # optional display name (defaults to `id`)
+  - id: CTO
+    type: CTO
+    currency: EUR
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Unique identifier, referenced by the `account` column of your events |
+| `type` | Yes | Free-form account type (`PEA`, `CTO`, `401k`, …) |
+| `currency` | Yes | Account currency (`EUR`, `USD`, …) |
+| `label` | No | Display name (defaults to `id`) |
+
+### The `account` column
+
+Once accounts are declared, **every event line must carry an `account` column**
+whose value matches a declared `id`:
+
+```csv title="events/2024.csv"
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes,account
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,,PEA
+2024-01-16,BUY,AAPL,Apple Inc,5,160.00,1.00,,,CTO
+```
+
+- A line **without** an `account` value is a validation error.
+- An `account` value that does **not** match any declared `id` is a validation
+  error.
+- With the example above, AAPL is tracked as **two independent positions** —
+  10 shares in the PEA and 5 in the CTO — each with its own weighted average
+  cost price.
+
+:::note What if I don't declare accounts?
+The `account` column is simply ignored and every position falls under the
+implicit `default` account. Manual mode is unaffected as well.
+:::
+
+### How accounts appear downstream
+
+- **InfluxDB** — every point of `portfolio_metrics` carries an `account` tag
+  (`default` when accounts aren't declared).
+- **Prometheus** — the `sb_*` gauges gain an `account` label, so the same
+  symbol held in two accounts no longer overwrites itself.
+- **Grafana (dashboard 1)** — the "patrimoine total" dashboard **aggregates
+  across all accounts**: `Owned quantity`, `Total Investment`, etc. sum the
+  accounts, and `Cost price` is their quantity-weighted average. It stays a
+  single "total wealth" view and does **not** add an account selector.
+
+:::info Existing data
+Points written before this feature existed have no `account` tag; InfluxDB
+exposes them as `NULL`. The dashboard queries read them with
+`COALESCE(account, 'default')`, so your historical data stays visible and is
+aggregated correctly. No migration or history rewrite is performed.
+:::
 
 ## Key behaviours
 

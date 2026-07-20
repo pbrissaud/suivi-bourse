@@ -23,7 +23,7 @@ from events import EventLoader, EventValidator, EventAggregator, EventWatcher
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
-from events.schemas import EventType
+from events.schemas import EventType, Account, Portfolio, DEFAULT_ACCOUNT
 from influxdb_writer import InfluxDBWriter
 from prometheus_exporter import PrometheusExporter
 
@@ -31,6 +31,26 @@ LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
 scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
 yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
+
+# Cerberus schema for the opt-in `accounts:` block of settings.yaml. Declaring
+# this block turns on first-class accounts; its absence leaves behaviour
+# strictly unchanged.
+ACCOUNTS_SCHEMA = {
+    'accounts': {
+        'type': 'list',
+        'required': True,
+        'empty': False,
+        'schema': {
+            'type': 'dict',
+            'schema': {
+                'id': {'type': 'string', 'required': True, 'empty': False},
+                'type': {'type': 'string', 'required': True, 'empty': False},
+                'currency': {'type': 'string', 'required': True, 'empty': False},
+                'label': {'type': 'string', 'required': False},
+            },
+        },
+    },
+}
 
 
 class InvalidConfigFile(Exception):
@@ -66,6 +86,8 @@ class ConfigurationManager:
         self._mode: Optional[str] = None
         self._events_source: Optional[str] = None
         self._watch_enabled: bool = False
+        # Declared accounts (opt-in). None means no accounts block was declared.
+        self._accounts: Optional[Portfolio] = None
         self._confuse_config: Optional[Configuration] = None
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
@@ -79,6 +101,13 @@ class ConfigurationManager:
 
     def _load_settings(self) -> None:
         """Load settings from settings.yaml or environment."""
+        # Read settings.yaml once (if present) so the accounts block is available
+        # regardless of how the mode is ultimately selected.
+        settings = {}
+        if self.settings_path.exists():
+            with open(self.settings_path, 'r', encoding='utf-8') as f:
+                settings = yaml.safe_load(f) or {}
+
         # Priority 1: Environment variable
         env_mode = os.getenv('SB_CONFIG_MODE')
         if env_mode:
@@ -86,8 +115,6 @@ class ConfigurationManager:
             app_logger.info(f"Using config mode from environment: {self._mode}")
         # Priority 2: settings.yaml
         elif self.settings_path.exists():
-            with open(self.settings_path, 'r', encoding='utf-8') as f:
-                settings = yaml.safe_load(f) or {}
             self._mode = settings.get('mode', self.MODE_MANUAL).lower()
             events_settings = settings.get('events', {})
             self._events_source = events_settings.get('source')
@@ -98,9 +125,59 @@ class ConfigurationManager:
             self._mode = self.MODE_MANUAL
             app_logger.info(f"No settings found, using default mode: {self._mode}")
 
+        # Accounts are an opt-in feature declared in settings.yaml, independent of
+        # how the mode was selected. Absence leaves behaviour strictly unchanged.
+        self._accounts = self._parse_accounts(settings.get('accounts'))
+        if self._accounts is not None:
+            app_logger.info(
+                f"Loaded {len(self._accounts.accounts)} declared account(s): "
+                f"{', '.join(sorted(self._accounts.ids()))}")
+
         # Default events source if not specified
         if self._mode == self.MODE_EVENTS and not self._events_source:
             self._events_source = str(self.config_dir / 'events')
+
+    def _parse_accounts(self, raw) -> Optional[Portfolio]:
+        """Validate and build the declared accounts from the raw settings block.
+
+        Returns None when no accounts are declared (opt-out). Raises ValueError
+        on a malformed block or duplicate account ids.
+        """
+        if not raw:
+            return None
+
+        validator = Validator(ACCOUNTS_SCHEMA)
+        if not validator.validate({'accounts': raw}):
+            raise ValueError(
+                f"Invalid 'accounts' block in settings.yaml: {validator.errors}")
+
+        accounts = [
+            Account(
+                id=a['id'],
+                type=a['type'],
+                currency=a['currency'],
+                label=a.get('label', a['id']),
+            )
+            for a in raw
+        ]
+
+        ids = [a.id for a in accounts]
+        duplicates = sorted({i for i in ids if ids.count(i) > 1})
+        if duplicates:
+            raise ValueError(
+                f"Duplicate account id(s) in settings.yaml: {duplicates}")
+
+        return Portfolio(accounts=accounts)
+
+    def load_accounts(self) -> Optional[Portfolio]:
+        """Return the declared accounts, or None when none are declared.
+
+        The None return is the single signal that later gates per-account series
+        publication (see the accounts roadmap).
+        """
+        if self._mode is None:
+            self._load_settings()
+        return self._accounts
 
     def get_mode(self) -> str:
         """Get the current configuration mode."""
@@ -172,11 +249,16 @@ class ConfigurationManager:
             self._cache_key = current_key
             return []
 
-        validator = EventValidator()
+        # When accounts are declared, every event must carry a valid account and
+        # positions are keyed per account; otherwise everything falls under
+        # 'default' (a single code path either way).
+        account_ids = self._accounts.ids() if self._accounts else None
+
+        validator = EventValidator(account_ids=account_ids)
         validator.validate_or_raise(events)
 
         aggregator = EventAggregator()
-        shares = aggregator.aggregate(events)
+        shares = aggregator.aggregate(events, accounts_declared=account_ids is not None)
 
         # Update cache
         self._cached_shares = shares
@@ -451,6 +533,7 @@ class SuiviBourseMetrics:
         for i, share in enumerate(self.shares):
             share_name = share['name']
             share_symbol = share['symbol']
+            share_account = share.get('account', DEFAULT_ACCOUNT)
 
             last_quote, info = self._fetch_ticker_data(share_symbol)
 
@@ -476,6 +559,7 @@ class SuiviBourseMetrics:
                     self.influxdb.write_metrics(
                         share_name=share_name,
                         share_symbol=share_symbol,
+                        account=share_account,
                         share_price=last_quote,
                         purchased_quantity=share['purchase']['quantity'],
                         purchased_price=share['purchase']['cost_price'],
@@ -547,6 +631,7 @@ class SuiviBourseMetrics:
         for share in self.shares:
             symbol = share['symbol']
             name = share['name']
+            account = share.get('account', DEFAULT_ACCOUNT)
 
             # Get the target date (first BUY)
             first_buy_date = self.config_manager.get_first_buy_date(symbol)
@@ -673,7 +758,8 @@ class SuiviBourseMetrics:
                     prices=prices,
                     share_currency=info.get('currency'),
                     share_exchange=info.get('exchange'),
-                    quote_type=info.get('quoteType')
+                    quote_type=info.get('quoteType'),
+                    account=account
                 )
                 backfilled_count += written
             except Exception as e:

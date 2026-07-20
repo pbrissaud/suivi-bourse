@@ -5,7 +5,13 @@ Data schemas for the events module.
 from dataclasses import dataclass, field
 from datetime import date  # noqa: F401 — used in the `date: date` field annotation (eager-evaluated on Python <3.14)
 from enum import Enum
-from typing import Optional
+from typing import List, Optional, Set
+
+
+# Account bucket used when no accounts are declared (opt-out users) or for
+# points written before the accounts feature existed. Kept as a module constant
+# so every layer (aggregator, InfluxDB tag, Prometheus label) agrees on it.
+DEFAULT_ACCOUNT = "default"
 
 
 class EventType(Enum):
@@ -28,6 +34,7 @@ class Event:
     fee: Optional[float] = None
     amount: Optional[float] = None
     notes: Optional[str] = None
+    account: Optional[str] = None
 
     def __post_init__(self):
         # Convert string event_type to enum if needed
@@ -55,6 +62,7 @@ class ShareState:
     """Complete aggregated state for a share."""
     name: str
     symbol: str
+    account: str = DEFAULT_ACCOUNT
     purchase: PurchaseState = field(default_factory=PurchaseState)
     estate: EstateState = field(default_factory=EstateState)
 
@@ -63,6 +71,7 @@ class ShareState:
         return {
             'name': self.name,
             'symbol': self.symbol,
+            'account': self.account,
             'purchase': {
                 'quantity': self.purchase.quantity,
                 'cost_price': self.purchase.cost_price,
@@ -73,3 +82,29 @@ class ShareState:
                 'received_dividend': self.estate.received_dividend,
             },
         }
+
+
+@dataclass
+class Account:
+    """A declared account (opt-in feature, configured in settings.yaml)."""
+    id: str
+    type: str
+    currency: str
+    label: str
+
+
+@dataclass
+class Portfolio:
+    """The set of declared accounts."""
+    accounts: List[Account] = field(default_factory=list)
+
+    def ids(self) -> Set[str]:
+        """Return the set of declared account ids."""
+        return {a.id for a in self.accounts}
+
+    def get(self, account_id: str) -> Optional[Account]:
+        """Return the declared account with this id, or None."""
+        for account in self.accounts:
+            if account.id == account_id:
+                return account
+        return None

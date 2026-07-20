@@ -19,7 +19,7 @@ class EventLoader:
     """Loads portfolio events from CSV and XLSX files."""
 
     REQUIRED_COLUMNS = {'date', 'event_type', 'symbol', 'name'}
-    OPTIONAL_COLUMNS = {'quantity', 'unit_price', 'fee', 'amount', 'notes'}
+    OPTIONAL_COLUMNS = {'quantity', 'unit_price', 'fee', 'amount', 'notes', 'account'}
     ALL_COLUMNS = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
 
     def __init__(self, source_path: str):
@@ -198,6 +198,13 @@ class EventLoader:
         # Parse notes
         notes = row.get('notes', '').strip() if row.get('notes') else None
 
+        # Parse account (optional column; validation of whether it is required
+        # happens in EventValidator once declared accounts are known)
+        account_value = row.get('account')
+        if account_value is not None and not isinstance(account_value, str):
+            account_value = str(account_value)
+        account = account_value.strip() if account_value else None
+
         return Event(
             date=event_date,
             event_type=event_type,
@@ -208,6 +215,7 @@ class EventLoader:
             fee=fee,
             amount=amount,
             notes=notes if notes else None,
+            account=account if account else None,
         )
 
     def _parse_float(self, value, field_name: str) -> Optional[float]:

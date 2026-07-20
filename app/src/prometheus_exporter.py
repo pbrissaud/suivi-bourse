@@ -14,7 +14,9 @@ from logfmt_logger import getLogger
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("prometheus_exporter", level=LOG_LEVEL)
 
-COMMON_LABELS = ['share_name', 'share_symbol']
+# 'account' is part of every series identity: without it a symbol held in two
+# accounts would collapse onto the same series and silently overwrite itself.
+COMMON_LABELS = ['share_name', 'share_symbol', 'account']
 
 
 class PrometheusExporter:
@@ -84,7 +86,8 @@ class PrometheusExporter:
             last_quote: Latest price, or None if the fetch failed.
             info: Enriched ticker info dict, or None if the fetch failed.
         """
-        labels = (share['name'], share['symbol'])
+        account = share.get('account', 'default')
+        labels = (share['name'], share['symbol'], account)
 
         self.purchased_quantity.labels(*labels).set(share['purchase']['quantity'])
         self.purchased_price.labels(*labels).set(share['purchase']['cost_price'])
@@ -97,7 +100,7 @@ class PrometheusExporter:
 
         self.share_price.labels(*labels).set(last_quote)
         self.share_info.labels(
-            share['name'], share['symbol'],
+            share['name'], share['symbol'], account,
             info['currency'], info['exchange'], info['quoteType']).set(1)
 
         if info.get('dividendYield') is not None:

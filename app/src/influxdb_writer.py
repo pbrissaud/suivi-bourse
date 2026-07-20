@@ -87,6 +87,7 @@ class InfluxDBWriter:
         self,
         share_name: str,
         share_symbol: str,
+        account: str = "default",
         share_price: Optional[float] = None,
         purchased_quantity: Optional[float] = None,
         purchased_price: Optional[float] = None,
@@ -108,6 +109,7 @@ class InfluxDBWriter:
         Args:
             share_name: Name of the share (tag)
             share_symbol: Yahoo Finance symbol (tag)
+            account: Account bucket (tag, default 'default')
             share_price: Current price (field)
             purchased_quantity: Quantity purchased (field)
             purchased_price: Weighted average cost price (field)
@@ -131,6 +133,8 @@ class InfluxDBWriter:
         # Tags (always set)
         point.tag("share_name", share_name)
         point.tag("share_symbol", share_symbol)
+        # account is always written (default 'default') so every point carries it
+        point.tag("account", account or "default")
 
         # Optional tags
         if share_currency:
@@ -182,7 +186,8 @@ class InfluxDBWriter:
         prices: List[Dict[str, Any]],
         share_currency: Optional[str] = None,
         share_exchange: Optional[str] = None,
-        quote_type: Optional[str] = None
+        quote_type: Optional[str] = None,
+        account: str = "default"
     ) -> int:
         """
         Write historical price data to InfluxDB in batch.
@@ -201,6 +206,7 @@ class InfluxDBWriter:
             share_currency: Currency (tag)
             share_exchange: Exchange (tag)
             quote_type: Type (tag)
+            account: Account bucket (tag, default 'default')
 
         Returns:
             Number of points written
@@ -220,6 +226,7 @@ class InfluxDBWriter:
             point = Point(self.MEASUREMENT)
             point.tag("share_name", share_name)
             point.tag("share_symbol", share_symbol)
+            point.tag("account", account or "default")
 
             if share_currency:
                 point.tag("share_currency", share_currency)
