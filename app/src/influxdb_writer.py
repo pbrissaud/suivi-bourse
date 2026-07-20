@@ -268,12 +268,19 @@ class InfluxDBWriter:
 
         return len(points)
 
-    def get_oldest_timestamp(self, share_symbol: str) -> Optional[datetime]:
+    def get_oldest_timestamp(
+        self, share_symbol: str, account: Optional[str] = None
+    ) -> Optional[datetime]:
         """
         Get the oldest timestamp for a given share symbol in InfluxDB.
 
         Args:
             share_symbol: Yahoo Finance symbol
+            account: When provided, scope the lookup to this account so backfill
+                gaps are detected per account. Uses COALESCE(account, 'default')
+                so points written before the account tag existed count as
+                'default' — never a bare ``WHERE account = ...`` that would drop
+                them.
 
         Returns:
             Oldest timestamp as datetime, or None if no data exists
@@ -283,11 +290,15 @@ class InfluxDBWriter:
 
         # Escape single quotes to keep share_symbol a safe SQL string literal
         safe_symbol = share_symbol.replace("'", "''")
+        where = f"share_symbol = '{safe_symbol}'"
+        if account is not None:
+            safe_account = account.replace("'", "''")
+            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
         FROM "{self.MEASUREMENT}"
-        WHERE share_symbol = '{safe_symbol}'
+        WHERE {where}
         ORDER BY time ASC
         LIMIT 1
         """

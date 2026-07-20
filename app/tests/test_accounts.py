@@ -284,6 +284,82 @@ def test_events_pipeline_unknown_account_raises_when_declared(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# aggregate_until_date: account-aware point-in-time replay (backfill)
+# --------------------------------------------------------------------------- #
+def _two_account_events():
+    return [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=10, unit_price=150.0, fee=2.5, account="PEA"),
+        Event(date(2024, 1, 16), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=5, unit_price=160.0, fee=1.0, account="CTO"),
+    ]
+
+
+def test_aggregate_until_date_scoped_to_account():
+    events = _two_account_events()
+    agg = EventAggregator()
+
+    pea = agg.aggregate_until_date(events, date(2024, 2, 1), "AAPL",
+                                   account="PEA", accounts_declared=True)
+    cto = agg.aggregate_until_date(events, date(2024, 2, 1), "AAPL",
+                                   account="CTO", accounts_declared=True)
+
+    assert pea["estate"]["quantity"] == 10
+    assert pea["account"] == "PEA"
+    assert cto["estate"]["quantity"] == 5
+    assert cto["account"] == "CTO"
+
+
+def test_aggregate_until_date_none_before_account_first_event():
+    events = _two_account_events()
+    # CTO's first event is 2024-01-16; before that it has no state.
+    result = EventAggregator().aggregate_until_date(
+        events, date(2024, 1, 15), "AAPL", account="CTO", accounts_declared=True)
+    assert result is None
+
+
+def test_aggregate_until_date_merges_all_accounts_when_none():
+    """Legacy symbol-scoped call (account=None) merges every account."""
+    events = _two_account_events()
+    merged = EventAggregator().aggregate_until_date(
+        events, date(2024, 2, 1), "AAPL")
+    assert merged["estate"]["quantity"] == 15
+
+
+# --------------------------------------------------------------------------- #
+# get_oldest_timestamp: account-scoped SQL (COALESCE, never WHERE account=)
+# --------------------------------------------------------------------------- #
+def test_get_oldest_timestamp_scopes_query_by_account(mocker):
+    from influxdb_writer import InfluxDBWriter
+
+    writer = InfluxDBWriter(host="http://x", token="t", database="db")
+    fake_client = mocker.MagicMock()
+    fake_client.query.return_value = None
+    writer._client = fake_client
+
+    writer.get_oldest_timestamp("AAPL", account="PEA")
+
+    sql = fake_client.query.call_args.kwargs["query"]
+    assert "COALESCE(account, 'default') = 'PEA'" in sql
+    # Never a bare account filter that would drop pre-tag (NULL) points.
+    assert "WHERE account =" not in sql
+
+
+def test_get_oldest_timestamp_no_account_filter_when_omitted(mocker):
+    from influxdb_writer import InfluxDBWriter
+
+    writer = InfluxDBWriter(host="http://x", token="t", database="db")
+    fake_client = mocker.MagicMock()
+    fake_client.query.return_value = None
+    writer._client = fake_client
+
+    writer.get_oldest_timestamp("AAPL")
+
+    sql = fake_client.query.call_args.kwargs["query"]
+    assert "account" not in sql
+
+
+# --------------------------------------------------------------------------- #
 # schema.yaml accepts the account key on a share dict
 # --------------------------------------------------------------------------- #
 def test_share_schema_accepts_account_key(shares_validator):

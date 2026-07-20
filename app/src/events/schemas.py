@@ -8,9 +8,11 @@ from enum import Enum
 from typing import List, Optional, Set
 
 
-# Account bucket used when no accounts are declared (opt-out users) or for
-# points written before the accounts feature existed. Kept as a module constant
-# so every layer (aggregator, InfluxDB tag, Prometheus label) agrees on it.
+# Canonical account bucket used when no accounts are declared (opt-out users) or
+# for points written before the accounts feature existed. The events/aggregation
+# layer and main.py reference this constant; the lower-level InfluxDB writer and
+# Prometheus exporter keep the same literal "default" as a parameter default so
+# they stay decoupled from the events domain.
 DEFAULT_ACCOUNT = "default"
 
 

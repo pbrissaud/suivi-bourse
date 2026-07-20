@@ -39,14 +39,16 @@ class FakeConfigManager:
     """In-memory stand-in for main.ConfigurationManager.
 
     Exposes exactly the surface SuiviBourseMetrics relies on: load_shares(),
-    get_mode(), get_first_buy_date(), get_events().
+    get_mode(), get_first_buy_date(), get_events(), load_accounts().
     """
 
-    def __init__(self, shares, mode="manual", first_buy_dates=None, events=None):
+    def __init__(self, shares, mode="manual", first_buy_dates=None, events=None,
+                 accounts=None):
         self._shares = shares
         self._mode = mode
         self._first_buy_dates = first_buy_dates or {}
         self._events = events
+        self._accounts = accounts
         self.raise_on_load = False
 
     def load_shares(self, force=False):
@@ -56,6 +58,9 @@ class FakeConfigManager:
 
     def get_mode(self):
         return self._mode
+
+    def load_accounts(self):
+        return self._accounts
 
     def get_first_buy_date(self, symbol):
         return self._first_buy_dates.get(symbol)
@@ -344,7 +349,8 @@ def test_backfill_marks_complete_when_oldest_reaches_first_buy(
 
     mock_influx.write_historical_prices.assert_not_called()
     expected = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
-    assert metrics._backfill_complete["AAPL"] == expected
+    # Completion is tracked per (symbol, account); default account here.
+    assert metrics._backfill_complete[("AAPL", "default")] == expected
 
 
 def test_backfill_fetches_chunk_when_gap_exists(mock_influx, shares_validator, mocker):
@@ -419,4 +425,4 @@ def test_backfill_empty_window_marks_complete(mock_influx, shares_validator, moc
 
     mock_influx.write_historical_prices.assert_not_called()
     expected = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
-    assert metrics._backfill_complete["AAPL"] == expected
+    assert metrics._backfill_complete[("AAPL", "default")] == expected

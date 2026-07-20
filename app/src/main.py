@@ -628,6 +628,10 @@ class SuiviBourseMetrics:
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
+        # Accounts are resolved per (symbol, account) so a symbol held in two
+        # accounts backfills each series independently.
+        accounts_declared = self.config_manager.load_accounts() is not None
+
         for share in self.shares:
             symbol = share['symbol']
             name = share['name']
@@ -650,8 +654,8 @@ class SuiviBourseMetrics:
             # Skip symbols already backfilled up to their first BUY date to avoid
             # refetching the same window every cycle (e.g. a first BUY on a
             # non-trading day never lets oldest reach it exactly).
-            if self._backfill_complete.get(symbol) == first_buy_date:
-                app_logger.debug(f"Backfill already complete for {symbol}")
+            if self._backfill_complete.get((symbol, account)) == first_buy_date:
+                app_logger.debug(f"Backfill already complete for {symbol} ({account})")
                 continue
 
             # Ensure share info (tags) is available so historical points share the
@@ -666,8 +670,8 @@ class SuiviBourseMetrics:
                     f"No share info available for {symbol}, deferring backfill")
                 continue
 
-            # Get the oldest data point in InfluxDB
-            oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol)
+            # Get the oldest data point in InfluxDB for this (symbol, account)
+            oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol, account=account)
 
             # Determine if we need to backfill (compare at day granularity)
             if oldest_timestamp is not None:
@@ -675,9 +679,9 @@ class SuiviBourseMetrics:
                 # Compare dates only to avoid tiny time windows
                 if oldest_timestamp.date() <= first_buy_date.date():
                     app_logger.debug(
-                        f"Backfill complete for {symbol}: "
+                        f"Backfill complete for {symbol} ({account}): "
                         f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
-                    self._backfill_complete[symbol] = first_buy_date
+                    self._backfill_complete[(symbol, account)] = first_buy_date
                     continue
 
                 # Need to fetch data before oldest_timestamp
@@ -719,9 +723,9 @@ class SuiviBourseMetrics:
                 # mark the symbol complete to avoid refetching this window forever.
                 if start_date <= first_buy_date:
                     app_logger.debug(
-                        f"Backfill complete for {symbol}: reached first BUY date "
-                        f"with no earlier trading data")
-                    self._backfill_complete[symbol] = first_buy_date
+                        f"Backfill complete for {symbol} ({account}): reached first BUY "
+                        f"date with no earlier trading data")
+                    self._backfill_complete[(symbol, account)] = first_buy_date
                 time.sleep(self.backfill_delay)
                 continue
 
@@ -739,7 +743,8 @@ class SuiviBourseMetrics:
                     point_date = ts.date() if isinstance(ts, datetime) else ts
                     if point_date not in state_by_date:
                         state_by_date[point_date] = aggregator.aggregate_until_date(
-                            events, point_date, symbol)
+                            events, point_date, symbol,
+                            account=account, accounts_declared=accounts_declared)
                     state = state_by_date[point_date]
                     if state:
                         price_point['purchased_quantity'] = state['purchase']['quantity']

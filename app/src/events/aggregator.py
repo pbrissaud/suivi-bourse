@@ -145,7 +145,9 @@ class EventAggregator:
         self,
         events: List[Event],
         target_date: date,
-        symbol: str
+        symbol: str,
+        account: Optional[str] = None,
+        accounts_declared: bool = False,
     ) -> Optional[Dict]:
         """
         Aggregate events for a specific symbol up to a given date.
@@ -154,15 +156,24 @@ class EventAggregator:
             events: List of events sorted by date.
             target_date: Only process events up to this date (inclusive).
             symbol: The symbol to aggregate.
+            account: When provided, only events belonging to this account bucket
+                are replayed, so each account's historical state is independent.
+                When None, every account is merged (symbol-scoped, legacy).
+            accounts_declared: Whether accounts are declared, to resolve each
+                event's bucket the same way :meth:`aggregate` does.
 
         Returns:
             Share dictionary for the symbol, or None if no events exist.
         """
-        # Filter events for the symbol up to target_date
-        filtered_events = [
-            e for e in events
-            if e.symbol == symbol and e.date <= target_date
-        ]
+        # Filter events for the symbol up to target_date (and account if given)
+        def _keep(e: Event) -> bool:
+            if e.symbol != symbol or e.date > target_date:
+                return False
+            if account is None:
+                return True
+            return self._event_account(e, accounts_declared) == account
+
+        filtered_events = [e for e in events if _keep(e)]
 
         if not filtered_events:
             return None
@@ -171,6 +182,7 @@ class EventAggregator:
         state = ShareState(
             name=filtered_events[0].name,
             symbol=symbol,
+            account=account or DEFAULT_ACCOUNT,
             purchase=PurchaseState(),
             estate=EstateState(),
         )
