@@ -252,7 +252,7 @@ Prometheus `/metrics` endpoint (enabled by default, `SB_METRICS_PORT`=8081). It
 runs in parallel with the InfluxDB writer and reflects only the current snapshot
 per share (no historical backfill). Disable it with `SB_PROMETHEUS_ENABLED=false`.
 
-Gauges (prefix `sb_`, labels `share_name`/`share_symbol`): `sb_share_price`,
+Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_price`,
 `sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`,
 `sb_owned_quantity`, `sb_received_dividend`, `sb_dividend_yield`, `sb_pe_ratio`,
 `sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
@@ -266,6 +266,7 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`): `sb_share_price`,
 |------|------|-------------|
 | Tag | `share_name` | Display name |
 | Tag | `share_symbol` | Yahoo Finance ticker |
+| Tag | `account` | Account bucket (`default` unless accounts are declared) |
 | Tag | `share_currency` | Currency (USD, EUR, etc.) |
 | Tag | `share_exchange` | Exchange (NMS, PAR, etc.) |
 | Tag | `quote_type` | Type (EQUITY, ETF, etc.) |

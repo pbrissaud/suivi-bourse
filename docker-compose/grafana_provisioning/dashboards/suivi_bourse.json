@@ -84,7 +84,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT bucket as time, SUM(investment) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "rawSql": "SELECT bucket as time, SUM(investment) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, COALESCE(account, 'default') as account, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol, COALESCE(account, 'default')) GROUP BY bucket ORDER BY bucket",
           "refId": "A",
           "format": "time_series"
         }
@@ -147,7 +147,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT bucket as time, SUM(valuation) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(share_price * owned_quantity) as valuation FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "rawSql": "SELECT bucket as time, SUM(valuation) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, COALESCE(account, 'default') as account, AVG(share_price * owned_quantity) as valuation FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL GROUP BY bucket, share_symbol, COALESCE(account, 'default')) GROUP BY bucket ORDER BY bucket",
           "refId": "A",
           "format": "time_series"
         }
@@ -214,7 +214,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT bucket as time, (SUM(valuation) + SUM(dividends) - SUM(investment)) / NULLIF(SUM(investment), 0) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, AVG(share_price * owned_quantity) as valuation, AVG(COALESCE(received_dividend, 0)) as dividends, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol) GROUP BY bucket ORDER BY bucket",
+          "rawSql": "SELECT bucket as time, (SUM(valuation) + SUM(dividends) - SUM(investment)) / NULLIF(SUM(investment), 0) as value FROM (SELECT DATE_BIN(INTERVAL '5 minutes', time) as bucket, share_symbol, COALESCE(account, 'default') as account, AVG(share_price * owned_quantity) as valuation, AVG(COALESCE(received_dividend, 0)) as dividends, AVG(purchased_price * purchased_quantity) as investment FROM portfolio_metrics WHERE $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL GROUP BY bucket, share_symbol, COALESCE(account, 'default')) GROUP BY bucket ORDER BY bucket",
           "refId": "A",
           "format": "time_series"
         }
@@ -454,7 +454,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, purchased_quantity as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(value) as value FROM (SELECT time, purchased_quantity as value, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_quantity IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -518,7 +518,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, purchased_price as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_price IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(pp * pq) / NULLIF(SUM(pq), 0) as value FROM (SELECT time, purchased_price as pp, purchased_quantity as pq, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -581,7 +581,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, purchased_fee as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_fee IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(value) as value FROM (SELECT time, purchased_fee as value, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND purchased_fee IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -717,7 +717,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, (share_price - purchased_price) as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND purchased_price IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, MAX(sp) - (SUM(pp * pq) / NULLIF(SUM(pq), 0)) as value FROM (SELECT time, share_price as sp, purchased_price as pp, purchased_quantity as pq, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -779,7 +779,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, owned_quantity as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND owned_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(value) as value FROM (SELECT time, owned_quantity as value, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND owned_quantity IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -842,7 +842,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, received_dividend as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND received_dividend IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(value) as value FROM (SELECT time, received_dividend as value, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND received_dividend IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }
@@ -914,7 +914,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB}"
           },
-          "rawSql": "SELECT time, ((owned_quantity * share_price) + COALESCE(received_dividend, 0) - (purchased_quantity * purchased_price) - COALESCE(purchased_fee, 0)) as value FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "rawSql": "SELECT MAX(time) as time, SUM(oq * sp) + SUM(COALESCE(rd, 0)) - SUM(pq * pp) - SUM(COALESCE(pf, 0)) as value FROM (SELECT time, owned_quantity as oq, share_price as sp, received_dividend as rd, purchased_quantity as pq, purchased_price as pp, purchased_fee as pf, ROW_NUMBER() OVER (PARTITION BY COALESCE(account, 'default') ORDER BY time DESC) as rn FROM portfolio_metrics WHERE share_name = '${share}' AND $__timeFilter(time) AND share_price IS NOT NULL AND owned_quantity IS NOT NULL AND purchased_price IS NOT NULL AND purchased_quantity IS NOT NULL) WHERE rn = 1",
           "refId": "A",
           "format": "time_series"
         }

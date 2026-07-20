@@ -28,7 +28,8 @@ def _info(**overrides):
     return info
 
 
-AAPL = {'share_name': 'Apple', 'share_symbol': 'AAPL'}
+# A share without an 'account' key resolves to the 'default' account label.
+AAPL = {'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default'}
 
 
 @pytest.fixture
@@ -87,9 +88,27 @@ def test_dividend_yield_is_scaled_to_percentage(exporter):
 def test_share_info_gauge_carries_tag_labels(exporter):
     exporter.update_share(_share(), 150.0, _info())
     assert exporter.registry.get_sample_value('sb_share_info', {
-        'share_name': 'Apple', 'share_symbol': 'AAPL',
+        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default',
         'share_currency': 'USD', 'share_exchange': 'NMS', 'quote_type': 'EQUITY',
     }) == 1.0
+
+
+# --- account label ----------------------------------------------------------
+
+def test_same_symbol_in_two_accounts_produces_distinct_series(exporter):
+    """A symbol held in two accounts must not collapse onto one series."""
+    pea = dict(_share(), account='PEA')
+    pea['estate'] = {'quantity': 10.0, 'received_dividend': 0.0}
+    cto = dict(_share(), account='CTO')
+    cto['estate'] = {'quantity': 5.0, 'received_dividend': 0.0}
+
+    exporter.update_share(pea, 150.0, _info())
+    exporter.update_share(cto, 150.0, _info())
+
+    assert exporter.registry.get_sample_value('sb_owned_quantity', {
+        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'PEA'}) == 10.0
+    assert exporter.registry.get_sample_value('sb_owned_quantity', {
+        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'CTO'}) == 5.0
 
 
 # --- None handling ----------------------------------------------------------
@@ -117,7 +136,7 @@ def test_failed_fetch_still_sets_portfolio_but_no_market(exporter):
     assert _val(exporter, 'sb_share_price') is None
     assert _val(exporter, 'sb_dividend_yield') is None
     assert exporter.registry.get_sample_value('sb_share_info', {
-        'share_name': 'Apple', 'share_symbol': 'AAPL',
+        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default',
         'share_currency': 'USD', 'share_exchange': 'NMS', 'quote_type': 'EQUITY',
     }) is None
 

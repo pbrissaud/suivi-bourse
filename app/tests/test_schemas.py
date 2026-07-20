@@ -193,6 +193,7 @@ def test_to_dict_default_structure():
     assert s.to_dict() == {
         'name': 'Apple',
         'symbol': 'AAPL',
+        'account': 'default',
         'purchase': {
             'quantity': 0.0,
             'cost_price': 0.0,
@@ -206,7 +207,7 @@ def test_to_dict_default_structure():
 
 
 def test_to_dict_reflects_populated_values():
-    s = ShareState(name="Microsoft", symbol="MSFT")
+    s = ShareState(name="Microsoft", symbol="MSFT", account="PEA")
     s.purchase.quantity = 10.0
     s.purchase.cost_price = 250.0
     s.purchase.fee = 4.0
@@ -216,6 +217,7 @@ def test_to_dict_reflects_populated_values():
     assert s.to_dict() == {
         'name': 'Microsoft',
         'symbol': 'MSFT',
+        'account': 'PEA',
         'purchase': {
             'quantity': 10.0,
             'cost_price': 250.0,
@@ -231,6 +233,13 @@ def test_to_dict_reflects_populated_values():
 def test_to_dict_exact_key_set():
     s = ShareState(name="Apple", symbol="AAPL")
     d = s.to_dict()
-    assert set(d.keys()) == {'name', 'symbol', 'purchase', 'estate'}
+    assert set(d.keys()) == {'name', 'symbol', 'account', 'purchase', 'estate'}
     assert set(d['purchase'].keys()) == {'quantity', 'cost_price', 'fee'}
     assert set(d['estate'].keys()) == {'quantity', 'received_dividend'}
+
+
+def test_to_dict_default_account_when_unset():
+    """A ShareState built without an account defaults to 'default'."""
+    s = ShareState(name="Apple", symbol="AAPL")
+    assert s.account == 'default'
+    assert s.to_dict()['account'] == 'default'

@@ -2,7 +2,7 @@
 Event validator for validating portfolio events.
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Set, Tuple
 
 from .schemas import Event, EventType
 
@@ -14,6 +14,16 @@ class EventValidationError(Exception):
 
 class EventValidator:
     """Validates portfolio events."""
+
+    def __init__(self, account_ids: Optional[Set[str]] = None):
+        """
+        Args:
+            account_ids: Set of declared account ids. When provided (accounts are
+                declared, opt-in feature), every event must carry an ``account``
+                matching one of these ids. When ``None``, accounts are not
+                declared and the ``account`` column is ignored.
+        """
+        self.account_ids = account_ids
 
     def validate(self, events: List[Event]) -> Tuple[bool, List[str]]:
         """
@@ -54,6 +64,10 @@ class EventValidator:
         errors = []
         prefix = f"Event #{event_num} ({event.date}, {event.event_type.value}, {event.symbol})"
 
+        # When accounts are declared, every event must carry a valid account
+        if self.account_ids is not None:
+            errors.extend(self._validate_account(event, prefix))
+
         if event.event_type == EventType.BUY:
             errors.extend(self._validate_buy(event, prefix))
         elif event.event_type == EventType.SELL:
@@ -62,6 +76,21 @@ class EventValidator:
             errors.extend(self._validate_grant(event, prefix))
         elif event.event_type == EventType.DIVIDEND:
             errors.extend(self._validate_dividend(event, prefix))
+
+        return errors
+
+    def _validate_account(self, event: Event, prefix: str) -> List[str]:
+        """Validate the account of an event against the declared account ids."""
+        errors = []
+
+        if not event.account:
+            errors.append(
+                f"{prefix}: account is required (accounts are declared in settings.yaml)")
+        elif event.account not in self.account_ids:
+            declared = ", ".join(sorted(self.account_ids)) or "none"
+            errors.append(
+                f"{prefix}: account '{event.account}' is not a declared account id "
+                f"(declared: {declared})")
 
         return errors
 

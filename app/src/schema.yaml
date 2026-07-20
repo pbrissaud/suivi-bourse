@@ -12,6 +12,9 @@ shares:
       symbol:
         type: string
         required: True
+      account:
+        type: string
+        required: False
       purchase:
         type: dict
         required: True

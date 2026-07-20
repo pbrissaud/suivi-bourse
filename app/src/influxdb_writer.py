@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
+from events.schemas import DEFAULT_ACCOUNT
+
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
 
@@ -87,6 +89,7 @@ class InfluxDBWriter:
         self,
         share_name: str,
         share_symbol: str,
+        account: str = DEFAULT_ACCOUNT,
         share_price: Optional[float] = None,
         purchased_quantity: Optional[float] = None,
         purchased_price: Optional[float] = None,
@@ -108,6 +111,7 @@ class InfluxDBWriter:
         Args:
             share_name: Name of the share (tag)
             share_symbol: Yahoo Finance symbol (tag)
+            account: Account bucket (tag, default 'default')
             share_price: Current price (field)
             purchased_quantity: Quantity purchased (field)
             purchased_price: Weighted average cost price (field)
@@ -131,6 +135,8 @@ class InfluxDBWriter:
         # Tags (always set)
         point.tag("share_name", share_name)
         point.tag("share_symbol", share_symbol)
+        # account is always written (default bucket) so every point carries it
+        point.tag("account", account or DEFAULT_ACCOUNT)
 
         # Optional tags
         if share_currency:
@@ -182,7 +188,8 @@ class InfluxDBWriter:
         prices: List[Dict[str, Any]],
         share_currency: Optional[str] = None,
         share_exchange: Optional[str] = None,
-        quote_type: Optional[str] = None
+        quote_type: Optional[str] = None,
+        account: str = DEFAULT_ACCOUNT
     ) -> int:
         """
         Write historical price data to InfluxDB in batch.
@@ -201,6 +208,7 @@ class InfluxDBWriter:
             share_currency: Currency (tag)
             share_exchange: Exchange (tag)
             quote_type: Type (tag)
+            account: Account bucket (tag, default 'default')
 
         Returns:
             Number of points written
@@ -220,6 +228,7 @@ class InfluxDBWriter:
             point = Point(self.MEASUREMENT)
             point.tag("share_name", share_name)
             point.tag("share_symbol", share_symbol)
+            point.tag("account", account or DEFAULT_ACCOUNT)
 
             if share_currency:
                 point.tag("share_currency", share_currency)
@@ -261,12 +270,19 @@ class InfluxDBWriter:
 
         return len(points)
 
-    def get_oldest_timestamp(self, share_symbol: str) -> Optional[datetime]:
+    def get_oldest_timestamp(
+        self, share_symbol: str, account: Optional[str] = None
+    ) -> Optional[datetime]:
         """
         Get the oldest timestamp for a given share symbol in InfluxDB.
 
         Args:
             share_symbol: Yahoo Finance symbol
+            account: When provided, scope the lookup to this account so backfill
+                gaps are detected per account. Uses COALESCE(account, 'default')
+                so points written before the account tag existed count as
+                'default' — never a bare ``WHERE account = ...`` that would drop
+                them.
 
         Returns:
             Oldest timestamp as datetime, or None if no data exists
@@ -276,11 +292,15 @@ class InfluxDBWriter:
 
         # Escape single quotes to keep share_symbol a safe SQL string literal
         safe_symbol = share_symbol.replace("'", "''")
+        where = f"share_symbol = '{safe_symbol}'"
+        if account is not None:
+            safe_account = account.replace("'", "''")
+            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
         FROM "{self.MEASUREMENT}"
-        WHERE share_symbol = '{safe_symbol}'
+        WHERE {where}
         ORDER BY time ASC
         LIMIT 1
         """

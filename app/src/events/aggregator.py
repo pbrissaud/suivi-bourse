@@ -3,9 +3,11 @@ Event aggregator for computing portfolio state from events.
 """
 
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from .schemas import Event, EventType, ShareState, PurchaseState, EstateState
+from .schemas import (
+    DEFAULT_ACCOUNT, Event, EventType, ShareState, PurchaseState, EstateState,
+)
 
 
 class AggregationError(Exception):
@@ -16,12 +18,26 @@ class AggregationError(Exception):
 class EventAggregator:
     """Aggregates portfolio events into share states."""
 
-    def aggregate(self, events: List[Event]) -> List[Dict]:
+    def _event_account(self, event: Event, accounts_declared: bool) -> str:
+        """Resolve the account bucket for an event.
+
+        When accounts are declared, positions are keyed by the event's own
+        account (guaranteed present by validation). Otherwise everything falls
+        into the implicit ``default`` account — a single code path either way.
+        """
+        if accounts_declared and event.account:
+            return event.account
+        return DEFAULT_ACCOUNT
+
+    def aggregate(self, events: List[Event], accounts_declared: bool = False) -> List[Dict]:
         """
         Aggregate events into share configurations.
 
         Args:
             events: List of events sorted by date.
+            accounts_declared: When True, positions are keyed by
+                ``(account, symbol)``. When False, everything is aggregated
+                under the implicit ``default`` account.
 
         Returns:
             List of share dictionaries compatible with the config schema.
@@ -29,19 +45,25 @@ class EventAggregator:
         Raises:
             AggregationError: If aggregation fails (e.g., selling more than owned).
         """
-        # Group events by symbol and process in order
-        states: Dict[str, ShareState] = {}
+        # Group events by (account, symbol) and process in order
+        states: Dict[Tuple[str, str], ShareState] = {}
+        order: List[Tuple[str, str]] = []
 
         for event in events:
-            if event.symbol not in states:
-                states[event.symbol] = ShareState(
+            account = self._event_account(event, accounts_declared)
+            key = (account, event.symbol)
+
+            if key not in states:
+                states[key] = ShareState(
                     name=event.name,
                     symbol=event.symbol,
+                    account=account,
                     purchase=PurchaseState(),
                     estate=EstateState(),
                 )
+                order.append(key)
 
-            state = states[event.symbol]
+            state = states[key]
 
             # Update name if provided (use latest name)
             if event.name:
@@ -57,13 +79,8 @@ class EventAggregator:
             elif event.event_type == EventType.DIVIDEND:
                 self._process_dividend(state, event)
 
-        # Convert to list of dicts, preserving symbol order of first appearance
-        seen_symbols = []
-        for event in events:
-            if event.symbol not in seen_symbols:
-                seen_symbols.append(event.symbol)
-
-        return [states[symbol].to_dict() for symbol in seen_symbols]
+        # Convert to list of dicts, preserving (account, symbol) first-appearance order
+        return [states[key].to_dict() for key in order]
 
     def _process_buy(self, state: ShareState, event: Event) -> None:
         """
@@ -128,7 +145,9 @@ class EventAggregator:
         self,
         events: List[Event],
         target_date: date,
-        symbol: str
+        symbol: str,
+        account: Optional[str] = None,
+        accounts_declared: bool = False,
     ) -> Optional[Dict]:
         """
         Aggregate events for a specific symbol up to a given date.
@@ -137,15 +156,24 @@ class EventAggregator:
             events: List of events sorted by date.
             target_date: Only process events up to this date (inclusive).
             symbol: The symbol to aggregate.
+            account: When provided, only events belonging to this account bucket
+                are replayed, so each account's historical state is independent.
+                When None, every account is merged (symbol-scoped, legacy).
+            accounts_declared: Whether accounts are declared, to resolve each
+                event's bucket the same way :meth:`aggregate` does.
 
         Returns:
             Share dictionary for the symbol, or None if no events exist.
         """
-        # Filter events for the symbol up to target_date
-        filtered_events = [
-            e for e in events
-            if e.symbol == symbol and e.date <= target_date
-        ]
+        # Filter events for the symbol up to target_date (and account if given)
+        def _keep(e: Event) -> bool:
+            if e.symbol != symbol or e.date > target_date:
+                return False
+            if account is None:
+                return True
+            return self._event_account(e, accounts_declared) == account
+
+        filtered_events = [e for e in events if _keep(e)]
 
         if not filtered_events:
             return None
@@ -154,6 +182,7 @@ class EventAggregator:
         state = ShareState(
             name=filtered_events[0].name,
             symbol=symbol,
+            account=account or DEFAULT_ACCOUNT,
             purchase=PurchaseState(),
             estate=EstateState(),
         )

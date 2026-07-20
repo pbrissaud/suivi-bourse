@@ -187,8 +187,33 @@ def test_write_metrics_mandatory_tags_always_present_even_without_optionals(
     writer.write_metrics(share_name="Micro", share_symbol="MSFT")
 
     point = _last_written_record(client)
-    # Only the two mandatory tags, no optional tag keys.
-    assert set(point._tags.keys()) == {"share_name", "share_symbol"}
+    # The mandatory tags (name, symbol, account) are always present, no optionals.
+    assert set(point._tags.keys()) == {"share_name", "share_symbol", "account"}
+    # account defaults to 'default' so every point carries it.
+    assert point._tags["account"] == "default"
+
+
+def test_write_metrics_account_tag_when_provided(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+
+    writer.write_metrics(share_name="Apple", share_symbol="AAPL", account="PEA")
+
+    point = _last_written_record(client)
+    assert point._tags["account"] == "PEA"
+
+
+def test_write_historical_prices_carries_account_tag(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+
+    writer.write_historical_prices(
+        share_name="Apple", share_symbol="AAPL",
+        prices=[{"timestamp": datetime(2024, 1, 2, tzinfo=timezone.utc), "price": 100.0}],
+        account="CTO",
+    )
+
+    records = client.write.call_args.kwargs["record"]
+    point = records[0] if isinstance(records, list) else records
+    assert point._tags["account"] == "CTO"
 
 
 def test_write_metrics_optional_tags_only_when_provided(writer, mock_client_cls):
