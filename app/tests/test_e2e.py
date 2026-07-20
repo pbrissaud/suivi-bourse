@@ -184,7 +184,7 @@ def test_events_mode_full_chain_drives_write_metrics(
 def test_backfill_writes_historical_state_for_intermediate_date(
     tmp_path, monkeypatch, fake_ticker, mock_influx, shares_validator
 ):
-    """backfill() enriches each price point with aggregate_until_date state."""
+    """backfill() enriches each price point with the replay timeline state."""
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
@@ -242,12 +242,13 @@ def test_backfill_writes_historical_state_for_intermediate_date(
     assert point["owned_quantity"] == pytest.approx(21.0)  # GRANT+BUYs, no SELL
     assert point["received_dividend"] == pytest.approx(2.4)
 
-    # Cross-check against the real aggregator to prove the state is not hardcoded.
+    # Cross-check against the real replay timeline to prove the state is not
+    # hardcoded (and identical to the pre-refactor aggregate_until_date values).
     from events.aggregator import EventAggregator
     from datetime import date as _date
-    expected = EventAggregator().aggregate_until_date(
-        config_manager.get_events(), _date(2024, 6, 20), "AAPL"
-    )
+    expected = EventAggregator().replay(
+        config_manager.get_events()
+    ).position_at("default", "AAPL", _date(2024, 6, 20))
     assert point["purchased_quantity"] == expected["purchase"]["quantity"]
     assert point["owned_quantity"] == expected["estate"]["quantity"]
     assert point["received_dividend"] == expected["estate"]["received_dividend"]
