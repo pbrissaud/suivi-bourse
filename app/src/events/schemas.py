@@ -2,6 +2,7 @@
 Data schemas for the events module.
 """
 
+import bisect
 from dataclasses import dataclass, field
 from datetime import date  # noqa: F401 — used in the `date: date` field annotation (eager-evaluated on Python <3.14)
 from enum import Enum
@@ -122,14 +123,13 @@ class Timeline:
     def _state_at(
         snaps: List[Tuple[date, "ShareState"]], target_date: date
     ) -> Optional["ShareState"]:
-        """Latest snapshot at or before ``target_date`` (forward-fill), or None."""
-        result = None
-        for change_date, state in snaps:
-            if change_date <= target_date:
-                result = state
-            else:
-                break
-        return result
+        """Latest snapshot at or before ``target_date`` (forward-fill), or None.
+
+        Snapshots are date-sorted, so this is a binary search: the position just
+        left of the insertion point is the latest change on or before the date.
+        """
+        idx = bisect.bisect_right(snaps, target_date, key=lambda snap: snap[0])
+        return snaps[idx - 1][1] if idx else None
 
     def position_at(
         self, account: str, symbol: str, target_date: date
