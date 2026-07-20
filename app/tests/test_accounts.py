@@ -284,7 +284,7 @@ def test_events_pipeline_unknown_account_raises_when_declared(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# aggregate_until_date: account-aware point-in-time replay (backfill)
+# replay + Timeline.position_at: account-aware point-in-time state (backfill)
 # --------------------------------------------------------------------------- #
 def _two_account_events():
     return [
@@ -295,14 +295,11 @@ def _two_account_events():
     ]
 
 
-def test_aggregate_until_date_scoped_to_account():
-    events = _two_account_events()
-    agg = EventAggregator()
+def test_position_at_scoped_to_account():
+    tl = EventAggregator().replay(_two_account_events(), accounts_declared=True)
 
-    pea = agg.aggregate_until_date(events, date(2024, 2, 1), "AAPL",
-                                   account="PEA", accounts_declared=True)
-    cto = agg.aggregate_until_date(events, date(2024, 2, 1), "AAPL",
-                                   account="CTO", accounts_declared=True)
+    pea = tl.position_at("PEA", "AAPL", date(2024, 2, 1))
+    cto = tl.position_at("CTO", "AAPL", date(2024, 2, 1))
 
     assert pea["estate"]["quantity"] == 10
     assert pea["account"] == "PEA"
@@ -310,20 +307,19 @@ def test_aggregate_until_date_scoped_to_account():
     assert cto["account"] == "CTO"
 
 
-def test_aggregate_until_date_none_before_account_first_event():
-    events = _two_account_events()
-    # CTO's first event is 2024-01-16; before that it has no state.
-    result = EventAggregator().aggregate_until_date(
-        events, date(2024, 1, 15), "AAPL", account="CTO", accounts_declared=True)
-    assert result is None
+def test_position_at_none_before_account_first_event():
+    tl = EventAggregator().replay(_two_account_events(), accounts_declared=True)
+    # CTO's first event is 2024-01-16; before that it has no state (not an error).
+    assert tl.position_at("CTO", "AAPL", date(2024, 1, 15)) is None
 
 
-def test_aggregate_until_date_merges_all_accounts_when_none():
-    """Legacy symbol-scoped call (account=None) merges every account."""
-    events = _two_account_events()
-    merged = EventAggregator().aggregate_until_date(
-        events, date(2024, 2, 1), "AAPL")
+def test_replay_merges_all_events_under_default_when_not_declared():
+    """Without declared accounts every event falls under 'default'."""
+    tl = EventAggregator().replay(_two_account_events(), accounts_declared=False)
+    merged = tl.position_at("default", "AAPL", date(2024, 2, 1))
     assert merged["estate"]["quantity"] == 15
+    # No per-account positions exist in this mode.
+    assert tl.position_at("PEA", "AAPL", date(2024, 2, 1)) is None
 
 
 # --------------------------------------------------------------------------- #

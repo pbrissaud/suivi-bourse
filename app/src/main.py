@@ -633,6 +633,12 @@ class SuiviBourseMetrics:
         # accounts backfills each series independently.
         accounts_declared = self.config_manager.load_accounts() is not None
 
+        # A single replay per cycle serves every symbol and every date; each
+        # per-date lookup below is a forward-fill on this timeline, never a
+        # re-replay (backfill drops from O(days × events) to O(events + days)).
+        events = self.config_manager.get_events()
+        timeline = EventAggregator().replay(events, accounts_declared) if events else None
+
         for share in self.shares:
             symbol = share['symbol']
             name = share['name']
@@ -730,22 +736,18 @@ class SuiviBourseMetrics:
                 time.sleep(self.backfill_delay)
                 continue
 
-            # Enrich price data with portfolio state at each date
-            events = self.config_manager.get_events()
-            if events:
-                aggregator = EventAggregator()
-                # Many price points (esp. hourly) share the same calendar day and
-                # thus the same portfolio state; aggregate once per date instead of
-                # replaying all events for every point.
+            # Enrich price data with portfolio state at each date, read from the
+            # single per-cycle timeline. Many price points (esp. hourly) share the
+            # same calendar day and thus the same state; look up once per date.
+            if timeline is not None:
                 state_by_date: Dict = {}
                 for price_point in prices:
                     ts = price_point['timestamp']
-                    # Convert datetime to date for aggregation
+                    # Convert datetime to date for the timeline lookup
                     point_date = ts.date() if isinstance(ts, datetime) else ts
                     if point_date not in state_by_date:
-                        state_by_date[point_date] = aggregator.aggregate_until_date(
-                            events, point_date, symbol,
-                            account=account, accounts_declared=accounts_declared)
+                        state_by_date[point_date] = timeline.position_at(
+                            account, symbol, point_date)
                     state = state_by_date[point_date]
                     if state:
                         price_point['purchased_quantity'] = state['purchase']['quantity']

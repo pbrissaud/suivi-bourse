@@ -298,7 +298,7 @@ def test_full_pipeline_matches_expected_state(aggregator):
 
 
 # ---------------------------------------------------------------------------
-# aggregate_until_date()
+# replay() + Timeline.position_at() — point-in-time state (forward-fill)
 # ---------------------------------------------------------------------------
 
 def _timeline():
@@ -316,16 +316,18 @@ def _timeline():
     ]
 
 
-def test_until_date_returns_none_when_no_matching_events(aggregator):
+def test_position_at_returns_none_when_no_matching_events(aggregator):
+    tl = aggregator.replay(_timeline())
     # Symbol not present at all.
-    assert aggregator.aggregate_until_date(_timeline(), date(2024, 12, 31), "TSLA") is None
-    # Symbol present but every event is after the target date.
-    assert aggregator.aggregate_until_date(_timeline(), date(2024, 1, 1), "AAPL") is None
+    assert tl.position_at("default", "TSLA", date(2024, 12, 31)) is None
+    # Symbol present but every event is after the target date (empty, not error).
+    assert tl.position_at("default", "AAPL", date(2024, 1, 1)) is None
 
 
-def test_until_date_boundary_is_inclusive(aggregator):
+def test_position_at_boundary_is_inclusive(aggregator):
+    tl = aggregator.replay(_timeline())
     # target_date exactly equals the first AAPL event date -> that event counts.
-    result = aggregator.aggregate_until_date(_timeline(), date(2024, 1, 15), "AAPL")
+    result = tl.position_at("default", "AAPL", date(2024, 1, 15))
 
     assert result is not None
     assert result["symbol"] == "AAPL"
@@ -335,12 +337,12 @@ def test_until_date_boundary_is_inclusive(aggregator):
     assert result["estate"]["received_dividend"] == 0.0
 
 
-def test_until_date_intermediate_state_differs_from_final(aggregator):
-    events = _timeline()
+def test_position_at_forward_fills_date_without_event(aggregator):
+    tl = aggregator.replay(_timeline())
 
-    # Intermediate date: after the first BUY + dividend, but BEFORE the second
-    # AAPL BUY (2024-06-15) and BEFORE the SELL (2024-09-15).
-    mid = aggregator.aggregate_until_date(events, date(2024, 5, 1), "AAPL")
+    # 2024-05-01 has no event: forward-fill from the 2024-03-01 dividend state,
+    # after the first BUY but BEFORE the second AAPL BUY and the SELL.
+    mid = tl.position_at("default", "AAPL", date(2024, 5, 1))
     assert mid is not None
     assert mid["purchase"]["quantity"] == 10
     assert mid["purchase"]["cost_price"] == 150.0
@@ -349,7 +351,7 @@ def test_until_date_intermediate_state_differs_from_final(aggregator):
     assert mid["estate"]["received_dividend"] == pytest.approx(2.40)
 
     # Final date: includes the second BUY and the SELL, so it must differ.
-    final = aggregator.aggregate_until_date(events, date(2024, 12, 31), "AAPL")
+    final = tl.position_at("default", "AAPL", date(2024, 12, 31))
     assert final is not None
     assert final["purchase"]["quantity"] == 15
     assert final["purchase"]["cost_price"] == pytest.approx(
@@ -362,12 +364,74 @@ def test_until_date_intermediate_state_differs_from_final(aggregator):
     assert mid["purchase"]["cost_price"] != final["purchase"]["cost_price"]
 
 
-def test_until_date_filters_by_symbol(aggregator):
+def test_position_at_isolates_symbol(aggregator):
+    tl = aggregator.replay(_timeline())
     # Only MSFT events should be considered; AAPL activity must not leak in.
-    result = aggregator.aggregate_until_date(_timeline(), date(2024, 12, 31), "MSFT")
+    result = tl.position_at("default", "MSFT", date(2024, 12, 31))
 
     assert result is not None
     assert result["symbol"] == "MSFT"
     assert result["purchase"]["quantity"] == 5
     assert result["purchase"]["cost_price"] == 380.0
     assert result["estate"]["quantity"] == 5
+
+
+def test_replay_timeline_is_sparse(aggregator):
+    """One snapshot per date the position changes, not per calendar day."""
+    tl = aggregator.replay(_timeline())
+    aapl_snaps = tl.snapshots[("default", "AAPL")]
+    # AAPL changes on 4 dates: 01-15 BUY, 03-01 DIVIDEND, 06-15 BUY, 09-15 SELL.
+    assert [d for d, _ in aapl_snaps] == [
+        date(2024, 1, 15), date(2024, 3, 1), date(2024, 6, 15), date(2024, 9, 15)]
+    assert len(tl.snapshots[("default", "MSFT")]) == 1
+
+
+def test_replay_snapshots_are_immutable_copies(aggregator):
+    """Later events must not mutate earlier snapshots (deep-copied)."""
+    tl = aggregator.replay(_timeline())
+    snaps = tl.snapshots[("default", "AAPL")]
+    first_state = snaps[0][1]      # state as of 2024-01-15
+    last_state = snaps[-1][1]      # state as of 2024-09-15
+    assert first_state.estate.quantity == 10
+    assert last_state.estate.quantity == 12
+    assert first_state is not last_state
+
+
+def test_replay_emits_grant_as_non_valued_inkind_flow():
+    from events import EventAggregator, InKindFlow
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=10, unit_price=150.0, fee=2.5),
+        Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc", quantity=2),
+    ]
+    tl = EventAggregator().replay(events)
+    assert len(tl.flows) == 1
+    flow = tl.flows[0]
+    assert isinstance(flow, InKindFlow)
+    assert (flow.date, flow.account, flow.symbol, flow.quantity) == (
+        date(2024, 6, 1), "default", "AAPL", 2)
+    # Non-valued: the flow carries no price.
+    assert not hasattr(flow, "price")
+
+
+def test_aggregate_matches_timeline_current(aggregator):
+    """Non-regression: aggregate() == replay().current() (same values/order)."""
+    events = _timeline()
+    assert aggregator.aggregate(events) == aggregator.replay(events).current()
+
+
+def test_at_returns_all_positions_forward_filled(aggregator):
+    tl = aggregator.replay(_timeline())
+
+    # Before any event: empty portfolio, not an error.
+    assert tl.at(date(2023, 12, 31)) == []
+
+    # 2024-05-01: AAPL present (forward-filled from 03-01), MSFT present (02-01).
+    mid = {s["symbol"]: s for s in tl.at(date(2024, 5, 1))}
+    assert set(mid) == {"AAPL", "MSFT"}
+    assert mid["AAPL"]["estate"]["quantity"] == 10
+    assert mid["MSFT"]["estate"]["quantity"] == 5
+
+    # 2024-01-20: only AAPL has appeared yet.
+    early = tl.at(date(2024, 1, 20))
+    assert [s["symbol"] for s in early] == ["AAPL"]

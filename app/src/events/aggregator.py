@@ -2,11 +2,13 @@
 Event aggregator for computing portfolio state from events.
 """
 
+import copy
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from .schemas import (
     DEFAULT_ACCOUNT, Event, EventType, ShareState, PurchaseState, EstateState,
+    Timeline, InKindFlow,
 )
 
 
@@ -31,7 +33,10 @@ class EventAggregator:
 
     def aggregate(self, events: List[Event], accounts_declared: bool = False) -> List[Dict]:
         """
-        Aggregate events into share configurations.
+        Aggregate events into share configurations (latest state).
+
+        Thin wrapper over :meth:`replay`: there is a single replay implementation
+        and this returns its final state per position.
 
         Args:
             events: List of events sorted by date.
@@ -45,9 +50,31 @@ class EventAggregator:
         Raises:
             AggregationError: If aggregation fails (e.g., selling more than owned).
         """
-        # Group events by (account, symbol) and process in order
+        return self.replay(events, accounts_declared).current()
+
+    def replay(self, events: List[Event], accounts_declared: bool = False) -> Timeline:
+        """
+        Replay events once into a sparse :class:`Timeline`.
+
+        A single replay serves every symbol and every date: the timeline records
+        one snapshot per position per date where its state changes, and
+        forward-fills on query (``Timeline.at`` / ``position_at``). External
+        flows are emitted **without** a price (the aggregator never reads one).
+
+        Args:
+            events: List of events sorted by date.
+            accounts_declared: When True, positions are keyed by
+                ``(account, symbol)``; otherwise everything falls under
+                ``default``.
+
+        Returns:
+            A Timeline covering all positions.
+
+        Raises:
+            AggregationError: If aggregation fails (e.g., selling more than owned).
+        """
+        timeline = Timeline()
         states: Dict[Tuple[str, str], ShareState] = {}
-        order: List[Tuple[str, str]] = []
 
         for event in events:
             account = self._event_account(event, accounts_declared)
@@ -61,7 +88,8 @@ class EventAggregator:
                     purchase=PurchaseState(),
                     estate=EstateState(),
                 )
-                order.append(key)
+                timeline.snapshots[key] = []
+                timeline.order.append(key)
 
             state = states[key]
 
@@ -76,11 +104,32 @@ class EventAggregator:
                 self._process_sell(state, event)
             elif event.event_type == EventType.GRANT:
                 self._process_grant(state, event)
+                # GRANT is an external in-kind flow, emitted non-valued.
+                timeline.flows.append(InKindFlow(
+                    date=event.date, account=account,
+                    symbol=event.symbol, quantity=event.quantity))
             elif event.event_type == EventType.DIVIDEND:
                 self._process_dividend(state, event)
 
-        # Convert to list of dicts, preserving (account, symbol) first-appearance order
-        return [states[key].to_dict() for key in order]
+            # Record the position's state as of this date (one snapshot per date)
+            self._snapshot(timeline.snapshots[key], event.date, state)
+
+        return timeline
+
+    @staticmethod
+    def _snapshot(
+        snaps: List[Tuple[date, ShareState]], on_date: date, state: ShareState
+    ) -> None:
+        """Append (or, for a same-date change, replace) an immutable snapshot.
+
+        Events are date-sorted, so a same-date event just supersedes the day's
+        prior snapshot — the timeline keeps exactly one snapshot per change date.
+        """
+        snap = copy.deepcopy(state)
+        if snaps and snaps[-1][0] == on_date:
+            snaps[-1] = (on_date, snap)
+        else:
+            snaps.append((on_date, snap))
 
     def _process_buy(self, state: ShareState, event: Event) -> None:
         """
@@ -140,66 +189,3 @@ class EventAggregator:
         Increases estate.received_dividend.
         """
         state.estate.received_dividend += event.amount
-
-    def aggregate_until_date(
-        self,
-        events: List[Event],
-        target_date: date,
-        symbol: str,
-        account: Optional[str] = None,
-        accounts_declared: bool = False,
-    ) -> Optional[Dict]:
-        """
-        Aggregate events for a specific symbol up to a given date.
-
-        Args:
-            events: List of events sorted by date.
-            target_date: Only process events up to this date (inclusive).
-            symbol: The symbol to aggregate.
-            account: When provided, only events belonging to this account bucket
-                are replayed, so each account's historical state is independent.
-                When None, every account is merged (symbol-scoped, legacy).
-            accounts_declared: Whether accounts are declared, to resolve each
-                event's bucket the same way :meth:`aggregate` does.
-
-        Returns:
-            Share dictionary for the symbol, or None if no events exist.
-        """
-        # Filter events for the symbol up to target_date (and account if given)
-        def _keep(e: Event) -> bool:
-            if e.symbol != symbol or e.date > target_date:
-                return False
-            if account is None:
-                return True
-            return self._event_account(e, accounts_declared) == account
-
-        filtered_events = [e for e in events if _keep(e)]
-
-        if not filtered_events:
-            return None
-
-        # Create initial state
-        state = ShareState(
-            name=filtered_events[0].name,
-            symbol=symbol,
-            account=account or DEFAULT_ACCOUNT,
-            purchase=PurchaseState(),
-            estate=EstateState(),
-        )
-
-        for event in filtered_events:
-            # Update name if provided (use latest name)
-            if event.name:
-                state.name = event.name
-
-            # Process based on event type
-            if event.event_type == EventType.BUY:
-                self._process_buy(state, event)
-            elif event.event_type == EventType.SELL:
-                self._process_sell(state, event)
-            elif event.event_type == EventType.GRANT:
-                self._process_grant(state, event)
-            elif event.event_type == EventType.DIVIDEND:
-                self._process_dividend(state, event)
-
-        return state.to_dict()

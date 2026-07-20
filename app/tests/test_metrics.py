@@ -378,6 +378,32 @@ def test_backfill_fetches_chunk_when_gap_exists(mock_influx, shares_validator, m
     assert kwargs["share_currency"] == "USD"
 
 
+def test_backfill_does_single_replay_per_cycle(
+        mock_influx, shares_validator, mocker, sample_events):
+    """One replay serves every symbol, regardless of the number of shares."""
+    import main
+    first_buys = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 2, 1)}
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
+        mock_influx, shares_validator, mode="events",
+        first_buy_dates=first_buys, events=sample_events)
+    for sym in ("AAPL", "MSFT"):
+        metrics._share_info_cache[sym] = {
+            "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    mock_influx.get_oldest_timestamp.return_value = datetime(
+        2024, 6, 1, tzinfo=timezone.utc)
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[
+        {"timestamp": datetime(2024, 3, 1, tzinfo=timezone.utc), "price": 170.0}])
+    mock_influx.write_historical_prices.return_value = 1
+
+    spy = mocker.spy(main.EventAggregator, "replay")
+    metrics.backfill()
+
+    # Exactly one replay for the whole cycle (two shares), not one per share.
+    assert spy.call_count == 1
+
+
 def test_backfill_write_failure_does_not_abort_remaining_shares(
         mock_influx, shares_validator, mocker):
     first_buys = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}

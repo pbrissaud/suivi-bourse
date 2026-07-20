@@ -2,10 +2,11 @@
 Data schemas for the events module.
 """
 
+import bisect
 from dataclasses import dataclass, field
 from datetime import date  # noqa: F401 — used in the `date: date` field annotation (eager-evaluated on Python <3.14)
 from enum import Enum
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 
 # Canonical account bucket used when no accounts are declared (opt-out users) or
@@ -83,6 +84,82 @@ class ShareState:
                 'received_dividend': self.estate.received_dividend,
             },
         }
+
+
+@dataclass
+class InKindFlow:
+    """A non-valued in-kind external flow (currently a GRANT).
+
+    The aggregator emits it *without* a price — valuation at the day's price is
+    resolved downstream (performance module), which is why the aggregator never
+    needs to know a price. Kept here as the tracer for future cash flows
+    (DEPOSIT/WITHDRAWAL land in a later slice).
+    """
+    date: date
+    account: str
+    symbol: str
+    quantity: float
+
+
+@dataclass
+class Timeline:
+    """A sparse replay of portfolio events.
+
+    Holds, per ``(account, symbol)`` position, one snapshot per date where that
+    position's state changed (not one per calendar day). ``at()`` /
+    ``position_at()`` forward-fill: they return the latest snapshot at or before
+    the requested date, so the timeline is agnostic to the query window (the
+    window is an InfluxDB property that grows with backfill, not a property of
+    the events).
+    """
+    # (account, symbol) -> ascending [(change_date, ShareState snapshot)]
+    snapshots: Dict[Tuple[str, str], List[Tuple[date, "ShareState"]]] = field(default_factory=dict)
+    # First-appearance order of the positions (stable output ordering)
+    order: List[Tuple[str, str]] = field(default_factory=list)
+    # Non-valued external flows collected during the replay
+    flows: List[InKindFlow] = field(default_factory=list)
+
+    @staticmethod
+    def _state_at(
+        snaps: List[Tuple[date, "ShareState"]], target_date: date
+    ) -> Optional["ShareState"]:
+        """Latest snapshot at or before ``target_date`` (forward-fill), or None.
+
+        Snapshots are date-sorted, so this is a binary search: the position just
+        left of the insertion point is the latest change on or before the date.
+        """
+        idx = bisect.bisect_right(snaps, target_date, key=lambda snap: snap[0])
+        return snaps[idx - 1][1] if idx else None
+
+    def position_at(
+        self, account: str, symbol: str, target_date: date
+    ) -> Optional[dict]:
+        """State of one ``(account, symbol)`` position at ``target_date``.
+
+        Returns None when the position has no event on or before that date
+        (including before its first event — an empty state, never an error).
+        """
+        snaps = self.snapshots.get((account, symbol))
+        if not snaps:
+            return None
+        state = self._state_at(snaps, target_date)
+        return state.to_dict() if state is not None else None
+
+    def at(self, target_date: date) -> List[dict]:
+        """Every position's state at ``target_date`` (forward-filled).
+
+        Positions with no event on or before ``target_date`` are omitted.
+        """
+        result = []
+        for key in self.order:
+            state = self._state_at(self.snapshots[key], target_date)
+            if state is not None:
+                result.append(state.to_dict())
+        return result
+
+    def current(self) -> List[dict]:
+        """The latest state of every position (replaces the old full aggregate)."""
+        return [self.snapshots[key][-1][1].to_dict() for key in self.order]
 
 
 @dataclass
