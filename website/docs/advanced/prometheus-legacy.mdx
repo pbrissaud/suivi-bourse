@@ -27,8 +27,8 @@ SB_PROMETHEUS_ENABLED=false
 
 ## Exposed gauges
 
-All gauges are prefixed with `sb_` and carry the labels `share_name` and
-`share_symbol`.
+All share gauges are prefixed with `sb_` and carry the labels `share_name`,
+`share_symbol` and `account`.
 
 | Metric | Description |
 |--------|-------------|
@@ -43,6 +43,28 @@ All gauges are prefixed with `sb_` and carry the labels `share_name` and
 | `sb_market_cap` | Market capitalization |
 | `sb_volume` | Trading volume |
 | `sb_share_info` | Always `1`; carries extra labels `share_currency`, `share_exchange`, `quote_type` |
+
+:::warning New `account` label (v4.1) — re-glue existing queries
+Since v4.1 the `sb_*` gauges carry an **`account`** label. A query that used to
+aggregate without it now splits by account; aggregate the label away to restore
+the old behaviour:
+
+```promql
+sum without(account) (sb_owned_quantity)
+```
+
+See [Upgrading to accounts](/docs/advanced/upgrading-accounts).
+:::
+
+For opt-in [accounts](/docs/configuration/events-mode#accounts-opt-in), extra
+per-account and global gauges are exposed:
+
+| Metric | Labels | Description |
+|--------|--------|-------------|
+| `sb_account_cash_balance` / `sb_account_holdings_value` / `sb_account_total_value` / `sb_account_net_contributed` | `account` | Per-account cash & value |
+| `sb_account_xirr` / `sb_account_gain_absolu` / `sb_account_twr_index` | `account` | Per-account money-weighted performance |
+| `sb_account_info` | `account`, `account_type`, `account_currency` | Always `1` |
+| `sb_portfolio_*` | _(none)_ | The same fields at the global level, **without** an `account` label |
 
 ## Scraping with Prometheus
 

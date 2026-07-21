@@ -1,0 +1,112 @@
+---
+title: Upgrading to accounts (v4.1)
+description: What the account tag does to data already in InfluxDB, and the optional manual purge
+sidebar_position: 4
+---
+
+v4.1 introduces **first-class accounts**: every point written to
+`portfolio_metrics` now carries an `account` tag, and two new measurements
+(`account_metrics`, `portfolio_totals`) hold the per-account cash, value and
+money-weighted performance. This page explains the **seam** the `account` tag
+leaves on data that is already in your database — and what to do (and not do)
+about it.
+
+:::info No migration is run
+Upgrading performs **no** migration and **no** history rewrite. Nothing in your
+existing data is touched. Everything below is about *reading* the two regimes
+together, which just works.
+:::
+
+## What you'll see after upgrading
+
+Points written **before** the upgrade have no `account` tag. InfluxDB 3 is
+columnar (Parquet), not the old 1.x/2.x "series" model, so a missing tag is
+exposed as **`NULL`** rather than a distinct series. Read back with
+`COALESCE(account, 'default')` and the two regimes glue together seamlessly:
+
+```sql
+SELECT COALESCE(account, 'default') AS account, share_symbol, owned_quantity
+FROM portfolio_metrics
+WHERE share_name = 'Apple'
+```
+
+Your pre-upgrade points therefore appear under **`default`**, which is the honest
+label in both cases:
+
+- for a user who does **not** opt into accounts, there is only one (implicit)
+  account — `default` is exact;
+- for a user who **does** opt in, their events genuinely had no account before
+  the upgrade — `default` is honest.
+
+The shipped **dashboards read with `COALESCE(account, 'default')`** and never
+with a bare `WHERE account = '…'`, so your history stays visible and correctly
+aggregated.
+
+:::tip Performance is exact from day one
+Money-weighted performance (XIRR, TWR) is computed from the **price history**,
+which is read via `get_price_series()` — queried by `share_symbol` **only**,
+never filtered by `account`. Because a market price belongs to no account, the
+pre-tag (`NULL`) price history is read **in full**, so XIRR and TWR are exact
+over your **entire** history from the very first v4.1 write.
+:::
+
+## Why the history is not rewritten
+
+This is a **limitation, not a preference**:
+
+- InfluxDB 3 has **no `DELETE … WHERE`** — deletion granularity is the whole
+  table or the whole database.
+- Re-writing a point to add a tag produces a **second row** instead of replacing
+  the first, which would **double-count** every `SUM()`.
+- The backfill only ever works **backwards** in time; it can neither correct nor
+  corrupt points that already exist.
+
+So a bare `WHERE account = 'default'` **would** drop the untagged points — which
+is exactly why the read path uses `COALESCE(account, 'default')` everywhere.
+
+## Optional: start clean with a manual purge
+
+If you want a history that is 100% tagged, you can **manually** drop the
+`portfolio_metrics` table and let SuiviBourse recreate it on the next write:
+
+```bash
+curl -X DELETE "$INFLUXDB_HOST/api/v3/configure/table" \
+  -H "Authorization: Bearer $INFLUXDB_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"db": "suivi_bourse", "table": "portfolio_metrics"}'
+```
+
+The table is recreated cleanly on the next write (no grace period).
+
+:::danger This is **not** the recommended path — it destroys more than it repairs
+A purge throws away your real scrape history and can only be **rebuilt from
+backfill**, which is strictly worse:
+
+- backfill returns **daily closes only** — you lose the every-120s granularity of
+  live scraping;
+- `dividend_yield`, `pe_ratio` and `market_cap` are **never** rebuilt — they exist
+  only on live scrapes and are gone for good.
+
+Because of this, purging is a deliberate "I accept the loss" choice, never a
+default.
+:::
+
+:::caution Never automate destruction
+There is intentionally **no application flag or option** to purge data. A
+destructive flag combined with `restart: unless-stopped` would be a data
+shredder — the purge stays a manual, one-off `curl`.
+:::
+
+## Prometheus seam
+
+The same seam appears on the legacy Prometheus endpoint: the `sb_*` gauges now
+carry an **`account`** label. Any existing query that aggregated **without** it
+(e.g. `sum(sb_owned_quantity)`) will now split by account. Re-glue it by
+aggregating the label away:
+
+```promql
+sum without(account) (sb_owned_quantity)
+```
+
+See the [legacy Prometheus endpoint](/docs/advanced/prometheus-legacy) for the
+full gauge list.

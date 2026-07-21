@@ -303,8 +303,10 @@ implicit `default` account. Manual mode is unaffected as well.
 
 ### How accounts appear downstream
 
-- **InfluxDB** — every point of `portfolio_metrics` carries an `account` tag
-  (`default` when accounts aren't declared).
+- **InfluxDB** — every point of `portfolio_metrics` **written from v4.1 onwards**
+  carries an `account` tag (`default` when accounts aren't declared). Points
+  written before the upgrade have no tag — see
+  [Upgrading to accounts](/docs/advanced/upgrading-accounts).
 - **Prometheus** — the `sb_*` gauges gain an `account` label, so the same
   symbol held in two accounts no longer overwrites itself.
 - **Grafana (dashboard 1)** — the "patrimoine total" dashboard **aggregates
