@@ -171,10 +171,15 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 
 | Type | Effect on Portfolio |
 |------|---------------------|
-| `BUY` | +purchase.quantity, +estate.quantity, recalculates weighted avg cost_price, +purchase.fee |
-| `SELL` | -estate.quantity, +purchase.fee (sale fees are tracked) |
-| `GRANT` | +estate.quantity only (free shares, no impact on purchase) |
-| `DIVIDEND` | +estate.received_dividend |
+| `BUY` | +purchase.quantity, +estate.quantity, recalculates weighted avg cost_price, +purchase.fee, −cash |
+| `SELL` | -estate.quantity, +purchase.fee, +cash (proceeds `qty×price − fee`) |
+| `GRANT` | +estate.quantity only (free shares, no impact on purchase); cash-neutral |
+| `DIVIDEND` | +estate.received_dividend, +cash (`amount − fee`) |
+| `DEPOSIT` | +cash (`amount − fee`), +net_contributed (cash event: `account`+`amount` required, no share) |
+| `WITHDRAWAL` | −cash (`amount + fee`), −net_contributed (cash event) |
+
+Cash is a per-account ledger (starts at `0.00`). Negative balances are allowed
+(non-blocking warning); overselling stays blocking.
 
 #### Aggregation Logic
 
@@ -280,6 +285,24 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_p
 | Field | `pe_ratio` | P/E ratio |
 | Field | `market_cap` | Market capitalization |
 | Field | `volume` | Trading volume |
+
+**Measurement**: `account_metrics` (opt-in accounts only; daily series rewritten
+in full each cycle, points stamped at midnight of the day, idempotent upsert)
+
+| Type | Name | Description |
+|------|------|-------------|
+| Tag | `account` | Account id |
+| Tag | `account_type` | Account type (PEA, CTO, …) |
+| Tag | `account_currency` | Account currency |
+| Field | `cash_balance` | Per-account cash ledger balance |
+| Field | `holdings_value` | Σ(owned_quantity × price) over the account's symbols |
+| Field | `total_value` | `cash_balance + holdings_value` |
+| Field | `net_contributed` | Σ deposits − Σ withdrawals (fees excluded) |
+
+Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
+(labels `account_type`/`account_currency`). Price history for `holdings_value` is
+read via `InfluxDBWriter.get_price_series(symbol)` — queried by `share_symbol`
+only, never by `account` (a market price belongs to no account).
 
 ## Contributing
 

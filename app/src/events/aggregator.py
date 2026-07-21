@@ -7,8 +7,8 @@ from datetime import date
 from typing import Dict, List, Tuple
 
 from .schemas import (
-    DEFAULT_ACCOUNT, Event, EventType, ShareState, PurchaseState, EstateState,
-    Timeline, InKindFlow,
+    CASH_EVENT_TYPES, DEFAULT_ACCOUNT, Event, EventType, ShareState,
+    PurchaseState, EstateState, Timeline, InKindFlow, CashFlow, CashState,
 )
 
 
@@ -75,11 +75,25 @@ class EventAggregator:
         """
         timeline = Timeline()
         states: Dict[Tuple[str, str], ShareState] = {}
+        cash_states: Dict[str, CashState] = {}
 
         for event in events:
             account = self._event_account(event, accounts_declared)
-            key = (account, event.symbol)
 
+            # Every account gets a cash ledger, starting at 0.00, on first sight.
+            if account not in cash_states:
+                cash_states[account] = CashState()
+                timeline.cash_snapshots[account] = []
+            cash = cash_states[account]
+
+            # Cash events (DEPOSIT/WITHDRAWAL) carry no share: only the ledger moves.
+            if event.event_type in CASH_EVENT_TYPES:
+                self._process_cash_event(cash, event, account, timeline)
+                self._snapshot(timeline.cash_snapshots[account], event.date, cash)
+                continue
+
+            # Share events: update the (account, symbol) position...
+            key = (account, event.symbol)
             if key not in states:
                 states[key] = ShareState(
                     name=event.name,
@@ -114,16 +128,54 @@ class EventAggregator:
             # Record the position's state as of this date (one snapshot per date)
             self._snapshot(timeline.snapshots[key], event.date, state)
 
+            # ...and apply the event's cash effect (GRANT is cash-neutral).
+            if self._apply_share_cash(cash, event):
+                self._snapshot(timeline.cash_snapshots[account], event.date, cash)
+
         return timeline
 
-    @staticmethod
-    def _snapshot(
-        snaps: List[Tuple[date, ShareState]], on_date: date, state: ShareState
+    def _process_cash_event(
+        self, cash: CashState, event: Event, account: str, timeline: Timeline
     ) -> None:
+        """Apply a DEPOSIT/WITHDRAWAL to the ledger and emit its (signed) CashFlow.
+
+        The fee always makes the cash worse; ``net_contributed`` tracks the raw
+        external contribution (fee excluded). The emitted CashFlow is non-valued.
+        """
+        fee = event.fee or 0.0
+        if event.event_type == EventType.DEPOSIT:
+            cash.cash_balance += event.amount - fee
+            cash.net_contributed += event.amount
+            timeline.flows.append(CashFlow(event.date, account, event.amount))
+        else:  # WITHDRAWAL
+            cash.cash_balance -= event.amount + fee
+            cash.net_contributed -= event.amount
+            timeline.flows.append(CashFlow(event.date, account, -event.amount))
+
+    def _apply_share_cash(self, cash: CashState, event: Event) -> bool:
+        """Apply a share event's cash effect. Returns True if cash changed.
+
+        BUY debits, SELL and DIVIDEND credit (fee always worsens cash); GRANT is
+        cash-neutral.
+        """
+        fee = event.fee or 0.0
+        if event.event_type == EventType.BUY:
+            cash.cash_balance -= event.quantity * event.unit_price + fee
+        elif event.event_type == EventType.SELL:
+            cash.cash_balance += event.quantity * event.unit_price - fee
+        elif event.event_type == EventType.DIVIDEND:
+            cash.cash_balance += event.amount - fee
+        else:  # GRANT
+            return False
+        return True
+
+    @staticmethod
+    def _snapshot(snaps: List[Tuple[date, object]], on_date: date, state) -> None:
         """Append (or, for a same-date change, replace) an immutable snapshot.
 
-        Events are date-sorted, so a same-date event just supersedes the day's
-        prior snapshot — the timeline keeps exactly one snapshot per change date.
+        Works for any per-date state (ShareState or CashState). Events are
+        date-sorted, so a same-date event just supersedes the day's prior
+        snapshot — the timeline keeps exactly one snapshot per change date.
         """
         snap = copy.deepcopy(state)
         if snaps and snaps[-1][0] == on_date:

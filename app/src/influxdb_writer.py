@@ -4,13 +4,13 @@ Handles writing and reading metrics to/from InfluxDB 3.x
 """
 import math
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
-from events.schemas import DEFAULT_ACCOUNT
+from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
@@ -45,6 +45,7 @@ class InfluxDBWriter:
     """
 
     MEASUREMENT = "portfolio_metrics"
+    ACCOUNT_MEASUREMENT = "account_metrics"
 
     def __init__(
         self,
@@ -358,6 +359,86 @@ class InfluxDBWriter:
             logger.error(f"Error checking data for {share_symbol} on {date}: {e}")
 
         return False
+
+    def get_price_series(self, share_symbol: str) -> Dict[date, float]:
+        """Return the daily close price of a symbol from ``portfolio_metrics``.
+
+        🔒 Queries by ``share_symbol`` **only**, never by ``account``: a market
+        price belongs to no account, and points written before the account tag
+        existed have ``account = NULL`` — filtering on account would silently
+        truncate the price history. This is the shared price source consumed by
+        the account/performance series.
+
+        Returns a ``{date: close_price}`` mapping (one entry per day that has a
+        price), empty if there is no data.
+        """
+        if self._client is None:
+            self.connect()
+
+        safe_symbol = share_symbol.replace("'", "''")
+        # One row per day: the last (latest-time) price of each calendar day.
+        query = f"""
+        SELECT day, price FROM (
+            SELECT date_trunc('day', time) AS day, share_price AS price,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY date_trunc('day', time) ORDER BY time DESC) AS rn
+            FROM "{self.MEASUREMENT}"
+            WHERE share_symbol = '{safe_symbol}' AND share_price IS NOT NULL
+        ) WHERE rn = 1
+        ORDER BY day
+        """
+
+        series: Dict[date, float] = {}
+        try:
+            table = self._client.query(query=query, language="sql")
+            if table and len(table) > 0:
+                df = table.to_pandas()
+                for _, row in df.iterrows():
+                    day = row['day']
+                    day = day.date() if hasattr(day, 'date') else day
+                    series[day] = float(row['price'])
+        except Exception as e:
+            logger.error(f"Error querying price series for {share_symbol}: {e}")
+
+        return series
+
+    def write_account_metrics(self, points: List[AccountMetricPoint]) -> int:
+        """Write the daily ``account_metrics`` series (batch, idempotent).
+
+        Each :class:`AccountMetricPoint` carries the tags ``account`` /
+        ``account_type`` / ``account_currency`` and the fields ``cash_balance`` /
+        ``holdings_value`` / ``total_value`` / ``net_contributed`` at a midnight
+        ``timestamp``. Re-writing the same (tags, time) series overwrites rather
+        than duplicates, so recomputing and rewriting the whole series every
+        cycle is idempotent.
+        """
+        if self._client is None:
+            self.connect()
+
+        records = []
+        for p in points:
+            point = Point(self.ACCOUNT_MEASUREMENT)
+            point.tag("account", p.account or DEFAULT_ACCOUNT)
+            if p.account_type:
+                point.tag("account_type", p.account_type)
+            if p.account_currency:
+                point.tag("account_currency", p.account_currency)
+
+            for field_name in (
+                "cash_balance", "holdings_value", "total_value", "net_contributed"
+            ):
+                value = getattr(p, field_name)
+                if _is_valid_number(value):
+                    point.field(field_name, float(value))
+
+            point.time(p.timestamp, WritePrecision.S)
+            records.append(point)
+
+        if records:
+            self._client.write(record=records, write_precision='s')
+            logger.info(f"Written {len(records)} account_metrics points")
+
+        return len(records)
 
     def __enter__(self):
         self.connect()

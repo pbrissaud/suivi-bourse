@@ -55,7 +55,9 @@ variable — it takes priority over `settings.yaml`. See
 ## File format
 
 Both **CSV** and **XLSX** files are supported. Every file must contain a header
-row with (at least) the four required columns.
+row; only `date` and `event_type` are structurally required. Which of the other
+columns apply depends on the event type (a share `BUY` needs `symbol`/`name`/
+`quantity`/`unit_price`; a cash `DEPOSIT` needs `account`/`amount`).
 
 <Tabs>
   <TabItem value="csv" label="CSV" default>
@@ -90,27 +92,30 @@ Requires the `openpyxl` library, which is bundled in the Docker image.
 | Column | Required | Description |
 |--------|----------|-------------|
 | `date` | Yes | ISO format `YYYY-MM-DD` |
-| `event_type` | Yes | `BUY`, `SELL`, `GRANT` or `DIVIDEND` (case-insensitive) |
-| `symbol` | Yes | Yahoo! Finance ticker (e.g. `AAPL`, `MSFT`) |
-| `name` | Yes | Display name for the share |
+| `event_type` | Yes | `BUY`, `SELL`, `GRANT`, `DIVIDEND`, `DEPOSIT` or `WITHDRAWAL` (case-insensitive) |
+| `symbol` | For share events | Yahoo! Finance ticker (e.g. `AAPL`, `MSFT`); **forbidden** on cash events |
+| `name` | For share events | Display name for the share; **forbidden** on cash events |
 | `quantity` | For `BUY` / `SELL` / `GRANT` | Number of shares |
 | `unit_price` | For `BUY` / `SELL` | Price per share |
 | `fee` | Optional | Transaction fee (must be `>= 0`) |
-| `amount` | For `DIVIDEND` | Dividend amount received |
+| `amount` | For `DIVIDEND` / `DEPOSIT` / `WITHDRAWAL` | Amount received (dividend) or moved (cash) |
 | `notes` | Optional | Free-text comment (ignored by the app) |
-| `account` | Only when [accounts](#accounts-opt-in) are declared | Account `id` this event belongs to |
+| `account` | For cash events, and for any event when [accounts](#accounts-opt-in) are declared | Account `id` this event belongs to |
 
-The four required columns must always be present in the header. Empty cells are
-allowed for the columns that don't apply to a given event type.
+`date` and `event_type` must always be present in the header. Empty cells are
+allowed for the columns that don't apply to a given event type, and cash-only
+files may omit the share columns entirely.
 
 ## Event types
 
 | Type | Required fields | Effect on the portfolio |
 |------|-----------------|-------------------------|
-| `BUY` | `quantity` > 0, `unit_price` > 0 | +purchased quantity, +owned quantity, recomputes the weighted average cost price, +fee |
-| `SELL` | `quantity` > 0, `unit_price` > 0 | −owned quantity, +fee |
-| `GRANT` | `quantity` > 0 | +owned quantity only (free shares) |
-| `DIVIDEND` | `amount` > 0 | +received dividends |
+| `BUY` | `quantity` > 0, `unit_price` > 0 | +purchased quantity, +owned quantity, recomputes the weighted average cost price, +fee, −cash |
+| `SELL` | `quantity` > 0, `unit_price` > 0 | −owned quantity, +fee, **+cash (proceeds)** |
+| `GRANT` | `quantity` > 0 | +owned quantity only (free shares); cash-neutral |
+| `DIVIDEND` | `amount` > 0 | +received dividends, +cash |
+| `DEPOSIT` | `account`, `amount` > 0 | +cash (external contribution) |
+| `WITHDRAWAL` | `account`, `amount` > 0 | −cash (external withdrawal) |
 
 If any event fails validation, the whole ingestion is rejected and the
 **previous valid configuration is kept** — see [Error resilience](#error-resilience).
@@ -156,6 +161,56 @@ so raises an aggregation error and the previous valid configuration is kept.
 ### DIVIDEND — received dividends
 
 - Increases `estate.received_dividend` by `amount`.
+- Also **credits the account's cash** by `amount − fee`.
+
+## Cash events & the cash ledger
+
+`DEPOSIT` and `WITHDRAWAL` track the money that **enters and leaves** an account.
+Combined with the buy/sell/dividend flows, SuiviBourse keeps a **cash balance per
+account**, so you can see how much you contributed, how much it is worth, and how
+much is sitting idle as cash.
+
+```csv title="events/2024.csv"
+date,event_type,amount,fee,account,notes
+2024-01-01,DEPOSIT,10000,,PEA,Initial funding
+2024-06-01,WITHDRAWAL,500,1.5,PEA,Cash out
+```
+
+**Rules**
+
+- Required: `date`, `account`, `amount` (**> 0** — the direction is carried by the
+  event type, never by the sign). `fee` is optional (`>= 0`).
+- Forbidden on cash events: `symbol`, `name`, `quantity`, `unit_price` — providing
+  any of them is a validation error.
+- Cash is **siloed per account**: a transfer between accounts is expressed as a
+  `WITHDRAWAL` + `DEPOSIT` pair.
+
+**The cash ledger** starts at `0.00` per account. The `fee` always makes the cash
+worse:
+
+| Event | Effect on cash |
+|-------|----------------|
+| `DEPOSIT` | `+ (amount − fee)` |
+| `WITHDRAWAL` | `− (amount + fee)` |
+| `BUY` | `− (quantity × unit_price + fee)` |
+| `SELL` | `+ (quantity × unit_price − fee)` |
+| `DIVIDEND` | `+ (amount − fee)` |
+| `GRANT` | none |
+
+:::caution `SELL` now credits cash
+Previously the proceeds of a sale were not tracked. From now on, a `SELL`
+**credits the account's cash** with `quantity × unit_price − fee`.
+:::
+
+**Permissive policy** — a **negative** cash balance is **allowed**: it only logs a
+non-blocking warning. This is what keeps a user who adds accounts without
+rewriting their whole `DEPOSIT` history running (they will see negative balances,
+not an app that refuses to start). Selling more shares than you own stays
+**blocking**, as before.
+
+These values feed the **Accounts** dashboard (`cash_balance`, `holdings_value`,
+`total_value`, `net_contributed`), written to the `account_metrics` measurement
+**only for opt-in users** (accounts declared in `settings.yaml`).
 
 ## Accounts (opt-in)
 

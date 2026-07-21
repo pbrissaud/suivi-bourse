@@ -25,7 +25,8 @@ def test_event_type_enum_values():
 
 
 def test_event_type_membership_is_exhaustive():
-    assert {e.value for e in EventType} == {"BUY", "SELL", "GRANT", "DIVIDEND"}
+    assert {e.value for e in EventType} == {
+        "BUY", "SELL", "GRANT", "DIVIDEND", "DEPOSIT", "WITHDRAWAL"}
 
 
 # ---------------------------------------------------------------------------

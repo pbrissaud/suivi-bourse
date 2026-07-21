@@ -19,7 +19,9 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
-from events import EventLoader, EventValidator, EventAggregator, EventWatcher
+from events import (
+    EventLoader, EventValidator, EventAggregator, EventWatcher, AccountMetricPoint,
+)
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
@@ -792,6 +794,106 @@ class SuiviBourseMetrics:
             return
 
         self.expose_metrics()
+
+        # Recompute the per-account cash & value series after prices are fresh.
+        # Guarded so an account_metrics error never aborts the scrape cycle.
+        try:
+            self.update_account_metrics()
+        except Exception as e:
+            app_logger.error(f"Failed to update account metrics: {e}")
+
+    def update_account_metrics(self):
+        """Recompute and write the daily ``account_metrics`` series per account.
+
+        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The
+        whole series (earliest event date → today, one point per calendar day at
+        midnight) is rebuilt and rewritten every cycle — an idempotent upsert, so
+        the curve extends on its own as backfill fills earlier prices, with no
+        catch-up code. Never stamps a point in the future (midnight of the day).
+        """
+        portfolio = self.config_manager.load_accounts()
+        if portfolio is None:
+            return  # single gate: no declared accounts -> no account series
+
+        events = self.config_manager.get_events()
+        if not events:
+            return
+
+        timeline = EventAggregator().replay(events, accounts_declared=True)
+
+        # Per-symbol daily close prices (market data), as date-sorted (date, price)
+        # pairs forward-filled with the timeline's shared helper.
+        symbols = {s['symbol'] for s in self.shares if s.get('symbol')}
+        price_pairs: Dict[str, List] = {
+            sym: sorted(self.influxdb.get_price_series(sym).items())
+            for sym in symbols
+        }
+
+        start = min(e.date for e in events)
+        today = datetime.now(timezone.utc).date()
+
+        points = []
+        latest_by_account: Dict[str, AccountMetricPoint] = {}
+        day = start
+        while day <= today:
+            for account in portfolio.accounts:
+                acc = account.id
+                cash = timeline.cash_at(acc, day)
+                positions = [
+                    (sym, timeline.position_at(acc, sym, day)) for sym in symbols
+                ]
+                positions = [(sym, p) for sym, p in positions if p]
+
+                # Skip days before the account has any activity (no zero noise).
+                if cash is None and not positions:
+                    continue
+
+                cash_balance = cash.cash_balance if cash else 0.0
+                net_contributed = cash.net_contributed if cash else 0.0
+                holdings = 0.0
+                for sym, pos in positions:
+                    qty = pos['estate']['quantity']
+                    if not qty:
+                        continue
+                    price = timeline.state_at(price_pairs[sym], day)
+                    if price is not None:
+                        holdings += qty * price
+
+                point = AccountMetricPoint(
+                    account=acc,
+                    account_type=account.type,
+                    account_currency=account.currency,
+                    # Midnight of the day, never stamped in the future.
+                    timestamp=datetime(day.year, day.month, day.day, tzinfo=timezone.utc),
+                    cash_balance=cash_balance,
+                    holdings_value=holdings,
+                    total_value=cash_balance + holdings,
+                    net_contributed=net_contributed,
+                )
+                points.append(point)
+                latest_by_account[acc] = point
+            day += timedelta(days=1)
+
+        if points:
+            self.influxdb.write_account_metrics(points)
+
+        # Permissive cash policy: a negative balance is allowed (it keeps a user
+        # who adds accounts without rewriting their DEPOSIT history running), but
+        # it is worth a non-blocking warning.
+        for acc, p in latest_by_account.items():
+            if p.cash_balance < 0:
+                app_logger.warning(
+                    f"Account '{acc}' has a negative cash balance "
+                    f"({p.cash_balance:.2f}) — insufficient recorded cash")
+
+        # Prometheus: expose the latest (today) value per account.
+        if self.prometheus is not None:
+            for acc, p in latest_by_account.items():
+                try:
+                    self.prometheus.update_account(p)
+                except Exception as e:
+                    app_logger.error(
+                        f"Failed to update Prometheus account metrics for {acc}: {e}")
 
     def reload(self):
         """
