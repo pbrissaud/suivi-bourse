@@ -240,7 +240,7 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
 
     # Sum the per-account daily series by date (accounts start on different days).
     by_date: Dict[date, DailyPerf] = {}
-    for acc_id, perf in per_account.items():
+    for perf in per_account.values():
         for dp in perf.daily:
             agg = by_date.get(dp.date)
             if agg is None:
