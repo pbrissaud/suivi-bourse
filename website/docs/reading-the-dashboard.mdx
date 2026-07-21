@@ -1,0 +1,213 @@
+---
+title: Reading the dashboard
+description: How to interpret every number and chart on the Accounts dashboard — value, cash, XIRR, TWR and absolute gain
+sidebar_position: 5.5
+---
+
+The **SuiviBourse – Accounts** Grafana dashboard shows several numbers that are
+easy to misread — especially the two return metrics (**XIRR** and **TWR**) and
+the **absolute gain**, which does *not* equal `value − contributions` the way you
+might expect. This page explains what each tile and chart means, and the design
+choices behind the surprising ones.
+
+:::info Where these numbers come from
+Every metric below is read from the `account_metrics` (per account) and
+`portfolio_totals` (global) measurements, computed in `performance.py`. See
+[Upgrading to accounts](/docs/advanced/upgrading-accounts) for how the data model
+is laid out.
+:::
+
+## The dashboard at a glance
+
+The **SuiviBourse – Accounts** dashboard has three sections:
+
+| Section | What it shows |
+|---|---|
+| **Portfolio — all accounts** | Global totals across every declared account (only when all accounts share one currency). |
+| **TWR comparison** | The time-weighted return index, one line per account, on a shared base-100 scale. |
+| **Account: `<id>`** | The same tiles and charts scoped to a single account. |
+
+:::tip Tiles vs charts — an important distinction
+Some metrics are shown as a **big number tile** (Total value, Cash balance,
+XIRR, Absolute gain) and others **only as a chart** (TWR). That's deliberate:
+a metric that is a single figure "as of today" gets a tile; a metric that only
+makes sense as a **path over time** (TWR) is a line chart with no tile. If you're
+hunting for a "TWR" number and can't find one, that's why — see
+[Reading the TWR chart](#reading-the-twr-chart) below.
+:::
+
+## The value tiles
+
+### Total value
+
+```
+total_value = cash_balance + holdings_value
+```
+
+Everything the account is worth right now: the uninvested cash plus the market
+value of the shares.
+
+### Cash balance
+
+The per-account **cash ledger**. It starts at `0.00` and every event moves it:
+deposits and dividends add to it, buys and withdrawals subtract from it. It is a
+real running balance — negative balances are allowed (they raise a non-blocking
+warning), the way a real broker cash account can go temporarily negative.
+
+### Holdings value
+
+```
+holdings_value = Σ (owned_quantity × price)
+```
+
+summed over every symbol the account holds, using the price on that day. The
+price comes from the **backfilled history** (`get_price_series()`), so while
+backfill is still running this figure is **understated** — see
+[Numbers that settle over time](#numbers-that-settle-over-time).
+
+### Net contributed
+
+```
+net_contributed = Σ deposits − Σ withdrawals      (fees excluded)
+```
+
+The **external cash** you put in, minus what you took out. This is *cash only* —
+it does **not** include the market value of shares you received for free
+(`GRANT`). Keep that in mind for the next section, because the absolute gain uses
+a **different**, wider notion of "contribution".
+
+## The return metrics
+
+SuiviBourse reports **two** returns because they answer two different questions.
+
+### XIRR — money-weighted return
+
+XIRR is the **annualized internal rate of return** on the capital you actually
+committed, weighting each euro by how long it was invested. It answers:
+
+> *"What did the money I actually put in earn, per year?"*
+
+A large deposit made recently drags XIRR toward that deposit's short-term
+performance; the same portfolio can show very different XIRR depending on **when**
+you contributed. XIRR is shown as a percentage tile (e.g. `3.15 %`).
+
+:::note XIRR needs an external flow
+XIRR is only defined once there is at least one deposit, withdrawal or grant. On
+an account that never had an external flow it is left blank rather than shown as
+zero.
+:::
+
+### TWR — time-weighted return
+
+TWR removes the effect of your deposit/withdrawal timing and measures how the
+**holdings themselves** performed. It answers:
+
+> *"How well did my positions perform, regardless of when I added money?"*
+
+TWR is published as a **base-100 index** (`twr_index`), and shown **only as a
+chart** — there is no TWR tile.
+
+#### Reading the TWR chart
+
+- **100 = your starting point.** A value of **138 means +38 %** time-weighted
+  since inception.
+- The Y-axis **auto-scales to the selected time range**. With *Last 90 days*
+  selected you only see the last-90-days slice of an index that has been
+  compounding since your first purchase — so the line might sit around
+  `130 → 138` rather than starting at 100. That's not a bug: `130` means the
+  index was already at +30 % at the left edge of the window.
+- The base **re-anchors as backfill fills earlier history**: as older prices
+  arrive, the "day 0" the index is measured from moves further back, so the
+  absolute level can shift while backfill is still running.
+
+:::tip TWR vs XIRR — which to trust?
+Neither is "more correct" — they answer different questions. Use **TWR** to judge
+your **stock-picking / market performance**, and **XIRR** to judge the return on
+**your actual invested euros**. They diverge most when you make a large
+contribution shortly before viewing.
+:::
+
+## Absolute gain — the surprising one
+
+This is the tile people misread most. It is **not** `total_value − net_contributed`.
+
+```
+gain_absolu = total_value − base_contributed
+
+base_contributed = Σ cash contributions
+                 + Σ (grant_quantity × price on the grant date)
+```
+
+The difference from `net_contributed` is the **valued grants** term: shares you
+received **for free** (`GRANT` — loyalty shares, free-share attributions) are
+counted as an **in-kind contribution at their market value on the day you got
+them**, *not* as gain.
+
+### Why free shares count as a contribution, not gain
+
+Money-weighted performance measures the return on **capital you committed**. The
+day free shares land in your portfolio, its value jumps — but your *investments*
+didn't perform, you were simply **given** something. Counting that jump as gain
+would overstate your performance. So the framework treats the arrival of free
+shares exactly like a deposit: as money coming **in from outside**.
+
+:::note Worked example
+You hold shares and receive **5 free shares** worth **€180** on the grant day.
+
+- Your total value rises by €180.
+- `base_contributed` also rises by €180 (the grant, valued at market).
+- So `gain_absolu` is **unchanged** — the €180 is correctly booked as a
+  contribution, not as profit.
+
+This is why `gain_absolu` can be noticeably **lower** than
+`total_value − net_contributed`: the gap is the market value of every free share
+you've ever received.
+:::
+
+If you'd rather think in "net worth" terms (where free shares *are* a windfall),
+that's a legitimate different view — but it's a different definition, not a bug.
+
+## Common gotchas
+
+### "My gain looks too low"
+
+Almost always the **valued-grants** effect above. Sanity-check it: if
+`total_value − net_contributed` is much bigger than `gain_absolu`, the difference
+is the market value of your `GRANT` shares being treated as contributions.
+
+### A single position with an implausible historical price
+
+Grant valuation (and therefore `base_contributed`, XIRR and `gain_absolu`) uses
+the **backfilled price on the grant date**. If a ticker's history is
+**corporate-action–adjusted** — e.g. a reverse split makes pre-split prices look
+hundreds of times too high — a small free-share grant can be valued absurdly and
+skew the gain. If one number looks wildly off, inspect that symbol's backfilled
+price around the event date before trusting the aggregate.
+
+### The charts flash empty for a second
+
+Every time you edit an events file, SuiviBourse **rewrites the whole
+`account_metrics` / `portfolio_totals` series** (delete + re-insert ~one point
+per day). During that brief window the panels have no data and render blank —
+they refill within a second or two. This is normal, not a data loss.
+
+### Dates run into the future / months with no data
+
+That's the **time-range picker**, not the data. Dragging a time-series panel to
+the right creates an absolute range ending in the future, which Grafana caches
+in the URL. Pick a relative range (**Last 90 days**, **Last 1 year**) to re-anchor
+the axis on *now*.
+
+## Numbers that settle over time
+
+Right after startup, [backfill](/docs/backfill) is still walking price history
+backwards from today to your first purchase. Until it finishes:
+
+- **`holdings_value` is understated** (missing past prices count as 0), so
+  **`total_value`**, **XIRR** and **`gain_absolu`** are off — they can even show
+  **negative** briefly.
+- The **TWR base re-anchors** as earlier history arrives.
+
+Once backfill reports *"Backfill cycle complete: no new data to write"*, every
+symbol is filled back to its purchase date and the figures stabilize. Give it a
+few minutes on first run before reading the returns.
