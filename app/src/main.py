@@ -809,6 +809,22 @@ class SuiviBourseMetrics:
         """Midnight UTC of ``day`` — never stamped in the future."""
         return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
 
+    @staticmethod
+    def _value_kwargs(dp, last: bool, perf) -> dict:
+        """Shared value + perf fields for a metric point built from a DailyPerf.
+
+        twr_index is per-day; xirr / gain_absolu land only on the latest point.
+        """
+        return dict(
+            cash_balance=dp.cash_balance,
+            holdings_value=dp.holdings_value,
+            total_value=dp.total_value,
+            net_contributed=dp.net_contributed,
+            twr_index=dp.twr_index,
+            xirr=perf.xirr if last else None,
+            gain_absolu=perf.gain_absolu if last else None,
+        )
+
     def update_account_metrics(self):
         """Recompute and write the daily ``account_metrics`` + ``portfolio_totals``
         series via the performance module.
@@ -865,13 +881,7 @@ class SuiviBourseMetrics:
                     account_type=account.type,
                     account_currency=account.currency,
                     timestamp=self._midnight(dp.date),
-                    cash_balance=dp.cash_balance,
-                    holdings_value=dp.holdings_value,
-                    total_value=dp.total_value,
-                    net_contributed=dp.net_contributed,
-                    twr_index=dp.twr_index,
-                    xirr=perf.xirr if last else None,
-                    gain_absolu=perf.gain_absolu if last else None,
+                    **self._value_kwargs(dp, last, perf),
                 )
                 acc_points.append(pt)
                 if last:
@@ -884,13 +894,7 @@ class SuiviBourseMetrics:
             total_points = [
                 PortfolioTotalPoint(
                     timestamp=self._midnight(dp.date),
-                    cash_balance=dp.cash_balance,
-                    holdings_value=dp.holdings_value,
-                    total_value=dp.total_value,
-                    net_contributed=dp.net_contributed,
-                    twr_index=dp.twr_index,
-                    xirr=total.xirr if i == len(total.daily) - 1 else None,
-                    gain_absolu=total.gain_absolu if i == len(total.daily) - 1 else None,
+                    **self._value_kwargs(dp, i == len(total.daily) - 1, total),
                 )
                 for i, dp in enumerate(total.daily)
             ]

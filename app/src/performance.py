@@ -10,7 +10,7 @@ Definitions (see issue #563):
     GRANT (in-kind, valued at the day's price).
   * Internal flows (they ARE performance): BUY, SELL, DIVIDEND and every fee.
   * Daily valuation: V = cash + Σ(quantity × price), prices forward-filled.
-  * TWR return convention: flows land end-of-day, r_D = (V_D − F_D) / V_{D−1}.
+  * TWR return convention: flows land end-of-day, r_D = (V_D - F_D) / V_{D-1}.
 """
 
 from collections import defaultdict
@@ -88,7 +88,7 @@ def xirr(cashflows: List[Tuple[date, float]],
 
 def _fill_twr(daily: List[DailyPerf]) -> None:
     """Fill twr_index in place: base 100 anchored at the first day with value,
-    then compounded by r_D = (V_D − F_D) / V_{D−1} (flows land end-of-day)."""
+    then compounded by r_D = (V_D - F_D) / V_{D-1} (flows land end-of-day)."""
     prev_v: Optional[float] = None
     twr: Optional[float] = None
     for dp in daily:
@@ -128,7 +128,7 @@ def _holdings_value(timeline: Timeline, account: str, symbols,
 def _account_flows(timeline: Timeline, account: str, price_at: PriceAt):
     """Return (cash_flows, grant_flows) for one account.
 
-    cash_flows: list of (date, amount) with amount signed (+deposit, −withdrawal).
+    cash_flows: list of (date, amount) with amount signed (+deposit, -withdrawal).
     grant_flows: list of (date, symbol, quantity).
     """
     cash_flows, grant_flows = [], []
@@ -141,7 +141,7 @@ def _account_flows(timeline: Timeline, account: str, price_at: PriceAt):
 
 
 def _external_flow_by_date(cash_flows, grant_flows, price_at: PriceAt) -> Dict[date, float]:
-    """Net external inflow value per date (deposits +, withdrawals −, grants
+    """Net external inflow value per date (deposits +, withdrawals -, grants
     valued at the day's price). Unvalued grants (no price yet) are skipped."""
     by_date: Dict[date, float] = defaultdict(float)
     for d, amount in cash_flows:
@@ -159,7 +159,7 @@ def _xirr_cashflows(cash_flows, grant_flows, price_at: PriceAt,
     terminal value positive."""
     cfs: List[Tuple[date, float]] = []
     for d, amount in cash_flows:
-        cfs.append((d, -amount))               # deposit(+)→pay in(−); withdrawal(−)→receive(+)
+        cfs.append((d, -amount))               # deposit(+)→pay in(-); withdrawal(-)→receive(+)
     for d, sym, qty in grant_flows:
         price = price_at(sym, d)
         if price is not None:
@@ -169,7 +169,7 @@ def _xirr_cashflows(cash_flows, grant_flows, price_at: PriceAt,
 
 
 def _base_contributed(cash_flows, grant_flows, price_at: PriceAt) -> float:
-    """Total external contribution (deposits − withdrawals + valued grants)."""
+    """Total external contribution (deposits - withdrawals + valued grants)."""
     base = sum(amount for _, amount in cash_flows)
     for d, sym, qty in grant_flows:
         price = price_at(sym, d)

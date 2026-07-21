@@ -429,11 +429,7 @@ class InfluxDBWriter:
             if p.account_currency:
                 point.tag("account_currency", p.account_currency)
 
-            for field_name in self._ACCOUNT_FIELDS + self._PERF_FIELDS:
-                value = getattr(p, field_name)
-                if _is_valid_number(value):
-                    point.field(field_name, float(value))
-
+            self._set_value_fields(point, p)
             point.time(p.timestamp, WritePrecision.S)
             records.append(point)
 
@@ -442,6 +438,13 @@ class InfluxDBWriter:
             logger.info(f"Written {len(records)} account_metrics points")
 
         return len(records)
+
+    def _set_value_fields(self, point: Point, p: Any) -> None:
+        """Set the shared value + performance fields on a point (skipping NaN/None)."""
+        for field_name in self._ACCOUNT_FIELDS + self._PERF_FIELDS:
+            value = getattr(p, field_name)
+            if _is_valid_number(value):
+                point.field(field_name, float(value))
 
     def write_portfolio_totals(self, points: List[PortfolioTotalPoint]) -> int:
         """Write the global ``portfolio_totals`` series (batch, idempotent).
@@ -456,10 +459,7 @@ class InfluxDBWriter:
         records = []
         for p in points:
             point = Point(self.PORTFOLIO_MEASUREMENT)
-            for field_name in self._ACCOUNT_FIELDS + self._PERF_FIELDS:
-                value = getattr(p, field_name)
-                if _is_valid_number(value):
-                    point.field(field_name, float(value))
+            self._set_value_fields(point, p)
             point.time(p.timestamp, WritePrecision.S)
             records.append(point)
 
