@@ -134,19 +134,17 @@ class PrometheusExporter:
         if info.get('volume') is not None:
             self.volume.labels(*labels).set(info['volume'])
 
-    def update_account(self, point: dict) -> None:
+    def update_account(self, point) -> None:
         """Update the per-account gauges from a computed account_metrics point.
 
         Args:
-            point: dict with account / account_type / account_currency and the
-                cash_balance / holdings_value / total_value / net_contributed
-                fields (the latest, today's, values for the account).
+            point: an :class:`~events.schemas.AccountMetricPoint` (the latest,
+                today's, values for the account).
         """
-        account = point['account']
-        self.account_cash_balance.labels(account).set(point['cash_balance'])
-        self.account_holdings_value.labels(account).set(point['holdings_value'])
-        self.account_total_value.labels(account).set(point['total_value'])
-        self.account_net_contributed.labels(account).set(point['net_contributed'])
+        account = point.account
+        self.account_cash_balance.labels(account).set(point.cash_balance)
+        self.account_holdings_value.labels(account).set(point.holdings_value)
+        self.account_total_value.labels(account).set(point.total_value)
+        self.account_net_contributed.labels(account).set(point.net_contributed)
         self.account_info.labels(
-            account, point.get('account_type', ''),
-            point.get('account_currency', '')).set(1)
+            account, point.account_type or '', point.account_currency or '').set(1)

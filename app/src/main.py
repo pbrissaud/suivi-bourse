@@ -2,7 +2,6 @@
 SuiviBourse
 Paul Brissaud
 """
-import bisect
 import os
 import sys
 import time
@@ -20,7 +19,9 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
-from events import EventLoader, EventValidator, EventAggregator, EventWatcher
+from events import (
+    EventLoader, EventValidator, EventAggregator, EventWatcher, AccountMetricPoint,
+)
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
@@ -801,12 +802,6 @@ class SuiviBourseMetrics:
         except Exception as e:
             app_logger.error(f"Failed to update account metrics: {e}")
 
-    @staticmethod
-    def _price_on(sorted_days: List, series: Dict, day) -> Optional[float]:
-        """Forward-fill: the latest price at or before ``day``, or None."""
-        idx = bisect.bisect_right(sorted_days, day)
-        return series[sorted_days[idx - 1]] if idx else None
-
     def update_account_metrics(self):
         """Recompute and write the daily ``account_metrics`` series per account.
 
@@ -826,20 +821,19 @@ class SuiviBourseMetrics:
 
         timeline = EventAggregator().replay(events, accounts_declared=True)
 
-        # Per-symbol daily close prices (market data; forward-filled per day).
+        # Per-symbol daily close prices (market data), as date-sorted (date, price)
+        # pairs forward-filled with the timeline's shared helper.
         symbols = {s['symbol'] for s in self.shares if s.get('symbol')}
-        price_series: Dict[str, Dict] = {}
-        price_days: Dict[str, List] = {}
-        for sym in symbols:
-            series = self.influxdb.get_price_series(sym)
-            price_series[sym] = series
-            price_days[sym] = sorted(series.keys())
+        price_pairs: Dict[str, List] = {
+            sym: sorted(self.influxdb.get_price_series(sym).items())
+            for sym in symbols
+        }
 
         start = min(e.date for e in events)
         today = datetime.now(timezone.utc).date()
 
         points = []
-        latest_by_account: Dict[str, Dict] = {}
+        latest_by_account: Dict[str, AccountMetricPoint] = {}
         day = start
         while day <= today:
             for account in portfolio.accounts:
@@ -861,21 +855,21 @@ class SuiviBourseMetrics:
                     qty = pos['estate']['quantity']
                     if not qty:
                         continue
-                    price = self._price_on(price_days[sym], price_series[sym], day)
+                    price = timeline.state_at(price_pairs[sym], day)
                     if price is not None:
                         holdings += qty * price
 
-                point = {
-                    'account': acc,
-                    'account_type': account.type,
-                    'account_currency': account.currency,
+                point = AccountMetricPoint(
+                    account=acc,
+                    account_type=account.type,
+                    account_currency=account.currency,
                     # Midnight of the day, never stamped in the future.
-                    'timestamp': datetime(day.year, day.month, day.day, tzinfo=timezone.utc),
-                    'cash_balance': cash_balance,
-                    'holdings_value': holdings,
-                    'total_value': cash_balance + holdings,
-                    'net_contributed': net_contributed,
-                }
+                    timestamp=datetime(day.year, day.month, day.day, tzinfo=timezone.utc),
+                    cash_balance=cash_balance,
+                    holdings_value=holdings,
+                    total_value=cash_balance + holdings,
+                    net_contributed=net_contributed,
+                )
                 points.append(point)
                 latest_by_account[acc] = point
             day += timedelta(days=1)
@@ -887,10 +881,10 @@ class SuiviBourseMetrics:
         # who adds accounts without rewriting their DEPOSIT history running), but
         # it is worth a non-blocking warning.
         for acc, p in latest_by_account.items():
-            if p['cash_balance'] < 0:
+            if p.cash_balance < 0:
                 app_logger.warning(
                     f"Account '{acc}' has a negative cash balance "
-                    f"({p['cash_balance']:.2f}) — insufficient recorded cash")
+                    f"({p.cash_balance:.2f}) — insufficient recorded cash")
 
         # Prometheus: expose the latest (today) value per account.
         if self.prometheus is not None:

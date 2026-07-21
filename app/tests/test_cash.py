@@ -19,6 +19,7 @@ import pytest
 
 from events import (
     EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
+    AccountMetricPoint,
 )
 
 
@@ -179,11 +180,11 @@ def test_write_account_metrics_tags_and_fields(mocker):
     writer._client = fake_client
 
     ts = datetime(2024, 1, 15, tzinfo=timezone.utc)
-    n = writer.write_account_metrics([{
-        "account": "PEA", "account_type": "PEA", "account_currency": "EUR",
-        "timestamp": ts, "cash_balance": 100.0, "holdings_value": 900.0,
-        "total_value": 1000.0, "net_contributed": 800.0,
-    }])
+    n = writer.write_account_metrics([AccountMetricPoint(
+        account="PEA", account_type="PEA", account_currency="EUR",
+        timestamp=ts, cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0,
+    )])
 
     assert n == 1
     records = fake_client.write.call_args.kwargs["record"]
@@ -266,20 +267,20 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
 
     points = mock_influx.write_account_metrics.call_args.args[0]
     # Two calendar days: 01-01 (cash only) and 01-02 (cash + holdings).
-    by_day = {p["timestamp"].date(): p for p in points}
+    by_day = {p.timestamp.date(): p for p in points}
     assert set(by_day) == {date(2024, 1, 1), date(2024, 1, 2)}
     # Every point is stamped at midnight, never in the future.
     for p in points:
-        ts = p["timestamp"]
+        ts = p.timestamp
         assert (ts.hour, ts.minute, ts.second) == (0, 0, 0)
     d1 = by_day[date(2024, 1, 1)]
-    assert d1["cash_balance"] == pytest.approx(1000.0)
-    assert d1["holdings_value"] == pytest.approx(0.0)
+    assert d1.cash_balance == pytest.approx(1000.0)
+    assert d1.holdings_value == pytest.approx(0.0)
     d2 = by_day[date(2024, 1, 2)]
-    assert d2["cash_balance"] == pytest.approx(800.0)   # 1000 - 2*100
-    assert d2["holdings_value"] == pytest.approx(220.0)  # 2 * 110
-    assert d2["total_value"] == pytest.approx(1020.0)
-    assert d2["net_contributed"] == pytest.approx(1000.0)
+    assert d2.cash_balance == pytest.approx(800.0)   # 1000 - 2*100
+    assert d2.holdings_value == pytest.approx(220.0)  # 2 * 110
+    assert d2.total_value == pytest.approx(1020.0)
+    assert d2.net_contributed == pytest.approx(1000.0)
 
 
 def test_update_account_metrics_is_idempotent(mock_influx, shares_validator, mocker):
@@ -310,11 +311,12 @@ def test_prometheus_update_account_sets_gauges():
     from prometheus_exporter import PrometheusExporter
 
     exp = PrometheusExporter(registry=CollectorRegistry())
-    exp.update_account({
-        "account": "PEA", "account_type": "PEA", "account_currency": "EUR",
-        "cash_balance": 100.0, "holdings_value": 900.0,
-        "total_value": 1000.0, "net_contributed": 800.0,
-    })
+    exp.update_account(AccountMetricPoint(
+        account="PEA", account_type="PEA", account_currency="EUR",
+        timestamp=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0,
+    ))
 
     reg = exp.registry
     assert reg.get_sample_value("sb_account_cash_balance", {"account": "PEA"}) == 100.0

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
-from events.schemas import DEFAULT_ACCOUNT
+from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
@@ -402,15 +402,15 @@ class InfluxDBWriter:
 
         return series
 
-    def write_account_metrics(self, points: List[Dict[str, Any]]) -> int:
+    def write_account_metrics(self, points: List[AccountMetricPoint]) -> int:
         """Write the daily ``account_metrics`` series (batch, idempotent).
 
-        Each point carries the tags ``account`` / ``account_type`` /
-        ``account_currency`` and the fields ``cash_balance`` / ``holdings_value``
-        / ``total_value`` / ``net_contributed`` at a midnight ``timestamp``.
-        Re-writing the same (tags, time) series overwrites rather than
-        duplicates, so recomputing and rewriting the whole series every cycle is
-        idempotent.
+        Each :class:`AccountMetricPoint` carries the tags ``account`` /
+        ``account_type`` / ``account_currency`` and the fields ``cash_balance`` /
+        ``holdings_value`` / ``total_value`` / ``net_contributed`` at a midnight
+        ``timestamp``. Re-writing the same (tags, time) series overwrites rather
+        than duplicates, so recomputing and rewriting the whole series every
+        cycle is idempotent.
         """
         if self._client is None:
             self.connect()
@@ -418,20 +418,20 @@ class InfluxDBWriter:
         records = []
         for p in points:
             point = Point(self.ACCOUNT_MEASUREMENT)
-            point.tag("account", p.get("account") or "default")
-            if p.get("account_type"):
-                point.tag("account_type", p["account_type"])
-            if p.get("account_currency"):
-                point.tag("account_currency", p["account_currency"])
+            point.tag("account", p.account or DEFAULT_ACCOUNT)
+            if p.account_type:
+                point.tag("account_type", p.account_type)
+            if p.account_currency:
+                point.tag("account_currency", p.account_currency)
 
             for field_name in (
                 "cash_balance", "holdings_value", "total_value", "net_contributed"
             ):
-                value = p.get(field_name)
+                value = getattr(p, field_name)
                 if _is_valid_number(value):
                     point.field(field_name, float(value))
 
-            point.time(p["timestamp"], WritePrecision.S)
+            point.time(p.timestamp, WritePrecision.S)
             records.append(point)
 
         if records:

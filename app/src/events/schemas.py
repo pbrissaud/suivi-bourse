@@ -4,9 +4,9 @@ Data schemas for the events module.
 
 import bisect
 from dataclasses import dataclass, field
-from datetime import date  # noqa: F401 — used in the `date: date` field annotation (eager-evaluated on Python <3.14)
+from datetime import date, datetime  # noqa: F401 — used in dataclass field annotations (eager-evaluated on Python <3.14)
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 # Canonical account bucket used when no accounts are declared (opt-out users) or
@@ -137,6 +137,24 @@ class CashState:
 
 
 @dataclass
+class AccountMetricPoint:
+    """One daily point of the ``account_metrics`` series for one account.
+
+    A typed seam shared by the computation (main), the InfluxDB writer and the
+    Prometheus exporter, so a mistyped field fails fast instead of silently
+    dropping.
+    """
+    account: str
+    account_type: str
+    account_currency: str
+    timestamp: datetime
+    cash_balance: float
+    holdings_value: float
+    total_value: float
+    net_contributed: float
+
+
+@dataclass
 class Timeline:
     """A sparse replay of portfolio events.
 
@@ -154,17 +172,20 @@ class Timeline:
     # First-appearance order of the positions (stable output ordering)
     order: List[Tuple[str, str]] = field(default_factory=list)
     # Non-valued external flows collected during the replay (in-kind + cash)
-    flows: List[object] = field(default_factory=list)
+    flows: List[Union[InKindFlow, CashFlow]] = field(default_factory=list)
 
     @staticmethod
-    def _state_at(snaps: list, target_date: date):
-        """Latest snapshot at or before ``target_date`` (forward-fill), or None.
+    def state_at(pairs: List[Tuple[date, object]], target_date: date):
+        """Forward-fill: the value of the ``(date, value)`` pair at or before
+        ``target_date``, or None.
 
-        Snapshots are date-sorted, so this is a binary search: the position just
+        Pairs must be date-sorted, so this is a binary search — the pair just
         left of the insertion point is the latest change on or before the date.
+        Reused for any date-keyed series (position snapshots, cash snapshots,
+        price series).
         """
-        idx = bisect.bisect_right(snaps, target_date, key=lambda snap: snap[0])
-        return snaps[idx - 1][1] if idx else None
+        idx = bisect.bisect_right(pairs, target_date, key=lambda pair: pair[0])
+        return pairs[idx - 1][1] if idx else None
 
     def cash_at(self, account: str, target_date: date) -> Optional["CashState"]:
         """Cash ledger state of an account at ``target_date`` (forward-filled).
@@ -176,7 +197,7 @@ class Timeline:
         snaps = self.cash_snapshots.get(account)
         if not snaps:
             return None
-        return self._state_at(snaps, target_date)
+        return self.state_at(snaps, target_date)
 
     def position_at(
         self, account: str, symbol: str, target_date: date
@@ -189,7 +210,7 @@ class Timeline:
         snaps = self.snapshots.get((account, symbol))
         if not snaps:
             return None
-        state = self._state_at(snaps, target_date)
+        state = self.state_at(snaps, target_date)
         return state.to_dict() if state is not None else None
 
     def at(self, target_date: date) -> List[dict]:
@@ -199,7 +220,7 @@ class Timeline:
         """
         result = []
         for key in self.order:
-            state = self._state_at(self.snapshots[key], target_date)
+            state = self.state_at(self.snapshots[key], target_date)
             if state is not None:
                 result.append(state.to_dict())
         return result
