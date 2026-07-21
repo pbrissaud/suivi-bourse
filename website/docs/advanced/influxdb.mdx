@@ -16,6 +16,7 @@ Tags identify the series and are used to filter/group in Grafana.
 |-----|-------------|---------|
 | `share_name` | Display name | `Apple` |
 | `share_symbol` | Yahoo! Finance ticker | `AAPL` |
+| `account` | Account bucket (`default` unless accounts are declared) | `PEA`, `default` |
 | `share_currency` | Currency | `USD` |
 | `share_exchange` | Exchange | `NMS`, `PAR` |
 | `quote_type` | Instrument type | `EQUITY`, `ETF` |
@@ -24,6 +25,14 @@ Tags identify the series and are used to filter/group in Grafana.
 `share_name` and `share_symbol` are always set. The currency/exchange/quote-type
 tags are only written when the ticker info was successfully fetched, so that
 historical and live points share the same series identity.
+:::
+
+:::warning The `account` tag is on v4.1+ writes only, not on history
+The `account` tag is carried by **100% of the points written from v4.1 onwards** —
+**not** by points written before the upgrade, which have no tag and are exposed
+as `NULL`. Always read it with `COALESCE(account, 'default')` and never with a
+bare `WHERE account = '…'` (which would silently drop the pre-v4.1 points). See
+[Upgrading to accounts](/docs/advanced/upgrading-accounts) for the full picture.
 :::
 
 ## Fields
@@ -48,6 +57,16 @@ historical and live points share the same series identity.
 Market fields such as `dividend_yield`, `pe_ratio` and `market_cap` may be
 missing for some instruments (e.g. ETFs or crypto). Fields are only written when
 a value is available.
+:::
+
+:::note Account measurements
+For opt-in [accounts](/docs/configuration/events-mode#accounts-opt-in),
+SuiviBourse also writes two daily measurements: **`account_metrics`** (tags
+`account` / `account_type` / `account_currency`; fields `cash_balance`,
+`holdings_value`, `total_value`, `net_contributed`, `xirr`, `gain_absolu`,
+`twr_index`) and **`portfolio_totals`** — the same performance fields at the
+global level, written with **no tag** (a synthetic account tag would double every
+`SUM()`), only when all accounts share one currency.
 :::
 
 ## Querying with SQL

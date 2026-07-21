@@ -271,7 +271,7 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_p
 |------|------|-------------|
 | Tag | `share_name` | Display name |
 | Tag | `share_symbol` | Yahoo Finance ticker |
-| Tag | `account` | Account bucket (`default` unless accounts are declared) |
+| Tag | `account` | Account bucket (`default` unless accounts are declared); on v4.1+ writes only — pre-v4.1 points have no tag (`NULL`), read with `COALESCE(account, 'default')` |
 | Tag | `share_currency` | Currency (USD, EUR, etc.) |
 | Tag | `share_exchange` | Exchange (NMS, PAR, etc.) |
 | Tag | `quote_type` | Type (EQUITY, ETF, etc.) |
