@@ -298,11 +298,25 @@ in full each cycle, points stamped at midnight of the day, idempotent upsert)
 | Field | `holdings_value` | Σ(owned_quantity × price) over the account's symbols |
 | Field | `total_value` | `cash_balance + holdings_value` |
 | Field | `net_contributed` | Σ deposits − Σ withdrawals (fees excluded) |
+| Field | `xirr` | Money-weighted return (annualized); latest point only, absent without an external flow |
+| Field | `twr_index` | Time-weighted return, base 100 (per day) |
+| Field | `gain_absolu` | Absolute gain (`value − contributions`); latest point only |
+
+**Measurement**: `portfolio_totals` — the same 7 perf fields at the **global**
+level, written with **no tag** (a synthetic account tag would double every
+`SUM()`). Written only when all accounts share one currency (FX is out of scope).
+
+Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
+computed in `app/src/performance.py` — a pure module taking a `Timeline` and an
+injected `price_at` callable (no InfluxDB/yfinance). External flows
+(DEPOSIT/WITHDRAWAL/GRANT) are the contribution; internal flows (BUY/SELL/
+DIVIDEND/fees) are the performance.
 
 Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
-(labels `account_type`/`account_currency`). Price history for `holdings_value` is
-read via `InfluxDBWriter.get_price_series(symbol)` — queried by `share_symbol`
-only, never by `account` (a market price belongs to no account).
+(labels `account_type`/`account_currency`) and global `sb_portfolio_*` gauges
+(no `account` label). Price history for `holdings_value` is read via
+`InfluxDBWriter.get_price_series(symbol)` — queried by `share_symbol` only, never
+by `account` (a market price belongs to no account).
 
 ## Contributing
 

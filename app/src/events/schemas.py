@@ -152,6 +152,29 @@ class AccountMetricPoint:
     holdings_value: float
     total_value: float
     net_contributed: float
+    # Money-weighted performance (only present once computable; xirr/gain_absolu
+    # require at least one external flow, so they may be absent).
+    xirr: Optional[float] = None
+    gain_absolu: Optional[float] = None
+    twr_index: Optional[float] = None
+
+
+@dataclass
+class PortfolioTotalPoint:
+    """One daily point of the global ``portfolio_totals`` series.
+
+    Carries **no tag** (a single global series): tagging it with a synthetic
+    account would double every ``SUM()`` over the per-account series. Written
+    only when all accounts share one currency (pooling currencies needs FX).
+    """
+    timestamp: datetime
+    cash_balance: float
+    holdings_value: float
+    total_value: float
+    net_contributed: float
+    xirr: Optional[float] = None
+    gain_absolu: Optional[float] = None
+    twr_index: Optional[float] = None
 
 
 @dataclass

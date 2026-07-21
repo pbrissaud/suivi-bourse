@@ -19,7 +19,7 @@ import pytest
 
 from events import (
     EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
-    AccountMetricPoint,
+    AccountMetricPoint, PortfolioTotalPoint,
 )
 
 
@@ -173,6 +173,25 @@ def test_get_price_series_queries_symbol_only_never_account(mocker):
     assert "account" not in sql
 
 
+def test_get_price_series_returns_full_history(mocker):
+    """No account filter -> pre-tag (account NULL) points come back in full."""
+    import pandas as pd
+    from influxdb_writer import InfluxDBWriter
+    writer = InfluxDBWriter(host="http://x", token="t", database="db")
+    fake_client = mocker.MagicMock()
+    table = mocker.MagicMock()
+    table.__len__.return_value = 2
+    table.to_pandas.return_value = pd.DataFrame({
+        "day": [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")],
+        "price": [100.0, 110.0],
+    })
+    fake_client.query.return_value = table
+    writer._client = fake_client
+
+    series = writer.get_price_series("AAPL")
+    assert series == {date(2024, 1, 2): 100.0, date(2024, 1, 3): 110.0}
+
+
 def test_write_account_metrics_tags_and_fields(mocker):
     from influxdb_writer import InfluxDBWriter
     writer = InfluxDBWriter(host="http://x", token="t", database="db")
@@ -304,6 +323,125 @@ def test_update_account_metrics_is_idempotent(mock_influx, shares_validator, moc
 
     # Same timestamps, tags and values -> InfluxDB overwrites rather than dupes.
     assert first == second
+
+
+def test_write_portfolio_totals_is_untagged(mocker):
+    from influxdb_writer import InfluxDBWriter
+    writer = InfluxDBWriter(host="http://x", token="t", database="db")
+    fake_client = mocker.MagicMock()
+    writer._client = fake_client
+
+    ts = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    n = writer.write_portfolio_totals([PortfolioTotalPoint(
+        timestamp=ts, cash_balance=100.0, holdings_value=900.0, total_value=1000.0,
+        net_contributed=800.0, xirr=0.12, gain_absolu=200.0, twr_index=120.0,
+    )])
+
+    assert n == 1
+    point = fake_client.write.call_args.kwargs["record"][0]
+    assert point._name == "portfolio_totals"
+    assert point._tags == {}  # no tag: a single global series
+    assert point._fields["total_value"] == 1000.0
+    assert point._fields["xirr"] == 0.12
+    assert point._fields["twr_index"] == 120.0
+
+
+def test_update_account_metrics_writes_portfolio_totals_single_currency(
+        mock_influx, shares_validator, mocker):
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2024, 1, 2, 12, 0, tzinfo=tz)
+    mocker.patch("main.datetime", _FixedDatetime)
+
+    m.update_account_metrics()
+
+    mock_influx.write_portfolio_totals.assert_called_once()
+    pts = mock_influx.write_portfolio_totals.call_args.args[0]
+    assert all(isinstance(p, PortfolioTotalPoint) for p in pts)
+
+
+def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
+        mock_influx, shares_validator, mocker):
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+    ]
+    portfolio = Portfolio([
+        Account("PEA", "PEA", "EUR", "Mon PEA"),
+        Account("CTO", "CTO", "USD", "My CTO"),
+    ])
+    mock_influx.get_price_series.return_value = {}
+
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2024, 1, 2, 12, 0, tzinfo=tz)
+    mocker.patch("main.datetime", _FixedDatetime)
+
+    m.update_account_metrics()
+
+    # EUR + USD -> no global series.
+    mock_influx.write_portfolio_totals.assert_not_called()
+    # ...but per-account metrics are still written.
+    mock_influx.write_account_metrics.assert_called_once()
+
+
+def test_account_metrics_perf_fields_only_on_latest_point(
+        mock_influx, shares_validator, mocker):
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    shares = [{"name": "Apple", "symbol": "AAPL", "account": "PEA",
+               "purchase": {"quantity": 10, "cost_price": 100.0, "fee": 0.0},
+               "estate": {"quantity": 10, "received_dividend": 0.0}}]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {
+        date(2024, 1, 1): 100.0, date(2024, 1, 2): 110.0}
+
+    m = _metrics(mock_influx, shares_validator, shares, events, portfolio)
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2024, 1, 2, 12, 0, tzinfo=tz)
+    mocker.patch("main.datetime", _FixedDatetime)
+
+    m.update_account_metrics()
+
+    pts = sorted(mock_influx.write_account_metrics.call_args.args[0],
+                 key=lambda p: p.timestamp)
+    # twr_index present on every point; gain_absolu only on the latest.
+    assert all(p.twr_index is not None for p in pts)
+    assert pts[0].gain_absolu is None
+    assert pts[-1].gain_absolu == pytest.approx(100.0)   # 10*110 - 1000
+    assert pts[-1].twr_index == pytest.approx(110.0)
+
+
+def test_prometheus_update_portfolio_sets_unlabeled_gauges():
+    from prometheus_client import CollectorRegistry
+    from prometheus_exporter import PrometheusExporter
+
+    exp = PrometheusExporter(registry=CollectorRegistry())
+    exp.update_portfolio(PortfolioTotalPoint(
+        timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+        cash_balance=100.0, holdings_value=900.0, total_value=1000.0,
+        net_contributed=800.0, xirr=0.12, gain_absolu=200.0, twr_index=120.0,
+    ))
+    reg = exp.registry
+    assert reg.get_sample_value("sb_portfolio_total_value") == 1000.0
+    assert reg.get_sample_value("sb_portfolio_xirr") == 0.12
+    assert reg.get_sample_value("sb_portfolio_twr_index") == 120.0
 
 
 def test_prometheus_update_account_sets_gauges():

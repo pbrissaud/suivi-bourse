@@ -8,7 +8,7 @@ and generates aggregated configuration compatible with the existing schema.
 from .schemas import (
     DEFAULT_ACCOUNT, CASH_EVENT_TYPES, Event, EventType, ShareState,
     PurchaseState, EstateState, Account, Portfolio, Timeline, InKindFlow,
-    CashFlow, CashState, AccountMetricPoint,
+    CashFlow, CashState, AccountMetricPoint, PortfolioTotalPoint,
 )
 from .loader import EventLoader
 from .validator import EventValidator
@@ -30,6 +30,7 @@ __all__ = [
     'CashFlow',
     'CashState',
     'AccountMetricPoint',
+    'PortfolioTotalPoint',
     'EventLoader',
     'EventValidator',
     'EventAggregator',

@@ -19,8 +19,10 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
+import performance
 from events import (
-    EventLoader, EventValidator, EventAggregator, EventWatcher, AccountMetricPoint,
+    EventLoader, EventValidator, EventAggregator, EventWatcher,
+    AccountMetricPoint, PortfolioTotalPoint,
 )
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
@@ -802,14 +804,37 @@ class SuiviBourseMetrics:
         except Exception as e:
             app_logger.error(f"Failed to update account metrics: {e}")
 
-    def update_account_metrics(self):
-        """Recompute and write the daily ``account_metrics`` series per account.
+    @staticmethod
+    def _midnight(day) -> datetime:
+        """Midnight UTC of ``day`` — never stamped in the future."""
+        return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
 
-        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The
-        whole series (earliest event date → today, one point per calendar day at
+    @staticmethod
+    def _value_kwargs(dp, last: bool, perf) -> dict:
+        """Shared value + perf fields for a metric point built from a DailyPerf.
+
+        twr_index is per-day; xirr / gain_absolu land only on the latest point.
+        """
+        return dict(
+            cash_balance=dp.cash_balance,
+            holdings_value=dp.holdings_value,
+            total_value=dp.total_value,
+            net_contributed=dp.net_contributed,
+            twr_index=dp.twr_index,
+            xirr=perf.xirr if last else None,
+            gain_absolu=perf.gain_absolu if last else None,
+        )
+
+    def update_account_metrics(self):
+        """Recompute and write the daily ``account_metrics`` + ``portfolio_totals``
+        series via the performance module.
+
+        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The whole
+        series (earliest event date → today, one point per calendar day at
         midnight) is rebuilt and rewritten every cycle — an idempotent upsert, so
-        the curve extends on its own as backfill fills earlier prices, with no
-        catch-up code. Never stamps a point in the future (midnight of the day).
+        the curve extends on its own as backfill fills earlier prices. Money-
+        weighted performance (xirr / gain_absolu / twr_index) comes from
+        ``performance.py``; xirr / gain_absolu land only on the latest point.
         """
         portfolio = self.config_manager.load_accounts()
         if portfolio is None:
@@ -821,61 +846,60 @@ class SuiviBourseMetrics:
 
         timeline = EventAggregator().replay(events, accounts_declared=True)
 
-        # Per-symbol daily close prices (market data), as date-sorted (date, price)
-        # pairs forward-filled with the timeline's shared helper.
+        # Injected price source: per-symbol daily closes, forward-filled. The
+        # performance module never touches InfluxDB — it only calls price_at.
         symbols = {s['symbol'] for s in self.shares if s.get('symbol')}
-        price_pairs: Dict[str, List] = {
+        price_pairs = {
             sym: sorted(self.influxdb.get_price_series(sym).items())
             for sym in symbols
         }
 
+        def price_at(symbol, day):
+            pairs = price_pairs.get(symbol)
+            return timeline.state_at(pairs, day) if pairs else None
+
         start = min(e.date for e in events)
         today = datetime.now(timezone.utc).date()
 
-        points = []
+        per_account = {
+            account.id: performance.compute_account(
+                timeline, account, symbols, price_at, start, today)
+            for account in portfolio.accounts
+        }
+        total = performance.compute_portfolio_total(
+            timeline, portfolio.accounts, symbols, price_at, start, today, per_account)
+
+        # --- account_metrics ------------------------------------------------
+        acc_points = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
-        day = start
-        while day <= today:
-            for account in portfolio.accounts:
-                acc = account.id
-                cash = timeline.cash_at(acc, day)
-                positions = [
-                    (sym, timeline.position_at(acc, sym, day)) for sym in symbols
-                ]
-                positions = [(sym, p) for sym, p in positions if p]
-
-                # Skip days before the account has any activity (no zero noise).
-                if cash is None and not positions:
-                    continue
-
-                cash_balance = cash.cash_balance if cash else 0.0
-                net_contributed = cash.net_contributed if cash else 0.0
-                holdings = 0.0
-                for sym, pos in positions:
-                    qty = pos['estate']['quantity']
-                    if not qty:
-                        continue
-                    price = timeline.state_at(price_pairs[sym], day)
-                    if price is not None:
-                        holdings += qty * price
-
-                point = AccountMetricPoint(
-                    account=acc,
+        for account in portfolio.accounts:
+            perf = per_account[account.id]
+            for i, dp in enumerate(perf.daily):
+                last = i == len(perf.daily) - 1
+                pt = AccountMetricPoint(
+                    account=account.id,
                     account_type=account.type,
                     account_currency=account.currency,
-                    # Midnight of the day, never stamped in the future.
-                    timestamp=datetime(day.year, day.month, day.day, tzinfo=timezone.utc),
-                    cash_balance=cash_balance,
-                    holdings_value=holdings,
-                    total_value=cash_balance + holdings,
-                    net_contributed=net_contributed,
+                    timestamp=self._midnight(dp.date),
+                    **self._value_kwargs(dp, last, perf),
                 )
-                points.append(point)
-                latest_by_account[acc] = point
-            day += timedelta(days=1)
+                acc_points.append(pt)
+                if last:
+                    latest_by_account[account.id] = pt
+        if acc_points:
+            self.influxdb.write_account_metrics(acc_points)
 
-        if points:
-            self.influxdb.write_account_metrics(points)
+        # --- portfolio_totals (global, untagged; only if single currency) ---
+        if total is not None:
+            total_points = [
+                PortfolioTotalPoint(
+                    timestamp=self._midnight(dp.date),
+                    **self._value_kwargs(dp, i == len(total.daily) - 1, total),
+                )
+                for i, dp in enumerate(total.daily)
+            ]
+            if total_points:
+                self.influxdb.write_portfolio_totals(total_points)
 
         # Permissive cash policy: a negative balance is allowed (it keeps a user
         # who adds accounts without rewriting their DEPOSIT history running), but
@@ -886,7 +910,7 @@ class SuiviBourseMetrics:
                     f"Account '{acc}' has a negative cash balance "
                     f"({p.cash_balance:.2f}) — insufficient recorded cash")
 
-        # Prometheus: expose the latest (today) value per account.
+        # Prometheus: expose the latest (today) value per account + global.
         if self.prometheus is not None:
             for acc, p in latest_by_account.items():
                 try:
@@ -894,6 +918,11 @@ class SuiviBourseMetrics:
                 except Exception as e:
                     app_logger.error(
                         f"Failed to update Prometheus account metrics for {acc}: {e}")
+            if total is not None and total.daily:
+                try:
+                    self.prometheus.update_portfolio(total_points[-1])
+                except Exception as e:
+                    app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
 
     def reload(self):
         """

@@ -87,6 +87,35 @@ class PrometheusExporter:
             "sb_account_info", "Account informations as label",
             ['account', 'account_type', 'account_currency'],
             registry=self.registry)
+        # Money-weighted performance per account.
+        self.account_xirr = Gauge(
+            "sb_account_xirr", "Money-weighted return (XIRR, annualized) of the account",
+            ['account'], registry=self.registry)
+        self.account_gain_absolu = Gauge(
+            "sb_account_gain_absolu", "Absolute gain of the account",
+            ['account'], registry=self.registry)
+        self.account_twr_index = Gauge(
+            "sb_account_twr_index", "Time-weighted return index (base 100) of the account",
+            ['account'], registry=self.registry)
+
+        # Global portfolio perf gauges — NO account label (a single global series;
+        # an account label would double every aggregation).
+        self.portfolio_cash_balance = Gauge(
+            "sb_portfolio_cash_balance", "Global cash balance", registry=self.registry)
+        self.portfolio_holdings_value = Gauge(
+            "sb_portfolio_holdings_value", "Global holdings value", registry=self.registry)
+        self.portfolio_total_value = Gauge(
+            "sb_portfolio_total_value", "Global total value", registry=self.registry)
+        self.portfolio_net_contributed = Gauge(
+            "sb_portfolio_net_contributed", "Global net contributed", registry=self.registry)
+        self.portfolio_xirr = Gauge(
+            "sb_portfolio_xirr", "Global money-weighted return (XIRR, annualized)",
+            registry=self.registry)
+        self.portfolio_gain_absolu = Gauge(
+            "sb_portfolio_gain_absolu", "Global absolute gain", registry=self.registry)
+        self.portfolio_twr_index = Gauge(
+            "sb_portfolio_twr_index", "Global time-weighted return index (base 100)",
+            registry=self.registry)
 
     def start(self, port: int) -> None:
         """Start the HTTP server exposing this exporter's registry."""
@@ -148,3 +177,24 @@ class PrometheusExporter:
         self.account_net_contributed.labels(account).set(point.net_contributed)
         self.account_info.labels(
             account, point.account_type or '', point.account_currency or '').set(1)
+        # Performance fields: only when computable (absent otherwise).
+        if point.xirr is not None:
+            self.account_xirr.labels(account).set(point.xirr)
+        if point.gain_absolu is not None:
+            self.account_gain_absolu.labels(account).set(point.gain_absolu)
+        if point.twr_index is not None:
+            self.account_twr_index.labels(account).set(point.twr_index)
+
+    def update_portfolio(self, point) -> None:
+        """Update the global (untagged) portfolio gauges from a
+        :class:`~events.schemas.PortfolioTotalPoint`."""
+        self.portfolio_cash_balance.set(point.cash_balance)
+        self.portfolio_holdings_value.set(point.holdings_value)
+        self.portfolio_total_value.set(point.total_value)
+        self.portfolio_net_contributed.set(point.net_contributed)
+        if point.xirr is not None:
+            self.portfolio_xirr.set(point.xirr)
+        if point.gain_absolu is not None:
+            self.portfolio_gain_absolu.set(point.gain_absolu)
+        if point.twr_index is not None:
+            self.portfolio_twr_index.set(point.twr_index)

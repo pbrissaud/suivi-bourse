@@ -3,10 +3,7 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -15,7 +12,7 @@
       }
     ]
   },
-  "description": "Per-account cash and value tracking (opt-in accounts).",
+  "description": "Per-account cash, value and money-weighted performance (opt-in accounts).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -24,12 +21,232 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
+      "panels": [],
+      "title": "Portfolio — all accounts",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie. Montants en EUR (multi-devises/FX hors scope).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] },
+          "unit": "currencyEUR"
+        },
+        "overrides": []
       },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 11,
+      "options": {
+        "colorMode": "none", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, total_value as value FROM portfolio_totals WHERE $__timeFilter(time) AND total_value IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Total value (global)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Net external cash contributed across all accounts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] },
+          "unit": "currencyEUR"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 12,
+      "options": {
+        "colorMode": "none", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, net_contributed as value FROM portfolio_totals WHERE $__timeFilter(time) AND net_contributed IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Net contributed (global)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Money-weighted return (XIRR, annualized), all accounts. Young portfolios annualize to wild figures — read it next to the absolute gain.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0 } ] },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "id": 13,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, xirr as value FROM portfolio_totals WHERE $__timeFilter(time) AND xirr IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "XIRR (global)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Absolute gain across all accounts (guard for a young XIRR). Amounts in EUR.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0 } ] },
+          "unit": "currencyEUR"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "id": 14,
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, gain_absolu as value FROM portfolio_totals WHERE $__timeFilter(time) AND gain_absolu IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Absolute gain (global)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Time-weighted return, base 100 (all accounts). The base 100 re-anchors as backfill fills earlier history.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text",
+            "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line",
+            "fillOpacity": 10, "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5,
+            "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "noValue": "Perf globale indisponible — aucun compte configuré, ou comptes en devises différentes. Voir la doc Comptes & trésorerie.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 7 },
+      "id": 15,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, twr_index FROM portfolio_totals WHERE $__timeFilter(time) AND twr_index IS NOT NULL ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "TWR index — global (base 100)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 19,
+      "panels": [],
+      "title": "TWR comparison",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Time-weighted return per account on the same base-100 scale (compare e.g. PEA vs CTO). The base 100 re-anchors as backfill fills earlier history.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text",
+            "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line",
+            "fillOpacity": 0, "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5,
+            "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "noValue": "Aucun compte configuré.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 20,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, account, twr_index FROM account_metrics WHERE $__timeFilter(time) AND twr_index IS NOT NULL ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        { "id": "partitionByValues", "options": { "fields": [ "account" ], "keepFields": false } }
+      ],
+      "title": "TWR index by account (base 100)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
       "id": 1,
       "panels": [],
       "repeat": "account",
@@ -38,64 +255,29 @@
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "description": "Cash currently sitting in the account. Amounts are formatted in EUR (the dashboard assumes EUR accounts; multi-currency formatting is out of scope).",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0 } ] },
           "unit": "currencyEUR"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 1
-      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 25 },
       "id": 2,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
         "textMode": "auto"
       },
       "pluginVersion": "10.4.0",
       "targets": [
         {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "format": "table",
-          "rawQuery": true,
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
           "rawSql": "SELECT time, cash_balance as value FROM account_metrics WHERE account = '$account' AND $__timeFilter(time) AND cash_balance IS NOT NULL ORDER BY time DESC LIMIT 1",
           "refId": "A"
         }
@@ -104,120 +286,110 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Money-weighted return (XIRR, annualized). Shown next to the absolute gain — on a young account the annualized figure gets wild.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Aucun flux externe (DEPOSIT/WITHDRAWAL) — XIRR non calculable. Voir le gain absolu.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0 } ] },
+          "unit": "percentunit"
+        },
+        "overrides": []
       },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 25 },
+      "id": 4,
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, xirr as value FROM account_metrics WHERE account = '$account' AND $__timeFilter(time) AND xirr IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "XIRR",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "description": "Absolute gain of the account (guard for a young XIRR). Amounts in EUR.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "noValue": "Aucun flux externe (DEPOSIT/WITHDRAWAL) — gain non calculable.",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0 } ] },
+          "unit": "currencyEUR"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 25 },
+      "id": 5,
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
+          "rawSql": "SELECT time, gain_absolu as value FROM account_metrics WHERE account = '$account' AND $__timeFilter(time) AND gain_absolu IS NOT NULL ORDER BY time DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Absolute gain",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "description": "cash_balance + holdings_value are stacked areas — their sum is total_value, so you read the portfolio value and its cash/holdings split at a glance. net_contributed is the thick line on top: the gap between the top of the areas and the line is the absolute gain. Amounts are formatted in EUR (the dashboard assumes EUR accounts; multi-currency formatting is out of scope).",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 25,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text",
+            "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line",
+            "fillOpacity": 25, "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5,
+            "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true,
+            "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
           "unit": "currencyEUR"
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "net_contributed"
-            },
+            "matcher": { "id": "byName", "options": "net_contributed" },
             "properties": [
-              {
-                "id": "custom.stacking",
-                "value": {
-                  "group": "A",
-                  "mode": "none"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 3
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
+              { "id": "custom.stacking", "value": { "group": "A", "mode": "none" } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineWidth", "value": 3 },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
             ]
           }
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 18,
-        "x": 6,
-        "y": 1
-      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
       "id": 3,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "targets": [
         {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "format": "table",
-          "rawQuery": true,
+          "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+          "format": "table", "rawQuery": true,
           "rawSql": "SELECT time, cash_balance, holdings_value, net_contributed FROM account_metrics WHERE account = '$account' AND $__timeFilter(time) ORDER BY time",
           "refId": "A"
         }
@@ -229,63 +401,30 @@
   "refresh": "5m",
   "revision": 1,
   "schemaVersion": 39,
-  "tags": [
-    "suivibourse",
-    "accounts"
-  ],
+  "tags": [ "suivibourse", "accounts" ],
   "templating": {
     "list": [
       {
-        "current": {
-          "selected": false,
-          "text": "InfluxDB",
-          "value": "InfluxDB"
-        },
-        "hide": 2,
-        "includeAll": false,
-        "multi": false,
-        "name": "DS_INFLUXDB",
-        "options": [],
-        "query": "influxdb",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
+        "current": { "selected": false, "text": "InfluxDB", "value": "InfluxDB" },
+        "hide": 2, "includeAll": false, "multi": false, "name": "DS_INFLUXDB",
+        "options": [], "query": "influxdb", "refresh": 1, "regex": "", "skipUrlSync": false,
         "type": "datasource"
       },
       {
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
-        },
-        "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
-        },
-        "definition": "",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Account",
-        "multi": true,
-        "name": "account",
-        "options": [],
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "definition": "", "hide": 0, "includeAll": true, "label": "Account", "multi": true,
+        "name": "account", "options": [],
         "query": "SELECT DISTINCT account AS __text, account AS __value FROM account_metrics ORDER BY account",
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
+        "refresh": 2, "regex": "", "skipUrlSync": false, "sort": 1, "type": "query"
       }
     ]
   },
-  "time": {
-    "from": "now-90d",
-    "to": "now"
-  },
+  "time": { "from": "now-90d", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "SuiviBourse - Accounts",
   "uid": "suivibourse-accounts",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
