@@ -98,9 +98,13 @@ def test_empty_numeric_cells_parse_to_none(tmp_path):
 # Missing required columns                                                    #
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("missing_col", ["date", "event_type", "symbol", "name"])
+@pytest.mark.parametrize("missing_col", ["date", "event_type"])
 def test_missing_required_column_raises(tmp_path, missing_col):
-    """Dropping any of date/event_type/symbol/name raises EventLoaderError."""
+    """Dropping either structurally-required header (date/event_type) raises.
+
+    symbol/name are no longer required in the header (cash events carry none);
+    their per-type requirement is enforced by the validator, not the loader.
+    """
     cols = ["date", "event_type", "symbol", "name",
             "quantity", "unit_price", "fee", "amount", "notes"]
     kept = [c for c in cols if c != missing_col]
@@ -286,14 +290,29 @@ def test_xlsx_parses_with_normalized_headers(tmp_path):
 
 
 def test_xlsx_missing_required_column_raises(tmp_path):
-    header = ["date", "event_type", "name",  # no 'symbol'
+    header = ["date", "symbol", "name",  # no 'event_type'
               "quantity", "unit_price", "fee", "amount", "notes"]
-    rows = [["2024-01-15", "BUY", "Apple Inc", 10, 150.0, 2.5, None, "n"]]
+    rows = [["2024-01-15", "AAPL", "Apple Inc", 10, 150.0, 2.5, None, "n"]]
     path = _write_xlsx(tmp_path / "bad.xlsx", header, rows)
 
     with pytest.raises(EventLoaderError) as exc:
         EventLoader(str(path)).load()
-    assert "symbol" in str(exc.value)
+    assert "event_type" in str(exc.value)
+
+
+def test_symbol_and_name_columns_are_optional(tmp_path):
+    """A file without symbol/name columns loads (cash events carry none)."""
+    path = tmp_path / "cash.csv"
+    path.write_text(
+        "date,event_type,amount,account\n"
+        "2024-01-15,DEPOSIT,1000,PEA\n", encoding="utf-8")
+    events = EventLoader(str(path)).load()
+    assert len(events) == 1
+    assert events[0].event_type is EventType.DEPOSIT
+    assert events[0].symbol is None
+    assert events[0].name is None
+    assert events[0].amount == 1000.0
+    assert events[0].account == "PEA"
 
 
 # --------------------------------------------------------------------------- #

@@ -69,6 +69,25 @@ class PrometheusExporter:
             "sb_volume", "Trading volume of the share", COMMON_LABELS,
             registry=self.registry)
 
+        # Per-account cash & value gauges (opt-in accounts feature). Labelled by
+        # account so each account is its own series.
+        self.account_cash_balance = Gauge(
+            "sb_account_cash_balance", "Cash balance of the account", ['account'],
+            registry=self.registry)
+        self.account_holdings_value = Gauge(
+            "sb_account_holdings_value", "Market value of the account's holdings",
+            ['account'], registry=self.registry)
+        self.account_total_value = Gauge(
+            "sb_account_total_value", "Total value (cash + holdings) of the account",
+            ['account'], registry=self.registry)
+        self.account_net_contributed = Gauge(
+            "sb_account_net_contributed", "Net external cash contributed to the account",
+            ['account'], registry=self.registry)
+        self.account_info = Gauge(
+            "sb_account_info", "Account informations as label",
+            ['account', 'account_type', 'account_currency'],
+            registry=self.registry)
+
     def start(self, port: int) -> None:
         """Start the HTTP server exposing this exporter's registry."""
         start_http_server(port, registry=self.registry)
@@ -114,3 +133,20 @@ class PrometheusExporter:
             self.market_cap.labels(*labels).set(info['marketCap'])
         if info.get('volume') is not None:
             self.volume.labels(*labels).set(info['volume'])
+
+    def update_account(self, point: dict) -> None:
+        """Update the per-account gauges from a computed account_metrics point.
+
+        Args:
+            point: dict with account / account_type / account_currency and the
+                cash_balance / holdings_value / total_value / net_contributed
+                fields (the latest, today's, values for the account).
+        """
+        account = point['account']
+        self.account_cash_balance.labels(account).set(point['cash_balance'])
+        self.account_holdings_value.labels(account).set(point['holdings_value'])
+        self.account_total_value.labels(account).set(point['total_value'])
+        self.account_net_contributed.labels(account).set(point['net_contributed'])
+        self.account_info.labels(
+            account, point.get('account_type', ''),
+            point.get('account_currency', '')).set(1)

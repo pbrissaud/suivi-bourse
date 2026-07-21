@@ -22,15 +22,26 @@ class EventType(Enum):
     SELL = "SELL"
     GRANT = "GRANT"
     DIVIDEND = "DIVIDEND"
+    DEPOSIT = "DEPOSIT"
+    WITHDRAWAL = "WITHDRAWAL"
+
+
+# Cash events move money in/out of an account and carry no share (symbol/name/
+# quantity/unit_price are forbidden on them).
+CASH_EVENT_TYPES = frozenset({EventType.DEPOSIT, EventType.WITHDRAWAL})
 
 
 @dataclass
 class Event:
-    """Represents a single portfolio event."""
+    """Represents a single portfolio event.
+
+    ``symbol``/``name`` are Optional because cash events (DEPOSIT/WITHDRAWAL)
+    carry no share.
+    """
     date: date
     event_type: EventType
-    symbol: str
-    name: str
+    symbol: Optional[str] = None
+    name: Optional[str] = None
     quantity: Optional[float] = None
     unit_price: Optional[float] = None
     fee: Optional[float] = None
@@ -92,13 +103,37 @@ class InKindFlow:
 
     The aggregator emits it *without* a price — valuation at the day's price is
     resolved downstream (performance module), which is why the aggregator never
-    needs to know a price. Kept here as the tracer for future cash flows
-    (DEPOSIT/WITHDRAWAL land in a later slice).
+    needs to know a price.
     """
     date: date
     account: str
     symbol: str
     quantity: float
+
+
+@dataclass
+class CashFlow:
+    """A cash external flow (DEPOSIT/WITHDRAWAL), signed at the account level.
+
+    ``amount`` is positive for a DEPOSIT and negative for a WITHDRAWAL — the
+    external contribution only, excluding any fee (fees are internal costs). The
+    performance module consumes these as the money put in/taken out.
+    """
+    date: date
+    account: str
+    amount: float
+
+
+@dataclass
+class CashState:
+    """Per-account cash ledger state.
+
+    ``cash_balance`` starts at 0.00 and every event applies its cash effect.
+    ``net_contributed`` accumulates the external cash contributions
+    (Σ deposits − Σ withdrawals, excluding fees).
+    """
+    cash_balance: float = 0.0
+    net_contributed: float = 0.0
 
 
 @dataclass
@@ -114,15 +149,15 @@ class Timeline:
     """
     # (account, symbol) -> ascending [(change_date, ShareState snapshot)]
     snapshots: Dict[Tuple[str, str], List[Tuple[date, "ShareState"]]] = field(default_factory=dict)
+    # account -> ascending [(change_date, CashState snapshot)]
+    cash_snapshots: Dict[str, List[Tuple[date, "CashState"]]] = field(default_factory=dict)
     # First-appearance order of the positions (stable output ordering)
     order: List[Tuple[str, str]] = field(default_factory=list)
-    # Non-valued external flows collected during the replay
-    flows: List[InKindFlow] = field(default_factory=list)
+    # Non-valued external flows collected during the replay (in-kind + cash)
+    flows: List[object] = field(default_factory=list)
 
     @staticmethod
-    def _state_at(
-        snaps: List[Tuple[date, "ShareState"]], target_date: date
-    ) -> Optional["ShareState"]:
+    def _state_at(snaps: list, target_date: date):
         """Latest snapshot at or before ``target_date`` (forward-fill), or None.
 
         Snapshots are date-sorted, so this is a binary search: the position just
@@ -130,6 +165,18 @@ class Timeline:
         """
         idx = bisect.bisect_right(snaps, target_date, key=lambda snap: snap[0])
         return snaps[idx - 1][1] if idx else None
+
+    def cash_at(self, account: str, target_date: date) -> Optional["CashState"]:
+        """Cash ledger state of an account at ``target_date`` (forward-filled).
+
+        Returns None when the account has no cash-affecting event on or before
+        that date — callers treat that as a zero balance (the ledger starts at
+        0.00).
+        """
+        snaps = self.cash_snapshots.get(account)
+        if not snaps:
+            return None
+        return self._state_at(snaps, target_date)
 
     def position_at(
         self, account: str, symbol: str, target_date: date

@@ -18,8 +18,11 @@ class EventLoaderError(Exception):
 class EventLoader:
     """Loads portfolio events from CSV and XLSX files."""
 
-    REQUIRED_COLUMNS = frozenset({'date', 'event_type', 'symbol', 'name'})
-    OPTIONAL_COLUMNS = frozenset({'quantity', 'unit_price', 'fee', 'amount', 'notes', 'account'})
+    # Only date + event_type are structurally required in the header; whether
+    # symbol/name/amount/… are required depends on the event type and is enforced
+    # by the validator (cash events carry no share, share events carry no amount).
+    REQUIRED_COLUMNS = frozenset({'date', 'event_type'})
+    OPTIONAL_COLUMNS = frozenset({'symbol', 'name', 'quantity', 'unit_price', 'fee', 'amount', 'notes', 'account'})
     ALL_COLUMNS = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
 
     def __init__(self, source_path: str):
@@ -179,15 +182,10 @@ class EventLoader:
             raise ValueError(
                 f"Invalid event_type: {event_type_str}. Valid types: {valid_types}")
 
-        # Parse symbol
-        symbol = row.get('symbol', '').strip() if row.get('symbol') else ''
-        if not symbol:
-            raise ValueError("symbol is required")
-
-        # Parse name
-        name = row.get('name', '').strip() if row.get('name') else ''
-        if not name:
-            raise ValueError("name is required")
+        # Parse symbol / name — optional at the parse level (cash events carry
+        # none). Per-type requirements are enforced by the validator.
+        symbol = row.get('symbol', '').strip() if row.get('symbol') else None
+        name = row.get('name', '').strip() if row.get('name') else None
 
         # Parse optional numeric fields
         quantity = self._parse_float(row.get('quantity'), 'quantity')

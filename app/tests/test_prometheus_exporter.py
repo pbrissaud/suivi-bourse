@@ -177,6 +177,9 @@ def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
         def get_events(self):
             return None
 
+        def load_accounts(self):
+            return None
+
     exporter = PrometheusExporter(registry=CollectorRegistry())
     metrics = main.SuiviBourseMetrics(
         FakeConfigManager(), shares_validator,
