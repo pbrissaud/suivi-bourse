@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
-from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint
+from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint, PortfolioTotalPoint
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
@@ -46,6 +46,11 @@ class InfluxDBWriter:
 
     MEASUREMENT = "portfolio_metrics"
     ACCOUNT_MEASUREMENT = "account_metrics"
+    PORTFOLIO_MEASUREMENT = "portfolio_totals"
+
+    # Performance fields written only when computable (None is skipped).
+    _PERF_FIELDS = ("xirr", "gain_absolu", "twr_index")
+    _ACCOUNT_FIELDS = ("cash_balance", "holdings_value", "total_value", "net_contributed")
 
     def __init__(
         self,
@@ -424,9 +429,7 @@ class InfluxDBWriter:
             if p.account_currency:
                 point.tag("account_currency", p.account_currency)
 
-            for field_name in (
-                "cash_balance", "holdings_value", "total_value", "net_contributed"
-            ):
+            for field_name in self._ACCOUNT_FIELDS + self._PERF_FIELDS:
                 value = getattr(p, field_name)
                 if _is_valid_number(value):
                     point.field(field_name, float(value))
@@ -437,6 +440,32 @@ class InfluxDBWriter:
         if records:
             self._client.write(record=records, write_precision='s')
             logger.info(f"Written {len(records)} account_metrics points")
+
+        return len(records)
+
+    def write_portfolio_totals(self, points: List[PortfolioTotalPoint]) -> int:
+        """Write the global ``portfolio_totals`` series (batch, idempotent).
+
+        A single **untagged** series (tagging it would double every ``SUM()`` over
+        the per-account series). Same 7 perf fields, same midnight-stamped,
+        rewritten-each-cycle idempotency as ``account_metrics``.
+        """
+        if self._client is None:
+            self.connect()
+
+        records = []
+        for p in points:
+            point = Point(self.PORTFOLIO_MEASUREMENT)
+            for field_name in self._ACCOUNT_FIELDS + self._PERF_FIELDS:
+                value = getattr(p, field_name)
+                if _is_valid_number(value):
+                    point.field(field_name, float(value))
+            point.time(p.timestamp, WritePrecision.S)
+            records.append(point)
+
+        if records:
+            self._client.write(record=records, write_precision='s')
+            logger.info(f"Written {len(records)} portfolio_totals points")
 
         return len(records)
 

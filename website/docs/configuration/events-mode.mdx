@@ -212,6 +212,39 @@ These values feed the **Accounts** dashboard (`cash_balance`, `holdings_value`,
 `total_value`, `net_contributed`), written to the `account_metrics` measurement
 **only for opt-in users** (accounts declared in `settings.yaml`).
 
+## Performance: XIRR & TWR
+
+On top of the cash & value series, SuiviBourse computes **money-weighted
+performance** — answering *"am I making money, given **when** I put it in?"*
+
+**External vs internal flows** — this is the whole definition of the metric:
+
+- **External** (they are the *contribution*, they do **not** count as
+  performance): `DEPOSIT`, `WITHDRAWAL`, and `GRANT` (in-kind, valued at the
+  day's price).
+- **Internal** (they **do** count as performance): `BUY`, `SELL`, `DIVIDEND`,
+  and every `fee`.
+
+**XIRR** (`xirr`) — the annualized money-weighted rate of return, solved in
+Python by bisection (no SQL, no new dependency). It needs at least one external
+flow; an account **without any** external flow produces **no** `xirr` at all
+(the field is absent, not `0`).
+
+**TWR** (`twr_index`) — the time-weighted return as a **base-100 index**, which
+strips out the effect of *when* you contributed. Its base 100 **re-anchors** as
+backfill fills earlier history.
+
+**Absolute gain** (`gain_absolu`) — `current value − contributions`. It is the
+**guard for a young XIRR**: over a few weeks an annualized rate gives wild
+numbers, so the two are always shown side by side.
+
+:::note Why the global performance can be missing
+The global `portfolio_totals` series is written **only when all accounts share
+the same currency** — pooling different currencies would need FX conversion,
+which is out of scope. So the dashboard's global block is empty **both** when no
+account is configured **and** when accounts use different currencies.
+:::
+
 ## Accounts (opt-in)
 
 By default every position is tracked in a single implicit account named
