@@ -42,7 +42,7 @@
         "type": "influxdb",
         "uid": "${DS_INFLUXDB}"
       },
-      "description": "Cash currently sitting in the account.",
+      "description": "Cash currently sitting in the account. Amounts are formatted in EUR (the dashboard assumes EUR accounts; multi-currency formatting is out of scope).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -108,7 +108,7 @@
         "type": "influxdb",
         "uid": "${DS_INFLUXDB}"
       },
-      "description": "cash_balance + holdings_value are stacked areas — their sum is total_value, so you read the portfolio value and its cash/holdings split at a glance. net_contributed is the thick line on top: the gap between the top of the areas and the line is the absolute gain.",
+      "description": "cash_balance + holdings_value are stacked areas — their sum is total_value, so you read the portfolio value and its cash/holdings split at a glance. net_contributed is the thick line on top: the gap between the top of the areas and the line is the absolute gain. Amounts are formatted in EUR (the dashboard assumes EUR accounts; multi-currency formatting is out of scope).",
       "fieldConfig": {
         "defaults": {
           "color": {

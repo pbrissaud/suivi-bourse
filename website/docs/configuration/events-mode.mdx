@@ -55,7 +55,9 @@ variable — it takes priority over `settings.yaml`. See
 ## File format
 
 Both **CSV** and **XLSX** files are supported. Every file must contain a header
-row with (at least) the four required columns.
+row; only `date` and `event_type` are structurally required. Which of the other
+columns apply depends on the event type (a share `BUY` needs `symbol`/`name`/
+`quantity`/`unit_price`; a cash `DEPOSIT` needs `account`/`amount`).
 
 <Tabs>
   <TabItem value="csv" label="CSV" default>
@@ -90,9 +92,9 @@ Requires the `openpyxl` library, which is bundled in the Docker image.
 | Column | Required | Description |
 |--------|----------|-------------|
 | `date` | Yes | ISO format `YYYY-MM-DD` |
-| `event_type` | Yes | `BUY`, `SELL`, `GRANT` or `DIVIDEND` (case-insensitive) |
-| `symbol` | Yes | Yahoo! Finance ticker (e.g. `AAPL`, `MSFT`) |
-| `name` | Yes | Display name for the share |
+| `event_type` | Yes | `BUY`, `SELL`, `GRANT`, `DIVIDEND`, `DEPOSIT` or `WITHDRAWAL` (case-insensitive) |
+| `symbol` | For share events | Yahoo! Finance ticker (e.g. `AAPL`, `MSFT`); **forbidden** on cash events |
+| `name` | For share events | Display name for the share; **forbidden** on cash events |
 | `quantity` | For `BUY` / `SELL` / `GRANT` | Number of shares |
 | `unit_price` | For `BUY` / `SELL` | Price per share |
 | `fee` | Optional | Transaction fee (must be `>= 0`) |
@@ -100,8 +102,9 @@ Requires the `openpyxl` library, which is bundled in the Docker image.
 | `notes` | Optional | Free-text comment (ignored by the app) |
 | `account` | For cash events, and for any event when [accounts](#accounts-opt-in) are declared | Account `id` this event belongs to |
 
-The four required columns must always be present in the header. Empty cells are
-allowed for the columns that don't apply to a given event type.
+`date` and `event_type` must always be present in the header. Empty cells are
+allowed for the columns that don't apply to a given event type, and cash-only
+files may omit the share columns entirely.
 
 ## Event types
 

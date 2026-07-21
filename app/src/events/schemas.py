@@ -130,7 +130,7 @@ class CashState:
 
     ``cash_balance`` starts at 0.00 and every event applies its cash effect.
     ``net_contributed`` accumulates the external cash contributions
-    (Σ deposits − Σ withdrawals, excluding fees).
+    (Σ deposits - Σ withdrawals, excluding fees).
     """
     cash_balance: float = 0.0
     net_contributed: float = 0.0
