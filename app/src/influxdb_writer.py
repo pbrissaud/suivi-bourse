@@ -414,8 +414,8 @@ class InfluxDBWriter:
         ``account_type`` / ``account_currency`` and the fields ``cash_balance`` /
         ``holdings_value`` / ``total_value`` / ``net_contributed`` at a midnight
         ``timestamp``. Re-writing the same (tags, time) series overwrites rather
-        than duplicates, so recomputing and rewriting the whole series every
-        cycle is idempotent.
+        than duplicates, so writing a recomputed slice each cycle is idempotent.
+        The caller writes only the stale tail (issue #597), not the whole series.
         """
         if self._client is None:
             self.connect()
@@ -451,7 +451,7 @@ class InfluxDBWriter:
 
         A single **untagged** series (tagging it would double every ``SUM()`` over
         the per-account series). Same 7 perf fields, same midnight-stamped,
-        rewritten-each-cycle idempotency as ``account_metrics``.
+        stale-tail-only idempotent write as ``account_metrics``.
         """
         if self._client is None:
             self.connect()

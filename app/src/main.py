@@ -4,8 +4,9 @@ Paul Brissaud
 """
 import os
 import sys
+import threading
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
@@ -396,6 +397,22 @@ class SuiviBourseMetrics:
         # backfill for that account.
         self._backfill_complete: Dict[Tuple[str, str], datetime] = {}
 
+        # Incremental perf-series write watermark (issue #597). Rewriting the
+        # whole daily account_metrics/portfolio_totals series every scrape cycle
+        # lands new, never-compacted Parquet files on InfluxDB 3 Core, so file
+        # count grows without bound. Instead we rewrite only the stale tail:
+        #   _perf_dirty_from — earliest day backfill has newly filled since the
+        #     last write (None = nothing earlier than today is stale). Written by
+        #     the backfill thread, read/reset by the scrape thread, so guarded by
+        #     _perf_lock.
+        #   _perf_last_events — the events list object fed to the last write; a
+        #     new object means the events cache was reloaded (files changed) and
+        #     the whole series must be rewritten. Touched only on the scrape
+        #     thread (update_account_metrics), so it needs no lock.
+        self._perf_lock = threading.Lock()
+        self._perf_dirty_from: Optional[date] = None
+        self._perf_last_events: Optional[List] = None
+
     def validate(self) -> bool:
         """
         Validate the configuration for the stock shares.
@@ -774,6 +791,11 @@ class SuiviBourseMetrics:
                     account=account
                 )
                 backfilled_count += written
+                # Newly filled earlier prices change holdings_value for that
+                # window; re-arm the perf series so the next scrape rewrites the
+                # tail from here (issue #597).
+                if written > 0:
+                    self._mark_perf_dirty(start_date.date())
             except Exception as e:
                 app_logger.error(
                     f"Failed to write historical prices for {symbol}: {e}")
@@ -825,15 +847,43 @@ class SuiviBourseMetrics:
             gain_absolu=perf.gain_absolu if last else None,
         )
 
+    def _mark_perf_dirty(self, from_date: date) -> None:
+        """Lower the perf-series write watermark to ``from_date`` (thread-safe).
+
+        Called by the backfill thread once it has written prices for an earlier
+        day: that day's ``holdings_value`` changed and TWR compounds forward, so
+        the whole tail from ``from_date`` to today must be rewritten next cycle.
+        ``min`` keeps the earliest pending bound across several backfills.
+        """
+        with self._perf_lock:
+            cur = self._perf_dirty_from
+            self._perf_dirty_from = from_date if cur is None else min(cur, from_date)
+
+    def _consume_perf_dirty_from(self) -> Optional[date]:
+        """Atomically read and clear the backfill watermark (thread-safe).
+
+        Reset happens up-front so a backfill landing mid-cycle re-arms the
+        watermark for the *next* cycle instead of being swallowed by this one.
+        """
+        with self._perf_lock:
+            pending = self._perf_dirty_from
+            self._perf_dirty_from = None
+            return pending
+
     def update_account_metrics(self):
         """Recompute and write the daily ``account_metrics`` + ``portfolio_totals``
         series via the performance module.
 
-        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The whole
+        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The full
         series (earliest event date → today, one point per calendar day at
-        midnight) is rebuilt and rewritten every cycle — an idempotent upsert, so
-        the curve extends on its own as backfill fills earlier prices. Money-
-        weighted performance (xirr / gain_absolu / twr_index) comes from
+        midnight) is recomputed every cycle, but only the **stale tail** is
+        written — a steady cycle rewrites just today's point. This is the fix for
+        issue #597: on InfluxDB 3 Core a full-series rewrite every scrape lands
+        new, never-compacted Parquet files, so file count grew without bound. The
+        write window widens back to an earlier day when backfill fills earlier
+        prices (``_mark_perf_dirty``) or when the events cache is reloaded (a new
+        events list object => full rewrite). Money-weighted performance (xirr /
+        gain_absolu / twr_index) comes from
         ``performance.py``; xirr / gain_absolu land only on the latest point.
         """
         portfolio = self.config_manager.load_accounts()
@@ -861,6 +911,20 @@ class SuiviBourseMetrics:
         start = min(e.date for e in events)
         today = datetime.now(timezone.utc).date()
 
+        # Incremental write window (issue #597). Consume the backfill watermark
+        # first so a backfill landing mid-cycle re-arms it for the next cycle. A
+        # reloaded events cache (new list object) forces a full rewrite; else we
+        # write from the earliest day backfill touched, defaulting to today only.
+        pending = self._consume_perf_dirty_from()
+        events_changed = events is not self._perf_last_events
+        self._perf_last_events = events
+        if events_changed:
+            write_from = start
+        elif pending is not None:
+            write_from = max(start, min(pending, today))
+        else:
+            write_from = today
+
         per_account = {
             account.id: performance.compute_account(
                 timeline, account, symbols, price_at, start, today)
@@ -870,12 +934,18 @@ class SuiviBourseMetrics:
             timeline, portfolio.accounts, symbols, price_at, start, today, per_account)
 
         # --- account_metrics ------------------------------------------------
+        # ``last`` (and thus xirr / gain_absolu) is decided over the FULL series
+        # so it always lands on today's point; only points on/after write_from
+        # are actually written. today >= write_from always, so the latest point
+        # (Prometheus + negative-cash warning) is present every cycle.
         acc_points = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
         for account in portfolio.accounts:
             perf = per_account[account.id]
             for i, dp in enumerate(perf.daily):
                 last = i == len(perf.daily) - 1
+                if dp.date < write_from:
+                    continue
                 pt = AccountMetricPoint(
                     account=account.id,
                     account_type=account.type,
@@ -886,10 +956,8 @@ class SuiviBourseMetrics:
                 acc_points.append(pt)
                 if last:
                     latest_by_account[account.id] = pt
-        if acc_points:
-            self.influxdb.write_account_metrics(acc_points)
-
         # --- portfolio_totals (global, untagged; only if single currency) ---
+        total_points = []
         if total is not None:
             total_points = [
                 PortfolioTotalPoint(
@@ -897,9 +965,22 @@ class SuiviBourseMetrics:
                     **self._value_kwargs(dp, i == len(total.daily) - 1, total),
                 )
                 for i, dp in enumerate(total.daily)
+                if dp.date >= write_from
             ]
+
+        # The watermark was consumed up front (for concurrency), so a failed
+        # write would otherwise drop the stale tail silently. Re-arm it on any
+        # write error so the next cycle retries the same slice; today's point is
+        # rewritten every cycle anyway, so only a sub-today tail needs re-arming.
+        try:
+            if acc_points:
+                self.influxdb.write_account_metrics(acc_points)
             if total_points:
                 self.influxdb.write_portfolio_totals(total_points)
+        except Exception:
+            if write_from < today:
+                self._mark_perf_dirty(write_from)
+            raise
 
         # Permissive cash policy: a negative balance is allowed (it keeps a user
         # who adds accounts without rewriting their DEPOSIT history running), but

@@ -286,8 +286,12 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_p
 | Field | `market_cap` | Market capitalization |
 | Field | `volume` | Trading volume |
 
-**Measurement**: `account_metrics` (opt-in accounts only; daily series rewritten
-in full each cycle, points stamped at midnight of the day, idempotent upsert)
+**Measurement**: `account_metrics` (opt-in accounts only; daily series, points
+stamped at midnight of the day, idempotent upsert). The series is recomputed in
+full every cycle but only the **stale tail** is written — a steady cycle rewrites
+just today's point; the window widens back when backfill fills earlier prices or
+the events cache reloads. This keeps InfluxDB 3 Core from accumulating unbounded
+Parquet files (issue #597).
 
 | Type | Name | Description |
 |------|------|-------------|

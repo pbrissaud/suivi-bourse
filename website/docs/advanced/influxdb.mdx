@@ -109,3 +109,28 @@ The provisioned token is a **development** value shipped for zero-config local
 use. Change it before any non-local deployment — see the
 [token note in the Docker Compose guide](/docs/deployment/docker-compose#environment-variables).
 :::
+
+## Long-running deployments & Parquet files
+
+InfluxDB 3 **Core** does not auto-compact: every write batch lands new Parquet
+files that are never merged. SuiviBourse keeps this in check by writing the
+account performance series **incrementally** — a steady scrape cycle rewrites
+only today's point instead of the whole daily history — so file growth stays
+bounded in normal operation.
+
+If a query still hits Core's per-query file cap (default **432**), for example
+after a very long uptime or a large backfill, you'll see errors like:
+
+```text
+Query would scan N Parquet files, exceeding the file limit.
+```
+
+Raise the cap on the InfluxDB container:
+
+```yaml
+environment:
+  - INFLUXDB3_QUERY_FILE_LIMIT=20000   # default is 432
+```
+
+For heavy, always-on workloads, InfluxDB 3 **Enterprise** adds automatic
+compaction, which removes the fragmentation entirely.

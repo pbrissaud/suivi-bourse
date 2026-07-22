@@ -428,6 +428,118 @@ def test_account_metrics_perf_fields_only_on_latest_point(
     assert pts[-1].twr_index == pytest.approx(110.0)
 
 
+# --------------------------------------------------------------------------- #
+# Incremental perf-series write (issue #597): steady cycles must not rewrite
+# the whole daily series (unbounded Parquet fragmentation on InfluxDB 3 Core).
+# --------------------------------------------------------------------------- #
+def _fixed_today(mocker, y, mo, d):
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(y, mo, d, 12, 0, tzinfo=tz)
+    mocker.patch("main.datetime", _FixedDatetime)
+
+
+def _acc_days(mock_influx):
+    return {p.timestamp.date()
+            for p in mock_influx.write_account_metrics.call_args.args[0]}
+
+
+def test_update_account_metrics_second_cycle_writes_only_today(
+        mock_influx, shares_validator, mocker):
+    """First cycle writes the full series; a steady second cycle (no backfill,
+    no event change) rewrites ONLY today's point — the fix for #597."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()
+    assert _acc_days(mock_influx) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
+
+    m.update_account_metrics()
+    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
+
+
+def test_backfill_dirty_mark_widens_the_incremental_window(
+        mock_influx, shares_validator, mocker):
+    """A backfill that fills an earlier day re-arms the watermark so the next
+    cycle rewrites the whole tail from that day through today (TWR compounds
+    forward, so the tail must be recomputed)."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()                 # full
+    m.update_account_metrics()                 # today only
+    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
+
+    m._mark_perf_dirty(date(2024, 1, 2))       # backfill filled 01-02
+    m.update_account_metrics()
+    assert _acc_days(mock_influx) == {date(2024, 1, 2), date(2024, 1, 3)}
+
+
+def test_update_account_metrics_full_rewrite_on_event_reload(
+        mock_influx, shares_validator, mocker):
+    """When the events cache is reloaded (files changed), the next cycle rewrites
+    the full series — a new/edited event can shift any past day (cash, holdings,
+    contributions), not just today."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()                 # full
+    m.update_account_metrics()                 # today only
+    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
+
+    # Simulate an event-file reload: get_events() now returns a NEW list object.
+    m.config_manager._events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    m.update_account_metrics()
+    assert _acc_days(mock_influx) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
+
+
+def test_write_failure_re_arms_the_dirty_watermark(
+        mock_influx, shares_validator, mocker):
+    """If the account_metrics write raises, the stale tail must not be lost: the
+    watermark is re-armed so the next cycle retries the same slice (#597)."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()                 # first full write succeeds
+    m._mark_perf_dirty(date(2024, 1, 2))       # backfill filled 01-02
+    mock_influx.write_account_metrics.side_effect = RuntimeError("influx down")
+
+    with pytest.raises(RuntimeError):
+        m.update_account_metrics()
+
+    # Tail [01-02 .. today] preserved for the next cycle, not silently dropped.
+    assert m._perf_dirty_from == date(2024, 1, 2)
+
+
+def test_portfolio_totals_second_cycle_writes_only_today(
+        mock_influx, shares_validator, mocker):
+    """The global portfolio_totals series is incremental too (same #597 fix)."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    mock_influx.get_price_series.return_value = {}
+    m = _metrics(mock_influx, shares_validator, shares=[], events=events, accounts=portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()
+    m.update_account_metrics()
+    totals = mock_influx.write_portfolio_totals.call_args.args[0]
+    assert {p.timestamp.date() for p in totals} == {date(2024, 1, 3)}
+
+
 def test_prometheus_update_portfolio_sets_unlabeled_gauges():
     from prometheus_client import CollectorRegistry
     from prometheus_exporter import PrometheusExporter
