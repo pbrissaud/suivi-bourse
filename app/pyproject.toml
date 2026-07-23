@@ -13,7 +13,7 @@ dependencies = [
     "influxdb3-python>=0.17.0",
     "prometheus-client==0.25.0",  # legacy /metrics endpoint (backward compatibility)
     "urllib3==2.7.0",
-    "yfinance==1.5.1",
+    "yfinance==1.5.2",
     "pandas>=2.0.0",       # NaN-safe volume handling in main.py (also required by yfinance)
     "openpyxl>=3.1.0",
     "watchdog>=3.0.0",
