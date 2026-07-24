@@ -1,5 +1,49 @@
 # Changelog
 
+## [4.1.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.0.1...v4.1.0) (2026-07-24)
+
+
+### Features
+
+* **app:** cash events, per-account ledger & account_metrics ([#576](https://github.com/pbrissaud/suivi-bourse/issues/576)) ([#589](https://github.com/pbrissaud/suivi-bourse/issues/589)) ([b696ad0](https://github.com/pbrissaud/suivi-bourse/commit/b696ad019181b263c3aa075f90fc18255425223f))
+* **app:** first-class accounts ([#574](https://github.com/pbrissaud/suivi-bourse/issues/574)) ([#586](https://github.com/pbrissaud/suivi-bourse/issues/586)) ([8f4ced5](https://github.com/pbrissaud/suivi-bourse/commit/8f4ced590bf7ec52c047691162cc216c777f7f54))
+* **app:** money-weighted performance — XIRR, TWR & portfolio_totals ([#577](https://github.com/pbrissaud/suivi-bourse/issues/577)) ([#591](https://github.com/pbrissaud/suivi-bourse/issues/591)) ([1f1f265](https://github.com/pbrissaud/suivi-bourse/commit/1f1f2652fc7010e62447d5b87bef49fbb0d94de5))
+* **app:** Timeline replay aggregation ([#575](https://github.com/pbrissaud/suivi-bourse/issues/575)) ([#587](https://github.com/pbrissaud/suivi-bourse/issues/587)) ([516c14f](https://github.com/pbrissaud/suivi-bourse/commit/516c14fb666f9da2eb20f46c3424a4485fd14f60))
+
+
+### Bug Fixes
+
+* **app:** write perf series incrementally to stop Parquet fragmentation ([ab7493e](https://github.com/pbrissaud/suivi-bourse/commit/ab7493e479b73310dfeff6f269e7ee067b928fe2)), closes [#597](https://github.com/pbrissaud/suivi-bourse/issues/597)
+
+
+### Documentation
+
+* **website:** add a guide on reading the Accounts dashboard metrics ([#594](https://github.com/pbrissaud/suivi-bourse/issues/594)) ([6548da3](https://github.com/pbrissaud/suivi-bourse/commit/6548da32dd4737144285103e2e8272924e1e8a51))
+* **website:** document the account-tag migration seam and manual purge ([#578](https://github.com/pbrissaud/suivi-bourse/issues/578)) ([#593](https://github.com/pbrissaud/suivi-bourse/issues/593)) ([cb7e49f](https://github.com/pbrissaud/suivi-bourse/commit/cb7e49fcb4661804e69163867f6912f3a2269cd8))
+
+
+### Dependencies
+
+* **app:** update dependency confuse to v2.2.1 ([#584](https://github.com/pbrissaud/suivi-bourse/issues/584)) ([f3bb9c6](https://github.com/pbrissaud/suivi-bourse/commit/f3bb9c6a32b46f616eae8ddb9141395ed2a6986c))
+* **app:** update dependency yfinance to v1.5.2 ([#600](https://github.com/pbrissaud/suivi-bourse/issues/600)) ([ff3d690](https://github.com/pbrissaud/suivi-bourse/commit/ff3d6909a05a1b8c1f4712da315ce78a14b121c3))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.11.29 ([#580](https://github.com/pbrissaud/suivi-bourse/issues/580)) ([2bc212a](https://github.com/pbrissaud/suivi-bourse/commit/2bc212aa39aad98c1f9af8f118d38f9ce5e9cea1))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.11.30 ([#588](https://github.com/pbrissaud/suivi-bourse/issues/588)) ([0bbce9c](https://github.com/pbrissaud/suivi-bourse/commit/0bbce9c9efdcb3d8c1c1824edd758e616f017d64))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.11.31 ([#598](https://github.com/pbrissaud/suivi-bourse/issues/598)) ([c0f5cef](https://github.com/pbrissaud/suivi-bourse/commit/c0f5cef0daa9ba836d432771bb1da4d32ec7e38e))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.11.32 ([#610](https://github.com/pbrissaud/suivi-bourse/issues/610)) ([5401754](https://github.com/pbrissaud/suivi-bourse/commit/5401754fa6b2ce9d595e1243ca4d70502511f4cb))
+* **docker-compose:** update grafana/grafana docker tag to v13.1.1 ([#590](https://github.com/pbrissaud/suivi-bourse/issues/590)) ([57d0062](https://github.com/pbrissaud/suivi-bourse/commit/57d00628d28f8fb184e6b8031e71310c94e25f48))
+* **website:** update docusaurus monorepo to v3.10.2 ([#552](https://github.com/pbrissaud/suivi-bourse/issues/552)) ([92d05ce](https://github.com/pbrissaud/suivi-bourse/commit/92d05cef0d547b43995b7080fdaa8263606a447d))
+* **website:** update pnpm to v11.12.0 ([#567](https://github.com/pbrissaud/suivi-bourse/issues/567)) ([58bcbac](https://github.com/pbrissaud/suivi-bourse/commit/58bcbac492e7eac18e8e162e6a8723365d7a08d0))
+* **website:** update pnpm to v11.13.0 ([#573](https://github.com/pbrissaud/suivi-bourse/issues/573)) ([dd0a57b](https://github.com/pbrissaud/suivi-bourse/commit/dd0a57bc4d06ae531b1928c7529d96148c8288bc))
+* **website:** update pnpm to v11.13.1 ([#581](https://github.com/pbrissaud/suivi-bourse/issues/581)) ([de831e9](https://github.com/pbrissaud/suivi-bourse/commit/de831e9dd4bd79caf604df342863a66751842cdc))
+* **website:** update pnpm to v11.14.0 ([#582](https://github.com/pbrissaud/suivi-bourse/issues/582)) ([61976b5](https://github.com/pbrissaud/suivi-bourse/commit/61976b5ba7bc7d1513a76eac153d58ea32776dd8))
+* **website:** update pnpm to v11.15.0 ([#583](https://github.com/pbrissaud/suivi-bourse/issues/583)) ([2780a5e](https://github.com/pbrissaud/suivi-bourse/commit/2780a5e369fbfcb7bed3c6c508ab4d228f633dc7))
+* **website:** update pnpm to v11.15.1 ([#585](https://github.com/pbrissaud/suivi-bourse/issues/585)) ([f112980](https://github.com/pbrissaud/suivi-bourse/commit/f1129802597794f8278f85593e23c5637549b029))
+* **website:** update pnpm to v11.16.0 ([#599](https://github.com/pbrissaud/suivi-bourse/issues/599)) ([593ef53](https://github.com/pbrissaud/suivi-bourse/commit/593ef53d014efa7d0d1ccd69d8e0c602ed85af78))
+* **website:** update pnpm to v11.17.0 ([#601](https://github.com/pbrissaud/suivi-bourse/issues/601)) ([f908bf7](https://github.com/pbrissaud/suivi-bourse/commit/f908bf7b59571118e8c3b74da158684eb8b73c45))
+* **workflows:** update actions/setup-node action to v7 ([#579](https://github.com/pbrissaud/suivi-bourse/issues/579)) ([466f474](https://github.com/pbrissaud/suivi-bourse/commit/466f474fd50704ddf61374fa6c26827dc3cd9d73))
+* **workflows:** update dependency node to v24 ([#565](https://github.com/pbrissaud/suivi-bourse/issues/565)) ([0985797](https://github.com/pbrissaud/suivi-bourse/commit/0985797731dc20e06b0265e58894409fc5f21bea))
+* **workflows:** update pnpm/action-setup action to v6 ([#566](https://github.com/pbrissaud/suivi-bourse/issues/566)) ([65a01f5](https://github.com/pbrissaud/suivi-bourse/commit/65a01f54909c3c4aff251780d9a43ff04b5a3f66))
+
 ## [4.0.1](https://github.com/pbrissaud/suivi-bourse/compare/v4.0.0...v4.0.1) (2026-07-10)
 
 
