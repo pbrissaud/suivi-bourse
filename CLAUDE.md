@@ -71,7 +71,16 @@ The application runs independent scheduled jobs on a single APScheduler:
   / revive).
 - **Backfill**: Progressively fills historical price data (default: every 60s).
 - **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
-  (opt-in accounts only) on the `REGULAR` cadence, decoupled from scraping.
+  (opt-in accounts only) as its **own gated interval job** at `SB_PERF_INTERVAL`
+  (default 120s), decoupled from the per-symbol scrape jobs (issue #618). Each
+  run is gated by the pure predicate `scheduling.perf_should_run()` — it runs
+  only when something changed since the last run: the events cache reloaded, a
+  backfill watermark is pending, or a `REGULAR` write occurred. The live-write
+  signal is a single global bool set on the `REGULAR` write path in
+  `_scrape_symbol`, checked-and-cleared up front under `_perf_lock` and seeded
+  `True` at boot (so today's point is fresh after an overnight restart). A
+  fully-closed market wave writes nothing — the non-trading-day gap is by design
+  (#606) and there is no closed-day Parquet drip (#597).
 
 Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
 
@@ -79,12 +88,12 @@ Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │    INGESTION      │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (REGULAR cadence)  │
+│  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (SB_PERF_INTERVAL) │
 │                          │  │                   │  │                  │  │                    │
-│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Check gaps     │  │ • Recompute perf   │
-│ • marketState → cadence  │  │ • Recalc state    │  │ • history()      │  │   series (opt-in   │
-│ • REGULAR: poll & write  │  │ • Update shares[] │  │ • Chunk 1 yr/req │  │   accounts only)   │
-│ • Closed: sleep to open  │  │ • Reconcile jobs  │  │ • Rate limit 10s │  │                    │
+│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Check gaps     │  │ • perf_should_run? │
+│ • marketState → cadence  │  │ • Recalc state    │  │ • history()      │  │ • Recompute perf   │
+│ • REGULAR: poll & write  │  │ • Update shares[] │  │ • Chunk 1 yr/req │  │   series (opt-in   │
+│ • Closed: sleep to open  │  │ • Reconcile jobs  │  │ • Rate limit 10s │  │   accounts only)   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -240,6 +249,7 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is in `REGULAR` state (per-symbol scheduling). Closed markets sleep to next open instead. |
 | `SB_SCRAPING_INTERVAL` | — | **Deprecated** heir of the removed global scrape interval. Honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset; logs a warning whenever present. |
+| `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
