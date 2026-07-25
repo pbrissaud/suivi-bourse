@@ -8,6 +8,7 @@ that the pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation
 reschedule-gate split, and the Prometheus fetch-success gate (#609).
 """
 
+import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -135,6 +136,111 @@ def test_scrape_symbol_writes_one_point_per_account_holding_symbol(
     assert accounts == {"pea", "cto"}
     # One fetch feeds both account points.
     m.scheduler.add_job.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Dead-ticker backoff wiring (#617) — per-job failure state
+# ---------------------------------------------------------------------------
+
+def test_scrape_symbol_failure_increments_and_backs_off(
+        mock_influx, shares_validator, mocker):
+    """A run of non-closed no-price cycles grows the re-arm delay past base."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+
+    # First three failures stay at base_interval (grace window).
+    for _ in range(3):
+        m._scrape_symbol("AAPL", now=NOW)
+    assert m._failure_counts["AAPL"] == 3
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+    # Fourth failure backs off to base×2.
+    m._scrape_symbol("AAPL", now=NOW)
+    assert m._failure_counts["AAPL"] == 4
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=240)
+
+
+def test_scrape_symbol_success_resets_failure_count(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A successful write clears an accumulated backoff back to base_interval."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 5
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert m._failure_counts["AAPL"] == 0
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+
+def test_reconcile_removes_departed_symbol_failure_state(
+        mock_influx, shares_validator, mocker):
+    """Failure state must not survive symbol removal (per-job lifetime)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts = {"AAPL": 1, "MSFT": 9}
+    m.scheduler.get_jobs.return_value = [
+        _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
+
+    m._reconcile_jobs()  # MSFT departed (only AAPL held)
+
+    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
+    assert "MSFT" not in m._failure_counts
+    assert m._failure_counts == {"AAPL": 1}
+
+
+def test_scrape_symbol_departed_does_not_persist_failure_count(
+        mock_influx, shares_validator, mocker):
+    """A scrape whose symbol has already departed must not (re)write its
+    backoff counter — the held-recheck guards the persist (issue #617)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 3
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    m.shares = []  # departed between the last reconcile and this cycle
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert "AAPL" not in m._failure_counts     # not resurrected
+    m.scheduler.add_job.assert_not_called()    # and not re-armed
+
+
+def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
+        mock_influx, shares_validator, mocker):
+    """The named race: a scrape in-flight when reconcile removes its symbol
+    must not write the failure counter back after cleanup popped it.
+
+    The fetch blocks the scrape thread *before* its lock-guarded persist, so the
+    reconcile pop is forced to win the shared lock first; when the scrape then
+    resumes it sees the symbol no longer held and skips the write. Without the
+    lock + held-recheck this would leave a stale 'AAPL' entry (resurrection)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 2  # a backoff already building
+
+    fetch_started = threading.Event()
+    release_fetch = threading.Event()
+
+    def blocking_fetch(symbol):
+        fetch_started.set()
+        assert release_fetch.wait(timeout=5)
+        return (None, None)  # failure -> decide would increment + persist
+
+    mocker.patch.object(m, "_fetch_ticker_data", side_effect=blocking_fetch)
+
+    scrape_thread = threading.Thread(target=m._scrape_symbol, args=("AAPL",))
+    scrape_thread.start()
+    assert fetch_started.wait(timeout=5)  # scrape is in-flight, pre-persist
+
+    # Symbol departs: ingest updates shares, reconcile removes the job + pops.
+    m.shares = []
+    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
+    m._reconcile_jobs()
+    assert "AAPL" not in m._failure_counts  # cleanup popped it
+
+    # Let the in-flight scrape finish; it must NOT restore the counter.
+    release_fetch.set()
+    scrape_thread.join(timeout=5)
+    assert not scrape_thread.is_alive()
+    assert "AAPL" not in m._failure_counts
+    m.scheduler.add_job.assert_not_called()  # also does not re-arm
 
 
 # ---------------------------------------------------------------------------

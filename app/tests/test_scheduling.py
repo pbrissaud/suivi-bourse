@@ -12,7 +12,8 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 import scheduling
-from scheduling import decide, extract_market_context, SHORT_RETRY, MAX_SLEEP
+from scheduling import (
+    decide, extract_market_context, SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE)
 
 
 UTC = timezone.utc
@@ -84,14 +85,94 @@ def test_decide_closed_with_past_next_open_short_retries():
 
 
 # ---------------------------------------------------------------------------
-# decide — failure_count passthrough (backoff deferred to a later slice)
+# decide — dead-ticker guard: consecutive-failure backoff (#617, design #608)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("state,price", [
-    ("REGULAR", True), ("REGULAR", False), ("CLOSED", False), (None, True)])
-def test_decide_threads_failure_count_unchanged(state, price):
-    _, _, new_fc, _ = decide(state, price, None, NOW, 7, BASE)
-    assert new_fc == 7
+def test_decide_write_resets_failure_count():
+    """A successful write clears the counter regardless of its prior value."""
+    _, next_delay, new_fc, _ = decide("REGULAR", True, None, NOW, 7, BASE)
+    assert new_fc == 0
+    assert next_delay == BASE            # reset -> back to base cadence
+
+
+def test_decide_non_closed_no_price_increments_failure_count():
+    """A non-closed cycle with no writable price is a failure."""
+    _, _, new_fc, _ = decide("REGULAR", False, None, NOW, 0, BASE)
+    assert new_fc == 1
+
+
+@pytest.mark.parametrize("state", ["CLOSED", "POST", "POSTPOST", "PRE", "PREPRE"])
+def test_decide_closed_cycle_never_counts_as_failure(state):
+    """A closed -> sleep-to-open cycle leaves the counter untouched (passthrough),
+    neither incrementing (market shut is not a ticker fault) nor resetting."""
+    _, _, new_fc, _ = decide(state, False, None, NOW, 5, BASE)
+    assert new_fc == 5
+
+
+def test_decide_grace_then_backoff_progression():
+    """K=3 failures at base_interval, then base×2^(n-K) capped at MAX_SLEEP.
+
+    Loops the non-closed no-price failure branch, re-injecting the returned
+    counter each cycle with a simple injected clock, and records the delay.
+    """
+    K = FAILURE_GRACE
+    assert K == 3
+    fc = 0
+    delays = []
+    for _ in range(15):
+        _, next_delay, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+        delays.append(next_delay)
+
+    # Failures 1..K all re-arm at base_interval (grace window).
+    assert delays[:K] == [BASE, BASE, BASE]
+    # From the K-th failure onward, geometric ×2 growth: base×2^(n-K).
+    assert delays[3] == BASE * 2       # n=4
+    assert delays[4] == BASE * 4       # n=5
+    assert delays[5] == BASE * 8       # n=6
+    # Every delay is capped at MAX_SLEEP and the tail is pinned there.
+    assert all(d <= MAX_SLEEP for d in delays)
+    assert delays[-1] == MAX_SLEEP
+
+
+def test_decide_success_mid_backoff_resets_to_base():
+    """A successful write in the middle of a backoff drops cadence back to base."""
+    fc = 0
+    for _ in range(6):                                  # build up a deep backoff
+        _, delay, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    assert delay > BASE and fc == 6
+
+    # The market prints a price -> write, reset.
+    should_write, delay, fc, dirty = decide("REGULAR", True, None, NOW, fc, BASE)
+    assert (should_write, delay, fc, dirty) == (True, BASE, 0, True)
+
+
+def test_decide_closed_cycles_interleaved_do_not_advance_backoff():
+    """closed cycles between failures must not increment the counter, so the
+    backoff resumes exactly where the failures left it."""
+    fc = 0
+    # Two failures.
+    _, _, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    _, _, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    assert fc == 2
+
+    # A closed stretch: counter frozen, sleeps to next open (not backoff).
+    next_open = NOW + timedelta(hours=1)
+    _, closed_delay, fc, _ = decide("CLOSED", False, next_open, NOW, fc, BASE)
+    assert (fc, closed_delay) == (2, 3600)
+
+    # Failures resume: n=3 still grace, n=4 first backoff step.
+    _, delay3, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    assert (fc, delay3) == (3, BASE)
+    _, delay4, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    assert (fc, delay4) == (4, BASE * 2)
+
+
+def test_decide_backoff_never_overflows_for_a_long_dead_ticker():
+    """A ticker dead for a very long run stays pinned at MAX_SLEEP without
+    building an astronomical delay from 2^n."""
+    _, next_delay, new_fc, _ = decide("REGULAR", False, None, NOW, 100_000, BASE)
+    assert next_delay == MAX_SLEEP
+    assert new_fc == 100_001
 
 
 # ---------------------------------------------------------------------------
