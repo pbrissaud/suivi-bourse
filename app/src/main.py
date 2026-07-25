@@ -715,16 +715,25 @@ class SuiviBourseMetrics:
             now = datetime.now(timezone.utc)
             held = self._held_symbols()
             scheduled = self._scheduled_symbols()
-            # Add new + revive missing in one pass: any held symbol without a
-            # live job fires immediately.
-            for symbol in held - scheduled:
-                self._arm_symbol(symbol, 0, now)
-            # Remove departed symbols' idle jobs (belt-and-braces with the
-            # in-flight membership re-check in _scrape_symbol).
-            for symbol in scheduled - held:
-                self.scheduler.remove_job(_scrape_job_id(symbol))
         except Exception as e:
             app_logger.error(f"Failed to reconcile per-symbol jobs: {e}")
+            return
+        # Add new + revive missing in one pass: any held symbol without a live
+        # job fires immediately. Remove departed symbols' idle jobs (belt-and-
+        # braces with the in-flight membership re-check in _scrape_symbol).
+        # Each op is guarded on its own so one failure — e.g. a JobLookupError
+        # from a self-re-arming date job that just fired and vanished — never
+        # aborts the rest of the reconcile pass.
+        for symbol in held - scheduled:
+            try:
+                self._arm_symbol(symbol, 0, now)
+            except Exception as e:
+                app_logger.error(f"Failed to arm scrape job for {symbol}: {e}")
+        for symbol in scheduled - held:
+            try:
+                self.scheduler.remove_job(_scrape_job_id(symbol))
+            except Exception as e:
+                app_logger.debug(f"Job for {symbol} already gone, skipping: {e}")
 
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol, gate the write, and re-arm the job (design #602).

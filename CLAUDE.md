@@ -71,7 +71,7 @@ The application runs independent scheduled jobs on a single APScheduler:
 Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
 
 ### Scheduled Jobs
-```
+```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │    INGESTION      │  │    BACKFILL      │  │   PERFORMANCE      │
 │  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (REGULAR cadence)  │

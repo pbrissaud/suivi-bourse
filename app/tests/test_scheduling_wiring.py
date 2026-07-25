@@ -11,6 +11,7 @@ reschedule-gate split, and the Prometheus fetch-success gate (#609).
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
@@ -221,6 +222,25 @@ def test_reconcile_leaves_unchanged_jobs_untouched(
 
     m.scheduler.add_job.assert_not_called()
     m.scheduler.remove_job.assert_not_called()
+
+
+def test_reconcile_one_remove_failure_does_not_abort_the_pass(
+        mock_influx, shares_validator, mocker):
+    """A JobLookupError from one vanished job (a self-re-armed date job that
+    just fired) must not skip the remaining removals or arms."""
+    m = _metrics([_share("AAPL"), _share("TSLA", "Tesla")],
+                 mock_influx, shares_validator, mocker)
+    m.scheduler.get_jobs.return_value = [
+        _job(_scrape_job_id("MSFT")), _job(_scrape_job_id("GOOG"))]
+    # First removal raises (job already gone); the second must still run.
+    m.scheduler.remove_job.side_effect = [JobLookupError("gone"), None]
+
+    m._reconcile_jobs()
+
+    armed = {c.kwargs["id"] for c in m.scheduler.add_job.call_args_list}
+    assert armed == {_scrape_job_id("AAPL"), _scrape_job_id("TSLA")}
+    removed = {c.args[0] for c in m.scheduler.remove_job.call_args_list}
+    assert removed == {_scrape_job_id("MSFT"), _scrape_job_id("GOOG")}
 
 
 def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
