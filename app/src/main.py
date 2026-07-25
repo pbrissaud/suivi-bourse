@@ -21,6 +21,7 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import performance
+import scheduling
 from events import (
     EventLoader, EventValidator, EventAggregator, EventWatcher,
     AccountMetricPoint, PortfolioTotalPoint,
@@ -56,6 +57,41 @@ ACCOUNTS_SCHEMA = {
         },
     },
 }
+
+
+# Per-symbol scrape jobs are keyed ``scrape:<symbol>`` in the APScheduler
+# jobstore (issue #616). One job per symbol — scraping is account-independent.
+SCRAPE_JOB_PREFIX = 'scrape:'
+
+
+def _scrape_job_id(symbol: str) -> str:
+    return f'{SCRAPE_JOB_PREFIX}{symbol}'
+
+
+def resolve_regular_interval() -> int:
+    """Resolve the REGULAR-state poll interval (``base_interval``) from the env.
+
+    Precedence (design #607): ``SB_REGULAR_INTERVAL`` > ``SB_SCRAPING_INTERVAL``
+    (deprecated fallback) > ``120``. ``SB_SCRAPING_INTERVAL`` is the direct heir
+    of the removed global scrape interval, so it is still honored as a fallback
+    but a warning is logged whenever it is present — whether used or ignored.
+    """
+    new_val = os.getenv('SB_REGULAR_INTERVAL')
+    old_val = os.getenv('SB_SCRAPING_INTERVAL')
+    if old_val is not None:
+        if new_val is not None:
+            app_logger.warning(
+                "SB_SCRAPING_INTERVAL is deprecated and ignored because "
+                "SB_REGULAR_INTERVAL is set; remove SB_SCRAPING_INTERVAL.")
+        else:
+            app_logger.warning(
+                "SB_SCRAPING_INTERVAL is deprecated; prefer SB_REGULAR_INTERVAL. "
+                "Honoring it as a fallback for now.")
+    if new_val is not None:
+        return int(new_val)
+    if old_val is not None:
+        return int(old_val)
+    return 120
 
 
 class InvalidConfigFile(Exception):
@@ -389,6 +425,17 @@ class SuiviBourseMetrics:
         self.backfill_delay = int(os.getenv('SB_BACKFILL_DELAY', '10'))
         self.backfill_chunk_days = int(os.getenv('SB_BACKFILL_CHUNK_DAYS', '365'))
 
+        # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
+        # as its own self-rescheduling APScheduler job; the scheduler is injected
+        # from __main__ (None until then, so unit tests that never wire it skip
+        # reconciliation). `regular_interval` is the REGULAR-state poll cadence
+        # (base_interval), overridden from the environment in __main__.
+        # `_failure_counts` is threaded through scheduling.decide per symbol
+        # (backoff growth itself is a later slice).
+        self.scheduler: Optional[BlockingScheduler] = None
+        self.regular_interval = 120
+        self._failure_counts: Dict[str, int] = {}
+
         # Cache for share info (to avoid repeated API calls during backfill)
         self._share_info_cache: Dict[str, Dict] = {}
 
@@ -460,7 +507,15 @@ class SuiviBourseMetrics:
                     'dividendYield': ticker_info.get('dividendYield'),
                     'peRatio': ticker_info.get('trailingPE') or ticker_info.get('forwardPE'),
                     'marketCap': ticker_info.get('marketCap'),
-                    'volume': int(last_volume) if pd.notna(last_volume) else None
+                    'volume': int(last_volume) if pd.notna(last_volume) else None,
+                    # Market-context fields feed the per-symbol scheduler
+                    # (scheduling.extract_market_context). They ride on `info`
+                    # so _fetch_ticker_data keeps its (last_quote, info) shape;
+                    # _history_meta carries currentTradingPeriod for the exact
+                    # next-open. Extra keys are ignored by the write path.
+                    'marketState': ticker_info.get('marketState'),
+                    'exchangeTimezoneName': ticker_info.get('exchangeTimezoneName'),
+                    '_history_meta': getattr(ticker, 'history_metadata', None),
                 }
                 # Cache the info for backfill use
                 self._share_info_cache[symbol] = info
@@ -548,25 +603,65 @@ class SuiviBourseMetrics:
 
         return None
 
+    def _update_share_prometheus(self, share, last_quote, info) -> None:
+        """Update the legacy Prometheus ``sb_share_*`` gauges for one share.
+
+        Kept independent of the InfluxDB write so ``/metrics`` stays populated
+        even if InfluxDB errors, and gated by the caller on **fetch success**
+        (price present) rather than the write/REGULAR gate — a closed-market
+        restart must still leave the share gauges populated (design #609).
+        """
+        if self.prometheus is None:
+            return
+        try:
+            self.prometheus.update_share(share, last_quote, info)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
+
+    def _write_share_metrics(self, share, last_quote, info) -> None:
+        """Write one share's live metrics point to InfluxDB.
+
+        Guarded so a transient InfluxDB error on one share does not abort the
+        surrounding cycle. Callers only invoke this once the fetch succeeded, so
+        currency/exchange/quote_type tags are always present and the point lands
+        in the same enriched series as its history.
+        """
+        try:
+            self.influxdb.write_metrics(
+                share_name=share['name'],
+                share_symbol=share['symbol'],
+                account=share.get('account', DEFAULT_ACCOUNT),
+                share_price=last_quote,
+                purchased_quantity=share['purchase']['quantity'],
+                purchased_price=share['purchase']['cost_price'],
+                purchased_fee=share['purchase']['fee'],
+                owned_quantity=share['estate']['quantity'],
+                received_dividend=share['estate']['received_dividend'],
+                share_currency=info['currency'],
+                share_exchange=info['exchange'],
+                quote_type=info['quoteType'],
+                dividend_yield=info['dividendYield'] * 100 if info['dividendYield'] is not None else None,
+                pe_ratio=info['peRatio'],
+                market_cap=info['marketCap'],
+                volume=info['volume']
+            )
+        except Exception as e:
+            app_logger.error(
+                f"Failed to write metrics for {share['symbol']}: {e}")
+
     def expose_metrics(self):
         """
         Expose the metrics for each stock share to InfluxDB.
+
+        Synchronous whole-portfolio scrape kept for the manual/backward-compat
+        path; the scheduled runtime drives per-symbol jobs via ``_scrape_symbol``.
         """
-        for i, share in enumerate(self.shares):
-            share_name = share['name']
+        for share in self.shares:
             share_symbol = share['symbol']
-            share_account = share.get('account', DEFAULT_ACCOUNT)
 
             last_quote, info = self._fetch_ticker_data(share_symbol)
-
-            # Update the legacy Prometheus gauges independently of the InfluxDB
-            # write so the /metrics endpoint stays populated even if InfluxDB errors.
-            if self.prometheus is not None:
-                try:
-                    self.prometheus.update_share(share, last_quote, info)
-                except Exception as e:
-                    app_logger.error(
-                        f"Failed to update Prometheus metrics for {share_symbol}: {e}")
+            self._update_share_prometheus(share, last_quote, info)
 
             # Skip writing when the fetch failed: writing portfolio fields with
             # missing currency/exchange/quote_type tags would land them in a
@@ -575,33 +670,139 @@ class SuiviBourseMetrics:
                 app_logger.warning(
                     f"No data fetched for {share_symbol}, skipping metrics write")
             else:
-                # Guard the write so a transient InfluxDB error on one share does
-                # not abort the whole scrape cycle and drop the remaining shares.
-                try:
-                    self.influxdb.write_metrics(
-                        share_name=share_name,
-                        share_symbol=share_symbol,
-                        account=share_account,
-                        share_price=last_quote,
-                        purchased_quantity=share['purchase']['quantity'],
-                        purchased_price=share['purchase']['cost_price'],
-                        purchased_fee=share['purchase']['fee'],
-                        owned_quantity=share['estate']['quantity'],
-                        received_dividend=share['estate']['received_dividend'],
-                        share_currency=info['currency'],
-                        share_exchange=info['exchange'],
-                        quote_type=info['quoteType'],
-                        dividend_yield=info['dividendYield'] * 100 if info['dividendYield'] is not None else None,
-                        pe_ratio=info['peRatio'],
-                        market_cap=info['marketCap'],
-                        volume=info['volume']
-                    )
-                except Exception as e:
-                    app_logger.error(
-                        f"Failed to write metrics for {share_symbol}: {e}")
+                self._write_share_metrics(share, last_quote, info)
 
-            if i < len(self.shares) - 1:
-                time.sleep(1)
+    # ------------------------------------------------------------------ #
+    # Market-aware per-symbol scheduling (issue #616)
+    # ------------------------------------------------------------------ #
+
+    def _held_symbols(self) -> set:
+        """The set of symbols currently held across all accounts."""
+        return {s['symbol'] for s in self.shares if s.get('symbol')}
+
+    def _scheduled_symbols(self) -> set:
+        """Symbols that currently have a live per-symbol scrape job."""
+        out = set()
+        for job in (self.scheduler.get_jobs() or []):
+            jid = getattr(job, 'id', '') or ''
+            if jid.startswith(SCRAPE_JOB_PREFIX):
+                out.add(jid[len(SCRAPE_JOB_PREFIX):])
+        return out
+
+    def _arm_symbol(self, symbol: str, delay: float, now: datetime) -> None:
+        """(Re)schedule a symbol's scrape job to fire ``delay`` seconds from now.
+
+        A single ``date`` trigger — the job re-arms itself each cycle, so this is
+        both the immediate bootstrap (``delay=0``) and the self-reschedule.
+        """
+        run_date = now + timedelta(seconds=delay)
+        self.scheduler.add_job(
+            self._scrape_symbol, 'date', run_date=run_date,
+            args=[symbol], id=_scrape_job_id(symbol),
+            name=f'Scrape {symbol}', replace_existing=True)
+
+    def _reconcile_jobs(self) -> None:
+        """Diff the held-symbol set against the scheduled jobs (design #604).
+
+        New **and** revived (missing) symbols are armed to fire immediately (the
+        first fire is the bootstrap); departed symbols are ``remove_job``'d;
+        unchanged symbols keep their existing timers untouched. Guarded so a
+        scheduler hiccup never aborts ingestion.
+        """
+        if self.scheduler is None:
+            return
+        try:
+            now = datetime.now(timezone.utc)
+            held = self._held_symbols()
+            scheduled = self._scheduled_symbols()
+        except Exception as e:
+            app_logger.error(f"Failed to reconcile per-symbol jobs: {e}")
+            return
+        # Add new + revive missing in one pass: any held symbol without a live
+        # job fires immediately. Remove departed symbols' idle jobs (belt-and-
+        # braces with the in-flight membership re-check in _scrape_symbol).
+        # Each op is guarded on its own so one failure — e.g. a JobLookupError
+        # from a self-re-arming date job that just fired and vanished — never
+        # aborts the rest of the reconcile pass.
+        for symbol in held - scheduled:
+            try:
+                self._arm_symbol(symbol, 0, now)
+            except Exception as e:
+                app_logger.error(f"Failed to arm scrape job for {symbol}: {e}")
+        for symbol in scheduled - held:
+            try:
+                self.scheduler.remove_job(_scrape_job_id(symbol))
+            except Exception as e:
+                app_logger.debug(f"Job for {symbol} already gone, skipping: {e}")
+
+    def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
+        """Scrape one symbol, gate the write, and re-arm the job (design #602).
+
+        Fetch once, then apply ``scheduling.decide`` to split the two gates:
+        the write gate (not-closed AND price present) and the reschedule gate
+        (closed → sleep to next open, else ``base_interval``). Writes one point
+        per account holding this symbol. Re-arms only while the symbol is still
+        held (the in-flight half of the self-reschedule↔removal race guard).
+        """
+        injected_now = now is not None
+        now = now or datetime.now(timezone.utc)
+        last_quote, info = self._fetch_ticker_data(symbol)
+        price_present = last_quote is not None and info is not None
+
+        holdings = [s for s in self.shares if s.get('symbol') == symbol]
+
+        # Prometheus sb_share_* gauges stay on the fetch-success gate (#609),
+        # never the write/REGULAR gate.
+        if price_present:
+            for share in holdings:
+                self._update_share_prometheus(share, last_quote, info)
+
+        if info is not None:
+            state, next_open = scheduling.extract_market_context(
+                info, info.get('_history_meta'), now)
+        else:
+            # Fetch failed outright: no state to read, fail-open as REGULAR so a
+            # transient failure keeps the job polling rather than sleeping it.
+            state, next_open = None, None
+
+        should_write, next_delay, new_failure_count, _mark_dirty = scheduling.decide(
+            state, price_present, next_open, now,
+            self._failure_counts.get(symbol, 0), self.regular_interval)
+        self._failure_counts[symbol] = new_failure_count
+
+        if should_write:
+            for share in holdings:
+                self._write_share_metrics(share, last_quote, info)
+        else:
+            app_logger.debug(
+                f"Skipping write for {symbol} (state={state}, "
+                f"price_present={price_present})")
+
+        # Re-arm only if still held — the in-flight guard against a job that was
+        # removed mid-cycle re-adding itself after reconcile's remove_job.
+        if self.scheduler is not None and symbol in self._held_symbols():
+            # Schedule from a fresh wall-clock, not the decision `now` captured
+            # before the fetch: _fetch_ticker_data can sleep on rate-limit
+            # retries, which for a small next_delay would otherwise put run_date
+            # in the past and let APScheduler drop the job, breaking the
+            # self-reschedule chain. Tests inject `now` to keep run_date
+            # deterministic; production recomputes it here.
+            arm_now = now if injected_now else datetime.now(timezone.utc)
+            self._arm_symbol(symbol, next_delay, arm_now)
+
+    def recompute_perf(self) -> None:
+        """Recompute the perf series on its own interval (design #605 seam).
+
+        Now that per-symbol jobs replaced the global scrape loop, the
+        account_metrics/portfolio_totals recompute runs as its own scheduled
+        job. Guarded so an error never kills the scheduler thread. (Dirty-flag
+        gating of this job is a later slice; the write itself is already
+        incremental, so cadence-driven recomputes stay cheap.)
+        """
+        try:
+            self.update_account_metrics()
+        except Exception as e:
+            app_logger.error(f"Failed to update account metrics: {e}")
 
     def ingest(self):
         """
@@ -626,6 +827,12 @@ class SuiviBourseMetrics:
                 app_logger.debug("No changes in shares configuration")
         except Exception as e:
             app_logger.error(f"Error during ingestion (keeping previous config): {e}")
+
+        # Reconcile the per-symbol scrape jobs against the (possibly unchanged)
+        # held-symbol set. Idempotent and always run — on the first ingest it
+        # arms every symbol, later it only touches the diff. No-op until the
+        # scheduler is wired in __main__.
+        self._reconcile_jobs()
 
     def backfill(self):
         """
@@ -811,20 +1018,18 @@ class SuiviBourseMetrics:
     def scrape(self):
         """
         Scrape stock prices from Yahoo Finance and expose metrics.
-        This is called on a separate schedule from ingestion.
+
+        Synchronous whole-portfolio path kept for the manual/backward-compat and
+        e2e harness; the scheduled runtime drives per-symbol jobs + the perf job.
         """
         if not self.shares:
             app_logger.warning("No shares configured, skipping scrape")
             return
 
         self.expose_metrics()
-
-        # Recompute the per-account cash & value series after prices are fresh.
-        # Guarded so an account_metrics error never aborts the scrape cycle.
-        try:
-            self.update_account_metrics()
-        except Exception as e:
-            app_logger.error(f"Failed to update account metrics: {e}")
+        # Recompute the per-account cash & value series after prices are fresh
+        # (shares the guarded recompute_perf helper).
+        self.recompute_perf()
 
     @staticmethod
     def _midnight(day) -> datetime:
@@ -1040,8 +1245,10 @@ if __name__ == "__main__":
         dataSchema = yaml.safe_load(f)
     shares_validator = Validator(dataSchema)
 
-    # Get intervals from environment
-    scraping_interval = int(os.getenv('SB_SCRAPING_INTERVAL', default='120'))
+    # Get intervals from environment. SB_REGULAR_INTERVAL is the heir of the
+    # removed global SB_SCRAPING_INTERVAL (design #607); resolve_regular_interval
+    # applies the precedence + deprecation warning.
+    regular_interval = resolve_regular_interval()
     ingestion_interval = int(os.getenv('SB_INGESTION_INTERVAL', default='300'))
     backfill_interval = int(os.getenv('SB_BACKFILL_INTERVAL', default='60'))
 
@@ -1049,6 +1256,7 @@ if __name__ == "__main__":
     try:
         # Init SuiviBourseMetrics (connects to InfluxDB)
         sb_metrics = SuiviBourseMetrics(config_manager, shares_validator)
+        sb_metrics.regular_interval = regular_interval
         # Expose the legacy Prometheus /metrics endpoint if enabled (default on)
         if sb_metrics.prometheus is not None:
             metrics_port = int(os.getenv('SB_METRICS_PORT', default='8081'))
@@ -1057,17 +1265,16 @@ if __name__ == "__main__":
                 f"Prometheus metrics available on :{metrics_port}/metrics")
         # Start file watcher for hot-reload if in events mode
         config_manager.start_watcher(sb_metrics.ingest)
-        # Run initial ingestion and scrape on startup
-        sb_metrics.run()
-        # Start scheduler with three separate jobs
+        # Wire the scheduler before bootstrapping so ingest() can arm the
+        # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
+        # bootstrap — no separate initial scrape.
         scheduler = BlockingScheduler()
-        # Scraping job: fetches prices from Yahoo Finance
-        scheduler.add_job(
-            sb_metrics.scrape, 'interval',
-            seconds=scraping_interval,
-            id='scrape',
-            name='Price scraping')
-        # Ingestion job: reloads events from files (with caching)
+        sb_metrics.scheduler = scheduler
+        # Bootstrap: load shares + arm one self-rescheduling scrape job per
+        # symbol (each fires immediately, then re-arms on its market cadence).
+        sb_metrics.ingest()
+        # Ingestion job: reloads events from files (with caching) and reconciles
+        # the per-symbol scrape jobs against the new symbol set.
         scheduler.add_job(
             sb_metrics.ingest, 'interval',
             seconds=ingestion_interval,
@@ -1079,9 +1286,17 @@ if __name__ == "__main__":
             seconds=backfill_interval,
             id='backfill',
             name='Historical backfill')
+        # Performance job: recomputes the account/portfolio perf series (opt-in
+        # accounts only) on the REGULAR cadence, decoupled from the per-symbol
+        # scrape jobs.
+        scheduler.add_job(
+            sb_metrics.recompute_perf, 'interval',
+            seconds=regular_interval,
+            id='perf',
+            name='Performance recompute')
         app_logger.info(
-            f"Scheduler started: scraping every {scraping_interval}s, "
-            f"ingestion every {ingestion_interval}s, "
+            f"Scheduler started: per-symbol scraping (REGULAR every "
+            f"{regular_interval}s), ingestion every {ingestion_interval}s, "
             f"backfill every {backfill_interval}s")
         scheduler.start()
     except ConfuseExceptions.NotFoundError as e:

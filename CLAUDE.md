@@ -55,32 +55,44 @@ SB_CONFIG_MODE=events docker-compose -f docker-compose.dev.yaml up -d
 
 **Main entry point**: `app/src/main.py`
 
-The application runs three independent scheduled jobs:
-- **Scraping**: Fetches stock prices from Yahoo Finance (default: every 120s)
-- **Ingestion**: Reloads portfolio events from files (default: every 300s)
-- **Backfill**: Progressively fills historical price data (default: every 60s)
+The application runs independent scheduled jobs on a single APScheduler:
+- **Scraping**: one **self-rescheduling job per held symbol**, market-aware
+  (issue #616). Each job fetches its symbol from Yahoo Finance, writes a point
+  per account holding it, then re-arms on its own cadence: `REGULAR` markets
+  re-poll every `SB_REGULAR_INTERVAL` (default 120s); closed markets sleep to
+  the next open (capped 24h). There is no global scrape job.
+- **Ingestion**: Reloads portfolio events from files (default: every 300s) and
+  reconciles the per-symbol scrape jobs against the new symbol set (add / remove
+  / revive).
+- **Backfill**: Progressively fills historical price data (default: every 60s).
+- **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
+  (opt-in accounts only) on the `REGULAR` cadence, decoupled from scraping.
 
 Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
 
-### Three Independent Schedules
+### Scheduled Jobs
+```text
+┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
+│  SCRAPE  (per symbol,    │  │    INGESTION      │  │    BACKFILL      │  │   PERFORMANCE      │
+│  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (REGULAR cadence)  │
+│                          │  │                   │  │                  │  │                    │
+│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Check gaps     │  │ • Recompute perf   │
+│ • marketState → cadence  │  │ • Recalc state    │  │ • history()      │  │   series (opt-in   │
+│ • REGULAR: poll & write  │  │ • Update shares[] │  │ • Chunk 1 yr/req │  │   accounts only)   │
+│ • Closed: sleep to open  │  │ • Reconcile jobs  │  │ • Rate limit 10s │  │                    │
+└──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
+         │                            │                       │                       │
+         └────────────────────────────┴───────────┬───────────┴───────────────────────┘
+                                                   ▼
+                                            ┌─────────────┐
+                                            │  InfluxDB 3 │
+                                            │  (database) │
+                                            └─────────────┘
 ```
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│     SCRAPING        │  │     INGESTION       │  │     BACKFILL        │
-│   (every 120s)      │  │   (every 300s)      │  │   (every 60s)       │
-│                     │  │                     │  │                     │
-│ • yfinance.Ticker() │  │ • Load events CSV   │  │ • Check gaps        │
-│ • Current prices    │  │ • Recalculate state │  │ • yfinance.history()│
-│ • Write InfluxDB    │  │ • Update shares[]   │  │ • Chunk 1 year/req  │
-│                     │  │                     │  │ • Rate limit 10s    │
-└─────────────────────┘  └─────────────────────┘  └─────────────────────┘
-         │                        │                        │
-         └────────────────────────┼────────────────────────┘
-                                  ▼
-                           ┌─────────────┐
-                           │  InfluxDB 3 │
-                           │  (database) │
-                           └─────────────┘
-```
+
+The two pure modules `scheduling.py` (cadence/market-context decisions) and
+`performance.py` (money-weighted returns) hold the testable logic — no InfluxDB
+or yfinance, `now` injected.
 
 ## Configuration
 
@@ -221,7 +233,8 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
 | `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
-| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is in `REGULAR` state (per-symbol scheduling). Closed markets sleep to next open instead. |
+| `SB_SCRAPING_INTERVAL` | — | **Deprecated** heir of the removed global scrape interval. Honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset; logs a warning whenever present. |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
