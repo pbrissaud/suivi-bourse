@@ -163,6 +163,15 @@ def fake_ticker():
     - ``start``: first date of the default DatetimeIndex (daily frequency).
     - ``info``: dict to merge over the default ``.info`` (override any key).
     - ``history_df``: supply a fully custom DataFrame, bypassing default generation.
+
+    Market-aware scheduling fields (issue #616) also ride on ``.info``
+    (``marketState``, ``exchangeTimezoneName``, ``regularMarketTime``) — pass
+    them via ``info=``. The ``history()`` metadata (``currentTradingPeriod``,
+    read by ``main`` as ``ticker.history_metadata``) is supplied separately:
+
+    - ``market_state``: convenience for ``info["marketState"]``.
+    - ``history_metadata``: dict exposed as ``ticker.history_metadata`` (defaults
+      to ``None`` so, absent an override, the exact next-open is unavailable).
     """
     def _build_df(close, rows, start):
         idx = pd.date_range(start=start, periods=rows, freq="D", tz=timezone.utc)
@@ -176,7 +185,8 @@ def fake_ticker():
         }
         return pd.DataFrame(data, index=idx)
 
-    def _make(close=185.0, rows=3, start="2024-01-02", info=None, history_df=None):
+    def _make(close=185.0, rows=3, start="2024-01-02", info=None, history_df=None,
+              market_state=None, history_metadata=None):
         df = history_df if history_df is not None else _build_df(close, rows, start)
         default_info = {
             "currency": "USD",
@@ -188,17 +198,20 @@ def fake_ticker():
             "marketCap": 3_000_000_000_000,
             "volume": 50_000_000,
         }
+        if market_state is not None:
+            default_info["marketState"] = market_state
         if info:
             default_info.update(info)
 
         class _FakeTicker:
-            def __init__(self, frame, info_dict):
+            def __init__(self, frame, info_dict, hist_meta):
                 self._frame = frame
                 self.info = info_dict
+                self.history_metadata = hist_meta
 
             def history(self, *args, **kwargs):
                 return self._frame
 
-        return _FakeTicker(df, default_info)
+        return _FakeTicker(df, default_info, history_metadata)
 
     return _make
