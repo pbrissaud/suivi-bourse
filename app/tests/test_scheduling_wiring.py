@@ -138,6 +138,56 @@ def test_scrape_symbol_writes_one_point_per_account_holding_symbol(
 
 
 # ---------------------------------------------------------------------------
+# Dead-ticker backoff wiring (#617) — per-job failure state
+# ---------------------------------------------------------------------------
+
+def test_scrape_symbol_failure_increments_and_backs_off(
+        mock_influx, shares_validator, mocker):
+    """A run of non-closed no-price cycles grows the re-arm delay past base."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+
+    # First three failures stay at base_interval (grace window).
+    for _ in range(3):
+        m._scrape_symbol("AAPL", now=NOW)
+    assert m._failure_counts["AAPL"] == 3
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+    # Fourth failure backs off to base×2.
+    m._scrape_symbol("AAPL", now=NOW)
+    assert m._failure_counts["AAPL"] == 4
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=240)
+
+
+def test_scrape_symbol_success_resets_failure_count(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A successful write clears an accumulated backoff back to base_interval."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 5
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert m._failure_counts["AAPL"] == 0
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+
+def test_reconcile_removes_departed_symbol_failure_state(
+        mock_influx, shares_validator, mocker):
+    """Failure state must not survive symbol removal (per-job lifetime)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts = {"AAPL": 1, "MSFT": 9}
+    m.scheduler.get_jobs.return_value = [
+        _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
+
+    m._reconcile_jobs()  # MSFT departed (only AAPL held)
+
+    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
+    assert "MSFT" not in m._failure_counts
+    assert m._failure_counts == {"AAPL": 1}
+
+
+# ---------------------------------------------------------------------------
 # Prometheus fetch-success gate (#609)
 # ---------------------------------------------------------------------------
 

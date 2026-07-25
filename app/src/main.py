@@ -430,8 +430,9 @@ class SuiviBourseMetrics:
         # from __main__ (None until then, so unit tests that never wire it skip
         # reconciliation). `regular_interval` is the REGULAR-state poll cadence
         # (base_interval), overridden from the environment in __main__.
-        # `_failure_counts` is threaded through scheduling.decide per symbol
-        # (backoff growth itself is a later slice).
+        # `_failure_counts` holds the per-symbol consecutive-failure count fed to
+        # scheduling.decide for the dead-ticker backoff (issue #617); it is
+        # dropped in _reconcile_jobs when a symbol departs so state is per-job.
         self.scheduler: Optional[BlockingScheduler] = None
         self.regular_interval = 120
         self._failure_counts: Dict[str, int] = {}
@@ -734,6 +735,11 @@ class SuiviBourseMetrics:
                 self.scheduler.remove_job(_scrape_job_id(symbol))
             except Exception as e:
                 app_logger.debug(f"Job for {symbol} already gone, skipping: {e}")
+            finally:
+                # Failure-backoff state is per-job (issue #617): drop it when the
+                # symbol departs so a later revival starts fresh at base_interval
+                # rather than inheriting a stale dead-ticker backoff.
+                self._failure_counts.pop(symbol, None)
 
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol, gate the write, and re-arm the job (design #602).

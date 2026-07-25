@@ -60,7 +60,12 @@ The application runs independent scheduled jobs on a single APScheduler:
   (issue #616). Each job fetches its symbol from Yahoo Finance, writes a point
   per account holding it, then re-arms on its own cadence: `REGULAR` markets
   re-poll every `SB_REGULAR_INTERVAL` (default 120s); closed markets sleep to
-  the next open (capped 24h). There is no global scrape job.
+  the next open (capped 24h). A **dead-ticker guard** (issue #617) backs a
+  symbol off when non-closed cycles keep producing no writable price: the first
+  3 failures still re-arm at `base_interval`, then the delay grows
+  `base_interval × 2^(n−3)` capped at 24h, resetting to 0 on the first
+  successful write. Closed cycles never count as failures. There is no global
+  scrape job.
 - **Ingestion**: Reloads portfolio events from files (default: every 300s) and
   reconciles the per-symbol scrape jobs against the new symbol set (add / remove
   / revive).
