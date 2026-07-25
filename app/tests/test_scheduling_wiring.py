@@ -8,6 +8,7 @@ that the pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation
 reschedule-gate split, and the Prometheus fetch-success gate (#609).
 """
 
+import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -185,6 +186,61 @@ def test_reconcile_removes_departed_symbol_failure_state(
     m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
     assert "MSFT" not in m._failure_counts
     assert m._failure_counts == {"AAPL": 1}
+
+
+def test_scrape_symbol_departed_does_not_persist_failure_count(
+        mock_influx, shares_validator, mocker):
+    """A scrape whose symbol has already departed must not (re)write its
+    backoff counter — the held-recheck guards the persist (issue #617)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 3
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+    m.shares = []  # departed between the last reconcile and this cycle
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert "AAPL" not in m._failure_counts     # not resurrected
+    m.scheduler.add_job.assert_not_called()    # and not re-armed
+
+
+def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
+        mock_influx, shares_validator, mocker):
+    """The named race: a scrape in-flight when reconcile removes its symbol
+    must not write the failure counter back after cleanup popped it.
+
+    The fetch blocks the scrape thread *before* its lock-guarded persist, so the
+    reconcile pop is forced to win the shared lock first; when the scrape then
+    resumes it sees the symbol no longer held and skips the write. Without the
+    lock + held-recheck this would leave a stale 'AAPL' entry (resurrection)."""
+    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+    m._failure_counts["AAPL"] = 2  # a backoff already building
+
+    fetch_started = threading.Event()
+    release_fetch = threading.Event()
+
+    def blocking_fetch(symbol):
+        fetch_started.set()
+        assert release_fetch.wait(timeout=5)
+        return (None, None)  # failure -> decide would increment + persist
+
+    mocker.patch.object(m, "_fetch_ticker_data", side_effect=blocking_fetch)
+
+    scrape_thread = threading.Thread(target=m._scrape_symbol, args=("AAPL",))
+    scrape_thread.start()
+    assert fetch_started.wait(timeout=5)  # scrape is in-flight, pre-persist
+
+    # Symbol departs: ingest updates shares, reconcile removes the job + pops.
+    m.shares = []
+    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
+    m._reconcile_jobs()
+    assert "AAPL" not in m._failure_counts  # cleanup popped it
+
+    # Let the in-flight scrape finish; it must NOT restore the counter.
+    release_fetch.set()
+    scrape_thread.join(timeout=5)
+    assert not scrape_thread.is_alive()
+    assert "AAPL" not in m._failure_counts
+    m.scheduler.add_job.assert_not_called()  # also does not re-arm
 
 
 # ---------------------------------------------------------------------------

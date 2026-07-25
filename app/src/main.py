@@ -433,9 +433,14 @@ class SuiviBourseMetrics:
         # `_failure_counts` holds the per-symbol consecutive-failure count fed to
         # scheduling.decide for the dead-ticker backoff (issue #617); it is
         # dropped in _reconcile_jobs when a symbol departs so state is per-job.
+        # Written by the scrape thread and popped by the ingest/reconcile thread
+        # (APScheduler's default ThreadPoolExecutor runs jobs concurrently), so
+        # guarded by `_failure_counts_lock`: without it, an in-flight scrape of a
+        # just-departed symbol could resurrect its counter after cleanup.
         self.scheduler: Optional[BlockingScheduler] = None
         self.regular_interval = 120
         self._failure_counts: Dict[str, int] = {}
+        self._failure_counts_lock = threading.Lock()
 
         # Cache for share info (to avoid repeated API calls during backfill)
         self._share_info_cache: Dict[str, Dict] = {}
@@ -738,8 +743,11 @@ class SuiviBourseMetrics:
             finally:
                 # Failure-backoff state is per-job (issue #617): drop it when the
                 # symbol departs so a later revival starts fresh at base_interval
-                # rather than inheriting a stale dead-ticker backoff.
-                self._failure_counts.pop(symbol, None)
+                # rather than inheriting a stale dead-ticker backoff. Under the
+                # shared lock so a concurrent in-flight scrape (which re-checks
+                # membership under the same lock) can't write the entry back.
+                with self._failure_counts_lock:
+                    self._failure_counts.pop(symbol, None)
 
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol, gate the write, and re-arm the job (design #602).
@@ -771,10 +779,20 @@ class SuiviBourseMetrics:
             # transient failure keeps the job polling rather than sleeping it.
             state, next_open = None, None
 
-        should_write, next_delay, new_failure_count, _mark_dirty = scheduling.decide(
-            state, price_present, next_open, now,
-            self._failure_counts.get(symbol, 0), self.regular_interval)
-        self._failure_counts[symbol] = new_failure_count
+        with self._failure_counts_lock:
+            should_write, next_delay, new_failure_count, _mark_dirty = scheduling.decide(
+                state, price_present, next_open, now,
+                self._failure_counts.get(symbol, 0), self.regular_interval)
+            # Persist the backoff counter only while the symbol is still held. A
+            # concurrent ingest() reconcile may have removed it (and popped its
+            # entry) between this cycle's fetch and here; the held-recheck under
+            # the shared lock stops this write from resurrecting a departed
+            # symbol's counter after cleanup (issue #617 race). Both branches run
+            # under the lock so the reconcile pop can't interleave mid-decision.
+            if symbol in self._held_symbols():
+                self._failure_counts[symbol] = new_failure_count
+            else:
+                self._failure_counts.pop(symbol, None)
 
         if should_write:
             for share in holdings:
