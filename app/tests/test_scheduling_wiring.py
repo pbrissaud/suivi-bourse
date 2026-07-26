@@ -9,14 +9,16 @@ reschedule-gate split, and the Prometheus fetch-success gate (#609).
 """
 
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
-from main import SuiviBourseMetrics, _scrape_job_id, resolve_regular_interval
+from main import (
+    SuiviBourseMetrics, _scrape_job_id, resolve_regular_interval,
+    register_interval_jobs, SCRAPE_JOB_PREFIX)
 
 
 UTC = timezone.utc
@@ -241,6 +243,181 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
     assert not scrape_thread.is_alive()
     assert "AAPL" not in m._failure_counts
     m.scheduler.add_job.assert_not_called()  # also does not re-arm
+
+
+# ---------------------------------------------------------------------------
+# Perf recompute — gated interval job (#618)
+# ---------------------------------------------------------------------------
+
+def test_scrape_symbol_regular_write_sets_perf_dirty_live(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A REGULAR write raises the global live-write dirty bool (issue #618)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False  # start clean to prove the write sets it
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.write_metrics.assert_called_once()
+    assert m._perf_dirty_live is True
+
+
+def test_scrape_symbol_closed_does_not_set_perf_dirty_live(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A closed-market probe writes nothing and leaves the flag clean, so a
+    fully-closed wave produces no perf point (non-trading-day gap #606)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.write_metrics.assert_not_called()
+    assert m._perf_dirty_live is False
+
+
+def test_scrape_symbol_price_failure_does_not_set_perf_dirty_live(
+        mock_influx, shares_validator, mocker):
+    """A non-closed cycle with no writable price writes nothing -> flag stays."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert m._perf_dirty_live is False
+
+
+def test_scrape_symbol_failed_influx_write_does_not_set_perf_dirty_live(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """write_metrics raising (Influx outage) must not raise the dirty flag —
+    no point persisted, so there is nothing new for perf to read (#618)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    mock_influx.write_metrics.side_effect = Exception("influx unreachable")
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.write_metrics.assert_called_once()
+    assert m._perf_dirty_live is False
+
+
+def test_recompute_perf_skips_when_all_quiet(
+        mock_influx, shares_validator, mocker):
+    """No dirty signal -> update_account_metrics is not called (no Parquet drip)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    # Clear the boot seed and align _perf_last_events with current events so
+    # events_changed is False (get_events() returns None for the fake manager).
+    m._perf_dirty_live = False
+    m._perf_last_events = m.config_manager.get_events()
+    spy = mocker.patch.object(m, "update_account_metrics")
+
+    m.recompute_perf()
+
+    spy.assert_not_called()
+
+
+def test_recompute_perf_boot_seed_runs_first_cycle(
+        mock_influx, shares_validator, mocker):
+    """Seeded True at boot -> the first cycle always runs (fresh restart point)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    assert m._perf_dirty_live is True          # boot seed
+    spy = mocker.patch.object(m, "update_account_metrics")
+
+    m.recompute_perf()
+
+    spy.assert_called_once()
+
+
+def test_recompute_perf_runs_and_clears_live_flag_under_lock(
+        mock_influx, shares_validator, mocker):
+    """A live REGULAR write triggers a run; the flag is checked-and-cleared."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    m._perf_last_events = m.config_manager.get_events()
+    spy = mocker.patch.object(m, "update_account_metrics")
+
+    # A live write lands (as _scrape_symbol would set it).
+    with m._perf_lock:
+        m._perf_dirty_live = True
+
+    m.recompute_perf()
+    spy.assert_called_once()
+    assert m._perf_dirty_live is False         # cleared
+
+    # Next quiet cycle skips — the flag was consumed, not sticky.
+    spy.reset_mock()
+    m.recompute_perf()
+    spy.assert_not_called()
+
+
+def test_recompute_perf_runs_when_backfill_watermark_pending(
+        mock_influx, shares_validator, mocker):
+    """A pending backfill watermark alone triggers a run (checked, not consumed
+    here — update_account_metrics consumes it)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    m._perf_last_events = m.config_manager.get_events()
+    m._mark_perf_dirty(date(2024, 1, 2))
+    spy = mocker.patch.object(m, "update_account_metrics")
+
+    m.recompute_perf()
+
+    spy.assert_called_once()
+    # Watermark is only *checked* in the gate; consumption stays downstream.
+    assert m._perf_dirty_from == date(2024, 1, 2)
+
+
+def test_recompute_perf_runs_when_events_changed(
+        mock_influx, shares_validator, mocker):
+    """A reloaded events cache (new list object) alone triggers a run."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    # _perf_last_events differs from get_events() (None) -> events_changed True.
+    m._perf_last_events = ["stale"]
+    spy = mocker.patch.object(m, "update_account_metrics")
+
+    m.recompute_perf()
+
+    spy.assert_called_once()
+
+
+def test_recompute_perf_error_does_not_propagate_and_rearms_live_flag(
+        mock_influx, shares_validator, mocker):
+    """An update_account_metrics failure is logged (never killing the thread) and
+    the consumed live-write signal is re-armed so the next cycle retries."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = True  # a live write triggered this cycle
+    mocker.patch.object(m, "update_account_metrics", side_effect=RuntimeError("boom"))
+
+    m.recompute_perf()  # must not raise
+
+    assert m._perf_dirty_live is True  # re-armed for the next cycle
+
+
+# ---------------------------------------------------------------------------
+# register_interval_jobs — perf job at SB_PERF_INTERVAL, separate from scrape
+# ---------------------------------------------------------------------------
+
+def test_register_interval_jobs_registers_perf_at_its_own_interval(
+        mock_influx, shares_validator, mocker):
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    scheduler = mocker.MagicMock(spec=BackgroundScheduler)
+
+    register_interval_jobs(
+        scheduler, m, ingestion_interval=300, backfill_interval=60,
+        perf_interval=90)
+
+    by_id = {c.kwargs["id"]: c for c in scheduler.add_job.call_args_list}
+    assert set(by_id) == {"ingest", "backfill", "perf"}
+    perf = by_id["perf"]
+    # perf is an interval job at SB_PERF_INTERVAL, bound to recompute_perf.
+    assert perf.args[0].__func__ is SuiviBourseMetrics.recompute_perf
+    assert perf.args[1] == "interval"
+    assert perf.kwargs["seconds"] == 90
+    # Separate from the per-symbol scrape jobs (no scrape: prefixed id here).
+    assert not any(jid.startswith(SCRAPE_JOB_PREFIX) for jid in by_id)
 
 
 # ---------------------------------------------------------------------------

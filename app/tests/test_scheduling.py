@@ -13,7 +13,8 @@ import pytest
 
 import scheduling
 from scheduling import (
-    decide, extract_market_context, SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE)
+    decide, extract_market_context, perf_should_run,
+    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE)
 
 
 UTC = timezone.utc
@@ -206,6 +207,27 @@ def test_decide_sequence_closed_then_short_retry_resolves_forward():
     later = NOW + timedelta(seconds=SHORT_RETRY)
     w, d, _, _ = decide("REGULAR", True, None, later, 0, BASE)
     assert (w, d) == (True, BASE)
+
+
+# ---------------------------------------------------------------------------
+# perf_should_run — gate the perf-recompute interval job (#618, design #605)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("events_changed,backfill_pending,live_write,expected", [
+    # All quiet -> skip (a fully-closed market wave, no closed-day Parquet drip).
+    (False, False, False, False),
+    # Any single dirty signal -> run.
+    (True, False, False, True),     # events cache reloaded (full rewrite)
+    (False, True, False, True),     # backfill watermark pending
+    (False, False, True, True),     # live REGULAR write since last run (boot seed)
+    # Combinations still run.
+    (True, True, False, True),
+    (True, False, True, True),
+    (False, True, True, True),
+    (True, True, True, True),
+])
+def test_perf_should_run_truth_table(events_changed, backfill_pending, live_write, expected):
+    assert perf_should_run(events_changed, backfill_pending, live_write) is expected
 
 
 # ---------------------------------------------------------------------------

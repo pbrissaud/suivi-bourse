@@ -118,6 +118,30 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     return should_write, next_delay, new_failure_count, mark_dirty
 
 
+def perf_should_run(events_changed: bool, backfill_pending: bool,
+                    live_write: bool) -> bool:
+    """Gate one run of the perf-recompute interval job (design #605, issue #618).
+
+    Now that ``update_account_metrics`` is its own interval job (it can no longer
+    piggyback on the per-symbol scrape without firing N recomputes per market-open
+    wave), it must stay as quiet as prices do overnight. Run **only when something
+    changed** since the last recompute; skip ⟺ events unchanged **and** no
+    backfill watermark **and** no live ``REGULAR`` write since the last run:
+
+      * ``events_changed`` — the events cache reloaded (a new list object): the
+        whole series is rewritten.
+      * ``backfill_pending`` — a backfill watermark (``_perf_dirty_from``) is set:
+        earlier prices were filled, so the stale tail must be rewritten.
+      * ``live_write`` — a ``REGULAR`` write landed since the last run (the
+        boot-seeded live-write bool): today's close is fresh.
+
+    All-quiet skips, so a fully-closed market wave writes no ``account_metrics`` /
+    ``portfolio_totals`` point — the non-trading-day gap is by design (#606) and
+    there is no closed-day Parquet drip (#597).
+    """
+    return events_changed or backfill_pending or live_write
+
+
 def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
                            now: datetime) -> Tuple[Optional[str], Optional[datetime]]:
     """Extract ``(marketState, next_open)`` from ticker data.

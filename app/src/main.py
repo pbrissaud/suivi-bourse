@@ -94,6 +94,33 @@ def resolve_regular_interval() -> int:
     return 120
 
 
+def register_interval_jobs(scheduler, sb_metrics, ingestion_interval: int,
+                           backfill_interval: int, perf_interval: int) -> None:
+    """Register the three fixed-cadence interval jobs on ``scheduler``.
+
+    Kept separate from the per-symbol scrape jobs (issue #616), which are ``date``
+    triggers armed by ``ingest``/``_reconcile_jobs`` under the ``scrape:`` id
+    prefix. The perf recompute is its own job at ``SB_PERF_INTERVAL`` (issue
+    #618), never piggybacked on the scrape. Extracted from ``__main__`` so the
+    wiring is unit-testable against a spy scheduler.
+    """
+    scheduler.add_job(
+        sb_metrics.ingest, 'interval',
+        seconds=ingestion_interval,
+        id='ingest',
+        name='Event ingestion')
+    scheduler.add_job(
+        sb_metrics.backfill, 'interval',
+        seconds=backfill_interval,
+        id='backfill',
+        name='Historical backfill')
+    scheduler.add_job(
+        sb_metrics.recompute_perf, 'interval',
+        seconds=perf_interval,
+        id='perf',
+        name='Performance recompute')
+
+
 class InvalidConfigFile(Exception):
     def __init__(self, errors_):
         self.errors = errors_
@@ -460,11 +487,18 @@ class SuiviBourseMetrics:
         #     _perf_lock.
         #   _perf_last_events — the events list object fed to the last write; a
         #     new object means the events cache was reloaded (files changed) and
-        #     the whole series must be rewritten. Touched only on the scrape
-        #     thread (update_account_metrics), so it needs no lock.
+        #     the whole series must be rewritten. Touched only on the perf-job
+        #     thread (recompute_perf/update_account_metrics), so it needs no lock.
+        #   _perf_dirty_live — a single global bool set on the REGULAR write path
+        #     in _scrape_symbol (issue #618): the live-write trigger for the
+        #     gated perf job, alongside the two above. Written by the scrape
+        #     threads and checked-and-cleared by the perf-job thread, so guarded
+        #     by _perf_lock. Seeded True at boot so today's point is always fresh
+        #     after a weekend/overnight restart.
         self._perf_lock = threading.Lock()
         self._perf_dirty_from: Optional[date] = None
         self._perf_last_events: Optional[List] = None
+        self._perf_dirty_live: bool = True
 
     def validate(self) -> bool:
         """
@@ -625,13 +659,16 @@ class SuiviBourseMetrics:
             app_logger.error(
                 f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
 
-    def _write_share_metrics(self, share, last_quote, info) -> None:
+    def _write_share_metrics(self, share, last_quote, info) -> bool:
         """Write one share's live metrics point to InfluxDB.
 
         Guarded so a transient InfluxDB error on one share does not abort the
         surrounding cycle. Callers only invoke this once the fetch succeeded, so
         currency/exchange/quote_type tags are always present and the point lands
-        in the same enriched series as its history.
+        in the same enriched series as its history. Returns whether the point
+        was actually persisted, so callers can tell a real write from a
+        swallowed failure (issue #618 — an all-failed wave must not raise the
+        perf dirty flag).
         """
         try:
             self.influxdb.write_metrics(
@@ -652,9 +689,11 @@ class SuiviBourseMetrics:
                 market_cap=info['marketCap'],
                 volume=info['volume']
             )
+            return True
         except Exception as e:
             app_logger.error(
                 f"Failed to write metrics for {share['symbol']}: {e}")
+            return False
 
     def expose_metrics(self):
         """
@@ -780,7 +819,7 @@ class SuiviBourseMetrics:
             state, next_open = None, None
 
         with self._failure_counts_lock:
-            should_write, next_delay, new_failure_count, _mark_dirty = scheduling.decide(
+            should_write, next_delay, new_failure_count, mark_dirty = scheduling.decide(
                 state, price_present, next_open, now,
                 self._failure_counts.get(symbol, 0), self.regular_interval)
             # Persist the backoff counter only while the symbol is still held. A
@@ -795,8 +834,19 @@ class SuiviBourseMetrics:
                 self._failure_counts.pop(symbol, None)
 
         if should_write:
+            wrote_live_data = False
             for share in holdings:
-                self._write_share_metrics(share, last_quote, info)
+                wrote = self._write_share_metrics(share, last_quote, info)
+                wrote_live_data = wrote_live_data or wrote
+            # A REGULAR write makes today's perf series stale: raise the global
+            # live-write dirty bool so the gated perf job (issue #618) runs its
+            # next cycle. One flag for the whole market-open wave — it coalesces
+            # N symbols' writes into a single recompute by construction. Only
+            # when a point actually persisted — an all-failed Influx outage
+            # must not trigger a perf recompute with nothing new to read.
+            if mark_dirty and wrote_live_data:
+                with self._perf_lock:
+                    self._perf_dirty_live = True
         else:
             app_logger.debug(
                 f"Skipping write for {symbol} (state={state}, "
@@ -815,17 +865,47 @@ class SuiviBourseMetrics:
             self._arm_symbol(symbol, next_delay, arm_now)
 
     def recompute_perf(self) -> None:
-        """Recompute the perf series on its own interval (design #605 seam).
+        """Recompute the perf series as its own gated interval job (#605, #618).
 
         Now that per-symbol jobs replaced the global scrape loop, the
         account_metrics/portfolio_totals recompute runs as its own scheduled
-        job. Guarded so an error never kills the scheduler thread. (Dirty-flag
-        gating of this job is a later slice; the write itself is already
-        incremental, so cadence-driven recomputes stay cheap.)
+        job at ``SB_PERF_INTERVAL`` — never inside the scrape, which would fire N
+        recomputes per market-open wave.
+
+        Read the three dirty signals up front and gate on
+        ``scheduling.perf_should_run`` so a fully-closed market wave writes
+        nothing (no closed-day Parquet drip, #597/#606):
+          * the live-write bool ``_perf_dirty_live`` — set on the REGULAR write
+            path in ``_scrape_symbol``; **checked-and-cleared here** under
+            ``_perf_lock`` (seeded True at boot so today's point is fresh after
+            an overnight restart).
+          * the backfill watermark ``_perf_dirty_from`` — merely *checked* here;
+            its consume/clear stays in ``update_account_metrics``.
+          * ``events_changed`` — a reloaded events cache (a new list object).
+
+        Guarded so an error never kills the scheduler thread.
         """
+        with self._perf_lock:
+            live_write = self._perf_dirty_live
+            self._perf_dirty_live = False
+            backfill_pending = self._perf_dirty_from is not None
+        events = self.config_manager.get_events()
+        events_changed = events is not self._perf_last_events
+        if not scheduling.perf_should_run(events_changed, backfill_pending, live_write):
+            app_logger.debug(
+                "Perf recompute skipped: nothing changed since last run")
+            return
         try:
             self.update_account_metrics()
         except Exception as e:
+            # The live-write signal was consumed up front (for concurrency), so a
+            # failed write would otherwise drop today's fresh point until the next
+            # REGULAR scrape re-sets the flag. Re-arm it on error so the next
+            # cycle retries, mirroring the _perf_dirty_from re-arm inside
+            # update_account_metrics.
+            if live_write:
+                with self._perf_lock:
+                    self._perf_dirty_live = True
             app_logger.error(f"Failed to update account metrics: {e}")
 
     def ingest(self):
@@ -1045,15 +1125,14 @@ class SuiviBourseMetrics:
 
         Synchronous whole-portfolio path kept for the manual/backward-compat and
         e2e harness; the scheduled runtime drives per-symbol jobs + the perf job.
+        The perf recompute is **detached** from scrape (issue #618): it is its
+        own gated interval job, never piggybacked here.
         """
         if not self.shares:
             app_logger.warning("No shares configured, skipping scrape")
             return
 
         self.expose_metrics()
-        # Recompute the per-account cash & value series after prices are fresh
-        # (shares the guarded recompute_perf helper).
-        self.recompute_perf()
 
     @staticmethod
     def _midnight(day) -> datetime:
@@ -1275,6 +1354,7 @@ if __name__ == "__main__":
     regular_interval = resolve_regular_interval()
     ingestion_interval = int(os.getenv('SB_INGESTION_INTERVAL', default='300'))
     backfill_interval = int(os.getenv('SB_BACKFILL_INTERVAL', default='60'))
+    perf_interval = int(os.getenv('SB_PERF_INTERVAL', default='120'))
 
     sb_metrics = None
     try:
@@ -1297,31 +1377,16 @@ if __name__ == "__main__":
         # Bootstrap: load shares + arm one self-rescheduling scrape job per
         # symbol (each fires immediately, then re-arms on its market cadence).
         sb_metrics.ingest()
-        # Ingestion job: reloads events from files (with caching) and reconciles
-        # the per-symbol scrape jobs against the new symbol set.
-        scheduler.add_job(
-            sb_metrics.ingest, 'interval',
-            seconds=ingestion_interval,
-            id='ingest',
-            name='Event ingestion')
-        # Backfill job: progressively fills historical data
-        scheduler.add_job(
-            sb_metrics.backfill, 'interval',
-            seconds=backfill_interval,
-            id='backfill',
-            name='Historical backfill')
-        # Performance job: recomputes the account/portfolio perf series (opt-in
-        # accounts only) on the REGULAR cadence, decoupled from the per-symbol
-        # scrape jobs.
-        scheduler.add_job(
-            sb_metrics.recompute_perf, 'interval',
-            seconds=regular_interval,
-            id='perf',
-            name='Performance recompute')
+        # Register the three fixed-cadence interval jobs (ingestion, backfill,
+        # perf recompute). Per-symbol scrape jobs are armed by ingest() above and
+        # kept separate; the perf recompute is its own gated job (issue #618).
+        register_interval_jobs(
+            scheduler, sb_metrics, ingestion_interval, backfill_interval,
+            perf_interval)
         app_logger.info(
             f"Scheduler started: per-symbol scraping (REGULAR every "
             f"{regular_interval}s), ingestion every {ingestion_interval}s, "
-            f"backfill every {backfill_interval}s")
+            f"backfill every {backfill_interval}s, perf every {perf_interval}s")
         scheduler.start()
     except ConfuseExceptions.NotFoundError as e:
         app_logger.fatal(
