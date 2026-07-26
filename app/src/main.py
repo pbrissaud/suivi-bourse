@@ -659,13 +659,16 @@ class SuiviBourseMetrics:
             app_logger.error(
                 f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
 
-    def _write_share_metrics(self, share, last_quote, info) -> None:
+    def _write_share_metrics(self, share, last_quote, info) -> bool:
         """Write one share's live metrics point to InfluxDB.
 
         Guarded so a transient InfluxDB error on one share does not abort the
         surrounding cycle. Callers only invoke this once the fetch succeeded, so
         currency/exchange/quote_type tags are always present and the point lands
-        in the same enriched series as its history.
+        in the same enriched series as its history. Returns whether the point
+        was actually persisted, so callers can tell a real write from a
+        swallowed failure (issue #618 — an all-failed wave must not raise the
+        perf dirty flag).
         """
         try:
             self.influxdb.write_metrics(
@@ -686,9 +689,11 @@ class SuiviBourseMetrics:
                 market_cap=info['marketCap'],
                 volume=info['volume']
             )
+            return True
         except Exception as e:
             app_logger.error(
                 f"Failed to write metrics for {share['symbol']}: {e}")
+            return False
 
     def expose_metrics(self):
         """
@@ -829,13 +834,17 @@ class SuiviBourseMetrics:
                 self._failure_counts.pop(symbol, None)
 
         if should_write:
+            wrote_live_data = False
             for share in holdings:
-                self._write_share_metrics(share, last_quote, info)
+                wrote = self._write_share_metrics(share, last_quote, info)
+                wrote_live_data = wrote_live_data or wrote
             # A REGULAR write makes today's perf series stale: raise the global
             # live-write dirty bool so the gated perf job (issue #618) runs its
             # next cycle. One flag for the whole market-open wave — it coalesces
-            # N symbols' writes into a single recompute by construction.
-            if mark_dirty:
+            # N symbols' writes into a single recompute by construction. Only
+            # when a point actually persisted — an all-failed Influx outage
+            # must not trigger a perf recompute with nothing new to read.
+            if mark_dirty and wrote_live_data:
                 with self._perf_lock:
                     self._perf_dirty_live = True
         else:

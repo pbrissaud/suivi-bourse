@@ -288,6 +288,21 @@ def test_scrape_symbol_price_failure_does_not_set_perf_dirty_live(
     assert m._perf_dirty_live is False
 
 
+def test_scrape_symbol_failed_influx_write_does_not_set_perf_dirty_live(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """write_metrics raising (Influx outage) must not raise the dirty flag —
+    no point persisted, so there is nothing new for perf to read (#618)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m._perf_dirty_live = False
+    mock_influx.write_metrics.side_effect = Exception("influx unreachable")
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.write_metrics.assert_called_once()
+    assert m._perf_dirty_live is False
+
+
 def test_recompute_perf_skips_when_all_quiet(
         mock_influx, shares_validator, mocker):
     """No dirty signal -> update_account_metrics is not called (no Parquet drip)."""
