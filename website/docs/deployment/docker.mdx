@@ -62,7 +62,8 @@ Use the `-e` / `--env` flags to override defaults. The most common ones:
 | `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
-| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) while a symbol's market is open (closed markets sleep to the next open) |
+| `SB_SCRAPING_INTERVAL` | _(deprecated)_ | Deprecated fallback for `SB_REGULAR_INTERVAL` (honored with a warning) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 See the [configuration overview](/docs/configuration/overview#environment-variables)

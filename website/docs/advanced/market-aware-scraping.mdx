@@ -1,0 +1,169 @@
+---
+title: Market-aware scraping (v4.1)
+description: Per-symbol, market-state-driven price scraping — the cadence model, the worker-pool dials, the resulting weekend/holiday chart gaps, and the optional purge
+sidebar_position: 5
+---
+
+From **v4.1**, price scraping is **per-symbol and market-aware**. Instead of one
+global loop that polled every symbol every `SB_SCRAPING_INTERVAL` seconds around
+the clock, SuiviBourse now schedules **one self-rescheduling job per held
+symbol**, and each job decides its own next wake-up from the symbol's live
+market state. This page explains the cadence model, the two worker-pool dials,
+the visible weekend/holiday gaps it introduces, and the (deprecated) env-var
+mapping.
+
+:::info No config change, no user action required
+This is a `feat` (minor) release. Your `config.yaml` / event files are
+**unchanged**, the in-memory job store is rebuilt at every boot, and
+`SB_SCRAPING_INTERVAL` is **still honored** (see the
+[deprecation](#deprecation) section below). The only visible changes are honest
+[chart gaps](#weekend-and-holiday-gaps) across closed markets and the storage fix
+that stops closed days from writing dense points.
+:::
+
+## The cadence model
+
+Each per-symbol job fetches its symbol from Yahoo! Finance, writes a point per
+account holding it, then **re-arms itself** based on the returned `marketState`:
+
+| Market state | What happens | Next wake-up |
+|---|---|---|
+| **`REGULAR`** (open) | Poll and write a point | `SB_REGULAR_INTERVAL` (default **120 s**) later |
+| **Closed** (pre/post, weekend, holiday) | Write nothing | Sleep until the **next open** (capped at 24 h) |
+
+There is **no global scrape job** anymore. A closed market produces **no point at
+all** — the non-trading-day gap is by design, not missing data.
+
+### Anti-herd jitter
+
+Every re-arm offsets its wake-up by a fresh random `uniform(0, 30 s)` jitter, so
+a whole exchange's holdings — which all share the same next-open time — spread
+their fetches over a 30-second window instead of stampeding Yahoo! Finance in
+lockstep at the opening bell. The `REGULAR`-poll cadence is re-randomized the
+same way each cycle. The 30 s window is hardcoded; it is **not** an operator dial.
+
+### Dead-ticker backoff
+
+If a non-closed cycle keeps producing no writable price (a delisted or bad
+ticker), the job backs off instead of hammering the API every
+`SB_REGULAR_INTERVAL`:
+
+- the first **3** failures still re-arm at the base interval;
+- after that the delay grows `base_interval × 2^(n−3)`, capped at **24 h**;
+- the delay **resets to zero on the first successful write**.
+
+Closed-market cycles never count as failures — sleeping over a weekend does not
+trip the backoff.
+
+## Worker-pool dials
+
+The per-symbol jobs share an APScheduler thread pool, sized at boot from two
+environment variables:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SB_DYNAMIC_EXECUTOR_POOL` | `false` | `false` → a **fixed** pool of `SB_EXECUTOR_POOL`. `true` → **auto-size** from the largest same-exchange cohort. |
+| `SB_EXECUTOR_POOL` | `10` | Fixed pool size (used only when auto sizing is **off**). Enforced ≥ 1; ignored with a warning when auto sizing is on. |
+
+When `SB_DYNAMIC_EXECUTOR_POOL=true`, the pool is sized as
+`min(reserved + ceil(largest_cohort × 5 / 30), 50)`, where `reserved` covers the
+non-scrape jobs (3 in events mode, 1 in manual mode). The default (`false`) keeps
+the fixed pool of 10 — **identical to previous behavior**, so leaving both unset
+changes nothing.
+
+## The performance job
+
+Recomputing the per-account and global return series
+(`account_metrics` / `portfolio_totals`) is **its own gated job**, decoupled from
+scraping, running every `SB_PERF_INTERVAL` seconds (default **120 s**, events
+mode / opt-in accounts only). Each cycle is **gated**: it recomputes only when
+something actually changed since the last run — the events cache reloaded, a
+backfill watermark is pending, or a live `REGULAR` write landed. A fully-closed
+market wave writes nothing and the perf job skips its run, so a closed day adds
+no Parquet churn.
+
+## Weekend and holiday gaps
+
+Because a closed market writes **no** point, charts now show **honest gaps**
+across weekends and holidays instead of the flat, fake frozen candles you saw
+before. How this reads on the dashboard:
+
+- **Stat tiles** (Total value, Cash balance, XIRR, Absolute gain) resolve the
+  **last point in the selected range**, so over a weekend they keep showing the
+  **frozen-but-correct last close** — the number you want.
+- **Candlestick, volume and time-series panels** render a blank
+  Saturday/Sunday — the market being shut, not a data loss. This is an
+  improvement over the old fake weekend candles.
+
+Keep the dashboard range at **a few days or more** (the shipped defaults already
+do) so every stat tile always resolves to a recent point.
+
+:::caution External Prometheus staleness alerts
+The legacy `sb_share_price` gauge legitimately **stops updating while a market is
+closed**. If you run an external Prometheus *"no fresh samples"* / staleness
+alert on it, widen the alert window past a weekend so a normal closed market
+doesn't page you. See the
+[legacy Prometheus endpoint](/docs/advanced/prometheus-legacy).
+:::
+
+See [Reading the dashboard](/docs/reading-the-dashboard#weekend-and-holiday-gaps-in-the-charts)
+for how these gaps interact with the return metrics.
+
+## Deprecation: `SB_SCRAPING_INTERVAL` → `SB_REGULAR_INTERVAL` {#deprecation}
+
+The old single scrape interval was renamed to **`SB_REGULAR_INTERVAL`** because
+it now describes only the *open-market* poll cadence — closed markets sleep to
+the next open instead.
+
+| Old | New | Behavior |
+|---|---|---|
+| `SB_SCRAPING_INTERVAL` | `SB_REGULAR_INTERVAL` | Same default (120 s), now the `REGULAR`-state poll interval. |
+
+`SB_SCRAPING_INTERVAL` is **deprecated but still honored**: if `SB_REGULAR_INTERVAL`
+is unset, its value is used as a fallback and a **warning** is logged. If **both**
+are set, `SB_REGULAR_INTERVAL` wins and `SB_SCRAPING_INTERVAL` is ignored (also
+warned). Migrate at your leisure by renaming the variable — no other change is
+required.
+
+## Optional: purge pre-upgrade closed-market points
+
+Before this release, the global loop wrote a **dense** point on every cycle, even
+while markets were closed — so your pre-upgrade history has fake weekend/holiday
+samples, while everything written after the upgrade has honest gaps. If that seam
+bothers you, you can **optionally** wipe the old table and let backfill + live
+scraping rebuild a uniformly-gapped history.
+
+:::warning InfluxDB 3 Core deletes at table granularity only
+InfluxDB 3 **Core** has **no row-level or predicate/time-range `DELETE`** (that
+`influx delete --predicate` flow exists only on Cloud/Serverless). So you cannot
+surgically remove *just* the closed-market rows — the only purge available is
+dropping the **whole** measurement and rebuilding it.
+:::
+
+Drop `portfolio_metrics` (and, if you want the perf series rebuilt too,
+`account_metrics` / `portfolio_totals`). Each table is recreated cleanly on the
+next write:
+
+```bash
+for table in portfolio_metrics account_metrics portfolio_totals; do
+  curl -X DELETE "$INFLUXDB_HOST/api/v3/configure/table" \
+    -H "Authorization: Bearer $INFLUXDB_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"db\": \"suivi_bourse\", \"table\": \"$table\"}"
+done
+```
+
+:::danger This destroys real history — never automate it
+A drop throws away every **live** scrape and can only be **rebuilt from
+backfill**, which is strictly worse:
+
+- backfill returns **daily closes only** — you lose the every-120 s granularity
+  of live scraping;
+- `dividend_yield`, `pe_ratio` and `market_cap` are **never** rebuilt — they exist
+  only on live scrapes and are gone for good.
+
+There is intentionally **no application flag** to purge data — combined with
+`restart: unless-stopped` a destructive flag would be a data shredder. This stays
+a deliberate, manual, one-off `curl` you run yourself. If in doubt, **do
+nothing**: the seam is cosmetic and the two regimes read together fine.
+:::

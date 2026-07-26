@@ -165,7 +165,8 @@ At minimum you must set the InfluxDB connection variables:
 | `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
 | `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
-| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) while a symbol's market is open (closed markets sleep to the next open) |
+| `SB_SCRAPING_INTERVAL` | _(deprecated)_ | Deprecated fallback for `SB_REGULAR_INTERVAL` (honored with a warning) |
 | `SB_METRICS_PORT` | `8081` | Port for the legacy Prometheus `/metrics` endpoint |
 | `LOG_LEVEL` | `INFO` | Logging level |
 

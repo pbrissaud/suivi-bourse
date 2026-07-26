@@ -49,11 +49,21 @@ All settings can be overridden with environment variables.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
-| `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is **open** (`REGULAR`). Closed markets sleep to the next open instead — see [market-aware scraping](/docs/advanced/market-aware-scraping). |
+| `SB_SCRAPING_INTERVAL` | _(deprecated)_ | **Deprecated** heir of the old global scrape interval. Still honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset (logs a warning). Prefer `SB_REGULAR_INTERVAL`. |
+| `SB_PERF_INTERVAL` | `120` | Recompute interval (seconds) for the `account_metrics` / `portfolio_totals` performance series (events mode, opt-in accounts). |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Auto-size the scheduler's thread pool from the largest same-exchange cohort. Off by default (fixed pool) — opt-in. |
 | `SB_EXECUTOR_POOL` | `10` | Fixed thread-pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Ignored (with a warning) when auto sizing is on. |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+:::caution `SB_SCRAPING_INTERVAL` is deprecated
+The old single scrape interval was renamed to `SB_REGULAR_INTERVAL` when scraping
+became **per-symbol and market-aware**. `SB_SCRAPING_INTERVAL` is still read as a
+fallback (with a warning) so existing deployments keep working unchanged, but
+set `SB_REGULAR_INTERVAL` going forward. If both are set, `SB_REGULAR_INTERVAL`
+wins and `SB_SCRAPING_INTERVAL` is ignored.
+:::
 
 :::note Anti-herd jitter
 Each per-symbol job spreads its wake over a hardcoded **30 s** jitter window, so

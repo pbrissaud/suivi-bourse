@@ -198,6 +198,26 @@ the right creates an absolute range ending in the future, which Grafana caches
 in the URL. Pick a relative range (**Last 90 days**, **Last 1 year**) to re-anchor
 the axis on *now*.
 
+### Weekend and holiday gaps in the charts
+
+Since [market-aware scraping](/docs/advanced/market-aware-scraping), SuiviBourse
+**writes no point while a market is closed** — a fully-closed day (weekend,
+public holiday) produces nothing rather than repeating the last close. That
+changes how two kinds of panels read across a closed market:
+
+- **Stat tiles** (Total value, Cash balance, XIRR, Absolute gain) resolve the
+  **last point in the selected range**, so over a weekend they keep showing the
+  **frozen-but-correct last close** — exactly the number you want.
+- **Candlestick, volume and time-series panels show honest gaps** across closed
+  days instead of the old flat, fake weekend candles. A blank Saturday/Sunday is
+  the market being shut, not missing data.
+
+Keep the dashboard range at **a few days or more** (the shipped defaults already
+do) so a stat tile always has a recent point to resolve to. If you run external
+Prometheus staleness alerts, see the
+[market-aware scraping](/docs/advanced/market-aware-scraping#weekend-and-holiday-gaps)
+note on widening them past a weekend.
+
 ## Numbers that settle over time
 
 Right after startup, [backfill](/docs/backfill) is still walking price history
