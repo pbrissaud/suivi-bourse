@@ -12,7 +12,8 @@ testable against dicts and an injected clock (issue #616, design #602-#609).
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from math import ceil
+from typing import Dict, List, Optional, Tuple
 
 try:  # zoneinfo is stdlib on 3.9+; no new dependency (design #602/#603).
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -41,6 +42,21 @@ _MAX_BACKOFF_EXP = 32
 # Approximate local open used only when the exact next-open is unavailable.
 # ``marketState`` remains the authority on wake, so an early guess is fine.
 _APPROX_OPEN_HOUR = 8
+
+# Anti-herd jitter (issue #619, design #611) — the heir of the removed
+# inter-share ``time.sleep(1)``. Hardcoded, not an operator dial (like
+# ``SHORT_RETRY`` / ``MAX_SLEEP``). Every per-symbol job arming (main.py) offsets
+# its ``run_date`` by a fresh ``uniform(0, JITTER_SECONDS)`` so a same-exchange
+# cohort sharing one next-open spreads over ``[open, open + JITTER_SECONDS]`` and
+# the ``REGULAR``-poll lockstep is re-randomized each cycle. A ``date`` trigger
+# can't carry APScheduler's own ``jitter``, so main applies it to ``run_date``.
+JITTER_SECONDS = 30
+
+# Executor pool auto-sizing (issue #619, design #611) — see ``compute_pool_size``.
+POOL_CAP = 50              # hard bound on the *auto* formula only (not the dial)
+FETCH_EST_SECONDS = 5      # rough wall-clock of one _fetch_ticker_data cycle
+RESERVED_EVENTS = 3        # backfill + perf (+ headroom) exist in events mode
+RESERVED_MANUAL = 1        # backfill only in manual mode
 
 
 def is_closed(state) -> bool:
@@ -140,6 +156,48 @@ def perf_should_run(events_changed: bool, backfill_pending: bool,
     there is no closed-day Parquet drip (#597).
     """
     return events_changed or backfill_pending or live_write
+
+
+def compute_pool_size(mode: str, shares: List[dict],
+                      exchange_of: Dict[str, Optional[str]]) -> int:
+    """Auto executor-pool size for ``SB_DYNAMIC_EXECUTOR_POOL`` (#619, #611).
+
+    Under one self-rescheduling job per symbol (#616), every symbol on the same
+    exchange gets the same next-open timestamp, so at market open a whole cohort
+    fires together. Size the pool to the busiest wave: the **largest same-exchange
+    cohort** drives the scrape workers. Each cohort of ``N`` is spread over the
+    ``JITTER_SECONDS`` window, so ``ceil(N × FETCH_EST_SECONDS / JITTER_SECONDS)``
+    workers keep up::
+
+        min(reserved + ceil(largest_cohort × FETCH_EST / JITTER), POOL_CAP)
+
+    ``reserved`` covers the non-scrape jobs — ``RESERVED_EVENTS`` (backfill + perf
+    + headroom) in events mode, ``RESERVED_MANUAL`` (backfill only) otherwise.
+    ``exchange_of`` maps each held symbol to its exchange; a symbol with no known
+    exchange (``None``/missing/falsy) is its own **solo market** (cohort of 1),
+    never grouped — so an all-unknown portfolio never inflates into one giant
+    cohort. The result is clamped to ``[1, POOL_CAP]``: ``POOL_CAP`` bounds only
+    this auto formula, never the fixed ``SB_EXECUTOR_POOL`` dial.
+    """
+    reserved = RESERVED_EVENTS if mode == 'events' else RESERVED_MANUAL
+
+    symbols = {s['symbol'] for s in shares if s.get('symbol')}
+    cohorts: Dict[str, int] = {}
+    solo = 0
+    for symbol in symbols:
+        exchange = exchange_of.get(symbol)
+        if exchange:
+            cohorts[exchange] = cohorts.get(exchange, 0) + 1
+        else:
+            solo += 1  # unknown exchange: a solo market, its own cohort of 1
+
+    cohort_sizes = list(cohorts.values())
+    if solo:
+        cohort_sizes.append(1)
+    largest = max(cohort_sizes, default=0)
+
+    scrape_workers = ceil(largest * FETCH_EST_SECONDS / JITTER_SECONDS)
+    return max(1, min(reserved + scrape_workers, POOL_CAP))
 
 
 def extract_market_context(info: Optional[dict], history_meta: Optional[dict],

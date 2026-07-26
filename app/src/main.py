@@ -3,6 +3,7 @@ SuiviBourse
 Paul Brissaud
 """
 import os
+import random
 import sys
 import threading
 import time
@@ -13,6 +14,7 @@ from typing import List, Dict, Optional, Tuple
 import pandas as pd
 import yaml
 import yfinance as yf
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.blocking import BlockingScheduler
 from cerberus import Validator
 from confuse import Configuration, exceptions as ConfuseExceptions
@@ -92,6 +94,37 @@ def resolve_regular_interval() -> int:
     if old_val is not None:
         return int(old_val)
     return 120
+
+
+def resolve_executor_pool_size(mode: str, shares: List[dict],
+                               capture_exchange_of) -> int:
+    """Resolve the APScheduler executor-pool size from the two dials (issue #619).
+
+    ``SB_DYNAMIC_EXECUTOR_POOL`` (default ``false``) picks fixed vs auto:
+
+      * ``false`` → a fixed pool of ``SB_EXECUTOR_POOL`` (default ``10``) —
+        identical to today's behaviour on upgrade (APScheduler's default pool is
+        also 10).
+      * ``true``  → ``scheduling.compute_pool_size`` over same-exchange cohorts.
+        ``capture_exchange_of`` (a zero-arg callable → ``{symbol: exchange}``,
+        e.g. the ``SuiviBourseMetrics`` method of the same name) is invoked
+        **only** on this path, so the fixed default never triggers the
+        pre-scheduler exchange fetch. If ``SB_EXECUTOR_POOL`` is also set it is
+        ignored, with a warning (convention of #607).
+
+    Always ``>= 1``. ``POOL_CAP`` bounds only the auto formula, never the fixed
+    dial (operator freedom, design #611).
+    """
+    auto = os.getenv('SB_DYNAMIC_EXECUTOR_POOL', 'false').lower() == 'true'
+    fixed_raw = os.getenv('SB_EXECUTOR_POOL')
+    if not auto:
+        fixed = int(fixed_raw) if fixed_raw is not None else 10
+        return max(1, fixed)
+    if fixed_raw is not None:
+        app_logger.warning(
+            "SB_EXECUTOR_POOL is ignored because SB_DYNAMIC_EXECUTOR_POOL is "
+            "enabled; the executor pool is sized automatically.")
+    return scheduling.compute_pool_size(mode, shares, capture_exchange_of())
 
 
 def register_interval_jobs(scheduler, sb_metrics, ingestion_interval: int,
@@ -725,6 +758,31 @@ class SuiviBourseMetrics:
         """The set of symbols currently held across all accounts."""
         return {s['symbol'] for s in self.shares if s.get('symbol')}
 
+    def capture_exchange_of(self) -> Dict[str, Optional[str]]:
+        """Map each held symbol to its exchange for auto pool sizing (#619, #611).
+
+        Same-exchange cohorts drive ``scheduling.compute_pool_size``, but the
+        exchange lives only in the yfinance ``info`` — not the config — so we fetch
+        it once up front, before the scheduler's executor is fixed at construction
+        (the design's "pre-scheduler scrape"). Reuses the shared
+        ``_share_info_cache`` so a symbol already fetched isn't fetched twice. A
+        symbol whose fetch fails, or that reports the ``'undefined'`` sentinel
+        (yfinance's default for a missing exchange), maps to ``None`` —
+        ``compute_pool_size`` then treats it as a solo market rather than grouping
+        every unknown into one giant cohort.
+
+        Only called on the auto path (``SB_DYNAMIC_EXECUTOR_POOL=true``), so the
+        fixed-pool default never pays this fetch cost.
+        """
+        exchange_of: Dict[str, Optional[str]] = {}
+        for symbol in sorted(self._held_symbols()):
+            info = self._share_info_cache.get(symbol)
+            if info is None:
+                _, info = self._fetch_ticker_data(symbol)
+            exchange = (info or {}).get('exchange')
+            exchange_of[symbol] = exchange if exchange and exchange != 'undefined' else None
+        return exchange_of
+
     def _scheduled_symbols(self) -> set:
         """Symbols that currently have a live per-symbol scrape job."""
         out = set()
@@ -739,12 +797,29 @@ class SuiviBourseMetrics:
 
         A single ``date`` trigger — the job re-arms itself each cycle, so this is
         both the immediate bootstrap (``delay=0``) and the self-reschedule.
+
+        Anti-herd jitter (issue #619): offset every arming by a fresh
+        ``uniform(0, JITTER_SECONDS)`` — the heir of the removed inter-share
+        ``time.sleep(1)``. A same-exchange cohort sharing one next-open thus
+        spreads over ``[open, open + JITTER_SECONDS]``, and the ``REGULAR``-poll
+        lockstep is re-randomized each cycle. A ``date`` trigger can't carry
+        APScheduler's own ``jitter`` (only interval/cron can), so we apply it to
+        ``run_date`` directly, mirroring APScheduler's ``uniform(0, jitter)``.
+
+        ``misfire_grace_time=None`` (run however late): under per-symbol jobs each
+        job *is* its own scheduler (it re-arms inside ``_scrape_symbol``), so a
+        misfired-and-skipped run would permanently kill the symbol and ingest()'s
+        set-diff wouldn't revive it. Running late is safe — the on-wake
+        ``marketState`` re-read (#608/#616) self-corrects. ``max_instances=1``
+        (no overlap; ``coalesce`` is moot with one pending run per job).
         """
-        run_date = now + timedelta(seconds=delay)
+        jitter = random.uniform(0, scheduling.JITTER_SECONDS)
+        run_date = now + timedelta(seconds=delay + jitter)
         self.scheduler.add_job(
             self._scrape_symbol, 'date', run_date=run_date,
             args=[symbol], id=_scrape_job_id(symbol),
-            name=f'Scrape {symbol}', replace_existing=True)
+            name=f'Scrape {symbol}', replace_existing=True,
+            misfire_grace_time=None, max_instances=1)
 
     def _reconcile_jobs(self) -> None:
         """Diff the held-symbol set against the scheduled jobs (design #604).
@@ -1369,10 +1444,20 @@ if __name__ == "__main__":
                 f"Prometheus metrics available on :{metrics_port}/metrics")
         # Start file watcher for hot-reload if in events mode
         config_manager.start_watcher(sb_metrics.ingest)
+        # Size the executor pool from the two dials (issue #619). Default
+        # (SB_DYNAMIC_EXECUTOR_POOL=false) is a fixed pool of SB_EXECUTOR_POOL
+        # (10) — identical to today. Auto sizing groups the held symbols into
+        # same-exchange cohorts, so capture_exchange_of() is invoked only on that
+        # path (a pre-scheduler fetch; the executor is fixed once at
+        # construction, no hot resize).
+        pool_size = resolve_executor_pool_size(
+            config_manager.get_mode(), sb_metrics.shares,
+            sb_metrics.capture_exchange_of)
         # Wire the scheduler before bootstrapping so ingest() can arm the
         # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
         # bootstrap — no separate initial scrape.
-        scheduler = BlockingScheduler()
+        scheduler = BlockingScheduler(
+            executors={'default': ThreadPoolExecutor(pool_size)})
         sb_metrics.scheduler = scheduler
         # Bootstrap: load shares + arm one self-rescheduling scrape job per
         # symbol (each fires immediately, then re-arms on its market cadence).
@@ -1386,7 +1471,8 @@ if __name__ == "__main__":
         app_logger.info(
             f"Scheduler started: per-symbol scraping (REGULAR every "
             f"{regular_interval}s), ingestion every {ingestion_interval}s, "
-            f"backfill every {backfill_interval}s, perf every {perf_interval}s")
+            f"backfill every {backfill_interval}s, perf every {perf_interval}s, "
+            f"executor pool: {pool_size} workers")
         scheduler.start()
     except ConfuseExceptions.NotFoundError as e:
         app_logger.fatal(

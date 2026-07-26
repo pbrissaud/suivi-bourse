@@ -13,8 +13,8 @@ import pytest
 
 import scheduling
 from scheduling import (
-    decide, extract_market_context, perf_should_run,
-    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE)
+    decide, extract_market_context, perf_should_run, compute_pool_size,
+    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP)
 
 
 UTC = timezone.utc
@@ -326,3 +326,71 @@ def test_is_closed_whitelist():
         assert scheduling.is_closed(s) is True
     for s in ("REGULAR", None, "", "unknown"):
         assert scheduling.is_closed(s) is False
+
+
+# ---------------------------------------------------------------------------
+# compute_pool_size — auto executor-pool sizing (#619, design #611)
+# ---------------------------------------------------------------------------
+
+def _shares(*symbols):
+    """Minimal share dicts — compute_pool_size only reads ``symbol``."""
+    return [{"symbol": s} for s in symbols]
+
+
+def _same_exchange(symbols, exchange="NMS"):
+    return {s: exchange for s in symbols}
+
+
+@pytest.mark.parametrize("mode,count,expected", [
+    # Design #611 worked examples: reserved + ceil(cohort*5/30), reserved 3/1.
+    ("events", 30, 8),    # 3 + ceil(150/30)=5
+    ("manual", 30, 6),    # 1 + 5
+    ("events", 100, 20),  # 3 + ceil(500/30)=17
+    ("manual", 5, 2),     # 1 + ceil(25/30)=1
+    ("events", 1, 4),     # 3 + ceil(5/30)=1
+    ("manual", 1, 2),     # 1 + 1
+])
+def test_compute_pool_size_same_exchange_cohort(mode, count, expected):
+    symbols = [f"SYM{i}" for i in range(count)]
+    assert compute_pool_size(
+        mode, _shares(*symbols), _same_exchange(symbols)) == expected
+
+
+def test_compute_pool_size_clamps_to_cap():
+    # A cohort large enough to blow past POOL_CAP is clamped to it.
+    symbols = [f"SYM{i}" for i in range(1000)]
+    size = compute_pool_size("events", _shares(*symbols), _same_exchange(symbols))
+    assert size == POOL_CAP
+
+
+@pytest.mark.parametrize("mode,expected", [("manual", 1), ("events", 3)])
+def test_compute_pool_size_empty_portfolio_is_reserved_and_at_least_one(mode, expected):
+    assert compute_pool_size(mode, [], {}) == expected
+
+
+def test_compute_pool_size_sizes_on_largest_cohort_only():
+    # Two exchanges: NMS holds 30, PAR holds 3 -> the 30-cohort drives the size.
+    nms = [f"N{i}" for i in range(30)]
+    par = [f"P{i}" for i in range(3)]
+    exchange_of = {**_same_exchange(nms, "NMS"), **_same_exchange(par, "PAR")}
+    assert compute_pool_size(
+        "manual", _shares(*(nms + par)), exchange_of) == 6  # 1 + 5
+
+
+def test_compute_pool_size_unknown_exchange_is_a_solo_market():
+    # No exchange known for any symbol -> each is a solo cohort of 1, not grouped.
+    symbols = [f"SYM{i}" for i in range(30)]
+    exchange_of = {s: None for s in symbols}
+    # largest cohort = 1 -> ceil(5/30)=1 -> manual 1+1=2 (not 6).
+    assert compute_pool_size("manual", _shares(*symbols), exchange_of) == 2
+
+
+def test_compute_pool_size_missing_exchange_entry_is_solo():
+    # A symbol absent from exchange_of behaves like an unknown exchange (solo).
+    symbols = ["AAA", "BBB"]
+    assert compute_pool_size("manual", _shares(*symbols), {}) == 2  # 1 + 1
+
+
+def test_compute_pool_size_ignores_shares_without_symbol():
+    shares = [{"symbol": "AAA"}, {"name": "no symbol"}, {"symbol": None}]
+    assert compute_pool_size("manual", shares, {"AAA": "NMS"}) == 2  # 1 + 1
