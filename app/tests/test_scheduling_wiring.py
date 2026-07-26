@@ -12,17 +12,31 @@ import threading
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
+import scheduling
 from main import (
     SuiviBourseMetrics, _scrape_job_id, resolve_regular_interval,
-    register_interval_jobs, SCRAPE_JOB_PREFIX)
+    resolve_executor_pool_size, register_interval_jobs, SCRAPE_JOB_PREFIX)
 
 
 UTC = timezone.utc
 NOW = datetime(2024, 1, 15, 15, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _no_jitter(mocker):
+    """Zero the anti-herd jitter (issue #619) for the cadence/reconcile tests.
+
+    Jitter is an orthogonal concern: these tests pin the exact base re-arm delay,
+    so the random ``uniform(0, JITTER_SECONDS)`` offset ``_arm_symbol`` adds would
+    make ``run_date`` non-deterministic. Zero it here; the dedicated jitter tests
+    below re-patch ``main.random.uniform`` to assert the spread.
+    """
+    mocker.patch("main.random.uniform", return_value=0.0)
 
 
 def _share(symbol="AAPL", name="Apple", account="default"):
@@ -594,3 +608,162 @@ def test_regular_interval_no_warning_when_old_var_absent(monkeypatch, mocker):
     warn = mocker.patch.object(main.app_logger, "warning")
     assert resolve_regular_interval() == 45
     warn.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Anti-herd jitter + misfire/max_instances on the per-symbol jobs (issue #619)
+# ---------------------------------------------------------------------------
+
+def test_arm_symbol_offsets_run_date_by_jitter(
+        mock_influx, shares_validator, mocker):
+    """Jitter is applied as a uniform(0, JITTER_SECONDS) offset on run_date."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    # Re-patch over the autouse zero-jitter with a fixed non-zero offset.
+    uniform = mocker.patch("main.random.uniform", return_value=7.5)
+
+    m._arm_symbol("AAPL", 120, NOW)
+
+    uniform.assert_called_once_with(0, scheduling.JITTER_SECONDS)
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+        NOW + timedelta(seconds=127.5)
+
+
+def test_arm_symbol_jitter_stays_within_window(
+        mock_influx, shares_validator, mocker):
+    """With real randomness the offset lands in [0, JITTER_SECONDS]."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    mocker.stopall()  # drop the autouse zero-jitter -> real random.uniform
+
+    lo = NOW + timedelta(seconds=120)
+    hi = lo + timedelta(seconds=scheduling.JITTER_SECONDS)
+    for _ in range(50):
+        m._arm_symbol("AAPL", 120, NOW)
+        run_date = m.scheduler.add_job.call_args.kwargs["run_date"]
+        assert lo <= run_date <= hi
+
+
+def test_arm_symbol_registers_misfire_none_and_single_instance(
+        mock_influx, shares_validator, mocker):
+    """Per-symbol jobs carry misfire_grace_time=None and max_instances=1."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+
+    m._arm_symbol("AAPL", 120, NOW)
+
+    kwargs = m.scheduler.add_job.call_args.kwargs
+    assert kwargs["misfire_grace_time"] is None
+    assert kwargs["max_instances"] == 1
+    assert kwargs["replace_existing"] is True
+
+
+def test_scrape_symbol_rearm_carries_misfire_and_max_instances(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """The self-reschedule (not just the bootstrap) keeps the misfire policy."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    kwargs = m.scheduler.add_job.call_args.kwargs
+    assert kwargs["misfire_grace_time"] is None
+    assert kwargs["max_instances"] == 1
+
+
+# ---------------------------------------------------------------------------
+# resolve_executor_pool_size — the two dials (issue #619)
+# ---------------------------------------------------------------------------
+
+def _never_capture():  # a capture callable that must NOT be invoked
+    raise AssertionError("capture_exchanges called on the fixed-pool path")
+
+
+def test_executor_pool_defaults_to_ten(monkeypatch):
+    monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
+    monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
+    # Fixed path: capture must not run (no pre-scheduler fetch).
+    assert resolve_executor_pool_size("manual", [], _never_capture) == 10
+
+
+def test_executor_pool_honors_fixed_dial(monkeypatch):
+    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "false")
+    monkeypatch.setenv("SB_EXECUTOR_POOL", "4")
+    assert resolve_executor_pool_size("manual", [], _never_capture) == 4
+
+
+def test_executor_pool_fixed_enforces_at_least_one(monkeypatch):
+    monkeypatch.setenv("SB_EXECUTOR_POOL", "0")
+    monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
+    assert resolve_executor_pool_size("manual", [], _never_capture) == 1
+
+
+def test_executor_pool_auto_uses_compute_pool_size(monkeypatch):
+    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "true")
+    monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
+    shares = [{"symbol": f"S{i}"} for i in range(30)]
+    exchange_of = {s["symbol"]: "NMS" for s in shares}
+    # events/30-same-exchange -> 3 + ceil(150/30) = 8 (design #611 example).
+    assert resolve_executor_pool_size(
+        "events", shares, lambda: exchange_of) == 8
+
+
+def test_executor_pool_auto_warns_when_fixed_also_set(monkeypatch, mocker):
+    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "true")
+    monkeypatch.setenv("SB_EXECUTOR_POOL", "10")
+    warn = mocker.patch.object(main.app_logger, "warning")
+    size = resolve_executor_pool_size("manual", [], lambda: {})
+    warn.assert_called_once()          # conflicting fixed dial flagged
+    assert size == 1                   # empty portfolio, manual -> reserved 1
+
+
+# ---------------------------------------------------------------------------
+# capture_exchange_of — pre-scheduler exchange snapshot (issue #619)
+# ---------------------------------------------------------------------------
+
+def test_capture_exchange_of_reads_info_cache_and_fetches_missing(
+        mock_influx, shares_validator, mocker):
+    m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")],
+                 mock_influx, shares_validator, mocker)
+    # AAPL already cached; MSFT must be fetched.
+    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
+    fetch = mocker.patch.object(
+        m, "_fetch_ticker_data", return_value=(1.0, {"exchange": "PAR"}))
+
+    result = m.capture_exchange_of()
+
+    assert result == {"AAPL": "NMS", "MSFT": "PAR"}
+    fetch.assert_called_once_with("MSFT")   # cached AAPL not re-fetched
+
+
+def test_capture_exchange_of_maps_failed_and_undefined_to_none(
+        mock_influx, shares_validator, mocker):
+    m = _metrics([_share(symbol="AAA"), _share(symbol="BBB")],
+                 mock_influx, shares_validator, mocker)
+
+    def _fetch(symbol):
+        return (None, None) if symbol == "AAA" else (1.0, {"exchange": "undefined"})
+
+    mocker.patch.object(m, "_fetch_ticker_data", side_effect=_fetch)
+
+    result = m.capture_exchange_of()
+
+    # Failed fetch and the 'undefined' sentinel both become solo (None).
+    assert result == {"AAA": None, "BBB": None}
+
+
+def test_capture_exchange_of_times_out_to_solo_market(
+        mock_influx, shares_validator, mocker):
+    """A fetch that outlives the deadline maps to a solo market, not a hang."""
+    m = _metrics([_share(symbol="SLOW")], mock_influx, shares_validator, mocker)
+    mocker.patch("main._EXCHANGE_CAPTURE_TIMEOUT_SECONDS", 0.2)
+    release = threading.Event()
+
+    def _slow(symbol):
+        release.wait(timeout=5)          # outlasts the 0.2s deadline
+        return (1.0, {"exchange": "NMS"})
+
+    mocker.patch.object(m, "_fetch_ticker_data", side_effect=_slow)
+    try:
+        result = m.capture_exchange_of()
+        # Startup didn't block on the slow fetch; the symbol fell back to solo.
+        assert result == {"SLOW": None}
+    finally:
+        release.set()                    # let the worker thread exit cleanly

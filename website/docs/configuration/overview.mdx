@@ -51,7 +51,15 @@ All settings can be overridden with environment variables.
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
 | `SB_SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
+| `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Auto-size the scheduler's thread pool from the largest same-exchange cohort. Off by default (fixed pool) — opt-in. |
+| `SB_EXECUTOR_POOL` | `10` | Fixed thread-pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Ignored (with a warning) when auto sizing is on. |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+:::note Anti-herd jitter
+Each per-symbol job spreads its wake over a hardcoded **30 s** jitter window, so
+a whole exchange's holdings don't fetch in lockstep at market open. This is not
+an operator dial.
+:::
 
 ### Backfill (events mode)
 

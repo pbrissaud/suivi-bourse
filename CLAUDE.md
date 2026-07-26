@@ -65,7 +65,20 @@ The application runs independent scheduled jobs on a single APScheduler:
   3 failures still re-arm at `base_interval`, then the delay grows
   `base_interval × 2^(n−3)` capped at 24h, resetting to 0 on the first
   successful write. Closed cycles never count as failures. There is no global
-  scrape job.
+  scrape job. **Anti-herd (issue #619):** every arming offsets its `run_date` by
+  a fresh `uniform(0, 30s)` jitter (the heir of the removed inter-share
+  `time.sleep(1)`; a `date` trigger can't carry APScheduler's own `jitter`), so a
+  same-exchange cohort sharing one next-open spreads over `[open, open+30s]` and
+  the `REGULAR`-poll lockstep is re-randomized each cycle. Jobs carry
+  `misfire_grace_time=None` (run however late — a skipped run would permanently
+  kill a self-rescheduling job; the on-wake `marketState` re-read self-corrects)
+  and `max_instances=1`. The APScheduler **executor pool** is sized at boot from
+  two dials: `SB_DYNAMIC_EXECUTOR_POOL` (default `false` → fixed
+  `SB_EXECUTOR_POOL`, default 10) or, when `true`, the pure
+  `scheduling.compute_pool_size(mode, shares, exchange_of)` =
+  `min(reserved + ceil(largest_cohort × 5 / 30), 50)` with `reserved` 3 (events)
+  / 1 (manual). `exchange_of` is captured by a pre-scheduler fetch
+  (`capture_exchange_of`) only on the auto path.
 - **Ingestion**: Reloads portfolio events from files (default: every 300s) and
   reconciles the per-symbol scrape jobs against the new symbol set (add / remove
   / revive).
@@ -250,6 +263,8 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is in `REGULAR` state (per-symbol scheduling). Closed markets sleep to next open instead. |
 | `SB_SCRAPING_INTERVAL` | — | **Deprecated** heir of the removed global scrape interval. Honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset; logs a warning whenever present. |
 | `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
+| `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
+| `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
