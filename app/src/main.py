@@ -2,6 +2,7 @@
 SuiviBourse
 Paul Brissaud
 """
+import concurrent.futures
 import os
 import random
 import sys
@@ -68,6 +69,15 @@ SCRAPE_JOB_PREFIX = 'scrape:'
 
 def _scrape_job_id(symbol: str) -> str:
     return f'{SCRAPE_JOB_PREFIX}{symbol}'
+
+
+# Pre-scheduler exchange capture for auto pool sizing (issue #619). At boot the
+# whole app blocks on this before ``BlockingScheduler`` is even built, so the
+# fetch is fanned out over a small bounded pool and hard-capped by an overall
+# deadline — a slow / rate-limited yfinance session must not delay startup
+# indefinitely. Symbols unresolved within the deadline fall back to solo markets.
+_EXCHANGE_CAPTURE_WORKERS = 8
+_EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 
 
 def resolve_regular_interval() -> int:
@@ -758,6 +768,18 @@ class SuiviBourseMetrics:
         """The set of symbols currently held across all accounts."""
         return {s['symbol'] for s in self.shares if s.get('symbol')}
 
+    @staticmethod
+    def _exchange_from_info(info: Optional[dict]) -> Optional[str]:
+        """The exchange from a ticker ``info`` dict, or ``None``.
+
+        ``None`` for a failed fetch or the ``'undefined'`` sentinel (yfinance's
+        default for a missing exchange), so ``compute_pool_size`` treats the
+        symbol as a solo market rather than grouping every unknown into one giant
+        cohort.
+        """
+        exchange = (info or {}).get('exchange')
+        return exchange if exchange and exchange != 'undefined' else None
+
     def capture_exchange_of(self) -> Dict[str, Optional[str]]:
         """Map each held symbol to its exchange for auto pool sizing (#619, #611).
 
@@ -765,22 +787,57 @@ class SuiviBourseMetrics:
         exchange lives only in the yfinance ``info`` — not the config — so we fetch
         it once up front, before the scheduler's executor is fixed at construction
         (the design's "pre-scheduler scrape"). Reuses the shared
-        ``_share_info_cache`` so a symbol already fetched isn't fetched twice. A
-        symbol whose fetch fails, or that reports the ``'undefined'`` sentinel
-        (yfinance's default for a missing exchange), maps to ``None`` —
-        ``compute_pool_size`` then treats it as a solo market rather than grouping
-        every unknown into one giant cohort.
+        ``_share_info_cache`` so a symbol already fetched isn't fetched twice.
+
+        The whole app blocks here at boot, so the uncached symbols are fetched
+        concurrently over a bounded pool (``_EXCHANGE_CAPTURE_WORKERS``) and the
+        collection is hard-capped by ``_EXCHANGE_CAPTURE_TIMEOUT_SECONDS``: a slow
+        or rate-limited yfinance session can't delay scheduler startup
+        indefinitely. Any symbol that fails or doesn't resolve in time maps to
+        ``None`` — a solo market (see ``_exchange_from_info``).
 
         Only called on the auto path (``SB_DYNAMIC_EXECUTOR_POOL=true``), so the
         fixed-pool default never pays this fetch cost.
         """
         exchange_of: Dict[str, Optional[str]] = {}
+        to_fetch = []
         for symbol in sorted(self._held_symbols()):
             info = self._share_info_cache.get(symbol)
             if info is None:
-                _, info = self._fetch_ticker_data(symbol)
-            exchange = (info or {}).get('exchange')
-            exchange_of[symbol] = exchange if exchange and exchange != 'undefined' else None
+                to_fetch.append(symbol)
+                exchange_of[symbol] = None  # solo unless the fetch resolves below
+            else:
+                exchange_of[symbol] = self._exchange_from_info(info)
+
+        if not to_fetch:
+            return exchange_of
+
+        pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(_EXCHANGE_CAPTURE_WORKERS, len(to_fetch)))
+        futures = {pool.submit(self._fetch_ticker_data, s): s for s in to_fetch}
+        try:
+            for future in concurrent.futures.as_completed(
+                    futures, timeout=_EXCHANGE_CAPTURE_TIMEOUT_SECONDS):
+                symbol = futures[future]
+                try:
+                    _, info = future.result()
+                except Exception as e:
+                    app_logger.warning(
+                        f"Exchange capture failed for {symbol}, treating as a "
+                        f"solo market: {e}")
+                    continue
+                exchange_of[symbol] = self._exchange_from_info(info)
+        except concurrent.futures.TimeoutError:
+            unresolved = sorted(s for f, s in futures.items() if not f.done())
+            app_logger.warning(
+                f"Exchange capture timed out after "
+                f"{_EXCHANGE_CAPTURE_TIMEOUT_SECONDS}s; treating "
+                f"{len(unresolved)} symbol(s) as solo markets: "
+                f"{', '.join(unresolved)}")
+        finally:
+            # Don't block startup joining slow/hung in-flight fetches; cancel what
+            # hasn't started yet (cancel_futures: py3.9+).
+            pool.shutdown(wait=False, cancel_futures=True)
         return exchange_of
 
     def _scheduled_symbols(self) -> set:

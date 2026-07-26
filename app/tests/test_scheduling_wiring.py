@@ -747,3 +747,23 @@ def test_capture_exchange_of_maps_failed_and_undefined_to_none(
 
     # Failed fetch and the 'undefined' sentinel both become solo (None).
     assert result == {"AAA": None, "BBB": None}
+
+
+def test_capture_exchange_of_times_out_to_solo_market(
+        mock_influx, shares_validator, mocker):
+    """A fetch that outlives the deadline maps to a solo market, not a hang."""
+    m = _metrics([_share(symbol="SLOW")], mock_influx, shares_validator, mocker)
+    mocker.patch("main._EXCHANGE_CAPTURE_TIMEOUT_SECONDS", 0.2)
+    release = threading.Event()
+
+    def _slow(symbol):
+        release.wait(timeout=5)          # outlasts the 0.2s deadline
+        return (1.0, {"exchange": "NMS"})
+
+    mocker.patch.object(m, "_fetch_ticker_data", side_effect=_slow)
+    try:
+        result = m.capture_exchange_of()
+        # Startup didn't block on the slow fetch; the symbol fell back to solo.
+        assert result == {"SLOW": None}
+    finally:
+        release.set()                    # let the worker thread exit cleanly
