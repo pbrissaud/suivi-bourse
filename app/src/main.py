@@ -1104,152 +1104,270 @@ class SuiviBourseMetrics:
         timeline = EventAggregator().replay(events, accounts_declared) if events else None
 
         for share in self.shares:
-            symbol = share['symbol']
-            name = share['name']
-            account = share.get('account', DEFAULT_ACCOUNT)
-
-            # Get the target date (first BUY)
-            first_buy_date = self.config_manager.get_first_buy_date(symbol)
-            if not first_buy_date:
-                app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
-                continue
-
-            # Convert date to datetime if needed and make timezone-aware
-            if isinstance(first_buy_date, datetime):
-                if first_buy_date.tzinfo is None:
-                    first_buy_date = first_buy_date.replace(tzinfo=timezone.utc)
-            else:
-                # It's a date object, convert to datetime
-                first_buy_date = datetime.combine(first_buy_date, datetime.min.time(), tzinfo=timezone.utc)
-
-            # Skip symbols already backfilled up to their first BUY date to avoid
-            # refetching the same window every cycle (e.g. a first BUY on a
-            # non-trading day never lets oldest reach it exactly).
-            if self._backfill_complete.get((symbol, account)) == first_buy_date:
-                app_logger.debug(f"Backfill already complete for {symbol} ({account})")
-                continue
-
-            # Ensure share info (tags) is available so historical points share the
-            # same series identity as live scrape points. Fetch it if the scrape
-            # job has not populated the cache yet; defer backfill if unavailable.
-            info = self._share_info_cache.get(symbol)
-            if not info:
-                self._fetch_ticker_data(symbol)
-                info = self._share_info_cache.get(symbol)
-            if not info:
-                app_logger.warning(
-                    f"No share info available for {symbol}, deferring backfill")
-                continue
-
-            # Get the oldest data point in InfluxDB for this (symbol, account)
-            oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol, account=account)
-
-            # Determine if we need to backfill (compare at day granularity)
-            if oldest_timestamp is not None:
-                # Already have some data, check if we need to go further back
-                # Compare dates only to avoid tiny time windows
-                if oldest_timestamp.date() <= first_buy_date.date():
-                    app_logger.debug(
-                        f"Backfill complete for {symbol} ({account}): "
-                        f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
-                    self._backfill_complete[(symbol, account)] = first_buy_date
-                    continue
-
-                # Need to fetch data before oldest_timestamp
-                # Use the actual timestamp to minimize gaps with hourly data
-                end_date = oldest_timestamp
-                if end_date.tzinfo is None:
-                    end_date = end_date.replace(tzinfo=timezone.utc)
-            else:
-                # No data at all, start from now
-                end_date = datetime.now(timezone.utc)
-
-            # Calculate the chunk to fetch (going backwards in time)
-            start_date = end_date - timedelta(days=self.backfill_chunk_days)
-
-            # Don't go before the first BUY date
-            if start_date < first_buy_date:
-                start_date = first_buy_date
-
-            # Skip if window is less than 1 day (avoids useless requests outside market hours)
-            if (end_date - start_date).days < 1:
-                app_logger.debug(
-                    f"Backfill window too small for {symbol}, skipping until next cycle")
-                continue
-
-            app_logger.info(
-                f"Backfilling {name} ({symbol}): {start_date.date()} to {end_date.date()}")
-
-            # Fetch historical data
-            prices = self._fetch_historical_data(symbol, start_date, end_date)
-
-            if prices is None:
-                app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
-                continue
-
-            if not prices:
-                # Empty window: the fetch succeeded but returned no rows. If we
-                # have already reached the first BUY date there is no earlier
-                # trading data (e.g. the first BUY fell on a weekend/holiday), so
-                # mark the symbol complete to avoid refetching this window forever.
-                if start_date <= first_buy_date:
-                    app_logger.debug(
-                        f"Backfill complete for {symbol} ({account}): reached first BUY "
-                        f"date with no earlier trading data")
-                    self._backfill_complete[(symbol, account)] = first_buy_date
-                time.sleep(self.backfill_delay)
-                continue
-
-            # Enrich price data with portfolio state at each date, read from the
-            # single per-cycle timeline. Many price points (esp. hourly) share the
-            # same calendar day and thus the same state; look up once per date.
-            if timeline is not None:
-                state_by_date: Dict = {}
-                for price_point in prices:
-                    ts = price_point['timestamp']
-                    # Convert datetime to date for the timeline lookup
-                    point_date = ts.date() if isinstance(ts, datetime) else ts
-                    if point_date not in state_by_date:
-                        state_by_date[point_date] = timeline.position_at(
-                            account, symbol, point_date)
-                    state = state_by_date[point_date]
-                    if state:
-                        price_point['purchased_quantity'] = state['purchase']['quantity']
-                        price_point['purchased_price'] = state['purchase']['cost_price']
-                        price_point['purchased_fee'] = state['purchase']['fee']
-                        price_point['owned_quantity'] = state['estate']['quantity']
-                        price_point['received_dividend'] = state['estate']['received_dividend']
-
-            # Write to InfluxDB using the share info resolved earlier in the loop.
-            # Guard the write like expose_metrics does so a transient InfluxDB
-            # error on one share does not abort backfilling the remaining shares.
-            try:
-                written = self.influxdb.write_historical_prices(
-                    share_name=name,
-                    share_symbol=symbol,
-                    prices=prices,
-                    share_currency=info.get('currency'),
-                    share_exchange=info.get('exchange'),
-                    quote_type=info.get('quoteType'),
-                    account=account
-                )
-                backfilled_count += written
-                # Newly filled earlier prices change holdings_value for that
-                # window; re-arm the perf series so the next scrape rewrites the
-                # tail from here (issue #597).
-                if written > 0:
-                    self._mark_perf_dirty(start_date.date())
-            except Exception as e:
-                app_logger.error(
-                    f"Failed to write historical prices for {symbol}: {e}")
-
-            # Rate limit between symbols
-            time.sleep(self.backfill_delay)
+            backfilled_count += self._backfill_share(share, timeline)
 
         if backfilled_count > 0:
             app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
+
+    def _backfill_share(self, share, timeline) -> int:
+        """Backfill one share in both directions (issue #626).
+
+        The **backward** pass extends the series toward the first BUY date and
+        stops once ``_backfill_complete`` is set; the **forward** pass recovers a
+        recent session missed while the app was down. The two directions are
+        **independent** — a completed backward watermark never suppresses the
+        forward pass (issue #627). Returns points written this cycle.
+        """
+        symbol = share['symbol']
+        account = share.get('account', DEFAULT_ACCOUNT)
+
+        # Get the target date (first BUY)
+        first_buy_date = self.config_manager.get_first_buy_date(symbol)
+        if not first_buy_date:
+            app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
+            return 0
+
+        # Convert date to datetime if needed and make timezone-aware
+        if isinstance(first_buy_date, datetime):
+            if first_buy_date.tzinfo is None:
+                first_buy_date = first_buy_date.replace(tzinfo=timezone.utc)
+        else:
+            # It's a date object, convert to datetime
+            first_buy_date = datetime.combine(
+                first_buy_date, datetime.min.time(), tzinfo=timezone.utc)
+
+        written = 0
+        # Backward pass — skip once complete to avoid refetching the same window
+        # every cycle (e.g. a first BUY on a non-trading day never lets oldest
+        # reach it exactly). This skip must NOT gate the forward pass below.
+        if self._backfill_complete.get((symbol, account)) == first_buy_date:
+            app_logger.debug(f"Backfill already complete for {symbol} ({account})")
+        else:
+            written += self._backfill_backward(share, first_buy_date, timeline)
+
+        # Forward pass — independent of the backward-completion watermark.
+        written += self._backfill_forward(share, timeline)
+        return written
+
+    def _ensure_share_info(self, symbol: str) -> Optional[Dict]:
+        """Resolve the share info (tags) so historical points share the same
+        series identity as live scrape points.
+
+        Fetches it if the scrape job has not populated the cache yet; returns
+        ``None`` (the caller defers this cycle) if still unavailable.
+        """
+        info = self._share_info_cache.get(symbol)
+        if not info:
+            self._fetch_ticker_data(symbol)
+            info = self._share_info_cache.get(symbol)
+        if not info:
+            app_logger.warning(
+                f"No share info available for {symbol}, deferring backfill")
+        return info
+
+    def _enrich_and_write(self, share, info, prices, perf_from_date,
+                          timeline) -> int:
+        """Enrich a fetched price chunk with portfolio state and write it.
+
+        Shared by the backward and forward passes so recovered points carry the
+        **same** enriched series identity/tags as live and backward-filled ones,
+        letting the perf ``holdings_value`` pick them up on the next recompute.
+        Guarded like ``expose_metrics`` so a transient InfluxDB error on one
+        share does not abort backfilling the remaining shares. Returns the number
+        of points written.
+        """
+        symbol = share['symbol']
+        name = share['name']
+        account = share.get('account', DEFAULT_ACCOUNT)
+
+        # Enrich price data with portfolio state at each date, read from the
+        # single per-cycle timeline. Many price points (esp. hourly) share the
+        # same calendar day and thus the same state; look up once per date.
+        if timeline is not None:
+            state_by_date: Dict = {}
+            for price_point in prices:
+                ts = price_point['timestamp']
+                # Convert datetime to date for the timeline lookup
+                point_date = ts.date() if isinstance(ts, datetime) else ts
+                if point_date not in state_by_date:
+                    state_by_date[point_date] = timeline.position_at(
+                        account, symbol, point_date)
+                state = state_by_date[point_date]
+                if state:
+                    price_point['purchased_quantity'] = state['purchase']['quantity']
+                    price_point['purchased_price'] = state['purchase']['cost_price']
+                    price_point['purchased_fee'] = state['purchase']['fee']
+                    price_point['owned_quantity'] = state['estate']['quantity']
+                    price_point['received_dividend'] = state['estate']['received_dividend']
+
+        try:
+            written = self.influxdb.write_historical_prices(
+                share_name=name,
+                share_symbol=symbol,
+                prices=prices,
+                share_currency=info.get('currency'),
+                share_exchange=info.get('exchange'),
+                quote_type=info.get('quoteType'),
+                account=account
+            )
+            # Newly filled prices change holdings_value for that window; re-arm
+            # the perf series so the next recompute rewrites the tail from here
+            # (issue #597).
+            if written > 0:
+                self._mark_perf_dirty(perf_from_date)
+            return written
+        except Exception as e:
+            app_logger.error(
+                f"Failed to write historical prices for {symbol}: {e}")
+            return 0
+
+    def _fetch_and_store(self, share, info, start_date, end_date, timeline):
+        """Fetch one ``[start, end]`` chunk and, if non-empty, enrich + write it.
+
+        The shared tail of both backfill passes (they differ only in window
+        sizing and how they treat an empty window). Returns ``(prices, written)``:
+
+          * ``prices is None`` — the fetch failed; the caller logs and retries.
+          * ``prices == []`` — an empty window (yfinance returned no rows); the
+            caller decides what an empty window means for its direction.
+          * otherwise ``prices`` is the fetched rows and ``written`` the count
+            persisted.
+
+        Rate-limits (``SB_BACKFILL_DELAY``) after any completed fetch — empty or
+        written — but not after a fetch failure.
+        """
+        prices = self._fetch_historical_data(
+            share['symbol'], start_date, end_date)
+        if prices is None:
+            return None, 0
+        if not prices:
+            time.sleep(self.backfill_delay)
+            return prices, 0
+        written = self._enrich_and_write(
+            share, info, prices, start_date.date(), timeline)
+        # Rate limit between symbols
+        time.sleep(self.backfill_delay)
+        return prices, written
+
+    def _backfill_backward(self, share, first_buy_date, timeline) -> int:
+        """Backward pass: extend the series toward the first BUY date, one chunk
+        (``SB_BACKFILL_CHUNK_DAYS``) per cycle. Returns points written this cycle.
+        """
+        symbol = share['symbol']
+        name = share['name']
+        account = share.get('account', DEFAULT_ACCOUNT)
+
+        info = self._ensure_share_info(symbol)
+        if info is None:
+            return 0
+
+        # Get the oldest data point in InfluxDB for this (symbol, account)
+        oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol, account=account)
+
+        # Determine if we need to backfill (compare at day granularity)
+        if oldest_timestamp is not None:
+            # Already have some data, check if we need to go further back
+            # Compare dates only to avoid tiny time windows
+            if oldest_timestamp.date() <= first_buy_date.date():
+                app_logger.debug(
+                    f"Backfill complete for {symbol} ({account}): "
+                    f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
+                self._backfill_complete[(symbol, account)] = first_buy_date
+                return 0
+
+            # Need to fetch data before oldest_timestamp
+            # Use the actual timestamp to minimize gaps with hourly data
+            end_date = oldest_timestamp
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+        else:
+            # No data at all, start from now
+            end_date = datetime.now(timezone.utc)
+
+        # Calculate the chunk to fetch (going backwards in time)
+        start_date = end_date - timedelta(days=self.backfill_chunk_days)
+
+        # Don't go before the first BUY date
+        if start_date < first_buy_date:
+            start_date = first_buy_date
+
+        # Skip if window is less than 1 day (avoids useless requests outside market hours)
+        if (end_date - start_date).days < 1:
+            app_logger.debug(
+                f"Backfill window too small for {symbol}, skipping until next cycle")
+            return 0
+
+        app_logger.info(
+            f"Backfilling {name} ({symbol}): {start_date.date()} to {end_date.date()}")
+
+        prices, written = self._fetch_and_store(
+            share, info, start_date, end_date, timeline)
+
+        if prices is None:
+            app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
+            return 0
+
+        if not prices:
+            # Empty window: the fetch succeeded but returned no rows. If we
+            # have already reached the first BUY date there is no earlier
+            # trading data (e.g. the first BUY fell on a weekend/holiday), so
+            # mark the symbol complete to avoid refetching this window forever.
+            if start_date <= first_buy_date:
+                app_logger.debug(
+                    f"Backfill complete for {symbol} ({account}): reached first BUY "
+                    f"date with no earlier trading data")
+                self._backfill_complete[(symbol, account)] = first_buy_date
+
+        return written
+
+    def _backfill_forward(self, share, timeline) -> int:
+        """Forward pass: recover a session missed while the app was down by
+        fetching ``[newest, now]`` (issue #627).
+
+        Window sizing is delegated to the pure
+        ``scheduling.forward_backfill_window`` and gap classification to yfinance
+        — an empty window (weekend/holiday, or already covered) writes nothing.
+        The pure ``< 1 day`` guard makes this **no-op during live trading**
+        (newest ≈ now → sub-day window → skip), so the live ``REGULAR`` writer
+        stays the sole writer of the present with no duplicate at the seam.
+        Returns points written this cycle.
+        """
+        symbol = share['symbol']
+        name = share['name']
+        account = share.get('account', DEFAULT_ACCOUNT)
+
+        newest = self.influxdb.get_newest_timestamp(symbol, account=account)
+        window = scheduling.forward_backfill_window(
+            newest, datetime.now(timezone.utc), self.backfill_chunk_days)
+        if window is None:
+            return 0
+        start_date, end_date = window
+
+        info = self._ensure_share_info(symbol)
+        if info is None:
+            return 0
+
+        app_logger.info(
+            f"Forward-filling {name} ({symbol}): {start_date.date()} to {end_date.date()}")
+
+        # Same granularity/chunking as the backward pass: 1h within 730d, 1d beyond.
+        prices, written = self._fetch_and_store(
+            share, info, start_date, end_date, timeline)
+
+        if prices is None:
+            app_logger.warning(
+                f"Failed to fetch forward history for {symbol}, will retry next cycle")
+            return 0
+
+        if not prices:
+            # Empty window: yfinance returned no rows — a weekend/holiday gap or
+            # an already-covered range. Self-classifying no-op, nothing written.
+            app_logger.debug(
+                f"Forward-fill window for {symbol} returned no rows, skipping")
+
+        return written
 
     def scrape(self):
         """

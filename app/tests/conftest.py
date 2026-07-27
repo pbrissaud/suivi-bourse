@@ -107,6 +107,7 @@ def mock_influx(mocker):
     without real I/O:
       - connect() / close() / write_metrics(): no-op (return None)
       - get_oldest_timestamp(): None (no existing data)
+      - get_newest_timestamp(): None (no existing data → forward pass no-ops)
       - has_data_for_date(): False
       - write_historical_prices(): 0 (points written; keeps ``+=`` arithmetic sane)
 
@@ -118,6 +119,7 @@ def mock_influx(mocker):
     m.close.return_value = None
     m.write_metrics.return_value = None
     m.get_oldest_timestamp.return_value = None
+    m.get_newest_timestamp.return_value = None
     m.has_data_for_date.return_value = False
     m.write_historical_prices.return_value = 0
     return m

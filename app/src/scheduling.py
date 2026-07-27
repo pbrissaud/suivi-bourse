@@ -158,6 +158,42 @@ def perf_should_run(events_changed: bool, backfill_pending: bool,
     return events_changed or backfill_pending or live_write
 
 
+def forward_backfill_window(
+    newest: Optional[datetime], now: datetime, chunk_days: int
+) -> Optional[Tuple[datetime, datetime]]:
+    """Size one forward gap-fill window ``[newest, end]``, or ``None`` (#627/#626).
+
+    Pure mirror of the backward pass's window sizing, injected ``now``, no
+    InfluxDB/yfinance — so the "should we fetch, and how wide" decision is unit
+    testable in isolation. The forward pass recovers a trading session the app
+    missed while down by asking ``history(newest → now)``; classifying the window
+    (real session vs weekend/holiday) is delegated to yfinance, never decided
+    here.
+
+    Returns ``None`` (no fetch this cycle) when:
+
+      * ``newest is None`` — the series has no stored point yet; the *backward*
+        pass owns seeding an empty series, the forward pass has no anchor.
+      * ``(now - newest).days < 1`` — reuse of the backward pass's ``< 1 day``
+        guard. This is what makes the forward pass **no-op during live trading**:
+        the live ``REGULAR`` writer keeps ``newest`` ≈ ``now``, the sub-day window
+        is skipped, and the forward pass never races or duplicates the seam. A
+        clock skew (``now < newest``) yields a negative delta → also skipped.
+
+    Otherwise returns ``(newest, end)`` where ``end = min(newest + chunk_days,
+    now)`` — chunked identically to the backward pass so a long gap is filled one
+    ``chunk_days`` window per cycle, advancing forward as ``newest`` catches up.
+    """
+    if newest is None:
+        return None
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    if (now - newest).days < 1:
+        return None
+    end = min(newest + timedelta(days=chunk_days), now)
+    return newest, end
+
+
 def compute_pool_size(mode: str, shares: List[dict],
                       exchange_of: Dict[str, Optional[str]]) -> int:
     """Auto executor-pool size for ``SB_DYNAMIC_EXECUTOR_POOL`` (#619, #611).

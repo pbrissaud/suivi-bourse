@@ -14,6 +14,7 @@ import pytest
 import scheduling
 from scheduling import (
     decide, extract_market_context, perf_should_run, compute_pool_size,
+    forward_backfill_window,
     SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP)
 
 
@@ -394,3 +395,58 @@ def test_compute_pool_size_missing_exchange_entry_is_solo():
 def test_compute_pool_size_ignores_shares_without_symbol():
     shares = [{"symbol": "AAA"}, {"name": "no symbol"}, {"symbol": None}]
     assert compute_pool_size("manual", shares, {"AAA": "NMS"}) == 2  # 1 + 1
+
+
+# ---------------------------------------------------------------------------
+# forward_backfill_window — forward gap-fill window sizing (#627/#626)
+# ---------------------------------------------------------------------------
+
+def test_forward_window_fresh_gap_fills_to_now():
+    # A missed session: newest is 2 days back, a large chunk covers it in one
+    # window, so end lands exactly on now.
+    newest = NOW - timedelta(days=2)
+    assert forward_backfill_window(newest, NOW, chunk_days=365) == (newest, NOW)
+
+
+def test_forward_window_no_gap_returns_none():
+    # newest == now (freshly written): nothing to recover.
+    assert forward_backfill_window(NOW, NOW, chunk_days=365) is None
+
+
+def test_forward_window_sub_day_gap_is_noop_during_live_trading():
+    # The live REGULAR writer keeps newest ≈ now; a sub-day window (e.g. a
+    # weekend that has only just begun) is skipped by the < 1 day guard so the
+    # forward pass never races the seam.
+    newest = NOW - timedelta(hours=6)
+    assert forward_backfill_window(newest, NOW, chunk_days=365) is None
+
+
+def test_forward_window_multi_chunk_long_gap_advances_one_chunk():
+    # An 800-day gap with a 365-day chunk: only the first chunk this cycle, end
+    # capped at newest + chunk_days (< now), advancing forward next cycles.
+    newest = NOW - timedelta(days=800)
+    start, end = forward_backfill_window(newest, NOW, chunk_days=365)
+    assert start == newest
+    assert end == newest + timedelta(days=365)
+    assert end < NOW
+
+
+def test_forward_window_none_newest_returns_none():
+    # Empty series: the backward pass owns seeding it, the forward pass has no
+    # anchor.
+    assert forward_backfill_window(None, NOW, chunk_days=365) is None
+
+
+def test_forward_window_naive_newest_is_coerced_utc():
+    # A naive newest (defensive) must not raise on the now - newest subtraction.
+    newest_naive = (NOW - timedelta(days=3)).replace(tzinfo=None)
+    start, end = forward_backfill_window(newest_naive, NOW, chunk_days=365)
+    assert start == NOW - timedelta(days=3)
+    assert end == NOW
+
+
+def test_forward_window_clock_skew_returns_none():
+    # now before newest (clock skew) yields a negative delta → skipped, not a
+    # backwards window.
+    newest = NOW + timedelta(days=1)
+    assert forward_backfill_window(newest, NOW, chunk_days=365) is None
