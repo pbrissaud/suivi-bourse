@@ -1072,14 +1072,19 @@ class SuiviBourseMetrics:
 
     def backfill(self):
         """
-        Backfill historical price data for all shares.
+        Backfill historical price data for all shares, in both directions.
         This runs as a third scheduled job, progressively filling gaps.
 
-        For each share:
-        1. Find the first BUY date from events
-        2. Check the oldest data point in InfluxDB
-        3. If there's a gap, fetch one chunk (default: 1 year) of history
-        4. Rate limit between requests
+        For each share, delegates to ``_backfill_share`` which runs two
+        independent passes (issue #626):
+          * Backward: extend the series toward the first BUY date, one
+            ``SB_BACKFILL_CHUNK_DAYS`` chunk per cycle, until ``_backfill_complete``
+            is set.
+          * Forward: recover a session missed while the app was down by fetching
+            ``[newest, now]`` (issue #627) — independent of the backward
+            watermark.
+        Fetches one chunk (default: 1 year) of history per direction and rate
+        limits between requests.
         """
         if not self.shares:
             app_logger.debug("No shares configured, skipping backfill")

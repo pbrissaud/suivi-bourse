@@ -633,6 +633,9 @@ def test_get_newest_timestamp_orders_descending(writer, mock_client_cls):
     assert 'FROM "portfolio_metrics"' in q
     assert "share_symbol = 'AAPL'" in q
     assert "ORDER BY time DESC" in q
+    # Anchor on the newest price-bearing point so a price-less newer point can't
+    # make the forward pass skip an older missing price range.
+    assert "share_price IS NOT NULL" in q
     assert client.query.call_args.kwargs["language"] == "sql"
 
 

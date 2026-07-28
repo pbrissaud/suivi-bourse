@@ -336,13 +336,22 @@ class InfluxDBWriter:
         forward gap-fill pass (issue #627) to find where the stored series ends
         so it can recover a session missed while the app was down.
 
+        Anchors on the newest **price-bearing** point (``share_price IS NOT
+        NULL``): ``write_metrics`` can persist a point without a price, and the
+        forward pass exists to fill *price* gaps that ``holdings_value`` reads
+        (``get_price_series`` filters the same way). Without the filter a newer
+        price-less point would make the forward pass believe coverage reaches
+        ``now`` and skip an older missing price range.
+
         Args:
             share_symbol: Yahoo Finance symbol
             account: When provided, scope the lookup to this account like
                 ``get_oldest_timestamp``. Uses COALESCE(account, 'default') so
                 points written before the account tag existed count as
                 'default' — never a bare ``WHERE account = ...`` that would drop
-                them.
+                them. Scoped per account (not symbol-only like
+                ``get_price_series``) because a backfill *coverage* anchor is
+                per-series: each account's gap is tracked independently.
 
         Returns:
             Newest timestamp as datetime, or None if no data exists
@@ -360,7 +369,7 @@ class InfluxDBWriter:
         query = f"""
         SELECT time
         FROM "{self.MEASUREMENT}"
-        WHERE {where}
+        WHERE {where} AND share_price IS NOT NULL
         ORDER BY time DESC
         LIMIT 1
         """
