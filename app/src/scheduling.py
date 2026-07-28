@@ -12,8 +12,8 @@ testable against dicts and an injected clock (issue #616, design #602-#609).
 """
 
 from datetime import datetime, timedelta, timezone
-from math import ceil
-from typing import Dict, List, Optional, Tuple
+from math import ceil, isclose
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 try:  # zoneinfo is stdlib on 3.9+; no new dependency (design #602/#603).
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -192,6 +192,96 @@ def forward_backfill_window(
         return None
     end = min(newest + timedelta(days=chunk_days), now)
     return newest, end
+
+
+# Price-freshness sonde default horizon (issue #628, design #626). The operator
+# dial ``SB_STALENESS_HORIZON`` (main.py) overrides it; the default is a few
+# ``REGULAR`` poll cycles wide so an ordinary tick never trips the sonde.
+STALENESS_HORIZON = 900  # s
+
+# Relative tolerance for "the stored price is unchanged". A live quote differing
+# by more than this fraction has *moved*; anything within it is treated as the
+# same price (a genuinely flat quote is not a stuck writer).
+_STALENESS_REL_TOL = 1e-9
+
+
+class SondeState(NamedTuple):
+    """The price-freshness sonde's per-(symbol, account) memory (issue #628).
+
+    Carried across ``REGULAR`` cycles by the caller so staleness is measured over
+    *consecutive polling*, not the raw wall-clock age of the stored point:
+
+      * ``stored_price`` — the newest stored price observed last cycle, to detect
+        whether the writer advanced it since.
+      * ``frozen_since`` — when the stored price was first seen frozen (the anchor
+        the horizon is measured from).
+      * ``last_seen`` — when the sonde last ran for this series, to detect a break
+        in consecutive polling (a market-closed gap) and re-baseline across it.
+    """
+    stored_price: float
+    frozen_since: datetime
+    last_seen: datetime
+
+
+def price_freshness_step(
+    prev: Optional[SondeState], live_price: Optional[float],
+    stored_price: Optional[float], now: datetime, horizon: float,
+) -> Tuple[Optional[SondeState], bool]:
+    """Advance the price-freshness liveness sonde one ``REGULAR`` cycle (#628/#626).
+
+    Pure and stateful-by-value — no InfluxDB / yfinance, ``now`` injected,
+    ``prev`` fed back in from last cycle — so the "is the writer silently stale"
+    call is unit-testable in isolation. This is the repurposed price-diff,
+    shipped as **observability**, not as a backfill trigger: the time-window
+    forward pass (#627) can't see a writer that fetches fine but persists a frozen
+    value because it believes coverage reaches ``now``.
+
+    **Why memory instead of the stored point's raw age.** A healthy writer
+    advances the newest stored price *every* ``REGULAR`` cycle, so "the newest
+    stored value stopped advancing across *consecutive* cycles" is the true
+    stuck-writer signal. Measuring the horizon over consecutive observations —
+    not the wall-clock age of the stored point — is what stops the **first tick
+    after an overnight/weekend close** from firing a false positive: the market
+    being shut writes nothing (#606), so that morning point is legitimately hours
+    old, yet the writer is fine. Age alone can't tell the two apart; consecutive
+    observation can. Two guards make it robust:
+
+      * **value advanced** (or first observation) → the writer is persisting:
+        re-baseline ``frozen_since = now``, no signal. In the healthy case the
+        last-of-session write advanced the value beyond the sonde's last
+        observation, so the morning cycle sees a change and re-baselines.
+      * **polling gap wider than the horizon** (``now − last_seen > horizon``) →
+        the market was closed in between, so accrued frozen time can't be trusted:
+        re-baseline, no signal. A genuinely stuck writer polls every
+        ``base_interval`` (≪ horizon) and never trips this.
+
+    Otherwise, with the stored value unchanged across consecutive polling, the
+    signal fires (``stale=True``) iff the live quote has **moved** away from it
+    (``not isclose``) *and* it has stayed frozen for at least ``horizon`` seconds.
+    A flat live quote is a genuinely flat market, not a stuck writer — no signal
+    (the accepted false-negative called out in #626).
+
+    Returns ``(new_state, stale)``; a ``None`` new-state means "forget this
+    series" (sonde disabled or empty series). Diagnostic only: the caller must
+    never let this change scrape cadence, write gating, or the #617 backoff.
+    """
+    if horizon <= 0 or stored_price is None:
+        return None, False
+
+    value_advanced = prev is None or not isclose(
+        prev.stored_price, stored_price, rel_tol=_STALENESS_REL_TOL, abs_tol=0.0)
+    polling_broke = prev is not None and (
+        now - prev.last_seen).total_seconds() > horizon
+    if value_advanced or polling_broke:
+        # Writer advanced the value, or consecutive polling broke (market closed)
+        # — re-baseline the frozen anchor to now, emit nothing.
+        return SondeState(stored_price, now, now), False
+
+    frozen_since = prev.frozen_since
+    moved = live_price is not None and not isclose(
+        live_price, stored_price, rel_tol=_STALENESS_REL_TOL, abs_tol=0.0)
+    stale = moved and (now - frozen_since).total_seconds() >= horizon
+    return SondeState(stored_price, frozen_since, now), stale
 
 
 def compute_pool_size(mode: str, shares: List[dict],

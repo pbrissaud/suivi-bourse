@@ -14,8 +14,8 @@ import pytest
 import scheduling
 from scheduling import (
     decide, extract_market_context, perf_should_run, compute_pool_size,
-    forward_backfill_window,
-    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP)
+    forward_backfill_window, price_freshness_step, SondeState,
+    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP, STALENESS_HORIZON)
 
 
 UTC = timezone.utc
@@ -450,3 +450,118 @@ def test_forward_window_clock_skew_returns_none():
     # backwards window.
     newest = NOW + timedelta(days=1)
     assert forward_backfill_window(newest, NOW, chunk_days=365) is None
+
+
+# ---------------------------------------------------------------------------
+# price_freshness_step — price-freshness liveness sonde (#628/#626)
+# ---------------------------------------------------------------------------
+
+HORIZON = 900
+
+
+def _step(prev, live, stored, now):
+    return price_freshness_step(prev, live, stored, now, HORIZON)
+
+
+def test_first_observation_baselines_and_never_flags():
+    # No prior state: baseline the frozen anchor, never flag on the first look.
+    state, stale = _step(None, live=191.0, stored=185.0, now=NOW)
+    assert stale is False
+    assert state == SondeState(185.0, NOW, NOW)
+
+
+def test_frozen_value_moved_quote_past_horizon_is_stale():
+    # Stored value unchanged across consecutive polling for >= horizon while the
+    # live quote has moved away from it: the writer is silently stale.
+    prev = SondeState(stored_price=185.0, frozen_since=NOW,
+                      last_seen=NOW + timedelta(seconds=450))
+    now = NOW + timedelta(seconds=HORIZON)
+    state, stale = _step(prev, live=191.0, stored=185.0, now=now)
+    assert stale is True
+    assert state == SondeState(185.0, NOW, now)  # anchor carried forward
+
+
+def test_frozen_but_within_horizon_is_not_stale():
+    # Unchanged and moved, but not frozen long enough yet: no false positive on
+    # an ordinary tick.
+    prev = SondeState(185.0, NOW, NOW)
+    now = NOW + timedelta(seconds=HORIZON - 1)
+    _state, stale = _step(prev, live=191.0, stored=185.0, now=now)
+    assert stale is False
+
+
+def test_value_advanced_rebaselines_and_is_not_stale():
+    # A healthy writer advances the stored value each cycle → re-baseline, never
+    # flag, however old the previous anchor.
+    prev = SondeState(185.0, NOW, NOW)
+    now = NOW + timedelta(seconds=HORIZON + 5000)
+    state, stale = _step(prev, live=191.0, stored=190.0, now=now)
+    assert stale is False
+    assert state == SondeState(190.0, now, now)
+
+
+def test_polling_gap_wider_than_horizon_rebaselines():
+    # The market-open-after-close fix: a break in consecutive polling wider than
+    # the horizon (overnight/weekend) re-baselines even with the value unchanged,
+    # so the first morning tick never fires a false positive (#628 acceptance).
+    prev = SondeState(185.0, NOW, NOW)
+    now = NOW + timedelta(hours=16)  # overnight gap, value still 185
+    state, stale = _step(prev, live=191.0, stored=185.0, now=now)
+    assert stale is False
+    assert state == SondeState(185.0, now, now)
+
+
+def test_flat_market_past_horizon_is_not_stale():
+    # Stored value frozen and old, but the live quote still matches it: a
+    # genuinely flat market, not a stuck writer (accepted #626 false-negative).
+    prev = SondeState(185.0, NOW, NOW + timedelta(seconds=450))
+    now = NOW + timedelta(seconds=HORIZON)
+    _state, stale = _step(prev, live=185.0, stored=185.0, now=now)
+    assert stale is False
+
+
+def test_flat_quote_within_tolerance_is_not_stale():
+    # A sub-epsilon float wobble on an otherwise flat price is "unchanged".
+    prev = SondeState(185.0, NOW, NOW + timedelta(seconds=450))
+    now = NOW + timedelta(seconds=HORIZON)
+    _state, stale = _step(prev, live=185.0 + 1e-9, stored=185.0, now=now)
+    assert stale is False
+
+
+def test_missing_live_quote_never_flags():
+    # No live quote to compare against → no signal (state still advances).
+    prev = SondeState(185.0, NOW, NOW + timedelta(seconds=450))
+    now = NOW + timedelta(seconds=HORIZON)
+    _state, stale = _step(prev, live=None, stored=185.0, now=now)
+    assert stale is False
+
+
+def test_empty_series_forgets_state_and_never_flags():
+    # No stored price yet (empty series): nothing to anchor on.
+    state, stale = _step(SondeState(185.0, NOW, NOW), live=191.0,
+                         stored=None, now=NOW + timedelta(seconds=HORIZON))
+    assert (state, stale) == (None, False)
+
+
+@pytest.mark.parametrize("horizon", [0, -1, -900])
+def test_non_positive_horizon_disables_sonde(horizon):
+    # A non-positive horizon turns the sonde off, even with a clearly stuck writer.
+    prev = SondeState(185.0, NOW, NOW)
+    state, stale = price_freshness_step(
+        prev, 191.0, 185.0, NOW + timedelta(seconds=10_000), horizon)
+    assert (state, stale) == (None, False)
+
+
+def test_at_exactly_horizon_counts_as_stale():
+    # frozen elapsed == horizon meets the ">= horizon" gate (inclusive boundary),
+    # with the polling gap itself not exceeding the horizon (so no re-baseline).
+    prev = SondeState(185.0, NOW, NOW)
+    now = NOW + timedelta(seconds=HORIZON)
+    _state, stale = _step(prev, live=191.0, stored=185.0, now=now)
+    assert stale is True
+
+
+def test_default_horizon_is_several_cycles_wide():
+    # The shipped default is comfortably wider than a REGULAR poll interval so an
+    # ordinary tick can't trip the sonde.
+    assert STALENESS_HORIZON >= 5 * BASE

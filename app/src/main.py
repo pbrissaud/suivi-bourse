@@ -495,6 +495,15 @@ class SuiviBourseMetrics:
         self.backfill_delay = int(os.getenv('SB_BACKFILL_DELAY', '10'))
         self.backfill_chunk_days = int(os.getenv('SB_BACKFILL_CHUNK_DAYS', '365'))
 
+        # Price-freshness liveness sonde horizon (issue #628, design #626). The
+        # staleness signal fires only once the newest stored price has gone
+        # unrefreshed for at least this many seconds while the live quote moves;
+        # a few REGULAR cycles wide by default so an ordinary tick never trips it.
+        # ``0`` (or negative) disables the sonde — the pure decision returns
+        # False and the check no-ops.
+        self.staleness_horizon = int(
+            os.getenv('SB_STALENESS_HORIZON', str(scheduling.STALENESS_HORIZON)))
+
         # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
         # as its own self-rescheduling APScheduler job; the scheduler is injected
         # from __main__ (None until then, so unit tests that never wire it skip
@@ -542,6 +551,16 @@ class SuiviBourseMetrics:
         self._perf_dirty_from: Optional[date] = None
         self._perf_last_events: Optional[List] = None
         self._perf_dirty_live: bool = True
+
+        # Price-freshness liveness sonde state (issue #628). Per-(symbol, account)
+        # memory so staleness is measured over *consecutive* REGULAR polling, not
+        # the raw wall-clock age of the stored point (which can't tell a stuck
+        # writer from a normal overnight/weekend close). Each (symbol, account) is
+        # touched only by its own single scrape job (one job per symbol,
+        # max_instances=1), but the dict is guarded for parity with the other
+        # cross-thread scrape state.
+        self._sonde_lock = threading.Lock()
+        self._sonde_state: Dict[Tuple[str, str], scheduling.SondeState] = {}
 
     def validate(self) -> bool:
         """
@@ -920,6 +939,57 @@ class SuiviBourseMetrics:
                 with self._failure_counts_lock:
                     self._failure_counts.pop(symbol, None)
 
+    def _check_price_freshness(self, holdings: List[dict], live_price,
+                               now: datetime) -> None:
+        """Price-freshness liveness sonde (issue #628, design #626).
+
+        Runs only on the ``REGULAR`` write path (the caller's ``should_write``
+        gate): for each (symbol, account) holding, read the newest stored price
+        and advance the pure ``scheduling.price_freshness_step`` against this
+        series' remembered state. When the stored price has stayed frozen across
+        consecutive ``REGULAR`` cycles for at least ``staleness_horizon`` while
+        the live quote has moved, the writer is silently stale — emit a WARNING
+        and raise the ``sb_price_staleness`` gauge (cleared to 0 otherwise so it
+        auto-recovers). Measuring over consecutive polling (not the stored
+        point's raw age) is what keeps the first tick after an overnight/weekend
+        close — legitimately hours old — from firing a false positive.
+
+        **Diagnostic only** — never changes scrape cadence, write gating, or the
+        #617 dead-ticker backoff. Fully guarded: a read or metric error here must
+        never disturb the surrounding scrape cycle (the sonde complements #617
+        from the monitoring side, it is not part of the writer's control flow).
+        Called *before* this cycle's write so it reads the coverage as it stood,
+        not the point the write is about to refresh.
+        """
+        if self.staleness_horizon <= 0:
+            return
+        for share in holdings:
+            symbol = share['symbol']
+            account = share.get('account', DEFAULT_ACCOUNT)
+            key = (symbol, account)
+            try:
+                stored_price = self.influxdb.get_newest_price(symbol, account=account)
+                with self._sonde_lock:
+                    new_state, stale = scheduling.price_freshness_step(
+                        self._sonde_state.get(key), live_price, stored_price,
+                        now, self.staleness_horizon)
+                    if new_state is None:
+                        self._sonde_state.pop(key, None)
+                    else:
+                        self._sonde_state[key] = new_state
+
+                if stale:
+                    app_logger.warning(
+                        f"Price-freshness sonde: stored price for {share['name']} "
+                        f"({symbol}, account={account}) frozen at {stored_price} "
+                        f"across REGULAR polling while the live quote is "
+                        f"{live_price} — the writer may be silently stale")
+                if self.prometheus is not None:
+                    self.prometheus.update_price_staleness(share, stale)
+            except Exception as e:
+                app_logger.debug(
+                    f"Price-freshness sonde failed for {symbol}: {e}")
+
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol, gate the write, and re-arm the job (design #602).
 
@@ -966,6 +1036,11 @@ class SuiviBourseMetrics:
                 self._failure_counts.pop(symbol, None)
 
         if should_write:
+            # Price-freshness liveness sonde (issue #628): read the stored price
+            # *before* this cycle's write refreshes it, so a silently stale writer
+            # is caught. Purely diagnostic — never gates the write below.
+            self._check_price_freshness(holdings, last_quote, now)
+
             wrote_live_data = False
             for share in holdings:
                 wrote = self._write_share_metrics(share, last_quote, info)

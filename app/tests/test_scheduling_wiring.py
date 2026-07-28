@@ -463,6 +463,140 @@ def test_prometheus_not_updated_when_fetch_fails(
 
 
 # ---------------------------------------------------------------------------
+# Price-freshness liveness sonde (#628) — diagnostic only
+# ---------------------------------------------------------------------------
+
+def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch, caplog):
+    """A writer whose stored price stays frozen across consecutive REGULAR cycles
+    for >= the horizon while the live quote moves → WARNING + gauge 1. The signal
+    needs a first cycle to baseline, then a later cycle past the horizon."""
+    prom = mocker.MagicMock()
+    m = _metrics([_share()], mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 900
+    # Live close is 185.0 (fake_ticker default); stored value never advances.
+    mock_influx.get_newest_price.return_value = 180.0
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    # Cycle 1: baseline — no signal yet.
+    m._scrape_symbol("AAPL", now=NOW)
+    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+
+    # Cycle 2, one horizon later (gap not wider than the horizon): still frozen,
+    # quote moved → stale.
+    with caplog.at_level("WARNING"):
+        m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+
+    assert any("Price-freshness sonde" in r.message and "AAPL" in r.message
+               for r in caplog.records)
+    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], True)
+    # Diagnostic only: writes and re-arms happened normally each cycle.
+    assert mock_influx.write_metrics.call_count == 2
+
+
+def test_sonde_no_false_positive_first_tick_after_close(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """The market-open-after-close fix: a polling gap wider than the horizon
+    (overnight) re-baselines, so the first morning tick raises no signal even
+    though the stored point is legitimately hours old and the quote gapped."""
+    prom = mocker.MagicMock()
+    m = _metrics([_share()], mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 900
+    mock_influx.get_newest_price.return_value = 180.0  # frozen value across the gap
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    # Yesterday's last REGULAR cycle baselines the series.
+    m._scrape_symbol("AAPL", now=NOW)
+    # This morning, 16h later (a break in consecutive polling): re-baseline, not stale.
+    m._scrape_symbol("AAPL", now=NOW + timedelta(hours=16))
+
+    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+
+
+def test_sonde_no_false_positive_when_writer_advances_value(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A normally-updating symbol advances the stored value each cycle → the
+    sonde re-baselines and never flags, however long it runs."""
+    prom = mocker.MagicMock()
+    m = _metrics([_share()], mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 900
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    mock_influx.get_newest_price.return_value = 180.0
+    m._scrape_symbol("AAPL", now=NOW)
+    # Next cycle the writer has persisted a new value (healthy).
+    mock_influx.get_newest_price.return_value = 184.0
+    m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+
+    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+
+
+def test_sonde_does_not_run_on_closed_market(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """The sonde is a REGULAR-only check: a closed probe writes nothing and never
+    reads the stored price or touches the staleness gauge."""
+    prom = mocker.MagicMock()
+    m = _metrics([_share()], mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 900
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.get_newest_price.assert_not_called()
+    prom.update_price_staleness.assert_not_called()
+
+
+def test_sonde_disabled_when_horizon_non_positive(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A non-positive horizon turns the sonde off: no read, no gauge, write intact."""
+    prom = mocker.MagicMock()
+    m = _metrics([_share()], mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 0
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.get_newest_price.assert_not_called()
+    prom.update_price_staleness.assert_not_called()
+    mock_influx.write_metrics.assert_called_once()
+
+
+def test_sonde_read_error_never_disturbs_scrape(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """A read error in the sonde is swallowed: the write, re-arm, and backoff
+    reset all proceed exactly as if the sonde were absent (diagnostic only)."""
+    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m.staleness_horizon = 900
+    mock_influx.get_newest_price.side_effect = RuntimeError("db down")
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    mock_influx.write_metrics.assert_called_once()
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+
+
+def test_sonde_checks_each_account_holding(
+        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+    """One live fetch, but the sonde reads and reports per (symbol, account)."""
+    prom = mocker.MagicMock()
+    shares = [_share(account="pea"), _share(account="cto")]
+    m = _metrics(shares, mock_influx, shares_validator, mocker, prometheus=prom)
+    m.staleness_horizon = 900
+    mock_influx.get_newest_price.return_value = None  # no stored price yet
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    # Scoped per account on the read side...
+    read_accounts = {c.kwargs["account"]
+                     for c in mock_influx.get_newest_price.call_args_list}
+    assert read_accounts == {"pea", "cto"}
+    # ...and both cleared to fresh (None stored price → not stale).
+    assert prom.update_price_staleness.call_count == 2
+
+
+# ---------------------------------------------------------------------------
 # _reconcile_jobs — add / remove / revive / untouched + race guard
 # ---------------------------------------------------------------------------
 
