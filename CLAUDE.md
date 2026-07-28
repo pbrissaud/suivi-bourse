@@ -64,7 +64,20 @@ The application runs independent scheduled jobs on a single APScheduler:
   symbol off when non-closed cycles keep producing no writable price: the first
   3 failures still re-arm at `base_interval`, then the delay grows
   `base_interval × 2^(n−3)` capped at 24h, resetting to 0 on the first
-  successful write. Closed cycles never count as failures. There is no global
+  successful write. Closed cycles never count as failures. A **price-freshness
+  liveness sonde** (issue #628) rides the `REGULAR` write path: before each write
+  it reads the newest stored price for the (symbol, account) and advances the
+  pure `scheduling.price_freshness_step` against per-series memory
+  (`_sonde_state`). When the stored value stays frozen across *consecutive*
+  `REGULAR` cycles for at least `SB_STALENESS_HORIZON` (default 900s) while the
+  live quote moves, it emits a WARNING and raises the `sb_price_staleness` gauge.
+  Staleness is measured over consecutive polling, **not** the stored point's
+  wall-clock age — the writer advancing the value each cycle re-baselines, and a
+  polling gap wider than the horizon (overnight/weekend close) re-baselines too,
+  so the first tick after a close never fires a false positive (#628 acceptance).
+  Purely diagnostic — it never changes cadence, write gating, or the #617 backoff;
+  it catches a writer that fetches fine but persists *stale* values, which the
+  forward gap-fill (#627) can't see. There is no global
   scrape job. **Anti-herd (issue #619):** every arming offsets its `run_date` by
   a fresh `uniform(0, 30s)` jitter (the heir of the removed inter-share
   `time.sleep(1)`; a `date` trigger can't carry APScheduler's own `jitter`), so a
@@ -269,6 +282,7 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
+| `SB_STALENESS_HORIZON` | `900` | Price-freshness liveness sonde horizon (seconds): during `REGULAR`, flag a symbol whose stored price stays frozen this long across consecutive polling cycles while the live quote moves (issue #628). Diagnostic only — never changes cadence/write gating/#617 backoff. `0` disables the sonde. |
 | `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
 | `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint |
@@ -304,7 +318,11 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_p
 `sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`,
 `sb_owned_quantity`, `sb_received_dividend`, `sb_dividend_yield`, `sb_pe_ratio`,
 `sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
-`share_currency`/`share_exchange`/`quote_type`).
+`share_currency`/`share_exchange`/`quote_type`). `sb_price_staleness` is the
+price-freshness liveness sonde (issue #628): `1` when a symbol's stored price is
+silently stale (frozen past `SB_STALENESS_HORIZON` during `REGULAR` while the
+live quote moves), `0` otherwise — a gauge so it auto-clears when the writer
+recovers.
 
 ## InfluxDB Data Model
 

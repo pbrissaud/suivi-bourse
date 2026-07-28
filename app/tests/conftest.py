@@ -120,6 +120,9 @@ def mock_influx(mocker):
     m.write_metrics.return_value = None
     m.get_oldest_timestamp.return_value = None
     m.get_newest_timestamp.return_value = None
+    # None → the price-freshness sonde (#628) has no stored price to anchor on,
+    # so it forgets state and never flags.
+    m.get_newest_price.return_value = None
     m.has_data_for_date.return_value = False
     m.write_historical_prices.return_value = 0
     return m

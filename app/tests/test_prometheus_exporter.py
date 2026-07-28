@@ -52,7 +52,7 @@ def test_all_expected_gauges_are_registered(exporter):
         'sb_share_price', 'sb_purchased_quantity', 'sb_purchased_price',
         'sb_purchased_fee', 'sb_owned_quantity', 'sb_received_dividend',
         'sb_share_info', 'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap',
-        'sb_volume',
+        'sb_volume', 'sb_price_staleness',
     ):
         assert f'# HELP {name} ' in text
 
@@ -109,6 +109,27 @@ def test_same_symbol_in_two_accounts_produces_distinct_series(exporter):
         'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'PEA'}) == 10.0
     assert exporter.registry.get_sample_value('sb_owned_quantity', {
         'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'CTO'}) == 5.0
+
+
+# --- price-freshness sonde (#628) -------------------------------------------
+
+def test_update_price_staleness_sets_one_when_stale(exporter):
+    exporter.update_price_staleness(_share(), True)
+    assert _val(exporter, 'sb_price_staleness') == 1
+
+
+def test_update_price_staleness_clears_to_zero_when_fresh(exporter):
+    # A gauge: it clears when the writer recovers.
+    exporter.update_price_staleness(_share(), True)
+    exporter.update_price_staleness(_share(), False)
+    assert _val(exporter, 'sb_price_staleness') == 0
+
+
+def test_price_staleness_labelled_per_account(exporter):
+    pea = dict(_share(), account='PEA')
+    exporter.update_price_staleness(pea, True)
+    assert exporter.registry.get_sample_value('sb_price_staleness', {
+        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'PEA'}) == 1
 
 
 # --- None handling ----------------------------------------------------------

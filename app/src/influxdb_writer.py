@@ -276,6 +276,24 @@ class InfluxDBWriter:
 
         return len(points)
 
+    @staticmethod
+    def _symbol_account_where(share_symbol: str, account: Optional[str]) -> str:
+        """Build the shared ``share_symbol [+ account]`` SQL WHERE clause.
+
+        Escapes single quotes so ``share_symbol``/``account`` stay safe string
+        literals, and scopes by ``COALESCE(account, 'default')`` when an account
+        is given — so points written before the account tag existed count as
+        'default' rather than being dropped by a bare ``WHERE account = ...``.
+        Shared by the oldest/newest lookups so the escaping + COALESCE rule lives
+        in one place.
+        """
+        safe_symbol = share_symbol.replace("'", "''")
+        where = f"share_symbol = '{safe_symbol}'"
+        if account is not None:
+            safe_account = account.replace("'", "''")
+            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
+        return where
+
     def get_oldest_timestamp(
         self, share_symbol: str, account: Optional[str] = None
     ) -> Optional[datetime]:
@@ -296,12 +314,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        # Escape single quotes to keep share_symbol a safe SQL string literal
-        safe_symbol = share_symbol.replace("'", "''")
-        where = f"share_symbol = '{safe_symbol}'"
-        if account is not None:
-            safe_account = account.replace("'", "''")
-            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
+        where = self._symbol_account_where(share_symbol, account)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
@@ -359,12 +372,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        # Escape single quotes to keep share_symbol a safe SQL string literal
-        safe_symbol = share_symbol.replace("'", "''")
-        where = f"share_symbol = '{safe_symbol}'"
-        if account is not None:
-            safe_account = account.replace("'", "''")
-            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
+        where = self._symbol_account_where(share_symbol, account)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
@@ -386,6 +394,45 @@ class InfluxDBWriter:
                     return ts
         except Exception as e:
             logger.error(f"Error querying newest timestamp for {share_symbol}: {e}")
+
+        return None
+
+    def get_newest_price(
+        self, share_symbol: str, account: Optional[str] = None
+    ) -> Optional[float]:
+        """Return the newest stored ``share_price`` for a series, or ``None``.
+
+        Used by the price-freshness liveness sonde (issue #628): the sonde
+        compares the newest stored price *value* against the live quote across
+        consecutive ``REGULAR`` cycles to catch a writer that fetches fine but
+        persists stale values. Anchors on the newest **price-bearing** point
+        (``share_price IS NOT NULL``) and scopes by ``share_symbol`` + ``account``
+        exactly like ``get_newest_timestamp``.
+
+        Returns ``None`` when the series has no price-bearing point (or the query
+        fails — the sonde is diagnostic, a read error must never surface).
+        """
+        if self._client is None:
+            self.connect()
+
+        where = self._symbol_account_where(share_symbol, account)
+        # Use SQL query for InfluxDB 3
+        query = f"""
+        SELECT share_price
+        FROM "{self.MEASUREMENT}"
+        WHERE {where} AND share_price IS NOT NULL
+        ORDER BY time DESC
+        LIMIT 1
+        """
+
+        try:
+            table = self._client.query(query=query, language="sql")
+            if table and len(table) > 0:
+                df = table.to_pandas()
+                if not df.empty:
+                    return float(df.iloc[0]['share_price'])
+        except Exception as e:
+            logger.error(f"Error querying newest price for {share_symbol}: {e}")
 
         return None
 

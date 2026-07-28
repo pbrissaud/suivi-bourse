@@ -663,6 +663,63 @@ def test_get_newest_timestamp_escapes_single_quote(writer, mock_client_cls):
 
 
 # --------------------------------------------------------------------------- #
+# get_newest_price (price-freshness liveness sonde, #628)                     #
+# --------------------------------------------------------------------------- #
+def test_get_newest_price_returns_float(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"share_price": [185.5]}))
+
+    price = writer.get_newest_price("AAPL")
+
+    assert price == 185.5
+    assert isinstance(price, float)
+
+
+def test_get_newest_price_empty_returns_none(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(
+        pd.DataFrame({"share_price": []}), length=0)
+
+    assert writer.get_newest_price("AAPL") is None
+
+
+def test_get_newest_price_exception_returns_none(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.side_effect = RuntimeError("db down")
+
+    # Diagnostic-only sonde: a read error must never surface.
+    assert writer.get_newest_price("AAPL") is None
+
+
+def test_get_newest_price_query_shape(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(
+        pd.DataFrame({"share_price": []}), length=0)
+
+    writer.get_newest_price("AAPL", account="pea")
+
+    q = _last_query(client)
+    assert 'FROM "portfolio_metrics"' in q
+    assert "share_symbol = 'AAPL'" in q
+    assert "ORDER BY time DESC" in q
+    # Anchor on a price-bearing point and scope by account like get_newest_timestamp.
+    assert "share_price IS NOT NULL" in q
+    assert "COALESCE(account, 'default') = 'pea'" in q
+    assert client.query.call_args.kwargs["language"] == "sql"
+
+
+def test_get_newest_price_escapes_single_quote(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(
+        pd.DataFrame({"share_price": []}), length=0)
+
+    writer.get_newest_price("O'Reilly")
+
+    q = _last_query(client)
+    assert "share_symbol = 'O''Reilly'" in q
+
+
+# --------------------------------------------------------------------------- #
 # has_data_for_date                                                            #
 # --------------------------------------------------------------------------- #
 def test_has_data_for_date_true_when_count_positive(writer, mock_client_cls):

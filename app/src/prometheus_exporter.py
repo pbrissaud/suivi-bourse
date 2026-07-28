@@ -68,6 +68,13 @@ class PrometheusExporter:
         self.volume = Gauge(
             "sb_volume", "Trading volume of the share", COMMON_LABELS,
             registry=self.registry)
+        # Price-freshness liveness sonde (issue #628). 1 when the stored price is
+        # silently stale (frozen past the horizon while the live quote moves), 0
+        # when fresh — a gauge so it auto-clears when the writer recovers.
+        self.price_staleness = Gauge(
+            "sb_price_staleness",
+            "1 when the stored price is silently stale while the live quote moves",
+            COMMON_LABELS, registry=self.registry)
 
         # Per-account cash & value gauges (opt-in accounts feature). Labelled by
         # account so each account is its own series.
@@ -162,6 +169,17 @@ class PrometheusExporter:
             self.market_cap.labels(*labels).set(info['marketCap'])
         if info.get('volume') is not None:
             self.volume.labels(*labels).set(info['volume'])
+
+    def update_price_staleness(self, share: dict, stale: bool) -> None:
+        """Set the price-freshness sonde gauge for one share (issue #628).
+
+        Diagnostic only: ``1`` flags a silently stale writer for
+        (share_name, share_symbol, account), ``0`` clears it once the stored
+        price tracks the live quote again.
+        """
+        account = share.get('account', DEFAULT_ACCOUNT)
+        labels = (share['name'], share['symbol'], account)
+        self.price_staleness.labels(*labels).set(1 if stale else 0)
 
     def update_account(self, point) -> None:
         """Update the per-account gauges from a computed account_metrics point.
