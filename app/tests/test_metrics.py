@@ -433,6 +433,120 @@ def test_backfill_write_failure_does_not_abort_remaining_shares(
     assert symbols_written == ["AAPL", "MSFT"]
 
 
+# ---------------------------------------------------------------------------
+# backfill — forward gap-fill pass (issue #627)
+# ---------------------------------------------------------------------------
+
+def test_backfill_forward_fills_recent_gap(mock_influx, shares_validator, mocker):
+    """A session missed while down (old newest) is recovered by the forward pass,
+    carrying the same tags/account as live points, even when the backward pass is
+    already complete (the two directions are independent)."""
+    first_buy = date(2024, 1, 15)
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
+    metrics._share_info_cache["AAPL"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    # Backward already complete -> only the forward pass should act.
+    metrics._backfill_complete[("AAPL", "default")] = datetime(
+        2024, 1, 15, tzinfo=timezone.utc)
+    # Newest stored point is old enough to leave a gap to fill up to now.
+    mock_influx.get_newest_timestamp.return_value = datetime(
+        2024, 6, 1, tzinfo=timezone.utc)
+    canned = [{"timestamp": datetime(2024, 6, 3, tzinfo=timezone.utc), "price": 175.0}]
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=canned)
+    mock_influx.write_historical_prices.return_value = 1
+
+    metrics.backfill()
+
+    # Backward complete -> its oldest lookup is never issued; forward drives it.
+    mock_influx.get_oldest_timestamp.assert_not_called()
+    mock_influx.get_newest_timestamp.assert_called_once_with("AAPL", account="default")
+    mock_influx.write_historical_prices.assert_called_once()
+    kwargs = mock_influx.write_historical_prices.call_args.kwargs
+    assert kwargs["share_symbol"] == "AAPL"
+    assert kwargs["account"] == "default"
+    assert kwargs["share_currency"] == "USD"
+    assert kwargs["share_exchange"] == "NMS"
+    assert kwargs["prices"] == canned
+
+
+def test_backfill_forward_empty_window_writes_nothing(
+        mock_influx, shares_validator, mocker):
+    """A weekend/holiday gap: yfinance returns no rows for the forward window, so
+    nothing is written (self-classifying, no calendar logic)."""
+    first_buy = date(2024, 1, 15)
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
+    metrics._share_info_cache["AAPL"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    metrics._backfill_complete[("AAPL", "default")] = datetime(
+        2024, 1, 15, tzinfo=timezone.utc)
+    mock_influx.get_newest_timestamp.return_value = datetime(
+        2024, 6, 1, tzinfo=timezone.utc)
+    # yfinance returns no rows for the window -> empty, a no-op.
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+    mocker.patch("main.time.sleep")
+
+    metrics.backfill()
+
+    mock_influx.write_historical_prices.assert_not_called()
+
+
+def test_backfill_forward_noop_when_series_empty(
+        mock_influx, shares_validator, mocker):
+    """No stored point yet (newest None): the forward pass has no anchor and the
+    backward pass owns seeding the series, so no forward fetch happens."""
+    first_buy = date(2024, 1, 15)
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
+    metrics._share_info_cache["AAPL"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    metrics._backfill_complete[("AAPL", "default")] = datetime(
+        2024, 1, 15, tzinfo=timezone.utc)
+    mock_influx.get_newest_timestamp.return_value = None
+    fetch = mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+
+    fetch.assert_not_called()
+    mock_influx.write_historical_prices.assert_not_called()
+
+
+def test_backfill_runs_both_directions_in_one_cycle(
+        mock_influx, shares_validator, mocker):
+    """When both an older gap (backward) and a recent gap (forward) exist, a
+    single cycle fills both for the same symbol."""
+    first_buy = date(2024, 1, 15)
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
+    metrics._share_info_cache["AAPL"] = {
+        "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
+    metrics.backfill_chunk_days = 365
+    # Oldest after first BUY -> a backward gap; newest old -> a forward gap.
+    mock_influx.get_oldest_timestamp.return_value = datetime(
+        2024, 6, 1, tzinfo=timezone.utc)
+    mock_influx.get_newest_timestamp.return_value = datetime(
+        2024, 6, 10, tzinfo=timezone.utc)
+    canned = [{"timestamp": datetime(2024, 6, 3, tzinfo=timezone.utc), "price": 170.0}]
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=canned)
+    mocker.patch("main.time.sleep")
+    mock_influx.write_historical_prices.return_value = 1
+
+    metrics.backfill()
+
+    # One write for the backward chunk, one for the forward chunk.
+    assert mock_influx.write_historical_prices.call_count == 2
+    # Backward pass never marked complete (the older gap remains open).
+    assert ("AAPL", "default") not in metrics._backfill_complete
+
+
 def test_backfill_empty_window_marks_complete(mock_influx, shares_validator, mocker):
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(

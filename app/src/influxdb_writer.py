@@ -326,6 +326,69 @@ class InfluxDBWriter:
 
         return None
 
+    def get_newest_timestamp(
+        self, share_symbol: str, account: Optional[str] = None
+    ) -> Optional[datetime]:
+        """
+        Get the newest timestamp for a given share symbol in InfluxDB.
+
+        Mirror of ``get_oldest_timestamp`` (``ORDER BY time DESC``), used by the
+        forward gap-fill pass (issue #627) to find where the stored series ends
+        so it can recover a session missed while the app was down.
+
+        Anchors on the newest **price-bearing** point (``share_price IS NOT
+        NULL``): ``write_metrics`` can persist a point without a price, and the
+        forward pass exists to fill *price* gaps that ``holdings_value`` reads
+        (``get_price_series`` filters the same way). Without the filter a newer
+        price-less point would make the forward pass believe coverage reaches
+        ``now`` and skip an older missing price range.
+
+        Args:
+            share_symbol: Yahoo Finance symbol
+            account: When provided, scope the lookup to this account like
+                ``get_oldest_timestamp``. Uses COALESCE(account, 'default') so
+                points written before the account tag existed count as
+                'default' — never a bare ``WHERE account = ...`` that would drop
+                them. Scoped per account (not symbol-only like
+                ``get_price_series``) because a backfill *coverage* anchor is
+                per-series: each account's gap is tracked independently.
+
+        Returns:
+            Newest timestamp as datetime, or None if no data exists
+        """
+        if self._client is None:
+            self.connect()
+
+        # Escape single quotes to keep share_symbol a safe SQL string literal
+        safe_symbol = share_symbol.replace("'", "''")
+        where = f"share_symbol = '{safe_symbol}'"
+        if account is not None:
+            safe_account = account.replace("'", "''")
+            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
+        # Use SQL query for InfluxDB 3
+        query = f"""
+        SELECT time
+        FROM "{self.MEASUREMENT}"
+        WHERE {where} AND share_price IS NOT NULL
+        ORDER BY time DESC
+        LIMIT 1
+        """
+
+        try:
+            table = self._client.query(query=query, language="sql")
+            if table and len(table) > 0:
+                # Convert Arrow table to Python
+                df = table.to_pandas()
+                if not df.empty:
+                    ts = df.iloc[0]['time']
+                    if hasattr(ts, 'to_pydatetime'):
+                        return ts.to_pydatetime()
+                    return ts
+        except Exception as e:
+            logger.error(f"Error querying newest timestamp for {share_symbol}: {e}")
+
+        return None
+
     def has_data_for_date(self, share_symbol: str, date: datetime) -> bool:
         """
         Check if data exists for a specific symbol on a given date.

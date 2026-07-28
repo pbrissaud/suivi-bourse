@@ -587,6 +587,82 @@ def test_get_oldest_timestamp_query_targets_symbol_and_measurement(
 
 
 # --------------------------------------------------------------------------- #
+# get_newest_timestamp                                                         #
+# --------------------------------------------------------------------------- #
+def test_get_newest_timestamp_returns_datetime(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    df = pd.DataFrame({"time": [pd.Timestamp("2020-01-02T03:04:05Z")]})
+    client.query.return_value = FakeTable(df)
+
+    result = writer.get_newest_timestamp("AAPL")
+
+    assert isinstance(result, datetime)
+    assert result == datetime(2020, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+
+def test_get_newest_timestamp_plain_datetime_passthrough(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    plain = datetime(2019, 9, 9, tzinfo=timezone.utc)
+    df = pd.DataFrame({"time": pd.Series([plain], dtype="object")})
+    client.query.return_value = FakeTable(df)
+
+    assert writer.get_newest_timestamp("AAPL") == plain
+
+
+def test_get_newest_timestamp_empty_returns_none(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"time": []}), length=0)
+
+    assert writer.get_newest_timestamp("AAPL") is None
+
+
+def test_get_newest_timestamp_exception_returns_none(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.side_effect = RuntimeError("db down")
+
+    assert writer.get_newest_timestamp("AAPL") is None
+
+
+def test_get_newest_timestamp_orders_descending(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"time": []}), length=0)
+
+    writer.get_newest_timestamp("AAPL")
+
+    q = _last_query(client)
+    assert 'FROM "portfolio_metrics"' in q
+    assert "share_symbol = 'AAPL'" in q
+    assert "ORDER BY time DESC" in q
+    # Anchor on the newest price-bearing point so a price-less newer point can't
+    # make the forward pass skip an older missing price range.
+    assert "share_price IS NOT NULL" in q
+    assert client.query.call_args.kwargs["language"] == "sql"
+
+
+def test_get_newest_timestamp_scopes_by_account(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"time": []}), length=0)
+
+    writer.get_newest_timestamp("AAPL", account="pea")
+
+    q = _last_query(client)
+    # Scoped like get_oldest_timestamp: COALESCE keeps pre-tag NULL points as
+    # 'default' rather than dropping them with a bare WHERE account = ...
+    assert "COALESCE(account, 'default') = 'pea'" in q
+
+
+def test_get_newest_timestamp_escapes_single_quote(writer, mock_client_cls):
+    client = mock_client_cls.return_value
+    client.query.return_value = FakeTable(pd.DataFrame({"time": []}), length=0)
+
+    writer.get_newest_timestamp("O'Reilly")
+
+    q = _last_query(client)
+    assert "share_symbol = 'O''Reilly'" in q
+    assert "'O'Reilly'" not in q
+
+
+# --------------------------------------------------------------------------- #
 # has_data_for_date                                                            #
 # --------------------------------------------------------------------------- #
 def test_has_data_for_date_true_when_count_positive(writer, mock_client_cls):
