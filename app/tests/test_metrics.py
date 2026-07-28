@@ -158,6 +158,59 @@ def test_fetch_ticker_data_empty_history_returns_none(
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
 
 
+def test_fetch_ticker_data_uses_last_non_nan_close(
+        mock_influx, shares_validator, fake_ticker, monkeypatch):
+    """Yahoo returns the most recent daily bar with a NaN close for a while
+    after a session ends (the daily aggregate lags the intraday data). The fetch
+    must fall back to the last row that actually has a close — and still cache
+    ``.info`` — instead of bailing on ``(None, None)``; otherwise
+    ``_ensure_share_info`` defers ALL backfill whenever the market is closed,
+    defeating the missed-session gap-fill (#627)."""
+    idx = pd.date_range("2024-01-02", periods=3, freq="D", tz=timezone.utc)
+    df = pd.DataFrame(
+        {
+            "Open": [150.0, 151.0, 152.0],
+            "High": [151.0, 152.0, 153.0],
+            "Low": [149.0, 150.0, 151.0],
+            "Close": [175.0, 176.52, float("nan")],  # last daily bar NaN
+            "Volume": [1_000_000, 1_010_000, 1_020_000],
+        },
+        index=idx,
+    )
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
+
+    last_quote, info = metrics._fetch_ticker_data("AAPL")
+
+    # Last non-NaN close, not the NaN tail row.
+    assert last_quote == pytest.approx(176.52)
+    # .info is still resolved and cached so backfill can proceed while closed.
+    assert info is not None
+    assert metrics._share_info_cache["AAPL"] == info
+
+
+def test_fetch_ticker_data_all_nan_close_returns_none(
+        mock_influx, shares_validator, fake_ticker, monkeypatch):
+    """A frame with no usable close at all is still rejected as no-data, so a
+    NaN price never reaches InfluxDB."""
+    idx = pd.date_range("2024-01-02", periods=2, freq="D", tz=timezone.utc)
+    df = pd.DataFrame(
+        {
+            "Open": [150.0, 151.0],
+            "High": [151.0, 152.0],
+            "Low": [149.0, 150.0],
+            "Close": [float("nan"), float("nan")],
+            "Volume": [1_000_000, 1_010_000],
+        },
+        index=idx,
+    )
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
+
+    assert metrics._fetch_ticker_data("AAPL") == (None, None)
+    assert "AAPL" not in metrics._share_info_cache
+
+
 def test_fetch_ticker_data_retries_after_rate_limit(
         mock_influx, shares_validator, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)

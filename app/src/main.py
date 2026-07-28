@@ -588,13 +588,19 @@ class SuiviBourseMetrics:
                 if ticker_history.empty:
                     app_logger.warning(f"No price history returned for {symbol}")
                     return None, None
-                last_row = ticker_history.tail(1)
-                last_quote = last_row['Close'].iloc[0]
-                # Guard against a NaN close (holiday / partial bar): treat it as
-                # no data so we never write a NaN price to InfluxDB.
-                if pd.isna(last_quote):
-                    app_logger.warning(f"Latest close price is NaN for {symbol}, skipping")
+                # Use the last row that actually has a close. Yahoo returns the
+                # most recent daily bar with a NaN close for a while after a
+                # session ends (the daily aggregate lags the intraday data), so a
+                # blind tail(1) would reject a perfectly good series outside
+                # market hours — and, via _ensure_share_info, defer ALL backfill
+                # (both passes) whenever the market is closed, defeating the
+                # missed-session gap-fill (#627). Mirror the per-row NaN skip that
+                # _fetch_historical_data already does.
+                valid_close = ticker_history['Close'].dropna()
+                if valid_close.empty:
+                    app_logger.warning(f"No non-NaN close price for {symbol}, skipping")
                     return None, None
+                last_quote = valid_close.iloc[-1]
                 # Get hourly volume instead of daily volume
                 ticker_history_hourly = ticker.history(period='1d', interval='1h')
                 if not ticker_history_hourly.empty and 'Volume' in ticker_history_hourly.columns:
