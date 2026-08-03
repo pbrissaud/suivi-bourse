@@ -95,7 +95,23 @@ The application runs independent scheduled jobs on a single APScheduler:
 - **Ingestion**: Reloads portfolio events from files (default: every 300s) and
   reconciles the per-symbol scrape jobs against the new symbol set (add / remove
   / revive).
-- **Backfill**: Progressively fills historical price data (default: every 60s).
+- **Backfill**: **bidirectional** (issue #626), every 60s, both passes run per
+  share each cycle and are independent. **Backward** (pre-existing): oldest
+  stored point → first `BUY`, one `SB_BACKFILL_CHUNK_DAYS` chunk per cycle,
+  stops once the `_backfill_complete` watermark is set. **Forward gap-fill**
+  (issue #627): recovers a trading session missed while the app was down
+  (stop/crash/host asleep) by fetching `[newest → now]` — anchor =
+  `get_newest_timestamp` (newest point with `share_price IS NOT NULL`, scoped by
+  symbol+account), window sized by the pure
+  `scheduling.forward_backfill_window(newest, now, chunk_days)`. Returns `None`
+  (no fetch) when the series is empty (backward owns seeding) or the anchor is
+  `< 1 day` old — that guard is what makes the forward pass a **no-op during
+  live trading** (`newest ≈ now`), so the `REGULAR` writer stays the sole writer
+  of the present with no duplicate at the seam. Gap classification is delegated
+  to yfinance: a weekend/holiday window comes back empty and stays a gap (#606),
+  a missed open session comes back with rows. `_backfill_complete` gates **only**
+  the backward pass. Recovered points carry the same tags/series identity as live
+  points, so perf `holdings_value` picks them up.
 - **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
   (opt-in accounts only) as its **own gated interval job** at `SB_PERF_INTERVAL`
   (default 120s), decoupled from the per-symbol scrape jobs (issue #618). Each
@@ -116,8 +132,8 @@ Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `
 │  SCRAPE  (per symbol,    │  │    INGESTION      │  │    BACKFILL      │  │   PERFORMANCE      │
 │  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (SB_PERF_INTERVAL) │
 │                          │  │                   │  │                  │  │                    │
-│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Check gaps     │  │ • perf_should_run? │
-│ • marketState → cadence  │  │ • Recalc state    │  │ • history()      │  │ • Recompute perf   │
+│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Backward pass  │  │ • perf_should_run? │
+│ • marketState → cadence  │  │ • Recalc state    │  │ • Forward pass   │  │ • Recompute perf   │
 │ • REGULAR: poll & write  │  │ • Update shares[] │  │ • Chunk 1 yr/req │  │   series (opt-in   │
 │ • Closed: sleep to open  │  │ • Reconcile jobs  │  │ • Rate limit 10s │  │   accounts only)   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘

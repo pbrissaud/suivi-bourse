@@ -1,13 +1,19 @@
 ---
 title: Historical backfill
-description: Reconstruct the full history of your portfolio in InfluxDB
+description: Reconstruct the full history of your portfolio in InfluxDB, and recover trading sessions missed while the app was down
 sidebar_position: 4
 ---
 
-Live scraping only records prices from the moment you start the app. **Backfill**
-fills in the past: it fetches historical prices from Yahoo! Finance all the way
-back to your first purchase and writes them to InfluxDB, so Grafana can show the
-full evolution of your portfolio — not just the period since you deployed it.
+Live scraping only records prices while the app is running. **Backfill** fills in
+everything else, in **two independent directions**:
+
+- **Backward** — fetches historical prices from Yahoo! Finance all the way back to
+  your first purchase, so Grafana shows the full evolution of your portfolio, not
+  just the period since you deployed it.
+- **Forward** (v4.1) — recovers a trading session the app **missed while it was
+  down**: stopped, crashed, or a host that slept through market hours. Without it,
+  such a session was a permanent hole, since the live scrape is the only writer of
+  the present.
 
 :::info Events mode only
 Backfill requires knowing *when* you bought each share, which only
@@ -17,33 +23,66 @@ backfill job runs but does nothing.
 
 ## How it works
 
-Backfill runs as a third scheduled job (every `SB_BACKFILL_INTERVAL` seconds,
-default `60`). On each cycle, for every share it:
+Backfill runs as one scheduled job (every `SB_BACKFILL_INTERVAL` seconds, default
+`60`). On each cycle it walks every share and runs **both passes**, then waits
+`SB_BACKFILL_DELAY` seconds (default `10`) before moving to the next symbol, to
+stay within Yahoo! Finance rate limits.
+
+Both passes share the same enrichment step: every historical price point is
+**enriched** with the portfolio state *as of that date* (quantity owned, cost
+price, cumulative fees and dividends) by replaying the events up to that day, then
+written to the `portfolio_metrics` measurement with the exact same tags as a live
+point — so recovered points feed the
+[performance series](/docs/reading-the-dashboard) like any other.
+
+### Backward pass — down to the first purchase
 
 1. Finds the **date of the first `BUY` event** for that symbol — the target to
    backfill down to.
 2. Reads the **oldest data point** already stored in InfluxDB for that symbol.
 3. If there is a gap, fetches **one chunk** of history going backwards in time
    (`SB_BACKFILL_CHUNK_DAYS` days, default `365`).
-4. **Enriches** each historical price point with the portfolio state *as of that
-   date* (quantity owned, cost price, cumulative fees and dividends), by
-   replaying the events up to that day.
-5. Writes the enriched points to the `portfolio_metrics` measurement.
-6. Waits `SB_BACKFILL_DELAY` seconds (default `10`) before moving to the next
-   symbol, to stay within Yahoo! Finance rate limits.
 
-Because it only fetches one chunk per symbol per cycle, backfill fills history
+Because it only fetches one chunk per symbol per cycle, history is reconstructed
 **progressively**. A portfolio with several years of history can take a while to
-be fully reconstructed — this is expected and keeps the app well-behaved with
+be fully rebuilt — this is expected and keeps the app well-behaved with
 Yahoo! Finance.
 
 Once the oldest stored point reaches the first `BUY` date, the symbol is marked
-complete and skipped on subsequent cycles (until a new, earlier event is added).
+complete and the **backward** pass is skipped on subsequent cycles (until a new,
+earlier event is added). The forward pass below is **not** affected by that
+watermark — it keeps running for the lifetime of the app.
+
+### Forward pass — recover missed sessions {#forward}
+
+1. Reads the **newest stored point that carries a price** for that symbol and
+   account — the coverage anchor.
+2. Asks Yahoo! Finance for the window **`[newest → now]`**, chunked the same way
+   (`SB_BACKFILL_CHUNK_DAYS` per cycle), and writes whatever rows come back.
+3. **Skips entirely** when the anchor is less than **1 day** old, or when the
+   series has no point yet (an empty series is the backward pass's job to seed).
+
+That 1-day guard is what keeps the forward pass **inert during normal operation**:
+while the app is up, the live scrape keeps the newest point a couple of minutes
+old, so the window is never opened and there is no duplicate at the seam. The live
+`REGULAR` scrape remains the sole writer of the present.
+
+:::note The calendar is delegated to Yahoo! Finance
+There is no holiday table and no gap classifier. `history()` returns rows **only
+for real trading periods**, so a window covering a weekend or a holiday comes back
+empty and stays a gap — consistent with the
+[by-design non-trading-day gaps](/docs/advanced/market-aware-scraping#weekend-and-holiday-gaps)
+— while a genuinely missed *open* session comes back with rows and gets filled.
+:::
+
+A recovered session is written at **hourly** resolution (see below), which is
+coarser than the ~120 s live cadence. This is cosmetic: the session is back in the
+charts and in the performance series instead of being a hole.
 
 ## Data resolution
 
 Yahoo! Finance only serves intraday history for a limited window, so backfill
-adapts the granularity automatically:
+adapts the granularity automatically (both passes):
 
 | Age of the data | Interval used |
 |-----------------|---------------|
@@ -59,7 +98,7 @@ Both live and backfilled points include OHLC fields (`price_open`, `price_high`,
 |----------|---------|--------|
 | `SB_BACKFILL_INTERVAL` | `60` | How often a backfill cycle runs (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Pause between symbols / requests (seconds) — increase if you hit rate limits |
-| `SB_BACKFILL_CHUNK_DAYS` | `365` | How many days of history are fetched per request |
+| `SB_BACKFILL_CHUNK_DAYS` | `365` | How many days of history are fetched per request — also the width of one forward window |
 
 :::tip Rate limiting
 If you see rate-limit warnings in the logs, raise `SB_BACKFILL_DELAY` and/or
@@ -69,7 +108,16 @@ with exponential backoff, so it eventually catches up.
 
 ## Resilience
 
-- Backfill never blocks scraping or ingestion — the three jobs are independent.
+- Backfill never blocks scraping or ingestion — the jobs are independent.
 - A failed or empty chunk is retried on the next cycle.
 - If the first `BUY` falls on a non-trading day (weekend/holiday) and there is no
   earlier data, the symbol is marked complete instead of being refetched forever.
+- The two passes are independent: a symbol whose backward pass is complete still
+  gets its missed sessions recovered.
+
+:::tip What backfill *cannot* see
+The forward pass only detects **missing time**. If the app is running and fetching
+fine but persists a **frozen** price, coverage looks complete and nothing is
+recovered. That failure mode is watched separately by the
+[price-freshness sonde](/docs/advanced/market-aware-scraping#price-freshness-sonde).
+:::
