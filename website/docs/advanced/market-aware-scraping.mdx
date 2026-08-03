@@ -1,6 +1,6 @@
 ---
 title: Market-aware scraping (v4.1)
-description: Per-symbol, market-state-driven price scraping — the cadence model, the worker-pool dials, the resulting weekend/holiday chart gaps, and the optional purge
+description: Per-symbol, market-state-driven price scraping — the cadence model, the worker-pool dials, the price-freshness sonde, the resulting weekend/holiday chart gaps, and the optional purge
 sidebar_position: 5
 ---
 
@@ -82,6 +82,46 @@ backfill watermark is pending, or a live `REGULAR` write landed. A fully-closed
 market wave writes nothing and the perf job skips its run, so a closed day adds
 no Parquet churn.
 
+## Price-freshness sonde {#price-freshness-sonde}
+
+A per-symbol job can fail in a way neither the backoff above nor the
+[forward gap-fill](/docs/backfill#forward) can see: it keeps fetching and keeps
+writing, but the value it persists **stops moving** while the market is open and
+the live quote does move. Coverage looks complete, the job looks healthy, and the
+chart flatlines.
+
+Since v4.1 a **diagnostic sonde** rides the `REGULAR` write path and watches for
+exactly that. On each open-market cycle, before writing, it compares the newest
+**stored** price for the (symbol, account) with the **live** quote. If the stored
+value stays frozen across **consecutive** polling cycles for at least
+`SB_STALENESS_HORIZON` seconds (default **900**) *while the live quote has moved*,
+SuiviBourse logs a `WARNING` and raises the
+[`sb_price_staleness`](/docs/advanced/prometheus-legacy) gauge to `1`. The gauge
+returns to `0` on its own as soon as the writer catches up.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SB_STALENESS_HORIZON` | `900` | How long (seconds) the stored price must stay frozen, across consecutive open-market cycles, before the sonde fires. `0` disables the sonde. |
+
+:::note Why it doesn't fire every Monday morning
+Staleness is measured over **consecutive polling**, not over the stored point's
+wall-clock age. A market that was shut all weekend legitimately leaves a point
+that is hours old — but the sonde re-baselines whenever the writer advances the
+value *or* whenever the gap between two of its own observations exceeds the
+horizon, so the first tick after a close never raises a false positive. A
+genuinely stuck writer polls every `SB_REGULAR_INTERVAL` (well under the horizon)
+and does trip it.
+
+A **flat live quote** is treated as a genuinely flat market, not a stuck writer —
+no signal. That is an accepted blind spot.
+:::
+
+:::info Diagnostic only
+The sonde never changes the scrape cadence, the write gating or the dead-ticker
+backoff, and a failure inside it can never disturb the scrape cycle. It only
+logs and moves a gauge.
+:::
+
 ## Weekend and holiday gaps
 
 Because a closed market writes **no** point, charts now show **honest gaps**
@@ -102,7 +142,9 @@ do) so every stat tile always resolves to a recent point.
 The legacy `sb_share_price` gauge legitimately **stops updating while a market is
 closed**. If you run an external Prometheus *"no fresh samples"* / staleness
 alert on it, widen the alert window past a weekend so a normal closed market
-doesn't page you. See the
+doesn't page you. To alert on a writer that is *actually* stuck, use the
+[`sb_price_staleness`](#price-freshness-sonde) gauge instead — it already knows
+the difference between a shut market and a frozen writer. See the
 [legacy Prometheus endpoint](/docs/advanced/prometheus-legacy).
 :::
 

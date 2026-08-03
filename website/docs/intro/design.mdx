@@ -14,7 +14,10 @@ sidebar_position: 1
      [market-aware](/docs/advanced/market-aware-scraping): it polls only while
      the symbol's market is open and sleeps until the next open otherwise.
    - **Ingestion** — reloads and re-aggregates your portfolio configuration.
-   - **Backfill** — progressively fills in historical prices (events mode only).
+   - **Backfill** — progressively fills in historical prices, in
+     [both directions](/docs/backfill): backward to your first purchase, and
+     forward to recover a session missed while the app was down (events mode
+     only).
    - **Performance** — recomputes the per-account and global return series
      (events mode, opt-in accounts only).
 3. Every data point is written to **InfluxDB 3 Core** in the
@@ -32,11 +35,11 @@ sidebar_position: 1
 │      SCRAPING      │     INGESTION      │      BACKFILL      │    PERFORMANCE     │
 │  (per symbol,      │    (every 300s)    │    (every 60s)     │  (SB_PERF_INTERVAL)│
 │   market-aware)    │                    │  events mode only  │  events mode only  │
-│ • yfinance.Ticker()│ • Load config or   │ • Find first BUY   │ • Only when data   │
-│ • marketState →    │   event files      │ • Check oldest pt  │   changed          │
-│   poll or sleep    │ • Validate         │   in InfluxDB      │ • Recompute XIRR / │
-│ • Open: write pt   │ • Aggregate        │ • Fetch 1 chunk of │   TWR / value      │
-│ • Closed: sleep to │ • Cache (by mtime) │   history (≈1 year)│ • Write account_/  │
+│ • yfinance.Ticker()│ • Load config or   │ • Backward: to the │ • Only when data   │
+│ • marketState →    │   event files      │   first BUY event  │   changed          │
+│   poll or sleep    │ • Validate         │ • Forward: recover │ • Recompute XIRR / │
+│ • Open: write pt   │ • Aggregate        │   missed sessions  │   TWR / value      │
+│ • Closed: sleep to │ • Cache (by mtime) │ • 1 chunk / cycle  │ • Write account_/  │
 │   next open        │ • Update shares[]  │ • Enrich + write   │   portfolio series │
 └─────────┬──────────┴─────────┬──────────┴─────────┬──────────┴─────────┬──────────┘
           │                    │                    │                    │

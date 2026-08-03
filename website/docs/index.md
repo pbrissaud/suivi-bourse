@@ -35,7 +35,8 @@ configuration mode.
   aggregate positions automatically.
 - The **legacy Prometheus endpoint** is still exposed for backward compatibility.
 
-Start with the [Getting Started](/docs/intro/getting-started) guide.
+Start with the [Getting Started](/docs/intro/getting-started) guide, or see the
+[changelog](/docs/changelog) for what landed in each release since v4.
 
 ## Support
 

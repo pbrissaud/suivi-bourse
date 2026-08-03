@@ -43,6 +43,7 @@ All share gauges are prefixed with `sb_` and carry the labels `share_name`,
 | `sb_market_cap` | Market capitalization |
 | `sb_volume` | Trading volume |
 | `sb_share_info` | Always `1`; carries extra labels `share_currency`, `share_exchange`, `quote_type` |
+| `sb_price_staleness` | `1` when the stored price is **silently stale** — frozen across consecutive open-market cycles while the live quote moves — `0` otherwise. See the [price-freshness sonde](/docs/advanced/market-aware-scraping#price-freshness-sonde). |
 
 :::warning New `account` label (v4.1) — re-glue existing queries
 Since v4.1 the `sb_*` gauges carry an **`account`** label. A query that used to
