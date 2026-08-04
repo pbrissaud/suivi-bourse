@@ -245,6 +245,60 @@ Three things to know:
 To keep the old flat layout instead, set `SB_CONFIG_DIR=.` in `.env` — the whole
 `docker-compose` folder then becomes the config directory.
 
+## Deploying with Coolify {#coolify}
+
+[Coolify](https://coolify.io) deploys the stack straight from the repository, and
+most of it fits without changes: every setting is a `${VAR}` in
+`docker-compose.yaml`, so Coolify surfaces them as editable environment
+variables, and the InfluxDB / Grafana named volumes are handled natively. There
+is no `.env` to provide — Coolify injects the variables itself.
+
+**One thing needs care: the configuration directory.** Coolify recreates the
+repository clone on every deployment, `data/` is git-ignored so it is never in
+that clone, and `make init` does not run. Left at its `./data` default, the app
+would start against an empty directory and find no portfolio.
+
+Point `SB_CONFIG_DIR` at an **absolute path on the host** instead:
+
+1. Create a new **Docker Compose** resource pointing at this repository, with
+   `docker-compose/docker-compose.yaml` as the compose file.
+
+2. Set at least these environment variables in Coolify:
+
+   ```bash
+   INFLUXDB_TOKEN=apiv3_...              # required — generate one, see below
+   SB_CONFIG_DIR=/data/suivi-bourse/config
+   ```
+
+   Generate the token with `openssl rand -hex 32` and prefix it with `apiv3_`.
+   The stack refuses to start while `INFLUXDB_TOKEN` is empty.
+
+3. Create that directory on the Coolify host and put your configuration in it —
+   `settings.yaml` plus either `config.yaml` or an `events/` folder, exactly the
+   layout described in [Configuration directory](#configuration-directory). You
+   can also declare it through Coolify's **Persistent Storage** as a bind mount.
+
+4. Deploy.
+
+An absolute path is not just a workaround: it keeps your portfolio outside the
+deployment's working directory, so redeployments never touch it. Everything else
+— upgrades via `SB_VERSION`, mode auto-detection, adding event files — works the
+same as anywhere else.
+
+:::tip Serve Grafana through Coolify's proxy
+The stack publishes its ports on the host by default. On Coolify you will
+usually prefer to attach a domain to the `grafana` service and let its proxy
+terminate TLS, rather than exposing port `3000` directly.
+:::
+
+:::caution `is_directory` belongs in a Coolify-only file
+Coolify understands a non-standard `is_directory: true` flag on bind mounts that
+makes it pre-create the host directory. Do **not** add it to
+`docker-compose.yaml`: plain Docker Compose rejects it outright with
+`additional properties 'is_directory' not allowed`, which would break every
+other deployment. Keep it in a separate compose file if you want it.
+:::
+
 ## Development stack
 
 A `docker-compose.dev.yaml` is also provided. It builds the app image locally,
