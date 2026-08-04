@@ -1,5 +1,23 @@
 # Changelog
 
+## [4.2.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.1.0...v4.2.0) (2026-08-04)
+
+
+### Features
+
+* **docker-compose:** make the deployment config-driven ([#638](https://github.com/pbrissaud/suivi-bourse/issues/638)) ([ed0c4a1](https://github.com/pbrissaud/suivi-bourse/commit/ed0c4a147c24eaa734eebdf31dc5d4b955adddac))
+
+
+### Documentation
+
+* document deploying the compose stack on Coolify ([#639](https://github.com/pbrissaud/suivi-bourse/issues/639)) ([e8915f6](https://github.com/pbrissaud/suivi-bourse/commit/e8915f61839ac27cb349f14ebbc6958f39f159ff))
+* **website:** changelog section for v4.2 ([#640](https://github.com/pbrissaud/suivi-bourse/issues/640)) ([820245d](https://github.com/pbrissaud/suivi-bourse/commit/820245d969182a47b49ecddc05eca6f52637c5a7))
+
+
+### Dependencies
+
+* **website:** update pnpm to v11.20.0 ([#636](https://github.com/pbrissaud/suivi-bourse/issues/636)) ([2e4b833](https://github.com/pbrissaud/suivi-bourse/commit/2e4b833193eeb15c4deea94fc8d056329d66cb69))
+
 ## [4.1.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.0.1...v4.1.0) (2026-08-03)
 
 
