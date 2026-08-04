@@ -61,6 +61,19 @@ variables, and the InfluxDB admin token has one source (`INFLUXDB_TOKEN` in
 `.env`) that `influxdb3-init.sh` materialises into a token file and Grafana's
 datasource reads via `$__env{}`.
 
+**Port publishing is an overlay.** `docker-compose.yaml` declares no `ports:`
+— the services reach each other over the compose network — and
+`docker-compose.expose.yaml` holds the three blocks. `.env.example` chains them
+with `COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml`, so local use
+is unchanged; `GRAFANA_PORT`/`INFLUXDB_PORT`/`SB_METRICS_PORT` are read by the
+overlay. PaaS platforms that regenerate from `docker-compose.yaml` alone and
+write their own env (Coolify, Dokploy) never load the overlay and get the
+unpublished stack, which is what a reverse proxy in front of Grafana wants.
+`docker-compose.dev.yaml` is standalone and keeps its own `ports:` (an explicit
+`-f` overrides `COMPOSE_FILE`). Existing `.env` files predate the line — `make
+init` warns when it is missing, since the stack would otherwise come up with
+nothing published.
+
 ## Architecture
 
 **Main entry point**: `app/src/main.py`

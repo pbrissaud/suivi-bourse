@@ -3,6 +3,14 @@
 # Everything is tunable from .env; this file should not need editing. Copy
 # .env.example to .env and data.example/ to data/ (or run `make init`), then
 # `docker compose up -d`.
+#
+# This file publishes NO port: the services talk to each other over the compose
+# network, and how they are reached from outside is a deployment decision.
+# `docker-compose.expose.yaml` is the overlay that maps them onto host ports,
+# and `.env.example` enables it through COMPOSE_FILE, so a local stack behaves
+# exactly as before. Platforms that regenerate their own environment from this
+# file alone (Coolify, Dokploy, …) get the unpublished variant and route to the
+# services through their reverse proxy.
 name: ${COMPOSE_PROJECT_NAME:-suivi-bourse}
 
 x-logging: &logging
@@ -44,8 +52,6 @@ services:
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?set INFLUXDB_TOKEN in .env}
       INFLUXDB_DATABASE: ${INFLUXDB_DATABASE:-suivi_bourse}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    ports:
-    - ${SB_METRICS_PORT:-8081}:${SB_METRICS_PORT:-8081}  # Prometheus /metrics (legacy)
     volumes:
     # One mount for the whole config directory: settings.yaml, config.yaml and
     # events/ all live in there, so switching modes is a file drop rather than a
@@ -77,8 +83,6 @@ services:
       # token and database stay defined in .env only.
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?set INFLUXDB_TOKEN in .env}
       INFLUXDB_DATABASE: ${INFLUXDB_DATABASE:-suivi_bourse}
-    ports:
-    - ${GRAFANA_PORT:-3000}:3000
     volumes:
     - ./grafana_provisioning:/etc/grafana/provisioning:ro
     - sb_grafana_data:/var/lib/grafana
@@ -96,8 +100,6 @@ services:
       # init.sh materialises the admin-token file from this value, so .env is
       # the single source of truth for the token.
       SB_INFLUXDB_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?set INFLUXDB_TOKEN in .env}
-    ports:
-    - ${INFLUXDB_PORT:-8181}:8181
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
       interval: 10s
