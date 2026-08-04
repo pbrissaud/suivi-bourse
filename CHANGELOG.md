@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.2.2](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.1...v4.2.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* **docker-compose:** authenticate the InfluxDB healthcheck ([#644](https://github.com/pbrissaud/suivi-bourse/issues/644)) ([3750054](https://github.com/pbrissaud/suivi-bourse/commit/375005445b28484f4662d2f4dfcae1c78624e82e))
+
+
+### Dependencies
+
+* **docker-compose:** update grafana/grafana docker tag to v13.1.2 ([#643](https://github.com/pbrissaud/suivi-bourse/issues/643)) ([b8bd7ae](https://github.com/pbrissaud/suivi-bourse/commit/b8bd7ae3c979495e79e8cbdd29b4e8256391bda9))
+
 ## [4.2.1](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.0...v4.2.1) (2026-08-04)
 
 
