@@ -136,10 +136,12 @@ def resolve_regular_interval() -> int:
             app_logger.warning(
                 "SB_SCRAPING_INTERVAL is deprecated; prefer SB_REGULAR_INTERVAL. "
                 "Honoring it as a fallback for now.")
+    # Resolve precedence first, then parse through env_int so a non-numeric
+    # value raises the same named error as every other interval dial.
     if new_val is not None:
-        return int(new_val)
+        return env_int('SB_REGULAR_INTERVAL', 120)
     if old_val is not None:
-        return int(old_val)
+        return env_int('SB_SCRAPING_INTERVAL', 120)
     return 120
 
 

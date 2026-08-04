@@ -9,8 +9,18 @@ help:  ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-init:  ## Create .env and data/ from the shipped templates (never overwrites)
-	@test -f .env || { cp .env.example .env; echo "created .env"; }
+init:  ## Create .env (with a unique token) and data/ from the templates
+	@test -f .env || { \
+		cp .env.example .env; \
+		token=$$(openssl rand -hex 32 2>/dev/null \
+			|| python3 -c 'import secrets;print(secrets.token_hex(32))' 2>/dev/null); \
+		if [ -n "$$token" ]; then \
+			sed -i.bak "s|^INFLUXDB_TOKEN=.*|INFLUXDB_TOKEN=apiv3_$$token|" .env && rm -f .env.bak; \
+			echo "created .env with a freshly generated INFLUXDB_TOKEN"; \
+		else \
+			echo "created .env — set INFLUXDB_TOKEN yourself (no openssl/python3 found)"; \
+		fi; \
+	}
 	@test -d data || { cp -r data.example data; echo "created data/"; }
 	@echo "Ready. Edit data/config.yaml, or drop broker exports into data/events/."
 

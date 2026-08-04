@@ -24,8 +24,11 @@ In the `docker-compose` folder, create your `.env` and config directory from the
 shipped templates — these two are yours, no other file needs editing:
 
 ```bash
-make init     # cp .env.example .env && cp -r data.example data
+make init
 ```
+
+It creates `.env` (with a freshly generated InfluxDB token) and `data/`, skipping
+whatever already exists — re-running it never overwrites your configuration.
 
 ### 3. Modify config
 Edit `data/config.yaml` with the current state of your portfolio, or visit the

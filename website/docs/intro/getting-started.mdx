@@ -30,11 +30,11 @@ extract it, and move into the `docker-compose` folder.
 
 ```bash
 make init
-# equivalent to: cp .env.example .env && cp -r data.example data
 ```
 
-This gives you a `.env` (every setting) and a `data/` directory (your
-portfolio). They are yours — no shipped file needs editing from here on.
+This gives you a `.env` (every setting, including a freshly generated InfluxDB
+token) and a `data/` directory (your portfolio). They are yours — no shipped file
+needs editing from here on, and re-running `make init` leaves both untouched.
 
 ## 4. Configure your portfolio
 

@@ -744,6 +744,21 @@ def test_regular_interval_no_warning_when_old_var_absent(monkeypatch, mocker):
     warn.assert_not_called()
 
 
+def test_regular_interval_names_the_bad_variable(monkeypatch, mocker):
+    """A non-numeric interval raises the same named error as the other dials."""
+    monkeypatch.setenv("SB_REGULAR_INTERVAL", "abc")
+    monkeypatch.delenv("SB_SCRAPING_INTERVAL", raising=False)
+    with pytest.raises(ValueError, match="SB_REGULAR_INTERVAL"):
+        resolve_regular_interval()
+
+    # ... including when the deprecated fallback is the one being used.
+    monkeypatch.delenv("SB_REGULAR_INTERVAL")
+    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "abc")
+    mocker.patch.object(main.app_logger, "warning")
+    with pytest.raises(ValueError, match="SB_SCRAPING_INTERVAL"):
+        resolve_regular_interval()
+
+
 def test_regular_interval_ignores_blank_values(monkeypatch, mocker):
     """Blank vars fall through to the default instead of crashing on int('').
 
