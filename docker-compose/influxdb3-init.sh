@@ -5,7 +5,26 @@ DATA_DIR="${INFLUXDB3_DATA_DIR:-/var/lib/influxdb3}"
 DATABASE="${INFLUXDB3_DATABASE:-suivi_bourse}"
 NODE_ID="${INFLUXDB3_NODE_ID:-suivi-bourse}"
 TOKEN_FILE="${INFLUXDB3_ADMIN_TOKEN_FILE:-}"
+ADMIN_TOKEN_VALUE="${SB_INFLUXDB_ADMIN_TOKEN:-}"
 WITHOUT_AUTH="${INFLUXDB3_WITHOUT_AUTH:-false}"
+
+# The admin token has a single source of truth: INFLUXDB_TOKEN in .env, handed
+# over as SB_INFLUXDB_ADMIN_TOKEN (deliberately not INFLUXDB3_-prefixed, so it
+# cannot collide with influxdb3's own env parsing). Materialise the token file it
+# from it, so rotating the token is a one-line edit rather than three files kept
+# in sync (token file, Grafana datasource, .env).
+if [ "$WITHOUT_AUTH" != "true" ] && [ -n "$ADMIN_TOKEN_VALUE" ] && [ -z "$TOKEN_FILE" ]; then
+  TOKEN_FILE=/tmp/influxdb3-admin-token.json
+  umask 077
+  cat > "$TOKEN_FILE" <<EOF
+{
+  "token": "$ADMIN_TOKEN_VALUE",
+  "name": "_admin",
+  "description": "SuiviBourse admin token (generated from INFLUXDB_TOKEN)"
+}
+EOF
+  umask 022
+fi
 
 # Build serve command
 SERVE_ARGS="--node-id=$NODE_ID --object-store=file --data-dir=$DATA_DIR"

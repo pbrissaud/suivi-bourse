@@ -19,10 +19,23 @@ Note: Docker Compose launches a full environnement with a pre-configured Prometh
 * Docker (>19.03.0)
 * Docker-Compose 
 
-### 2. Modify config
-Edit the `config.yaml` file located in `docker-compose` folder. Complete the file with the provided example or visit the [chapter 3](https://pbrissaud.github.io/suivi-bourse/docs/intro/config) of the documentation to know more about writing config file. 
+### 2. Create your configuration
+In the `docker-compose` folder, create your `.env` and config directory from the
+shipped templates — these two are yours, no other file needs editing:
 
-*Example Config:* 
+```bash
+make init
+```
+
+It creates `.env` (with a freshly generated InfluxDB token) and `data/`, skipping
+whatever already exists — re-running it never overwrites your configuration.
+
+### 3. Modify config
+Edit `data/config.yaml` with the current state of your portfolio, or visit the
+[configuration documentation](https://pbrissaud.github.io/suivi-bourse/docs/configuration/overview)
+to know more about writing a config file.
+
+*Example Config:*
 ```yaml
 ---
 shares:
@@ -37,14 +50,19 @@ shares:
     received_dividend: 2.85
 ```
 
-### 3. Run the stack
+To track transactions instead, drop your broker exports (`.csv` / `.xlsx`) into
+`data/events/` — SuiviBourse detects them and switches to
+[events mode](https://pbrissaud.github.io/suivi-bourse/docs/configuration/events-mode)
+by itself.
+
+### 4. Run the stack
 Run the following command in the `docker-compose` folder :
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 4. Visit Grafana
+### 5. Visit Grafana
 Connect to Grafana (`http://localhost:3000`) with the following credentials:
 * login:  `admin`
 * password: `admin`

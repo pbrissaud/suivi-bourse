@@ -14,6 +14,10 @@ stack**:
 - `suivi-bourse-influxdb` — a pre-initialized **InfluxDB 3 Core** instance
 - `suivi-bourse-graf` — a **Grafana** with a provisioned datasource and dashboard
 
+Two files are yours and yours only: **`.env`** (all settings) and a **config
+directory** (your portfolio). Both are git-ignored, and neither `docker-compose.yaml`
+nor any other shipped file needs editing — including to switch modes.
+
 ## Requirements
 
 - Windows, Linux or macOS
@@ -28,14 +32,25 @@ stack**:
 
 2. Move into the **`docker-compose`** folder.
 
-3. Configure your portfolio using one of the two modes:
+3. Create your `.env` and config directory from the shipped templates:
+
+```bash
+make init
+```
+
+`make init` creates `.env` (with a freshly generated `INFLUXDB_TOKEN`) and
+`data/`, and **skips whatever already exists** — re-running it never overwrites
+your configuration. Without `make`, copy the templates yourself, taking care not
+to clobber an existing `.env` or `data/`, and set `INFLUXDB_TOKEN` by hand.
+
+4. Configure your portfolio using one of the two modes:
 
 <Tabs>
   <TabItem value="manual" label="Manual mode" default>
 
-Edit `config.yaml` following the [manual mode doc](/docs/configuration/manual-mode):
+Edit `data/config.yaml` following the [manual mode doc](/docs/configuration/manual-mode):
 
-```yaml title="config.yaml"
+```yaml title="data/config.yaml"
 shares:
 - name: Apple
   symbol: AAPL
@@ -48,130 +63,197 @@ shares:
     received_dividend: 2.85
 ```
 
+This is the default: with no event files around, the app runs in manual mode.
+
   </TabItem>
   <TabItem value="events" label="Events mode">
 
-1. Create a `settings.yaml` file:
+Drop your transaction files into `data/events/`:
 
-```yaml title="settings.yaml"
-mode: events
-events:
-  source: /home/appuser/.config/SuiviBourse/events/
-  watch: true
-```
-
-2. Add your transaction files to the `events/` directory:
-
-```csv title="events/portfolio.csv"
+```csv title="data/events/portfolio.csv"
 date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
 2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
 ```
 
-3. Select events mode in the `.env` file:
+**That's the whole switch.** SuiviBourse detects the event files and runs in
+events mode — no `.env`, `settings.yaml` or compose change required. Copy
+`examples/events-example.csv` to get started, and see the
+[events mode doc](/docs/configuration/events-mode) for the full CSV format and
+[backfill](/docs/backfill) for historical data.
 
-```bash title=".env"
-SB_CONFIG_MODE=events
-```
-
-See the [events mode doc](/docs/configuration/events-mode) for the full CSV
-format and [backfill](/docs/backfill) for historical data.
+Set `SB_CONFIG_MODE=events` in `.env` only if you want the mode pinned
+regardless of directory contents.
 
   </TabItem>
 </Tabs>
 
-4. Start the stack:
+5. Start the stack:
 
 ```bash
-docker compose up -d
+docker compose up -d      # or: make up
 ```
 
 ## Ports
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| Grafana | `3000` | Dashboards (login `admin` / `admin`) |
-| InfluxDB 3 | `8181` | Database HTTP API |
-| App | `8081` | Legacy Prometheus `/metrics` endpoint |
+Every port is configurable in `.env`.
+
+| Service | Variable | Default | Purpose |
+|---------|----------|---------|---------|
+| Grafana | `GRAFANA_PORT` | `3000` | Dashboards (login `admin` / `admin`) |
+| InfluxDB 3 | `INFLUXDB_PORT` | `8181` | Database HTTP API |
+| App | `SB_METRICS_PORT` | `8081` | Legacy Prometheus `/metrics` endpoint |
+
+## Configuration directory
+
+The stack mounts **one** directory read-only at
+`/home/appuser/.config/SuiviBourse` inside the app container:
+
+```
+data/
+├── settings.yaml    # Mode override, events options, opt-in accounts
+├── config.yaml      # Manual mode: your portfolio
+└── events/          # Events mode: your broker exports (.csv / .xlsx)
+```
+
+Point the stack somewhere else — a NAS share, a directory outside the release
+folder — with `SB_CONFIG_DIR` in `.env`:
+
+```bash title=".env"
+SB_CONFIG_DIR=/srv/suivi-bourse/config
+```
+
+Files for the mode you are not using are simply ignored, so you can keep a
+`config.yaml` around while running in events mode.
 
 ## Environment variables
 
-Edit the **`.env`** file in the `docker-compose` folder:
+Everything lives in **`.env`**, which is created from `.env.example` and never
+overwritten by an upgrade. All values are optional except `INFLUXDB_TOKEN`, and
+the names match the application's own variables one-for-one.
 
-```bash title=".env"
-SCRAPING_INTERVAL=120
-
-# InfluxDB 3 Configuration
-INFLUXDB_DATABASE=suivi_bourse
-INFLUXDB_TOKEN=apiv3_suivi-bourse-admin-token-for-local-development
-```
+### Deployment
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SCRAPING_INTERVAL` | `120` | Price scraping interval (seconds) |
-| `INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
-| `BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
-| `BACKFILL_DELAY` | `10` | Delay between backfill requests (seconds) |
-| `BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
-| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
-| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
-| `INFLUXDB_TOKEN` | _(preset)_ | InfluxDB admin token (matches the provisioned token) |
+| `SB_VERSION` | `4` | App image tag. Pin an exact version (`4.2.1`) for reproducible upgrades and rollbacks |
+| `SB_CONFIG_DIR` | `./data` | Config directory mounted into the app |
+| `COMPOSE_PROJECT_NAME` | `suivi-bourse` | Prefix for container and volume names — change it to run two stacks side by side |
 | `GF_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 
+### Application
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_CONFIG_MODE` | _(empty)_ | Force `manual` or `events`. Empty leaves it to `settings.yaml`, then auto-detection |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is open |
+| `SB_PERF_INTERVAL` | `120` | Performance recompute interval (seconds) |
+| `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
+| `SB_STALENESS_HORIZON` | `900` | Price-freshness sonde horizon (seconds); `0` disables it |
+| `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Auto-size the scheduler thread pool |
+| `SB_EXECUTOR_POOL` | `10` | Fixed thread-pool size when auto-sizing is off |
+| `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
+| `SB_BACKFILL_DELAY` | `10` | Delay between backfill requests (seconds) |
+| `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
+| `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
+| `SB_METRICS_PORT` | `8081` | Port for `/metrics` |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+| `INFLUXDB_TOKEN` | _(none)_ | InfluxDB admin token — **required**, generated by `make init` |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
 :::caution InfluxDB token
-The compose stack ships with a **development** admin token
-(`apiv3_suivi-bourse-admin-token-for-local-development`), preconfigured in both
-InfluxDB and the Grafana datasource. **Change it before any non-local use** by
-editing `influxdb3-token.json`, the Grafana datasource under
-`grafana_provisioning/datasources/`, and `INFLUXDB_TOKEN` in `.env`.
+No token ships with the project: `.env.example` leaves `INFLUXDB_TOKEN` empty and
+`make init` fills it with a freshly generated value, so every deployment gets its
+own. The stack refuses to start while it is empty.
+
+If you created `.env` by hand, or want to rotate the token:
+
+```bash
+make token            # prints a fresh token
+# paste it into INFLUXDB_TOKEN in .env, then:
+docker compose up -d
+```
+
+InfluxDB, Grafana's provisioned datasource and the app all read that one value.
+Avoid `$` in the token: Grafana expands `$VAR` inside provisioning files.
 :::
 
 ## File structure
 
 After setup, your `docker-compose` folder looks like:
 
-<Tabs>
-  <TabItem value="manual" label="Manual mode" default>
-
 ```
 docker-compose/
-├── .env
-├── config.yaml               # Your portfolio configuration
+├── .env                       # Yours — all settings (git-ignored)
+├── .env.example               # Shipped template
+├── data/                      # Yours — portfolio config (git-ignored)
+│   ├── settings.yaml
+│   ├── config.yaml            # Manual mode
+│   └── events/                # Events mode
+│       └── 2024.csv
+├── data.example/              # Shipped template
+├── examples/
+│   └── events-example.csv     # Sample transaction file
+├── Makefile                   # init / up / logs / upgrade helpers
 ├── docker-compose.yaml
 ├── influxdb3-init.sh          # InfluxDB 3 bootstrap (creates the database)
-├── influxdb3-token.json       # InfluxDB admin token (dev default)
 └── grafana_provisioning/
     ├── datasources/           # InfluxDB SQL datasource
     └── dashboards/            # "Stock share monitoring" dashboard
 ```
 
-  </TabItem>
-  <TabItem value="events" label="Events mode">
+The same layout works in both modes — there is no mode-specific file structure.
 
-```
-docker-compose/
-├── .env                       # Contains SB_CONFIG_MODE=events
-├── settings.yaml              # Mode configuration
-├── events/                    # Your transaction files
-│   ├── 2023.csv
-│   └── 2024.csv
-├── docker-compose.yaml
-├── influxdb3-init.sh
-├── influxdb3-token.json
-└── grafana_provisioning/
-    ├── datasources/
-    └── dashboards/
+## Upgrading
+
+`SB_VERSION` pins the app image, so upgrades are explicit and reversible:
+
+```bash
+docker compose pull && docker compose up -d     # or: make upgrade
 ```
 
-  </TabItem>
-</Tabs>
+Bump `SB_VERSION` in `.env` to move across majors, or set it back to the
+previous version to roll back. Your `.env` and config directory are untouched by
+an upgrade, so re-extracting a newer release over the folder is safe.
+
+## Migrating from a pre-4.2 layout {#migration}
+
+Earlier stacks kept `config.yaml`, `settings.yaml` and `events/` at the root of
+the `docker-compose` folder, mounted file by file, with the token duplicated in
+three places. To move over:
+
+```bash
+cd docker-compose
+mkdir -p data
+mv config.yaml settings.yaml data/ 2>/dev/null
+mv events data/ 2>/dev/null
+cp .env.example .env.new       # then port your values over, see below
+```
+
+Three things to know:
+
+- **`.env` is no longer shipped**, so it will not be overwritten again — but the
+  old one was tracked, and a `git pull` may remove it. Keep a copy before
+  upgrading.
+- **Variable names now match the app's**: `SCRAPING_INTERVAL` becomes
+  `SB_REGULAR_INTERVAL`, `INGESTION_INTERVAL` becomes `SB_INGESTION_INTERVAL`,
+  and so on. The old `SCRAPING_INTERVAL` mapped to the deprecated
+  `SB_SCRAPING_INTERVAL`, which logged a warning on every boot.
+- **`influxdb3-token.json` is gone.** The token comes from `INFLUXDB_TOKEN` in
+  `.env` alone; the file is generated inside the container at startup.
+
+To keep the old flat layout instead, set `SB_CONFIG_DIR=.` in `.env` — the whole
+`docker-compose` folder then becomes the config directory.
 
 ## Development stack
 
 A `docker-compose.dev.yaml` is also provided. It builds the app image locally,
 runs InfluxDB **without authentication**, enables `DEBUG` logging, and also
-serves this documentation site. It defaults to events mode:
+serves this documentation site on port `4000`. It defaults to the checked-in
+`data.example/` directory, so it runs with no setup:
 
 ```bash
-docker compose -f docker-compose.dev.yaml up -d
+docker compose -f docker-compose.dev.yaml up -d      # or: make dev
 ```
+
+Point it at your own config with `SB_CONFIG_DIR=./data`.

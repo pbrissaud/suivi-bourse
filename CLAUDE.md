@@ -44,12 +44,22 @@ pnpm build    # Production build (fails on broken links)
 
 ```bash
 cd docker-compose
-docker-compose up -d              # Full stack: app + InfluxDB + Grafana
-docker-compose -f docker-compose.dev.yaml up -d  # Development mode
+make init                         # .env from .env.example, data/ from data.example/
+docker compose up -d              # Full stack: app + InfluxDB + Grafana
+docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.example/)
 
-# Events mode
-SB_CONFIG_MODE=events docker-compose -f docker-compose.dev.yaml up -d
+# Events mode: drop a .csv/.xlsx into the config dir's events/ folder — the mode
+# is auto-detected. SB_CONFIG_MODE only forces it.
 ```
+
+The stack owns exactly two user-writable things, both git-ignored: `.env` (every
+setting, names identical to the app's own env vars) and the **config directory**
+(`SB_CONFIG_DIR`, default `./data`) mounted read-only as a single volume at
+`/home/appuser/.config/SuiviBourse`. `docker-compose.yaml` is never edited by
+users: the image tag is `${SB_VERSION:-4}`, ports and container-name prefix are
+variables, and the InfluxDB admin token has one source (`INFLUXDB_TOKEN` in
+`.env`) that `influxdb3-init.sh` materialises into a token file and Grafana's
+datasource reads via `$__env{}`.
 
 ## Architecture
 
@@ -164,7 +174,13 @@ SuiviBourse supports two **mutually exclusive** configuration modes:
 **Mode selection priority:**
 1. Environment variable `SB_CONFIG_MODE` (`manual` or `events`)
 2. `~/.config/SuiviBourse/settings.yaml` → `mode` field
-3. Default: `manual`
+3. Auto-detection: `events` if the events source holds ≥1 `.csv`/`.xlsx`
+4. Default: `manual`
+
+The `events:` block (`source`, `watch`) is parsed regardless of *how* the mode
+was selected — it describes how to read events, not whether to. Every `SB_*`
+variable treats a blank value as unset (`env_str`/`env_int`/`env_flag`), because
+compose renders an undefined substitution as an empty string.
 
 > **Note**: The two modes are mutually exclusive. Switching to `events` mode ignores `config.yaml` entirely. There is no automatic migration between modes.
 
@@ -299,7 +315,7 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
 | `SB_STALENESS_HORIZON` | `900` | Price-freshness liveness sonde horizon (seconds): during `REGULAR`, flag a symbol whose stored price stays frozen this long across consecutive polling cycles while the live quote moves (issue #628). Diagnostic only — never changes cadence/write gating/#617 backoff. `0` disables the sonde. |
-| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_CONFIG_MODE` | _(unset)_ | Force the configuration mode (`manual` or `events`). Unset/blank → `settings.yaml`, then auto-detection, then `manual`. |
 | `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint |
 | `LOG_LEVEL` | `INFO` | Logging level |

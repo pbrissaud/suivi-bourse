@@ -99,6 +99,10 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
+# Compose deployment: the user's own config directory and env file. The
+# templates (data.example/, .env.example) are the versioned ones.
+docker-compose/data/
+
 # Environments
 .env
 .venv

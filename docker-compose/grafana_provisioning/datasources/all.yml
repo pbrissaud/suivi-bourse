@@ -1,3 +1,5 @@
+# The token and database name are read from Grafana's environment (fed by .env
+# through docker-compose.yaml), so credentials live in exactly one place.
 apiVersion: 1
 datasources:
   - name: InfluxDB
@@ -8,8 +10,8 @@ datasources:
     jsonData:
       version: SQL
       httpMode: POST
-      dbName: suivi_bourse
+      dbName: $__env{INFLUXDB_DATABASE}
       insecureGrpc: true
       tlsSkipVerify: true
     secureJsonData:
-      token: apiv3_suivi-bourse-admin-token-for-local-development
+      token: $__env{INFLUXDB_TOKEN}

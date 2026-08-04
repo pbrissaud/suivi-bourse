@@ -86,7 +86,7 @@ jobs:
   doc:
     runs-on: ubuntu-latest
     needs: create-release
-    if: ${{needs.create-release.outputs.release_created}} 
+    if: ${{needs.create-release.outputs.release_created}}
     steps:
       - uses: actions/checkout@v7
         with:
