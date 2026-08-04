@@ -15,6 +15,12 @@ documented (or fixed first): `events.watch: true` stops working, and
 `settings.yaml` is never re-read at runtime. Details in
 [Behaviours that break](#behaviours-that-break).
 
+There is a second, more ambitious answer — **the app pulls the repo itself**,
+no sidecar at all. It is also feasible, it makes most of this document's
+complexity evaporate, and it works outside compose too. It is written up in
+[§9](#9-option-e--the-app-does-the-sync-itself). The two are alternatives, not
+layers.
+
 Everything below was checked against git-sync `master` (post-`v4.7.1`) source
 and validated with `docker compose config`. It has **not** been run against a
 live daemon — no Docker daemon was available in the environment where this was
@@ -268,6 +274,12 @@ ships — Option A's audience is the PaaS deployment, not the homelab.
 auth handling, retry/backoff, shallow-fetch and atomic publication, and gets
 each of them slightly wrong. git-sync exists for this.
 
+### Option E — the app syncs the repo itself
+
+Not rejected: it is arguably the better design, and it is a different kind of
+change (a feature, not a deployment recipe). Written up separately in
+[§9](#9-option-e--the-app-does-the-sync-itself).
+
 ## 6. Secrets and threat model
 
 A portfolio repo is personal financial data and should be private, which means
@@ -321,7 +333,111 @@ still needed:
    `linux/amd64`, `linux/arm`, `linux/arm64`, `linux/ppc64le`, `linux/s390x`, so
    this should be a formality.
 
-## 9. Open questions for the maintainer
+## 9. Option E — the app does the sync itself
+
+Instead of a sidecar, SuiviBourse grows a config-sync job: fetch the repo on an
+interval, and on a new SHA invalidate the cache and re-ingest.
+
+### Why it is the better design on the merits
+
+**The symlink dance disappears.** Every awkward piece of Option A — the atomic
+swap, `volumes: !override`, the Compose ≥ 2.24 floor, the `65533` volume
+ownership trick, the stale-worktree race — exists for exactly one reason: two
+processes share a directory and one of them can rewrite it under the other's
+feet. One process that writes and then re-reads under its own lock needs none
+of it. It checks out into a stable directory, then calls `invalidate_cache()`
+and `ingest()` inline.
+
+**It works everywhere**, not just in compose: `docker run`, the standalone/pip
+install, Kubernetes, any PaaS. The sidecar only ever covers the compose stack,
+which is one of three documented deployment paths.
+
+**`events.watch: true` stops being a casualty** and becomes merely redundant —
+the reload is triggered deterministically by the sync job rather than
+accidentally by inotify noticing a deleted directory.
+
+**It fits the project's idioms.** A pure `config_sync.py` alongside
+`scheduling.py` and `performance.py` — decisions in, no I/O, fetcher injected —
+is unit-testable with no network, which is how the rest of the app is built. The
+job itself is a fourth entry in `register_interval_jobs`. And "on error, keep the
+previous valid configuration and carry on" is already the established behaviour
+for ingestion; a failed pull falls into the same shape, with the last good
+checkout still on disk from the previous run.
+
+### What it costs
+
+**It inverts a 4.2 invariant.** The config mount is `:ro` on purpose — "the app
+never writes to its config". App-side sync needs a writable tree. The clean way
+out is to check out into a *separate* volume and let the config directory point
+at it, which means making the config directory configurable app-side:
+`ConfigurationManager` hardcodes `Path('~/.config/SuiviBourse')` and only the
+constructor can override it (for tests). An `SB_CONFIG_DIR` read by the app is a
+few lines and is useful on its own, but it is a prerequisite, not a detail.
+
+**Chicken-and-egg on its own configuration.** The git settings cannot live in
+`settings.yaml`, because `settings.yaml` is inside the repo being synced. They
+have to be environment variables (`SB_CONFIG_GIT_REPO`, `_REF`, `_INTERVAL`,
+`_USERNAME`, `_TOKEN`). That is consistent with the project's env-first
+convention, but it does mean this is the one feature with no `settings.yaml`
+representation at all.
+
+**`settings.yaml`-is-never-re-read stops being a documentation footnote.** Under
+Option A it is a caveat; here it is a bug you have shipped on purpose, because
+the whole point is that config changes at runtime. Fixing `_load_settings()` to
+re-run becomes a prerequisite rather than a follow-up.
+
+**Scope.** git-sync is ~3000 lines because auth, backoff, SSH host-key
+verification, proxies, submodules and LFS are all real. A read-only HTTPS pull
+is maybe 150 lines plus tests; the first feature request will be SSH deploy
+keys, and the second will be a corporate proxy. Owning that is a decision, not
+an accident.
+
+**Threat model.** The app gains outbound access to a git host and holds a
+credential. Today it talks to Yahoo Finance and InfluxDB only.
+
+### Implementation note: `dulwich`, not the `git` CLI
+
+`python:3.14-slim` ships no `git`, so the CLI route means `apt-get install git`
+in the Dockerfile — tens of MB, on every arch. Worse, feeding a PAT to the CLI
+leaks it: in the remote URL persisted into `.git/config`, and in `ps` for
+anything sharing the namespace. Doing it properly needs `GIT_ASKPASS` or a
+credential helper — machinery to get right for something a library hands you.
+
+[`dulwich`](https://pypi.org/project/dulwich/) takes credentials as API
+arguments: nothing on a command line, nothing persisted. And it is nearly free
+dependency-wise — verified against PyPI for `1.2.12`:
+
+- runtime deps are `urllib3>=2.2.2` (the project already pins `urllib3==2.7.0`)
+  and `typing_extensions`, the latter only under `python_version < "3.12"`, so
+  not on 3.14 at all;
+- `manylinux_2_28` wheels for `cp314` on both `x86_64` and `aarch64`, plus a
+  `py3-none-any` pure-Python wheel as a fallback — no build toolchain, no arch
+  gap for Raspberry Pi users;
+- `requires-python >=3.10`, matching the project's own floor.
+
+So the real dependency cost is one package that brings in something already
+pinned.
+
+### Which one to pick
+
+They are alternatives. Shipping both means two ways to do the same thing and a
+support matrix nobody wants.
+
+- **Goal is "unblock Coolify/Dokploy users soon, touch no Python"** → Option A.
+  It is written, it is ~40 lines of YAML, and the risk is entirely outside the
+  app.
+- **Goal is "portfolio-in-a-Git-repo is a SuiviBourse feature"** — documented,
+  supported in standalone and Kubernetes, not just compose → Option E, and
+  Option A becomes dead weight.
+
+My read: Option E is the better product and the better architecture, but it is a
+feature with a tail (auth methods, the `SB_CONFIG_DIR` and `settings.yaml`
+prerequisites, a new egress path), whereas Option A is a deployment recipe that
+can ship this week and be deleted later without regret. Option A first, Option E
+if the demand materialises, is a defensible order — as long as Option A's docs
+do not promise it is the permanent answer.
+
+## 10. Open questions for the maintainer
 
 - Is the config repo expected to be **repo root = config dir**? git-sync's
   `--link` always points at the worktree root, so a config living in a
@@ -330,4 +446,8 @@ still needed:
   cheap answer.
 - Should `watch:` be force-disabled (a log warning when git-sync mode is
   detected) or just documented? The app cannot currently detect it.
-- Is the `settings.yaml`-never-reloaded fix in scope, or a separate issue?
+- Is the `settings.yaml`-never-reloaded fix in scope, or a separate issue? (It
+  is a caveat under Option A and a prerequisite under Option E.)
+- Sidecar (A) or app-side (E)? The two should not both ship. If E is where this
+  ends up, A is still worth shipping first as an unsupported recipe — but its
+  docs must not present it as the permanent answer.
