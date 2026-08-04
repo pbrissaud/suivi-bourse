@@ -778,6 +778,7 @@ def test_regular_interval_ignores_blank_values(monkeypatch, mocker):
 # ---------------------------------------------------------------------------
 
 def test_env_str_treats_blank_as_unset(monkeypatch):
+    """Whitespace-only reads as None; a real value comes back stripped."""
     monkeypatch.setenv("SB_TEST_VAR", "   ")
     assert main.env_str("SB_TEST_VAR") is None
     monkeypatch.setenv("SB_TEST_VAR", " value ")
@@ -787,6 +788,7 @@ def test_env_str_treats_blank_as_unset(monkeypatch):
 
 
 def test_env_int_falls_back_on_blank(monkeypatch):
+    """A blank int var yields the default; a set one is parsed."""
     monkeypatch.setenv("SB_TEST_INT", "")
     assert main.env_int("SB_TEST_INT", 42) == 42
     monkeypatch.setenv("SB_TEST_INT", "7")
@@ -794,12 +796,14 @@ def test_env_int_falls_back_on_blank(monkeypatch):
 
 
 def test_env_int_raises_a_named_error_on_garbage(monkeypatch):
+    """A non-numeric value names the variable, so the log says what to fix."""
     monkeypatch.setenv("SB_TEST_INT", "abc")
     with pytest.raises(ValueError, match="SB_TEST_INT"):
         main.env_int("SB_TEST_INT", 42)
 
 
 def test_env_flag_parses_common_spellings(monkeypatch):
+    """Both truthy and falsy spellings are honoured; blank keeps the default."""
     for raw in ("true", "TRUE", "1", "yes", "on"):
         monkeypatch.setenv("SB_TEST_FLAG", raw)
         assert main.env_flag("SB_TEST_FLAG", False) is True
