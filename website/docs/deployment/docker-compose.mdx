@@ -333,6 +333,19 @@ deployment's working directory, so redeployments never touch it. Everything else
 — upgrades via `SB_VERSION`, mode auto-detection, adding event files — works the
 same as anywhere else.
 
+:::note Why that mount uses the long syntax
+Coolify rewrites bind-mount sources when it parses the compose file, and for the
+short `source:target:ro` form it substitutes the default written in the file
+(`./data`) without ever reading your environment, then expands the leading `.`
+into its own clone directory. `SB_CONFIG_DIR` was silently ignored and the app
+started against an empty directory. The config mount is therefore declared with
+the long syntax (`type: bind` / `source:` / `target:`), which Coolify copies
+through untouched so `docker compose` resolves the variable at runtime — exactly
+like the `SB_VERSION` image tag. One side effect: Coolify recomposes the mount
+without its access mode, so the read-only flag is dropped there. The app never
+writes to its config directory, so nothing changes in practice.
+:::
+
 :::tip Publishing a port anyway
 If you do want a port bound on the Coolify host — reaching the InfluxDB API from
 outside, say — add the mapping in Coolify's compose editor for that service.
