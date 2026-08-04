@@ -56,7 +56,22 @@ services:
     # One mount for the whole config directory: settings.yaml, config.yaml and
     # events/ all live in there, so switching modes is a file drop rather than a
     # compose edit. Read-only — the app never writes to its config.
-    - ${SB_CONFIG_DIR:-./data}:/home/appuser/.config/SuiviBourse:ro
+    #
+    # Long syntax on purpose. Coolify's compose parser rewrites bind-mount
+    # sources at parse time, and for the *short* syntax it substitutes the
+    # literal default written here (`./data`) without ever consulting the
+    # application environment, then expands the leading `.` into its own clone
+    # directory — mounting an empty folder however SB_CONFIG_DIR is set
+    # (issue #646). The long-syntax source is copied through verbatim and
+    # resolved at runtime by docker compose, like the image tag above.
+    # `create_host_path` keeps the short syntax's habit of creating a missing
+    # source directory, so a local `docker compose up` behaves as before.
+    - type: bind
+      source: ${SB_CONFIG_DIR:-./data}
+      target: /home/appuser/.config/SuiviBourse
+      read_only: true
+      bind:
+        create_host_path: true
     healthcheck:
       # Probes the /metrics endpoint, unless it has been turned off.
       test:
