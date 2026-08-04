@@ -68,11 +68,23 @@ config directory — Coolify recreates the repository clone on every deployment,
 `data/` is git-ignored so it is never in that clone, and `make init` never runs.
 Point `SB_CONFIG_DIR` at an absolute host path, which also keeps your portfolio
 outside the deployment's working directory so redeploys cannot touch it. The
-guide also flags two traps: publishing ports instead of serving Grafana through
-Coolify's proxy, and Coolify's non-standard `is_directory: true` bind-mount flag,
+guide also flags Coolify's non-standard `is_directory: true` bind-mount flag,
 which plain Docker Compose rejects outright.
 
 → [Deploying with Coolify](/docs/deployment/docker-compose#coolify)
+
+### Publishing ports is an overlay
+
+`docker-compose.yaml` no longer binds anything on the host: the three services
+talk over the compose network, and `docker-compose.expose.yaml` carries the
+`ports:` blocks. `.env.example` chains both through `COMPOSE_FILE`, so a local
+`docker compose up -d` is unchanged. Drop that line and the same stack comes up
+with nothing published — which is what you want behind a reverse proxy, and what
+Coolify gets for free since it regenerates its deployment from
+`docker-compose.yaml` alone. It is also the file to trim when only Grafana
+should be reachable and InfluxDB should not.
+
+→ [Not publishing ports at all](/docs/deployment/docker-compose#port-overlay)
 
 ### New deployment variables
 
@@ -84,6 +96,7 @@ Set in `.env`, all optional except `INFLUXDB_TOKEN`.
 | `SB_CONFIG_DIR` | `./data` | Config directory mounted into the app — point it at a NAS share or an absolute path. |
 | `COMPOSE_PROJECT_NAME` | `suivi-bourse` | Prefix for container and volume names, to run two stacks side by side. |
 | `GRAFANA_PORT` / `INFLUXDB_PORT` | `3000` / `8181` | Published ports, previously hard-coded in the compose file. |
+| `COMPOSE_FILE` | `docker-compose.yaml:docker-compose.expose.yaml` | Chains the port overlay onto the stack. Comment it out to publish nothing. |
 | `GF_ADMIN_PASSWORD` | `admin` | Grafana admin password. |
 
 → [Environment variables](/docs/deployment/docker-compose#environment-variables)
@@ -106,6 +119,13 @@ clobbers your configuration.
 **`influxdb3-token.json` is gone.** The token comes from `INFLUXDB_TOKEN` in
 `.env` alone. Avoid `$` in its value: Grafana expands `$VAR` inside provisioning
 files.
+
+**An `.env` written before the port overlay publishes nothing.** The `ports:`
+blocks moved out of `docker-compose.yaml`, and it is the `COMPOSE_FILE` line in
+`.env` that pulls them back in — without it Grafana is unreachable on
+`localhost:3000`. Add
+`COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml` to your existing
+`.env`; `make init` prints the same reminder when the line is missing.
 
 **`SB_CONFIG_MODE` now defaults to unset, not `manual`.** If you keep event files
 around while deliberately running in manual mode, the new auto-detection would

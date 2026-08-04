@@ -1,0 +1,29 @@
+# SuiviBourse — host port publishing.
+#
+# Overlay on top of docker-compose.yaml, which publishes nothing by itself.
+# `.env.example` chains the two with
+#
+#   COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml
+#
+# so `docker compose up -d` in this folder keeps publishing Grafana, InfluxDB and
+# the /metrics endpoint on the host, as it always did. The ports themselves stay
+# tunable through GRAFANA_PORT / INFLUXDB_PORT / SB_METRICS_PORT in .env.
+#
+# Drop this file from COMPOSE_FILE (or never opt in, which is what a platform
+# regenerating its own environment from docker-compose.yaml does) when a reverse
+# proxy fronts the stack and nothing should be reachable on the host directly.
+#
+# Only publish what you actually reach from outside: Grafana alone is enough for
+# dashboards — the app and InfluxDB are reached over the compose network.
+services:
+  app:
+    ports:
+    - ${SB_METRICS_PORT:-8081}:${SB_METRICS_PORT:-8081}  # Prometheus /metrics (legacy)
+
+  grafana:
+    ports:
+    - ${GRAFANA_PORT:-3000}:3000
+
+  influxdb:
+    ports:
+    - ${INFLUXDB_PORT:-8181}:8181

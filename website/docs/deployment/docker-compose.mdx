@@ -104,6 +104,32 @@ Every port is configurable in `.env`.
 | InfluxDB 3 | `INFLUXDB_PORT` | `8181` | Database HTTP API |
 | App | `SB_METRICS_PORT` | `8081` | Legacy Prometheus `/metrics` endpoint |
 
+### Not publishing them at all {#port-overlay}
+
+Publishing is **an overlay**, not part of the stack itself.
+`docker-compose.yaml` maps no port — the three services talk to each other over
+the compose network — and `docker-compose.expose.yaml` is what puts them on the
+host. `.env.example` chains the two, so nothing changes for a local stack:
+
+```bash title=".env"
+COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml
+```
+
+Comment that line out and `docker compose up -d` starts the same stack with
+nothing bound on the host. That is what you want behind a reverse proxy, which
+reaches Grafana over the compose network instead — see
+[Deploying with Coolify](#coolify). The port variables above keep working either
+way; they are read by the overlay.
+
+Nothing else has to change: the compose commands stay `docker compose up -d`,
+`docker compose logs -f app`, and so on. Compose reads `COMPOSE_FILE` from
+`.env` and chains the files itself. On Windows, separate them with `;` instead
+of `:`.
+
+The overlay is also the place to publish **less**: keep only the `grafana`
+block if the dashboards are all you reach from outside, and leave InfluxDB and
+`/metrics` on the internal network.
+
 ## Configuration directory
 
 The stack mounts **one** directory read-only at
@@ -195,7 +221,8 @@ docker-compose/
 ├── examples/
 │   └── events-example.csv     # Sample transaction file
 ├── Makefile                   # init / up / logs / upgrade helpers
-├── docker-compose.yaml
+├── docker-compose.yaml        # The stack — publishes no port
+├── docker-compose.expose.yaml # Overlay: publishes them on the host
 ├── influxdb3-init.sh          # InfluxDB 3 bootstrap (creates the database)
 └── grafana_provisioning/
     ├── datasources/           # InfluxDB SQL datasource
@@ -215,6 +242,19 @@ docker compose pull && docker compose up -d     # or: make upgrade
 Bump `SB_VERSION` in `.env` to move across majors, or set it back to the
 previous version to roll back. Your `.env` and config directory are untouched by
 an upgrade, so re-extracting a newer release over the folder is safe.
+
+:::caution Ports moved to an overlay
+`docker-compose.yaml` no longer publishes anything by itself — an `.env` written
+before that change has no `COMPOSE_FILE` line, and the stack then comes up with
+Grafana unreachable on `localhost:3000`. Add the line to your existing `.env`:
+
+```bash title=".env"
+COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml
+```
+
+`make init` prints the same reminder when it finds an `.env` without it. See
+[Not publishing them at all](#port-overlay) for why the split exists.
+:::
 
 ## Migrating from a pre-4.2 layout {#migration}
 
@@ -253,6 +293,14 @@ most of it fits without changes: every setting is a `${VAR}` in
 variables, and the InfluxDB / Grafana named volumes are handled natively. There
 is no `.env` to provide — Coolify injects the variables itself.
 
+**Ports take care of themselves.** Coolify regenerates its deployment from
+`docker-compose.yaml` alone and writes its own environment, so it never sees the
+`COMPOSE_FILE` line from `.env.example` and never loads
+`docker-compose.expose.yaml`. What it deploys is the unpublished stack: attach a
+domain to the `grafana` service and its proxy reaches the container over the
+compose network, with nothing bound on the host. Same reasoning for any other
+reverse-proxied deployment — Dokploy, a hand-written Traefik or Caddy setup.
+
 **One thing needs care: the configuration directory.** Coolify recreates the
 repository clone on every deployment, `data/` is git-ignored so it is never in
 that clone, and `make init` does not run. Left at its `./data` default, the app
@@ -285,10 +333,11 @@ deployment's working directory, so redeployments never touch it. Everything else
 — upgrades via `SB_VERSION`, mode auto-detection, adding event files — works the
 same as anywhere else.
 
-:::tip Serve Grafana through Coolify's proxy
-The stack publishes its ports on the host by default. On Coolify you will
-usually prefer to attach a domain to the `grafana` service and let its proxy
-terminate TLS, rather than exposing port `3000` directly.
+:::tip Publishing a port anyway
+If you do want a port bound on the Coolify host — reaching the InfluxDB API from
+outside, say — add the mapping in Coolify's compose editor for that service.
+Pointing the resource at `docker-compose.expose.yaml` instead is not an option:
+the overlay only carries `ports:` blocks and is not a stack on its own.
 :::
 
 :::caution `is_directory` belongs in a Coolify-only file
