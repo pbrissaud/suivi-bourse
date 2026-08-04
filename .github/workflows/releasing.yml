@@ -83,40 +83,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Publish the compose stack itself to the registry, so the deployment can be
-  # run without cloning or extracting a release:
-  #   docker compose -f oci://ghcr.io/pbrissaud/suivi-bourse-stack:4 up -d
-  # Non-blocking: a failure here must not fail an otherwise good release.
-  compose:
-    runs-on: ubuntu-latest
-    needs: [create-release, docker]
-    if: ${{needs.create-release.outputs.release_created}}
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish compose stack
-        working-directory: docker-compose
-        env:
-          TAG_NAME: ${{needs.create-release.outputs.tag_name}}
-          # Only needed to satisfy the compose file's required-variable checks
-          # at render time; the published stack carries no token.
-          INFLUXDB_TOKEN: CHANGE_ME_IN_YOUR_ENV
-        run: |
-          version="${TAG_NAME#v}"
-          major="${version%%.*}"
-          for tag in "$version" "$major"; do
-            docker compose -f docker-compose.yaml publish \
-              "ghcr.io/pbrissaud/suivi-bourse-stack:${tag}" -y
-          done
-
   doc:
     runs-on: ubuntu-latest
     needs: create-release

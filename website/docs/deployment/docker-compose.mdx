@@ -245,35 +245,6 @@ Three things to know:
 To keep the old flat layout instead, set `SB_CONFIG_DIR=.` in `.env` — the whole
 `docker-compose` folder then becomes the config directory.
 
-## Running the stack without cloning {#oci}
-
-The stack is published to the registry alongside each release, and a recent
-Compose can pull it straight from there — no download-and-extract step at all:
-
-```bash
-docker compose -f oci://ghcr.io/pbrissaud/suivi-bourse-stack:4 up -d
-```
-
-The compose file carries no `env_file` reference and no local secret, so
-everything is driven by your environment (or `--env-file`). You still need a
-config directory: the app mounts it as a **bind mount**, resolved relative to the
-directory you run the command from, so create it first (`SB_CONFIG_DIR` points
-elsewhere if you prefer).
-
-Publish it yourself from a checkout with:
-
-```bash
-docker compose publish ghcr.io/<you>/suivi-bourse-stack:4
-```
-
-:::note Unverified
-This path relies on `docker compose publish`, which is recent and evolving —
-`oci://` support and the exact publish semantics depend on your Compose version,
-and the bind-mounted config directory has not been exercised end to end through
-a published artifact. Prefer the release download above if you want the
-well-trodden route; the publish job in CI is non-blocking for the same reason.
-:::
-
 ## Development stack
 
 A `docker-compose.dev.yaml` is also provided. It builds the app image locally,
