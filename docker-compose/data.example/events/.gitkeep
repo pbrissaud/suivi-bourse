@@ -1,0 +1,5 @@
+# Drop your broker exports (.csv / .xlsx) here.
+#
+# As soon as this folder holds one, SuiviBourse switches to events mode on its
+# own — no change to docker-compose.yaml, settings.yaml or .env required.
+# See ../../examples/events-example.csv for the expected columns.
