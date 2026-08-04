@@ -22,7 +22,27 @@ SuiviBourse decides which mode to use in this order:
 
 1. The `SB_CONFIG_MODE` environment variable (`manual` or `events`)
 2. The `mode` field in `settings.yaml`
-3. Default: `manual`
+3. **Auto-detection**: events mode if the events source holds at least one
+   `.csv` or `.xlsx` file
+4. Default: `manual`
+
+:::tip Let auto-detection do the work
+Declaring the mode in two places — your deployment *and* `settings.yaml` — is
+the main way the two drift apart. Leave both undeclared and dropping a broker
+export into `events/` is enough to switch to events mode; removing it switches
+back. An explicit `SB_CONFIG_MODE` or `mode:` always wins, so nothing changes
+for deployments that already state one.
+
+Auto-detection only looks at file extensions, so a `README.md` or `.gitkeep`
+sitting in `events/` never triggers it.
+:::
+
+:::note Blank counts as unset
+An empty `SB_CONFIG_MODE` (which is what `SB_CONFIG_MODE=${SB_CONFIG_MODE}`
+renders to when the variable is missing from a compose `.env`) is treated as
+"not set" and falls through to the next rule. The same holds for every `SB_*`
+variable: blank means default, never a parse error at boot.
+:::
 
 ## Configuration directory
 
@@ -48,7 +68,7 @@ All settings can be overridden with environment variables.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_CONFIG_MODE` | _(unset)_ | Force a configuration mode (`manual` or `events`). Unset or blank leaves the choice to `settings.yaml`, then auto-detection, then `manual`. |
 | `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is **open** (`REGULAR`). Closed markets sleep to the next open instead — see [market-aware scraping](/docs/advanced/market-aware-scraping). |
 | `SB_SCRAPING_INTERVAL` | _(deprecated)_ | **Deprecated** heir of the old global scrape interval. Still honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset (logs a warning). Prefer `SB_REGULAR_INTERVAL`. |
 | `SB_PERF_INTERVAL` | `120` | Recompute interval (seconds) for the `account_metrics` / `portfolio_totals` performance series (events mode, opt-in accounts). |

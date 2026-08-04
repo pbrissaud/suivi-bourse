@@ -26,16 +26,26 @@ Download the source code from the
 [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest),
 extract it, and move into the `docker-compose` folder.
 
-## 3. Configure your portfolio
+## 3. Create your configuration
+
+```bash
+make init
+# equivalent to: cp .env.example .env && cp -r data.example data
+```
+
+This gives you a `.env` (every setting) and a `data/` directory (your
+portfolio). They are yours — no shipped file needs editing from here on.
+
+## 4. Configure your portfolio
 
 Choose one of the two configuration modes.
 
 <Tabs>
   <TabItem value="manual" label="Manual mode" default>
 
-Edit `config.yaml` to describe the current state of your portfolio:
+Edit `data/config.yaml` to describe the current state of your portfolio:
 
-```yaml title="config.yaml"
+```yaml title="data/config.yaml"
 shares:
 - name: Apple
   symbol: AAPL
@@ -53,26 +63,16 @@ See [Manual mode](/docs/configuration/manual-mode) for the full reference.
   </TabItem>
   <TabItem value="events" label="Events mode">
 
-Create a `settings.yaml` file and an `events/` directory with your transactions:
+Drop your transactions into `data/events/`:
 
-```yaml title="settings.yaml"
-mode: events
-events:
-  source: /home/appuser/.config/SuiviBourse/events/
-  watch: true
-```
-
-```csv title="events/portfolio.csv"
+```csv title="data/events/portfolio.csv"
 date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
 2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
 ```
 
-Then set the mode in the `.env` file:
-
-```bash title=".env"
-SB_CONFIG_MODE=events
-```
+That's all: SuiviBourse detects the event files and switches to events mode on
+its own — nothing to declare in `.env` or `settings.yaml`.
 
 See [Events mode](/docs/configuration/events-mode) for the full CSV format.
 Events mode also unlocks [historical backfill](/docs/backfill).
@@ -80,7 +80,7 @@ Events mode also unlocks [historical backfill](/docs/backfill).
   </TabItem>
 </Tabs>
 
-## 4. Run the stack
+## 5. Run the stack
 
 Run the following command in the `docker-compose` folder:
 
@@ -91,7 +91,7 @@ docker compose up -d
 This starts three containers: `suivi-bourse-app`, `suivi-bourse-influxdb` and
 `suivi-bourse-graf`.
 
-## 5. Visit Grafana
+## 6. Visit Grafana
 
 Connect to Grafana at [http://localhost:3000](http://localhost:3000) with:
 
