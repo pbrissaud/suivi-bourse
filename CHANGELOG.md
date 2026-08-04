@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.1](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.0...v4.2.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **compose:** separate port publishing into an optional overlay ([#641](https://github.com/pbrissaud/suivi-bourse/issues/641)) ([062e92c](https://github.com/pbrissaud/suivi-bourse/commit/062e92cc485cc44c0e4dcd0d9bc50969d54128e6))
+
 ## [4.2.0](https://github.com/pbrissaud/suivi-bourse/compare/v4.1.0...v4.2.0) (2026-08-04)
 
 
