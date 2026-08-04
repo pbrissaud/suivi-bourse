@@ -36,7 +36,9 @@ from events.schemas import EventType, Account, Portfolio, DEFAULT_ACCOUNT
 from influxdb_writer import InfluxDBWriter
 from prometheus_exporter import PrometheusExporter
 
-LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
+# Blank counts as unset throughout (see ``env_str``): compose renders an
+# undefined substitution as an empty string rather than omitting the variable.
+LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
 scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
 yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
@@ -80,6 +82,41 @@ _EXCHANGE_CAPTURE_WORKERS = 8
 _EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 
 
+def env_str(name: str) -> Optional[str]:
+    """Read an env var, treating blank/whitespace-only as unset.
+
+    Compose substitutes an undefined variable as the *empty string* rather than
+    omitting it, so ``SB_FOO=${FOO}`` with no ``FOO`` in ``.env`` hands the
+    container ``SB_FOO=""``. A bare ``os.getenv`` sees a set-but-empty value and
+    every ``int()`` downstream blows up at boot; blank means "not configured".
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    raw = raw.strip()
+    return raw or None
+
+
+def env_int(name: str, default: int) -> int:
+    """Read an int env var, tolerating blanks and failing with a clear message."""
+    raw = env_str(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"Invalid value for {name}: {raw!r} is not an integer") from None
+
+
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean env var, tolerating blanks."""
+    raw = env_str(name)
+    if raw is None:
+        return default
+    return raw.lower() in ('1', 'true', 'yes', 'on')
+
+
 def resolve_regular_interval() -> int:
     """Resolve the REGULAR-state poll interval (``base_interval``) from the env.
 
@@ -88,8 +125,8 @@ def resolve_regular_interval() -> int:
     of the removed global scrape interval, so it is still honored as a fallback
     but a warning is logged whenever it is present — whether used or ignored.
     """
-    new_val = os.getenv('SB_REGULAR_INTERVAL')
-    old_val = os.getenv('SB_SCRAPING_INTERVAL')
+    new_val = env_str('SB_REGULAR_INTERVAL')
+    old_val = env_str('SB_SCRAPING_INTERVAL')
     if old_val is not None:
         if new_val is not None:
             app_logger.warning(
@@ -125,11 +162,10 @@ def resolve_executor_pool_size(mode: str, shares: List[dict],
     Always ``>= 1``. ``POOL_CAP`` bounds only the auto formula, never the fixed
     dial (operator freedom, design #611).
     """
-    auto = os.getenv('SB_DYNAMIC_EXECUTOR_POOL', 'false').lower() == 'true'
-    fixed_raw = os.getenv('SB_EXECUTOR_POOL')
+    auto = env_flag('SB_DYNAMIC_EXECUTOR_POOL', False)
+    fixed_raw = env_str('SB_EXECUTOR_POOL')
     if not auto:
-        fixed = int(fixed_raw) if fixed_raw is not None else 10
-        return max(1, fixed)
+        return max(1, env_int('SB_EXECUTOR_POOL', 10))
     if fixed_raw is not None:
         app_logger.warning(
             "SB_EXECUTOR_POOL is ignored because SB_DYNAMIC_EXECUTOR_POOL is "
@@ -219,22 +255,30 @@ class ConfigurationManager:
             with open(self.settings_path, 'r', encoding='utf-8') as f:
                 settings = yaml.safe_load(f) or {}
 
+        # The events block is parsed unconditionally: `source` and `watch`
+        # describe *how* to read events, not *whether* to. Gating them behind the
+        # settings.yaml branch of the mode resolution meant that selecting events
+        # mode through SB_CONFIG_MODE — the documented compose path — silently
+        # dropped a custom source and left the file watcher off despite
+        # `watch: true` sitting right there in settings.yaml.
+        events_settings = settings.get('events') or {}
+        self._events_source = events_settings.get('source')
+        self._watch_enabled = events_settings.get('watch', False)
+
         # Priority 1: Environment variable
-        env_mode = os.getenv('SB_CONFIG_MODE')
+        env_mode = env_str('SB_CONFIG_MODE')
         if env_mode:
             self._mode = env_mode.lower()
             app_logger.info(f"Using config mode from environment: {self._mode}")
-        # Priority 2: settings.yaml
-        elif self.settings_path.exists():
-            self._mode = settings.get('mode', self.MODE_MANUAL).lower()
-            events_settings = settings.get('events', {})
-            self._events_source = events_settings.get('source')
-            self._watch_enabled = events_settings.get('watch', False)
+        # Priority 2: an explicit `mode:` in settings.yaml
+        elif settings.get('mode'):
+            self._mode = str(settings['mode']).lower()
             app_logger.info(f"Using config mode from settings.yaml: {self._mode}")
-        # Priority 3: Default to manual
+        # Priority 3: infer it from what the config directory actually holds, so
+        # dropping event files in is enough to run in events mode — no second
+        # declaration to keep in sync in settings.yaml and the deployment.
         else:
-            self._mode = self.MODE_MANUAL
-            app_logger.info(f"No settings found, using default mode: {self._mode}")
+            self._mode = self._detect_mode()
 
         # Accounts are an opt-in feature declared in settings.yaml, independent of
         # how the mode was selected. Absence leaves behaviour strictly unchanged.
@@ -247,6 +291,38 @@ class ConfigurationManager:
         # Default events source if not specified
         if self._mode == self.MODE_EVENTS and not self._events_source:
             self._events_source = str(self.config_dir / 'events')
+
+    #: Event-file extensions recognised by the loader and by mode auto-detection.
+    EVENT_SUFFIXES = ('.csv', '.xlsx')
+
+    def _detect_mode(self) -> str:
+        """Infer the mode from the config directory's contents.
+
+        Events mode as soon as the events source holds at least one loadable
+        file, manual otherwise. This is the lowest-priority rule — an explicit
+        ``SB_CONFIG_MODE`` or ``mode:`` always wins — so it can only ever pick a
+        mode for a deployment that never stated one.
+        """
+        source = Path(self._events_source).expanduser() if self._events_source \
+            else self.config_dir / 'events'
+
+        found = False
+        if source.is_file():
+            found = source.suffix.lower() in self.EVENT_SUFFIXES
+        elif source.is_dir():
+            found = any(f.suffix.lower() in self.EVENT_SUFFIXES
+                        for f in source.iterdir())
+
+        if found:
+            app_logger.info(
+                f"No mode declared; detected event files in {source}, "
+                f"using mode: {self.MODE_EVENTS}")
+            return self.MODE_EVENTS
+
+        app_logger.info(
+            f"No mode declared and no event files in {source}, "
+            f"using default mode: {self.MODE_MANUAL}")
+        return self.MODE_MANUAL
 
     def _parse_accounts(self, raw) -> Optional[Portfolio]:
         """Validate and build the declared accounts from the raw settings block.
@@ -311,7 +387,7 @@ class ConfigurationManager:
             mtimes.append(f"{source}:{source.stat().st_mtime}")
         elif source.is_dir():
             for f in sorted(source.iterdir()):
-                if f.suffix.lower() in ('.csv', '.xlsx'):
+                if f.suffix.lower() in self.EVENT_SUFFIXES:
                     mtimes.append(f"{f}:{f.stat().st_mtime}")
 
         return "|".join(mtimes) if mtimes else None
@@ -487,13 +563,12 @@ class SuiviBourseMetrics:
         # Prometheus exporter (legacy /metrics endpoint, on by default for
         # backward compatibility). The HTTP server is started separately.
         self.prometheus = prometheus_exporter
-        if self.prometheus is None and \
-                os.getenv('SB_PROMETHEUS_ENABLED', 'true').lower() == 'true':
+        if self.prometheus is None and env_flag('SB_PROMETHEUS_ENABLED', True):
             self.prometheus = PrometheusExporter()
 
         # Backfill configuration
-        self.backfill_delay = int(os.getenv('SB_BACKFILL_DELAY', '10'))
-        self.backfill_chunk_days = int(os.getenv('SB_BACKFILL_CHUNK_DAYS', '365'))
+        self.backfill_delay = env_int('SB_BACKFILL_DELAY', 10)
+        self.backfill_chunk_days = env_int('SB_BACKFILL_CHUNK_DAYS', 365)
 
         # Price-freshness liveness sonde horizon (issue #628, design #626). The
         # staleness signal fires only once the newest stored price has gone
@@ -501,8 +576,8 @@ class SuiviBourseMetrics:
         # a few REGULAR cycles wide by default so an ordinary tick never trips it.
         # ``0`` (or negative) disables the sonde — the pure decision returns
         # False and the check no-ops.
-        self.staleness_horizon = int(
-            os.getenv('SB_STALENESS_HORIZON', str(scheduling.STALENESS_HORIZON)))
+        self.staleness_horizon = env_int(
+            'SB_STALENESS_HORIZON', scheduling.STALENESS_HORIZON)
 
         # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
         # as its own self-rescheduling APScheduler job; the scheduler is injected
@@ -1688,9 +1763,9 @@ if __name__ == "__main__":
     # removed global SB_SCRAPING_INTERVAL (design #607); resolve_regular_interval
     # applies the precedence + deprecation warning.
     regular_interval = resolve_regular_interval()
-    ingestion_interval = int(os.getenv('SB_INGESTION_INTERVAL', default='300'))
-    backfill_interval = int(os.getenv('SB_BACKFILL_INTERVAL', default='60'))
-    perf_interval = int(os.getenv('SB_PERF_INTERVAL', default='120'))
+    ingestion_interval = env_int('SB_INGESTION_INTERVAL', 300)
+    backfill_interval = env_int('SB_BACKFILL_INTERVAL', 60)
+    perf_interval = env_int('SB_PERF_INTERVAL', 120)
 
     sb_metrics = None
     try:
@@ -1699,7 +1774,7 @@ if __name__ == "__main__":
         sb_metrics.regular_interval = regular_interval
         # Expose the legacy Prometheus /metrics endpoint if enabled (default on)
         if sb_metrics.prometheus is not None:
-            metrics_port = int(os.getenv('SB_METRICS_PORT', default='8081'))
+            metrics_port = env_int('SB_METRICS_PORT', 8081)
             sb_metrics.prometheus.start(metrics_port)
             app_logger.info(
                 f"Prometheus metrics available on :{metrics_port}/metrics")

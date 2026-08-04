@@ -2,7 +2,8 @@
 Unit tests for main.ConfigurationManager.
 
 These tests exercise ConfigurationManager in isolation:
-  * mode selection priority (SB_CONFIG_MODE env > settings.yaml > default 'manual')
+  * mode selection priority (SB_CONFIG_MODE env > settings.yaml `mode:` >
+    auto-detection from the events source > default 'manual')
   * events-source defaulting
   * _compute_cache_key behaviour (None in manual, mtime-based in events)
   * the caching contract of _load_from_events (identity reuse, force reload,
@@ -54,8 +55,84 @@ def test_env_overrides_settings_yaml(tmp_path, monkeypatch):
     monkeypatch.setenv("SB_CONFIG_MODE", "manual")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-    # Because env short-circuits settings.yaml, its events settings are ignored.
-    assert cm._events_source is None
+    # The env var overrides the *mode* only; the events block is still parsed
+    # (and simply unused in manual mode).
+    assert cm._events_source == "/nowhere"
+
+
+def test_env_mode_still_honours_events_block(tmp_path, monkeypatch):
+    """Selecting events mode via env keeps settings.yaml's source and watch.
+
+    Regression guard: the env branch used to short-circuit the whole
+    settings.yaml read, so the documented compose path (SB_CONFIG_MODE=events)
+    silently ignored a custom source and never started the file watcher despite
+    `watch: true`.
+    """
+    src = str(tmp_path / "my_events")
+    _write_settings(tmp_path, f"events:\n  source: {src}\n  watch: true\n")
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
+    assert cm._events_source == src
+    assert cm._watch_enabled is True
+
+
+def test_blank_env_mode_is_treated_as_unset(tmp_path, monkeypatch):
+    """An empty SB_CONFIG_MODE falls through instead of selecting mode ''.
+
+    Compose renders `SB_CONFIG_MODE=${SB_CONFIG_MODE}` as an empty string when
+    the variable is absent from .env, which must not defeat settings.yaml.
+    """
+    _write_settings(tmp_path, "mode: events\n")
+    monkeypatch.setenv("SB_CONFIG_MODE", "   ")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
+
+
+# --------------------------------------------------------------------------- #
+# Mode auto-detection (lowest priority: nothing declared anywhere)
+# --------------------------------------------------------------------------- #
+def test_detects_events_mode_from_event_files(tmp_path):
+    """No env and no settings.yaml, but event files present -> events mode."""
+    events = tmp_path / "events"
+    events.mkdir()
+    (events / "2024.csv").write_text("date,event_type\n", encoding="utf-8")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
+    assert cm._events_source == str(tmp_path / "events")
+
+
+def test_detects_manual_mode_when_events_dir_has_no_event_files(tmp_path):
+    """An events dir holding no .csv/.xlsx does not trigger events mode."""
+    events = tmp_path / "events"
+    events.mkdir()
+    (events / "README.md").write_text("drop your exports here\n", encoding="utf-8")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
+
+
+def test_detection_uses_declared_events_source(tmp_path):
+    """Detection looks at settings.yaml's events.source, not just the default."""
+    src = tmp_path / "broker_exports"
+    src.mkdir()
+    (src / "export.xlsx").write_bytes(b"")
+    _write_settings(tmp_path, f"events:\n  source: {src}\n")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
+
+
+def test_explicit_manual_mode_beats_detection(tmp_path):
+    """An explicit `mode: manual` wins even with event files sitting there."""
+    events = tmp_path / "events"
+    events.mkdir()
+    (events / "2024.csv").write_text("date,event_type\n", encoding="utf-8")
+    _write_settings(tmp_path, "mode: manual\n")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
 
 
 def test_env_value_is_lowercased(tmp_path, monkeypatch):

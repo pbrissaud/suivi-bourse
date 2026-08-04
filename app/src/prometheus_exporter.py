@@ -13,7 +13,7 @@ from logfmt_logger import getLogger
 
 from events.schemas import DEFAULT_ACCOUNT
 
-LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
+LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
 logger = getLogger("prometheus_exporter", level=LOG_LEVEL)
 
 # 'account' is part of every series identity: without it a symbol held in two

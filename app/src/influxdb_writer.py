@@ -12,7 +12,7 @@ from logfmt_logger import getLogger
 
 from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint, PortfolioTotalPoint
 
-LOG_LEVEL = os.getenv('LOG_LEVEL', default='INFO')
+LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
 
 
@@ -66,9 +66,13 @@ class InfluxDBWriter:
             token: InfluxDB API token (default: from INFLUXDB_TOKEN env var)
             database: InfluxDB database (default: from INFLUXDB_DATABASE env var)
         """
-        self.host = host or os.getenv('INFLUXDB_HOST', 'http://influxdb:8181')
-        self.token = token or os.getenv('INFLUXDB_TOKEN') or ''
-        self.database = database or os.getenv('INFLUXDB_DATABASE', 'suivi_bourse')
+        # ``.strip() or default`` throughout: a blank env var counts as unset,
+        # since compose renders an undefined substitution as an empty string.
+        self.host = host or (os.getenv('INFLUXDB_HOST') or '').strip() \
+            or 'http://influxdb:8181'
+        self.token = token or (os.getenv('INFLUXDB_TOKEN') or '').strip()
+        self.database = database or (os.getenv('INFLUXDB_DATABASE') or '').strip() \
+            or 'suivi_bourse'
 
         self._client: Optional[InfluxDBClient3] = None
 

@@ -744,6 +744,64 @@ def test_regular_interval_no_warning_when_old_var_absent(monkeypatch, mocker):
     warn.assert_not_called()
 
 
+def test_regular_interval_ignores_blank_values(monkeypatch, mocker):
+    """Blank vars fall through to the default instead of crashing on int('').
+
+    `SB_REGULAR_INTERVAL=${REGULAR_INTERVAL}` with nothing in .env reaches the
+    container as an empty string, which is set-but-meaningless.
+    """
+    monkeypatch.setenv("SB_REGULAR_INTERVAL", "")
+    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "  ")
+    warn = mocker.patch.object(main.app_logger, "warning")
+    assert resolve_regular_interval() == 120
+    # A blank deprecated var is not "present" either, so no noise.
+    warn.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# env_str / env_int / env_flag — blank means unset (compose substitution)
+# ---------------------------------------------------------------------------
+
+def test_env_str_treats_blank_as_unset(monkeypatch):
+    monkeypatch.setenv("SB_TEST_VAR", "   ")
+    assert main.env_str("SB_TEST_VAR") is None
+    monkeypatch.setenv("SB_TEST_VAR", " value ")
+    assert main.env_str("SB_TEST_VAR") == "value"
+    monkeypatch.delenv("SB_TEST_VAR")
+    assert main.env_str("SB_TEST_VAR") is None
+
+
+def test_env_int_falls_back_on_blank(monkeypatch):
+    monkeypatch.setenv("SB_TEST_INT", "")
+    assert main.env_int("SB_TEST_INT", 42) == 42
+    monkeypatch.setenv("SB_TEST_INT", "7")
+    assert main.env_int("SB_TEST_INT", 42) == 7
+
+
+def test_env_int_raises_a_named_error_on_garbage(monkeypatch):
+    monkeypatch.setenv("SB_TEST_INT", "abc")
+    with pytest.raises(ValueError, match="SB_TEST_INT"):
+        main.env_int("SB_TEST_INT", 42)
+
+
+def test_env_flag_parses_common_spellings(monkeypatch):
+    for raw in ("true", "TRUE", "1", "yes", "on"):
+        monkeypatch.setenv("SB_TEST_FLAG", raw)
+        assert main.env_flag("SB_TEST_FLAG", False) is True
+    for raw in ("false", "0", "no", "off"):
+        monkeypatch.setenv("SB_TEST_FLAG", raw)
+        assert main.env_flag("SB_TEST_FLAG", True) is False
+    monkeypatch.setenv("SB_TEST_FLAG", "")
+    assert main.env_flag("SB_TEST_FLAG", True) is True
+
+
+def test_executor_pool_ignores_blank_fixed_dial(monkeypatch):
+    """A blank SB_EXECUTOR_POOL falls back to 10 rather than crashing."""
+    monkeypatch.setenv("SB_EXECUTOR_POOL", "")
+    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "")
+    assert resolve_executor_pool_size("manual", [], _never_capture) == 10
+
+
 # ---------------------------------------------------------------------------
 # Anti-herd jitter + misfire/max_instances on the per-symbol jobs (issue #619)
 # ---------------------------------------------------------------------------
