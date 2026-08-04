@@ -25,7 +25,8 @@ init:  ## Create .env (with a unique token) and data/ from the templates
 	@grep -q '^COMPOSE_FILE=' .env || { \
 		echo "note: your .env predates the port overlay — no port is published."; \
 		echo "      add this line to keep reaching Grafana on the host:"; \
-		echo "      COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml"; \
+		echo "        Linux/macOS: COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml"; \
+		echo "        Windows:     COMPOSE_FILE=docker-compose.yaml;docker-compose.expose.yaml"; \
 	}
 	@echo "Ready. Edit data/config.yaml, or drop broker exports into data/events/."
 
