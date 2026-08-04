@@ -101,7 +101,15 @@ services:
       # the single source of truth for the token.
       SB_INFLUXDB_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?set INFLUXDB_TOKEN in .env}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      # /health is authenticated when the server runs with an admin token, so a
+      # bare curl answers 401 forever and the container never turns healthy.
+      # CMD-SHELL (not CMD) so the container's shell expands the token; the
+      # doubled $$ keeps compose from interpolating it at parse time.
+      test:
+      - CMD-SHELL
+      - >-
+        curl -fsS -H "Authorization: Bearer $${SB_INFLUXDB_ADMIN_TOKEN}"
+        http://localhost:8181/health
       interval: 10s
       timeout: 5s
       retries: 5
