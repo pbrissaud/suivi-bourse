@@ -139,6 +139,48 @@ export interface DeclaredAccount {
 }
 
 /**
+ * One row of the accounts comparison table: the declaration joined to the newest
+ * `account_metrics` point.
+ *
+ * Every figure is nullable for two *different* reasons, and both are normal.
+ * `as_of === null` means the account is declared but its first perf cycle has
+ * not run — the row exists, the figures do not yet. A null `xirr` on a row that
+ * *has* an `as_of` is trap 3: the rate is written only once an external flow
+ * exists, so it is absent by design rather than zero.
+ *
+ * `as_of` is a **day**, not an instant: the series is midnight-stamped and
+ * today's point is rewritten in place through the day (trap 2), which is what
+ * the client cache has to expect.
+ */
+export interface AccountSummary extends DeclaredAccount {
+  as_of: string | null
+  cash_balance: number | null
+  holdings_value: number | null
+  total_value: number | null
+  net_contributed: number | null
+  gain_absolu: number | null
+  xirr: number | null
+  twr_index: number | null
+}
+
+export interface AccountHistoryPoint {
+  t: string | null
+  cash_balance: number | null
+  holdings_value: number | null
+  total_value: number | null
+  net_contributed: number | null
+  twr_index: number | null
+}
+
+/** One account's perf series. No `currency`: the collection owns it. */
+export interface AccountHistory {
+  account: string
+  from: string
+  to: string
+  points: AccountHistoryPoint[]
+}
+
+/**
  * The dashboard head, as a **discriminated union** (#655 déc. 8).
  *
  * This is the type doing the most work in the file. #652 déc. 6 fixed two terms
@@ -260,7 +302,7 @@ export interface MoversResponse {
  */
 export interface AccountsResponse {
   declared: boolean
-  accounts: DeclaredAccount[]
+  accounts: AccountSummary[]
 }
 
 export const api = {
@@ -274,6 +316,11 @@ export const api = {
   events: (symbol?: string) =>
     get<LedgerEvent[]>('/api/events' + (symbol ? `?symbol=${encodeURIComponent(symbol)}` : '')),
   accounts: () => get<AccountsResponse>('/api/accounts'),
+  accountHistory: (id: string, from: Date, to: Date) =>
+    get<AccountHistory>(
+      `/api/accounts/${encodeURIComponent(id)}/history` +
+        `?from=${from.toISOString()}&to=${to.toISOString()}`,
+    ),
   portfolio: (since?: Date) =>
     get<Portfolio>(
       '/api/portfolio' + (since ? `?since=${since.toISOString()}` : ''),

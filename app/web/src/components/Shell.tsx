@@ -15,6 +15,7 @@ import { Link, Outlet } from '@tanstack/react-router'
 const LINKS = [
   { to: '/', label: 'Tableau de bord' },
   { to: '/titres', label: 'Titres' },
+  { to: '/comptes', label: 'Comptes' },
 ] as const
 
 export function Shell() {

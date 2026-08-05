@@ -170,14 +170,25 @@ the React on top of it is admitted throwaway. Three modules, and the split is by
   déc. 1), so a long market closure no longer blanks the page. Also
   `raw_series` and `bucketed_series` — the latter is not in the design and the
   arithmetic forced it: 120 s over a 6.5-hour session is ~200 points a day, so a
-  five-year raw window is a quarter of a million points on the wire.
+  five-year raw window is a quarter of a million points on the wire. The perf
+  series get the same treatment: `latest_totals` / `totals_series` for the
+  global one, and (issue #661) `latest_account_metrics` — P1's window applied to
+  `account_metrics`, one query for the whole comparison table — plus
+  `account_series` for one account's history. All of them are `SELECT *` rather
+  than a field list, because `xirr` / `gain_absolu` / `twr_index` are written
+  only when computable and a field never written is a **column that does not
+  exist**: naming it turns "this account has no deposits" into a query error.
 - **`portfolio_view.py`** — pure, in the taste of `scheduling.py` /
   `performance.py`. Rows in, page objects out: the weighted mean
   `Σ(pp×pq)/Σpq` (a plain sum *and* a plain mean both produce plausible-looking
   wrong prices), the per-account rollup Grafana sums away in SQL, and
   **plus-value latente** — which requires the holdings term and defaults the
   other three to zero, because composing it out of null-tolerant helpers made a
-  share whose price was never observed report a total loss.
+  share whose price was never observed report a total loss. `build_accounts`
+  (#661) joins the **declaration** to the newest metrics row and lets the
+  declaration drive: an account with no series yet is a row of em dashes, a
+  series with no declaration is not a row, and nothing is summed across accounts
+  — the consolidated figures have one source, `portfolio_totals`.
 - **`influx_sql.py`** — the one rule both halves share: trap 1's
   `COALESCE(account,'default')` + quote escaping, the NaN guard, the bare-UTC-Z
   literal. A second implementation would decay, and its symptom — history that
@@ -502,7 +513,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, accounts, events (#659)
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint
 └── events/                 # Events module

@@ -47,6 +47,11 @@ MEASUREMENT = "portfolio_metrics"
 #: derived by summing the per-account series.
 TOTALS_MEASUREMENT = "portfolio_totals"
 
+#: The per-account perf series (issue #661). The same seven fields as
+#: :data:`TOTALS_MEASUREMENT`, tagged ``account`` / ``account_type`` /
+#: ``account_currency``, one point per calendar day at midnight.
+ACCOUNT_MEASUREMENT = "account_metrics"
+
 #: What a ``portfolio_totals`` row carries. Documentation and a whitelist — not
 #: a SELECT list; :meth:`latest_totals` explains why the query is ``SELECT *``.
 TOTALS_FIELDS = (
@@ -441,6 +446,84 @@ class PortfolioReader:
         ORDER BY time
         """)
 
+    # ------------------------------------------------------------------ #
+    # The per-account perf series behind the accounts page (issue #661)
+    # ------------------------------------------------------------------ #
+
+    def latest_account_metrics(self) -> List[Dict[str, Any]]:
+        """The newest ``account_metrics`` point of **every** account, in one query.
+
+        P1's shape applied to a second measurement: one ``ROW_NUMBER()`` window
+        answering the whole comparison table, rather than one ``value_at`` per
+        declared account. Same arithmetic as #652 déc. 8 — N accounts is N round
+        trips to fill one screen.
+
+        ``SELECT *`` for :meth:`latest_totals`' reason, and it is the same fact
+        seen per account: ``xirr`` and ``gain_absolu`` are written only once an
+        external flow exists, ``twr_index`` only once the valuation is non-zero,
+        and a field never written is a *column that does not exist*. Naming them
+        would turn "this account has no deposits" into a query error, which
+        :data:`_ABSENT_SCHEMA` would then report as an empty install — the whole
+        table gone because one rate is undefined.
+
+        **Trap 2** lives here rather than in the SQL: the series is daily and
+        midnight-stamped, and *today's point is rewritten in place* through the
+        day (#597 writes only the stale tail). "Latest" therefore means the
+        latest **day**, and its value is expected to change under a client cache
+        — which is why the front polls this rather than treating it as settled.
+
+        Trap 1's ``COALESCE`` is deliberately **not** applied: unlike
+        ``portfolio_metrics``, this measurement has carried its ``account`` tag
+        since its first point (``write_account_metrics`` tags every point,
+        defaulting the value itself), so there is no untagged generation to
+        rescue and coalescing would only hide a genuinely malformed write.
+        """
+        rows = self._rows(f"""
+        SELECT * FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                       PARTITION BY account ORDER BY time DESC) AS rn
+            FROM "{ACCOUNT_MEASUREMENT}"
+        ) WHERE rn = 1
+        ORDER BY account
+        """)
+        # The ranking column is an artefact of the window, not a field of the
+        # series. `SELECT * EXCEPT` is not portable enough to lean on, so it is
+        # dropped here — where the row is already being handled — rather than
+        # leaking into the payload as a mystery integer.
+        for row in rows:
+            row.pop('rn', None)
+        return rows
+
+    def account_series(
+        self,
+        account: str,
+        start: Optional[datetime] = None,
+        stop: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """One account's perf series over ``[start, stop]``, oldest first.
+
+        Two consumers, which is why it is one primitive: the TWR-by-account
+        chart reads ``twr_index`` from N of these in parallel, and the account's
+        detail sheet reads cash / holdings / contributed from the one it opened.
+        A multi-series endpoint would have served the first and left the second
+        to a second query — #655 weighed that and took the N calls, each cached
+        on its own.
+
+        Not bucketed, for :meth:`totals_series`' reason: one point per calendar
+        day means five years is ~1800 rows, and there is nothing to downsample.
+
+        The account filter goes through :func:`_tag_clause`, so the one rule
+        about the ``account`` tag has one home even where — as here — the tag is
+        never null.
+        """
+        where = [_tag_clause('account', account)]
+        where += _window_clauses(start, stop)
+        return self._rows(f"""
+        SELECT * FROM "{ACCOUNT_MEASUREMENT}"
+        WHERE {' AND '.join(where)}
+        ORDER BY time
+        """)
+
     def daily_position_series(
         self,
         start: Optional[datetime] = None,
@@ -581,5 +664,5 @@ def _normalise(value: Any) -> Any:
 
 __all__ = [
     'PortfolioReader', 'bucket_for_window',
-    'MEASUREMENT', 'TOTALS_MEASUREMENT', 'TOTALS_FIELDS',
+    'MEASUREMENT', 'TOTALS_MEASUREMENT', 'ACCOUNT_MEASUREMENT', 'TOTALS_FIELDS',
 ]

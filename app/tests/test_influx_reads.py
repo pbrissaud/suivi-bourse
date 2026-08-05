@@ -360,6 +360,66 @@ def test_totals_series_is_not_bucketed():
     assert 'ORDER BY time' in executor.sql
 
 
+# --------------------------------------------------------------------- #
+# The per-account perf series (issue #661)
+# --------------------------------------------------------------------- #
+
+def test_latest_account_metrics_ranks_the_newest_point_of_each_account():
+    """P1's shape on a second measurement: one window answering N accounts.
+
+    One `value_at` per declared account would be N round trips to fill one
+    screen — the arithmetic that made #652 déc. 8 generalise P1 in the first
+    place.
+    """
+    executor = FakeExecutor()
+    PortfolioReader(executor).latest_account_metrics()
+
+    assert 'FROM "account_metrics"' in executor.sql
+    assert 'ROW_NUMBER() OVER ( PARTITION BY account ORDER BY time DESC) AS rn' \
+        in executor.sql
+    assert 'WHERE rn = 1' in executor.sql
+    # Same reason as `latest_totals`: xirr/gain_absolu/twr_index are written
+    # only when computable, and naming a column that was never written is a
+    # query error that reads as an empty install.
+    assert 'xirr' not in executor.sql
+
+
+def test_latest_account_metrics_drops_the_ranking_column():
+    """`rn` is an artefact of the window, not a field of the series — and with
+    `SELECT *` it would otherwise ride all the way into the payload."""
+    frame = pd.DataFrame([
+        {'account': 'pea', 'time': pd.Timestamp('2026-08-05'),
+         'total_value': 12500.0, 'rn': 1},
+    ])
+    rows = PortfolioReader(FakeExecutor(frame)).latest_account_metrics()
+
+    assert rows[0]['total_value'] == 12500.0
+    assert 'rn' not in rows[0]
+
+
+def test_account_series_filters_through_the_shared_tag_rule():
+    """The account clause has one home (`influx_sql`), even here where the tag
+    is never null — two implementations of trap 1 is how one of them decays."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).account_series(
+        "pea", datetime(2024, 1, 1, tzinfo=timezone.utc), AN_INSTANT)
+
+    assert "COALESCE(account, 'default') = 'pea'" in executor.sql
+    assert "time >= '2024-01-01T00:00:00Z'" in executor.sql
+    assert 'ORDER BY time' in executor.sql
+    # Daily grain already: nothing to downsample, same as `totals_series`.
+    assert 'DATE_BIN' not in executor.sql
+
+
+def test_account_series_escapes_the_account_id():
+    """Ids come from a user-written settings.yaml, so they are literals, not
+    trusted identifiers."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).account_series("o'brien")
+
+    assert "'o''brien'" in executor.sql
+
+
 def test_daily_position_series_ranks_per_day_and_series_before_anything_is_summed():
     """The trap is the shape, not the fields. During a session a symbol is
     written every 120 s, so a `SUM(...) GROUP BY day` over the raw points

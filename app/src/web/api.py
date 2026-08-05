@@ -293,30 +293,90 @@ def get_portfolio_movers():
 
 @api_bp.get('/accounts')
 def list_accounts():
-    """The **declared** accounts, from ``settings.yaml``.
+    """The **declared** accounts, each with its newest perf figures.
 
-    #652 déc. 4 corrects trap 12 here, and it matters for the page's global
-    filter. The obvious source would be a ``DISTINCT`` on the ``account`` tag,
-    but ``validator.py:128-138`` makes every event carry a *declared* account
-    once any account is declared — so an account that holds shares without being
-    declared cannot exist, and the two lists differ only on historical residue
-    (an account since removed, the pre-v4.1 ``default`` bucket). Reading the
-    declaration also hands over ``label``, ``type`` and ``currency``: three
-    fields the app writes and **zero** Grafana panel reads (it hardcodes
-    ``currencyEUR``).
+    #652 déc. 4 corrects trap 12 here, and it matters for the shares page's
+    global filter. The obvious source would be a ``DISTINCT`` on the ``account``
+    tag, but ``validator.py:128-138`` makes every event carry a *declared*
+    account once any account is declared — so an account that holds shares
+    without being declared cannot exist, and the two lists differ only on
+    historical residue (an account since removed, the pre-v4.1 ``default``
+    bucket). Reading the declaration also hands over ``label``, ``type`` and
+    ``currency``: three fields the app writes and **zero** Grafana panel reads
+    (it hardcodes ``currencyEUR``).
+
+    The figures ride the *same* resource rather than a second one, which is
+    #655's REST rule doing what it was adopted for: there is one accounts
+    resource with two consumers — the shares filter reads ``id``/``label``, the
+    accounts table reads the rest — and one cache entry between them, exactly as
+    ``/api/shares`` serves the table and the dashboard's allocation. Splitting
+    the declaration from its figures would be the page-shaped endpoint that
+    decision rejected, under another name.
 
     ``declared: false`` is a *designed* state, not an empty one — the opt-out
     setup every default install runs. Stating it explicitly rather than letting
-    the front infer it from ``[]`` is #655 decision 8's discriminator rule.
+    the front infer it from ``[]`` is #655 decision 8's discriminator rule. It is
+    also what keeps the enrichment free for that install: with no declaration
+    there is no query, so the default setup's shares filter still cannot fail on
+    a database it never reads.
     """
     accounts = _snapshot().accounts
     if accounts is None:
         return jsonify({'declared': False, 'accounts': []})
+
+    rows = _reader().latest_account_metrics() if accounts.accounts else []
     return jsonify({
         'declared': True,
         'accounts': [
-            {'id': a.id, 'label': a.label, 'type': a.type, 'currency': a.currency}
-            for a in accounts.accounts
+            summary.to_dict()
+            for summary in portfolio_view.build_accounts(accounts.accounts, rows)
+        ],
+    })
+
+
+@api_bp.get('/accounts/<account_id>/history')
+def get_account_history(account_id: str):
+    """One account's perf series — the TWR chart and the detail sheet's curve.
+
+    Two consumers again, and this time they read different fields of it: the
+    comparison chart takes ``twr_index`` from N of these in parallel (#652
+    déc. 13 — the baseline's only multi-series query, and the one place
+    comparing accounts of different sizes means anything, since a base-100 index
+    carries neither size nor currency), while the sheet takes cash / holdings /
+    contributed from the single account it opened.
+
+    An unknown ``account_id`` is a **404**, and it is decided against the
+    declaration rather than against the data: an account with no series yet is
+    declared and empty (``200`` + ``[]``), while an id nobody declared does not
+    exist. Collapsing the two would answer a typo with an empty chart.
+
+    No ``currency`` in the payload — the collection owns it, per the same rule
+    ``/api/portfolio/history`` follows.
+    """
+    accounts = _snapshot().accounts
+    declared = accounts.get(account_id) if accounts is not None else None
+    if declared is None:
+        return not_found(f"No declared account {account_id!r}")
+
+    try:
+        start, stop = _parse_window(DEFAULT_HISTORY_WINDOW)
+    except ValueError as exc:
+        return bad_request(str(exc))
+
+    return jsonify({
+        'account': account_id,
+        'from': start.isoformat(),
+        'to': stop.isoformat(),
+        'points': [
+            {
+                't': _iso(row.get('time')),
+                'cash_balance': row.get('cash_balance'),
+                'holdings_value': row.get('holdings_value'),
+                'total_value': row.get('total_value'),
+                'net_contributed': row.get('net_contributed'),
+                'twr_index': row.get('twr_index'),
+            }
+            for row in _reader().account_series(account_id, start, stop)
         ],
     })
 

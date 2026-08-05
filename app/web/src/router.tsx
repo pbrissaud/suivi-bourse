@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 
 import { NotFound, Shell } from '@/components/Shell'
+import AccountsPage from '@/pages/AccountsPage'
 import DashboardPage from '@/pages/DashboardPage'
 import SharesPage from '@/pages/SharesPage'
 
@@ -43,8 +44,14 @@ const sharesRoute = createRoute({
   component: SharesPage,
 })
 
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/comptes',
+  component: AccountsPage,
+})
+
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([dashboardRoute, sharesRoute]),
+  routeTree: rootRoute.addChildren([dashboardRoute, sharesRoute, accountsRoute]),
   // Data fetching stays TanStack Query's (#655 déc. 3), so there are no route
   // loaders to preload — this only warms the component chunk on hover.
   defaultPreload: 'intent',

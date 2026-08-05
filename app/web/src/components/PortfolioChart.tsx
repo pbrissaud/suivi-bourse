@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 
 import { api, type PortfolioHistory } from '@/lib/api'
+import { roundOutward } from '@/lib/chart'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -337,16 +338,7 @@ export function computeDomain(points: Point[]): [number, number] | undefined {
   // zero baseline: a data-derived domain makes Recharts put the series' own
   // extreme on the axis, and a top gradation reading "19 733 €" looks like a
   // defect rather than a scale. Costs a little tightness, buys an axis a reader
-  // can use to estimate a value instead of only compare two curves.
-  const step = niceStep((max - min + 2 * pad) / 4)
-  return [Math.floor((min - pad) / step) * step, Math.ceil((max + pad) / step) * step]
-}
-
-/** The nearest round number at or below `value`: 1, 2, 5 × a power of ten. */
-function niceStep(value: number): number {
-  if (!(value > 0)) return 1
-  const magnitude = 10 ** Math.floor(Math.log10(value))
-  const normalised = value / magnitude
-  const factor = normalised >= 5 ? 5 : normalised >= 2 ? 2 : 1
-  return factor * magnitude
+  // can use to estimate a value instead of only compare two curves. Shared with
+  // the accounts page's index chart — see `lib/chart`.
+  return roundOutward(min - pad, max + pad)
 }

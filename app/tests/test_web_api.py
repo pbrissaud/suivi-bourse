@@ -470,8 +470,159 @@ def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     payload = client.get('/api/accounts').get_json()
 
     assert payload['declared'] is True
-    assert payload['accounts'] == [
-        {'id': 'pea', 'label': 'PEA Bourso', 'type': 'PEA', 'currency': 'EUR'}]
+    row = payload['accounts'][0]
+    assert (row['id'], row['label'], row['type'], row['currency']) == (
+        'pea', 'PEA Bourso', 'PEA', 'EUR')
+    # #661 enriched the resource with the newest perf figures. With nothing
+    # written yet they are all null and `as_of` says so — a declared account
+    # whose first perf cycle has not run is a row with em dashes, not a missing
+    # line.
+    assert row['as_of'] is None
+    assert row['total_value'] is None
+    assert row['xirr'] is None
+
+
+def account_metrics_frame(**overrides):
+    """One ``account_metrics`` row — the comparison table's whole source."""
+    base = {
+        'account': 'pea',
+        'time': pd.Timestamp('2026-08-05 00:00:00'),
+        'cash_balance': 500.0,
+        'holdings_value': 12000.0,
+        'total_value': 12500.0,
+        'net_contributed': 10000.0,
+        'xirr': 0.12,
+        'gain_absolu': 2500.0,
+        'twr_index': 118.4,
+    }
+    base.update(overrides)
+    return pd.DataFrame([base])
+
+
+def test_accounts_carries_the_newest_figures_of_each_account(tmp_path):
+    """The enrichment #661 added: one resource, two consumers.
+
+    `total_value` in particular is written since v4.1 and displayed nowhere —
+    the ticket's smallest item and the table's first column.
+    """
+    client = build_client(tmp_path, frame=account_metrics_frame(),
+                          settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+    row = client.get('/api/accounts').get_json()['accounts'][0]
+
+    assert row['total_value'] == 12500.0
+    assert row['gain_absolu'] == 2500.0
+    assert row['twr_index'] == 118.4
+    assert row['as_of'].startswith('2026-08-05')
+    # The declaration still drives the identity fields — the series' own
+    # `account_currency` tag records what the account *was*, not what it is.
+    assert row['currency'] == 'EUR'
+
+
+def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
+    """A declared account whose perf cycle has not run is a row of em dashes.
+
+    Not a missing line: the declaration drives the list (#652 déc. 4), so
+    absence of data cannot remove an account the human declared.
+    """
+    settings = ACCOUNTS_SETTINGS + (
+        "- id: cto\n"
+        "  type: CTO\n"
+        "  currency: EUR\n"
+        "  label: CTO Degiro\n"
+    )
+    client = build_client(tmp_path, frame=account_metrics_frame(),
+                          settings=settings, events=ACCOUNTS_EVENTS)
+    payload = client.get('/api/accounts').get_json()
+
+    assert [a['id'] for a in payload['accounts']] == ['pea', 'cto']
+    assert payload['accounts'][1]['as_of'] is None
+    assert payload['accounts'][1]['total_value'] is None
+
+
+def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
+    """Historical residue is not a row. The declaration is the list."""
+    frame = pd.DataFrame([
+        account_metrics_frame().iloc[0].to_dict(),
+        account_metrics_frame(account='old', total_value=999.0).iloc[0].to_dict(),
+    ])
+    client = build_client(tmp_path, frame=frame, settings=ACCOUNTS_SETTINGS,
+                          events=ACCOUNTS_EVENTS)
+    payload = client.get('/api/accounts').get_json()
+
+    assert [a['id'] for a in payload['accounts']] == ['pea']
+
+
+# --------------------------------------------------------------------- #
+# One account's history — the empty / absent / failed triad (#661)
+# --------------------------------------------------------------------- #
+
+def test_account_history_is_200_and_empty_before_the_first_point(tmp_path):
+    """Declared, no series yet: the empty-collection state, not an error."""
+    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+                          events=ACCOUNTS_EVENTS)
+    response = client.get('/api/accounts/pea/history')
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['account'] == 'pea'
+    assert payload['points'] == []
+
+
+def test_account_history_returns_the_series_with_its_nulls_intact(tmp_path):
+    """Trap 3 on a series: `xirr`/`twr_index` are absent, never zero."""
+    frame = pd.DataFrame([
+        {'account': 'pea', 'time': pd.Timestamp('2026-08-04 00:00:00'),
+         'cash_balance': 500.0, 'holdings_value': 11000.0, 'total_value': 11500.0,
+         'net_contributed': 10000.0, 'twr_index': float('nan')},
+        {'account': 'pea', 'time': pd.Timestamp('2026-08-05 00:00:00'),
+         'cash_balance': 500.0, 'holdings_value': 12000.0, 'total_value': 12500.0,
+         'net_contributed': 10000.0, 'twr_index': 118.4},
+    ])
+    client = build_client(tmp_path, frame=frame, settings=ACCOUNTS_SETTINGS,
+                          events=ACCOUNTS_EVENTS)
+    points = client.get('/api/accounts/pea/history').get_json()['points']
+
+    assert [p['twr_index'] for p in points] == [None, 118.4]
+    assert points[1]['total_value'] == 12500.0
+
+
+def test_an_undeclared_account_history_is_404_problem_json(tmp_path):
+    """Decided against the declaration, not against the data: a typo must not
+    answer with an empty chart."""
+    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+                          events=ACCOUNTS_EVENTS)
+    response = client.get('/api/accounts/nope/history')
+
+    assert response.status_code == 404
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/not-found'
+
+
+def test_account_history_without_any_declaration_is_404(tmp_path):
+    """No `accounts:` block at all — every id is unknown."""
+    response = build_client(tmp_path).get('/api/accounts/pea/history')
+
+    assert response.status_code == 404
+
+
+def test_account_history_storage_failure_is_503_problem_json(tmp_path):
+    client = build_client(tmp_path, error=Exception("connection refused"),
+                          settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+    response = client.get('/api/accounts/pea/history')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+    assert 'connection refused' in response.get_json()['detail']
+
+
+def test_account_history_rejects_an_inverted_window(tmp_path):
+    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+                          events=ACCOUNTS_EVENTS)
+    response = client.get(
+        '/api/accounts/pea/history?from=2026-06-01&to=2026-01-01')
+
+    assert response.status_code == 400
+    assert response.get_json()['type'] == '/problems/bad-request'
 
 
 # --------------------------------------------------------------------- #

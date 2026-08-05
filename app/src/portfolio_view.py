@@ -375,6 +375,108 @@ def build_multi_currency_head(accounts: Sequence[Any]) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------- #
+# The accounts page (issue #661, content #652 déc. 13)
+# --------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class AccountSummary:
+    """One row of the accounts comparison table.
+
+    A **declaration joined to an observation**, and the join direction is the
+    decision: the declaration drives. #652 déc. 4 settled where the account list
+    comes from (``settings.yaml``, not ``DISTINCT account``), and it decides two
+    cases at once here — a declared account whose perf cycle has not run yet is a
+    row with an em dash in every figure rather than a missing line, and a series
+    left behind by an account since removed from the declaration is not a row at
+    all.
+
+    ``label``, ``type`` and ``currency`` come from the declaration too, never
+    from the ``account_type`` / ``account_currency`` tags that ride the series.
+    The tags record what the account *was* when the point was written; the
+    declaration is what it is. Trap 14 is the same rule seen from the other end —
+    the baseline reads neither and hardcodes ``currencyEUR``.
+    """
+
+    id: str
+    label: Optional[str]
+    type: Optional[str]
+    currency: Optional[str]
+    #: The day the figures below describe — ``None`` when nothing was written
+    #: yet. Trap 2: the newest point is *today's*, and it is rewritten in place
+    #: through the day, so this is a day rather than an instant.
+    as_of: Optional[datetime]
+    cash_balance: Optional[float]
+    holdings_value: Optional[float]
+    total_value: Optional[float]
+    net_contributed: Optional[float]
+    gain_absolu: Optional[float]
+    xirr: Optional[float]
+    twr_index: Optional[float]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'label': self.label,
+            'type': self.type,
+            'currency': self.currency,
+            'as_of': _iso(self.as_of),
+            'cash_balance': self.cash_balance,
+            'holdings_value': self.holdings_value,
+            'total_value': self.total_value,
+            'net_contributed': self.net_contributed,
+            'gain_absolu': self.gain_absolu,
+            'xirr': self.xirr,
+            'twr_index': self.twr_index,
+        }
+
+
+def build_accounts(
+    declared: Sequence[Any],
+    rows: Sequence[Dict[str, Any]],
+) -> List[AccountSummary]:
+    """Join the declared accounts to their newest ``account_metrics`` row.
+
+    ``declared`` is ``Portfolio.accounts`` — the ``Account`` objects of the
+    published snapshot (#658) — and ``rows`` is
+    :meth:`influx_reads.PortfolioReader.latest_account_metrics`'s output.
+
+    Declaration order is kept: it is the order the human wrote in
+    ``settings.yaml``, which is a better default than any sort this module could
+    invent, and the table sorts on demand anyway.
+
+    Nothing is summed across accounts here, deliberately. The consolidated
+    figures have exactly one source — ``portfolio_totals``, read by
+    :func:`build_totals_head` — and a second arithmetic path to the same number
+    is how the two would eventually disagree. It would also be *wrong* the
+    moment the currencies differ, which is the very condition that makes
+    ``portfolio_totals`` absent.
+    """
+    by_id = {
+        row.get('account'): row for row in rows
+        if row.get('account') is not None
+    }
+
+    summaries = []
+    for account in declared:
+        row = by_id.get(account.id) or {}
+        summaries.append(AccountSummary(
+            id=account.id,
+            label=getattr(account, 'label', None),
+            type=getattr(account, 'type', None),
+            currency=getattr(account, 'currency', None),
+            as_of=row.get('time'),
+            cash_balance=row.get('cash_balance'),
+            holdings_value=row.get('holdings_value'),
+            total_value=row.get('total_value'),
+            net_contributed=row.get('net_contributed'),
+            gain_absolu=row.get('gain_absolu'),
+            xirr=row.get('xirr'),
+            twr_index=row.get('twr_index'),
+        ))
+    return summaries
+
+
+# --------------------------------------------------------------------- #
 # The main chart: total value vs net contributed (#652 déc. 7)
 # --------------------------------------------------------------------- #
 
@@ -700,8 +802,8 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 
 
 __all__ = [
-    'AccountPosition', 'SharePosition', 'Mover',
-    'build_shares', 'build_share', 'weighted_cost_price',
+    'AccountPosition', 'AccountSummary', 'SharePosition', 'Mover',
+    'build_shares', 'build_share', 'build_accounts', 'weighted_cost_price',
     'MODE_ACCOUNTS', 'MODE_TITRES', 'MODE_MULTI_CURRENCY', 'portfolio_mode',
     'build_totals_head', 'build_titres_head', 'build_multi_currency_head',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',

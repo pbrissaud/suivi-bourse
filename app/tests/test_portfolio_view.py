@@ -12,12 +12,14 @@ Two properties carry most of the weight:
   is not.
 """
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from portfolio_view import (
     MODE_ACCOUNTS,
     MODE_MULTI_CURRENCY,
     MODE_TITRES,
     baseline_reference,
+    build_accounts,
     build_movers,
     build_share,
     build_shares,
@@ -540,3 +542,81 @@ def test_each_mover_carries_its_own_currency():
 
     assert {m.symbol: m.currency for m in movers} == {
         'AAPL': 'USD', 'AIR.PA': 'EUR'}
+
+
+# --------------------------------------------------------------------- #
+# The accounts comparison table (issue #661)
+# --------------------------------------------------------------------- #
+
+def declared(id='pea', label='PEA Bourso', type='PEA', currency='EUR'):
+    """A declared account — the shape `Portfolio.accounts` holds."""
+    return SimpleNamespace(id=id, label=label, type=type, currency=currency)
+
+
+def metrics(account='pea', **overrides):
+    base = {
+        'account': account,
+        'time': datetime(2026, 8, 5, tzinfo=timezone.utc),
+        'cash_balance': 500.0,
+        'holdings_value': 12000.0,
+        'total_value': 12500.0,
+        'net_contributed': 10000.0,
+        'xirr': 0.12,
+        'gain_absolu': 2500.0,
+        'twr_index': 118.4,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_accounts_keep_their_declaration_order():
+    """The order the human wrote in settings.yaml, which beats any sort this
+    module could invent — and the table sorts on demand anyway."""
+    summaries = build_accounts(
+        [declared('cto', 'CTO Degiro', 'CTO'), declared('pea')],
+        [metrics('pea'), metrics('cto')])
+
+    assert [s.id for s in summaries] == ['cto', 'pea']
+
+
+def test_a_declared_account_with_no_series_is_a_row_of_absences():
+    """Declared but not yet computed. #652 déc. 4 makes the declaration the
+    list, so no data cannot remove a row — it empties one."""
+    summaries = build_accounts([declared('pea'), declared('cto', 'CTO', 'CTO')],
+                               [metrics('pea')])
+
+    assert summaries[1].as_of is None
+    assert summaries[1].total_value is None
+    assert summaries[1].xirr is None
+    # The identity fields still come from the declaration.
+    assert (summaries[1].label, summaries[1].currency) == ('CTO', 'EUR')
+
+
+def test_a_series_without_a_declaration_is_not_a_row():
+    """Historical residue: an account since removed from settings.yaml."""
+    summaries = build_accounts([declared('pea')], [metrics('pea'), metrics('old')])
+
+    assert [s.id for s in summaries] == ['pea']
+
+
+def test_the_declaration_wins_over_the_series_tags():
+    """`account_currency` records what the account *was* when the point was
+    written; the declaration is what it is. Trap 14 seen from the other end."""
+    summaries = build_accounts(
+        [declared('pea', currency='EUR')],
+        [metrics('pea', account_currency='USD')])
+
+    assert summaries[0].currency == 'EUR'
+
+
+def test_nothing_is_summed_across_accounts():
+    """The consolidated figures have exactly one source (`portfolio_totals`),
+    and a second arithmetic path to the same number is how two of them come to
+    disagree — besides being plain wrong across currencies."""
+    summaries = build_accounts(
+        [declared('pea'), declared('cto', 'CTO', 'CTO', 'USD')],
+        [metrics('pea', total_value=12500.0), metrics('cto', total_value=3000.0)])
+
+    assert [s.total_value for s in summaries] == [12500.0, 3000.0]
+    payload = summaries[0].to_dict()
+    assert 'portfolio_total' not in payload and 'share_pct' not in payload
