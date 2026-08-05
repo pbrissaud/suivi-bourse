@@ -216,9 +216,13 @@ def test_to_dict_emits_iso_timestamps_and_keeps_nulls():
 
     assert payload['price_time'] == '2024-06-01T00:00:00+00:00'
     assert payload['pe_ratio'] is None
-    # The slot #656 will fill; present and null until then, so the payload shape
-    # does not change when the status pills land.
-    assert payload['status'] is None
+    # #659 reserved a `status` slot here for the pills; #656 decision 6 retired
+    # it rather than filling it, and the assertion is inverted rather than
+    # deleted because the *absence* is the decision. `/api/shares` answers 503
+    # when InfluxDB fails, so a pill riding on this payload would disappear
+    # exactly when it is the only thing able to explain the empty table. The
+    # pills live on `/api/runtime`, which reads no InfluxDB at all.
+    assert 'status' not in payload
 
 
 # ===================================================================== #

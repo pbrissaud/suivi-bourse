@@ -7,6 +7,7 @@ import { projectToAccount } from '@/lib/positions'
 import { cn } from '@/lib/utils'
 import { SharesTable } from '@/components/SharesTable'
 import { ShareSheet } from '@/components/ShareSheet'
+import { RuntimePill } from '@/components/RuntimePill'
 import {
   Select,
   SelectContent,
@@ -33,6 +34,28 @@ export default function SharesPage() {
     refetchInterval: 120_000,
   })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  // A second resource, with its own cache entry and its own failure state
+  // (#656 déc. 6). That separation is the decision: `/api/runtime` reads no
+  // InfluxDB, so when the table above has gone to a 503 the pills are still
+  // there to say *why* — which is exactly what a pill riding on `/api/shares`
+  // could not have done.
+  const runtime = useQuery({
+    queryKey: ['runtime'],
+    queryFn: api.runtime,
+    refetchInterval: 120_000,
+  })
+
+  // `undefined` until the resource answers — not an empty Map. The difference
+  // carries: an empty Map says "the scheduler knows about none of these", which
+  // is a real state (every position removed) and must not be claimed while the
+  // query is still in flight.
+  const runtimeBySymbol = useMemo(
+    () =>
+      runtime.data
+        ? new Map(runtime.data.symbols.map((s) => [s.symbol, s]))
+        : undefined,
+    [runtime.data],
+  )
 
   const rows = useMemo(() => {
     const all = shares.data ?? []
@@ -77,6 +100,36 @@ export default function SharesPage() {
                 same screen as "you own nothing yet". #655 decision 8. */}
           </AlertDescription>
         </Alert>
+      )}
+
+      {/*
+        The payoff of #656 decision 6, and the reason #659's reserved `status`
+        slot was retired instead of filled. The table above is gone — its query
+        failed — and this is still here, because `/api/runtime` reads no InfluxDB
+        at all. A pill riding on the shares payload would have vanished with the
+        very screen it exists to explain.
+      */}
+      {shares.isError && runtime.data && (
+        <div className="space-y-2 rounded-lg border p-4">
+          <h2 className="text-sm font-medium">
+            État du suivi, malgré la base injoignable
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Les positions déclarées et ce que le planificateur en sait. Ces
+            informations vivent en mémoire du processus, pas dans InfluxDB.
+          </p>
+          <ul className="divide-y">
+            {runtime.data.symbols.map((state) => (
+              <li key={state.symbol} className="flex items-center gap-3 py-2">
+                <span className="font-mono text-sm">{state.symbol}</span>
+                <span className="text-sm text-muted-foreground">{state.name}</span>
+                <span className="ml-auto">
+                  <RuntimePill state={state} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {shares.isLoading && <Skeleton className="h-64 w-full" />}
@@ -125,7 +178,11 @@ export default function SharesPage() {
               </AlertDescription>
             </Alert>
           ) : (
-            <SharesTable shares={rows} onSelect={setSelected} />
+            <SharesTable
+              shares={rows}
+              runtime={runtimeBySymbol}
+              onSelect={setSelected}
+            />
           )}
         </>
       )}

@@ -203,6 +203,43 @@ query errors **propagate** and `web/problem.py` turns them into `503` +
 `200`+`[]` / `503`). The one exception is a measurement that does not exist yet
 — a fresh install, answered `[]`.
 
+**The app's own runtime state is a fourth pair, and it reads no InfluxDB at all**
+(issue #668, design #656). `GET /api/runtime` answers from process memory, the
+config snapshot and the APScheduler jobstore — nothing else. That is a decision,
+not an optimisation: `/api/shares` is a query and the blueprint answers `503`
+when one fails, so a status pill riding on that payload would **vanish exactly
+when it is the only thing able to explain the empty table**. #659's reserved
+`status` slot is therefore *retired*, not filled.
+
+- **`runtime_state.py`** — the one writer, of one shape. Each job ends its pass
+  by publishing an immutable **last-pass record**, keyed by the *job's* identity
+  (per symbol for scrape, per `(symbol, account, direction)` for backfill, global
+  for ingest and perf), plus a **consecutive-failure counter on the backfill**
+  that has no equivalent anywhere else — `_backfill_backward` logs a warning and
+  returns `0`, the same value a healthy weekend returns, so nothing distinguished
+  "pacing" from "wedged on yfinance". Only what has no home is published: no copy
+  of `_failure_counts`, `_backfill_complete` or `_share_info_cache` lives here.
+  The rule that keeps it safe is that **the lock never covers a fetch** and
+  *readers never iterate* — the row set comes from the configuration snapshot,
+  one `get` per key, because copying a dict the scrape threads are writing raises
+  `RuntimeError: dictionary changed size during iteration`.
+- **`runtime_view.py`** — pure, in the taste of `scheduling.py`. The contract it
+  honours is that **the API reports observations and never derives a verdict
+  across two items**: a reader taking `_failure_counts` at *t* and
+  `next_run_time` at *t+ε* is wrong twice over, while `scheduling.decide` handed
+  the job its verdict, delay and counter in **one call**. Three cases it exists
+  to get right: an **absent `next_run_time` is ambiguous** (a `date` job leaves
+  the jobstore *while it runs*, so absence is "being scraped now" *or*
+  "departed"); the cached `marketState` is **never** the pill (`decide`
+  fail-opens it, and the cache is written only on a successful fetch, so a
+  failing symbol reports the state from before its failure); and the three
+  terminal backfill states — `complete` / `no_buy` / `manual_mode` — are never
+  collapsed, manual mode having no backward pass at all.
+
+`/api/config` gains #654's read-only **effective configuration** — there rather
+than on `/api/runtime`, one noun two consumers — listing the variables *the app
+reads* (not the ones compose sends) with `INFLUXDB_TOKEN` redacted by name.
+
 `events/editor.py` is a **second read of the event files, as files**, beside the
 loader: `Event`, the aggregator and the validator stay byte-identical. Each row
 gets an **opaque token** over `(file, sheet, row)` — never `(file, row)`, since
@@ -551,12 +588,14 @@ app/src/
 ├── influx_sql.py           # Shared SQL rule: COALESCE(account,'default') + escaping, NaN guard, UTC-Z (#659)
 ├── influx_reads.py         # PortfolioReader — the UI read primitives; errors propagate (#659)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
+├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
+├── runtime_view.py         # Pure: records + snapshot + jobstore → pills and the banner (#668)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── schema.yaml             # Cerberus validation schema
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events, config
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events, config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659, #662)
 │   └── health.py           # /health blueprint
 └── events/                 # Events module

@@ -1,5 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router'
 
+import { RuntimeBanner } from '@/components/RuntimeBanner'
+
 /**
  * The app shell: the nav the four pages hang off, and the only thing that
  * outlives a page.
@@ -42,6 +44,12 @@ export function Shell() {
           </nav>
         </div>
       </header>
+
+      {/* Global on purpose (#652 déc. 15): background work is not a property of
+          any one page, and the question it answers — "is the app broken, or is
+          the market just asleep?" — gets asked in front of whichever page
+          happens to look odd. Silent when there is nothing to say. */}
+      <RuntimeBanner />
 
       <main className="mx-auto max-w-7xl p-6">
         <Outlet />

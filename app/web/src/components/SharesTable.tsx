@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 
-import type { Share } from '@/lib/api'
+import type { Share, SymbolRuntime } from '@/lib/api'
 import {
   formatCurrency,
   formatPercent,
@@ -10,6 +10,7 @@ import {
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { DataTable, numericColumn, type ColumnMeta } from '@/components/DataTable'
+import { RuntimePill } from '@/components/RuntimePill'
 import { Badge } from '@/components/ui/badge'
 
 /**
@@ -25,10 +26,17 @@ import { Badge } from '@/components/ui/badge'
 
 interface Props {
   shares: Share[]
+  /**
+   * The scheduler's view of each symbol, from a **second** resource with its own
+   * cache and its own failure state (#656 déc. 6). Undefined while it loads, and
+   * — crucially — still defined when `/api/shares` itself has failed, which is
+   * the case the pills exist for.
+   */
+  runtime?: Map<string, SymbolRuntime>
   onSelect: (symbol: string) => void
 }
 
-export function SharesTable({ shares, onSelect }: Props) {
+export function SharesTable({ shares, runtime, onSelect }: Props) {
   const columns = useMemo<ColumnDef<Share>[]>(
     () => [
       {
@@ -95,8 +103,30 @@ export function SharesTable({ shares, onSelect }: Props) {
           </div>
         ),
       },
+      {
+        // #652 déc. 15's pill. **Sortable**, and that is the difference between
+        // a decoration and a tool: with forty symbols, "show me the ones that
+        // are not writing" is a click rather than a scan. It is also item 3 of
+        // the same list — a repeated Grafana row cannot be sorted at all.
+        id: 'status',
+        accessorFn: (share) => runtime?.get(share.symbol)?.pill,
+        header: 'Suivi',
+        meta: { align: 'right' } satisfies ColumnMeta,
+        sortUndefined: 'last',
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <RuntimePill
+              state={runtime?.get(row.original.symbol)}
+              // `undefined` while the runtime query is in flight, so a row the
+              // scheduler does not know about is only ever claimed once there is
+              // an answer to base the claim on.
+              loaded={runtime !== undefined}
+            />
+          </div>
+        ),
+      },
     ],
-    [],
+    [runtime],
   )
 
   return (

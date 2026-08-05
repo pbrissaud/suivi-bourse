@@ -26,6 +26,7 @@ from yfinance.exceptions import YFRateLimitError
 
 import config_writer
 import performance
+import runtime_state
 import scheduling
 from events import (
     EventLoader, EventValidator, EventAggregator, EventWatcher,
@@ -219,6 +220,128 @@ def resolve_executor_pool_size(mode: str, shares: List[dict],
             "SB_EXECUTOR_POOL is ignored because SB_DYNAMIC_EXECUTOR_POOL is "
             "enabled; the executor pool is sized automatically.")
     return scheduling.compute_pool_size(mode, shares, capture_exchange_of())
+
+
+# --------------------------------------------------------------------- #
+# The read-only effective configuration (issue #668, handed over by #654)
+# --------------------------------------------------------------------- #
+
+#: Every environment variable **this application reads**, with its own default.
+#:
+#: The list has to be chosen and named, because "what the app reads" and "what
+#: compose sends" are *different lists* (#654 trap 11). ``SB_SCRAPING_INTERVAL``
+#: is still honored here yet appears in neither ``docker-compose.yaml`` nor
+#: ``.env.example``; conversely ``SB_VERSION`` and ``SB_CONFIG_DIR`` carry the
+#: ``SB_`` prefix and are consumed by the docker daemon, never by Python (trap
+#: 13) — a page listing "the SB_* settings" that showed them would imply they are
+#: reachable from in here, and they are not: from inside the container the config
+#: directory is *always* ``/home/appuser/.config/SuiviBourse``.
+#:
+#: ``default`` is ``None`` for the four that have no scalar fallback: the mode is
+#: resolved through ``settings.yaml`` and auto-detection, the token is required,
+#: and the other two simply have no value when unset.
+#:
+#: ``scope`` is ``runtime`` for the dials held on a mutable attribute and re-read
+#: every cycle — the effective value can in principle diverge from the
+#: environment, so those are reported from the **attribute**, not from
+#: ``os.environ`` — and ``boot`` for the rest.
+SETTINGS_INVENTORY = (
+    # name, default, scope, secret, deprecated
+    ('LOG_LEVEL', 'INFO', 'runtime', False, False),
+    ('INFLUXDB_HOST', 'http://influxdb:8181', 'boot', False, False),
+    ('INFLUXDB_TOKEN', None, 'boot', True, False),
+    ('INFLUXDB_DATABASE', 'suivi_bourse', 'boot', False, False),
+    ('SB_CONFIG_MODE', None, 'boot', False, False),
+    ('SB_REGULAR_INTERVAL', '120', 'runtime', False, False),
+    # Deliberately **not** reported from ``regular_interval``: this variable is
+    # a *fallback*, ignored outright when ``SB_REGULAR_INTERVAL`` is also set
+    # (``resolve_regular_interval`` warns and drops it), so showing the live
+    # cadence beside its name would claim it took effect when it did not. All
+    # this can honestly say is whether it is present — which is the one thing
+    # worth saying about a deprecated dial.
+    ('SB_SCRAPING_INTERVAL', None, 'boot', False, True),
+    ('SB_INGESTION_INTERVAL', '300', 'boot', False, False),
+    ('SB_BACKFILL_INTERVAL', '60', 'boot', False, False),
+    ('SB_PERF_INTERVAL', '120', 'boot', False, False),
+    ('SB_BACKFILL_DELAY', '10', 'runtime', False, False),
+    ('SB_BACKFILL_CHUNK_DAYS', '365', 'runtime', False, False),
+    ('SB_STALENESS_HORIZON', str(scheduling.STALENESS_HORIZON), 'runtime',
+     False, False),
+    ('SB_DYNAMIC_EXECUTOR_POOL', 'false', 'boot', False, False),
+    ('SB_EXECUTOR_POOL', '10', 'boot', False, False),
+    ('SB_PROMETHEUS_ENABLED', 'true', 'boot', False, False),
+    ('SB_METRICS_PORT', '8081', 'boot', False, False),
+    ('SB_WEB_PORT', '8080', 'boot', False, False),
+    ('SB_STATIC_DIR', None, 'boot', False, False),
+)
+
+#: Where a ``runtime``-scope value is actually read from on a live process. The
+#: attribute is the truth, not the environment (#654 §2.1): each of these is
+#: read from ``os.environ`` once at boot and then held on a plain mutable
+#: attribute that every cycle re-reads.
+_LIVE_ATTRIBUTES = {
+    'SB_REGULAR_INTERVAL': 'regular_interval',
+    'SB_BACKFILL_DELAY': 'backfill_delay',
+    'SB_BACKFILL_CHUNK_DAYS': 'backfill_chunk_days',
+    'SB_STALENESS_HORIZON': 'staleness_horizon',
+}
+
+
+def effective_settings(metrics=None) -> List[Dict]:
+    """What this container is actually running, read-only (#654 §6a → #656).
+
+    The one survivor of the settings question, and #654 is unambiguous about why
+    it is only a *view*: **0 of 17 variables can be persisted** from in here,
+    because ``.env`` is a host file the container never sees and compose re-reads
+    it only at ``up``. So this answers "what is this thing running?" and offers
+    no button.
+
+    Two rules come with it, both from #654's traps:
+
+    * **Redact by name, never by value** (trap 12). ``INFLUXDB_TOKEN`` sits in
+      the same environment and the prototype has no authentication — auth is out
+      of the map's scope — so the value never leaves the process. ``set`` says
+      whether there is one, which is the only thing worth knowing about it.
+    * **``source`` is factual, not helpful** (trap 2). Compose renders
+      ``${SB_REGULAR_INTERVAL:-120}`` as ``120`` even when ``.env`` omits the
+      line, so under compose almost everything reads ``environment`` and the
+      app's own defaults are dead code. Reporting a variable as "unset, using
+      the default" *because it equals the default* would be a guess; this reports
+      what was found.
+    """
+    settings = []
+    for name, default, scope, secret, deprecated in SETTINGS_INVENTORY:
+        raw = env_str(name)
+        if raw is not None:
+            source, value = 'environment', raw
+        elif default is not None:
+            source, value = 'default', default
+        else:
+            # No scalar fallback: the mode is resolved through settings.yaml and
+            # auto-detection, the token is required, the last two have no value.
+            source, value = 'unset', None
+
+        attribute = _LIVE_ATTRIBUTES.get(name)
+        if metrics is not None and attribute is not None:
+            live = getattr(metrics, attribute, None)
+            if live is not None:
+                value = str(live)
+        elif name == 'LOG_LEVEL':
+            # The only runtime dial the app can actually change (#654 §6b), so
+            # the level `logging` holds now is the effective one — the variable
+            # is merely where it started.
+            value = current_log_level()
+
+        settings.append({
+            'name': name,
+            'value': None if secret else value,
+            'set': raw is not None,
+            'source': source,
+            'scope': scope,
+            'secret': secret,
+            'deprecated': deprecated,
+        })
+    return settings
 
 
 def register_interval_jobs(scheduler, sb_metrics, ingestion_interval: int,
@@ -760,7 +883,8 @@ class SuiviBourseMetrics:
     def __init__(self, config_manager: ConfigurationManager, validator_: Validator,
                  configuration_: Optional[Configuration] = None,
                  influxdb_writer: Optional[InfluxDBWriter] = None,
-                 prometheus_exporter: Optional[PrometheusExporter] = None):
+                 prometheus_exporter: Optional[PrometheusExporter] = None,
+                 recorder: Optional[runtime_state.RuntimeRecorder] = None):
         self.config_manager = config_manager
         self.configuration = configuration_  # For backward compatibility
         # Kept for the legacy ``validate()`` below. It is no longer this class's
@@ -848,6 +972,14 @@ class SuiviBourseMetrics:
         # cross-thread scrape state.
         self._sonde_lock = threading.Lock()
         self._sonde_state: Dict[Tuple[str, str], scheduling.SondeState] = {}
+
+        # The last-pass records (issue #668, design #656). Injected from the
+        # Runtime so the web handlers reach the *same* recorder the jobs write
+        # to — it is built master-side, like the ConfigWriter and for the same
+        # reason. Defaulted here so a unit test that builds this class directly
+        # still has somewhere to publish, and so no call site below has to check
+        # for None.
+        self.recorder = recorder or runtime_state.RuntimeRecorder()
 
     @property
     def shares(self) -> List[Dict]:
@@ -1247,9 +1379,16 @@ class SuiviBourseMetrics:
                 # membership under the same lock) can't write the entry back.
                 with self._failure_counts_lock:
                     self._failure_counts.pop(symbol, None)
+                # Same cleanup, one storey up (issue #668): the last-pass
+                # records of a departed symbol are invisible to a reader — the
+                # row set comes from the configuration snapshot — but a process
+                # running for months through many portfolio edits would keep
+                # them all, and #597 is this app's story of a structure that
+                # grew without bound.
+                self.recorder.forget_symbol(symbol)
 
     def _check_price_freshness(self, holdings: List[dict], live_price,
-                               now: datetime) -> None:
+                               now: datetime) -> Tuple[str, ...]:
         """Price-freshness liveness sonde (issue #628, design #626).
 
         Runs only on the ``REGULAR`` write path (the caller's ``should_write``
@@ -1269,9 +1408,16 @@ class SuiviBourseMetrics:
         from the monitoring side, it is not part of the writer's control flow).
         Called *before* this cycle's write so it reads the coverage as it stood,
         not the point the write is about to refresh.
+
+        Returns the accounts it flagged, so the caller can carry them into the
+        scrape record (issue #668). The signal was already computed here, by the
+        one thread that holds this series' sonde memory — a reader recomputing it
+        would need that memory *and* a fresh price, at a second instant, which is
+        the composed read #656 déc. 4 exists to forbid.
         """
+        stale_accounts: List[str] = []
         if self.staleness_horizon <= 0:
-            return
+            return ()
         for share in holdings:
             symbol = share['symbol']
             account = share.get('account', DEFAULT_ACCOUNT)
@@ -1288,6 +1434,7 @@ class SuiviBourseMetrics:
                         self._sonde_state[key] = new_state
 
                 if stale:
+                    stale_accounts.append(account)
                     app_logger.warning(
                         f"Price-freshness sonde: stored price for {share['name']} "
                         f"({symbol}, account={account}) frozen at {stored_price} "
@@ -1298,6 +1445,31 @@ class SuiviBourseMetrics:
             except Exception as e:
                 app_logger.debug(
                     f"Price-freshness sonde failed for {symbol}: {e}")
+        return tuple(stale_accounts)
+
+    @staticmethod
+    def _scrape_verdict(should_write: bool, state, wrote: bool,
+                        has_holdings: bool) -> str:
+        """Name what one scrape pass did, at the instant it did it (issue #668).
+
+        Four values, and the fourth is the one worth having.
+        ``scheduling.decide`` resets the #617 counter whenever a price was
+        present, so an InfluxDB outage leaves a symbol polling happily at
+        ``base_interval`` with its counter at zero and **nothing persisted** —
+        the dead-ticker guard watches yfinance, by design, and cannot see this.
+        ``SCRAPE_WRITE_FAILED`` is where that shows up.
+
+        ``has_holdings`` guards the one race that would otherwise read as that
+        failure: a symbol removed from the portfolio between this cycle's fetch
+        and its write has nothing to write *and nothing wrong with it*.
+        """
+        if scheduling.is_closed(state):
+            return runtime_state.SCRAPE_CLOSED
+        if not should_write:
+            return runtime_state.SCRAPE_NO_PRICE
+        if wrote or not has_holdings:
+            return runtime_state.SCRAPE_WROTE
+        return runtime_state.SCRAPE_WRITE_FAILED
 
     def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
         """Scrape one symbol, gate the write, and re-arm the job (design #602).
@@ -1344,15 +1516,20 @@ class SuiviBourseMetrics:
             else:
                 self._failure_counts.pop(symbol, None)
 
+        stale_accounts: Tuple[str, ...] = ()
+        accounts_written: List[str] = []
         if should_write:
             # Price-freshness liveness sonde (issue #628): read the stored price
             # *before* this cycle's write refreshes it, so a silently stale writer
             # is caught. Purely diagnostic — never gates the write below.
-            self._check_price_freshness(holdings, last_quote, now)
+            stale_accounts = self._check_price_freshness(holdings, last_quote, now)
 
             wrote_live_data = False
             for share in holdings:
                 wrote = self._write_share_metrics(share, last_quote, info)
+                if wrote:
+                    accounts_written.append(
+                        share.get('account', DEFAULT_ACCOUNT))
                 wrote_live_data = wrote_live_data or wrote
             # A REGULAR write makes today's perf series stale: raise the global
             # live-write dirty bool so the gated perf job (issue #618) runs its
@@ -1364,9 +1541,39 @@ class SuiviBourseMetrics:
                 with self._perf_lock:
                     self._perf_dirty_live = True
         else:
+            wrote_live_data = False
             app_logger.debug(
                 f"Skipping write for {symbol} (state={state}, "
                 f"price_present={price_present})")
+
+        # The last-pass record (issue #668, design #656 déc. 1). Published here,
+        # once, out of values this pass already holds — `decide` handed back the
+        # verdict, the delay and the counter in one call, so the three are
+        # coherent with each other in a way no reader could reconstruct.
+        #
+        # Neither `state` nor the coercion is read from `_share_info_cache`
+        # (traps 2 and 3): `decide` fail-opens an unrecognised state to REGULAR
+        # while the cache keeps yfinance's raw string, and the cache is written
+        # only on a *successful* fetch — so a failing symbol's cache entry
+        # reports the market state from before its failure, which is the very
+        # case a pill exists to show. `state` here is what this cycle read, and
+        # `closed` is what the scheduler acted on.
+        self.recorder.record_scrape(runtime_state.ScrapeRecord(
+            symbol=symbol,
+            at=now,
+            market_state=state,
+            closed=scheduling.is_closed(state),
+            price_present=price_present,
+            verdict=self._scrape_verdict(
+                should_write, state, wrote_live_data, bool(holdings)),
+            failure_count=new_failure_count,
+            next_delay=next_delay,
+            accounts_written=tuple(accounts_written),
+            stale_accounts=stale_accounts,
+            error=(
+                f"No point persisted for {symbol}: InfluxDB refused the write"
+                if should_write and not wrote_live_data and holdings else None),
+        ))
 
         # Re-arm only if still held — the in-flight guard against a job that was
         # removed mid-cycle re-adding itself after reconcile's remove_job.
@@ -1410,12 +1617,28 @@ class SuiviBourseMetrics:
         # land between them.
         snapshot = self.config_manager.current()
         events_changed = snapshot.events is not self._perf_last_events
+
+        def publish(verdict: str, error: Optional[str] = None) -> None:
+            # #656 trap 4: `_perf_dirty_live` is *consumed* by this method — read
+            # and cleared under `_perf_lock` above — so a request thread reading
+            # it learns about a run that is pending, never about the one that
+            # just happened. The verdict has to be recorded; it cannot be
+            # inferred. The three inputs ride along rather than a single
+            # "reason", because a skip *is* the three of them being quiet.
+            self.recorder.record_perf(runtime_state.PerfRecord(
+                at=datetime.now(timezone.utc), verdict=verdict,
+                events_changed=events_changed,
+                backfill_pending=backfill_pending, live_write=live_write,
+                error=error))
+
         if not scheduling.perf_should_run(events_changed, backfill_pending, live_write):
             app_logger.debug(
                 "Perf recompute skipped: nothing changed since last run")
+            publish(runtime_state.PERF_SKIPPED)
             return
         try:
             self.update_account_metrics(snapshot)
+            publish(runtime_state.PERF_RAN)
         except Exception as e:
             # The live-write signal was consumed up front (for concurrency), so a
             # failed write would otherwise drop today's fresh point until the next
@@ -1426,6 +1649,7 @@ class SuiviBourseMetrics:
                 with self._perf_lock:
                     self._perf_dirty_live = True
             app_logger.error(f"Failed to update account metrics: {e}")
+            publish(runtime_state.PERF_FAILED, str(e))
 
     def ingest(self):
         """
@@ -1440,15 +1664,30 @@ class SuiviBourseMetrics:
         valid, so a failure anywhere above leaves the previous one standing for
         every reader, not just for this one.
         """
+        now = datetime.now(timezone.utc)
         try:
             before = self.config_manager.current().shares
-            after = self.config_manager.reload().shares
+            snapshot = self.config_manager.reload()
+            after = snapshot.shares
             if after != before:
                 app_logger.info("Shares configuration updated from events")
             else:
                 app_logger.debug("No changes in shares configuration")
+            self.recorder.record_ingest(runtime_state.IngestRecord(
+                at=now,
+                outcome=(runtime_state.INGEST_UPDATED if after != before
+                         else runtime_state.INGEST_UNCHANGED),
+                shares=len(after),
+                events=len(snapshot.events) if snapshot.events is not None else None,
+            ))
         except Exception as e:
             app_logger.error(f"Error during ingestion (keeping previous config): {e}")
+            # The record #656 called out as the one gap worth closing on its
+            # own: since #658 a rejected configuration is never published, so
+            # the app goes on running — correctly — on its previous snapshot,
+            # and the only trace of that anywhere is the line just above.
+            self.recorder.record_ingest(runtime_state.IngestRecord(
+                at=now, outcome=runtime_state.INGEST_FAILED, error=str(e)))
 
         # Reconcile the per-symbol scrape jobs against the (possibly unchanged)
         # held-symbol set. Idempotent and always run — on the first ingest it
@@ -1485,6 +1724,13 @@ class SuiviBourseMetrics:
         # Only backfill in events mode where we have event history
         if self.config_manager.get_mode() != ConfigurationManager.MODE_EVENTS:
             app_logger.debug("Backfill only available in events mode")
+            # #656 trap 6: this early return is the *whole* backward pass in
+            # manual mode, so "no progress" here is nominal and must never
+            # render as a stall. The job that knows it returned early is the one
+            # that says so — the reader is not left to infer a terminal state
+            # from the absence of a record, which is what would collapse it onto
+            # "never scraped yet".
+            self._record_manual_mode(snapshot)
             return
 
         app_logger.info("Starting backfill cycle")
@@ -1508,6 +1754,27 @@ class SuiviBourseMetrics:
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
+    def _record_manual_mode(self, snapshot: ConfigSnapshot) -> None:
+        """Publish the ``manual_mode`` terminal for every held series (#668).
+
+        One record per ``(symbol, account)``, on the backward pass only: the
+        forward pass is gated the same way, but it has no target and its healthy
+        steady state is already a no-op, so a terminal there would say nothing
+        the summary does not.
+        """
+        now = datetime.now(timezone.utc)
+        for share in snapshot.shares:
+            symbol = share.get('symbol')
+            if not symbol:
+                continue
+            self.recorder.record_backfill(runtime_state.BackfillRecord(
+                symbol=symbol,
+                account=share.get('account', DEFAULT_ACCOUNT),
+                direction=runtime_state.BACKWARD,
+                at=now,
+                terminal=runtime_state.TERMINAL_MANUAL_MODE,
+            ))
+
     def _backfill_share(self, share, snapshot: ConfigSnapshot, timeline) -> int:
         """Backfill one share in both directions (issue #626).
 
@@ -1524,6 +1791,15 @@ class SuiviBourseMetrics:
         first_buy_date = snapshot.first_buy_date(symbol)
         if not first_buy_date:
             app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
+            # The second of the three terminals (#656 trap 6). A GRANT-only
+            # position is the ordinary case, and it has no history to reach back
+            # to — distinct from "complete" (it never started) and from manual
+            # mode (the pass exists here, it simply has no target).
+            self.recorder.record_backfill(runtime_state.BackfillRecord(
+                symbol=symbol, account=account,
+                direction=runtime_state.BACKWARD,
+                at=datetime.now(timezone.utc),
+                terminal=runtime_state.TERMINAL_NO_BUY))
             return 0
 
         # Convert date to datetime if needed and make timezone-aware
@@ -1651,13 +1927,31 @@ class SuiviBourseMetrics:
     def _backfill_backward(self, share, first_buy_date, timeline) -> int:
         """Backward pass: extend the series toward the first BUY date, one chunk
         (``SB_BACKFILL_CHUNK_DAYS``) per cycle. Returns points written this cycle.
+
+        Every exit publishes a last-pass record (issue #668). That is the whole
+        answer to #656's driving question: this method used to log a warning and
+        return ``0`` on failure, which is indistinguishable from the ``0`` a
+        healthy weekend returns — so nothing anywhere told "pacing normally"
+        apart from "wedged on yfinance". The record carries the window it
+        attempted, the two dates the progress bar is drawn from, and — through
+        the recorder's fold — how many consecutive cycles have now failed.
         """
         symbol = share['symbol']
         name = share['name']
         account = share.get('account', DEFAULT_ACCOUNT)
 
+        def publish(**fields) -> None:
+            self.recorder.record_backfill(runtime_state.BackfillRecord(
+                symbol=symbol, account=account,
+                direction=runtime_state.BACKWARD,
+                at=datetime.now(timezone.utc),
+                target=first_buy_date, **fields))
+
         info = self._ensure_share_info(symbol)
         if info is None:
+            # Not counted as a failure: the tags are missing, not the history,
+            # and the next scrape of this symbol supplies them.
+            publish(skipped=runtime_state.SKIP_NO_SHARE_INFO)
             return 0
 
         # Get the oldest data point in InfluxDB for this (symbol, account)
@@ -1672,6 +1966,8 @@ class SuiviBourseMetrics:
                     f"Backfill complete for {symbol} ({account}): "
                     f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
                 self._backfill_complete[(symbol, account)] = first_buy_date
+                publish(oldest=oldest_timestamp,
+                        terminal=runtime_state.TERMINAL_COMPLETE)
                 return 0
 
             # Need to fetch data before oldest_timestamp
@@ -1694,6 +1990,8 @@ class SuiviBourseMetrics:
         if (end_date - start_date).days < 1:
             app_logger.debug(
                 f"Backfill window too small for {symbol}, skipping until next cycle")
+            publish(oldest=oldest_timestamp,
+                    skipped=runtime_state.SKIP_WINDOW_TOO_SMALL)
             return 0
 
         app_logger.info(
@@ -1704,6 +2002,10 @@ class SuiviBourseMetrics:
 
         if prices is None:
             app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
+            publish(oldest=oldest_timestamp, window=(start_date, end_date),
+                    failed=True,
+                    error=f"yfinance returned no history for {symbol} over "
+                          f"{start_date.date()} → {end_date.date()}")
             return 0
 
         if not prices:
@@ -1716,7 +2018,18 @@ class SuiviBourseMetrics:
                     f"Backfill complete for {symbol} ({account}): reached first BUY "
                     f"date with no earlier trading data")
                 self._backfill_complete[(symbol, account)] = first_buy_date
+                publish(oldest=oldest_timestamp, window=(start_date, end_date),
+                        terminal=runtime_state.TERMINAL_COMPLETE)
+                return written
+            # An empty window that has *not* reached the target is a gap
+            # classifying itself (#606) — a weekend, a holiday. Emphatically not
+            # a failure: counting it would make every Monday morning read as
+            # wedged, which is the exact misreading the counter exists to prevent.
+            publish(oldest=oldest_timestamp, window=(start_date, end_date))
+            return written
 
+        publish(oldest=oldest_timestamp, window=(start_date, end_date),
+                written=written)
         return written
 
     def _backfill_forward(self, share, timeline) -> int:
@@ -1736,14 +2049,32 @@ class SuiviBourseMetrics:
         account = share.get('account', DEFAULT_ACCOUNT)
 
         newest = self.influxdb.get_newest_timestamp(symbol, account=account)
+
+        def publish(**fields) -> None:
+            self.recorder.record_backfill(runtime_state.BackfillRecord(
+                symbol=symbol, account=account,
+                direction=runtime_state.FORWARD,
+                at=datetime.now(timezone.utc),
+                newest=newest, **fields))
+
         window = scheduling.forward_backfill_window(
             newest, datetime.now(timezone.utc), self.backfill_chunk_days)
         if window is None:
+            # The two no-ops the pure window sizing returns, told apart because
+            # they mean opposite things: an empty series is waiting on the
+            # *backward* pass to seed it, while `too_recent` is the healthy
+            # steady state during live trading — `newest ≈ now`, so this pass
+            # stands aside and the REGULAR writer stays the sole writer of the
+            # present. Collapsing them would make a perfectly well portfolio and
+            # an unseeded one read the same.
+            publish(skipped=(runtime_state.SKIP_NO_SERIES if newest is None
+                             else runtime_state.SKIP_TOO_RECENT))
             return 0
         start_date, end_date = window
 
         info = self._ensure_share_info(symbol)
         if info is None:
+            publish(skipped=runtime_state.SKIP_NO_SHARE_INFO)
             return 0
 
         app_logger.info(
@@ -1756,6 +2087,9 @@ class SuiviBourseMetrics:
         if prices is None:
             app_logger.warning(
                 f"Failed to fetch forward history for {symbol}, will retry next cycle")
+            publish(window=(start_date, end_date), failed=True,
+                    error=f"yfinance returned no history for {symbol} over "
+                          f"{start_date.date()} → {end_date.date()}")
             return 0
 
         if not prices:
@@ -1764,6 +2098,7 @@ class SuiviBourseMetrics:
             app_logger.debug(
                 f"Forward-fill window for {symbol} returned no rows, skipping")
 
+        publish(window=(start_date, end_date), written=written)
         return written
 
     def scrape(self):
@@ -2031,6 +2366,15 @@ class Runtime:
         # the lock lives in, and there is only ever one worker (#651).
         self.config_writer = config_writer.ConfigWriter(config_manager)
 
+        # The scheduler's last-pass records (issue #668). Master-side for the
+        # ConfigWriter's reason — a mutex and three references, and a
+        # ``threading.Lock`` crosses ``fork()`` unharmed — plus one of its own:
+        # ``GET /api/runtime`` must answer *before* and *without* a working
+        # scheduler, since explaining a screen that is not working is the entire
+        # reason the resource exists (#656 déc. 6). A recorder that only came
+        # into being in ``start_runtime`` would be absent exactly then.
+        self.recorder = runtime_state.RuntimeRecorder()
+
 
 def log_fatal(exc: BaseException) -> None:
     """Log a boot-fatal exception under the message its class earned.
@@ -2106,7 +2450,8 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # scrape path updates; passing None when it is disabled leaves it disabled.
     sb_metrics = SuiviBourseMetrics(
         runtime.config_manager, runtime.validator,
-        prometheus_exporter=runtime.prometheus)
+        prometheus_exporter=runtime.prometheus,
+        recorder=runtime.recorder)
     sb_metrics.regular_interval = regular_interval
     runtime.metrics = sb_metrics
 

@@ -15,6 +15,8 @@ import pandas as pd
 import pytest
 
 import main
+import runtime_state
+import web as web_module
 from web import create_app
 
 
@@ -921,3 +923,115 @@ def test_the_events_write_routes_do_not_shadow_the_files_resource(tmp_path):
 
     assert response.status_code == 200
     assert [entry['name'] for entry in response.get_json()] == ['2024.csv']
+
+
+# --------------------------------------------------------------------------- #
+# The app's own runtime state (issue #668, design #656)
+#
+# One case here is specific to this resource and is the reason it exists: it
+# must answer 200 while InfluxDB is unreachable. That is decision 6's whole
+# point, and it is the one thing a test can prove that looking cannot — on a
+# healthy stack the two designs are indistinguishable.
+# --------------------------------------------------------------------------- #
+
+def test_the_runtime_resource_answers_200_with_influxdb_unreachable(tmp_path):
+    """#656 decision 6, and the reason #659's `status` slot was retired.
+
+    `/api/shares` is an InfluxDB query and this blueprint answers 503 when one
+    fails, so a pill riding on that payload would **disappear exactly when it is
+    the only thing able to explain the empty table** — #655's error contract
+    turned against itself one storey up, and worse than the original, because
+    the diagnostic dies with what it diagnoses.
+    """
+    client = build_client(
+        tmp_path, error=Exception("connection refused"),
+        settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+
+    # The table is dead...
+    assert client.get('/api/shares').status_code == 503
+    # ...and the thing that explains why is not.
+    response = client.get('/api/runtime')
+
+    assert response.status_code == 200
+    assert response.get_json()['symbols'][0]['symbol'] == 'AAPL'
+
+
+def test_the_runtime_resource_issues_no_query_at_all(tmp_path):
+    """Not merely tolerant of a dead database — it never asks it anything.
+
+    Decision 4 makes that free: the backfill job already *reads* the oldest
+    stored point, so it *remembers* it, and the progress bar survives an
+    unreachable InfluxDB rather than merely degrading politely.
+    """
+    client, influx = build_client_and_influx(
+        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+
+    client.get('/api/runtime')
+
+    assert influx.queries == []
+
+
+def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
+    """The row set comes from the configuration snapshot (#656 déc. 3).
+
+    Driving it from the recorder would race the scrape threads *and* drop this
+    row; driving it from the declaration gives the honest answer for free — the
+    position exists, nothing has been observed about it yet.
+    """
+    client = build_client(
+        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+
+    body = client.get('/api/runtime').get_json()
+
+    assert [s['symbol'] for s in body['symbols']] == ['AAPL']
+    assert body['symbols'][0]['pill'] == 'unknown'
+    assert body['symbols'][0]['accounts'][0]['account'] == 'pea'
+
+
+def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
+    client, _ = build_client_and_influx(
+        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+    runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol='AAPL', at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
+        market_state='CLOSED', closed=True, price_present=True,
+        verdict=runtime_state.SCRAPE_CLOSED, failure_count=0,
+        next_delay=3600.0))
+
+    body = client.get('/api/runtime').get_json()
+
+    assert body['symbols'][0]['pill'] == 'closed'
+    assert body['symbols'][0]['market_state'] == 'CLOSED'
+    assert body['symbols'][0]['last_pass'] == '2026-08-05T15:00:00+00:00'
+    # No scheduler in a test process, and that is not trap 1's ambiguity.
+    assert body['symbols'][0]['next_run_state'] == 'unavailable'
+
+
+def test_the_shares_payload_no_longer_carries_the_retired_status_slot(tmp_path):
+    """#659 reserved it; #656 decision 6 retired it rather than filling it."""
+    frame = pd.DataFrame([influx_row()])
+
+    body = build_client(tmp_path, frame=frame).get('/api/shares').get_json()
+
+    assert 'status' not in body[0]
+
+
+def test_the_config_route_carries_the_effective_settings_with_the_token_redacted(
+        tmp_path, monkeypatch):
+    """#654's one survivor, on `/api/config` rather than `/api/runtime`.
+
+    #661's argument: one noun, two consumers. "What is this container running?"
+    is a question about the configuration, and the data page is already the
+    screen that asks it — while putting it on the runtime resource would start
+    that resource down the road to a junk drawer.
+    """
+    monkeypatch.setenv('INFLUXDB_TOKEN', 'apiv3_supersecret')
+    client = build_client(tmp_path)
+
+    settings = {s['name']: s for s in client.get('/api/config').get_json()['settings']}
+
+    assert settings['INFLUXDB_TOKEN']['value'] is None
+    assert settings['INFLUXDB_TOKEN']['set'] is True
+    assert settings['SB_REGULAR_INTERVAL']['value'] == '120'
+    # Compose-only variables are not app settings (#654 trap 13).
+    assert 'SB_VERSION' not in settings

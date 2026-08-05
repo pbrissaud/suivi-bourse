@@ -90,12 +90,13 @@ class SharePosition:
     pe_ratio: Optional[float]
     market_cap: Optional[float]
     accounts: Sequence[AccountPosition]
-    #: Reserved for #656's live scheduler state (market open/closed, price
-    #: frozen per #628, dead ticker backing off per #617). #652 déc. 15 wants a
-    #: pill per row; which state is readable, and how it is read without racing
-    #: the scheduler's threads, is that ticket's question. The slot is here so
-    #: the payload shape does not change when it lands.
-    status: Optional[str] = None
+    # #659 reserved a `status` slot here for #656's live scheduler state. #656
+    # decision 6 **retired it rather than filling it**, and the reason is this
+    # module's own error contract read one storey up: `/api/shares` is an
+    # InfluxDB query, so the blueprint answers 503 when it fails — and a pill
+    # riding on this payload would vanish exactly when it is the only thing able
+    # to explain the empty table. The pills live on `GET /api/runtime`, which
+    # touches no InfluxDB at all; see `runtime_view.py`.
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -120,7 +121,6 @@ class SharePosition:
             'pe_ratio': self.pe_ratio,
             'market_cap': self.market_cap,
             'accounts': [a.to_dict() for a in self.accounts],
-            'status': self.status,
         }
 
 

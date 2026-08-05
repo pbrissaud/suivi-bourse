@@ -124,8 +124,13 @@ export interface Share {
   pe_ratio: number | null
   market_cap: number | null
   accounts: AccountPosition[]
-  /** Reserved for #656's live scheduler state; always null until it lands. */
-  status: string | null
+  /**
+   * There is deliberately **no** `status` here. #659 reserved the slot for the
+   * scheduler pills; #656 decision 6 retired it, because this payload comes from
+   * an InfluxDB query that answers `503` when it fails — so a pill riding here
+   * would vanish exactly when it is the only thing able to explain the empty
+   * table. The pills come from `RuntimeState`, which reads no InfluxDB at all.
+   */
 }
 
 export interface PricePoint {
@@ -233,7 +238,185 @@ export interface ConfigInfo {
   editable: boolean
   read_only_reason: string | null
   log_level: string
+  /** #654's read-only effective configuration. See {@link EffectiveSetting}. */
+  settings: EffectiveSetting[]
   shares: DeclaredShare[]
+}
+
+/**
+ * One environment variable **the app reads** — a list that is not the same as
+ * the one compose sends (#654 trap 11), which is why it is server-chosen rather
+ * than scraped from the environment.
+ *
+ * Read-only, and permanently so: of seventeen variables, eight are cheap to
+ * *apply* at runtime and **zero** can be persisted, because `.env` is a host
+ * file the container never sees. There is no button here and there will not be
+ * one.
+ */
+export interface EffectiveSetting {
+  name: string
+  /** `null` for a secret — redacted by name, since the prototype has no auth. */
+  value: string | null
+  /** Whether the variable is present in the environment at all. */
+  set: boolean
+  source: 'environment' | 'default' | 'unset'
+  /** `runtime` values are read from the live attribute, not from `os.environ`. */
+  scope: 'runtime' | 'boot'
+  secret: boolean
+  deprecated: boolean
+}
+
+// ------------------------------------------------------------------------- //
+// The app's own runtime state (issue #668, design #656)
+//
+// The one item of #652's list that Grafana cannot reach at any price: none of
+// this is in InfluxDB, it is scheduler memory. Everything below is a **dated
+// observation** written by the job that made it — never a verdict this client
+// composes out of two of them, which is the failure mode the whole design is
+// shaped to avoid.
+// ------------------------------------------------------------------------- //
+
+/**
+ * The single headline a row gets. Ordered by the server, "broken beats asleep":
+ *
+ * - `write_failed` — the quote arrived and the point did not land. First,
+ *   because #617's dead-ticker counter is structurally blind to it: `decide`
+ *   resets that counter whenever a price was present, so an InfluxDB outage
+ *   looks perfectly healthy from the scheduler's side.
+ * - `backoff` — past #617's grace window, so the retry delay is now growing.
+ * - `frozen` — #628's sonde: the stored price stopped moving while the live
+ *   quote did not.
+ * - `failing` — failing, still retrying at the base cadence.
+ * - `closed` / `open` — the ordinary two.
+ * - `unknown` — nothing observed yet. A **designed** state on a fresh container.
+ */
+export type RuntimePill =
+  | 'unknown'
+  | 'closed'
+  | 'open'
+  | 'frozen'
+  | 'failing'
+  | 'backoff'
+  | 'write_failed'
+
+/**
+ * What the APScheduler jobstore can say about the next run — and `ambiguous` is
+ * the interesting one. A `date` job is removed from the jobstore *while it runs*
+ * and re-added when the pass ends, so an absent job means "being scraped right
+ * now" **or** "symbol departed". Render both readings; picking one is wrong
+ * about half the time and never says so.
+ */
+export type NextRunState = 'scheduled' | 'ambiguous' | 'unavailable'
+
+/** One backfill pass of one `(symbol, account)`, in one direction. */
+export interface BackfillProgress {
+  account: string
+  direction: 'backward' | 'forward'
+  /**
+   * A terminal (`complete` / `no_buy` / `manual_mode`), a skip reason
+   * (`too_recent` / `no_series` / `window_too_small` / `no_share_info`), or
+   * `running` / `failing` / `unknown`. The three terminals mean three different
+   * things and only the first is progress — `manual_mode` in particular is
+   * *nominal*: that installation has no backward pass at all.
+   */
+  state: string
+  at: string | null
+  /** The first BUY — the backward pass's target, and the bar's denominator. */
+  target: string | null
+  /** The oldest stored point, **as observed when the pass started**. */
+  oldest: string | null
+  /** The forward pass's anchor: the newest stored point it measured from. */
+  newest: string | null
+  window: [string | null, string | null] | null
+  written: number
+  /** Consecutive failed cycles. The one number that answers "is it stuck?". */
+  failures: number
+  ratio: number | null
+  error: string | null
+}
+
+export interface AccountRuntime {
+  account: string
+  frozen: boolean
+  written: boolean
+  backward: BackfillProgress | null
+  forward: BackfillProgress | null
+}
+
+export interface SymbolRuntime {
+  symbol: string
+  name: string | null
+  pill: RuntimePill
+  /** yfinance's raw value **as read this cycle** — `null` when the fetch failed.
+   *  Never the cached one, which describes the market before that failure. */
+  market_state: string | null
+  /** What the scheduler acted on, after its fail-open coercion. */
+  closed: boolean | null
+  last_pass: string | null
+  verdict: string | null
+  failure_count: number
+  next_delay: number | null
+  next_run: string | null
+  next_run_state: NextRunState
+  accounts: AccountRuntime[]
+  error: string | null
+}
+
+export interface BackfillSummary {
+  total: number
+  /** Series that have history to fetch — `no_buy` and `manual_mode` excluded,
+   *  or a manual install would show a bar stuck below 100 % forever. */
+  in_scope: number
+  complete: number
+  failing: number
+  running: number
+  unknown: number
+  no_buy: number
+  manual_mode: number
+  ratio: number | null
+}
+
+export interface Ingestion {
+  at: string | null
+  outcome: 'updated' | 'unchanged' | 'failed'
+  /** The banner's reason for existing: an invalid configuration is never
+   *  published, so the app goes on running — correctly — on the previous one,
+   *  and the only other trace of it anywhere is a log line. */
+  kept_previous: boolean
+  shares: number | null
+  events: number | null
+  error: string | null
+}
+
+export interface PerfRun {
+  at: string | null
+  verdict: 'ran' | 'skipped' | 'failed'
+  /** All three of #618's gate inputs, because a skip *is* the three of them
+   *  being quiet — one "reason" could not be named honestly. */
+  reasons: {
+    events_changed: boolean
+    backfill_pending: boolean
+    live_write: boolean
+  }
+  error: string | null
+}
+
+export interface RuntimeError {
+  source: string
+  key: string | null
+  at: string | null
+  message: string
+}
+
+export interface RuntimeState {
+  now: string | null
+  mode: 'events' | 'manual'
+  scheduler_running: boolean
+  symbols: SymbolRuntime[]
+  backfill: BackfillSummary
+  ingestion: Ingestion | null
+  perf: PerfRun | null
+  errors: RuntimeError[]
 }
 
 export interface DeclaredAccount {
@@ -435,6 +618,12 @@ export const api = {
       `/api/portfolio/history?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
   movers: () => get<MoversResponse>('/api/portfolio/movers'),
+
+  /**
+   * Reads no InfluxDB, so it keeps answering when everything else stops — which
+   * is the point: the table can be empty while this stays talkative.
+   */
+  runtime: () => get<RuntimeState>('/api/runtime'),
 
   // ----------------------------------------------------------------------- //
   // The write half (issue #662)

@@ -24,6 +24,8 @@ from flask import Blueprint, jsonify, request
 from logfmt_logger import getLogger
 
 import portfolio_view
+import runtime_state
+import runtime_view
 from config_writer import (
     Clobber,
     ConfigWriteError,
@@ -533,6 +535,99 @@ def convert_event_file(name: str):
 
 
 # --------------------------------------------------------------------- #
+# The app's own runtime state (issue #668, design #656)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/runtime')
+def get_runtime():
+    """What the scheduler is doing — the one thing Grafana cannot do at all.
+
+    Every other item of #652's "what does first-party buy" list, Grafana does
+    badly; this one it cannot reach at any price, because none of this is in
+    InfluxDB. It is scheduler memory, and the web process living *inside* the
+    scraper process (#651) is what makes it readable.
+
+    **This route touches no InfluxDB**, and that is decision 6 rather than an
+    optimisation. #659 reserved a ``status`` slot on ``/api/shares`` for the
+    pills; ``/api/shares`` is a query, and this blueprint answers ``503`` when a
+    query fails — so a pill riding there would **disappear exactly when it is the
+    only thing able to explain the empty table**. #655's error contract turned
+    against itself one storey up, and worse than the original, because the
+    diagnostic would die with what it diagnoses. So the slot is retired rather
+    than filled, and the pills live here: process memory, the configuration
+    snapshot, the APScheduler jobstore. Two resources on one page means two cache
+    cadences and two independent failure states — the table can be empty while
+    the banner is talkative.
+
+    Decision 4 makes that free: the backfill job already *reads* the oldest
+    stored point, so it *remembers* it, and the progress bar survives an
+    unreachable database.
+
+    The row set comes from the configuration snapshot and the records are fetched
+    one ``get`` per key — never an iteration of a dict the scrape threads are
+    writing, which raises ``RuntimeError: dictionary changed size during
+    iteration`` and only ever does so in production with forty symbols.
+    """
+    from web import current_runtime
+
+    runtime = current_runtime()
+    manager = runtime.config_manager
+    recorder = runtime.recorder
+    snapshot = manager.current()
+
+    scrape = {}
+    backfill = {}
+    for share in snapshot.shares:
+        symbol = share.get('symbol')
+        if not symbol:
+            continue
+        account = str(share.get('account') or runtime_view.DEFAULT_ACCOUNT)
+        scrape.setdefault(symbol, recorder.scrape_of(symbol))
+        for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
+            backfill[(symbol, account, direction)] = recorder.backfill_of(
+                symbol, account, direction)
+
+    return jsonify(runtime_view.build_runtime(
+        shares=snapshot.shares,
+        scrape=scrape,
+        backfill=backfill,
+        next_runs=_next_runs(runtime.scheduler),
+        ingest=recorder.ingest(),
+        perf=recorder.perf(),
+        now=datetime.now(timezone.utc),
+        mode=manager.get_mode(),
+        scheduler_running=runtime.scheduler is not None,
+    ))
+
+
+def _next_runs(scheduler) -> dict:
+    """``symbol -> next_run_time`` for the live per-symbol scrape jobs.
+
+    The one pull kept from the scheduler's internals (#656 déc. 4): it is the
+    truth of scheduling, the jobstore is natively locked, and a copied
+    ``next_delay`` would be exactly the duplicate decision 2 forbids.
+
+    A symbol **absent** from the result is trap 1 and not an error: a ``date``
+    job is removed from the jobstore *while it runs* and re-added at the end of
+    ``_scrape_symbol``, so absence means "being scraped right now" **or** "symbol
+    departed" — and a cycle can be seconds long, since a rate-limit retry sleeps
+    up to 8 s. The pure module renders that as one ambiguous value carrying both
+    readings, never as either alone.
+    """
+    if scheduler is None:
+        return {}
+    import main
+
+    runs = {}
+    for job in (scheduler.get_jobs() or []):
+        job_id = getattr(job, 'id', '') or ''
+        if job_id.startswith(main.SCRAPE_JOB_PREFIX):
+            symbol = job_id[len(main.SCRAPE_JOB_PREFIX):]
+            runs[symbol] = getattr(job, 'next_run_time', None)
+    return runs
+
+
+# --------------------------------------------------------------------- #
 # The configuration itself (issue #662)
 # --------------------------------------------------------------------- #
 
@@ -552,6 +647,16 @@ def get_config():
     it is `config.yaml`'s. Reading it from the snapshot rather than from
     InfluxDB is deliberate — the question here is *what is declared*, not what
     has been observed.
+
+    ``settings`` is #654's read-only **effective configuration**, and it lands
+    here rather than on ``/api/runtime`` on #661's argument: one noun, two
+    consumers. "What is this container running?" is a question about the
+    configuration, the data page is already the screen that asks it, and putting
+    it on the runtime resource would start that resource down the road to a junk
+    drawer. The list is the one the *app reads* — see
+    :data:`main.SETTINGS_INVENTORY` for why that has to be said out loud — and
+    ``INFLUXDB_TOKEN`` is redacted by name, since the prototype has no
+    authentication.
     """
     from web import current_runtime
     import main
@@ -565,6 +670,7 @@ def get_config():
         'editable': editable,
         'read_only_reason': reason,
         'log_level': main.current_log_level(),
+        'settings': main.effective_settings(runtime.metrics),
         'shares': _snapshot().shares,
     })
 

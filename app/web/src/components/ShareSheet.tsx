@@ -32,6 +32,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { PriceChart } from '@/components/PriceChart'
+import { RuntimeDetail } from '@/components/RuntimeDetail'
 
 /**
  * The detail sheet of #652 déc. 9/12: the per-account breakdown, the yfinance
@@ -50,6 +51,16 @@ interface Props {
 }
 
 export function ShareSheet({ symbol, onOpenChange }: Props) {
+  // Same cache entry as the table's pills and the global banner — one query for
+  // the whole process's state, folded per symbol by the pure module. Kept alive
+  // while the sheet is open, so the detail below refreshes on its own cadence.
+  const runtime = useQuery({
+    queryKey: ['runtime'],
+    queryFn: api.runtime,
+    enabled: symbol !== null,
+    refetchInterval: 120_000,
+  })
+
   // Fetched rather than reused from the table's row: it exercises the
   // single-symbol form of P1, and it is what the sheet would need anyway once
   // the payload carries more than a table row does.
@@ -179,6 +190,21 @@ export function ShareSheet({ symbol, onOpenChange }: Props) {
                     </TableBody>
                   </Table>
                 </div>
+              </section>
+
+              <Separator />
+
+              {/*
+                The seventh item of #652's "what a first-party UI buys" list, and
+                the only one Grafana cannot do *at all*. Not a measurement: this
+                is the scheduler's own memory, readable only because #651 put the
+                web process inside the scraper process.
+              */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-medium">État du suivi</h3>
+                <RuntimeDetail
+                  state={runtime.data?.symbols.find((s) => s.symbol === data.symbol)}
+                />
               </section>
 
               <Separator />

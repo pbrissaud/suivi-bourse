@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 
 import { api, type DeclaredShare } from '@/lib/api'
 import { AccountsEditor } from '@/components/AccountsEditor'
+import { EffectiveConfig, EngineStatus } from '@/components/EngineStatus'
 import { EventFiles } from '@/components/EventFiles'
 import { EventLedger } from '@/components/EventLedger'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -87,6 +88,14 @@ export default function DataPage() {
         {config.data && eventsMode && <EventFiles editable={editable} />}
         {config.data && <AccountsEditor eventsMode={eventsMode} />}
       </div>
+
+      {/* The app's own state, on the page that already asks what kind of
+          installation this is. #656 déc. 6 put the effective configuration on
+          `/api/config` rather than on `/api/runtime` — one noun, two consumers,
+          and it keeps the runtime resource from becoming a junk drawer. */}
+      <EngineStatus />
+
+      {config.data && <EffectiveConfig settings={config.data.settings} />}
 
       {config.data && <LogLevel current={config.data.log_level} />}
     </div>
