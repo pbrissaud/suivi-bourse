@@ -38,8 +38,15 @@ def _valid_shares(symbol="AAPL", name="Apple"):
 class FakeConfigManager:
     """In-memory stand-in for main.ConfigurationManager.
 
-    Exposes exactly the surface SuiviBourseMetrics relies on: load_shares(),
-    get_mode(), get_first_buy_date(), get_events(), load_accounts().
+    Exposes the surface SuiviBourseMetrics relies on since #658: ``current()``
+    (the published snapshot — the read path), ``reload()`` (the publisher), plus
+    ``get_mode()``. ``_first_buy_dates`` overrides what the snapshot would
+    derive from ``events``, so tests can name a first-BUY date without writing
+    an event list.
+
+    ``raise_on_load`` fails the *publisher* only, never ``current()``: that is
+    the production contract — a failed reload leaves the previously published
+    snapshot readable.
     """
 
     def __init__(self, shares, mode="manual", first_buy_dates=None, events=None,
@@ -51,10 +58,20 @@ class FakeConfigManager:
         self._accounts = accounts
         self.raise_on_load = False
 
-    def load_shares(self, force=False):
+    def current(self):
+        return _FakeSnapshot(
+            shares=self._shares, events=self._events, accounts=self._accounts,
+            cache_key=None, first_buy_dates=self._first_buy_dates)
+
+    def reload(self, force=False):
+        if isinstance(self.raise_on_load, BaseException):
+            raise self.raise_on_load
         if self.raise_on_load:
             raise RuntimeError("boom loading shares")
-        return self._shares
+        return self.current()
+
+    def load_shares(self, force=False):
+        return self.reload(force=force).shares
 
     def get_mode(self):
         return self._mode
@@ -67,6 +84,17 @@ class FakeConfigManager:
 
     def get_events(self):
         return self._events
+
+
+class _FakeSnapshot(main.ConfigSnapshot):
+    """A ConfigSnapshot whose first_buy_date comes from a dict, not events."""
+
+    def __init__(self, first_buy_dates=None, **kwargs):
+        super().__init__(**kwargs)
+        object.__setattr__(self, "_first_buy_dates", first_buy_dates or {})
+
+    def first_buy_date(self, symbol):
+        return self._first_buy_dates.get(symbol)
 
 
 class _RaisingTicker:
@@ -322,11 +350,17 @@ def test_ingest_updates_shares_when_valid_and_different(mock_influx, shares_vali
     assert metrics.shares == new_shares
 
 
-def test_ingest_keeps_previous_when_new_config_invalid(mock_influx, shares_validator):
+def test_ingest_keeps_previous_when_publication_fails(mock_influx, shares_validator):
+    """A refused configuration never reaches this class.
+
+    Since #658 the rejection happens in the manager, before publication, so
+    ``ingest`` sees an exception rather than a bad share list — and the snapshot
+    every reader holds is still the last valid one. The rejection itself is
+    tested against the real manager in ``test_configuration_manager.py``.
+    """
     original = [_valid_shares("AAPL", "Apple")]
     metrics, cfg = _build_metrics(original, mock_influx, shares_validator)
-    # Missing required purchase/estate blocks -> invalid per schema.yaml
-    cfg._shares = [{"name": "Broken", "symbol": "BAD"}]
+    cfg.raise_on_load = main.InvalidConfigFile({"shares": "required"})
 
     metrics.ingest()
 
@@ -345,12 +379,62 @@ def test_ingest_swallows_exceptions(mock_influx, shares_validator):
 
 
 # ---------------------------------------------------------------------------
+# One snapshot per cycle (issue #658)
+# ---------------------------------------------------------------------------
+
+def test_shares_is_a_read_of_the_published_snapshot(mock_influx, shares_validator):
+    """Not a copy: a republication is visible without anyone assigning it here.
+
+    The second copy is what let scraping and backfill run on two different
+    configurations for a cycle.
+    """
+    metrics, cfg = _build_metrics([_valid_shares("AAPL")], mock_influx,
+                                  shares_validator)
+    cfg._shares = [_valid_shares("MSFT", "Microsoft")]
+
+    assert [s["symbol"] for s in metrics.shares] == ["MSFT"]
+
+
+def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
+        mock_influx, shares_validator, mocker):
+    """Shares, events and accounts must come from the same generation.
+
+    They used to be fetched one call at a time (``self.shares``, then
+    ``load_accounts()``, then ``get_events()``, then ``get_first_buy_date()``
+    per share), so a reload landing mid-cycle could pair this cycle's shares
+    with the next cycle's events.
+    """
+    metrics, cfg = _build_metrics(
+        [_valid_shares("AAPL"), _valid_shares("MSFT")], mock_influx,
+        shares_validator, mode="events")
+    spy = mocker.spy(cfg, "current")
+
+    metrics.backfill()
+
+    assert spy.call_count == 1
+
+
+def test_recompute_perf_hands_its_snapshot_to_the_recompute(
+        mock_influx, shares_validator, mocker, sample_events):
+    """The gate and the recompute must judge the same configuration."""
+    metrics, cfg = _build_metrics([_valid_shares("AAPL")], mock_influx,
+                                  shares_validator, mode="events",
+                                  events=sample_events)
+    recompute = mocker.patch.object(metrics, "update_account_metrics")
+
+    metrics.recompute_perf()
+
+    recompute.assert_called_once()
+    assert recompute.call_args.args[0].events is sample_events
+
+
+# ---------------------------------------------------------------------------
 # scrape
 # ---------------------------------------------------------------------------
 
 def test_scrape_returns_when_no_shares(mock_influx, shares_validator, mocker):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
-    metrics.shares = []
+    metrics, cfg = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    cfg._shares = []
     spy = mocker.spy(metrics, "expose_metrics")
 
     metrics.scrape()
@@ -364,9 +448,9 @@ def test_scrape_returns_when_no_shares(mock_influx, shares_validator, mocker):
 # ---------------------------------------------------------------------------
 
 def test_backfill_returns_when_no_shares(mock_influx, shares_validator):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator,
-                                mode="events")
-    metrics.shares = []
+    metrics, cfg = _build_metrics([_valid_shares()], mock_influx, shares_validator,
+                                  mode="events")
+    cfg._shares = []
 
     metrics.backfill()
 

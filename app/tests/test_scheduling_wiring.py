@@ -53,6 +53,13 @@ class _FakeConfigManager:
     def __init__(self, shares):
         self._shares = shares
 
+    def current(self):
+        return main.ConfigSnapshot(shares=self._shares, events=None,
+                                   accounts=None, cache_key=None)
+
+    def reload(self, force=False):
+        return self.current()
+
     def load_shares(self, force=False):
         return self._shares
 
@@ -211,7 +218,7 @@ def test_scrape_symbol_departed_does_not_persist_failure_count(
     m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
     m._failure_counts["AAPL"] = 3
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
-    m.shares = []  # departed between the last reconcile and this cycle
+    m.config_manager._shares = []  # departed between the last reconcile and this cycle
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -246,7 +253,7 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
     assert fetch_started.wait(timeout=5)  # scrape is in-flight, pre-persist
 
     # Symbol departs: ingest updates shares, reconcile removes the job + pops.
-    m.shares = []
+    m.config_manager._shares = []
     m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
     m._reconcile_jobs()
     assert "AAPL" not in m._failure_counts  # cleanup popped it
@@ -681,7 +688,7 @@ def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
     m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
     # Symbol departs between fetch and re-arm.
-    m.shares = []
+    m.config_manager._shares = []
 
     m._scrape_symbol("AAPL", now=NOW)
 

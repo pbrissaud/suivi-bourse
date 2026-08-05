@@ -7,6 +7,7 @@ import os
 import random
 import threading
 import time
+from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -209,21 +210,91 @@ class InvalidConfigFile(Exception):
         super().__init__(self.message)
 
 
-class ConfigurationManager:
+def load_shares_schema() -> Validator:
+    """Build the Cerberus validator for the aggregated share list.
+
+    Lives next to ``ConfigurationManager`` because the manager is what validates
+    now (issue #658): a configuration snapshot exists only if it passed this
+    schema, so nothing downstream can read a rejected one.
     """
-    Manages configuration loading from either manual config or events files.
-    Includes caching to avoid reloading unchanged files.
+    with open(Path(__file__).parent / 'schema.yaml', encoding='UTF-8') as f:
+        return Validator(yaml.safe_load(f))
+
+
+@dataclass(frozen=True)
+class ConfigSnapshot:
+    """One complete, validated view of the configuration (issue #658).
+
+    The three fields ``ConfigurationManager`` used to mutate one by one
+    (``_cached_shares`` / ``_cached_events`` / ``_cache_key``) are a single
+    object here, built off-line and published by one attribute rebind. Readers
+    take the snapshot once and work on it, so they never see a half-written
+    configuration: a reload landing mid-cycle is invisible to whoever already
+    holds the previous one, and there is no window in which ``events`` is
+    ``None`` while ``shares`` is being repopulated.
+
+    Frozen, and treated as immutable all the way down: the lists inside are
+    rebuilt by every load and never edited in place.
+
+    ``events`` is ``None`` in manual mode (there are no events to speak of) and
+    ``[]`` in events mode with an empty source; ``accounts`` is ``None`` unless
+    an ``accounts:`` block is declared. ``cache_key`` is the mtime fingerprint
+    this snapshot was built from — ``None`` when nothing cacheable was read.
+    """
+
+    shares: List[Dict]
+    events: Optional[List]
+    accounts: Optional[Portfolio]
+    cache_key: Optional[str]
+
+    def first_buy_date(self, symbol: str) -> Optional[date]:
+        """Date of the earliest BUY event for ``symbol``, or ``None``.
+
+        The backfill target. A pure read of this snapshot's events, so a
+        concurrent reload can never turn it into ``None`` mid-cycle.
+        """
+        if self.events is None:
+            return None
+        buy_dates = [
+            e.date for e in self.events
+            if e.symbol == symbol and e.event_type == EventType.BUY
+        ]
+        return min(buy_dates) if buy_dates else None
+
+
+class ConfigurationManager:
+    """Publishes the configuration as an immutable snapshot (issue #658).
+
+    Reads either the manual ``config.yaml`` or the event files, validates the
+    result, and publishes it as a :class:`ConfigSnapshot`. Two rules shape the
+    class, both from design #653:
+
+    * **Never mutate published state in place.** ``_config`` is rebound, never
+      edited, so the read path takes no lock at all — a reader holding a
+      snapshot is holding a consistent one for as long as it needs it. One
+      mutex, ``_write_lock``, serialises the writers (the ingestion job, the
+      watchdog callback, and — once it exists — a web handler reloading
+      synchronously after a file edit).
+    * **Never publish what is not validated.** Cerberus runs *inside* snapshot
+      construction, so a rejected configuration never becomes a snapshot and
+      therefore cannot be read by anyone. This closes a split-brain that
+      predates the web UI: the cache used to be written before validation, so a
+      file the validator refused was still consumed by backfill and by the
+      performance recompute while scraping ran on the previous one.
     """
 
     MODE_MANUAL = 'manual'
     MODE_EVENTS = 'events'
 
-    def __init__(self, config_dir: Optional[str] = None):
+    def __init__(self, config_dir: Optional[str] = None,
+                 validator_: Optional[Validator] = None):
         """
         Initialize the configuration manager.
 
         Args:
             config_dir: Override configuration directory (for testing).
+            validator_: Override the shares validator (for testing). Defaults to
+                the production ``schema.yaml``.
         """
         if config_dir:
             self.config_dir = Path(config_dir).expanduser()
@@ -234,27 +305,38 @@ class ConfigurationManager:
         self._mode: Optional[str] = None
         self._events_source: Optional[str] = None
         self._watch_enabled: bool = False
-        # Declared accounts (opt-in). None means no accounts block was declared.
-        self._accounts: Optional[Portfolio] = None
         self._confuse_config: Optional[Configuration] = None
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
 
-        # Cache for events mode
-        self._cached_shares: Optional[List[Dict]] = None
-        self._cache_key: Optional[str] = None
+        self.validator = validator_ or load_shares_schema()
 
-        # Store raw events for backfill date calculation
-        self._cached_events: Optional[List] = None
+        # The published snapshot, and the mutex that serialises publishers.
+        # Both are created here, which under gunicorn's ``preload_app`` means
+        # *in the master, before the fork* — a ``threading.Lock`` survives
+        # ``fork()`` unharmed because the master is single-threaded at that
+        # instant, and the worker inherits an unlocked one.
+        self._config: Optional[ConfigSnapshot] = None
+        self._write_lock = threading.Lock()
+
+    def _read_settings_file(self) -> dict:
+        """Parse ``settings.yaml``, or ``{}`` when there is none."""
+        if not self.settings_path.exists():
+            return {}
+        with open(self.settings_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
 
     def _load_settings(self) -> None:
-        """Load settings from settings.yaml or environment."""
-        # Read settings.yaml once (if present) so the accounts block is available
-        # regardless of how the mode is ultimately selected.
-        settings = {}
-        if self.settings_path.exists():
-            with open(self.settings_path, 'r', encoding='utf-8') as f:
-                settings = yaml.safe_load(f) or {}
+        """Resolve the *deployment* settings: mode, events source, watch.
+
+        Read exactly once, on purpose — these three describe how this
+        deployment is wired, and changing them means restarting the container.
+        The ``accounts:`` block used to be read here too, which quietly made it
+        boot-only as well: editing it had no effect without a restart. It is
+        data, not deployment, so it moved to :meth:`_read_accounts`, which every
+        snapshot build re-runs.
+        """
+        settings = self._read_settings_file()
 
         # The events block is parsed unconditionally: `source` and `watch`
         # describe *how* to read events, not *whether* to. Gating them behind the
@@ -281,17 +363,19 @@ class ConfigurationManager:
         else:
             self._mode = self._detect_mode()
 
-        # Accounts are an opt-in feature declared in settings.yaml, independent of
-        # how the mode was selected. Absence leaves behaviour strictly unchanged.
-        self._accounts = self._parse_accounts(settings.get('accounts'))
-        if self._accounts is not None:
-            app_logger.info(
-                f"Loaded {len(self._accounts.accounts)} declared account(s): "
-                f"{', '.join(sorted(self._accounts.ids()))}")
-
         # Default events source if not specified
         if self._mode == self.MODE_EVENTS and not self._events_source:
             self._events_source = str(self.config_dir / 'events')
+
+    def _read_accounts(self) -> Optional[Portfolio]:
+        """Re-read the opt-in ``accounts:`` block from ``settings.yaml``.
+
+        Called on every snapshot build, so a declared account added or relabelled
+        on disk takes effect on the next reload rather than the next restart.
+        Raises ``ValueError`` on a malformed block or duplicate ids — which is
+        the whole point of running it *before* publication.
+        """
+        return self._parse_accounts(self._read_settings_file().get('accounts'))
 
     #: Event-file extensions recognised by the loader and by mode auto-detection.
     EVENT_SUFFIXES = ('.csv', '.xlsx')
@@ -361,11 +445,14 @@ class ConfigurationManager:
         """Return the declared accounts, or None when none are declared.
 
         The None return is the single signal that later gates per-account series
-        publication (see the accounts roadmap).
+        publication (see the accounts roadmap). Served from the published
+        snapshot once there is one, so a caller never sees accounts from a
+        different generation than the shares they were aggregated with.
         """
-        if self._mode is None:
-            self._load_settings()
-        return self._accounts
+        snap = self._config
+        if snap is not None:
+            return snap.accounts
+        return self._read_accounts()
 
     def get_mode(self) -> str:
         """Get the current configuration mode."""
@@ -374,16 +461,26 @@ class ConfigurationManager:
         return self._mode
 
     def _compute_cache_key(self) -> Optional[str]:
-        """Compute a cache key based on event files' modification times."""
+        """Fingerprint every file a snapshot is built from, by mtime.
+
+        ``settings.yaml`` joins the event files here (issue #658): now that the
+        ``accounts:`` block is re-read on every build, it has to be able to
+        invalidate the cache, or an edited account would sit unnoticed behind an
+        unchanged events directory.
+
+        ``None`` in manual mode — ``config.yaml`` is read through confuse, which
+        does its own reload, so manual mode has never cached and does not start
+        now.
+        """
         if self._mode != self.MODE_EVENTS:
             return None
 
-        source = Path(self._events_source).expanduser()
-        if not source.exists():
-            return None
-
-        # Build cache key from file paths and their mtimes
         mtimes = []
+        if self.settings_path.exists():
+            mtimes.append(
+                f"{self.settings_path}:{self.settings_path.stat().st_mtime}")
+
+        source = Path(self._events_source).expanduser()
         if source.is_file():
             mtimes.append(f"{source}:{source.stat().st_mtime}")
         elif source.is_dir():
@@ -393,37 +490,98 @@ class ConfigurationManager:
 
         return "|".join(mtimes) if mtimes else None
 
-    def load_shares(self, force: bool = False) -> List[Dict]:
+    # ------------------------------------------------------------------ #
+    # Publication (issue #658)
+    # ------------------------------------------------------------------ #
+
+    def current(self) -> ConfigSnapshot:
+        """The published snapshot — the lock-free read path.
+
+        One attribute read, because publication is a single rebind. Builds and
+        publishes one on first use, which in production has already happened in
+        the gunicorn master (:func:`build_runtime`).
         """
-        Load shares configuration based on the current mode.
+        snap = self._config
+        if snap is not None:
+            return snap
+        return self.reload()
 
-        Args:
-            force: Force reload even if cache is valid.
+    def reload(self, force: bool = False) -> ConfigSnapshot:
+        """Build a candidate snapshot and, if it is new, publish it.
 
-        Returns:
-            List of share configurations.
+        The only writer. Everything fallible — reading, parsing, aggregating,
+        validating — happens on the candidate *before* the rebind, so a failure
+        raises with the previously published snapshot still standing and still
+        complete. That is what makes "the previous valid configuration is kept"
+        true of the whole application rather than half of it.
+
+        ``force`` replaces the old ``invalidate_cache()`` + ``load_shares()``
+        pair. Those two calls had a window between them in which the caches were
+        ``None``: a backfill cycle landing there read ``events = None``, got no
+        first-BUY date, and silently skipped its backward pass. Expressed as an
+        argument, the window cannot exist — there is only ever a complete
+        snapshot published.
 
         Raises:
-            EventLoaderError, EventValidationError, AggregationError: If events mode fails.
-            ConfuseExceptions.NotFoundError: If manual mode fails.
+            EventLoaderError, EventValidationError, AggregationError: events mode.
+            ConfuseExceptions.NotFoundError: manual mode.
+            InvalidConfigFile: the aggregated shares failed ``schema.yaml``.
+            ValueError: the ``accounts:`` block is malformed.
+        """
+        with self._write_lock:
+            published = self._config
+            candidate = self._build_snapshot(published, force)
+            if candidate is not published:
+                # The publication. A single rebind, so a concurrent reader sees
+                # either the whole previous snapshot or the whole new one.
+                self._config = candidate
+            return candidate
+
+    def _build_snapshot(self, published: Optional[ConfigSnapshot],
+                        force: bool) -> ConfigSnapshot:
+        """Assemble a validated snapshot, or return ``published`` on a cache hit.
+
+        Runs under ``_write_lock``. Never touches ``self._config``: publication
+        is :meth:`reload`'s business.
         """
         if self._mode is None:
             self._load_settings()
 
+        cache_key = self._compute_cache_key()
+        cacheable = published is not None and self._mode == self.MODE_EVENTS
+        if not force and cacheable and published.cache_key == cache_key:
+            app_logger.debug("Using cached configuration (no file changes detected)")
+            return published
+
+        # Accounts first: in events mode their ids decide whether events must
+        # carry an account, so the two are necessarily read together.
+        accounts = self._read_accounts()
+
         if self._mode == self.MODE_EVENTS:
-            return self._load_from_events(force=force)
+            shares, events = self._load_from_events(accounts)
         else:
-            return self._load_from_manual()
+            shares, events = self._load_from_manual(), None
 
-    def _load_from_events(self, force: bool = False) -> List[Dict]:
-        """Load shares from event files with caching."""
-        # Check cache validity
-        current_key = self._compute_cache_key()
+        # An empty portfolio is a legitimate state, not a broken file: events
+        # mode starts life with an empty events/ directory and must keep running
+        # (with a warning) until the first file lands. schema.yaml's
+        # `empty: False` was written for a hand-edited config.yaml, where an
+        # empty `shares:` really is a mistake; applying it to a fresh install
+        # would turn "no events yet" into a boot failure.
+        if shares and not self.validator.validate({'shares': shares}):
+            raise InvalidConfigFile(self.validator.errors)
 
-        if not force and self._cached_shares is not None and current_key == self._cache_key:
-            app_logger.debug("Using cached shares (no file changes detected)")
-            return self._cached_shares
+        accounts_are_new = published is None or published.accounts != accounts
+        if accounts is not None and accounts_are_new:
+            app_logger.info(
+                f"Loaded {len(accounts.accounts)} declared account(s): "
+                f"{', '.join(sorted(accounts.ids()))}")
 
+        return ConfigSnapshot(shares=shares, events=events, accounts=accounts,
+                              cache_key=cache_key)
+
+    def _load_from_events(self, accounts: Optional[Portfolio]) -> Tuple[List[Dict], List]:
+        """Load and aggregate the event files. Returns ``(shares, events)``."""
         source = Path(self._events_source).expanduser()
         app_logger.info(f"Loading events from: {source}")
 
@@ -432,15 +590,12 @@ class ConfigurationManager:
 
         if not events:
             app_logger.warning("No events found in events directory")
-            self._cached_shares = []
-            self._cached_events = []
-            self._cache_key = current_key
-            return []
+            return [], []
 
         # When accounts are declared, every event must carry a valid account and
         # positions are keyed per account; otherwise everything falls under
         # 'default' (a single code path either way).
-        account_ids = self._accounts.ids() if self._accounts else None
+        account_ids = accounts.ids() if accounts else None
 
         validator = EventValidator(account_ids=account_ids)
         validator.validate_or_raise(events)
@@ -448,13 +603,8 @@ class ConfigurationManager:
         aggregator = EventAggregator()
         shares = aggregator.aggregate(events, accounts_declared=account_ids is not None)
 
-        # Update cache
-        self._cached_shares = shares
-        self._cached_events = events
-        self._cache_key = current_key
-
         app_logger.info(f"Loaded {len(events)} events for {len(shares)} shares")
-        return shares
+        return shares, events
 
     def _load_from_manual(self) -> List[Dict]:
         """Load shares from manual config.yaml."""
@@ -465,37 +615,36 @@ class ConfigurationManager:
 
         return self._confuse_config['shares'].get()
 
-    def get_first_buy_date(self, symbol: str) -> Optional[datetime]:
-        """
-        Get the date of the first BUY event for a symbol.
+    def load_shares(self, force: bool = False) -> List[Dict]:
+        """Publish a snapshot and return its shares.
+
+        Kept as the ergonomic façade over :meth:`reload` for callers that only
+        want the share list.
 
         Args:
-            symbol: Yahoo Finance ticker symbol
+            force: Rebuild even when the mtime fingerprint is unchanged.
 
         Returns:
-            Date of first BUY event, or None if not found
+            List of share configurations.
         """
-        if self._cached_events is None:
-            return None
+        return self.reload(force=force).shares
 
-        buy_dates = [
-            e.date for e in self._cached_events
-            if e.symbol == symbol and e.event_type == EventType.BUY
-        ]
+    def get_first_buy_date(self, symbol: str) -> Optional[date]:
+        """Date of the first BUY event for a symbol, from the published snapshot.
 
-        if not buy_dates:
-            return None
-
-        return min(buy_dates)
+        ``None`` before anything is published, and in manual mode.
+        """
+        snap = self._config
+        return snap.first_buy_date(symbol) if snap is not None else None
 
     def get_events(self) -> Optional[List]:
-        """
-        Get the cached events list.
+        """The published snapshot's events.
 
         Returns:
-            List of events, or None if not in events mode or no events loaded.
+            List of events, or None if not in events mode or nothing published.
         """
-        return self._cached_events
+        snap = self._config
+        return snap.events if snap is not None else None
 
     def start_watcher(self, reload_callback: callable) -> None:
         """
@@ -535,13 +684,6 @@ class ConfigurationManager:
             self._watcher = None
             app_logger.info("Stopped event file watcher")
 
-    def invalidate_cache(self) -> None:
-        """Invalidate the shares cache, forcing a reload on next load_shares call."""
-        self._cached_shares = None
-        self._cached_events = None
-        self._cache_key = None
-        app_logger.debug("Cache invalidated")
-
 
 class SuiviBourseMetrics:
     """
@@ -554,8 +696,10 @@ class SuiviBourseMetrics:
                  prometheus_exporter: Optional[PrometheusExporter] = None):
         self.config_manager = config_manager
         self.configuration = configuration_  # For backward compatibility
+        # Kept for the legacy ``validate()`` below. It is no longer this class's
+        # job: since #658 the configuration manager validates inside snapshot
+        # construction, so what this object holds has already passed the schema.
         self.validator = validator_
-        self.shares = config_manager.load_shares()
 
         # InfluxDB writer
         self.influxdb = influxdb_writer or InfluxDBWriter()
@@ -638,9 +782,25 @@ class SuiviBourseMetrics:
         self._sonde_lock = threading.Lock()
         self._sonde_state: Dict[Tuple[str, str], scheduling.SondeState] = {}
 
+    @property
+    def shares(self) -> List[Dict]:
+        """The held positions, read from the published configuration snapshot.
+
+        A read, not a copy (issue #658). Holding a second copy here is what used
+        to let the app run on two configurations at once: scraping worked from
+        this attribute while backfill and the perf recompute read the manager's
+        cache, and the two could disagree for a whole cycle — including in the
+        one case that matters, a file the validator had just rejected.
+        """
+        return self.config_manager.current().shares
+
     def validate(self) -> bool:
         """
         Validate the configuration for the stock shares.
+
+        Legacy: a published snapshot has already passed this schema, so this
+        can only ever return True. Kept for backward compatibility.
+
         Returns:
             bool: True if the configuration is valid, False otherwise.
         """
@@ -1178,14 +1338,17 @@ class SuiviBourseMetrics:
             live_write = self._perf_dirty_live
             self._perf_dirty_live = False
             backfill_pending = self._perf_dirty_from is not None
-        events = self.config_manager.get_events()
-        events_changed = events is not self._perf_last_events
+        # One snapshot for the whole cycle: the gate and the recompute must
+        # agree on which configuration they are talking about, and a reload can
+        # land between them.
+        snapshot = self.config_manager.current()
+        events_changed = snapshot.events is not self._perf_last_events
         if not scheduling.perf_should_run(events_changed, backfill_pending, live_write):
             app_logger.debug(
                 "Perf recompute skipped: nothing changed since last run")
             return
         try:
-            self.update_account_metrics()
+            self.update_account_metrics(snapshot)
         except Exception as e:
             # The live-write signal was consumed up front (for concurrency), so a
             # failed write would otherwise drop today's fresh point until the next
@@ -1204,17 +1367,16 @@ class SuiviBourseMetrics:
         Uses caching to avoid reloading unchanged files.
 
         Errors are logged but not raised to avoid blocking the scraping job.
-        The previous valid configuration is kept until the error is fixed.
+        The previous valid configuration is kept until the error is fixed —
+        which since #658 is true by construction rather than by this method's
+        care: the manager publishes a snapshot only once it is complete *and*
+        valid, so a failure anywhere above leaves the previous one standing for
+        every reader, not just for this one.
         """
         try:
-            new_shares = self.config_manager.load_shares()
-            if new_shares != self.shares:
-                if not self.validator.validate({"shares": new_shares}):
-                    app_logger.error(
-                        f"Invalid shares configuration, keeping previous: "
-                        f"{self.validator.errors}")
-                    return
-                self.shares = new_shares
+            before = self.config_manager.current().shares
+            after = self.config_manager.reload().shares
+            if after != before:
                 app_logger.info("Shares configuration updated from events")
             else:
                 app_logger.debug("No changes in shares configuration")
@@ -1243,7 +1405,13 @@ class SuiviBourseMetrics:
         Fetches one chunk (default: 1 year) of history per direction and rate
         limits between requests.
         """
-        if not self.shares:
+        # One snapshot for the whole cycle (issue #658). Shares, events and
+        # accounts have to come from the same generation: reading them one call
+        # at a time let a mid-cycle reload pair this cycle's shares with the
+        # next cycle's events, and — through the old invalidate-then-load pair —
+        # with no events at all, which quietly neutralised the backward pass.
+        snapshot = self.config_manager.current()
+        if not snapshot.shares:
             app_logger.debug("No shares configured, skipping backfill")
             return
 
@@ -1257,23 +1425,23 @@ class SuiviBourseMetrics:
 
         # Accounts are resolved per (symbol, account) so a symbol held in two
         # accounts backfills each series independently.
-        accounts_declared = self.config_manager.load_accounts() is not None
+        accounts_declared = snapshot.accounts is not None
 
         # A single replay per cycle serves every symbol and every date; each
         # per-date lookup below is a forward-fill on this timeline, never a
         # re-replay (backfill drops from O(days × events) to O(events + days)).
-        events = self.config_manager.get_events()
+        events = snapshot.events
         timeline = EventAggregator().replay(events, accounts_declared) if events else None
 
-        for share in self.shares:
-            backfilled_count += self._backfill_share(share, timeline)
+        for share in snapshot.shares:
+            backfilled_count += self._backfill_share(share, snapshot, timeline)
 
         if backfilled_count > 0:
             app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-    def _backfill_share(self, share, timeline) -> int:
+    def _backfill_share(self, share, snapshot: ConfigSnapshot, timeline) -> int:
         """Backfill one share in both directions (issue #626).
 
         The **backward** pass extends the series toward the first BUY date and
@@ -1285,8 +1453,8 @@ class SuiviBourseMetrics:
         symbol = share['symbol']
         account = share.get('account', DEFAULT_ACCOUNT)
 
-        # Get the target date (first BUY)
-        first_buy_date = self.config_manager.get_first_buy_date(symbol)
+        # Get the target date (first BUY), from this cycle's snapshot.
+        first_buy_date = snapshot.first_buy_date(symbol)
         if not first_buy_date:
             app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
             return 0
@@ -1590,7 +1758,7 @@ class SuiviBourseMetrics:
             self._perf_dirty_from = None
             return pending
 
-    def update_account_metrics(self):
+    def update_account_metrics(self, snapshot: Optional[ConfigSnapshot] = None):
         """Recompute and write the daily ``account_metrics`` + ``portfolio_totals``
         series via the performance module.
 
@@ -1605,12 +1773,17 @@ class SuiviBourseMetrics:
         events list object => full rewrite). Money-weighted performance (xirr /
         gain_absolu / twr_index) comes from
         ``performance.py``; xirr / gain_absolu land only on the latest point.
+
+        ``snapshot`` is this cycle's configuration, passed down by
+        ``recompute_perf`` so the gate and the recompute cannot straddle a
+        reload; it defaults to the currently published one for direct callers.
         """
-        portfolio = self.config_manager.load_accounts()
+        snapshot = snapshot or self.config_manager.current()
+        portfolio = snapshot.accounts
         if portfolio is None:
             return  # single gate: no declared accounts -> no account series
 
-        events = self.config_manager.get_events()
+        events = snapshot.events
         if not events:
             return
 
@@ -1618,7 +1791,7 @@ class SuiviBourseMetrics:
 
         # Injected price source: per-symbol daily closes, forward-filled. The
         # performance module never touches InfluxDB — it only calls price_at.
-        symbols = {s['symbol'] for s in self.shares if s.get('symbol')}
+        symbols = {s['symbol'] for s in snapshot.shares if s.get('symbol')}
         price_pairs = {
             sym: sorted(self.influxdb.get_price_series(sym).items())
             for sym in symbols
@@ -1725,15 +1898,11 @@ class SuiviBourseMetrics:
                 except Exception as e:
                     app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
 
-    def reload(self):
-        """
-        Reload the configuration and update the stock shares.
-        Legacy method for backward compatibility.
-        """
-        try:
-            self.shares = self.config_manager.load_shares(force=True)
-        except Exception as e:
-            raise e
+    # ``reload()`` used to live here, assigning ``self.shares`` from a forced
+    # load and thereby bypassing validation entirely — the one path that could
+    # publish a rejected configuration outright. There is nothing left for it to
+    # do: ``ConfigurationManager.reload(force=True)`` is the publisher, and this
+    # class reads what it publishes.
 
     def run(self):
         """
@@ -1819,17 +1988,17 @@ def build_runtime() -> Runtime:
     """
     app_logger.info('SuiviBourse is running !')
 
+    # The manager owns the schema now (issue #658): validation happens inside
+    # snapshot construction, so it cannot be handed a validator too late to
+    # matter.
     config_manager = ConfigurationManager()
 
-    # Load schema file
-    with open(Path(__file__).parent / "schema.yaml", encoding='UTF-8') as f:
-        data_schema = yaml.safe_load(f)
-    shares_validator = Validator(data_schema)
-
-    # Load — and thereby validate — the configuration in the master. The result
-    # is discarded: SuiviBourseMetrics loads it again in the worker, off the
-    # mtime cache. What matters is that a broken one raises *here*.
-    config_manager.load_shares()
+    # First publication, in the master. Reading, aggregating and validating all
+    # happen here, which is what keeps a broken configuration a single clean
+    # exit — the arbiter has not forked yet, so there is nothing to respawn. The
+    # worker inherits the published snapshot through the fork and starts on it;
+    # ``post_fork``'s ``ingest()`` is then a cache hit that only arms the jobs.
+    config_manager.reload()
 
     # Registry and gauges only: pure Python, no fd, no thread. The exporter's own
     # ThreadingHTTPServer is gone, replaced by a /metrics mount on the Flask app,
@@ -1838,7 +2007,7 @@ def build_runtime() -> Runtime:
     prometheus = PrometheusExporter() \
         if env_flag('SB_PROMETHEUS_ENABLED', True) else None
 
-    return Runtime(config_manager, shares_validator, prometheus)
+    return Runtime(config_manager, config_manager.validator, prometheus)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:

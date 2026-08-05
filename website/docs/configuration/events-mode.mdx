@@ -344,10 +344,16 @@ Organize them however you like:
 
 ### Caching
 
-Ingestion uses each file's **modification time (mtime)** to detect changes:
+Ingestion uses each file's **modification time (mtime)** to detect changes —
+your event files and `settings.yaml` alike:
 
-- If no file changed → the cached, already-aggregated data is reused.
-- If any file changed → a full reload and re-aggregation happens.
+- If nothing changed → the cached, already-aggregated data is reused.
+- If anything changed → a full reload and re-aggregation happens.
+
+Because `settings.yaml` is watched too, editing the `accounts:` block takes
+effect on the next ingestion cycle. `mode`, `events.source` and `events.watch`
+are read once at startup and still need a restart — they describe how the
+deployment is wired, not what is in your portfolio.
 
 ### Error resilience
 

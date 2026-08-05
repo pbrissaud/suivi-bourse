@@ -22,6 +22,11 @@ init:  ## Create .env (with a unique token) and data/ from the templates
 		fi; \
 	}
 	@test -d data || { cp -r data.example data; echo "created data/"; }
+	@grep -q '^SB_UID=' .env || { \
+		printf '\n# Ownership of the (writable) config mount — the invoking user.\n' >> .env; \
+		printf 'SB_UID=%s\nSB_GID=%s\n' "$$(id -u)" "$$(id -g)" >> .env; \
+		echo "recorded SB_UID=$$(id -u) SB_GID=$$(id -g) so the app writes files you own"; \
+	}
 	@grep -q '^COMPOSE_FILE=' .env || { \
 		echo "note: your .env predates the port overlay — no port is published."; \
 		echo "      add this line to keep reaching Grafana on the host:"; \

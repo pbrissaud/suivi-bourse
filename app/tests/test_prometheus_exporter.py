@@ -176,7 +176,14 @@ def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
     monkeypatch.setattr(main.yf, 'Ticker', lambda symbol: fake_ticker(close=150.0))
 
     class FakeConfigManager:
-        def load_shares(self):
+        def current(self):
+            return main.ConfigSnapshot(shares=[_share()], events=None,
+                                       accounts=None, cache_key=None)
+
+        def reload(self, force=False):
+            return self.current()
+
+        def load_shares(self, force=False):
             return [_share()]
 
         def get_mode(self):

@@ -43,12 +43,22 @@ class _FakeConfigManager:
         self.load_calls = 0
         self.watcher_started_with = None
         self.watcher_stopped = False
+        # The manager owns the shares schema since #658; the master reads it off
+        # the manager rather than building a second one.
+        self.validator = main.load_shares_schema()
 
-    def load_shares(self, force=False):
+    def reload(self, force=False):
         self.load_calls += 1
         if self._load_error is not None:
             raise self._load_error
-        return self._shares
+        return self.current()
+
+    def current(self):
+        return main.ConfigSnapshot(shares=self._shares, events=None,
+                                   accounts=None, cache_key=None)
+
+    def load_shares(self, force=False):
+        return self.reload(force=force).shares
 
     def get_mode(self):
         return "manual"

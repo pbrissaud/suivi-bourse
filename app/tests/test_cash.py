@@ -228,6 +228,14 @@ class _CashConfigManager:
         self._events = events
         self._accounts = accounts
 
+    def current(self):
+        import main
+        return main.ConfigSnapshot(shares=self._shares, events=self._events,
+                                   accounts=self._accounts, cache_key=None)
+
+    def reload(self, force=False):
+        return self.current()
+
     def load_shares(self, force=False):
         return self._shares
 

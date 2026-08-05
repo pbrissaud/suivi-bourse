@@ -18,9 +18,30 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project
 
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser \
+    # Debian's HOME_MODE is 0700, which since #658 no longer works: the service
+    # runs as the *host* user's uid so the config it writes stays theirs, and
+    # /home/appuser is both that uid's $HOME and gunicorn's `chdir` (the WORKDIR
+    # below). Without the traverse bit the boot dies on `os.chdir` before a line
+    # of application code runs.
+    && chmod 0755 /home/appuser \
+    # yfinance keeps a timezone cache under $HOME/.cache. That same foreign uid
+    # does not own it, so the cache would silently degrade to yfinance's no-op
+    # dummy — an extra network round-trip per ticker, forever. Sticky-writable,
+    # like /tmp, so any uid gets its own.
+    && mkdir -p /home/appuser/.cache \
+    && chmod 1777 /home/appuser/.cache
 WORKDIR /home/appuser
 COPY ./src /home/appuser
+
+# Not redundant with the appuser home. Since #658 the config mount is writable
+# and compose runs the service under the *host* user's uid so the files the UI
+# writes stay theirs — a uid with no /etc/passwd entry (501 on macOS), for which
+# Docker sets HOME=/, which would send main.py's
+# Path('~/.config/SuiviBourse').expanduser() to /.config/SuiviBourse and away
+# from the mount entirely.
+ENV HOME=/home/appuser
+
 USER appuser
 
 # 8080 serves the web UI and /health, 8081 keeps serving /metrics for existing

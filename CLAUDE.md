@@ -61,8 +61,15 @@ docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.e
 
 The stack owns exactly two user-writable things, both git-ignored: `.env` (every
 setting, names identical to the app's own env vars) and the **config directory**
-(`SB_CONFIG_DIR`, default `./data`) mounted read-only as a single volume at
-`/home/appuser/.config/SuiviBourse`. `docker-compose.yaml` is never edited by
+(`SB_CONFIG_DIR`, default `./data`) mounted as a single volume at
+`/home/appuser/.config/SuiviBourse`. That mount is **writable** since #658 — the
+web UI's data page edits events and the `accounts:` block — so the service runs
+as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
+invoking `id -u`/`id -g` in `.env`, keeping the files owned by the human who
+also edits them by hand. The image sets `ENV HOME=/home/appuser` for the same
+reason: a uid absent from `/etc/passwd` (501 on macOS) gets `HOME=/` from
+Docker, which would send `Path('~/.config/SuiviBourse').expanduser()` away from
+the mount. `docker-compose.yaml` is never edited by
 users: the image tag is `${SB_VERSION:-4}`, ports and container-name prefix are
 variables, and the InfluxDB admin token has one source (`INFLUXDB_TOKEN` in
 `.env`) that `influxdb3-init.sh` materialises into a token file and Grafana's
@@ -90,11 +97,14 @@ nothing published.
 one container, one process, one scheduler. gunicorn is not just a server here,
 it is the boot sequence, split either side of its `fork()`:
 
-- **master, under `preload_app`** — `main.build_runtime()`: `ConfigurationManager`,
-  the Cerberus validator, the config load **that validates it**, and the
-  `PrometheusExporter` registry. Pure work only: no thread, no socket, no fd
-  survives a fork. Loading the config here is what keeps a broken one a single
-  clean exit — the arbiter has not forked yet, so there is nothing to respawn.
+- **master, under `preload_app`** — `main.build_runtime()`: `ConfigurationManager`
+  (which owns the Cerberus validator), the **first publication** of the config
+  snapshot **that validates it**, and the `PrometheusExporter` registry. Pure
+  work only: no thread, no socket, no fd survives a fork. Publishing the config
+  here is what keeps a broken one a single clean exit — the arbiter has not
+  forked yet, so there is nothing to respawn — and the worker inherits the
+  published snapshot through the fork, so `post_fork`'s `ingest()` is a cache
+  hit that only arms the jobs.
 - **`post_fork`** — `main.start_runtime()`: the InfluxDB client (a connection
   pool the master must not share), `BackgroundScheduler` (not Blocking — the
   worker owns the foreground), `start_watcher()`, and the first `ingest()` that
@@ -119,6 +129,31 @@ serves the app, `SB_METRICS_PORT` keeps `/metrics` exactly where scrapers expect
 it. `PrometheusExporter` no longer runs an HTTP server of its own; the endpoint
 is a `DispatcherMiddleware` mount on the Flask app, fed the exporter's dedicated
 registry.
+
+**Configuration is one immutable snapshot** (issue #658, design #653).
+`ConfigurationManager` holds a single `ConfigSnapshot` — `shares`, `events`,
+`accounts`, `cache_key` — built off-line and **published by one attribute
+rebind**, so the read path (`current()`) takes no lock and a reader holds a
+coherent generation for as long as it needs it; one mutex serialises the writers
+(the ingestion job, the watchdog callback, and later a web handler reloading
+after a file edit). Two rules follow:
+
+- **Never mutate published state.** `invalidate_cache()` is gone; forcing is an
+  argument (`reload(force=True)`). The old pair nulled all three cache fields
+  *before* `ingest()` refilled them, and a backfill landing in that window read
+  `events = None` → no first-BUY date → its backward pass silently neutralised.
+- **Never publish what is not validated.** Cerberus runs *inside* snapshot
+  construction, closing a split-brain that predated the UI: the cache was
+  written by the loader and validated afterwards by `ingest()`, so a rejected
+  file still fed **backfill and the perf recompute** while scraping ran on the
+  previous one. `SuiviBourseMetrics.shares` is now a *read* of the snapshot, not
+  a second copy, and `backfill()` / `recompute_perf()` take one snapshot per
+  cycle. An **empty portfolio is exempt** from `schema.yaml`'s `empty: False` —
+  events mode legitimately starts with an empty `events/` directory.
+
+The `accounts:` block is re-read on every build (`settings.yaml`'s mtime joined
+the cache key), so editing it no longer needs a restart; `mode` / `events.source`
+/ `events.watch` stay boot-only — they are deployment settings.
 
 The application runs independent scheduled jobs on a single APScheduler:
 - **Scraping**: one **self-rescheduling job per held symbol**, market-aware
@@ -346,10 +381,10 @@ Events are **sorted by date** before processing, regardless of their order in fi
 All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use this to organize by year, broker, or account.
 
 #### Caching
-Ingestion uses **file modification time (mtime)** to detect changes. If no files have changed, the cache is used and no reprocessing occurs.
+Ingestion uses **file modification time (mtime)** to detect changes — of the event files *and* of `settings.yaml`, so an edited `accounts:` block is not hidden behind an unchanged events directory. If nothing changed, the published snapshot is reused unchanged (same object).
 
 #### Error Resilience
-If ingestion fails (invalid event, file error), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application.
+If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.yaml` rejected), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
 
 ---
 
@@ -383,7 +418,7 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 ```
 app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
-├── main.py                 # Runtime/build_runtime/start_runtime, ConfigurationManager, SuiviBourseMetrics
+├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── influxdb_writer.py      # InfluxDB 3 client wrapper (SQL queries)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── schema.yaml             # Cerberus validation schema

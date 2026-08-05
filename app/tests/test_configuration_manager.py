@@ -6,9 +6,11 @@ These tests exercise ConfigurationManager in isolation:
     auto-detection from the events source > default 'manual')
   * events-source defaulting
   * _compute_cache_key behaviour (None in manual, mtime-based in events)
-  * the caching contract of _load_from_events (identity reuse, force reload,
+  * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
-  * get_first_buy_date / get_events / invalidate_cache
+  * get_first_buy_date / get_events
+  * publication (issue #658): one immutable snapshot, validated before it is
+    published, swapped by a single rebind — the null window and the split-brain
 
 Every ConfigurationManager is built with ``config_dir=str(tmp_path)`` so nothing
 ever touches the real ~/.config/SuiviBourse. SB_CONFIG_MODE is managed strictly
@@ -17,11 +19,15 @@ never leak between tests. No network, no real InfluxDB, no yfinance.
 """
 
 import os
+import threading
+import time
 from datetime import date
 
 import pytest
 
+import main
 from main import ConfigurationManager
+from events.validator import EventValidationError
 
 
 # --------------------------------------------------------------------------- #
@@ -314,38 +320,230 @@ def test_get_events_none_before_load(tmp_path):
 
 
 def test_get_events_returns_cached_events(tmp_path, monkeypatch, events_dir):
-    """After an events load, get_events returns the cached event list."""
+    """After an events load, get_events returns the published snapshot's events."""
     monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
 
     events = cm.get_events()
-    assert events is cm._cached_events
+    assert events is cm.current().events
     assert len(events) == 7  # matches the canonical events CSV in conftest
 
 
 # --------------------------------------------------------------------------- #
-# invalidate_cache
+# Publication: the snapshot is built off-line and published by one rebind
+# (issue #658, design #653)
 # --------------------------------------------------------------------------- #
-def test_invalidate_cache_clears_all_caches(tmp_path, monkeypatch, events_dir):
-    """invalidate_cache wipes shares, events and the cache key."""
+def test_current_publishes_on_first_use_and_then_returns_the_same_object(
+        tmp_path, monkeypatch, events_dir):
+    """The read path is one attribute read, so it must be stable between loads."""
     monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
-    first = cm.load_shares()
-    assert cm.get_events() is not None
+    first = cm.current()
+    assert first is cm.current()
+    assert {s["symbol"] for s in first.shares} == {"AAPL", "MSFT"}
+    assert len(first.events) == 7
+    assert first.cache_key is not None
 
-    cm.invalidate_cache()
-    assert cm._cached_shares is None
-    assert cm._cached_events is None
-    assert cm._cache_key is None
-    assert cm.get_events() is None
-    assert cm.get_first_buy_date("AAPL") is None
 
-    # Next load re-runs the pipeline and yields a fresh object.
-    second = cm.load_shares()
-    assert second is not first
-    assert second == first
+def test_snapshot_is_swapped_whole_when_files_change(tmp_path, monkeypatch,
+                                                     events_dir):
+    """A reload replaces the snapshot; it never edits the published one."""
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+
+    before = cm.current()
+    csv_file = events_dir / "2024.csv"
+    st = csv_file.stat()
+    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
+
+    after = cm.reload()
+    assert after is not before
+    assert after.shares == before.shares
+    # The old snapshot is untouched — whoever still holds it holds a whole,
+    # coherent configuration.
+    assert before.events is not after.events
+    assert len(before.events) == 7
+
+
+def test_a_reload_never_exposes_a_half_built_configuration(
+        tmp_path, monkeypatch, events_dir):
+    """The null window: shares and events are published together or not at all.
+
+    ``invalidate_cache()`` used to null the three cache fields *before*
+    ``ingest()`` refilled them. A backfill cycle landing in that window read
+    ``events = None``, so ``get_first_buy_date`` returned ``None`` and the whole
+    backward pass was silently skipped for that cycle — no crash, no log. Here a
+    reader hammers the read path while a writer rebuilds; every observation must
+    be a complete configuration.
+    """
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm.current()  # first publication
+
+    # Make the rebuild slow enough that the reader is guaranteed to observe the
+    # window during which the candidate is being assembled.
+    real_load = cm._load_from_events
+
+    def slow_load(accounts):
+        time.sleep(0.005)
+        return real_load(accounts)
+
+    cm._load_from_events = slow_load
+
+    observations = []
+    stop = threading.Event()
+
+    def reader():
+        while not stop.is_set():
+            snap = cm.current()
+            observations.append(
+                (len(snap.shares), snap.events, snap.first_buy_date("AAPL")))
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    try:
+        for _ in range(20):
+            cm.reload(force=True)
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+    assert observations
+    for share_count, events, first_buy in observations:
+        assert share_count == 2
+        assert events is not None and len(events) == 7
+        assert first_buy == date(2024, 1, 15)
+
+
+# --------------------------------------------------------------------------- #
+# One published state: a rejected configuration changes nothing, anywhere
+# --------------------------------------------------------------------------- #
+class _AcceptingThenRejecting:
+    """Accepts the first document, rejects every later one."""
+
+    errors = {"shares": ["nope"]}
+
+    def __init__(self):
+        self.calls = 0
+
+    def validate(self, document):
+        self.calls += 1
+        return self.calls == 1
+
+
+def test_a_rejected_config_changes_nothing_anywhere(tmp_path, monkeypatch,
+                                                    events_dir):
+    """The split-brain, closed.
+
+    The cache used to be written by the loader and validated afterwards by
+    ``ingest()``, so a refused configuration was already sitting in it: scraping
+    kept the old shares while **backfill and the performance recompute** read
+    the very config the validator had just rejected. Validation now happens
+    inside snapshot construction, so a rejected one is never published and there
+    is nothing for anyone to read.
+    """
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(
+        config_dir=str(tmp_path), validator_=_AcceptingThenRejecting())
+    published = cm.current()
+
+    csv_file = events_dir / "2024.csv"
+    st = csv_file.stat()
+    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
+
+    with pytest.raises(main.InvalidConfigFile):
+        cm.reload()
+
+    # Every read path — not just the one ingest() used to guard — still sees the
+    # previous generation, and sees the *same* object.
+    assert cm.current() is published
+    assert cm.get_events() is published.events
+    assert cm.get_first_buy_date("AAPL") == date(2024, 1, 15)
+    assert cm.load_accounts() is published.accounts
+
+
+def test_the_real_schema_is_the_gate(tmp_path, mocker):
+    """A share list that fails schema.yaml is refused, with InvalidConfigFile."""
+    fake_config = mocker.MagicMock()
+    fake_config.__getitem__.return_value.get.return_value = [
+        {"name": "Broken", "symbol": "BAD"}  # no purchase/estate blocks
+    ]
+    mocker.patch("main.Configuration", return_value=fake_config)
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    with pytest.raises(main.InvalidConfigFile):
+        cm.reload()
+    assert cm._config is None  # nothing was published
+
+
+def test_an_empty_portfolio_is_not_a_rejection(tmp_path, monkeypatch):
+    """`empty: False` in schema.yaml must not turn a fresh install into a crash.
+
+    Events mode starts life with an empty events/ directory — the app is
+    expected to run, warn, and pick up the first file that lands.
+    """
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    (tmp_path / "events").mkdir()
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+
+    snap = cm.current()
+    assert snap.shares == []
+    assert snap.events == []
+
+
+def test_a_malformed_accounts_block_is_refused_before_publication(
+        tmp_path, monkeypatch, events_dir):
+    """`accounts:` is validated on the candidate too, not after publication."""
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    published = cm.current()
+
+    _write_settings(tmp_path, "accounts:\n  - id: PEA\n    type: PEA\n")  # no currency
+
+    with pytest.raises(ValueError, match="Invalid 'accounts' block"):
+        cm.reload()
+    assert cm.current() is published
+
+
+# --------------------------------------------------------------------------- #
+# The accounts block is re-read on every build (it used to be boot-only)
+# --------------------------------------------------------------------------- #
+def test_accounts_are_re_read_on_reload(tmp_path, monkeypatch, events_dir):
+    """Editing `accounts:` used to need a restart: _load_settings ran once."""
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.current().accounts is None
+
+    _write_settings(
+        tmp_path,
+        "accounts:\n  - id: PEA\n    type: PEA\n    currency: EUR\n")
+
+    # Every event in the fixture omits `account`, which is only legal while no
+    # account is declared — so a successful reload here proves the new block was
+    # actually read and applied.
+    with pytest.raises(EventValidationError):
+        cm.reload()
+
+
+def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, monkeypatch,
+                                                   events_dir):
+    """settings.yaml joins the event files in the cache key.
+
+    Without it an edited `accounts:` block would sit unnoticed behind an
+    unchanged events directory, and the re-read above would never fire.
+    """
+    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+    _write_settings(tmp_path, "mode: events\n")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+
+    key_before = cm.current().cache_key
+    settings = tmp_path / "settings.yaml"
+    st = settings.stat()
+    os.utime(settings, (st.st_atime, st.st_mtime + 100))
+
+    assert cm._compute_cache_key() != key_before
 
 
 # --------------------------------------------------------------------------- #

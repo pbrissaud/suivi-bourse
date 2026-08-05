@@ -11,6 +11,12 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-suivi-bourse-dev}-app
     build: ../app
     restart: unless-stopped
+    # Same reason as production (#658): the config mount is writable, so run as
+    # the developer. On a Mac this stack *is* the dev loop — the app cannot run
+    # natively any more, gunicorn forks and libcurl's Curl_macos_init then dies
+    # in CoreFoundation — and a Mac uid (501) has no /etc/passwd entry, which is
+    # precisely the case the image's ENV HOME covers.
+    user: "${SB_UID:-1000}:${SB_GID:-1000}"
     depends_on:
       influxdb:
         condition: service_healthy
@@ -35,7 +41,9 @@ services:
     - ${SB_WEB_PORT:-8080}:${SB_WEB_PORT:-8080}          # Web UI + /health
     - ${SB_METRICS_PORT:-8081}:${SB_METRICS_PORT:-8081}  # Prometheus /metrics (legacy)
     volumes:
-    - ${SB_CONFIG_DIR:-./data.example}:/home/appuser/.config/SuiviBourse:ro
+    # Writable, like production. Note that the default source is the checked-in
+    # data.example/, so edits made through the UI land in the working tree.
+    - ${SB_CONFIG_DIR:-./data.example}:/home/appuser/.config/SuiviBourse
     develop:
       watch:
         - action: rebuild

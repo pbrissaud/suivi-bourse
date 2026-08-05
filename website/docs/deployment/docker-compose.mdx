@@ -133,8 +133,8 @@ block if the dashboards are all you reach from outside, and leave InfluxDB and
 
 ## Configuration directory
 
-The stack mounts **one** directory read-only at
-`/home/appuser/.config/SuiviBourse` inside the app container:
+The stack mounts **one** directory at `/home/appuser/.config/SuiviBourse` inside
+the app container:
 
 ```
 data/
@@ -153,6 +153,23 @@ SB_CONFIG_DIR=/srv/suivi-bourse/config
 Files for the mode you are not using are simply ignored, so you can keep a
 `config.yaml` around while running in events mode.
 
+### Who owns the files {#config-ownership}
+
+The mount is **writable** — the app edits your event files and the `accounts:`
+block. So it has to run as whoever owns them, or every file it writes comes back
+owned by uid 1000 and you can no longer edit your own portfolio by hand.
+`make init` records that for you:
+
+```bash title=".env"
+SB_UID=1000
+SB_GID=1000
+```
+
+Leave them out and the container runs as `1000:1000`, which is right only if
+that is your uid — check with `id -u` / `id -g`. On a platform that generates
+its own environment (Coolify, Dokploy), set the two yourself to match the owner
+of `SB_CONFIG_DIR` on the host.
+
 ## Environment variables
 
 Everything lives in **`.env`**, which is created from `.env.example` and never
@@ -165,6 +182,7 @@ the names match the application's own variables one-for-one.
 |----------|---------|-------------|
 | `SB_VERSION` | `4` | App image tag. Pin an exact version (`4.2.1`) for reproducible upgrades and rollbacks |
 | `SB_CONFIG_DIR` | `./data` | Config directory mounted into the app |
+| `SB_UID` / `SB_GID` | `1000` | Uid/gid the app runs as — see [Who owns the files](#config-ownership) |
 | `COMPOSE_PROJECT_NAME` | `suivi-bourse` | Prefix for container and volume names — change it to run two stacks side by side |
 | `GF_ADMIN_PASSWORD` | `admin` | Grafana admin password |
 
@@ -343,9 +361,7 @@ into its own clone directory. `SB_CONFIG_DIR` was silently ignored and the app
 started against an empty directory. The config mount is therefore declared with
 the long syntax (`type: bind` / `source:` / `target:`), which Coolify copies
 through untouched so `docker compose` resolves the variable at runtime — exactly
-like the `SB_VERSION` image tag. One side effect: Coolify recomposes the mount
-without its access mode, so the read-only flag is dropped there. The app never
-writes to its config directory, so nothing changes in practice.
+like the `SB_VERSION` image tag.
 :::
 
 :::tip Publishing a port anyway
