@@ -12,14 +12,18 @@ boot sequence, and it is split across gunicorn's ``fork()``:
 
 ``gunicorn.conf.py`` wires the three and explains why the split is load-bearing.
 """
+import os
 import sys
+from pathlib import Path
 from typing import Optional
 
-from flask import Flask
+from flask import Flask, send_from_directory
 from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 import main
+from web import problem
+from web.api import api_bp
 from web.health import health_bp
 
 # The Runtime built in the master and inherited by the worker through ``fork()``.
@@ -53,8 +57,48 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
             sys.exit(1)
     _runtime = runtime
 
-    flask_app = Flask(__name__)
+    # static_folder=None: Flask's built-in /static/ route is not what the SPA
+    # needs. Vite emits index.html plus hashed assets/ at the *root* of the
+    # bundle, and every unknown path has to fall through to index.html for
+    # client-side routing — which is `_serve_spa` below, not a static mount.
+    flask_app = Flask(__name__, static_folder=None)
     flask_app.register_blueprint(health_bp)
+    flask_app.register_blueprint(api_bp)
+
+    @flask_app.get('/')
+    @flask_app.get('/<path:path>')
+    def _serve_spa(path: str = ''):
+        """Serve the built front, falling back to index.html for SPA routes.
+
+        The one rule that is load-bearing: **the catch-all must not swallow an
+        /api 404**. Without the guard below, a typo'd endpoint would return the
+        HTML shell with a 200, and the front's ``fetch`` would fail on a JSON
+        parse error somewhere far from the cause — the single most confusing
+        failure this arrangement can produce.
+        """
+        if path.startswith('api/'):
+            return problem.not_found(f"No such API endpoint: /{path}")
+
+        # /metrics is server-owned too. When SB_PROMETHEUS_ENABLED is false the
+        # DispatcherMiddleware mount is absent, and without this guard the
+        # request would fall through to index.html and answer **200 with HTML**
+        # — which is worse than the 404 it used to get, because a scraper reads
+        # a 200 as a healthy target and goes on reporting nothing wrong.
+        if path == 'metrics' or path.startswith('metrics/'):
+            return problem.not_found(
+                "The Prometheus endpoint is disabled (SB_PROMETHEUS_ENABLED=false)")
+
+        static_dir = _static_dir()
+        if not static_dir.is_dir():
+            # A Python-only run (tests, or a container built before the front
+            # existed) is a legitimate state: the API still serves. Say so
+            # plainly rather than 404-ing an empty path.
+            return problem.not_found(
+                "No web UI bundle in this build; the API is available under /api")
+
+        if path and (static_dir / path).is_file():
+            return send_from_directory(static_dir, path)
+        return send_from_directory(static_dir, 'index.html')
 
     # /metrics moves out of the exporter's own ThreadingHTTPServer and into this
     # app (#651); gunicorn's `bind` list keeps it answering on its usual port, so
@@ -70,6 +114,36 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
             {'/metrics': make_wsgi_app(runtime.prometheus.registry)})
 
     return flask_app
+
+
+def current_runtime() -> main.Runtime:
+    """The Runtime this process booted with, for request handlers.
+
+    The routes cannot capture it at import: ``create_app`` runs in the master
+    and the InfluxDB client is only created in ``post_fork``, so a handler must
+    reach the *same* object after the fork rather than a copy taken before it.
+    The module global is that channel — the fork hands the worker the identical
+    object for free.
+    """
+    if _runtime is None:
+        raise RuntimeError(
+            "create_app() has not run; there is no runtime to serve from")
+    return _runtime
+
+
+def _static_dir() -> Path:
+    """Where the built SPA lives.
+
+    Defaults to ``<parent of this package>/static``, which is one path in both
+    worlds: ``app/src/static`` in a checkout (Vite's ``build.outDir``) and
+    ``/home/appuser/static`` in the image, since the Dockerfile copies ``./src``
+    to the home directory. ``SB_STATIC_DIR`` overrides it for anyone serving the
+    bundle from elsewhere.
+    """
+    override = (os.getenv('SB_STATIC_DIR') or '').strip()
+    if override:
+        return Path(override).expanduser()
+    return Path(__file__).resolve().parent.parent / 'static'
 
 
 def start_background() -> None:
@@ -95,4 +169,4 @@ def stop_background() -> None:
         main.shutdown_runtime(_runtime)
 
 
-__all__ = ['create_app', 'start_background', 'stop_background']
+__all__ = ['create_app', 'current_runtime', 'start_background', 'stop_background']

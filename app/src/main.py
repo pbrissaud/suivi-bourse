@@ -460,6 +460,17 @@ class ConfigurationManager:
             self._load_settings()
         return self._mode
 
+    def get_events_source(self) -> Optional[str]:
+        """Where the event files are read from, or ``None`` in manual mode.
+
+        The editor read path (issue #659) needs the same source the loader is
+        given, so that a ledger row and the aggregated position it feeds are two
+        views of one file rather than two guesses at where the files live.
+        """
+        if self._mode is None:
+            self._load_settings()
+        return self._events_source
+
     def _compute_cache_key(self) -> Optional[str]:
         """Fingerprint every file a snapshot is built from, by mtime.
 

@@ -1,3 +1,30 @@
+# --- Front-end build stage (issue #659) -------------------------------------
+# The cost #655 decision 2 measured before choosing a packaged SPA over vendored
+# bundles: one node stage, and `COPY --from` of its output. Node never reaches
+# the final image — the runtime layer below stays Python-only, and `dist/` is
+# static files. The whole stage disappears the day the front is thrown away.
+FROM node:26-slim AS web
+
+WORKDIR /build
+# Node 25 unbundled corepack, so node:26-slim no longer ships it. Reinstalling
+# it beats `npm i -g pnpm@x` because corepack reads the version from
+# `web/package.json`'s `packageManager` field — one source of truth for the
+# package manager, instead of a second one to keep in sync here.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN npm install -g corepack@latest && corepack enable
+
+# Manifest and lockfile first, so a source-only change reuses the install layer.
+# `--frozen-lockfile` makes a lockfile that disagrees with package.json a build
+# failure rather than a silent resolution — the same contract `uv sync --locked`
+# gives the Python half.
+COPY web/package.json web/pnpm-lock.yaml ./web/
+RUN cd web && pnpm install --frozen-lockfile
+
+COPY web ./web
+# Vite writes to ../src/static (see web/vite.config.ts), i.e. /build/src/static.
+RUN cd web && pnpm build
+
+# --- Runtime stage ----------------------------------------------------------
 FROM python:3.14-slim
 
 # Bring in the uv binary from its official image (pinned for reproducibility)
@@ -33,6 +60,13 @@ RUN useradd --create-home appuser \
     && chmod 1777 /home/appuser/.cache
 WORKDIR /home/appuser
 COPY ./src /home/appuser
+
+# The built SPA, landing where Flask already looks for it: `_static_dir()`
+# resolves `<parent of the web package>/static`, which is this path in the image
+# and `app/src/static` in a checkout. One convention, no env var to keep in sync
+# — and .dockerignore excludes a locally built src/static so the host's copy can
+# never shadow this one.
+COPY --from=web /build/src/static /home/appuser/static
 
 # Not redundant with the appuser home. Since #658 the config mount is writable
 # and compose runs the service under the *host* user's uid so the files the UI

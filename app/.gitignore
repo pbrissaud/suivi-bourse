@@ -1,0 +1,12 @@
+# The built SPA. Vite writes it here (app/web/vite.config.ts `build.outDir`) so
+# Flask resolves one path in a checkout and in the image alike; it is a build
+# artefact either way and never committed. #655 decision 2 weighed the opposite
+# — vendoring minified bundles into the repo — and rejected it: invisible to the
+# dependency automation, hand-updated, and it would not even have removed the
+# JSON endpoints.
+src/static/
+
+# Front-end workspace
+web/node_modules/
+web/dist/
+web/.vite/

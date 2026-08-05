@@ -33,6 +33,28 @@ cd app && uv run flake8 src/ --ignore=E501
 cd app && uv run pytest tests/            # add --cov=src for coverage
 ```
 
+### Web UI (in `app/web/` directory)
+
+The front is a packaged SPA (issue #659). It lives under `app/` because the
+Docker build context is `./app`; it is **not** a pnpm workspace with `website/`.
+
+```bash
+cd app/web
+pnpm install
+pnpm build     # → app/src/static/, which Flask serves. Git-ignored.
+pnpm dev       # Vite on :5173, proxying /api to http://localhost:8080
+
+# `pnpm dev` needs the API running. On a Mac that means the container, not a
+# local process — #657: gunicorn forks and libcurl's Curl_macos_init then dies
+# in CoreFoundation. Point it elsewhere with SB_API_URL if needed.
+cd docker-compose && SB_UID=$(id -u) SB_GID=$(id -g) docker compose -f docker-compose.dev.yaml up -d
+```
+
+The image builds the bundle itself in a first `node` stage and `COPY --from`s
+`dist/`; the runtime image stays Python-only. `app/.dockerignore` keeps the
+host's `node_modules` and a locally built `src/static` out of the context — the
+latter would otherwise shadow the image's own build.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned: `docs/` holds the
@@ -129,6 +151,58 @@ serves the app, `SB_METRICS_PORT` keeps `/metrics` exactly where scrapers expect
 it. `PrometheusExporter` no longer runs an HTTP server of its own; the endpoint
 is a `DispatcherMiddleware` mount on the Flask app, fed the exporter's dedicated
 registry.
+
+**The web UI reads through a sibling of the writer** (issue #659, design #655).
+The layer between the UI and InfluxDB is the *for-keeps* half of the prototype;
+the React on top of it is admitted throwaway. Three modules, and the split is by
+**error contract**, not by subject matter:
+
+- **`influx_reads.py`** — `PortfolioReader`, taking a `query(sql) -> table`
+  executor as its single injection point (the pooled client is created in
+  `post_fork`). Its workhorse is **P1 generalised**: one window function,
+  `ROW_NUMBER() … PARTITION BY share_symbol, COALESCE(account,'default')`,
+  returning the newest observation per pair for the *whole* portfolio in one
+  query — the shares table and (later) the dashboard's allocation + movers share
+  it. It is a single query because every live point carries the price, the
+  position fields **and** the fundamentals together (`write_metrics` is only
+  called once the quote fetch succeeded), so there is no per-field last-non-null
+  pass to do. Deliberately **no time window**: "current" is absolute (#652
+  déc. 1), so a long market closure no longer blanks the page. Also
+  `raw_series` and `bucketed_series` — the latter is not in the design and the
+  arithmetic forced it: 120 s over a 6.5-hour session is ~200 points a day, so a
+  five-year raw window is a quarter of a million points on the wire.
+- **`portfolio_view.py`** — pure, in the taste of `scheduling.py` /
+  `performance.py`. Rows in, page objects out: the weighted mean
+  `Σ(pp×pq)/Σpq` (a plain sum *and* a plain mean both produce plausible-looking
+  wrong prices), the per-account rollup Grafana sums away in SQL, and
+  **plus-value latente** — which requires the holdings term and defaults the
+  other three to zero, because composing it out of null-tolerant helpers made a
+  share whose price was never observed report a total loss.
+- **`influx_sql.py`** — the one rule both halves share: trap 1's
+  `COALESCE(account,'default')` + quote escaping, the NaN guard, the bare-UTC-Z
+  literal. A second implementation would decay, and its symptom — history that
+  stops at a version boundary — reads as missing data, not as a bug.
+
+The reason this is a **sibling** of `influxdb_writer.py` rather than a growth of
+it: the writer ends every read with `except Exception: … return None`, which is
+right for a scheduler surviving a flaky query and wrong for a UI, where it makes
+"the database is unreachable" and "you own nothing yet" the same screen. Here
+query errors **propagate** and `web/problem.py` turns them into `503` +
+`application/problem+json`; absence stays three distinct states (`200`+`null` /
+`200`+`[]` / `503`). The one exception is a measurement that does not exist yet
+— a fresh install, answered `[]`.
+
+`events/editor.py` is a **second read of the event files, as files**, beside the
+loader: `Event`, the aggregator and the validator stay byte-identical. Each row
+gets an **opaque token** over `(file, sheet, row)` — never `(file, row)`, since
+`row_num` restarts at 2 in every xlsx worksheet — plus a content fingerprint
+exposed as `ETag`, which is what makes a stale address a `409` instead of a
+silently mis-edited row. Reads are tolerant of a malformed row (it comes back
+with its error) so the ledger can be used to *fix* it.
+
+Flask serves the built SPA with a catch-all that must **not** swallow `/api` or
+`/metrics`: without those guards a typo'd endpoint returns the HTML shell with a
+`200`, and a Prometheus scraper reads `200` as a healthy target.
 
 **Configuration is one immutable snapshot** (issue #658, design #653).
 `ConfigurationManager` holds a single `ConfigSnapshot` — `shares`, `events`,
@@ -419,19 +493,29 @@ If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.ya
 app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
-├── influxdb_writer.py      # InfluxDB 3 client wrapper (SQL queries)
+├── influxdb_writer.py      # InfluxDB 3 client wrapper — the scheduler's writes + its 5 anchor reads
+├── influx_sql.py           # Shared SQL rule: COALESCE(account,'default') + escaping, NaN guard, UTC-Z (#659)
+├── influx_reads.py         # PortfolioReader — the UI read primitives; errors propagate (#659)
+├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── schema.yaml             # Cerberus validation schema
+├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
-│   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies
+│   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
+│   ├── api.py              # /api blueprint: shares, prices, accounts, events (#659)
+│   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState
     ├── loader.py           # CSV/XLSX loading
+    ├── editor.py           # Editor read path: addressable rows, opaque id + ETag (#659)
     ├── validator.py        # Event validation
     ├── aggregator.py       # Aggregation logic
     └── watcher.py          # File watcher (watchdog)
+
+app/web/                    # Front-end workspace — Vite + React 19 + TS, Tailwind/shadcn,
+                            # TanStack Table & Query, Recharts. Builds into app/src/static.
 ```
 
 ## Prometheus Metrics (legacy)

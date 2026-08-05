@@ -2,7 +2,6 @@
 InfluxDB Writer Module for SuiviBourse
 Handles writing and reading metrics to/from InfluxDB 3.x
 """
-import math
 import os
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -11,30 +10,19 @@ from influxdb_client_3 import InfluxDBClient3, Point, WritePrecision
 from logfmt_logger import getLogger
 
 from events.schemas import DEFAULT_ACCOUNT, AccountMetricPoint, PortfolioTotalPoint
+# The COALESCE(account,'default') + escaping rule, the NaN guard and the UTC
+# literal formatter now live in influx_sql.py, shared with the read layer the
+# web UI sits on (issue #659). Imported under their original private names so
+# every call site below reads unchanged.
+from influx_sql import (
+    escape_literal,
+    is_valid_number as _is_valid_number,
+    symbol_account_where as _symbol_account_where,
+    utc_z as _utc_z,
+)
 
 LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
 logger = getLogger("influxdb_writer", level=LOG_LEVEL)
-
-
-def _is_valid_number(value: Any) -> bool:
-    """True when ``value`` is a real number (not None and not NaN).
-
-    yfinance rows can carry NaN (holidays / partial bars); NaN is a float that
-    passes ``is not None`` checks and would otherwise be written as a NaN field.
-    """
-    return value is not None and not (isinstance(value, float) and math.isnan(value))
-
-
-def _utc_z(dt: datetime) -> str:
-    """Format ``dt`` as a UTC ISO-8601 'Z' literal safe for SQL.
-
-    Timezone-aware datetimes are normalized to UTC and stripped of their offset
-    so the appended 'Z' stays valid — ``isoformat()`` alone would otherwise emit
-    ``...+00:00Z`` for aware inputs, which InfluxDB rejects.
-    """
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return f"{dt.isoformat()}Z"
 
 
 class InfluxDBWriter:
@@ -280,24 +268,6 @@ class InfluxDBWriter:
 
         return len(points)
 
-    @staticmethod
-    def _symbol_account_where(share_symbol: str, account: Optional[str]) -> str:
-        """Build the shared ``share_symbol [+ account]`` SQL WHERE clause.
-
-        Escapes single quotes so ``share_symbol``/``account`` stay safe string
-        literals, and scopes by ``COALESCE(account, 'default')`` when an account
-        is given — so points written before the account tag existed count as
-        'default' rather than being dropped by a bare ``WHERE account = ...``.
-        Shared by the oldest/newest lookups so the escaping + COALESCE rule lives
-        in one place.
-        """
-        safe_symbol = share_symbol.replace("'", "''")
-        where = f"share_symbol = '{safe_symbol}'"
-        if account is not None:
-            safe_account = account.replace("'", "''")
-            where += f" AND COALESCE(account, 'default') = '{safe_account}'"
-        return where
-
     def get_oldest_timestamp(
         self, share_symbol: str, account: Optional[str] = None
     ) -> Optional[datetime]:
@@ -318,7 +288,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        where = self._symbol_account_where(share_symbol, account)
+        where = _symbol_account_where(share_symbol, account)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
@@ -376,7 +346,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        where = self._symbol_account_where(share_symbol, account)
+        where = _symbol_account_where(share_symbol, account)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT time
@@ -419,7 +389,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        where = self._symbol_account_where(share_symbol, account)
+        where = _symbol_account_where(share_symbol, account)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT share_price
@@ -457,8 +427,7 @@ class InfluxDBWriter:
         start = date.replace(hour=0, minute=0, second=0, microsecond=0)
         stop = date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Escape single quotes to keep share_symbol a safe SQL string literal
-        safe_symbol = share_symbol.replace("'", "''")
+        safe_symbol = escape_literal(share_symbol)
         # Use SQL query for InfluxDB 3
         query = f"""
         SELECT COUNT(*) as count
@@ -494,7 +463,7 @@ class InfluxDBWriter:
         if self._client is None:
             self.connect()
 
-        safe_symbol = share_symbol.replace("'", "''")
+        safe_symbol = escape_literal(share_symbol)
         # One row per day: the last (latest-time) price of each calendar day.
         query = f"""
         SELECT day, price FROM (
