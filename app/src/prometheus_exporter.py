@@ -1,14 +1,18 @@
 """
 Prometheus Exporter Module for SuiviBourse
 
-Exposes the legacy ``sb_*`` Prometheus gauges on an HTTP ``/metrics`` endpoint,
-kept for backward compatibility with pre-InfluxDB deployments. It runs in
-parallel with the InfluxDB writer and only reflects the current snapshot of
-each share (no historical backfill — Prometheus is a scrape/current-value model).
+Holds the legacy ``sb_*`` Prometheus gauges, kept for backward compatibility
+with pre-InfluxDB deployments. They run in parallel with the InfluxDB writer and
+only reflect the current snapshot of each share (no historical backfill —
+Prometheus is a scrape/current-value model).
+
+This module owns the *registry*, not the server: since issue #651 the ``/metrics``
+endpoint is mounted on the Flask app (``web``) and served by gunicorn on its own
+socket, so the exporter no longer runs a ``ThreadingHTTPServer`` of its own.
 """
 import os
 
-from prometheus_client import CollectorRegistry, Gauge, start_http_server
+from prometheus_client import CollectorRegistry, Gauge
 from logfmt_logger import getLogger
 
 from events.schemas import DEFAULT_ACCOUNT
@@ -123,11 +127,6 @@ class PrometheusExporter:
         self.portfolio_twr_index = Gauge(
             "sb_portfolio_twr_index", "Global time-weighted return index (base 100)",
             registry=self.registry)
-
-    def start(self, port: int) -> None:
-        """Start the HTTP server exposing this exporter's registry."""
-        start_http_server(port, registry=self.registry)
-        logger.info(f"Prometheus metrics server started on port {port}")
 
     def update_share(self, share: dict, last_quote, info) -> None:
         """

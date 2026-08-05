@@ -5,7 +5,6 @@ Paul Brissaud
 import concurrent.futures
 import os
 import random
-import sys
 import threading
 import time
 from datetime import date, datetime, timezone, timedelta
@@ -16,7 +15,7 @@ import pandas as pd
 import yaml
 import yfinance as yf
 from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from cerberus import Validator
 from confuse import Configuration, exceptions as ConfuseExceptions
 from logfmt_logger import getLogger
@@ -74,7 +73,7 @@ def _scrape_job_id(symbol: str) -> str:
 
 
 # Pre-scheduler exchange capture for auto pool sizing (issue #619). At boot the
-# whole app blocks on this before ``BlockingScheduler`` is even built, so the
+# whole app blocks on this before the scheduler is even built, so the
 # fetch is fanned out over a small bounded pool and hard-capped by an overall
 # deadline — a slow / rate-limited yfinance session must not delay startup
 # indefinitely. Symbols unresolved within the deadline fall back to solo markets.
@@ -593,7 +592,7 @@ class SuiviBourseMetrics:
         # (APScheduler's default ThreadPoolExecutor runs jobs concurrently), so
         # guarded by `_failure_counts_lock`: without it, an in-flight scrape of a
         # just-departed symbol could resurrect its counter after cleanup.
-        self.scheduler: Optional[BlockingScheduler] = None
+        self.scheduler: Optional[BackgroundScheduler] = None
         self.regular_interval = 120
         self._failure_counts: Dict[str, int] = {}
         self._failure_counts_lock = threading.Lock()
@@ -1750,17 +1749,106 @@ class SuiviBourseMetrics:
             self.influxdb.close()
 
 
-if __name__ == "__main__":
+# ---------------------------------------------------------------------------
+# Boot — split across gunicorn's fork (issue #651)
+# ---------------------------------------------------------------------------
+#
+# The web API lives in this process, so gunicorn is the container entrypoint and
+# the ``__main__`` block that used to sit here is now three importable pieces:
+#
+#   build_runtime()     in the master, under ``preload_app``
+#   start_runtime()     in ``post_fork``, in the single worker
+#   shutdown_runtime()  in ``worker_exit``
+#
+# The line between the first two is not a matter of taste. ``preload_app`` runs
+# the application factory *before any fork*, so a configuration error raised
+# there ends the process once and cleanly — exactly what the five fatal branches
+# always did. But only the calling thread survives ``fork()``, and an inherited
+# connection pool would be shared with the master, so every thread, socket and
+# client has to be built on the far side. ``gunicorn.conf.py`` wires the three.
+
+
+class Runtime:
+    """The application's long-lived objects, filled in on both sides of the fork.
+
+    :func:`build_runtime` supplies the pure half — configuration manager,
+    validator, Prometheus registry — and :func:`start_runtime` then attaches the
+    half that could not have survived a fork: the InfluxDB client (inside
+    ``SuiviBourseMetrics``), the scheduler and its threads, the watchdog
+    observer.
+    """
+
+    def __init__(self, config_manager: ConfigurationManager,
+                 validator_: Validator,
+                 prometheus: Optional[PrometheusExporter]):
+        self.config_manager = config_manager
+        self.validator = validator_
+        self.prometheus = prometheus
+        self.metrics: Optional['SuiviBourseMetrics'] = None
+        self.scheduler: Optional[BackgroundScheduler] = None
+
+
+def log_fatal(exc: BaseException) -> None:
+    """Log a boot-fatal exception under the message its class earned.
+
+    The branch list is the one ``__main__`` carried before gunicorn. *How* the
+    process then dies differs by side of the fork and stays the caller's
+    business: the master exits 1 before forking; ``post_fork`` re-raises, so
+    gunicorn reports WORKER_BOOT_ERROR and halts the arbiter instead of
+    respawning a worker that would fail identically.
+    """
+    if isinstance(exc, ConfuseExceptions.NotFoundError):
+        app_logger.fatal(
+            'An error occurred while loading the configuration file : ' + str(exc))
+    elif isinstance(exc, (EventLoaderError, EventValidationError, AggregationError)):
+        app_logger.fatal(f'An error occurred while loading events : {exc}')
+    elif isinstance(exc, InvalidConfigFile):
+        app_logger.fatal(exc.message)
+    elif isinstance(exc, ValueError):
+        app_logger.fatal(f'Configuration error: {exc}')
+    else:
+        app_logger.fatal(f'An unexpected error occurred: {exc}', exc_info=True)
+
+
+def build_runtime() -> Runtime:
+    """Master-side boot: the pure half, run under ``preload_app`` before any fork.
+
+    Loading the configuration here is the whole point — it is the only remaining
+    place where a broken config still exits the process once, cleanly, with the
+    arbiter holding nothing to respawn.
+    """
     app_logger.info('SuiviBourse is running !')
 
-    # Initialize configuration manager
     config_manager = ConfigurationManager()
 
     # Load schema file
     with open(Path(__file__).parent / "schema.yaml", encoding='UTF-8') as f:
-        dataSchema = yaml.safe_load(f)
-    shares_validator = Validator(dataSchema)
+        data_schema = yaml.safe_load(f)
+    shares_validator = Validator(data_schema)
 
+    # Load — and thereby validate — the configuration in the master. The result
+    # is discarded: SuiviBourseMetrics loads it again in the worker, off the
+    # mtime cache. What matters is that a broken one raises *here*.
+    config_manager.load_shares()
+
+    # Registry and gauges only: pure Python, no fd, no thread. The exporter's own
+    # ThreadingHTTPServer is gone, replaced by a /metrics mount on the Flask app,
+    # so SB_PROMETHEUS_ENABLED now means "do not mount /metrics" rather than
+    # "run no HTTP server".
+    prometheus = PrometheusExporter() \
+        if env_flag('SB_PROMETHEUS_ENABLED', True) else None
+
+    return Runtime(config_manager, shares_validator, prometheus)
+
+
+def start_runtime(runtime: Runtime) -> Runtime:
+    """Worker-side boot (``post_fork``): everything a fork would have broken.
+
+    The InfluxDB client (a connection pool the master must not share), the
+    scheduler's threads, the watchdog observer, and the first ``ingest()`` —
+    which is also what arms the per-symbol scrape jobs (issue #616), their
+    immediate first fire being the bootstrap.
+    """
     # Get intervals from environment. SB_REGULAR_INTERVAL is the heir of the
     # removed global SB_SCRAPING_INTERVAL (design #607); resolve_regular_interval
     # applies the precedence + deprecation warning.
@@ -1769,66 +1857,62 @@ if __name__ == "__main__":
     backfill_interval = env_int('SB_BACKFILL_INTERVAL', 60)
     perf_interval = env_int('SB_PERF_INTERVAL', 120)
 
-    sb_metrics = None
-    try:
-        # Init SuiviBourseMetrics (connects to InfluxDB)
-        sb_metrics = SuiviBourseMetrics(config_manager, shares_validator)
-        sb_metrics.regular_interval = regular_interval
-        # Expose the legacy Prometheus /metrics endpoint if enabled (default on)
-        if sb_metrics.prometheus is not None:
-            metrics_port = env_int('SB_METRICS_PORT', 8081)
-            sb_metrics.prometheus.start(metrics_port)
-            app_logger.info(
-                f"Prometheus metrics available on :{metrics_port}/metrics")
-        # Start file watcher for hot-reload if in events mode
-        config_manager.start_watcher(sb_metrics.ingest)
-        # Size the executor pool from the two dials (issue #619). Default
-        # (SB_DYNAMIC_EXECUTOR_POOL=false) is a fixed pool of SB_EXECUTOR_POOL
-        # (10) — identical to today. Auto sizing groups the held symbols into
-        # same-exchange cohorts, so capture_exchange_of() is invoked only on that
-        # path (a pre-scheduler fetch; the executor is fixed once at
-        # construction, no hot resize).
-        pool_size = resolve_executor_pool_size(
-            config_manager.get_mode(), sb_metrics.shares,
-            sb_metrics.capture_exchange_of)
-        # Wire the scheduler before bootstrapping so ingest() can arm the
-        # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
-        # bootstrap — no separate initial scrape.
-        scheduler = BlockingScheduler(
-            executors={'default': ThreadPoolExecutor(pool_size)})
-        sb_metrics.scheduler = scheduler
-        # Bootstrap: load shares + arm one self-rescheduling scrape job per
-        # symbol (each fires immediately, then re-arms on its market cadence).
-        sb_metrics.ingest()
-        # Register the three fixed-cadence interval jobs (ingestion, backfill,
-        # perf recompute). Per-symbol scrape jobs are armed by ingest() above and
-        # kept separate; the perf recompute is its own gated job (issue #618).
-        register_interval_jobs(
-            scheduler, sb_metrics, ingestion_interval, backfill_interval,
-            perf_interval)
-        app_logger.info(
-            f"Scheduler started: per-symbol scraping (REGULAR every "
-            f"{regular_interval}s), ingestion every {ingestion_interval}s, "
-            f"backfill every {backfill_interval}s, perf every {perf_interval}s, "
-            f"executor pool: {pool_size} workers")
-        scheduler.start()
-    except ConfuseExceptions.NotFoundError as e:
-        app_logger.fatal(
-            'An error occurred while loading the configuration file : ' + str(e))
-        sys.exit(1)
-    except (EventLoaderError, EventValidationError, AggregationError) as e:
-        app_logger.fatal(f'An error occurred while loading events : {e}')
-        sys.exit(1)
-    except InvalidConfigFile as e:
-        app_logger.fatal(e.message)
-        sys.exit(1)
-    except ValueError as e:
-        app_logger.fatal(f'Configuration error: {e}')
-        sys.exit(1)
-    except Exception as e:
-        app_logger.fatal(f'An unexpected error occurred: {e}', exc_info=True)
-        sys.exit(1)
-    finally:
-        config_manager.stop_watcher()
-        if sb_metrics:
-            sb_metrics.close()
+    # Init SuiviBourseMetrics (connects to InfluxDB). The exporter comes from the
+    # master so the gauges the Flask app already publishes are the ones the
+    # scrape path updates; passing None when it is disabled leaves it disabled.
+    sb_metrics = SuiviBourseMetrics(
+        runtime.config_manager, runtime.validator,
+        prometheus_exporter=runtime.prometheus)
+    sb_metrics.regular_interval = regular_interval
+    runtime.metrics = sb_metrics
+
+    # Start file watcher for hot-reload if in events mode
+    runtime.config_manager.start_watcher(sb_metrics.ingest)
+    # Size the executor pool from the two dials (issue #619). Default
+    # (SB_DYNAMIC_EXECUTOR_POOL=false) is a fixed pool of SB_EXECUTOR_POOL
+    # (10) — identical to today. Auto sizing groups the held symbols into
+    # same-exchange cohorts, so capture_exchange_of() is invoked only on that
+    # path (a pre-scheduler fetch; the executor is fixed once at
+    # construction, no hot resize).
+    pool_size = resolve_executor_pool_size(
+        runtime.config_manager.get_mode(), sb_metrics.shares,
+        sb_metrics.capture_exchange_of)
+    # Wire the scheduler before bootstrapping so ingest() can arm the
+    # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
+    # bootstrap — no separate initial scrape. Background, not Blocking: the
+    # gunicorn worker owns the foreground now.
+    scheduler = BackgroundScheduler(
+        executors={'default': ThreadPoolExecutor(pool_size)})
+    sb_metrics.scheduler = scheduler
+    runtime.scheduler = scheduler
+    # Bootstrap: load shares + arm one self-rescheduling scrape job per
+    # symbol (each fires immediately, then re-arms on its market cadence).
+    sb_metrics.ingest()
+    # Register the three fixed-cadence interval jobs (ingestion, backfill,
+    # perf recompute). Per-symbol scrape jobs are armed by ingest() above and
+    # kept separate; the perf recompute is its own gated job (issue #618).
+    register_interval_jobs(
+        scheduler, sb_metrics, ingestion_interval, backfill_interval,
+        perf_interval)
+    scheduler.start()
+    app_logger.info(
+        f"Scheduler started: per-symbol scraping (REGULAR every "
+        f"{regular_interval}s), ingestion every {ingestion_interval}s, "
+        f"backfill every {backfill_interval}s, perf every {perf_interval}s, "
+        f"executor pool: {pool_size} workers")
+    return runtime
+
+
+def shutdown_runtime(runtime: Runtime) -> None:
+    """``worker_exit`` hook body — the heir of ``__main__``'s ``finally``.
+
+    Gains an explicit ``scheduler.shutdown``: under ``BlockingScheduler`` the
+    scheduler was dead by the time the ``finally`` ran, so there was nothing to
+    stop. ``wait=False`` because the worker is already on its way out — a scrape
+    in flight must not hold the shutdown open for a whole yfinance timeout.
+    """
+    if runtime.scheduler is not None and runtime.scheduler.running:
+        runtime.scheduler.shutdown(wait=False)
+    runtime.config_manager.stop_watcher()
+    if runtime.metrics is not None:
+        runtime.metrics.close()

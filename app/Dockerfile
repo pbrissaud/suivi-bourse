@@ -23,6 +23,12 @@ WORKDIR /home/appuser
 COPY ./src /home/appuser
 USER appuser
 
-EXPOSE 8081
+# 8080 serves the web UI and /health, 8081 keeps serving /metrics for existing
+# Prometheus scrapers. Both are sockets of a single gunicorn master (issue #651).
+EXPOSE 8080 8081
 
-ENTRYPOINT ["python3", "main.py"]
+# gunicorn, not `python3 main.py`: the API runs inside the scraper process, and
+# `preload_app` + `post_fork` in gunicorn.conf.py are what split the boot either
+# side of the fork. There is no second boot path — the config file is the only
+# place the sequence is written down.
+ENTRYPOINT ["gunicorn", "--config", "gunicorn.conf.py", "web:create_app()"]

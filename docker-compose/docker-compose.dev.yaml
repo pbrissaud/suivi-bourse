@@ -24,6 +24,7 @@ services:
       SB_BACKFILL_INTERVAL: ${SB_BACKFILL_INTERVAL:-30}
       SB_BACKFILL_DELAY: ${SB_BACKFILL_DELAY:-5}
       SB_BACKFILL_CHUNK_DAYS: ${SB_BACKFILL_CHUNK_DAYS:-365}
+      SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       SB_METRICS_PORT: ${SB_METRICS_PORT:-8081}
       SB_PROMETHEUS_ENABLED: ${SB_PROMETHEUS_ENABLED:-true}
       INFLUXDB_HOST: http://influxdb:8181
@@ -31,6 +32,7 @@ services:
       # No token needed - auth disabled in dev
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
+    - ${SB_WEB_PORT:-8080}:${SB_WEB_PORT:-8080}          # Web UI + /health
     - ${SB_METRICS_PORT:-8081}:${SB_METRICS_PORT:-8081}  # Prometheus /metrics (legacy)
     volumes:
     - ${SB_CONFIG_DIR:-./data.example}:/home/appuser/.config/SuiviBourse:ro

@@ -69,8 +69,17 @@ From the `app` folder, provide at least the InfluxDB token and run:
 ```bash
 INFLUXDB_HOST=http://localhost:8181 \
 INFLUXDB_TOKEN=<your-token> \
-uv run python src/main.py
+uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
 ```
+
+:::info
+The app is served by **gunicorn**: the web API and the scheduler share a single
+process, so there is one command and one process for both. `gunicorn.conf.py`
+is the boot sequence — it binds the web port (`SB_WEB_PORT`, default `8080`) and
+the legacy `/metrics` port, and refuses to start with more than one worker.
+Raise `threads`, never `workers`: each extra worker would run a second scraper
+and duplicate every write.
+:::
 
 For production, choose one of the following methods.
 
@@ -92,7 +101,7 @@ and `<your-token>` with your InfluxDB API token.
     Type=simple
     Restart=always
     WorkingDirectory=<installation_path>/app
-    ExecStart=uv run python src/main.py
+    ExecStart=uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
     User=<user>
     Group=<group>
     Environment=PYTHONUNBUFFERED=1
@@ -140,10 +149,19 @@ Using `cron` and `nohup`, you can run the app at boot:
 
 2. Add the following line (adjust the path and token):
     ```
-    @reboot cd <installation_path>/app && INFLUXDB_HOST=http://localhost:8181 INFLUXDB_TOKEN=<your-token> nohup uv run python src/main.py > $HOME/suivi-bourse.log 2>&1 &
+    @reboot cd <installation_path>/app && INFLUXDB_HOST=http://localhost:8181 INFLUXDB_TOKEN=<your-token> nohup uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()' > $HOME/suivi-bourse.log 2>&1 &
     ```
 
 The application logs will be written to `$HOME/suivi-bourse.log`.
+
+:::warning macOS
+A standalone run on macOS crashes as soon as a symbol is scraped: gunicorn
+forks its worker, and libcurl's macOS-only initialisation (`Curl_macos_init`,
+reached from `curl_easy_init` inside yfinance's HTTP backend) reads the system
+proxy configuration through CoreFoundation, which is not safe in a process
+forked without `exec`. Linux is unaffected — there is no `Curl_macos_init`
+there. On macOS, run the stack with Docker instead.
+:::
 
 </TabItem>
 <TabItem value="windows" label="Windows Service">
@@ -167,6 +185,7 @@ At minimum you must set the InfluxDB connection variables:
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) while a symbol's market is open (closed markets sleep to the next open) |
 | `SB_SCRAPING_INTERVAL` | _(deprecated)_ | Deprecated fallback for `SB_REGULAR_INTERVAL` (honored with a warning) |
+| `SB_WEB_PORT` | `8080` | Port for the web API and its `/health` endpoint |
 | `SB_METRICS_PORT` | `8081` | Port for the legacy Prometheus `/metrics` endpoint |
 | `LOG_LEVEL` | `INFO` | Logging level |
 

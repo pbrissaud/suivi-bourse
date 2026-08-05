@@ -16,7 +16,7 @@ share — there is no historical data or backfill on this endpoint (that lives i
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SB_PROMETHEUS_ENABLED` | `true` | Expose the `/metrics` endpoint |
+| `SB_PROMETHEUS_ENABLED` | `true` | Mount the `/metrics` endpoint |
 | `SB_METRICS_PORT` | `8081` | TCP port for the endpoint |
 
 To disable it entirely:
@@ -24,6 +24,17 @@ To disable it entirely:
 ```bash
 SB_PROMETHEUS_ENABLED=false
 ```
+
+:::note What changed in v5
+`/metrics` is now served by the app's own web server rather than a separate
+HTTP server inside the exporter. Nothing changes for a scraper: the endpoint
+keeps its own port and its own path, so existing `scrape_configs` need no edit.
+Two consequences worth knowing: `SB_PROMETHEUS_ENABLED=false` now unmounts the
+route instead of skipping a server (port `SB_METRICS_PORT` is then not bound at
+all), and the container healthcheck no longer probes `/metrics` — it probes
+`/health` on `SB_WEB_PORT`, so turning Prometheus off no longer leaves the
+deployment without a real healthcheck.
+:::
 
 ## Exposed gauges
 

@@ -162,19 +162,9 @@ def test_failed_fetch_still_sets_portfolio_but_no_market(exporter):
     }) is None
 
 
-# --- server -----------------------------------------------------------------
-
-def test_start_serves_its_own_registry(monkeypatch, exporter):
-    calls = {}
-
-    def fake_start(port, registry=None):
-        calls['port'] = port
-        calls['registry'] = registry
-
-    monkeypatch.setattr('prometheus_exporter.start_http_server', fake_start)
-    exporter.start(8081)
-    assert calls['port'] == 8081
-    assert calls['registry'] is exporter.registry
+# The exporter no longer serves anything: since issue #651 its registry is
+# mounted on the Flask app and served by gunicorn. That it is *this* registry
+# behind /metrics is asserted in test_web_boot.py.
 
 
 # --- wiring through SuiviBourseMetrics.scrape() ------------------------------

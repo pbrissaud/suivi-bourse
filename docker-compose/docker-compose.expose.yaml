@@ -18,6 +18,7 @@
 services:
   app:
     ports:
+    - ${SB_WEB_PORT:-8080}:${SB_WEB_PORT:-8080}          # Web UI + /health
     - ${SB_METRICS_PORT:-8081}:${SB_METRICS_PORT:-8081}  # Prometheus /metrics (legacy)
 
   grafana:

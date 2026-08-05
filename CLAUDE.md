@@ -16,8 +16,15 @@ SuiviBourse is a Python application that monitors stock shares using yfinance fo
 cd app && uv sync
 
 # Run the app locally (requires config at ~/.config/SuiviBourse/config.yaml or events/)
-# Also requires INFLUXDB_TOKEN environment variable
-cd app && INFLUXDB_TOKEN=your-token uv run python src/main.py
+# Also requires INFLUXDB_TOKEN environment variable. gunicorn is the only boot
+# path: the web API and the scheduler share one process (issue #651), and
+# src/gunicorn.conf.py holds the boot sequence. `main.py` has no __main__ block.
+cd app && INFLUXDB_TOKEN=your-token uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+# On macOS this crashes as soon as a symbol is scraped — gunicorn forks its
+# worker and libcurl's macOS-only Curl_macos_init (reached from curl_easy_init
+# in yfinance's HTTP backend) reads the system proxy config through
+# CoreFoundation, which is unsafe after a fork without exec. Linux has no such
+# init and is unaffected; on a Mac use docker-compose.dev.yaml instead.
 
 # Lint
 cd app && uv run flake8 src/ --ignore=E501
@@ -65,8 +72,8 @@ datasource reads via `$__env{}`.
 — the services reach each other over the compose network — and
 `docker-compose.expose.yaml` holds the three blocks. `.env.example` chains them
 with `COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml`, so local use
-is unchanged; `GRAFANA_PORT`/`INFLUXDB_PORT`/`SB_METRICS_PORT` are read by the
-overlay. PaaS platforms that regenerate from `docker-compose.yaml` alone and
+is unchanged; `GRAFANA_PORT`/`INFLUXDB_PORT`/`SB_WEB_PORT`/`SB_METRICS_PORT` are
+read by the overlay. PaaS platforms that regenerate from `docker-compose.yaml` alone and
 write their own env (Coolify, Dokploy) never load the overlay and get the
 unpublished stack, which is what a reverse proxy in front of Grafana wants.
 `docker-compose.dev.yaml` is standalone and keeps its own `ports:` (an explicit
@@ -76,7 +83,42 @@ nothing published.
 
 ## Architecture
 
-**Main entry point**: `app/src/main.py`
+**Entry point**: `app/src/gunicorn.conf.py` (the container `ENTRYPOINT` is
+`gunicorn --config gunicorn.conf.py 'web:create_app()'`).
+
+**Process shape** (issue #651): the web API lives *inside* the scraper process —
+one container, one process, one scheduler. gunicorn is not just a server here,
+it is the boot sequence, split either side of its `fork()`:
+
+- **master, under `preload_app`** — `main.build_runtime()`: `ConfigurationManager`,
+  the Cerberus validator, the config load **that validates it**, and the
+  `PrometheusExporter` registry. Pure work only: no thread, no socket, no fd
+  survives a fork. Loading the config here is what keeps a broken one a single
+  clean exit — the arbiter has not forked yet, so there is nothing to respawn.
+- **`post_fork`** — `main.start_runtime()`: the InfluxDB client (a connection
+  pool the master must not share), `BackgroundScheduler` (not Blocking — the
+  worker owns the foreground), `start_watcher()`, and the first `ingest()` that
+  arms the per-symbol scrape jobs.
+- **`worker_exit`** — `main.shutdown_runtime()`, the heir of the old `finally`.
+
+The two failure paths differ on purpose: the master calls `sys.exit(1)`, while
+`post_fork` **re-raises**, because gunicorn reads an exception there as
+`WORKER_BOOT_ERROR` and halts the arbiter, whereas an exit code would read as an
+ordinary worker death and be respawned forever.
+
+**`workers = 1` is a property of the design, not a tuning default**, and it is
+guarded twice: `on_starting` refuses to boot with more (checked there, not in the
+config body, because the command line is applied last), and the gunicorn control
+socket is disabled so `gunicornc -c "worker add 2"` cannot raise it on a running
+arbiter. N workers would be N schedulers: duplicate points on the same series
+identity, N× yfinance pressure, and #617/#618/#628's in-memory state split N
+ways — all of it silent. Concurrency comes from `threads` instead.
+
+One gunicorn master binds **two sockets** (`bind` takes a list): `SB_WEB_PORT`
+serves the app, `SB_METRICS_PORT` keeps `/metrics` exactly where scrapers expect
+it. `PrometheusExporter` no longer runs an HTTP server of its own; the endpoint
+is a `DispatcherMiddleware` mount on the Flask app, fed the exporter's dedicated
+registry.
 
 The application runs independent scheduled jobs on a single APScheduler:
 - **Scraping**: one **self-rescheduling job per held symbol**, market-aware
@@ -323,14 +365,15 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 | `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
 | `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
 | `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
+| `SB_WEB_PORT` | `8080` | Port for the Flask web API and its shallow `/health` route — the container healthcheck's only target (issue #651) |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
 | `SB_STALENESS_HORIZON` | `900` | Price-freshness liveness sonde horizon (seconds): during `REGULAR`, flag a symbol whose stored price stays frozen this long across consecutive polling cycles while the live quote moves (issue #628). Diagnostic only — never changes cadence/write gating/#617 backoff. `0` disables the sonde. |
 | `SB_CONFIG_MODE` | _(unset)_ | Force the configuration mode (`manual` or `events`). Unset/blank → `settings.yaml`, then auto-detection, then `manual`. |
-| `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
-| `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint |
+| `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint. Since #651 it unmounts a Flask route rather than skipping an HTTP server, so `false` also leaves `SB_METRICS_PORT` unbound |
+| `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint — a second gunicorn socket on the same app, so existing scrapers see no change |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ---
@@ -339,10 +382,14 @@ If ingestion fails (invalid event, file error), the **previous valid configurati
 
 ```
 app/src/
-├── main.py                 # Entry point, ConfigurationManager, SuiviBourseMetrics
+├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
+├── main.py                 # Runtime/build_runtime/start_runtime, ConfigurationManager, SuiviBourseMetrics
 ├── influxdb_writer.py      # InfluxDB 3 client wrapper (SQL queries)
-├── prometheus_exporter.py  # Legacy Prometheus /metrics exporter (sb_* gauges)
+├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── schema.yaml             # Cerberus validation schema
+├── web/                    # Flask package (disposable half, per #655)
+│   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies
+│   └── health.py           # /health blueprint
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState
@@ -358,6 +405,11 @@ For backward compatibility with pre-InfluxDB deployments, the app also exposes a
 Prometheus `/metrics` endpoint (enabled by default, `SB_METRICS_PORT`=8081). It
 runs in parallel with the InfluxDB writer and reflects only the current snapshot
 per share (no historical backfill). Disable it with `SB_PROMETHEUS_ENABLED=false`.
+
+Since #651 it is a route on the Flask app, mounted with `DispatcherMiddleware`
+and served on its own gunicorn socket — same port, same path, no change for a
+scraper. `prometheus_exporter.py` owns the registry only; its `start()` and its
+`ThreadingHTTPServer` are gone.
 
 Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_price`,
 `sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`,

@@ -108,11 +108,17 @@ an operator dial.
 | `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 
+### Web API
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SB_WEB_PORT` | `8080` | Port for the web API and its `/health` endpoint |
+
 ### Legacy Prometheus endpoint
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SB_PROMETHEUS_ENABLED` | `true` | Expose the legacy Prometheus `/metrics` endpoint |
+| `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint |
 | `SB_METRICS_PORT` | `8081` | Port for the `/metrics` endpoint |
 
 See [Legacy Prometheus endpoint](/docs/advanced/prometheus-legacy) for details.

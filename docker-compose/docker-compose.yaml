@@ -44,6 +44,8 @@ services:
       SB_BACKFILL_INTERVAL: ${SB_BACKFILL_INTERVAL:-60}
       SB_BACKFILL_DELAY: ${SB_BACKFILL_DELAY:-10}
       SB_BACKFILL_CHUNK_DAYS: ${SB_BACKFILL_CHUNK_DAYS:-365}
+      # Web UI / API
+      SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       # Legacy Prometheus endpoint
       SB_PROMETHEUS_ENABLED: ${SB_PROMETHEUS_ENABLED:-true}
       SB_METRICS_PORT: ${SB_METRICS_PORT:-8081}
@@ -73,12 +75,15 @@ services:
       bind:
         create_host_path: true
     healthcheck:
-      # Probes the /metrics endpoint, unless it has been turned off.
+      # Probes /health on the web port, unconditionally. It used to probe
+      # /metrics, which turned trivially green whenever SB_PROMETHEUS_ENABLED
+      # was false — a deployment with the legacy endpoint off had no healthcheck
+      # at all. /health is deliberately shallow and never reaches InfluxDB: the
+      # app is meant to survive a database outage, not be restarted for one.
       test:
       - CMD-SHELL
       - >-
-        test "$${SB_PROMETHEUS_ENABLED}" != "true" ||
-        python3 -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ['SB_METRICS_PORT']+'/metrics',timeout=5)"
+        python3 -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ['SB_WEB_PORT']+'/health',timeout=5)"
       interval: 30s
       timeout: 10s
       retries: 3
