@@ -34,6 +34,14 @@
   --color-price: var(--price);
   --color-grant: var(--grant);
   --color-dividend: var(--dividend);
+  --color-alloc-1: var(--alloc-1);
+  --color-alloc-2: var(--alloc-2);
+  --color-alloc-3: var(--alloc-3);
+  --color-alloc-4: var(--alloc-4);
+  --color-alloc-5: var(--alloc-5);
+  --color-alloc-6: var(--alloc-6);
+  --color-alloc-7: var(--alloc-7);
+  --color-alloc-8: var(--alloc-8);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -96,6 +104,24 @@
   --grant: oklch(0.68 0.15 85);
   --dividend: oklch(0.6 0.11 205);
 
+  /* The allocation donut's categorical ramp, and it needs its own set for the
+     same reason the chart marks do: --chart-1..5 are deliberately greyscale in
+     this preset, which is right for small multiples and useless for slices that
+     must be told apart at a glance. Eight of them, because that is where the
+     donut stops answering its question and the tail is pooled into "Autres".
+
+     Hues are spread but lightness and chroma are held constant, so no slice
+     shouts louder than another — an allocation has no good or bad value, unlike
+     --gain / --loss, and a ramp that varies intensity would imply one. */
+  --alloc-1: oklch(0.62 0.14 255);
+  --alloc-2: oklch(0.62 0.14 195);
+  --alloc-3: oklch(0.62 0.14 150);
+  --alloc-4: oklch(0.62 0.14 100);
+  --alloc-5: oklch(0.62 0.14 60);
+  --alloc-6: oklch(0.62 0.14 25);
+  --alloc-7: oklch(0.62 0.14 340);
+  --alloc-8: oklch(0.62 0.14 295);
+
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -135,6 +161,14 @@
   --price: oklch(0.72 0.14 255);
   --grant: oklch(0.78 0.14 85);
   --dividend: oklch(0.72 0.1 205);
+  --alloc-1: oklch(0.72 0.13 255);
+  --alloc-2: oklch(0.72 0.13 195);
+  --alloc-3: oklch(0.72 0.13 150);
+  --alloc-4: oklch(0.72 0.13 100);
+  --alloc-5: oklch(0.72 0.13 60);
+  --alloc-6: oklch(0.72 0.13 25);
+  --alloc-7: oklch(0.72 0.13 340);
+  --alloc-8: oklch(0.72 0.13 295);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

@@ -13,8 +13,8 @@ baseline can show the breakdown (#652 déc. 6, item 6). Aggregating here means
 both views come from one read: the table row *and* the sheet's breakdown.
 """
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 #: Fields summed straight across a share's accounts.
 _ADDITIVE = (
@@ -227,6 +227,353 @@ def _build_share(symbol: str, group: List[Dict[str, Any]]) -> SharePosition:
     )
 
 
+# --------------------------------------------------------------------- #
+# The consolidated dashboard (issue #660, content #652 déc. 5–8)
+#
+# Everything below answers one page, and the shape of the answer is a
+# **discriminated union** rather than one object with every field optional
+# (#655 déc. 8). The three builders return plain dicts on purpose: a single
+# dataclass carrying `gain_absolu` *and* `plus_value_latente`, each null in the
+# other's mode, is precisely the "infer the mode from which fields are null"
+# the discriminator exists to forbid — and it would put #652 déc. 6's two terms,
+# which must never be conflated, in one namespace.
+# --------------------------------------------------------------------- #
+
+#: Declared accounts, one currency: the global perf series exists and the head
+#: is **Gain** — total value − net contributed.
+MODE_ACCOUNTS = 'accounts'
+
+#: No declared accounts (or manual mode): the head falls back to **plus-value
+#: latente**, computable from ``portfolio_metrics`` alone. This is what a default
+#: install runs, so it is a designed mode, not a failure.
+MODE_TITRES = 'titres'
+
+#: Declared accounts in more than one currency. ``portfolio_totals`` is not
+#: written at all in that case (``performance.compute_portfolio_total`` returns
+#: ``None`` — pooling currencies needs FX, which is out of scope), so there is no
+#: global head to render. The slot #655 déc. 8 reserved: the API **states** the
+#: condition instead of answering with an empty head, and *what a consolidated
+#: view of a mixed portfolio should show* stays the open product question it was.
+MODE_MULTI_CURRENCY = 'multi_currency'
+
+
+def portfolio_mode(
+    account_currencies: Optional[Sequence[str]],
+    events_mode: bool,
+) -> str:
+    """Which head this portfolio gets. Pure — the page's first decision.
+
+    ``account_currencies`` is ``None`` when no ``accounts:`` block is declared,
+    and the currencies of the declared accounts otherwise.
+
+    The two conditions are #652 déc. 6's, read off their source: ``account_metrics``
+    and ``portfolio_totals`` are written by ``update_account_metrics``, which
+    returns early both when no ``Portfolio`` is declared *and* when the snapshot
+    carries no events — so a declared ``accounts:`` block in manual mode produces
+    no series either, and answering ``accounts`` there would leave the dashboard
+    waiting forever on a computation that is never going to run.
+
+    Deliberately decided from the **configuration**, never from whether the
+    series happens to have rows. That is what keeps "no declared accounts" and
+    "the perf job has not run yet" from rendering the same screen: the first is a
+    mode, the second is a mode whose figures are still absent.
+    """
+    if not account_currencies or not events_mode:
+        return MODE_TITRES
+    return MODE_ACCOUNTS if len(set(account_currencies)) == 1 else MODE_MULTI_CURRENCY
+
+
+def build_totals_head(
+    row: Optional[Dict[str, Any]],
+    currency: Optional[str],
+    baseline_since: Optional[datetime] = None,
+    baseline_value: Optional[float] = None,
+) -> Dict[str, Any]:
+    """The ``accounts`` head: one ``portfolio_totals`` row, made into a page.
+
+    ``gain_absolu`` in euros is the headline (#652 déc. 5 — the eye looks for
+    euros, not a rate), with net contributed under it and ``xirr`` / ``twr_index``
+    as two rates answering two different questions. Grafana's
+    ``Total Performance %`` is **deleted, not ported**: ``(val + div − inv) / inv``
+    ignores cash and external flows, and a fourth calculation standing next to
+    three correct ones is worse than a missing one.
+
+    ``row`` is ``None`` when the series has no point yet — declared accounts
+    whose first perf cycle has not run. Every figure is then ``null`` and
+    ``as_of`` says so; the mode still says ``accounts``, because the mode is a
+    property of the configuration and emptiness is a property of the data.
+    """
+    row = row or {}
+    total = row.get('total_value')
+    return {
+        'mode': MODE_ACCOUNTS,
+        'currency': currency,
+        'as_of': _iso(row.get('time')),
+        'total_value': total,
+        'cash_balance': row.get('cash_balance'),
+        'holdings_value': row.get('holdings_value'),
+        'net_contributed': row.get('net_contributed'),
+        'gain_absolu': row.get('gain_absolu'),
+        'xirr': row.get('xirr'),
+        'twr_index': row.get('twr_index'),
+        'baseline': _baseline(total, baseline_value, baseline_since),
+    }
+
+
+def build_titres_head(shares: Sequence[SharePosition]) -> Dict[str, Any]:
+    """The degraded head: **plus-value latente**, from ``portfolio_metrics``.
+
+    Not an error state — it is what every install without a declared
+    ``accounts:`` block shows, which is the default one. And the figure is
+    deliberately *not* called Gain: Gain is total value − net contributed and
+    needs declared accounts and events, while this is holdings + dividends −
+    invested − fees. #652 déc. 6 exists to keep the two apart, so they never
+    share a field name here either.
+
+    ``baseline`` is ``null`` and stays so. A relative delta would need each
+    position's *quantity* at the baseline instant as well as its price, and
+    valuing today's holdings at an old price would announce a move that is
+    partly a purchase. The honest answer is no delta rather than a wrong one.
+    """
+    holdings = _sum_values(s.market_value for s in shares)
+    invested = _sum_values(s.invested for s in shares)
+    dividends = _sum_values(s.received_dividend for s in shares)
+    fees = _sum_values(s.purchased_fee for s in shares)
+    plus_value = _plus_value(holdings, dividends, invested, fees)
+
+    times = [s.price_time for s in shares if isinstance(s.price_time, datetime)]
+    return {
+        'mode': MODE_TITRES,
+        'currency': _single_currency(s.currency for s in shares),
+        'as_of': _iso(max(times)) if times else None,
+        'holdings_value': holdings,
+        'invested': invested,
+        'received_dividend': dividends,
+        'purchased_fee': fees,
+        'plus_value_latente': plus_value,
+        'plus_value_pct': _ratio(plus_value, invested),
+        'baseline': None,
+    }
+
+
+def build_multi_currency_head(accounts: Sequence[Any]) -> Dict[str, Any]:
+    """The third case: declared accounts that do not share a currency.
+
+    States the condition and names the accounts, and stops there. There is no
+    global series to read — and inventing one by summing the per-account figures
+    would be adding euros to dollars, which is exactly what
+    ``compute_portfolio_total`` refuses to do.
+    """
+    return {
+        'mode': MODE_MULTI_CURRENCY,
+        'currencies': sorted({a.currency for a in accounts if a.currency}),
+        'accounts': [
+            {'id': a.id, 'label': a.label, 'currency': a.currency}
+            for a in accounts
+        ],
+    }
+
+
+# --------------------------------------------------------------------- #
+# The main chart: total value vs net contributed (#652 déc. 7)
+# --------------------------------------------------------------------- #
+
+def valuation_series(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fold per-``(day, symbol, account)`` closing rows into a daily portfolio.
+
+    The degraded main chart's arithmetic, and the forward-fill is the reason it
+    is here rather than in the SQL. A symbol whose exchange was shut on a day the
+    others traded has **no row** for that day, and a `GROUP BY day` would then
+    quietly drop it from that day's total — so a French holiday would show up as
+    the whole portfolio losing the value of its French shares and getting it back
+    the next morning. Carrying each series' last known state forward is what
+    makes the curve a valuation rather than a map of exchange calendars.
+
+    Rows arrive already reduced to one per ``(day, symbol, account)`` by
+    :meth:`influx_reads.PortfolioReader.daily_position_series` — that reduction
+    *is* SQL's job, since summing raw 120-second points would multiply the
+    portfolio by its polling rate.
+    """
+    by_day: Dict[Any, List[Dict[str, Any]]] = {}
+    for row in rows:
+        day = row.get('day')
+        if day is None:
+            continue
+        by_day.setdefault(day, []).append(row)
+
+    state: Dict[Tuple[Any, str], Dict[str, Any]] = {}
+    series: List[Dict[str, Any]] = []
+    for day in sorted(by_day):
+        for row in by_day[day]:
+            state[(row.get('share_symbol'), str(row.get('account') or 'default'))] = row
+        held = list(state.values())
+        series.append({
+            't': _iso(day),
+            'value': _sum_products(held, 'owned_quantity', 'share_price'),
+            'invested': _sum_products(held, 'purchased_quantity', 'purchased_price'),
+        })
+    return series
+
+
+# --------------------------------------------------------------------- #
+# Movers (#652 déc. 8)
+# --------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class Mover:
+    """One share's move since the previous session close."""
+
+    symbol: str
+    name: Optional[str]
+    currency: Optional[str]
+    price: Optional[float]
+    previous_price: Optional[float]
+    change: Optional[float]
+    change_pct: Optional[float]
+    market_value: Optional[float]
+    #: What the move did to the portfolio in money: ``change × owned_quantity``.
+    #: A 12 % jump on a token holding and a 0.4 % drift on the biggest line are
+    #: not the same news, and a percentage column alone cannot say which.
+    contribution: Optional[float]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'symbol': self.symbol,
+            'name': self.name,
+            'currency': self.currency,
+            'price': self.price,
+            'previous_price': self.previous_price,
+            'change': self.change,
+            'change_pct': self.change_pct,
+            'market_value': self.market_value,
+            'contribution': self.contribution,
+        }
+
+
+def session_baseline_instant(newest: datetime) -> datetime:
+    """The instant "since the last session close" resolves to: midnight UTC of
+    the day the newest observation falls in.
+
+    #652 déc. 8's trap, and it is worth spelling out why this simple rule answers
+    it. *"Today" is meaningless on a weekend*: on a Sunday, midnight-today is
+    after every price the portfolio holds, so a delta measured from it is
+    uniformly zero and the block goes blank on the two days a week someone
+    actually sits down to look at it. Anchoring on the newest **observation**
+    instead of on the clock makes a Sunday read Friday's session, which is what
+    "since the last close" means.
+
+    One instant for the whole portfolio, not one per symbol, and that stays
+    correct across exchanges: a share whose market has not opened today has its
+    last point on an earlier day, so the last point ≤ this instant *is* that same
+    point and it reports a change of zero — which is the truth, it has not traded.
+
+    Known limitation: a session that straddles UTC midnight (Sydney) would have
+    its baseline fall inside itself. No such exchange is in reach of this
+    portfolio today, and the fix would be a market calendar — the thing #616
+    already declined to carry.
+    """
+    utc = newest.astimezone(timezone.utc) if newest.tzinfo else newest
+    return datetime(utc.year, utc.month, utc.day, tzinfo=timezone.utc)
+
+
+def baseline_reference(baseline_rows: Sequence[Dict[str, Any]]) -> Optional[datetime]:
+    """The newest observation the baseline is actually built from.
+
+    Found by looking at the page. :func:`session_baseline_instant` returns a
+    *cut* — midnight of the newest day — and labelling the block with it read
+    « depuis la clôture du 5 août » on the afternoon of 5 August, announcing a
+    close that had not happened. The cut is the rule; it is not a session.
+
+    The rows carry the answer already, since ``values_at`` selects ``time``
+    alongside the value: the newest of those timestamps *is* an observed price,
+    and it lies at or before the cut by construction — so it is the last close
+    the comparison rests on, and naming it is a statement about data rather than
+    about the calendar.
+    """
+    times = [
+        row.get('time') for row in baseline_rows
+        if isinstance(row.get('time'), datetime)
+    ]
+    return max(times) if times else None
+
+
+def build_movers(
+    shares: Sequence[SharePosition],
+    baseline_rows: Sequence[Dict[str, Any]],
+) -> List[Mover]:
+    """Rank the portfolio by its move since ``session_baseline_instant``.
+
+    ``baseline_rows`` is ``values_at``'s output — one row per symbol carrying its
+    last price at or before that instant.
+
+    A share with no baseline (its first day) or no current price is **left out**
+    rather than shown at zero: it has not failed to move, it has nothing to
+    compare against, and a zero in a movers list is a claim. It still appears in
+    the allocation block, which needs no history.
+    """
+    baseline = {
+        row.get('share_symbol'): row.get('share_price')
+        for row in baseline_rows
+        if row.get('share_symbol') and row.get('share_price') is not None
+    }
+
+    movers = []
+    for share in shares:
+        previous = baseline.get(share.symbol)
+        change = _difference(share.price, previous)
+        if change is None:
+            continue
+        movers.append(Mover(
+            symbol=share.symbol,
+            name=share.name,
+            currency=share.currency,
+            price=share.price,
+            previous_price=previous,
+            change=change,
+            change_pct=_ratio(change, previous),
+            market_value=share.market_value,
+            contribution=_product(change, share.owned_quantity),
+        ))
+
+    # Biggest riser first, biggest faller last — the front takes both ends.
+    movers.sort(key=lambda m: (m.change_pct is None, -(m.change_pct or 0.0)))
+    return movers
+
+
+def _baseline(
+    current: Optional[float],
+    previous: Optional[float],
+    since: Optional[datetime],
+) -> Optional[Dict[str, Any]]:
+    """The head's relative delta — #652 déc. 2's UI preference, made a payload.
+
+    ``None`` when the caller asked for no baseline. When it asked and there is
+    nothing stored that early, ``previous`` is ``null`` and so are the deltas:
+    the portfolio did not exist yet, and calling that a gain of its entire value
+    is the exact shape of mistake trap 3 is about.
+    """
+    if since is None:
+        return None
+    change = _difference(current, previous)
+    return {
+        'since': _iso(since),
+        'total_value': previous,
+        'change': change,
+        'change_pct': _ratio(change, previous),
+    }
+
+
+def _single_currency(values: Iterable[Optional[str]]) -> Optional[str]:
+    """The one currency in play, or ``None`` when they disagree.
+
+    ``None`` makes the front render a bare number instead of guessing EUR —
+    which is trap 14, and precisely what the Grafana baseline does by hardcoding
+    ``currencyEUR`` in every panel unit.
+    """
+    found = {value for value in values if value}
+    return found.pop() if len(found) == 1 else None
+
+
 def _build_account(row: Dict[str, Any]) -> AccountPosition:
     """One breakdown row, with the same arithmetic scoped to a single account."""
     market_value = _product(row.get('owned_quantity'), row.get('share_price'))
@@ -285,6 +632,12 @@ def _plus_value(
 def _sum(rows: Iterable[Dict[str, Any]], field: str) -> Optional[float]:
     values = [r[field] for r in rows if r.get(field) is not None]
     return sum(values) if values else None
+
+
+def _sum_values(values: Iterable[Optional[float]]) -> Optional[float]:
+    """:func:`_sum` over an iterable of values rather than a field of rows."""
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
 
 
 def _sum_products(rows: Iterable[Dict[str, Any]], left: str, right: str) -> Optional[float]:
@@ -347,6 +700,10 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 
 
 __all__ = [
-    'AccountPosition', 'SharePosition',
+    'AccountPosition', 'SharePosition', 'Mover',
     'build_shares', 'build_share', 'weighted_cost_price',
+    'MODE_ACCOUNTS', 'MODE_TITRES', 'MODE_MULTI_CURRENCY', 'portfolio_mode',
+    'build_totals_head', 'build_titres_head', 'build_multi_currency_head',
+    'valuation_series', 'session_baseline_instant', 'baseline_reference',
+    'build_movers',
 ]

@@ -41,6 +41,24 @@ logger = getLogger("influx_reads", level=LOG_LEVEL)
 
 MEASUREMENT = "portfolio_metrics"
 
+#: The global perf series (issue #660). Untagged on purpose — trap 4: a
+#: synthetic ``account`` tag would double every ``SUM()`` over
+#: ``account_metrics``, so the *global* figures are read from here and are never
+#: derived by summing the per-account series.
+TOTALS_MEASUREMENT = "portfolio_totals"
+
+#: What a ``portfolio_totals`` row carries. Documentation and a whitelist — not
+#: a SELECT list; :meth:`latest_totals` explains why the query is ``SELECT *``.
+TOTALS_FIELDS = (
+    'cash_balance',
+    'holdings_value',
+    'total_value',
+    'net_contributed',
+    'xirr',
+    'gain_absolu',
+    'twr_index',
+)
+
 #: Fields carried by every live point, read as one coherent observation.
 #:
 #: ``write_metrics`` writes all of these on the same point, and its callers only
@@ -281,6 +299,226 @@ class PortfolioReader:
         """
         return self._rows(sql)
 
+    # ------------------------------------------------------------------ #
+    # P6 — value_at: the last point at or before an instant (issue #660)
+    # ------------------------------------------------------------------ #
+
+    def value_at(
+        self,
+        measurement: str,
+        field: str,
+        t: datetime,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> Optional[float]:
+        """The value of ``field`` at ``t`` — meaning the **last point ≤ t**.
+
+        The 6th primitive of #650's inventory, named by #652 déc. 2 and left
+        unbuilt by the vertical slice. The "≤" is the whole of it: *the exact
+        point never exists*. ``portfolio_totals`` is stamped at midnight, prices
+        land every 120 s during a session and not at all outside one, and a
+        weekend or a holiday is a legitimate hole (#606). A query for the point
+        *at* an instant answers ``None`` almost always; a query for the last one
+        before it answers what a human means by "its value then".
+
+        Returns ``None`` when nothing was ever stored before ``t`` — which is
+        absence, not zero: a portfolio that did not exist yet has no value, and
+        rendering that as ``0`` would put a spectacular fake gain on screen.
+        """
+        rows = self._rows(self._last_before_sql(measurement, field, t, filters))
+        return rows[0].get(field) if rows else None
+
+    def values_at(
+        self,
+        measurement: str,
+        field: str,
+        t: datetime,
+        partition_by: str,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """:meth:`value_at` for every value of a tag, in **one** query.
+
+        The movers block needs the previous session's close for the whole
+        portfolio at once, and doing that as one ``value_at`` per symbol would
+        be N round-trips to answer one screen — the same arithmetic that made
+        #652 déc. 8 generalise P1. The rule is identical (last point ≤ ``t``);
+        only the partitioning differs, which is why both shapes are built by
+        :meth:`_last_before_sql` rather than by two SQL strings that would drift.
+        """
+        sql = self._last_before_sql(measurement, field, t, filters, partition_by)
+        return self._rows(sql)
+
+    def _last_before_sql(
+        self,
+        measurement: str,
+        field: str,
+        t: datetime,
+        filters: Optional[Dict[str, str]],
+        partition_by: Optional[str] = None,
+    ) -> str:
+        """Render the "last point ≤ t" rule, scalar or partitioned.
+
+        ``measurement``, ``field`` and ``partition_by`` reach SQL as
+        **identifiers**, and quote-doubling protects a string literal, not an
+        identifier. So they are not escaped, they are *whitelisted*: a caller can
+        only ask for a pair :data:`_VALUE_AT_TARGETS` names. Filter values, which
+        do come from user-authored files, go through ``escape_literal``.
+        """
+        if (measurement, field) not in _VALUE_AT_TARGETS:
+            raise ValueError(f"Unsupported value_at target: {measurement}.{field}")
+        if partition_by is not None and partition_by not in _FILTERABLE_TAGS:
+            raise ValueError(f"Unsupported partition: {partition_by!r}")
+
+        where = [f"{field} IS NOT NULL", f"time <= '{utc_z(t)}'"]
+        for tag, value in (filters or {}).items():
+            where.append(_tag_clause(tag, value))
+        predicate = ' AND '.join(where)
+
+        if partition_by is None:
+            return f"""
+            SELECT {field}, time
+            FROM "{measurement}"
+            WHERE {predicate}
+            ORDER BY time DESC
+            LIMIT 1
+            """
+
+        return f"""
+        SELECT {partition_by}, {field}, time FROM (
+            SELECT {partition_by}, {field}, time,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY {partition_by}
+                       ORDER BY time DESC) AS rn
+            FROM "{measurement}"
+            WHERE {predicate}
+        ) WHERE rn = 1
+        ORDER BY {partition_by}
+        """
+
+    # ------------------------------------------------------------------ #
+    # The global perf series behind the dashboard (issue #660)
+    # ------------------------------------------------------------------ #
+
+    def latest_totals(self) -> Optional[Dict[str, Any]]:
+        """The newest ``portfolio_totals`` point, or ``None`` when there is none.
+
+        ``SELECT *`` rather than a field list, and that is not laziness. Three of
+        the seven fields are written **only when computable** — ``xirr`` and
+        ``gain_absolu`` need an external flow, ``twr_index`` needs a non-zero
+        valuation — and in InfluxDB 3 a field that was never written is a
+        *column that does not exist*. Naming it in the SELECT would turn "this
+        portfolio has no deposits" into a query error, which
+        :data:`_ABSENT_SCHEMA` then reports as an empty install: the entire head
+        would vanish because one rate happened to be undefined. An absent field
+        has to arrive as an absent key, and ``SELECT *`` is what delivers that.
+
+        No time window, per #652 déc. 1 — "current" is absolute. It matters more
+        here than on the shares page: the perf job is gated (#618) and a
+        fully-closed market wave writes nothing at all, so any window narrow
+        enough to be useful is also narrow enough to blank the dashboard.
+        """
+        rows = self._rows(
+            f'SELECT * FROM "{TOTALS_MEASUREMENT}" ORDER BY time DESC LIMIT 1')
+        return rows[0] if rows else None
+
+    def totals_series(
+        self,
+        start: Optional[datetime] = None,
+        stop: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """The global perf series over ``[start, stop]``, oldest first.
+
+        Deliberately **not** bucketed, unlike :meth:`bucketed_series`: the series
+        is written one point per calendar day at midnight, so five years is ~1800
+        rows and there is nothing to downsample. The same fact is what makes a
+        short preset degenerate on the dashboard's main chart — a "1 day" window
+        holds one point — and why that chart offers months and years only.
+        """
+        where = _window_clauses(start, stop)
+        predicate = f"WHERE {' AND '.join(where)}" if where else ""
+        return self._rows(f"""
+        SELECT * FROM "{TOTALS_MEASUREMENT}"
+        {predicate}
+        ORDER BY time
+        """)
+
+    def daily_position_series(
+        self,
+        start: Optional[datetime] = None,
+        stop: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """One row per ``(day, share_symbol, account)``: the day's closing state.
+
+        The source of the **degraded** main chart — valuation vs investment,
+        #652 déc. 7's fallback for a portfolio with no declared accounts, which
+        is what a default install is. It has to come from ``portfolio_metrics``
+        because ``portfolio_totals`` does not exist without declared accounts.
+
+        The trap is in the shape, not the fields: during a session a symbol is
+        written every 120 s, so a plain ``SUM(owned_quantity * share_price)``
+        grouped by day multiplies the portfolio by however many times it was
+        polled — a valuation curve that tracks *market opening hours*. Hence the
+        same ``ROW_NUMBER()`` as P1, one rank per ``(day, symbol, account)``,
+        taking each series' last point of each day before anything is added up.
+
+        Summing is deliberately left to :mod:`portfolio_view`: a symbol whose
+        market was shut on a day the others traded simply has no row for it, and
+        dropping it from that day's total would make the whole portfolio dip
+        every time one exchange took a holiday. Forward-filling is the fix and it
+        is pure logic, so it belongs where it can be tested with literal lists.
+        """
+        where = ["share_price IS NOT NULL"]
+        where += _window_clauses(start, stop)
+
+        return self._rows(f"""
+        SELECT day, share_symbol, account, share_price, owned_quantity,
+               purchased_quantity, purchased_price
+        FROM (
+            SELECT DATE_BIN(INTERVAL '1 day', time) AS day,
+                   share_symbol, COALESCE(account, 'default') AS account,
+                   share_price, owned_quantity,
+                   purchased_quantity, purchased_price,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY DATE_BIN(INTERVAL '1 day', time),
+                                    share_symbol, COALESCE(account, 'default')
+                       ORDER BY time DESC) AS rn
+            FROM "{MEASUREMENT}"
+            WHERE {' AND '.join(where)}
+        ) WHERE rn = 1
+        ORDER BY day, share_symbol, account
+        """)
+
+
+#: The ``(measurement, field)`` pairs :meth:`PortfolioReader.value_at` may be
+#: asked for. A closed set because both halves land in SQL as identifiers, where
+#: quote-doubling buys nothing — and because a primitive that can read *any*
+#: field of *any* measurement is the generic query API #655 decision 6 rejected.
+_VALUE_AT_TARGETS = frozenset({
+    # The movers block: the previous session's close, per symbol.
+    (MEASUREMENT, 'share_price'),
+    # The head's relative delta ("+10 % since…"), #652 déc. 2.
+    (TOTALS_MEASUREMENT, 'total_value'),
+    (TOTALS_MEASUREMENT, 'net_contributed'),
+    (TOTALS_MEASUREMENT, 'twr_index'),
+})
+
+#: Tags a filter or a partition may name — same identifier argument.
+_FILTERABLE_TAGS = ('share_symbol', 'account')
+
+
+def _tag_clause(tag: str, value: str) -> str:
+    """One ``tag = value`` predicate, with trap 1 applied where it belongs.
+
+    ``account`` is compared through ``COALESCE(account, 'default')`` because
+    points written before v4.1 carry no account tag; every other tag is compared
+    bare. Getting this wrong is invisible — the query succeeds and silently
+    omits the pre-v4.1 half of the history.
+    """
+    if tag not in _FILTERABLE_TAGS:
+        raise ValueError(f"Unsupported filter tag: {tag!r}")
+    if tag == 'account':
+        return f"COALESCE(account, 'default') = '{escape_literal(value)}'"
+    return f"{tag} = '{escape_literal(value)}'"
+
 
 #: The bucket widths :func:`bucket_for_window` may choose. Closed set on purpose:
 #: the value reaches SQL as a literal, so it must never come from a request.
@@ -341,4 +579,7 @@ def _normalise(value: Any) -> Any:
     return value
 
 
-__all__ = ['PortfolioReader', 'bucket_for_window', 'MEASUREMENT']
+__all__ = [
+    'PortfolioReader', 'bucket_for_window',
+    'MEASUREMENT', 'TOTALS_MEASUREMENT', 'TOTALS_FIELDS',
+]

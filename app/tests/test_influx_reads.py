@@ -17,7 +17,12 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from influx_reads import PortfolioReader, bucket_for_window
+from influx_reads import (
+    MEASUREMENT,
+    TOTALS_MEASUREMENT,
+    PortfolioReader,
+    bucket_for_window,
+)
 
 
 class FakeTable:
@@ -213,6 +218,164 @@ def test_a_missing_measurement_is_an_empty_install_not_a_failure():
     """
     executor = FakeExecutor(error=Exception("table 'portfolio_metrics' not found"))
     assert PortfolioReader(executor).latest_per_account() == []
+
+
+# --------------------------------------------------------------------- #
+# P6 — value_at, the 6th primitive (issue #660)
+#
+# #660's testing criterion names this one: "the 'last point ≤ t' rule is the
+# logic". Everything else about the primitive is plumbing.
+# --------------------------------------------------------------------- #
+
+AN_INSTANT = datetime(2026, 8, 5, tzinfo=timezone.utc)
+
+
+def test_value_at_reads_the_last_point_at_or_before_the_instant():
+    """The rule, and the reason it is `<=` rather than `=`: the exact point
+    never exists. `portfolio_totals` is stamped at midnight, prices land every
+    120 s during a session and not at all outside one, and a weekend is a
+    legitimate hole (#606). A query *at* an instant answers nothing, almost
+    always.
+    """
+    executor = FakeExecutor()
+    PortfolioReader(executor).value_at(TOTALS_MEASUREMENT, 'total_value', AN_INSTANT)
+
+    assert "time <= '2026-08-05T00:00:00Z'" in executor.sql
+    assert "ORDER BY time DESC" in executor.sql
+    assert "LIMIT 1" in executor.sql
+    # Bare UTC 'Z' — `isoformat()` alone would emit '+00:00Z', which InfluxDB
+    # rejects outright.
+    assert '+00:00' not in executor.sql
+
+
+def test_value_at_ignores_points_where_the_field_is_null():
+    """Otherwise the "last point" can be a point that carries no value at all —
+    `write_metrics` persists a row without a price when the quote fetch fails."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).value_at(MEASUREMENT, 'share_price', AN_INSTANT)
+
+    assert 'share_price IS NOT NULL' in executor.sql
+
+
+def test_value_at_returns_none_when_nothing_was_stored_that_early():
+    """Absence, not zero. A portfolio that did not exist yet has no value, and
+    calling that a gain of everything is trap 3 at its most flattering."""
+    reader = PortfolioReader(FakeExecutor())
+
+    assert reader.value_at(TOTALS_MEASUREMENT, 'total_value', AN_INSTANT) is None
+
+
+def test_value_at_refuses_a_target_it_does_not_know():
+    """The measurement and the field land in SQL as **identifiers**, where
+    quote-doubling buys nothing. So they are whitelisted rather than escaped —
+    and a primitive that can read any field of any measurement is the generic
+    query API #655 decision 6 rejected."""
+    reader = PortfolioReader(FakeExecutor())
+
+    with pytest.raises(ValueError):
+        reader.value_at('portfolio_metrics', 'volume; DROP TABLE x', AN_INSTANT)
+    with pytest.raises(ValueError):
+        reader.value_at('some_other_measurement', 'share_price', AN_INSTANT)
+
+
+def test_value_at_scopes_an_account_through_coalesce():
+    """Trap 1 again, and it is invisible when wrong: a bare `account = 'x'`
+    succeeds and silently omits the pre-v4.1 half of the history."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).value_at(
+        MEASUREMENT, 'share_price', AN_INSTANT, {'account': 'pea'})
+
+    assert "COALESCE(account, 'default') = 'pea'" in executor.sql
+
+
+def test_value_at_escapes_a_filter_value():
+    executor = FakeExecutor()
+    PortfolioReader(executor).value_at(
+        MEASUREMENT, 'share_price', AN_INSTANT, {'share_symbol': "O'NEIL"})
+
+    assert "share_symbol = 'O''NEIL'" in executor.sql
+
+
+def test_values_at_answers_every_symbol_in_one_query():
+    """The movers block needs the previous close for the whole portfolio, and
+    one `value_at` per symbol would be N round-trips for one screen — the same
+    arithmetic that made #652 déc. 8 generalise P1."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).values_at(
+        MEASUREMENT, 'share_price', AN_INSTANT, partition_by='share_symbol')
+
+    assert len(executor.queries) == 1
+    assert 'ROW_NUMBER() OVER ( PARTITION BY share_symbol ORDER BY time DESC) AS rn' \
+        in executor.sql
+    assert 'WHERE rn = 1' in executor.sql
+    assert "time <= '2026-08-05T00:00:00Z'" in executor.sql
+
+
+def test_values_at_refuses_a_partition_it_does_not_know():
+    reader = PortfolioReader(FakeExecutor())
+
+    with pytest.raises(ValueError):
+        reader.values_at(MEASUREMENT, 'share_price', AN_INSTANT,
+                         partition_by='time DESC) AS rn FROM x; --')
+
+
+# --------------------------------------------------------------------- #
+# The global perf series
+# --------------------------------------------------------------------- #
+
+def test_latest_totals_selects_every_column_rather_than_naming_the_fields():
+    """Three of the seven fields are written only when computable, and in
+    InfluxDB 3 a field never written is a column that does not exist. Naming
+    `xirr` in the SELECT would turn "this portfolio has no deposits" into a
+    query error — which `_ABSENT_SCHEMA` then reports as an empty install, so
+    the whole head would vanish because one rate was undefined.
+    """
+    executor = FakeExecutor()
+    PortfolioReader(executor).latest_totals()
+
+    assert 'SELECT * FROM "portfolio_totals"' in executor.sql
+    assert 'xirr' not in executor.sql
+
+
+def test_latest_totals_has_no_time_window():
+    """Déc. 1 again, and it bites harder here: the perf job is gated (#618) and
+    a fully-closed market wave writes nothing, so any window narrow enough to be
+    useful is narrow enough to blank the dashboard."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).latest_totals()
+
+    assert 'time >=' not in executor.sql
+    assert 'time <=' not in executor.sql
+
+
+def test_totals_series_is_not_bucketed():
+    """One point per calendar day is already the grain; there is nothing to
+    downsample, and five years is ~1800 rows."""
+    executor = FakeExecutor()
+    PortfolioReader(executor).totals_series(
+        datetime(2024, 1, 1, tzinfo=timezone.utc), AN_INSTANT)
+
+    assert 'DATE_BIN' not in executor.sql
+    assert "time >= '2024-01-01T00:00:00Z'" in executor.sql
+    assert 'ORDER BY time' in executor.sql
+
+
+def test_daily_position_series_ranks_per_day_and_series_before_anything_is_summed():
+    """The trap is the shape, not the fields. During a session a symbol is
+    written every 120 s, so a `SUM(...) GROUP BY day` over the raw points
+    multiplies the portfolio by its polling rate — a valuation curve that really
+    tracks market opening hours.
+    """
+    executor = FakeExecutor()
+    PortfolioReader(executor).daily_position_series()
+
+    assert "DATE_BIN(INTERVAL '1 day', time)" in executor.sql
+    assert 'PARTITION BY DATE_BIN(INTERVAL \'1 day\', time), share_symbol, ' \
+        "COALESCE(account, 'default') ORDER BY time DESC" in executor.sql
+    assert 'WHERE rn = 1' in executor.sql
+    # Summing is the pure module's job — a missing day has to stay a missing row
+    # so it can be forward-filled rather than silently dropped from the total.
+    assert 'SUM(' not in executor.sql
 
 
 def test_a_real_query_error_propagates():

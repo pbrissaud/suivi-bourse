@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider } from '@tanstack/react-router'
 
-import App from '@/App'
+import { router } from '@/router'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -23,10 +24,13 @@ const queryClient = new QueryClient({
   },
 })
 
+// Query outside Router: the router carries no loaders (#655 déc. 3 gave data
+// fetching to Query), so nothing in the route tree needs the client in its
+// context — the components reach it through the provider like any other hook.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 )

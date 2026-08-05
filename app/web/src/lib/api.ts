@@ -139,6 +139,121 @@ export interface DeclaredAccount {
 }
 
 /**
+ * The dashboard head, as a **discriminated union** (#655 déc. 8).
+ *
+ * This is the type doing the most work in the file. #652 déc. 6 fixed two terms
+ * that must never be conflated — **Gain** (total value − net contributed, needs
+ * declared accounts) and **plus-value latente** (holdings + dividends − invested
+ * − fees, always computable) — and the union is what makes conflating them a
+ * compile error rather than a discipline: `gain_absolu` does not exist on the
+ * `titres` variant, so reading it there does not typecheck.
+ *
+ * `mode` is decided by the server from the *configuration*, never from which
+ * fields came back null. That is what keeps "you have not declared accounts"
+ * and "the perf job has not run yet" two different screens.
+ */
+export interface PortfolioBaseline {
+  since: string
+  total_value: number | null
+  change: number | null
+  change_pct: number | null
+}
+
+export interface AccountsPortfolio {
+  mode: 'accounts'
+  currency: string | null
+  as_of: string | null
+  total_value: number | null
+  cash_balance: number | null
+  holdings_value: number | null
+  net_contributed: number | null
+  gain_absolu: number | null
+  xirr: number | null
+  twr_index: number | null
+  baseline: PortfolioBaseline | null
+}
+
+export interface TitresPortfolio {
+  mode: 'titres'
+  currency: string | null
+  as_of: string | null
+  holdings_value: number | null
+  invested: number | null
+  received_dividend: number | null
+  purchased_fee: number | null
+  plus_value_latente: number | null
+  plus_value_pct: number | null
+  baseline: null
+}
+
+/**
+ * The third case. `portfolio_totals` is not written at all when the declared
+ * accounts disagree on currency, so there is no consolidated head to render and
+ * none is invented — the API states the condition instead. What a consolidated
+ * view of a mixed portfolio *should* show is still an open product question.
+ */
+export interface MultiCurrencyPortfolio {
+  mode: 'multi_currency'
+  currencies: string[]
+  accounts: { id: string; label: string; currency: string }[]
+}
+
+export type Portfolio =
+  | AccountsPortfolio
+  | TitresPortfolio
+  | MultiCurrencyPortfolio
+
+/**
+ * The main chart. The field names carry #652 déc. 7's distinction rather than
+ * describing it: `contributed` is money the investor put in, `invested` is what
+ * the positions cost. Two different curves; one name for both is how they would
+ * end up conflated.
+ */
+export interface PortfolioHistoryWindow {
+  from: string
+  to: string
+}
+
+export type PortfolioHistory = PortfolioHistoryWindow &
+  (
+    | { mode: 'accounts'; points: { t: string | null; value: number | null; contributed: number | null }[] }
+    | { mode: 'titres'; points: { t: string | null; value: number | null; invested: number | null }[] }
+    | { mode: 'multi_currency'; points: never[] }
+  )
+
+export interface Mover {
+  symbol: string
+  name: string | null
+  /** Per row, not per response — which is what lets the block survive a
+   *  mixed-currency portfolio the head refuses to consolidate. */
+  currency: string | null
+  price: number | null
+  previous_price: number | null
+  change: number | null
+  change_pct: number | null
+  market_value: number | null
+  /** `change × owned_quantity` — what the move was worth. A 12 % jump on a token
+   *  holding and a 0.4 % drift on the biggest line are not the same news. */
+  contribution: number | null
+}
+
+export interface MoversResponse {
+  /**
+   * The **cut** the rule defines — midnight of the newest observation's day.
+   * `null` on a fresh install, where there is no observation to anchor on.
+   */
+  since: string | null
+  /**
+   * The newest price actually found at or before that cut, i.e. the close the
+   * comparison rests on. Label the block with **this**, not with `since`: on the
+   * afternoon of 5 August the cut is 5 August 00:00, and naming it announced a
+   * close that had not happened yet.
+   */
+  reference: string | null
+  movers: Mover[]
+}
+
+/**
  * `declared: false` is a designed state, not an empty list — the opt-out setup
  * every default install runs. #655 decision 8's discriminator rule: the server
  * states the condition instead of leaving the front to infer it from `[]`.
@@ -159,4 +274,13 @@ export const api = {
   events: (symbol?: string) =>
     get<LedgerEvent[]>('/api/events' + (symbol ? `?symbol=${encodeURIComponent(symbol)}` : '')),
   accounts: () => get<AccountsResponse>('/api/accounts'),
+  portfolio: (since?: Date) =>
+    get<Portfolio>(
+      '/api/portfolio' + (since ? `?since=${since.toISOString()}` : ''),
+    ),
+  portfolioHistory: (from: Date, to: Date) =>
+    get<PortfolioHistory>(
+      `/api/portfolio/history?from=${from.toISOString()}&to=${to.toISOString()}`,
+    ),
+  movers: () => get<MoversResponse>('/api/portfolio/movers'),
 }

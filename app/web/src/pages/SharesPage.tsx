@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 const ALL = '__all__'
 
-export default function App() {
+export default function SharesPage() {
   const [account, setAccount] = useState<string>(ALL)
   const [quoteType, setQuoteType] = useState<string>(ALL)
   const [exchange, setExchange] = useState<string>(ALL)
@@ -59,7 +59,7 @@ export default function App() {
   const totals = useMemo(() => summarise(rows), [rows])
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="space-y-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Titres</h1>
         <p className="text-sm text-muted-foreground">
