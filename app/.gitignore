@@ -10,3 +10,13 @@ src/static/
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Re-include the front's `lib/`. The repo-root .gitignore carries `lib/` from
+# the Python template (line 30), which matches `app/web/src/lib/` and silently
+# swallowed api.ts / format.ts / utils.ts — the build then failed only on a
+# fresh checkout, because a local `docker build` reads the working tree rather
+# than what git actually holds.
+#
+# It has to negate the **directory**: git cannot re-include a file whose parent
+# directory is excluded, so `!web/src/lib/*.ts` alone would do nothing.
+!web/src/lib/
