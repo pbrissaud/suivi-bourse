@@ -19,19 +19,31 @@ export class ApiProblem extends Error {
   readonly title: string
   readonly detail?: string
   readonly type?: string
+  /**
+   * The validator's own messages, on a 422 (#653: a rejected save says *which*
+   * row). Empty for every other problem, so a caller can render them
+   * unconditionally.
+   */
+  readonly errors: string[]
 
-  constructor(init: { status: number; title: string; detail?: string; type?: string }) {
+  constructor(init: {
+    status: number
+    title: string
+    detail?: string
+    type?: string
+    errors?: string[]
+  }) {
     super(init.detail || init.title)
     this.name = 'ApiProblem'
     this.status = init.status
     this.title = init.title
     this.detail = init.detail
     this.type = init.type
+    this.errors = init.errors ?? []
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: 'application/json' } })
+async function unwrap<T>(response: Response, path: string): Promise<T> {
   const contentType = response.headers.get('content-type') ?? ''
 
   if (!response.ok) {
@@ -48,6 +60,29 @@ async function get<T>(path: string): Promise<T> {
     })
   }
   return response.json() as Promise<T>
+}
+
+async function get<T>(path: string): Promise<T> {
+  return unwrap<T>(
+    await fetch(path, { headers: { Accept: 'application/json' } }),
+    path,
+  )
+}
+
+async function send<T>(
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  const init: RequestInit = { method, headers: { Accept: 'application/json', ...headers } }
+  if (body instanceof FormData) {
+    init.body = body
+  } else if (body !== undefined) {
+    init.headers = { ...init.headers, 'Content-Type': 'application/json' }
+    init.body = JSON.stringify(body)
+  }
+  return unwrap<T>(await fetch(path, init), path)
 }
 
 /** One share as held in one account — the detail sheet's breakdown row. */
@@ -112,13 +147,19 @@ export type EventType = 'BUY' | 'SELL' | 'GRANT' | 'DIVIDEND' | 'DEPOSIT' | 'WIT
 export interface LedgerEvent {
   /** Opaque. Round-trip it; never parse it (#653: no file/row in the contract). */
   id: string
-  /** Content fingerprint — becomes `If-Match` when the Data page can write. */
+  /** Content fingerprint, sent back as `If-Match` on every write. */
   etag: string
   /** Display-only provenance: the file's name (#652 déc. 14's discreet column). */
   source: string
   /** False for xlsx, which is read-only on the edit path. */
   editable: boolean
   error: string | null
+  /**
+   * The raw cells, present **only** when the row failed to parse — and that is
+   * the whole repair journey: a broken row has no typed fields to show, so
+   * without these the ledger could name the problem and offer nothing to fix.
+   */
+  cells?: Record<string, string>
   date?: string
   event_type?: EventType
   symbol?: string | null
@@ -129,6 +170,70 @@ export interface LedgerEvent {
   amount?: number | null
   notes?: string | null
   account?: string | null
+}
+
+/** The columns a CSV row holds, in the documented order. */
+export const EVENT_COLUMNS = [
+  'date',
+  'event_type',
+  'symbol',
+  'name',
+  'quantity',
+  'unit_price',
+  'fee',
+  'amount',
+  'notes',
+  'account',
+] as const
+
+export type EventColumn = (typeof EVENT_COLUMNS)[number]
+
+/** One event as the write endpoints take it: cells, not types. */
+export type EventDraft = Partial<Record<EventColumn, string>>
+
+/**
+ * What a write did — including the half that did not go well.
+ *
+ * `reloaded: false` is not an error and not a success either: the bytes landed,
+ * and the configuration still will not load. It happens by design when the
+ * files were *already* invalid and the edit is one step of a repair, so the
+ * page has to say "saved, still broken" rather than pick one of the two.
+ */
+export interface WriteResult {
+  reloaded: boolean
+  errors: string[]
+  event?: LedgerEvent
+  source?: string
+}
+
+/** One event file, as the badge and the convert action see it. */
+export interface EventFile {
+  name: string
+  /** False for a workbook: saving one would write over its formulas. */
+  editable: boolean
+  rows: number
+}
+
+/** A position as `config.yaml` declares it — the manual screen's content. */
+export interface DeclaredShare {
+  name: string
+  symbol: string
+  account?: string
+  purchase: { quantity: number; cost_price: number; fee: number }
+  estate: { quantity: number; received_dividend: number }
+}
+
+/**
+ * What kind of installation this is. Asked once by the data page, which has two
+ * entirely different screens to choose between — and `editable` is asked with
+ * it so an unwritable mount is a sentence rather than a failed first save.
+ */
+export interface ConfigInfo {
+  mode: 'events' | 'manual'
+  editable: boolean
+  read_only_reason: string | null
+  log_level: string
+  shares: DeclaredShare[]
 }
 
 export interface DeclaredAccount {
@@ -330,4 +435,44 @@ export const api = {
       `/api/portfolio/history?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
   movers: () => get<MoversResponse>('/api/portfolio/movers'),
+
+  // ----------------------------------------------------------------------- //
+  // The write half (issue #662)
+  // ----------------------------------------------------------------------- //
+
+  config: () => get<ConfigInfo>('/api/config'),
+
+  createEvent: (draft: EventDraft) => send<WriteResult>('POST', '/api/events', draft),
+
+  /**
+   * `If-Match` is required, not optional. The id is an *address* — a position
+   * in a file — so without the fingerprint a ledger reordered by hand between
+   * the read and the write would silently edit a different event.
+   */
+  updateEvent: (id: string, etag: string, draft: EventDraft) =>
+    send<WriteResult>('PATCH', `/api/events/${encodeURIComponent(id)}`, draft, {
+      'If-Match': etag,
+    }),
+
+  deleteEvent: (id: string, etag: string) =>
+    send<WriteResult>('DELETE', `/api/events/${encodeURIComponent(id)}`, undefined, {
+      'If-Match': etag,
+    }),
+
+  eventFiles: () => get<EventFile[]>('/api/events/files'),
+
+  importEventFile: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return send<WriteResult>('POST', '/api/events/files', form)
+  },
+
+  convertEventFile: (name: string) =>
+    send<WriteResult>('POST', `/api/events/files/${encodeURIComponent(name)}/convert`),
+
+  setAccounts: (accounts: DeclaredAccount[]) =>
+    send<WriteResult>('PUT', '/api/accounts', { accounts }),
+
+  setLogLevel: (level: string) =>
+    send<{ log_level: string }>('PUT', '/api/config/log-level', { level }),
 }

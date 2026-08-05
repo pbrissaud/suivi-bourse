@@ -16,6 +16,7 @@ const LINKS = [
   { to: '/', label: 'Tableau de bord' },
   { to: '/titres', label: 'Titres' },
   { to: '/comptes', label: 'Comptes' },
+  { to: '/donnees', label: 'Données' },
 ] as const
 
 export function Shell() {

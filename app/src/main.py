@@ -3,6 +3,7 @@ SuiviBourse
 Paul Brissaud
 """
 import concurrent.futures
+import logging
 import os
 import random
 import threading
@@ -23,6 +24,7 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
+import config_writer
 import performance
 import scheduling
 from events import (
@@ -42,6 +44,50 @@ LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
 scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
 yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
+
+#: Every logger the app names, across all its modules. The list is explicit
+#: rather than a walk of ``logging.root.manager``, so turning the app to DEBUG
+#: cannot accidentally turn a dependency's own logger up with it.
+MANAGED_LOGGERS = (
+    'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'influxdb_writer',
+    'influx_reads', 'prometheus_exporter', 'web.api', 'config_writer',
+)
+
+
+def set_log_level(level: str) -> str:
+    """Change the log level of the running process. **Ephemeral** by design.
+
+    The one survivor of #654's settings page, and the reason it survived is the
+    reason it is not persisted: ``.env`` is a host file the container never
+    sees, so a "saved" level would revert on the next ``docker compose up`` —
+    a setting that silently reverts is worse than one that never claimed to
+    stick. This lasts until the process restarts, and says so.
+
+    The trap is the second line of the loop. ``logfmt_logger.getLogger`` attaches
+    a ``StreamHandler`` and calls ``ch.setLevel(level)`` on it, so a logger
+    raised to ``DEBUG`` still has every debug record dropped by its own handler
+    — the call appears to work and changes nothing.
+    """
+    resolved = (level or '').strip().upper()
+    if resolved not in ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'):
+        raise ValueError(
+            f"Unknown log level {level!r}. "
+            f"Expected one of CRITICAL, ERROR, WARNING, INFO, DEBUG.")
+
+    for name in MANAGED_LOGGERS:
+        target = logging.getLogger(name)
+        target.setLevel(resolved)
+        for handler in target.handlers:
+            handler.setLevel(resolved)
+
+    app_logger.info(f"Log level set to {resolved} (until the process restarts)")
+    return resolved
+
+
+def current_log_level() -> str:
+    """The level the app's own logger is at, whatever set it."""
+    return logging.getLevelName(logging.getLogger('suivi_bourse').level)
+
 
 # Cerberus schema for the opt-in `accounts:` block of settings.yaml. Declaring
 # this block turns on first-class accounts; its absence leaves behaviour
@@ -440,6 +486,16 @@ class ConfigurationManager:
                 f"Duplicate account id(s) in settings.yaml: {duplicates}")
 
         return Portfolio(accounts=accounts)
+
+    def accounts_on_disk(self) -> Optional[Portfolio]:
+        """The declared accounts as ``settings.yaml`` holds them right now.
+
+        Distinct from :meth:`load_accounts`, which serves the *published*
+        snapshot and is therefore one generation behind a file that has just
+        been edited. The write path (issue #662) validates a candidate against
+        the disk it is about to join, not against what the app last accepted.
+        """
+        return self._read_accounts()
 
     def load_accounts(self) -> Optional[Portfolio]:
         """Return the declared accounts, or None when none are declared.
@@ -1966,6 +2022,14 @@ class Runtime:
         self.prometheus = prometheus
         self.metrics: Optional['SuiviBourseMetrics'] = None
         self.scheduler: Optional[BackgroundScheduler] = None
+
+        # The config directory's writer (issue #662). Master-side on purpose:
+        # it is a mutex and a reference, and a ``threading.Lock`` crosses
+        # ``fork()`` unharmed — the master is single-threaded at that instant,
+        # so the worker inherits an unlocked one. Built here rather than in
+        # ``start_runtime`` because the routes must reach the *same* instance
+        # the lock lives in, and there is only ever one worker (#651).
+        self.config_writer = config_writer.ConfigWriter(config_manager)
 
 
 def log_fatal(exc: BaseException) -> None:

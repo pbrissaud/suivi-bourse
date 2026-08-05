@@ -749,3 +749,175 @@ def test_a_naive_instant_is_read_as_utc_not_local_time(tmp_path):
     assert "time >= '2024-01-15T00:00:00Z'" in sql
     assert datetime(2024, 1, 15, tzinfo=timezone.utc).isoformat() == \
         '2024-01-15T00:00:00+00:00'
+
+
+# --------------------------------------------------------------------------- #
+# The write path's HTTP contract (issue #662)
+# --------------------------------------------------------------------------- #
+#
+# The routes are thin, so what is tested is the *status* each refusal earns.
+# They are not interchangeable: the front branches on them — a 409 refetches the
+# ledger and reopens the row, a 403 badges the file or the whole page, a 422
+# renders the validator's own messages, a 428 is a bug in the front itself.
+
+LEDGER_CSV = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes,account\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase,\n"
+)
+
+
+def ledger_client(tmp_path):
+    return build_client(tmp_path, events=LEDGER_CSV)
+
+
+def first_row(client):
+    return client.get('/api/events').get_json()[0]
+
+
+def test_a_created_event_answers_201_with_the_row_it_wrote(tmp_path):
+    client = ledger_client(tmp_path)
+    response = client.post('/api/events', json={
+        'date': '2024-06-01', 'event_type': 'GRANT', 'symbol': 'AAPL',
+        'name': 'Apple Inc', 'quantity': 1,
+    })
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body['reloaded'] is True
+    assert body['event']['event_type'] == 'GRANT'
+    # The server picked the file, so the response is where the UI learns it.
+    assert body['source'].endswith('.csv')
+
+
+def test_an_edit_without_if_match_is_428_and_writes_nothing(tmp_path):
+    """A missing guard and a failed guard are different news.
+
+    428 says the *client* forgot the precondition — a front bug, fixed in the
+    front. 409 says a precondition was sent and no longer holds — a concurrent
+    edit, fixed by refetching. One status for both would hide the first.
+    """
+    client = ledger_client(tmp_path)
+    response = client.patch(f"/api/events/{first_row(client)['id']}",
+                            json={'quantity': 99})
+
+    assert response.status_code == 428
+    assert response.mimetype == 'application/problem+json'
+    assert first_row(client)['quantity'] == 10.0
+
+
+def test_a_stale_if_match_is_409(tmp_path):
+    client = ledger_client(tmp_path)
+    response = client.patch(
+        f"/api/events/{first_row(client)['id']}",
+        json={'quantity': 99}, headers={'If-Match': 'not-the-etag'})
+
+    assert response.status_code == 409
+    assert response.get_json()['type'] == '/problems/stale-fingerprint'
+    assert first_row(client)['quantity'] == 10.0
+
+
+def test_a_quoted_if_match_is_accepted(tmp_path):
+    """A conforming client quotes the etag; the front sends it bare.
+
+    Both have to work, or the API is only usable from the one client that
+    happens to be shipped with it.
+    """
+    client = ledger_client(tmp_path)
+    row = first_row(client)
+    response = client.patch(f"/api/events/{row['id']}", json={'quantity': 11},
+                            headers={'If-Match': f'"{row["etag"]}"'})
+
+    assert response.status_code == 200
+    assert first_row(client)['quantity'] == 11.0
+
+
+def test_a_candidate_that_breaks_the_portfolio_is_422_with_the_errors(tmp_path):
+    """#653: a rejected save changes nothing *and* says what it objected to."""
+    client = ledger_client(tmp_path)
+    response = client.post('/api/events', json={
+        'date': '2024-07-01', 'event_type': 'SELL', 'symbol': 'AAPL',
+        'name': 'Apple Inc', 'quantity': 400, 'unit_price': 190,
+    })
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body['type'] == '/problems/invalid-configuration'
+    assert body['errors']
+    assert len(client.get('/api/events').get_json()) == 1
+
+
+def test_manual_mode_refuses_the_ledger_with_409_not_an_empty_write(tmp_path):
+    """A manual install is a different kind of installation, not an empty one."""
+    response = build_client(tmp_path).post('/api/events', json={
+        'date': '2024-06-01', 'event_type': 'GRANT', 'symbol': 'AAPL',
+        'name': 'Apple Inc', 'quantity': 1,
+    })
+
+    assert response.status_code == 409
+    assert response.get_json()['type'] == '/problems/wrong-mode'
+
+
+def test_a_malformed_body_is_400_not_503(tmp_path):
+    """The blueprint's catch-all renders every exception as a storage 503.
+
+    Flask's own `get_json` raises on a bad body, so without `silent=True` a
+    client that sent broken JSON would be told the database is down.
+    """
+    response = ledger_client(tmp_path).post(
+        '/api/events', data='{not json', content_type='application/json')
+
+    assert response.status_code == 400
+
+
+def test_the_config_route_says_which_installation_this_is(tmp_path):
+    """The data page's first question, asked once instead of discovered."""
+    body = ledger_client(tmp_path).get('/api/config').get_json()
+
+    assert body['mode'] == 'events'
+    assert body['editable'] is True
+    assert body['read_only_reason'] is None
+    assert body['shares'][0]['symbol'] == 'AAPL'
+
+
+def test_the_config_route_carries_config_yaml_in_manual_mode(tmp_path):
+    """The manual screen's whole content — declared, not observed."""
+    (tmp_path / 'config.yaml').write_text(
+        "shares:\n"
+        "- name: Apple\n"
+        "  symbol: AAPL\n"
+        "  purchase: {quantity: 1, fee: 2, cost_price: 119.98}\n"
+        "  estate: {quantity: 2, received_dividend: 2.85}\n",
+        encoding='utf-8')
+    manager = main.ConfigurationManager(config_dir=str(tmp_path))
+    runtime = main.Runtime(manager, manager.validator, None)
+    client = create_app(runtime).test_client()
+
+    body = client.get('/api/config').get_json()
+    assert body['mode'] == 'manual'
+    assert body['editable'] is False
+    assert 'manual mode' in body['read_only_reason']
+    assert body['shares'][0]['symbol'] == 'AAPL'
+
+
+def test_the_log_level_toggle_answers_with_what_it_set(tmp_path):
+    client = ledger_client(tmp_path)
+    try:
+        assert client.put('/api/config/log-level',
+                          json={'level': 'debug'}).get_json() == {'log_level': 'DEBUG'}
+        assert client.put('/api/config/log-level',
+                          json={'level': 'nope'}).status_code == 400
+    finally:
+        main.set_log_level('INFO')
+
+
+def test_the_events_write_routes_do_not_shadow_the_files_resource(tmp_path):
+    """`/api/events/files` must not be read as an event id.
+
+    Both live under the same collection, and a token is an opaque string — so
+    the day the file resource starts 404ing as an unknown row is the day this
+    test earns its place.
+    """
+    response = ledger_client(tmp_path).get('/api/events/files')
+
+    assert response.status_code == 200
+    assert [entry['name'] for entry in response.get_json()] == ['2024.csv']

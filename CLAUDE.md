@@ -209,7 +209,49 @@ gets an **opaque token** over `(file, sheet, row)` — never `(file, row)`, sinc
 `row_num` restarts at 2 in every xlsx worksheet — plus a content fingerprint
 exposed as `ETag`, which is what makes a stale address a `409` instead of a
 silently mis-edited row. Reads are tolerant of a malformed row (it comes back
-with its error) so the ledger can be used to *fix* it.
+with its error **and its raw cells**, or the ledger could name a defect it
+cannot show) so the ledger can be used to *fix* it. It also owns the **bytes
+half** of a write: rendering a CSV back, and `write_atomic` — same-directory
+temp under a suffix the loader ignores, `fsync`, `os.replace`.
+
+**`config_writer.py` is the write half of the config directory** (issue #662),
+sibling of `influxdb_writer.py`: each is the only module allowed to put bytes
+where its half of the system reads them. The sequence is #653's and **its order
+is the design** — build the candidate in memory → validate it → `os.replace` →
+republish via `reload(force=True)`, a *re-read of the disk* rather than a
+hand-off, so the published snapshot is always what a restart would load. Since
+#658 made a schema-invalid config fatal at boot, one transition is what the
+module exists to prevent, and one is what it must permit:
+
+- **valid → invalid is refused** — `422` + the validator's messages verbatim,
+  nothing written.
+- **invalid → invalid is allowed.** Refusing every edit while the files are
+  already rejected locks the user out of the only tool that repairs them; the
+  app is already on its previous snapshot, so the write cannot make it worse.
+  The response then carries `reloaded: false` plus what is still broken — the
+  page has to say "saved, still broken" rather than pick one.
+- The **submitted row** is the exception: it must parse on its own, always.
+- **Import is stricter than editing** — a file must introduce **no new error**
+  (a multiset difference on provenance-stripped messages, since renumbering an
+  event or renaming a file changes every message that mentions it). An upload
+  the user still holds costs a correction to refuse; an edit costs them the way
+  out.
+
+An event created from the UI lands in `ui.csv` — the client never names a file
+(#653 keeps the contract in *events*), so the server picks one destination and
+the response says which. Converting a workbook writes the `.csv` and renames the
+`.xlsx` to `.xlsx.bak`, **in that order**: the reverse doubles every event for
+as long as both are visible, and a duplicate event is legitimate, so nothing
+downstream would object. `PUT /api/accounts` splices only the `accounts:` block
+of `settings.yaml`, leaving every other byte and comment — and refuses a
+well-formed block that drops an id the events still name (`validator.py:128-138`
+makes that fatal at the *next* boot, long after the click).
+
+**Manual mode is a different page, not an empty one**: the ledger does not
+exist, `config.yaml`'s positions are shown read-only, and no conversion to
+events is offered — an aggregated position carries no dates, so synthesising
+events would mean inventing a purchase date that then drives `first_buy_date`
+and the money-weighted return.
 
 Flask serves the built SPA with a catch-all that must **not** swallow `/api` or
 `/metrics`: without those guards a typo'd endpoint returns the HTML shell with a
@@ -505,6 +547,7 @@ app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── influxdb_writer.py      # InfluxDB 3 client wrapper — the scheduler's writes + its 5 anchor reads
+├── config_writer.py        # The config directory's write half: validate → os.replace → republish (#662)
 ├── influx_sql.py           # Shared SQL rule: COALESCE(account,'default') + escaping, NaN guard, UTC-Z (#659)
 ├── influx_reads.py         # PortfolioReader — the UI read primitives; errors propagate (#659)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
@@ -513,14 +556,14 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events
-│   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events, config
+│   ├── problem.py          # RFC 9457 application/problem+json responses (#659, #662)
 │   └── health.py           # /health blueprint
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState
     ├── loader.py           # CSV/XLSX loading
-    ├── editor.py           # Editor read path: addressable rows, opaque id + ETag (#659)
+    ├── editor.py           # Addressable rows (opaque id + ETag) + the CSV write mechanics (#659, #662)
     ├── validator.py        # Event validation
     ├── aggregator.py       # Aggregation logic
     └── watcher.py          # File watcher (watchdog)

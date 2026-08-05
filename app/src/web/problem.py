@@ -38,6 +38,19 @@ TYPE_NOT_FOUND = '/problems/not-found'
 TYPE_BAD_REQUEST = '/problems/bad-request'
 TYPE_INTERNAL = '/problems/internal-error'
 
+# The write path's own vocabulary (issue #662). Each one is a *different* thing
+# for the ledger to say, which is the whole reason they are separate types
+# rather than one 400 with a message: the front branches on them — a stale
+# fingerprint refetches and reopens the row, a read-only source badges the file,
+# an unwritable directory is a deployment problem no retry will fix.
+TYPE_STALE = '/problems/stale-fingerprint'
+TYPE_READ_ONLY = '/problems/read-only-source'
+TYPE_UNWRITABLE = '/problems/source-unwritable'
+TYPE_WRONG_MODE = '/problems/wrong-mode'
+TYPE_CONFLICT = '/problems/conflict'
+TYPE_INVALID_CONFIG = '/problems/invalid-configuration'
+TYPE_PRECONDITION_REQUIRED = '/problems/precondition-required'
+
 
 def problem(status: int, title: str, detail: Optional[str] = None,
             type_: str = TYPE_INTERNAL, **extra: Any):
@@ -95,7 +108,90 @@ def internal_error(detail: str):
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
 
 
+# --------------------------------------------------------------------------- #
+# The write path (issue #662)
+# --------------------------------------------------------------------------- #
+
+def conflict(detail: str, type_: str = TYPE_CONFLICT):
+    """409 — the request cannot be applied to the resource as it stands now."""
+    return problem(409, 'Conflict', detail, type_)
+
+
+def stale_fingerprint(detail: str):
+    """409 — the addressed row is no longer the row the client read.
+
+    ``409`` rather than the ``412`` an ``If-Match`` failure usually earns, and
+    the difference is not pedantry. ``412`` says *this representation is not the
+    one you have*; here the representation is fine and the **address** has
+    moved — reorder a CSV by hand and the token now names a different event, so
+    what failed is a conflict with the current state of the collection, which is
+    409's own definition. #655 fixed this reading when it chose the fingerprint,
+    and the front's handling follows from it: refetch the ledger, do not retry.
+    """
+    return conflict(detail, TYPE_STALE)
+
+
+def read_only_source(detail: str):
+    """403 — the server understood, and will not write this file.
+
+    Not a 405: the method is right for the collection, and it is the *member*
+    that refuses. RFC 9110 keeps 403 for a refusal unrelated to authentication,
+    which is exactly a workbook whose formulas a save would overwrite.
+    """
+    return problem(403, 'Read-only source', detail, TYPE_READ_ONLY)
+
+
+def source_unwritable(detail: str):
+    """403 — the config directory itself cannot be written.
+
+    A deployment condition, not a request error, and worth its own type: no
+    retry and no correction of the payload will change it. This is the visible
+    end of the map's PaaS fog — a platform that never ran ``make init`` runs the
+    container as ``1000:1000`` over someone else's files.
+    """
+    return problem(403, 'Configuration directory not writable', detail,
+                   TYPE_UNWRITABLE)
+
+
+def wrong_mode(detail: str):
+    """409 — this installation has no event ledger to write to."""
+    return conflict(detail, TYPE_WRONG_MODE)
+
+
+def precondition_required(detail: str):
+    """428 — the guard is missing, so the write was not attempted.
+
+    Distinct from the 409 a *failed* guard earns: one says the client forgot
+    ``If-Match``, the other says it sent one that no longer holds. Collapsing
+    them would make a front bug and a concurrent edit read the same.
+    """
+    return problem(428, 'Precondition required', detail,
+                   TYPE_PRECONDITION_REQUIRED)
+
+
+def invalid_configuration(errors, detail: Optional[str] = None):
+    """422 — the candidate would produce a configuration the app refuses.
+
+    The validator's messages travel **verbatim**, in an ``errors`` member: #653
+    is explicit that a rejected save changes nothing *and* that the response
+    carries what the validator objected to, because the alternative is a user
+    staring at "invalid" with no way to learn which row.
+
+    ``422`` and not ``400``: the request is perfectly well-formed — it is the
+    configuration it would produce that is not.
+    """
+    messages = list(errors or [])
+    return problem(
+        422,
+        'Invalid configuration',
+        detail or (messages[0] if messages else None),
+        TYPE_INVALID_CONFIG,
+        errors=messages)
+
+
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request',
-    'internal_error', 'CONTENT_TYPE',
+    'internal_error', 'conflict', 'stale_fingerprint', 'read_only_source',
+    'source_unwritable', 'wrong_mode', 'precondition_required',
+    'invalid_configuration', 'CONTENT_TYPE',
 ]
