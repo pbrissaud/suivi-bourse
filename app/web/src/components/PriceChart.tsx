@@ -33,7 +33,15 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 type Preset = '1M' | '3M' | '1A' | 'MAX'
 
-const PRESETS: Record<Preset, number> = { '1M': 30, '3M': 91, '1A': 365, MAX: 1826 }
+/** Span in days for the named presets. `MAX` has none — see `resolveWindow`. */
+const PRESETS: Record<Exclude<Preset, 'MAX'>, number> = { '1M': 30, '3M': 91, '1A': 365 }
+
+const NAMED: Exclude<Preset, 'MAX'>[] = ['1M', '3M', '1A']
+
+const DAY_MS = 86_400_000
+
+/** How far back `MAX` reaches when there is nothing to anchor it to. */
+const MAX_FALLBACK_DAYS = 1826
 
 /** A marker's vertical anchor, which is the ticket's first open design point. */
 type Anchor = 'price' | 'floor'
@@ -60,22 +68,61 @@ interface Props {
 }
 
 export function PriceChart({ symbol, currency, costPrice }: Props) {
-  const [preset, setPreset] = useState<Preset>('3M')
+  // `null` means "not chosen yet", so the default can follow the data instead of
+  // being frozen at mount — see `preset` below.
+  const [chosen, setChosen] = useState<Preset | null>(null)
 
-  const { from, to } = useMemo(() => {
-    const now = new Date()
-    const start = new Date(now)
-    start.setDate(start.getDate() - PRESETS[preset])
-    return { from: start, to: now }
-  }, [preset])
-
-  const prices = useQuery({
-    queryKey: ['prices', symbol, preset],
-    queryFn: () => api.prices(symbol, from, to),
-  })
+  // Fetched first, because the window now depends on it: the events are what
+  // tell us how long this position has existed.
   const events = useQuery({
     queryKey: ['events', symbol],
     queryFn: () => api.events(symbol),
+  })
+
+  /**
+   * The oldest event for this symbol — the point before which there is nothing
+   * to show, since the backward backfill targets the first BUY and stops there.
+   * `null` in manual mode, which has no events at all.
+   */
+  const firstEventTime = useMemo(() => {
+    const times = (events.data ?? [])
+      .filter((event) => event.date)
+      .map((event) => new Date(`${event.date}T00:00:00Z`).getTime())
+      .filter((t) => Number.isFinite(t))
+    return times.length ? Math.min(...times) : null
+  }, [events.data])
+
+  const historyDays = useMemo(
+    () => (firstEventTime === null ? null : (Date.now() - firstEventTime) / DAY_MS),
+    [firstEventTime],
+  )
+
+  /**
+   * A named preset is offered only when it actually *zooms in* — i.e. when it is
+   * strictly narrower than the position's whole history. Buying a share three
+   * months ago and being offered "1A" produces a plot that is 77 % empty, and
+   * "MAX" at its old hardcoded five years produced one that was 95 % empty with
+   * the data crammed against the right edge. Both were the same defect: a window
+   * fixed in advance, blind to how long the position has existed.
+   */
+  const isEnabled = (key: Preset) =>
+    key === 'MAX' || historyDays === null || PRESETS[key] < historyDays
+
+  // Default to 3M while it still zooms in, otherwise show the whole history.
+  // Derived rather than stored, so it settles by itself when the events land —
+  // and a preset the user picked is dropped if it stops being offered (the sheet
+  // can be handed a different symbol without remounting).
+  const fallback: Preset = isEnabled('3M') ? '3M' : 'MAX'
+  const preset: Preset = chosen && isEnabled(chosen) ? chosen : fallback
+
+  const { from, to } = useMemo(
+    () => resolveWindow(preset, firstEventTime),
+    [preset, firstEventTime],
+  )
+
+  const prices = useQuery({
+    queryKey: ['prices', symbol, from.getTime(), to.getTime()],
+    queryFn: () => api.prices(symbol, from, to),
   })
 
   const series = useMemo(
@@ -123,16 +170,25 @@ export function PriceChart({ symbol, currency, costPrice }: Props) {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex gap-1">
-          {(Object.keys(PRESETS) as Preset[]).map((key) => (
-            <Button
-              key={key}
-              size="sm"
-              variant={preset === key ? 'secondary' : 'ghost'}
-              onClick={() => setPreset(key)}
-            >
-              {key}
-            </Button>
-          ))}
+          {[...NAMED, 'MAX' as const].map((key) => {
+            const enabled = isEnabled(key)
+            return (
+              <Button
+                key={key}
+                size="sm"
+                variant={preset === key ? 'secondary' : 'ghost'}
+                disabled={!enabled}
+                title={
+                  enabled
+                    ? undefined
+                    : "Cette position n'est pas assez ancienne pour cette période."
+                }
+                onClick={() => setChosen(key)}
+              >
+                {key}
+              </Button>
+            )
+          })}
         </div>
         {/* The server says which bucket it used, and we show it. A chart that
             silently downsamples is a chart that lies about its resolution. */}
@@ -315,6 +371,35 @@ interface SeriesPoint {
  * ordinary weekend joined and breaks a genuine suspension.
  */
 const MIN_GAP_MS = 36 * 60 * 60 * 1000
+/**
+ * The window a preset asks for.
+ *
+ * `MAX` means *the whole history* — the first event minus a small margin — and
+ * not a fixed five years. The margin keeps the opening purchase marker off the
+ * very edge of the plot, where it would be half-clipped.
+ *
+ * Anchoring on the first event rather than on the oldest stored price is
+ * deliberate: it is the only one of the two known *before* fetching, and the
+ * two agree by construction anyway, since the backward backfill targets the
+ * first BUY and stops there.
+ */
+export function resolveWindow(
+  preset: Preset,
+  firstEventTime: number | null,
+): { from: Date; to: Date } {
+  const to = new Date()
+
+  if (preset !== 'MAX') {
+    return { from: new Date(to.getTime() - PRESETS[preset] * DAY_MS), to }
+  }
+  if (firstEventTime === null) {
+    return { from: new Date(to.getTime() - MAX_FALLBACK_DAYS * DAY_MS), to }
+  }
+
+  const margin = Math.max((to.getTime() - firstEventTime) * 0.02, 2 * DAY_MS)
+  return { from: new Date(firstEventTime - margin), to }
+}
+
 export function withGaps(points: { t: string | null; price: number | null }[]): SeriesPoint[] {
   const parsed: SeriesPoint[] = points
     .filter((point) => point.t !== null)
