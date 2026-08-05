@@ -44,56 +44,82 @@ export function Allocation({ shares }: { shares: Share[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-      <ResponsiveContainer width="100%" height={220} className="max-w-[220px]">
-        <PieChart>
-          <Pie
-            data={slices}
-            dataKey="value"
-            nameKey="label"
-            innerRadius={58}
-            outerRadius={88}
-            paddingAngle={1}
-            isAnimationActive={false}
-          >
-            {slices.map((slice) => (
-              <Cell key={slice.key} fill={slice.colour} stroke="var(--background)" />
-            ))}
-          </Pie>
-          <Tooltip
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null
-              const slice = payload[0].payload as Slice
-              return (
-                <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
-                  <div className="font-medium">{slice.label}</div>
-                  <div className="tabular text-muted-foreground">
-                    {formatCurrency(slice.value, currency)} ·{' '}
-                    {formatPercent(total ? slice.value / total : null)}
+    <div className="space-y-3">
+      {/*
+        A donut over mixed currencies adds dollars to euros, and unlike a total
+        it does not *look* wrong — the slices still sum to 100 %, they are just
+        100 % of a quantity that means nothing. The head refuses to consolidate
+        a mixed portfolio and says so; this block cannot refuse (the shapes are
+        still the portfolio's), so it says so instead. Which is the whole of the
+        multi-currency rule on this page: never silently.
+      */}
+      {currency === null && countCurrencies(shares) > 1 && (
+        <p className="text-xs text-muted-foreground italic">
+          Portefeuille multidevise : les parts additionnent des montants libellés
+          dans des devises différentes.
+        </p>
+      )}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <ResponsiveContainer width="100%" height={220} className="max-w-[220px]">
+          <PieChart>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={58}
+              outerRadius={88}
+              paddingAngle={1}
+              isAnimationActive={false}
+            >
+              {slices.map((slice) => (
+                <Cell key={slice.key} fill={slice.colour} stroke="var(--background)" />
+              ))}
+            </Pie>
+            <Tooltip
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null
+                const slice = payload[0].payload as Slice
+                return (
+                  <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
+                    <div className="font-medium">{slice.label}</div>
+                    <div className="tabular text-muted-foreground">
+                      {formatCurrency(slice.value, currency)} ·{' '}
+                      {formatPercent(total ? slice.value / total : null)}
+                    </div>
                   </div>
-                </div>
-              )
-            }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-
-      <ul className="flex-1 space-y-1 text-sm">
-        {slices.map((slice) => (
-          <li key={slice.key} className="flex items-center gap-2">
-            <span
-              className="inline-block size-2.5 shrink-0 rounded-full"
-              style={{ background: slice.colour }}
+                )
+              }}
             />
-            <span className="truncate">{slice.label}</span>
-            <span className="ml-auto tabular text-muted-foreground">
-              {formatPercent(total ? slice.value / total : null)}
-            </span>
-          </li>
-        ))}
-      </ul>
+          </PieChart>
+        </ResponsiveContainer>
+
+        <ul className="flex-1 space-y-1 text-sm">
+          {slices.map((slice) => (
+            <li key={slice.key} className="flex items-center gap-2">
+              <span
+                className="inline-block size-2.5 shrink-0 rounded-full"
+                style={{ background: slice.colour }}
+              />
+              <span className="truncate">{slice.label}</span>
+              <span className="ml-auto tabular text-muted-foreground">
+                {formatPercent(total ? slice.value / total : null)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
+}
+
+/** How many distinct currencies the valued positions are denominated in. */
+function countCurrencies(shares: Share[]): number {
+  return new Set(
+    shares
+      .filter((share) => share.market_value !== null && share.market_value > 0)
+      .map((share) => share.currency)
+      .filter(Boolean),
+  ).size
 }
 
 /**
