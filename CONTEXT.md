@@ -63,8 +63,10 @@ flows are the *performance*; they never change the contribution.
 ### Money
 
 **Base currency**:
-The single currency every figure in the app is reported in. Chosen once, on first
-run, and immutable for as long as any event exists.
+The single currency every figure in the app is reported in. It has no default — until
+it is answered, prices are still fetched but nothing is converted and no return is
+computed. Immutable once **set**: the answer can be given late, it just cannot be
+taken back.
 _Avoid_: reporting currency, account currency, home currency
 
 **Quote currency**:
@@ -139,3 +141,34 @@ the series, blind to when money was added or removed.
 Money-weighted return — what the owner actually earned, annualised, given when they
 put money in and took it out. Needs only the external flows and today's value, so it
 is exact from the first cycle even while history is still being fetched.
+
+### The app talking about itself
+
+**Setting**:
+A dial the owner turns — a poll interval, a backfill chunk, the base currency. It
+lives in the store and nowhere else: there is one place that says what a setting is
+worth, and the environment is not it. Every setting has a default in the code; the
+store carries a copy of it, and a value it does not carry is that default.
+_Avoid_: configuration, option, parameter, environment variable
+
+**Boot variable**:
+Something the process has to know *before* it can open the store — where the store
+is, which ports to bind, whether to serve metrics, how loudly to log. The only thing
+the environment still says. Not a setting, and never editable from the app.
+
+**Headless**:
+An install that serves no page. It still serves the API — "headless" means without an
+interface, not without HTTP — so everything remains declarable and every setting
+remains turnable. The Prometheus gauges are the point of it.
+
+**Advisory**:
+Something the app has to tell the owner: a predicate and a sentence. Most are
+*derived* — the file that is present, the variable that is ignored, the key that is
+missing — and are recomputed rather than recorded; only what cannot be recomputed is
+written down, and only the acknowledgement is stored. An advisory is not a trace of
+what happened: provenance is what records that.
+_Avoid_: audit log, journal, notification, toast
+
+**Provenance**:
+Where a declared row came from — which file, imported when, with what fingerprint.
+Displayable ("row 14 of `2024.csv`"), never an address to write back to.

@@ -12,7 +12,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | # | Decision |
 |---|---|
 | [0001](./0001-one-embedded-store-duckdb.md) | One embedded store, and it is DuckDB |
-| [0002](./0002-one-base-currency.md) | One base currency, chosen once and never changed |
+| [0002](./0002-one-base-currency.md) | One base currency, set once and never changed |
 | [0003](./0003-weighted-average-cost-no-closed-flag.md) | Weighted-average cost, and a closed position is not a flagged position |
 | [0004](./0004-carrying-price.md) | A position with no price is carried at its cost |
 | [0005](./0005-every-position-is-historied.md) | Every position is historied: manual mode is removed |
@@ -24,6 +24,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0011](./0011-performance-series-is-a-cache.md) | The performance series is a cache, not a record |
 | [0012](./0012-first-party-ui-replaces-grafana-prometheus-stays.md) | The first-party UI replaces Grafana, and Prometheus stays |
 | [0013](./0013-accounts-are-data-with-provenance.md) | Accounts are user data with provenance, not a setting |
+| [0014](./0014-settings-live-only-in-the-store.md) | Settings live only in the store, and the environment stops speaking |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.
