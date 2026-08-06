@@ -697,3 +697,20 @@ by `account` (a market price belongs to no account).
 - DCO sign-off required: use `git commit -s`
 - Conventional commits enforced (feat, fix, docs, deps, chore, refactor)
 - Version bumping is automatic via Release Please
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, driven with the `gh` CLI — including the
+v5 wayfinding map (#669) and its child tickets. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each label string equal to its name. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See
+`docs/agents/domain.md`.
