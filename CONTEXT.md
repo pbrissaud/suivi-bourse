@@ -153,13 +153,30 @@ _Avoid_: configuration, option, parameter, environment variable
 
 **Boot variable**:
 Something the process has to know *before* it can open the store — where the store
-is, which ports to bind, whether to serve metrics, how loudly to log. The only thing
-the environment still says. Not a setting, and never editable from the app.
+is, where the drop folder is, which ports to bind, whether to serve metrics, how
+loudly to log. The only thing the environment still says. Not a setting, and never
+editable from the app. Its defaults describe a container; anything else overrides them.
+
+**Drop folder**:
+The directory a portfolio's files are read from — the events and the account
+declaration. Read-only and optional: the app never writes to it and never creates it,
+and an install that has none is ordinary rather than degraded. A provisioning input,
+never the truth.
+_Avoid_: config directory, events directory, data directory
 
 **Headless**:
-An install that serves no page. It still serves the API — "headless" means without an
-interface, not without HTTP — so everything remains declarable and every setting
-remains turnable. The Prometheus gauges are the point of it.
+An install whose owner reads only the Prometheus gauges. Not a configuration — there is
+no switch that turns the interface off; the page is always served, it is simply never
+looked at. The API is served too, which is what keeps everything declarable and every
+setting turnable by hand.
+_Avoid_: headless mode, API-only mode
+
+**Ephemeral install**:
+An install whose store has nowhere to live, so it lasts exactly as long as the process.
+Neither an error nor a mode one chooses: it is what an install *is* until it is given
+somewhere to keep things — which makes it the honest way to try the app. The app says
+so every time, because it stays true until it stops being true.
+_Avoid_: demo mode, temporary mode, test mode
 
 **Advisory**:
 Something the app has to tell the owner: a predicate and a sentence. Most are

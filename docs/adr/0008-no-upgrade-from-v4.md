@@ -18,8 +18,10 @@ files import **without a single edit**.
 - Accounts are declared in a **dedicated file in the event format**; the v4
   `settings.yaml` is *named, never read* — reading it would make every multi-account
   v4's files fail validation outright.
-- v5 **refuses to start** without an explicit store location; the error message is the
-  guide.
+- ~~v5 **refuses to start** without an explicit store location; the error message is the
+  guide.~~ **Amended by [ADR-0015](./0015-one-container-two-mounts-persistence-is-observed.md)**:
+  a bare run starts and simply does not persist. The refusal guarded against a loss that
+  turns out to be detectable, so the condition is observed and stated instead.
 - **Exporting events exists**, without which the honest answer to "can I go back to
   v4?" is no.
 - The several notices this produces (an unread `config.yaml`, an unread

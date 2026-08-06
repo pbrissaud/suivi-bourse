@@ -25,6 +25,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0012](./0012-first-party-ui-replaces-grafana-prometheus-stays.md) | The first-party UI replaces Grafana, and Prometheus stays |
 | [0013](./0013-accounts-are-data-with-provenance.md) | Accounts are user data with provenance, not a setting |
 | [0014](./0014-settings-live-only-in-the-store.md) | Settings live only in the store, and the environment stops speaking |
+| [0015](./0015-one-container-two-mounts-persistence-is-observed.md) | One container, two mounts, and persistence that is observed rather than demanded |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.
