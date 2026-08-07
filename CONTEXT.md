@@ -133,6 +133,13 @@ from *dividends*: three named figures, never one composite.
 What a sale returned above the cost basis it consumed. A property of a position, not
 of a price.
 
+**Total gain**:
+Latent gain plus realized gain plus dividends. The three are the *breakdown* of it and
+never terms added to it — the sale's proceeds are already in the cash balance. Always
+shown as a total dominating its three terms, because three figures aligned without
+their total is what invites adding them to something else.
+_Avoid_: gain absolu (as an on-screen label), plus-value (for the composite)
+
 **TWR**:
 Time-weighted return — how the securities performed, indexed to 100 at the start of
 the series, blind to when money was added or removed.
@@ -189,3 +196,23 @@ _Avoid_: audit log, journal, notification, toast
 **Provenance**:
 Where a declared row came from — which file, imported when, with what fingerprint.
 Displayable ("row 14 of `2024.csv`"), never an address to write back to.
+
+### On screen
+
+**Convention note**:
+The account a figure gives of the rule it rests on — an information icon beside the
+figure, opening on click into a short text and a versioned link to the documentation.
+It sits on the figure, never on the page: a page that states its conventions in prose is
+a page explaining itself instead of showing figures. On a table it goes on the column
+header, never on a cell.
+_Avoid_: tooltip, hint, help text, disclaimer
+
+**Absence**:
+A figure that has no value, in one of four kinds that are never rendered alike. Under
+one rule: **an em dash means there is nothing to compute; anything missing is named**.
+_Nothing to compute_ — the latent gain of a position with no quantity. _Waiting_ — a
+price exists but its conversion does not yet. _Never fetched_ — every attempt on a
+symbol came back with nothing, which is repairable and says so. And _carried at cost_,
+which is not an absence at all: the price is an em dash while the value is real.
+A zero is none of these. It is a figure, and never wears absence's grey.
+_Avoid_: empty, missing, N/A, null (as an on-screen state)
