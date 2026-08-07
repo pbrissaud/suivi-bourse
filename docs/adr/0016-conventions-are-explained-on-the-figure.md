@@ -38,6 +38,20 @@ they cannot stack: they distribute.
   realized and dividends — because their sum is an identity, and three figures aligned
   without their total is exactly what invites adding them to something else. In a table
   the form does not nest, so it is three columns whose sum is the header.
+- **A total and its terms never share a row.** Subordination is vertical, and a table row
+  has only the horizontal axis: mounted side by side, `Gain total +942,37 €`, `latente
+  +493,37 €` and `réalisée −659,98 €` are five numeric columns of equal weight, and
+  nothing says the last four are *inside* the first — the form invites exactly the
+  addition ADR-0003 says a contributor will attempt. So either the total is the **column
+  header** over its terms (the shares table, ADR-0017), or the total is the cell and the
+  terms live in a **block** elsewhere (the accounts table, ADR-0019). Never both on one
+  line. This is also why the shares sheet is the only surface where the form appears
+  naked: a block is the only place it can.
+- **A bubble never outlives the figure it explains.** Click-to-open was chosen so the
+  reader can walk to the link inside it, not so the bubble survives its subject leaving
+  the screen — a pinned bubble floating over unrelated content is worse than no bubble.
+  It closes on scroll, and it opens **beside** its figure rather than over it: the two
+  boards that mounted it both had it covering the very numbers it was explaining.
 - **Absence has four renderings under one rule**: the em dash means *there is nothing to
   compute*; anything missing is named instead. Waiting for a rate and never fetched are
   never the same glyph — the second is repairable, and the app knows the count of failed

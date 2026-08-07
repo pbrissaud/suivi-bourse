@@ -28,6 +28,8 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0015](./0015-one-container-two-mounts-persistence-is-observed.md) | One container, two mounts, and persistence that is observed rather than demanded |
 | [0016](./0016-conventions-are-explained-on-the-figure.md) | Conventions are explained on the figure, not written on the page |
 | [0017](./0017-a-closed-position-leaves-the-table-never-the-total.md) | A closed position leaves the table, never the total |
+| [0018](./0018-the-gain-has-four-terms.md) | The gain has four terms, and their sum is its definition |
+| [0019](./0019-a-comparison-stops-where-it-exists.md) | A comparison never outruns the period where it exists |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.
