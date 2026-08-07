@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.2.3](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.2...v4.2.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* **compose:** declare the config mount with the long volume syntax ([#647](https://github.com/pbrissaud/suivi-bourse/issues/647)) ([bdd5c7c](https://github.com/pbrissaud/suivi-bourse/commit/bdd5c7cad84c7f54af6530841f76d17de4990185)), closes [#646](https://github.com/pbrissaud/suivi-bourse/issues/646)
+
+
+### Dependencies
+
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.2 ([#682](https://github.com/pbrissaud/suivi-bourse/issues/682)) ([6639be2](https://github.com/pbrissaud/suivi-bourse/commit/6639be2f588380e1b388e129e3b89ae9bd4d6e77))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.3 ([#693](https://github.com/pbrissaud/suivi-bourse/issues/693)) ([809e2ea](https://github.com/pbrissaud/suivi-bourse/commit/809e2ea796b7f5ba83d1a90d730219aad1712128))
+* **docker-compose:** update grafana/grafana docker tag to v13.1.3 ([#689](https://github.com/pbrissaud/suivi-bourse/issues/689)) ([2a1d719](https://github.com/pbrissaud/suivi-bourse/commit/2a1d7191c593dfb5e5cc44d715373c9eaa9258c7))
+
 ## [4.2.2](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.1...v4.2.2) (2026-08-04)
 
 
