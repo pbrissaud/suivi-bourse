@@ -16,11 +16,12 @@ the redundancy is cheaper than the join it avoids.
 
 ## Consequences
 
-- **The base currency is immutable once it is set** — amended by ADR-0014, which found
-  that "immutable once any event exists" locks an owner who imports before answering out
-  of their own currency for good. The unrecoverable act is *changing* it, not answering
-  late: while the key is unset no amount has ever been interpreted. Getting it wrong is
-  still repaired by editing files, not by a setting.
+- **The base currency is immutable from the first event** — twice amended, each time in
+  the same direction. ADR-0014 found that "immutable once any event exists" locks an owner
+  who imports before answering out of their own currency for good; ADR-0021 found that
+  answering on an empty ledger interprets nothing either, since with no event there is no
+  held symbol and therefore no price point. The unrecoverable act is *reinterpreting*
+  amounts, never answering late or thinking again before anything is written.
 - **It has no default, and nothing refuses while it is unset.** Prices are still
   fetched, natively, with a `NULL` conversion the lateral pass repairs once the currency
   is answered; no performance series is written at all — not zeros, not `NULL`s — and

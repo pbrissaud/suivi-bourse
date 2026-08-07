@@ -197,6 +197,13 @@ _Avoid_: audit log, journal, notification, toast
 Where a declared row came from — which file, imported when, with what fingerprint.
 Displayable ("row 14 of `2024.csv`"), never an address to write back to.
 
+**First run**:
+Not a moment in the boot sequence but a state: the base currency is absent, which is to
+say nobody has ever answered here. It is the app's only question, and the only setting
+without a default. It ends when the question is answered — by a person, or by an import
+that declares its currency — and a restored backup never re-enters it.
+_Avoid_: onboarding (as a phase), setup, installation wizard, first boot
+
 ### On screen
 
 **Convention note**:
@@ -206,6 +213,20 @@ It sits on the figure, never on the page: a page that states its conventions in 
 a page explaining itself instead of showing figures. On a table it goes on the column
 header, never on a cell.
 _Avoid_: tooltip, hint, help text, disclaimer
+
+**Banner**:
+The one thing the app interrupts with: why what you are looking at is wrong or empty — a
+missing base currency, a reconstruction still running, a scheduler that stopped. It shows
+**one** at a time and never stacks; what it cannot fit is held by the installation panel
+regardless. Its order is causal rather than a ranking, so two of them rarely contend.
+_Avoid_: alert bar, notification bar, status strip
+
+**Receipt**:
+What a gesture produced, said back to whoever made it — and it lasts as long as the
+operation does, not three seconds. It acknowledges an act; it is never the record of one.
+An import started by the watcher has no gesture and therefore no receipt: its record is
+its provenance.
+_Avoid_: toast, notification, snackbar, flash message
 
 **Absence**:
 A figure that has no value, in one of four kinds that are never rendered alike. Under
