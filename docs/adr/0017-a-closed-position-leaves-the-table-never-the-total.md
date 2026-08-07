@@ -22,6 +22,10 @@ disposal fees into the proceeds, and a `GRANT` with no price feeds contribution 
 basis together — and it was written down in none of the tickets that produced its
 three terms.
 
+**Corrected by [ADR-0018](./0018-the-gain-has-four-terms.md):** exact on a portfolio whose
+transfers are free, and short by the fees taken from deposits and withdrawals otherwise —
+which no position can carry, so this page can never show that term.
+
 ## Consequences
 
 - **The folded section is not the live table with empty cells.** It has its own
