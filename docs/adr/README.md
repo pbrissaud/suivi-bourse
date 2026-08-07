@@ -27,6 +27,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0014](./0014-settings-live-only-in-the-store.md) | Settings live only in the store, and the environment stops speaking |
 | [0015](./0015-one-container-two-mounts-persistence-is-observed.md) | One container, two mounts, and persistence that is observed rather than demanded |
 | [0016](./0016-conventions-are-explained-on-the-figure.md) | Conventions are explained on the figure, not written on the page |
+| [0017](./0017-a-closed-position-leaves-the-table-never-the-total.md) | A closed position leaves the table, never the total |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.
