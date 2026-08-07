@@ -30,6 +30,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0017](./0017-a-closed-position-leaves-the-table-never-the-total.md) | A closed position leaves the table, never the total |
 | [0018](./0018-the-gain-has-four-terms.md) | The gain has four terms, and their sum is its definition |
 | [0019](./0019-a-comparison-stops-where-it-exists.md) | A comparison never outruns the period where it exists |
+| [0020](./0020-the-line-is-no-longer-the-unit.md) | The line is no longer the unit: the data page revokes rather than repairs |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.

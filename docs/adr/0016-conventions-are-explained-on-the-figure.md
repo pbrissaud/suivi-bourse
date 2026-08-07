@@ -58,6 +58,13 @@ they cannot stack: they distribute.
   attempts rather than the impossibility.
 - **Zero stops rendering as absence.** `signClass` greys `0` exactly as it greys `null`,
   and a closed row carries both side by side.
+- **A per-row marker that does not discriminate is noise, however correct it is.** Two
+  page tickets produced the same defect independently: a market-state pill rendering ten
+  identical `Marché ouvert` out of eleven, and a read-only padlock rendering on 285 rows
+  out of 285. Both were demoted — the first to an icon plus a header counter, the second
+  to nothing at all, the provenance column already saying it. The test is not whether
+  the marker is true but whether it varies across the rows it is shown on
+  ([ADR-0020](./0020-the-line-is-no-longer-the-unit.md)).
 
 [Full argument: #690](https://github.com/pbrissaud/suivi-bourse/issues/690) ·
 [the sentences it retires: #672](https://github.com/pbrissaud/suivi-bourse/issues/672),
