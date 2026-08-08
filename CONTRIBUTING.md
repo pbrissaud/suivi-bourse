@@ -38,3 +38,31 @@ See `git help commit`:
 
 **You don't need to bump any version number, this will be done automatically once PR merged**
 
+## Releasing
+
+Release Please cuts the releases from the conventional commits landed on
+`master`. `version.txt` and `.release-please-manifest.json` are its files: they
+are bumped by `release-type: simple`, never edited by hand.
+
+Two gestures happen at merge time rather than in a file, which is why they are
+written down here:
+
+* **A major is declared, not deduced.** A `!` on a commit makes the version
+  number depend on one character in a commit message. When the next version is
+  a decision rather than a consequence — v5 is — the merge commit carries the
+  trailer instead:
+
+  ```text
+  Release-As: 5.0.0
+  ```
+
+* **An integration branch reaches `master` as a merge, not a squash.**
+  `preview/v5` holds the history of the rewrite, and that history has value;
+  squashing trades twenty-three commits for one line.
+
+`docs:` commits are hidden from the generated `CHANGELOG.md`
+(`release-please-config.json`). On a branch where twelve of them are the map's
+own ADRs, the generated notes would serve the journal of the work as the
+release notes of the product. The hand-written release-notes page of the
+documentation is the surface that tells a reader what the release changes.
+
