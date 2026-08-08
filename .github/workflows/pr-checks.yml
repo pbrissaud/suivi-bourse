@@ -42,6 +42,44 @@ jobs:
 
       - run: cd app && uv run pytest tests/
 
+  web:
+    name: "Front"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Get changed files in the front folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v47
+        with:
+          files: |
+            app/web/**
+      - name: Install pnpm
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.20.0
+      - name: Set up Node.js
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          # pnpm 11.9 requires node:sqlite (Node >= 22.5)
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/web/pnpm-lock.yaml
+      # Three gates, and the order is the cost: types, then the suite, then the
+      # bundle. `pnpm test` needs neither network nor configuration — the seam
+      # fakes HTTP and errors on any request no handler names.
+      - name: Check the front if it changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: app/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm test
+          pnpm build
+
   build-docs:
     name: "Building doc"
     runs-on: ubuntu-latest

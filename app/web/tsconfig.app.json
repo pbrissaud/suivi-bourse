@@ -8,6 +8,10 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    // The catalogues are JSON, and `MessageKey` is `keyof typeof en` — a key
+    // that does not exist has to be a compile error, not a string that renders
+    // as itself.
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
