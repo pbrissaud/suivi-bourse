@@ -39,6 +39,38 @@ async function chooseInMenu(
   await user.click(await screen.findByRole('menuitemradio', { name: option }))
 }
 
+describe('the walking skeleton', () => {
+  it('starts, dresses, speaks two languages and walks its four routes', async () => {
+    // The whole ticket in one pass, because the value of a tracer bullet is
+    // that it can be *shown*: the app comes up, the sidebar is there, the
+    // ground turns, the language turns, and the four routes answer under both.
+    const { user } = renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
+    expect(within(nav()).getAllByRole('link')).toHaveLength(4)
+
+    await chooseInMenu(user, 'Thème', 'Sombre')
+    expect(document.documentElement).toHaveClass('dark')
+
+    await chooseInMenu(user, 'Langue', 'English')
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+
+    for (const entry of ['Shares', 'Accounts', 'Data']) {
+      await user.click(within(nav()).getByRole('link', { name: entry }))
+      expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
+      // The page is not built yet, and says so — in the reader's language.
+      expect(screen.getByText('This page is not built yet.')).toBeInTheDocument()
+    }
+
+    // Back to French, on the page we happen to be standing on.
+    await chooseInMenu(user, 'Language', 'Français')
+    expect(await screen.findByRole('heading', { name: 'Données' })).toBeInTheDocument()
+    expect(screen.getByText('Cette page n’est pas encore construite.')).toBeInTheDocument()
+    // The ground did not move when the language did.
+    expect(document.documentElement).toHaveClass('dark')
+  })
+})
+
 describe('the four routes', () => {
   it('answer, and the reader walks to each of them', async () => {
     const { user } = renderApp()
