@@ -15,14 +15,27 @@ function HomepageHeader() {
         <h1 className="hero__title">{siteConfig.title}</h1>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
         <div className={styles.buttons}>
+          {/*
+            The call to action points at the guide, which is one command and one
+            screen. `onBrokenLinks: 'throw'` checks this target like any other
+            link, so it dies with the page it names — which is what it did to
+            /docs/intro/getting-started.
+          */}
           <Link
             className="button button--secondary button--lg"
-            to="/docs/intro/getting-started">
-            Suivi Bourse Tutorial - 5min ⏱️
+            to="/docs/get-started">
+            Get started — one command ⏱️
           </Link>
         </div>
+        {/*
+          screenshot.png is a slot, and it currently holds a neutral wireframe
+          of the app's shell rather than a capture: the v5 interface does not
+          exist yet to be photographed. What it must never hold again is the
+          v3-era Grafana dashboard that was here — the first image of the
+          project cannot be a tool that has left it.
+        */}
         <div className={clsx('row', styles.paddingTop)}>
-        <img src={ScreenshotPictureUrl} />
+        <img src={ScreenshotPictureUrl} alt="Placeholder for a capture of the SuiviBourse interface" />
         </div>
       </div>
     </header>
@@ -34,7 +47,7 @@ export default function Home() {
   return (
     <Layout
       title={`Hello from ${siteConfig.title}`}
-      description="Track your stock portfolio with yfinance, InfluxDB 3 & Grafana">
+      description={siteConfig.tagline}>
       <HomepageHeader />
       <main>
         <HomepageFeatures />

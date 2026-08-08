@@ -12,7 +12,10 @@ const projectName = 'suivi-bourse';
 
 const config = {
   title: 'Suivi Bourse',
-  tagline: 'Track your stock portfolio with yfinance, InfluxDB 3 & Grafana',
+  // The tagline names the product, never the stack it happens to sit on: v5 has
+  // no stack, and the previous one ("with yfinance, InfluxDB 3 & Grafana") was
+  // a fourth writer of the getting-started (ADR-0012, ADR-0025).
+  tagline: 'Track your portfolio: your events in, your figures out, in one container',
   url: `https://${organizationName}.github.io`,
   baseUrl: `/${projectName}/`,
   onBrokenLinks: 'throw',
@@ -48,8 +51,8 @@ const config = {
           editUrl:
             `https://github.com/${organizationName}/${projectName}/tree/master/website/`,
           // Docs versioning:
-          //  - `current` (the ./docs folder) is v5. Its content is still the
-          //    v4 corpus until the rewrite lands; the label is the destination.
+          //  - `current` (the ./docs folder) is v5: a flat thread of eleven
+          //    entries, ordered by ./sidebars.js and carrying no category.
           //  - `4.x` is the frozen snapshot of the last v4 release (InfluxDB 3
           //    + Grafana + config files), served at /docs/v4.
           //  - `3.x` is the frozen snapshot of the last v3 release

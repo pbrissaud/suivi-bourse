@@ -1,0 +1,63 @@
+---
+title: Get started
+description: One command, one screen
+---
+
+You need Docker, and you need nowhere to put anything yet — the app names its
+own store file inside the directory you give it.
+
+## Run
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -p 8080:8080 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+`--restart unless-stopped` is what brings the container back after a reboot.
+
+The `-v` is the whole difference between a trial and an install. Without it the
+container still starts — it simply keeps nothing, and it says so on every start,
+in its first log lines and in the `sb_store_ephemeral` gauge. That is a fair way
+to try the app for an evening. It is not a way to keep a portfolio: the store
+lives in the container's writable layer, and the first `docker rm` takes it.
+
+## Open
+
+Go to [http://localhost:8080](http://localhost:8080).
+
+The app asks you exactly one thing: **the base currency** every figure is
+reported in. It has no default, and nothing else has to be decided at
+installation. You may close the question and answer it later — while your
+ledger is empty the answer is still yours to change; from your first event it
+is fixed, because changing it afterwards would reinterpret amounts you already
+recorded. Until it is answered, prices are still fetched, nothing is converted
+and no return is computed; the app says so on screen rather than refusing.
+
+If you never intend to open the page — you publish the metrics port and read
+the gauges — the same question is answered with one `curl` on the write API,
+which is always served. An import that declares its own currency answers it
+too, and then even that call is unnecessary.
+
+Then record a position, or import the files you already have. Prices appear as
+they are fetched; the history behind them is rebuilt backwards while you use
+the app. Give it time rather than reloading: **about 25 minutes for 30 symbols
+over five years**, and figures that depend on a price you do not have yet say
+so instead of guessing.
+
+:::note Backups come in two forms, and neither is hot
+Exporting your events backs up **the portfolio**: re-import them into a fresh
+install and the rebuild fetches the prices again. Stopping the container,
+copying the volume and restarting backs up **the installation** — the only form
+that also keeps your settings, your base currency and the fine-grained price
+history you have accumulated. That last one is the thing no late backup ever
+recovers: past 60 days, nothing sells you a price finer than hourly.
+:::
+
+---
+
+Running version 4 today? Nothing here is an upgrade, and the reconciliation is
+its own page: [Coming from v4](./coming-from-v4.mdx).
