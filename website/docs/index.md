@@ -1,60 +1,56 @@
 ---
 title: Home
 id: home
-description: SuiviBourse documentation home
+description: What SuiviBourse is, and what it is not
 slug: /
-sidebar_position: 1
 ---
 
-# Documentation Home
+# SuiviBourse
 
-Welcome to the **SuiviBourse** documentation.
+A personal stock-portfolio tracker. You record what you bought, sold, received
+and paid in; it fetches the prices, values your positions and computes your
+returns — in one container, with nothing else to install.
 
-SuiviBourse monitors your stock portfolio: it fetches live prices from
-Yahoo! Finance, stores them (together with historical data) in
-**InfluxDB 3 Core**, and lets you visualize everything in **Grafana**.
+## What it does
 
-:::info Version 4
-This documentation covers version **>= 4.0**, which stores data in
-**InfluxDB 3 Core** and adds **historical backfill** and the **events**
-configuration mode.
+- **It keeps your ledger.** Six kinds of event — `BUY`, `SELL`, `GRANT`,
+  `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` — recorded in the app or imported from
+  the files your broker exports. Your events are the only thing it treats as
+  yours; everything else it shows is derived from them and can be recomputed.
+- **It fetches prices, and it fetches the past.** A symbol whose market is open
+  is polled often, a symbol whose market is closed sleeps until it reopens, and
+  the history behind your first purchase is rebuilt in the background until it
+  reaches it.
+- **It reports in one currency.** Everything you own is converted into a single
+  base currency, so a portfolio spread over several markets still adds up to one
+  figure.
+- **It shows you four pages** — a dashboard, your shares, your accounts, and
+  the data you gave it — and each figure explains, on the figure itself, the
+  convention it rests on.
+- **It exposes Prometheus gauges.** They are not a legacy: they are what makes
+  the app usable by someone who never opens the interface at all.
 
-Looking for the previous release? Switch to **v3** with the version selector in
-the top-right navbar — v3 stores data in Prometheus and only supports the manual
-configuration mode.
-:::
+## What it is not
 
-## What's new in v4
+- **Not a broker, and not an adviser.** It executes nothing, recommends nothing
+  and knows nothing your events do not tell it.
+- **Not a stack.** There is no database to run beside it, no dashboard tool to
+  provision and nothing to compose: one image, one store, one process.
+- **Not a market terminal.** Prices come from Yahoo! Finance on a polite
+  cadence; the further back a point is, the coarser it is kept.
+- **Not an upgrade from version 4.** A version 5 install is a new install whose
+  import folder happens to be full — see [Coming from v4](./coming-from-v4.mdx).
 
-- **InfluxDB 3 Core** replaces Prometheus as the primary datastore, unlocking
-  long-term historical storage.
-- **Historical backfill**: SuiviBourse progressively fills past price data back
-  to your first purchase, so you can see the full evolution of your portfolio.
-- **Events mode**: describe your portfolio as a list of transactions
-  (`BUY`, `SELL`, `GRANT`, `DIVIDEND`) in CSV/XLSX files and let SuiviBourse
-  aggregate positions automatically.
-- The **legacy Prometheus endpoint** is still exposed for backward compatibility.
+## Start here
 
-Start with the [Getting Started](/docs/intro/getting-started) guide, or see the
-[changelog](/docs/changelog) for what landed in each release since v4.
+[Get started](./get-started.mdx) is one command and one screen.
 
-## Support
+## Support, licence, credits
 
-To report a problem or request a feature, please
-[open a ticket on the GitHub page](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
-
-## Contributing
-
-Pull requests welcome, as long as they're not overly specific to a niche
-use-case. Please read and follow the
-[contributing documentation](https://github.com/pbrissaud/suivi-bourse/blob/master/CONTRIBUTING.md).
-
-## Licence
-
-This project is under the
-[MIT license](https://github.com/pbrissaud/suivi-bourse/blob/master/LICENSE).
-
-## Credits
-
-A big thank you to the contributors and maintainers of the projects SuiviBourse
-relies on.
+To report a problem or request a feature,
+[open a ticket](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
+Pull requests are welcome — please read
+[the contributing guide](https://github.com/pbrissaud/suivi-bourse/blob/master/CONTRIBUTING.md)
+first. The project is under the
+[MIT licence](https://github.com/pbrissaud/suivi-bourse/blob/master/LICENSE),
+and owes a great deal to the maintainers of the projects it relies on.

@@ -1,0 +1,18 @@
+---
+title: 'Headless: the gauges'
+description: The sb_* inventory, including sb_store_ephemeral
+---
+
+This page will carry the inventory of the Prometheus gauges, which is
+everything an install whose owner never opens the interface has to read.
+
+:::info Not written yet
+It is the subject of its own ticket. What it will hold:
+
+- every `sb_*` gauge, its labels and what it means;
+- `sb_store_ephemeral`, the only way an install with no interface learns that it keeps nothing;
+- setting the base currency by `curl`, since the write API is always served.
+
+Headless is a usage and not a variant install, which is why this is a page of
+the same thread rather than a branch of its own.
+:::

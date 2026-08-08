@@ -1,0 +1,15 @@
+---
+title: How prices are collected
+description: Market-aware cadence, the back-off of a silent symbol, and currency conversion
+---
+
+This page will carry how a price arrives: the market-aware cadence, what
+happens to a symbol that stops answering, and where the conversion happens.
+
+:::info Not written yet
+It is the subject of its own ticket. What it will hold:
+
+- one job per held symbol: polled while its market is open, asleep until it reopens;
+- the back-off that spares a delisted or misspelled symbol from being asked forever;
+- conversion at write time, the rate stored beside the price, and what a missing rate leaves behind.
+:::
