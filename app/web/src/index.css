@@ -1,9 +1,194 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+ * 1. The primitives — tweakcn's `Vercel` preset. **Never hand-edited.**
+ *
+ * Regenerate with, and only with:
+ *
+ *     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/vercel.json
+ *
+ * The cut between this block and the next *is* the decision (ADR-0023): the
+ * preset owns the chrome and regenerates; the domain layer owns the meaning and
+ * does not. Editing a value here is how the two halves stopped being tellable
+ * apart in the prototype — a `radix-nova` style nobody chose, with a
+ * hand-written layer piled on top and nothing saying which won.
+ *
+ * The preset was picked on evidence already in the repository: it declares
+ * `font-sans: Geist`, and `@fontsource-variable/geist` had been a dependency
+ * since the prototype. Its primitives are near monochrome (`primary: oklch(0 0
+ * 0)`), which leaves all the colour to the domain — ADR-0016's posture exactly.
+ * ========================================================================== */
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.9900 0 0);
+  --foreground: oklch(0 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(0.9900 0 0);
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9400 0 0);
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.9700 0 0);
+  --muted-foreground: oklch(0.4400 0 0);
+  --accent: oklch(0.9400 0 0);
+  --accent-foreground: oklch(0 0 0);
+  --destructive: oklch(0.6300 0.1900 23.0300);
+  --border: oklch(0.9200 0 0);
+  --input: oklch(0.9400 0 0);
+  --ring: oklch(0 0 0);
+  --chart-1: oklch(0.8100 0.1700 75.3500);
+  --chart-2: oklch(0.5500 0.2200 264.5300);
+  --chart-3: oklch(0.7200 0 0);
+  --chart-4: oklch(0.9200 0 0);
+  --chart-5: oklch(0.5600 0 0);
+  --sidebar: oklch(0.9900 0 0);
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0 0 0);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9400 0 0);
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.9400 0 0);
+  --sidebar-ring: oklch(0 0 0);
+  --destructive-foreground: oklch(1 0 0);
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-opacity: 0.18;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --letter-spacing: 0em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --tracking-normal: 0em;
+}
+
+.dark {
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.1400 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.1800 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.2500 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2300 0 0);
+  --muted-foreground: oklch(0.7200 0 0);
+  --accent: oklch(0.3200 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.6900 0.2000 23.9100);
+  --border: oklch(0.2600 0 0);
+  --input: oklch(0.3200 0 0);
+  --ring: oklch(0.7200 0 0);
+  --chart-1: oklch(0.8100 0.1700 75.3500);
+  --chart-2: oklch(0.5800 0.2100 260.8400);
+  --chart-3: oklch(0.5600 0 0);
+  --chart-4: oklch(0.4400 0 0);
+  --chart-5: oklch(0.9200 0 0);
+  --sidebar: oklch(0.1800 0 0);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(1 0 0);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.3200 0 0);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.3200 0 0);
+  --sidebar-ring: oklch(0.7200 0 0);
+  --destructive-foreground: oklch(0 0 0);
+  --radius: 0.5rem;
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-opacity: 0.18;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --letter-spacing: 0em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+}
+
+/* ==========================================================================
+ * 2. The domain — what the preset cannot say, and nothing else.
+ *
+ * The sizing rule is the block's whole defence (ADR-0023): a token enters only
+ * when no preset token already says it. `--price` takes `--chart-2` and
+ * `--grant` takes `--chart-1` **verbatim**; only `--dividend` is added, the
+ * preset's three remaining chart slots being grey. Without that rule the layer
+ * grows with every page and becomes the hand-written half we just deleted.
+ *
+ * The twelve `--alloc-*` are **absent on purpose**: they are the one ramp whose
+ * *direction* depends on the ground rather than merely adapting to it, so they
+ * are generated in `lib/alloc.ts` and written onto the root element by
+ * `ThemeProvider` when it resolves the ground. One source, twelve stops, no
+ * palette to maintain — and `@theme inline` below still exposes them as
+ * `bg-alloc-3`, so a call site cannot tell where they came from.
+ * ========================================================================== */
+
+:root {
+  /* The two colours this app reasons in. `--loss` is deliberately **not**
+     `--destructive` despite two degrees of hue between them, and is lower in
+     chroma: the theme's red says *this failed*, and an unrealised loss is not
+     an error — a portfolio is made of small moves, and a screen of vivid red
+     reads as an alarm rather than as −0,4 %. */
+  --gain: oklch(0.58 0.13 155);
+  --loss: oklch(0.58 0.13 25);
+
+  /* The chart's marks. Two of the three are the preset's own chart tokens,
+     taken verbatim rather than re-picked; only the dividend needed a colour,
+     the preset's remaining slots being grey. */
+  --price: var(--chart-2);
+  --grant: var(--chart-1);
+  --dividend: oklch(0.60 0.11 195);
+
+  /* The status dot and the ephemeral-store notice have no colour in the preset:
+     `--gain` / `--loss` are semantic for *money*, `--destructive` says *error*,
+     and neither says *worth a look*. Checked token by token against the preset
+     before adding this one. Kept off `--grant`'s hue so a mark and a state are
+     never the same colour. */
+  --attention: oklch(0.62 0.16 50);
+}
+
+.dark {
+  --gain: oklch(0.72 0.14 155);
+  --loss: oklch(0.72 0.14 25);
+  --price: var(--chart-2);
+  --grant: var(--chart-1);
+  --dividend: oklch(0.72 0.10 195);
+  --attention: oklch(0.75 0.15 55);
+}
+
+/* ==========================================================================
+ * 3. The bridge — both halves through the same pipe, so `text-gain` is written
+ * like `bg-card` and a call site never has to know which block a token is from.
+ * ========================================================================== */
 
 @theme inline {
   --color-background: var(--background);
@@ -21,6 +206,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -29,11 +215,23 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-shadow-color: var(--shadow-color);
+
+  /* The domain half, same pipe. */
   --color-gain: var(--gain);
   --color-loss: var(--loss);
   --color-price: var(--price);
   --color-grant: var(--grant);
   --color-dividend: var(--dividend);
+  --color-attention: var(--attention);
   --color-alloc-1: var(--alloc-1);
   --color-alloc-2: var(--alloc-2);
   --color-alloc-3: var(--alloc-3);
@@ -42,141 +240,49 @@
   --color-alloc-6: var(--alloc-6);
   --color-alloc-7: var(--alloc-7);
   --color-alloc-8: var(--alloc-8);
+  --color-alloc-9: var(--alloc-9);
+  --color-alloc-10: var(--alloc-10);
+  --color-alloc-11: var(--alloc-11);
+  --color-alloc-12: var(--alloc-12);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-}
 
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* `Geist` is what the preset names; `Geist Variable` is what
+     `@fontsource-variable/geist` actually registers. The preset's intention
+     only loads if both are named, and naming them is the bridge's job — the
+     primitives block above stays exactly as the registry writes it. */
+  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --font-serif: Georgia, serif;
+  --font-heading: var(--font-sans);
 
-  /* Gain and loss are the two colours this app actually reasons in, so they
-     are theme variables rather than utility classes sprinkled at call sites.
-     Deliberately not red/green at full saturation: a portfolio is mostly small
-     moves, and a screen of vivid red reads as an alarm rather than as −0.4 %. */
-  --gain: oklch(0.58 0.13 155);
-  --loss: oklch(0.58 0.18 25);
-
-  /* The chart's own marks, named for what they mean rather than borrowed from
-     --chart-1..5. The nova preset makes those five deliberately greyscale,
-     which is right for a dashboard of small multiples and wrong here: this
-     chart carries one curve and four kinds of marker that must be told apart
-     at a glance. Semantic names also stop a later theme change from silently
-     turning "achat" and "dividende" the same colour. */
-  --price: oklch(0.55 0.16 255);
-  --grant: oklch(0.68 0.15 85);
-  --dividend: oklch(0.6 0.11 205);
-
-  /* The allocation donut's categorical ramp, and it needs its own set for the
-     same reason the chart marks do: --chart-1..5 are deliberately greyscale in
-     this preset, which is right for small multiples and useless for slices that
-     must be told apart at a glance. Eight of them, because that is where the
-     donut stops answering its question and the tail is pooled into "Autres".
-
-     Hues are spread but lightness and chroma are held constant, so no slice
-     shouts louder than another — an allocation has no good or bad value, unlike
-     --gain / --loss, and a ramp that varies intensity would imply one. */
-  --alloc-1: oklch(0.62 0.14 255);
-  --alloc-2: oklch(0.62 0.14 195);
-  --alloc-3: oklch(0.62 0.14 150);
-  --alloc-4: oklch(0.62 0.14 100);
-  --alloc-5: oklch(0.62 0.14 60);
-  --alloc-6: oklch(0.62 0.14 25);
-  --alloc-7: oklch(0.62 0.14 340);
-  --alloc-8: oklch(0.62 0.14 295);
-
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --gain: oklch(0.72 0.15 155);
-  --loss: oklch(0.7 0.19 25);
-  --price: oklch(0.72 0.14 255);
-  --grant: oklch(0.78 0.14 85);
-  --dividend: oklch(0.72 0.1 205);
-  --alloc-1: oklch(0.72 0.13 255);
-  --alloc-2: oklch(0.72 0.13 195);
-  --alloc-3: oklch(0.72 0.13 150);
-  --alloc-4: oklch(0.72 0.13 100);
-  --alloc-5: oklch(0.72 0.13 60);
-  --alloc-6: oklch(0.72 0.13 25);
-  --alloc-7: oklch(0.72 0.13 340);
-  --alloc-8: oklch(0.72 0.13 295);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
+  --tracking-tight: calc(var(--tracking-normal) - 0.025em);
+  --tracking-wide: calc(var(--tracking-normal) + 0.025em);
+  --tracking-wider: calc(var(--tracking-normal) + 0.05em);
+  --tracking-widest: calc(var(--tracking-normal) + 0.1em);
+  --tracking-normal: var(--tracking-normal);
+  --shadow-2xl: var(--shadow-2xl);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-md: var(--shadow-md);
+  --shadow: var(--shadow);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-2xs: var(--shadow-2xs);
+  --spacing: var(--spacing);
+  --letter-spacing: var(--letter-spacing);
+  --shadow-offset-y: var(--shadow-offset-y);
+  --shadow-offset-x: var(--shadow-offset-x);
+  --shadow-spread: var(--shadow-spread);
+  --shadow-blur: var(--shadow-blur);
+  --shadow-opacity: var(--shadow-opacity);
 }
 
 @layer base {
@@ -185,6 +291,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
   }
   /* Numbers in a portfolio are read *down a column*, so their glyphs have to
      line up. Tabular figures are the difference between a table you can scan
