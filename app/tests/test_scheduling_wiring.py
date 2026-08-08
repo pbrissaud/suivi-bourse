@@ -19,7 +19,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import main
 import scheduling
 from main import (
-    SuiviBourseMetrics, _scrape_job_id, resolve_regular_interval,
+    SuiviBourseMetrics, _scrape_job_id,
     resolve_executor_pool_size, register_interval_jobs, SCRAPE_JOB_PREFIX)
 
 
@@ -52,9 +52,13 @@ def _share(symbol="AAPL", name="Apple", account="default"):
 class _FakeConfigManager:
     def __init__(self, shares):
         self._shares = shares
+        # One list object, reused: `recompute_perf` decides "the events cache
+        # reloaded" by identity, so a fresh `[]` per call would read as a reload
+        # every cycle and defeat the gate under test.
+        self._events = []
 
     def current(self):
-        return main.ConfigSnapshot(shares=self._shares, events=None,
+        return main.ConfigSnapshot(shares=self._shares, events=self._events,
                                    accounts=None, cache_key=None)
 
     def reload(self, force=False):
@@ -63,14 +67,11 @@ class _FakeConfigManager:
     def load_shares(self, force=False):
         return self._shares
 
-    def get_mode(self):
-        return "manual"
-
     def load_accounts(self):
         return None
 
     def get_events(self):
-        return None
+        return self._events
 
 
 def _metrics(shares, mock_influx, shares_validator, mocker, prometheus=None):
@@ -718,66 +719,29 @@ def test_reconcile_noop_without_scheduler(mock_influx, shares_validator, mocker)
 
 
 # ---------------------------------------------------------------------------
-# resolve_regular_interval — precedence + deprecation warning (#607)
+# SB_REGULAR_INTERVAL — the one dial (#607; its deprecated heir left with #711)
 # ---------------------------------------------------------------------------
 
 def test_regular_interval_defaults_to_120(monkeypatch):
     monkeypatch.delenv("SB_REGULAR_INTERVAL", raising=False)
-    monkeypatch.delenv("SB_SCRAPING_INTERVAL", raising=False)
-    assert resolve_regular_interval() == 120
+    assert main.env_int("SB_REGULAR_INTERVAL", 120) == 120
 
 
-def test_regular_interval_prefers_new_var(monkeypatch, mocker):
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "60")
-    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "300")
-    warn = mocker.patch.object(main.app_logger, "warning")
-    assert resolve_regular_interval() == 60          # new wins
-    warn.assert_called_once()                        # deprecated var flagged
-
-
-def test_regular_interval_falls_back_to_old_var_with_warning(monkeypatch, mocker):
-    monkeypatch.delenv("SB_REGULAR_INTERVAL", raising=False)
-    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "90")
-    warn = mocker.patch.object(main.app_logger, "warning")
-    assert resolve_regular_interval() == 90          # honored as fallback
-    warn.assert_called_once()
-
-
-def test_regular_interval_no_warning_when_old_var_absent(monkeypatch, mocker):
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "45")
-    monkeypatch.delenv("SB_SCRAPING_INTERVAL", raising=False)
-    warn = mocker.patch.object(main.app_logger, "warning")
-    assert resolve_regular_interval() == 45
-    warn.assert_not_called()
-
-
-def test_regular_interval_names_the_bad_variable(monkeypatch, mocker):
+def test_regular_interval_names_the_bad_variable(monkeypatch):
     """A non-numeric interval raises the same named error as the other dials."""
     monkeypatch.setenv("SB_REGULAR_INTERVAL", "abc")
-    monkeypatch.delenv("SB_SCRAPING_INTERVAL", raising=False)
     with pytest.raises(ValueError, match="SB_REGULAR_INTERVAL"):
-        resolve_regular_interval()
-
-    # ... including when the deprecated fallback is the one being used.
-    monkeypatch.delenv("SB_REGULAR_INTERVAL")
-    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "abc")
-    mocker.patch.object(main.app_logger, "warning")
-    with pytest.raises(ValueError, match="SB_SCRAPING_INTERVAL"):
-        resolve_regular_interval()
+        main.env_int("SB_REGULAR_INTERVAL", 120)
 
 
-def test_regular_interval_ignores_blank_values(monkeypatch, mocker):
-    """Blank vars fall through to the default instead of crashing on int('').
+def test_regular_interval_ignores_blank_values(monkeypatch):
+    """A blank var falls through to the default instead of crashing on int('').
 
     `SB_REGULAR_INTERVAL=${REGULAR_INTERVAL}` with nothing in .env reaches the
     container as an empty string, which is set-but-meaningless.
     """
     monkeypatch.setenv("SB_REGULAR_INTERVAL", "")
-    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "  ")
-    warn = mocker.patch.object(main.app_logger, "warning")
-    assert resolve_regular_interval() == 120
-    # A blank deprecated var is not "present" either, so no noise.
-    warn.assert_not_called()
+    assert main.env_int("SB_REGULAR_INTERVAL", 120) == 120
 
 
 # ---------------------------------------------------------------------------
@@ -825,7 +789,7 @@ def test_executor_pool_ignores_blank_fixed_dial(monkeypatch):
     """A blank SB_EXECUTOR_POOL falls back to 10 rather than crashing."""
     monkeypatch.setenv("SB_EXECUTOR_POOL", "")
     monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "")
-    assert resolve_executor_pool_size("manual", [], _never_capture) == 10
+    assert resolve_executor_pool_size([], _never_capture) == 10
 
 
 # ---------------------------------------------------------------------------
@@ -898,19 +862,19 @@ def test_executor_pool_defaults_to_ten(monkeypatch):
     monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
     monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
     # Fixed path: capture must not run (no pre-scheduler fetch).
-    assert resolve_executor_pool_size("manual", [], _never_capture) == 10
+    assert resolve_executor_pool_size([], _never_capture) == 10
 
 
 def test_executor_pool_honors_fixed_dial(monkeypatch):
     monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "false")
     monkeypatch.setenv("SB_EXECUTOR_POOL", "4")
-    assert resolve_executor_pool_size("manual", [], _never_capture) == 4
+    assert resolve_executor_pool_size([], _never_capture) == 4
 
 
 def test_executor_pool_fixed_enforces_at_least_one(monkeypatch):
     monkeypatch.setenv("SB_EXECUTOR_POOL", "0")
     monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
-    assert resolve_executor_pool_size("manual", [], _never_capture) == 1
+    assert resolve_executor_pool_size([], _never_capture) == 1
 
 
 def test_executor_pool_auto_uses_compute_pool_size(monkeypatch):
@@ -918,18 +882,17 @@ def test_executor_pool_auto_uses_compute_pool_size(monkeypatch):
     monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
     shares = [{"symbol": f"S{i}"} for i in range(30)]
     exchange_of = {s["symbol"]: "NMS" for s in shares}
-    # events/30-same-exchange -> 3 + ceil(150/30) = 8 (design #611 example).
-    assert resolve_executor_pool_size(
-        "events", shares, lambda: exchange_of) == 8
+    # 30 symbols on one exchange -> 3 + ceil(150/30) = 8 (design #611 example).
+    assert resolve_executor_pool_size(shares, lambda: exchange_of) == 8
 
 
 def test_executor_pool_auto_warns_when_fixed_also_set(monkeypatch, mocker):
     monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "true")
     monkeypatch.setenv("SB_EXECUTOR_POOL", "10")
     warn = mocker.patch.object(main.app_logger, "warning")
-    size = resolve_executor_pool_size("manual", [], lambda: {})
+    size = resolve_executor_pool_size([], lambda: {})
     warn.assert_called_once()          # conflicting fixed dial flagged
-    assert size == 1                   # empty portfolio, manual -> reserved 1
+    assert size == scheduling.RESERVED  # empty portfolio -> the reserved jobs
 
 
 # ---------------------------------------------------------------------------

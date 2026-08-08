@@ -74,20 +74,13 @@ def _no_sleep(monkeypatch):
     monkeypatch.setattr(main.time, "sleep", lambda *a, **k: None)
 
 
-def _events_config_via_settings(tmp_path, monkeypatch):
-    """Real ConfigurationManager in events mode, wired through settings.yaml.
-
-    Writes the CSV into ``<config_dir>/events/2024.csv`` and a settings.yaml
-    selecting events mode. Ensures SB_CONFIG_MODE is unset so settings.yaml
-    actually drives the mode (env var would otherwise win).
-    """
-    monkeypatch.delenv("SB_CONFIG_MODE", raising=False)
+def _config_with_declared_source(tmp_path):
+    """Real ConfigurationManager reading a source settings.yaml names."""
     config_dir = tmp_path / "config"
     events_dir = config_dir / "events"
     events_dir.mkdir(parents=True)
     (events_dir / "2024.csv").write_text(EVENTS_CSV, encoding="utf-8")
     (config_dir / "settings.yaml").write_text(
-        "mode: events\n"
         "events:\n"
         f"  source: {events_dir}\n",
         encoding="utf-8",
@@ -95,13 +88,12 @@ def _events_config_via_settings(tmp_path, monkeypatch):
     return ConfigurationManager(config_dir=str(config_dir))
 
 
-def _events_config_via_env(tmp_path, monkeypatch, csv_text=EVENTS_CSV):
-    """Real ConfigurationManager in events mode, selected via SB_CONFIG_MODE.
+def _config_with_default_source(tmp_path, csv_text=EVENTS_CSV):
+    """Real ConfigurationManager on the default ``<config_dir>/events`` source.
 
-    The events source defaults to ``<config_dir>/events`` when settings.yaml is
-    absent, so we drop the CSV there.
+    No settings.yaml at all — the setup every install that never declared one
+    runs, and since #711 the only one there is.
     """
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     config_dir = tmp_path / "config"
     events_dir = config_dir / "events"
     events_dir.mkdir(parents=True)
@@ -110,19 +102,19 @@ def _events_config_via_env(tmp_path, monkeypatch, csv_text=EVENTS_CSV):
 
 
 # --------------------------------------------------------------------------- #
-# 1. Full events-mode chain: loader -> validator -> aggregator -> scrape
+# 1. The full chain: loader -> validator -> aggregator -> scrape
 # --------------------------------------------------------------------------- #
-def test_events_mode_full_chain_drives_write_metrics(
+def test_the_full_chain_drives_write_metrics(
     tmp_path, monkeypatch, fake_ticker, mock_influx, shares_validator
 ):
-    """The whole events pipeline feeds correct portfolio state into write_metrics."""
+    """The whole pipeline feeds correct portfolio state into write_metrics."""
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
-    config_manager = _events_config_via_settings(tmp_path, monkeypatch)
+    config_manager = _config_with_declared_source(tmp_path)
 
-    # Sanity: mode really came from settings.yaml, not a stray env var.
-    assert config_manager.get_mode() == "events"
+    # Sanity: the source really came from settings.yaml.
+    assert config_manager.get_events_source().endswith("/events")
 
     sb = SuiviBourseMetrics(
         config_manager, shares_validator, influxdb_writer=mock_influx
@@ -188,7 +180,7 @@ def test_backfill_writes_historical_state_for_intermediate_date(
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
-    config_manager = _events_config_via_env(tmp_path, monkeypatch)
+    config_manager = _config_with_default_source(tmp_path)
     sb = SuiviBourseMetrics(
         config_manager, shares_validator, influxdb_writer=mock_influx
     )
@@ -255,69 +247,9 @@ def test_backfill_writes_historical_state_for_intermediate_date(
 
 
 # --------------------------------------------------------------------------- #
-# 3. Manual-mode E2E: config.yaml (via a fake confuse Configuration) -> scrape
+# 3. Negative path: an over-selling CSV surfaces as AggregationError
 # --------------------------------------------------------------------------- #
-def test_manual_mode_full_chain_drives_write_metrics(
-    tmp_path, monkeypatch, fake_ticker, mock_influx, shares_validator
-):
-    """Manual mode reads config.yaml shares and scrape writes their metrics."""
-    _no_sleep(monkeypatch)
-    _patch_ticker(monkeypatch, fake_ticker)
-    monkeypatch.delenv("SB_CONFIG_MODE", raising=False)
-
-    manual_shares = [{
-        "name": "Apple",
-        "symbol": "AAPL",
-        "purchase": {"quantity": 2, "fee": 2, "cost_price": 119.98},
-        "estate": {"quantity": 2, "received_dividend": 2.85},
-    }]
-
-    class _FakeConfuseConfig:
-        """Minimal stand-in for confuse.Configuration used by manual mode."""
-        def __init__(self, appname, modname):
-            self._shares = manual_shares
-
-        def __getitem__(self, key):
-            assert key == "shares"
-            return self
-
-        def get(self):
-            return self._shares
-
-        def reload(self):
-            pass
-
-    monkeypatch.setattr(main, "Configuration", _FakeConfuseConfig)
-
-    # No settings.yaml, no env var -> defaults to manual mode.
-    config_manager = ConfigurationManager(config_dir=str(tmp_path / "config"))
-    assert config_manager.get_mode() == "manual"
-
-    sb = SuiviBourseMetrics(
-        config_manager, shares_validator, influxdb_writer=mock_influx
-    )
-    assert sb.shares == manual_shares
-
-    sb.scrape()
-
-    mock_influx.write_metrics.assert_called_once()
-    kwargs = mock_influx.write_metrics.call_args.kwargs
-    assert kwargs["share_symbol"] == "AAPL"
-    assert kwargs["share_name"] == "Apple"
-    assert kwargs["share_price"] == pytest.approx(190.0)
-    assert kwargs["purchased_quantity"] == pytest.approx(2)
-    assert kwargs["purchased_price"] == pytest.approx(119.98)
-    assert kwargs["purchased_fee"] == pytest.approx(2)
-    assert kwargs["owned_quantity"] == pytest.approx(2)
-    assert kwargs["received_dividend"] == pytest.approx(2.85)
-
-
-# --------------------------------------------------------------------------- #
-# 4. Negative path: an over-selling CSV surfaces as AggregationError
-# --------------------------------------------------------------------------- #
-def test_oversell_csv_raises_aggregation_error_through_config_manager(
-    tmp_path, monkeypatch
-):
+def test_oversell_csv_raises_aggregation_error_through_config_manager(tmp_path):
     """A SELL exceeding holdings must propagate as AggregationError.
 
     The SELL is otherwise valid (positive quantity/unit_price) so it clears the
@@ -329,9 +261,7 @@ def test_oversell_csv_raises_aggregation_error_through_config_manager(
         "2024-01-15,BUY,AAPL,Apple Inc,5,150.00,2.50,,Buy five\n"
         "2024-02-15,SELL,AAPL,Apple Inc,10,190.00,2.00,,Oversell ten\n"
     )
-    config_manager = _events_config_via_env(
-        tmp_path, monkeypatch, csv_text=bad_csv
-    )
+    config_manager = _config_with_default_source(tmp_path, csv_text=bad_csv)
 
     with pytest.raises(AggregationError):
         config_manager.load_shares()

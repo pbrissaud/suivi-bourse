@@ -175,19 +175,20 @@ def test_a_scheduled_job_carries_its_instant():
 
 
 # ===================================================================== #
-# The three terminal backfill states, never collapsed (#656 trap 6)
+# The two terminal backfill states, never collapsed (#656 trap 6)
 # ===================================================================== #
 
-def test_complete_no_buy_and_manual_mode_stay_three_different_answers():
-    """They mean three different things and only one of them is progress.
+def test_complete_and_no_buy_stay_two_different_answers():
+    """They mean two different things and only one of them is progress.
 
     ``complete`` — everything back to the first BUY is stored.
     ``no_buy`` — the symbol was never bought (a GRANT-only position), so there is
     no target and never was.
-    ``manual_mode`` — this installation has **no backward pass at all**
-    (``backfill()`` returns early), so "no progress" is nominal.
 
-    Rendering any of them as a stall accuses the app of a fault it does not have.
+    (A third, ``manual_mode``, left with the mode it named — #711.)
+
+    Rendering either of them as a stall accuses the app of a fault it does not
+    have.
     """
     now = NOW
     states = {
@@ -195,8 +196,6 @@ def test_complete_no_buy_and_manual_mode_stay_three_different_answers():
             terminal=runtime_state.TERMINAL_COMPLETE),
         runtime_state.TERMINAL_NO_BUY: _backfill(
             terminal=runtime_state.TERMINAL_NO_BUY),
-        runtime_state.TERMINAL_MANUAL_MODE: _backfill(
-            terminal=runtime_state.TERMINAL_MANUAL_MODE),
     }
 
     for expected, record in states.items():
@@ -205,12 +204,12 @@ def test_complete_no_buy_and_manual_mode_stay_three_different_answers():
         assert progress.state == expected
 
 
-def test_manual_mode_never_leaves_the_banner_permanently_short():
+def test_a_portfolio_with_nothing_to_fetch_never_leaves_the_banner_short():
     """Trap 6 read at the banner's scale.
 
-    A manual install has a ``manual_mode`` terminal on every series. Counting
-    those as pending would draw a bar stuck below 100 % forever on an
-    installation that is working exactly as designed, which is the same
+    A portfolio held entirely by grant has a ``no_buy`` terminal on every
+    series. Counting those as pending would draw a bar stuck below 100 % forever
+    on an installation that is working exactly as designed, which is the same
     misreading one storey up.
     """
     symbols = runtime_view.build_symbols(
@@ -218,15 +217,15 @@ def test_manual_mode_never_leaves_the_banner_permanently_short():
         {},
         {
             ('AAPL', 'pea', runtime_state.BACKWARD): _backfill(
-                terminal=runtime_state.TERMINAL_MANUAL_MODE),
+                terminal=runtime_state.TERMINAL_NO_BUY),
             ('MSFT', 'pea', runtime_state.BACKWARD): _backfill(
-                symbol='MSFT', terminal=runtime_state.TERMINAL_MANUAL_MODE),
+                symbol='MSFT', terminal=runtime_state.TERMINAL_NO_BUY),
         },
         {}, NOW)
 
     summary = runtime_view.build_backfill_summary(symbols)
 
-    assert summary['manual_mode'] == 2
+    assert summary['no_buy'] == 2
     assert summary['in_scope'] == 0
     # No denominator, so no bar — rather than a bar reading 0 %.
     assert summary['ratio'] is None
@@ -588,13 +587,12 @@ def test_records_are_frozen_so_a_published_one_cannot_be_edited_in_place():
 # The whole payload
 # ===================================================================== #
 
-def test_the_payload_states_the_mode_because_manual_changes_what_absence_means():
+def test_the_payload_no_longer_states_a_mode_there_being_only_one():
     payload = runtime_view.build_runtime(
         shares=[_share()], scrape={}, backfill={}, next_runs={},
-        ingest=None, perf=None, now=NOW, mode='manual',
-        scheduler_running=False)
+        ingest=None, perf=None, now=NOW, scheduler_running=False)
 
-    assert payload['mode'] == 'manual'
+    assert 'mode' not in payload
     assert payload['scheduler_running'] is False
     assert payload['now'] == NOW.isoformat()
     assert payload['symbols'][0]['pill'] == runtime_view.PILL_UNKNOWN

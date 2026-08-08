@@ -235,30 +235,19 @@ def test_to_dict_emits_iso_timestamps_and_keeps_nulls():
 
 def test_no_declared_accounts_is_the_titres_mode():
     """The default install. A designed mode, not a missing configuration."""
-    assert portfolio_mode(None, events_mode=True) == MODE_TITRES
-    assert portfolio_mode([], events_mode=True) == MODE_TITRES
-
-
-def test_declared_accounts_in_manual_mode_still_get_the_titres_head():
-    """`update_account_metrics` returns early when the snapshot has no events,
-    so a declared `accounts:` block in manual mode produces **no series at all**.
-
-    Answering `accounts` there would leave the dashboard waiting forever on a
-    computation that is never going to run — a permanent "en cours de calcul"
-    that looks exactly like a broken app.
-    """
-    assert portfolio_mode(['EUR'], events_mode=False) == MODE_TITRES
+    assert portfolio_mode(None) == MODE_TITRES
+    assert portfolio_mode([]) == MODE_TITRES
 
 
 def test_one_currency_across_declared_accounts_is_the_accounts_mode():
-    assert portfolio_mode(['EUR', 'EUR'], events_mode=True) == MODE_ACCOUNTS
+    assert portfolio_mode(['EUR', 'EUR']) == MODE_ACCOUNTS
 
 
 def test_mixed_currencies_are_their_own_mode_not_an_empty_head():
     """`portfolio_totals` is not written for a mixed portfolio at all, so the
     figures are absent by construction. Stating the condition is #655 déc. 8's
     third case — the slot, without the product answer."""
-    assert portfolio_mode(['EUR', 'USD'], events_mode=True) == MODE_MULTI_CURRENCY
+    assert portfolio_mode(['EUR', 'USD']) == MODE_MULTI_CURRENCY
 
 
 def test_the_mode_is_read_from_the_configuration_not_from_the_data():

@@ -66,13 +66,12 @@ SCRAPE_NO_PRICE = 'no_price'
 BACKWARD = 'backward'
 FORWARD = 'forward'
 
-#: The three terminal states of the backward pass, which **must not be
-#: collapsed** (#656 trap 6). Manual mode has no backward pass at all
-#: (``backfill()`` returns early), so "no progress" there is nominal — rendering
-#: it as a stall would be the app accusing itself of a fault it does not have.
+#: The two terminal states of the backward pass, which **must not be
+#: collapsed** (#656 trap 6): "there is nothing left to fetch" and "this symbol
+#: was never bought" are both nominal, and only the first is progress. A third,
+#: ``manual_mode``, left with the mode it named (#711).
 TERMINAL_COMPLETE = 'complete'
 TERMINAL_NO_BUY = 'no_buy'
-TERMINAL_MANUAL_MODE = 'manual_mode'
 
 #: The forward pass's no-op reasons. ``SKIP_TOO_RECENT`` is the *normal* one
 #: during live trading: ``newest ≈ now``, the window is sub-day, and the pass
@@ -160,8 +159,8 @@ class BackfillRecord:
     direction: str
     at: datetime
     window: Optional[Tuple[datetime, datetime]] = None
-    #: The backward pass's target — the first BUY. ``None`` in manual mode and
-    #: for a symbol with no BUY event.
+    #: The backward pass's target — the first BUY. ``None`` for a symbol with
+    #: no BUY event.
     target: Optional[datetime] = None
     oldest: Optional[datetime] = None
     #: The forward pass's anchor: the newest stored point it measured from.
@@ -324,7 +323,7 @@ class RuntimeRecorder:
 __all__ = [
     'BACKWARD', 'FORWARD',
     'SCRAPE_WROTE', 'SCRAPE_WRITE_FAILED', 'SCRAPE_CLOSED', 'SCRAPE_NO_PRICE',
-    'TERMINAL_COMPLETE', 'TERMINAL_NO_BUY', 'TERMINAL_MANUAL_MODE',
+    'TERMINAL_COMPLETE', 'TERMINAL_NO_BUY',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
     'SKIP_NO_SHARE_INFO',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',

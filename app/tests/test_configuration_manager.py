@@ -2,10 +2,9 @@
 Unit tests for main.ConfigurationManager.
 
 These tests exercise ConfigurationManager in isolation:
-  * mode selection priority (SB_CONFIG_MODE env > settings.yaml `mode:` >
-    auto-detection from the events source > default 'manual')
-  * events-source defaulting
-  * _compute_cache_key behaviour (None in manual, mtime-based in events)
+  * events-source resolution (settings.yaml `events.source`, else <dir>/events)
+  * naming the v4 `config.yaml` this version no longer reads (issue #711)
+  * _compute_cache_key behaviour (mtime-based, settings.yaml included)
   * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
   * get_first_buy_date / get_events
@@ -13,9 +12,11 @@ These tests exercise ConfigurationManager in isolation:
     published, swapped by a single rebind — the null window and the split-brain
 
 Every ConfigurationManager is built with ``config_dir=str(tmp_path)`` so nothing
-ever touches the real ~/.config/SuiviBourse. SB_CONFIG_MODE is managed strictly
-through monkeypatch (an autouse fixture deletes it before every test) so it can
-never leak between tests. No network, no real InfluxDB, no yfinance.
+ever touches the real ~/.config/SuiviBourse. No network, no real InfluxDB, no
+yfinance.
+
+There is **one loading path** since #711 — the event ledger — so no test here
+selects a mode, and none can.
 """
 
 import os
@@ -30,187 +31,85 @@ from main import ConfigurationManager
 from events.validator import EventValidationError
 
 
-# --------------------------------------------------------------------------- #
-# Isolation: ensure SB_CONFIG_MODE never leaks in from the real environment or
-# from a previous test. Tests that need it set do so with monkeypatch.setenv.
-# --------------------------------------------------------------------------- #
-@pytest.fixture(autouse=True)
-def _no_config_mode_env(monkeypatch):
-    monkeypatch.delenv("SB_CONFIG_MODE", raising=False)
-
-
 def _write_settings(config_dir, text):
     """Write a settings.yaml into the config dir."""
     (config_dir / "settings.yaml").write_text(text, encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
-# Mode selection priority
+# Where the events are read from
 # --------------------------------------------------------------------------- #
-def test_default_mode_is_manual(tmp_path):
-    """No env var and no settings.yaml -> default mode 'manual'."""
+def test_events_source_defaults_to_config_dir_events(tmp_path):
+    """With no settings.yaml at all, the source is <config_dir>/events."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-    # Manual mode never populates an events source.
-    assert cm._events_source is None
+    assert cm.get_events_source() == str(tmp_path / "events")
 
 
-def test_env_overrides_settings_yaml(tmp_path, monkeypatch):
-    """SB_CONFIG_MODE env wins over a conflicting settings.yaml mode."""
-    _write_settings(tmp_path, "mode: events\nevents:\n  source: /nowhere\n")
-    monkeypatch.setenv("SB_CONFIG_MODE", "manual")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-    # The env var overrides the *mode* only; the events block is still parsed
-    # (and simply unused in manual mode).
-    assert cm._events_source == "/nowhere"
-
-
-def test_env_mode_still_honours_events_block(tmp_path, monkeypatch):
-    """Selecting events mode via env keeps settings.yaml's source and watch.
-
-    Regression guard: the env branch used to short-circuit the whole
-    settings.yaml read, so the documented compose path (SB_CONFIG_MODE=events)
-    silently ignored a custom source and never started the file watcher despite
-    `watch: true`.
-    """
+def test_events_source_honours_settings_yaml(tmp_path):
+    """settings.yaml's events block still says where to read and whether to watch."""
     src = str(tmp_path / "my_events")
     _write_settings(tmp_path, f"events:\n  source: {src}\n  watch: true\n")
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-    assert cm._events_source == src
+    assert cm.get_events_source() == src
     assert cm._watch_enabled is True
-
-
-def test_blank_env_mode_is_treated_as_unset(tmp_path, monkeypatch):
-    """An empty SB_CONFIG_MODE falls through instead of selecting mode ''.
-
-    Compose renders `SB_CONFIG_MODE=${SB_CONFIG_MODE}` as an empty string when
-    the variable is absent from .env, which must not defeat settings.yaml.
-    """
-    _write_settings(tmp_path, "mode: events\n")
-    monkeypatch.setenv("SB_CONFIG_MODE", "   ")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-
-
-# --------------------------------------------------------------------------- #
-# Mode auto-detection (lowest priority: nothing declared anywhere)
-# --------------------------------------------------------------------------- #
-def test_detects_events_mode_from_event_files(tmp_path):
-    """No env and no settings.yaml, but event files present -> events mode."""
-    events = tmp_path / "events"
-    events.mkdir()
-    (events / "2024.csv").write_text("date,event_type\n", encoding="utf-8")
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-    assert cm._events_source == str(tmp_path / "events")
-
-
-def test_detects_manual_mode_when_events_dir_has_no_event_files(tmp_path):
-    """An events dir holding no .csv/.xlsx does not trigger events mode."""
-    events = tmp_path / "events"
-    events.mkdir()
-    (events / "README.md").write_text("drop your exports here\n", encoding="utf-8")
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-
-
-def test_detection_uses_declared_events_source(tmp_path):
-    """Detection looks at settings.yaml's events.source, not just the default."""
-    src = tmp_path / "broker_exports"
-    src.mkdir()
-    (src / "export.xlsx").write_bytes(b"")
-    _write_settings(tmp_path, f"events:\n  source: {src}\n")
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-
-
-def test_explicit_manual_mode_beats_detection(tmp_path):
-    """An explicit `mode: manual` wins even with event files sitting there."""
-    events = tmp_path / "events"
-    events.mkdir()
-    (events / "2024.csv").write_text("date,event_type\n", encoding="utf-8")
-    _write_settings(tmp_path, "mode: manual\n")
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-
-
-def test_env_value_is_lowercased(tmp_path, monkeypatch):
-    """An upper-case env value is normalised to lower-case."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "EVENTS")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-
-
-def test_settings_yaml_selects_events_mode(tmp_path):
-    """With no env var, settings.yaml drives mode and reads events.source/watch."""
-    src = str(tmp_path / "my_events")
-    _write_settings(
-        tmp_path,
-        f"mode: events\nevents:\n  source: {src}\n  watch: true\n",
-    )
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-    assert cm._events_source == src
-    assert cm._watch_enabled is True
-
-
-def test_settings_yaml_manual_is_default_when_mode_absent(tmp_path):
-    """settings.yaml present but without a 'mode' key -> defaults to manual."""
-    _write_settings(tmp_path, "events:\n  watch: false\n")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-
-
-def test_events_source_defaults_to_config_dir_events_via_env(tmp_path, monkeypatch):
-    """In events mode with no explicit source, it defaults to <config_dir>/events."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-    assert cm._events_source == str(tmp_path / "events")
 
 
 def test_events_source_defaults_when_settings_omits_source(tmp_path):
-    """settings.yaml events mode without a source falls back to <config_dir>/events."""
-    _write_settings(tmp_path, "mode: events\nevents:\n  watch: false\n")
+    """A settings.yaml without a source falls back to <config_dir>/events."""
+    _write_settings(tmp_path, "events:\n  watch: false\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_EVENTS
-    assert cm._events_source == str(tmp_path / "events")
+    assert cm.get_events_source() == str(tmp_path / "events")
     assert cm._watch_enabled is False
+
+
+# --------------------------------------------------------------------------- #
+# The v4 file that is found and not read (issue #711)
+# --------------------------------------------------------------------------- #
+def test_a_config_yaml_is_named_at_startup(tmp_path, mocker):
+    """Four empty pages read as "the update erased my portfolio" without this.
+
+    The file itself is left exactly where its owner put it: nothing is migrated,
+    renamed or deleted (ADR-0008).
+    """
+    legacy = tmp_path / "config.yaml"
+    legacy.write_text("shares:\n- name: Apple\n  symbol: AAPL\n", encoding="utf-8")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.report_unread_files() == [str(legacy)]
+
+    warn.assert_called_once()
+    message = warn.call_args.args[0]
+    assert "config.yaml" in message
+    assert str(tmp_path / "events") in message   # says where it *does* look
+    assert legacy.exists()                       # and touches nothing
+
+
+def test_nothing_is_named_when_there_is_no_legacy_file(tmp_path, mocker):
+    """An install that never ran a manual v4 gets no warning at all."""
+    warn = mocker.patch.object(main.app_logger, "warning")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.report_unread_files() == []
+    warn.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
 # _compute_cache_key
 # --------------------------------------------------------------------------- #
-def test_cache_key_none_in_manual_mode(tmp_path):
-    """Manual mode has no file-based cache key."""
+def test_cache_key_reflects_event_file_mtimes(tmp_path, events_dir):
+    """The key references the event files and their mtimes."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-    assert cm._compute_cache_key() is None
-
-
-def test_cache_key_reflects_event_file_mtimes(tmp_path, monkeypatch, events_dir):
-    """In events mode the key references the event files and their mtimes."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_mode()  # populate _mode/_events_source
+    cm.get_events_source()  # populate _events_source
 
     key = cm._compute_cache_key()
     assert key is not None
     assert str(events_dir / "2024.csv") in key
 
 
-def test_cache_key_changes_when_file_mtime_changes(tmp_path, monkeypatch, events_dir):
+def test_cache_key_changes_when_file_mtime_changes(tmp_path, events_dir):
     """Touching an event file to a new mtime changes the cache key."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_mode()
+    cm.get_events_source()
 
     key_before = cm._compute_cache_key()
 
@@ -222,11 +121,10 @@ def test_cache_key_changes_when_file_mtime_changes(tmp_path, monkeypatch, events
     assert key_before != key_after
 
 
-def test_cache_key_none_when_events_source_missing(tmp_path, monkeypatch):
-    """No events directory on disk yields a None key (nothing to hash)."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
+def test_cache_key_none_when_events_source_missing(tmp_path):
+    """No events directory and no settings.yaml yields a None key (nothing to hash)."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_mode()
+    cm.get_events_source()
     # <config_dir>/events was never created.
     assert cm._compute_cache_key() is None
 
@@ -234,9 +132,8 @@ def test_cache_key_none_when_events_source_missing(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Caching contract of _load_from_events (real loader/validator/aggregator run)
 # --------------------------------------------------------------------------- #
-def test_events_load_produces_expected_shares(tmp_path, monkeypatch, events_dir):
+def test_events_load_produces_expected_shares(tmp_path, events_dir):
     """The real events pipeline runs and yields AAPL + MSFT shares."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     shares = cm.load_shares()
@@ -244,9 +141,8 @@ def test_events_load_produces_expected_shares(tmp_path, monkeypatch, events_dir)
     assert {s["symbol"] for s in shares} == {"AAPL", "MSFT"}
 
 
-def test_second_load_returns_same_cached_object(tmp_path, monkeypatch, events_dir):
+def test_second_load_returns_same_cached_object(tmp_path, events_dir):
     """A second load with no file change returns the identical cached object."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     first = cm.load_shares()
@@ -254,9 +150,8 @@ def test_second_load_returns_same_cached_object(tmp_path, monkeypatch, events_di
     assert second is first
 
 
-def test_force_reload_bypasses_cache(tmp_path, monkeypatch, events_dir):
+def test_force_reload_bypasses_cache(tmp_path, events_dir):
     """force=True re-runs the pipeline, returning a fresh (equal) object."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     first = cm.load_shares()
@@ -265,9 +160,8 @@ def test_force_reload_bypasses_cache(tmp_path, monkeypatch, events_dir):
     assert forced == first
 
 
-def test_file_change_invalidates_cache(tmp_path, monkeypatch, events_dir):
+def test_file_change_invalidates_cache(tmp_path, events_dir):
     """A changed file mtime invalidates the cache on the next (non-forced) load."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     first = cm.load_shares()
@@ -285,9 +179,8 @@ def test_file_change_invalidates_cache(tmp_path, monkeypatch, events_dir):
 # --------------------------------------------------------------------------- #
 # get_first_buy_date
 # --------------------------------------------------------------------------- #
-def test_get_first_buy_date_earliest_buy(tmp_path, monkeypatch, events_dir):
+def test_get_first_buy_date_earliest_buy(tmp_path, events_dir):
     """Returns the earliest BUY date for a symbol (ignores later BUYs)."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
 
@@ -302,9 +195,8 @@ def test_get_first_buy_date_none_when_no_events_loaded(tmp_path):
     assert cm.get_first_buy_date("AAPL") is None
 
 
-def test_get_first_buy_date_none_for_absent_symbol(tmp_path, monkeypatch, events_dir):
+def test_get_first_buy_date_none_for_absent_symbol(tmp_path, events_dir):
     """A symbol with no BUY events returns None."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
     assert cm.get_first_buy_date("GOOG") is None
@@ -319,9 +211,8 @@ def test_get_events_none_before_load(tmp_path):
     assert cm.get_events() is None
 
 
-def test_get_events_returns_cached_events(tmp_path, monkeypatch, events_dir):
+def test_get_events_returns_cached_events(tmp_path, events_dir):
     """After an events load, get_events returns the published snapshot's events."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
 
@@ -334,10 +225,8 @@ def test_get_events_returns_cached_events(tmp_path, monkeypatch, events_dir):
 # Publication: the snapshot is built off-line and published by one rebind
 # (issue #658, design #653)
 # --------------------------------------------------------------------------- #
-def test_current_publishes_on_first_use_and_then_returns_the_same_object(
-        tmp_path, monkeypatch, events_dir):
+def test_current_publishes_on_first_use_and_then_returns_the_same_object(tmp_path, events_dir):
     """The read path is one attribute read, so it must be stable between loads."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     first = cm.current()
@@ -347,10 +236,8 @@ def test_current_publishes_on_first_use_and_then_returns_the_same_object(
     assert first.cache_key is not None
 
 
-def test_snapshot_is_swapped_whole_when_files_change(tmp_path, monkeypatch,
-                                                     events_dir):
+def test_snapshot_is_swapped_whole_when_files_change(tmp_path, events_dir):
     """A reload replaces the snapshot; it never edits the published one."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     before = cm.current()
@@ -367,8 +254,7 @@ def test_snapshot_is_swapped_whole_when_files_change(tmp_path, monkeypatch,
     assert len(before.events) == 7
 
 
-def test_a_reload_never_exposes_a_half_built_configuration(
-        tmp_path, monkeypatch, events_dir):
+def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir):
     """The null window: shares and events are published together or not at all.
 
     ``invalidate_cache()`` used to null the three cache fields *before*
@@ -378,7 +264,6 @@ def test_a_reload_never_exposes_a_half_built_configuration(
     reader hammers the read path while a writer rebuilds; every observation must
     be a complete configuration.
     """
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.current()  # first publication
 
@@ -433,8 +318,7 @@ class _AcceptingThenRejecting:
         return self.calls == 1
 
 
-def test_a_rejected_config_changes_nothing_anywhere(tmp_path, monkeypatch,
-                                                    events_dir):
+def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     """The split-brain, closed.
 
     The cache used to be written by the loader and validated afterwards by
@@ -444,7 +328,6 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, monkeypatch,
     inside snapshot construction, so a rejected one is never published and there
     is nothing for anyone to read.
     """
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(
         config_dir=str(tmp_path), validator_=_AcceptingThenRejecting())
     published = cm.current()
@@ -464,27 +347,26 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, monkeypatch,
     assert cm.load_accounts() is published.accounts
 
 
-def test_the_real_schema_is_the_gate(tmp_path, mocker):
+def test_the_real_schema_is_the_gate(tmp_path, events_dir):
     """A share list that fails schema.yaml is refused, with InvalidConfigFile."""
-    fake_config = mocker.MagicMock()
-    fake_config.__getitem__.return_value.get.return_value = [
-        {"name": "Broken", "symbol": "BAD"}  # no purchase/estate blocks
-    ]
-    mocker.patch("main.Configuration", return_value=fake_config)
-
     cm = ConfigurationManager(config_dir=str(tmp_path))
+    # The aggregator can no longer produce this shape, so it is injected at the
+    # seam: what is under test is the validator standing between a candidate and
+    # publication, not the way the candidate was built.
+    cm._load_from_events = lambda accounts: (
+        [{"name": "Broken", "symbol": "BAD"}], [])  # no purchase/estate blocks
+
     with pytest.raises(main.InvalidConfigFile):
         cm.reload()
     assert cm._config is None  # nothing was published
 
 
-def test_an_empty_portfolio_is_not_a_rejection(tmp_path, monkeypatch):
+def test_an_empty_portfolio_is_not_a_rejection(tmp_path):
     """`empty: False` in schema.yaml must not turn a fresh install into a crash.
 
     Events mode starts life with an empty events/ directory — the app is
     expected to run, warn, and pick up the first file that lands.
     """
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     (tmp_path / "events").mkdir()
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
@@ -493,10 +375,8 @@ def test_an_empty_portfolio_is_not_a_rejection(tmp_path, monkeypatch):
     assert snap.events == []
 
 
-def test_a_malformed_accounts_block_is_refused_before_publication(
-        tmp_path, monkeypatch, events_dir):
+def test_a_malformed_accounts_block_is_refused_before_publication(tmp_path, events_dir):
     """`accounts:` is validated on the candidate too, not after publication."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     published = cm.current()
 
@@ -510,9 +390,8 @@ def test_a_malformed_accounts_block_is_refused_before_publication(
 # --------------------------------------------------------------------------- #
 # The accounts block is re-read on every build (it used to be boot-only)
 # --------------------------------------------------------------------------- #
-def test_accounts_are_re_read_on_reload(tmp_path, monkeypatch, events_dir):
+def test_accounts_are_re_read_on_reload(tmp_path, events_dir):
     """Editing `accounts:` used to need a restart: _load_settings ran once."""
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     assert cm.current().accounts is None
 
@@ -527,14 +406,12 @@ def test_accounts_are_re_read_on_reload(tmp_path, monkeypatch, events_dir):
         cm.reload()
 
 
-def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, monkeypatch,
-                                                   events_dir):
+def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, events_dir):
     """settings.yaml joins the event files in the cache key.
 
     Without it an edited `accounts:` block would sit unnoticed behind an
     unchanged events directory, and the re-read above would never fire.
     """
-    monkeypatch.setenv("SB_CONFIG_MODE", "events")
     _write_settings(tmp_path, "mode: events\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
@@ -544,48 +421,3 @@ def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, monkeypatch,
     os.utime(settings, (st.st_atime, st.st_mtime + 100))
 
     assert cm._compute_cache_key() != key_before
-
-
-# --------------------------------------------------------------------------- #
-# Manual mode loading (confuse is stubbed so no real config.yaml is read)
-# --------------------------------------------------------------------------- #
-def test_manual_load_returns_stub_shares(tmp_path, mocker):
-    """Manual mode reads shares via confuse.Configuration, which we stub out."""
-    stub_shares = [
-        {
-            "name": "Apple",
-            "symbol": "AAPL",
-            "purchase": {"quantity": 1, "fee": 2, "cost_price": 119.98},
-            "estate": {"quantity": 2, "received_dividend": 2.85},
-        }
-    ]
-    fake_config = mocker.MagicMock()
-    fake_config.__getitem__.return_value.get.return_value = stub_shares
-    mocker.patch("main.Configuration", return_value=fake_config)
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_mode() == ConfigurationManager.MODE_MANUAL
-
-    shares = cm.load_shares()
-    assert shares == stub_shares
-
-    # Manual mode does not populate the events cache.
-    assert cm.get_events() is None
-    assert cm.get_first_buy_date("AAPL") is None
-    # confuse was accessed for the 'shares' key.
-    fake_config.__getitem__.assert_called_with("shares")
-
-
-def test_manual_load_reloads_confuse_on_second_call(tmp_path, mocker):
-    """A second manual load reuses the confuse config and calls reload()."""
-    fake_config = mocker.MagicMock()
-    fake_config.__getitem__.return_value.get.return_value = []
-    ctor = mocker.patch("main.Configuration", return_value=fake_config)
-
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.load_shares()
-    cm.load_shares()
-
-    # Configuration constructed once; reload() used on the second load.
-    assert ctor.call_count == 1
-    fake_config.reload.assert_called_once()
