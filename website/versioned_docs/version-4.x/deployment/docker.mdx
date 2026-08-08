@@ -1,0 +1,70 @@
+---
+title: Docker
+description: Run only the app container against your own InfluxDB
+sidebar_position: 2
+---
+
+Docker mode deploys **only the SuiviBourse container**. You are responsible for
+providing an **InfluxDB 3** instance (and, if you want dashboards, Grafana) to
+build the stack described in the [Design](/docs/v4/intro/design) section.
+
+:::tip
+If you don't already run InfluxDB and Grafana, prefer the
+[Docker Compose](/docs/v4/deployment/docker-compose) stack, which wires everything
+together for you.
+:::
+
+## Requirements
+
+- Windows, Linux or macOS
+- Docker (> 19.03)
+- A reachable **InfluxDB 3 Core** instance and an API token
+
+## Supported architectures
+
+- `amd64`
+- `arm64`
+
+If you need another architecture, please open an issue on GitHub.
+
+## Steps
+
+1. Write a `config.yaml` (manual mode) or a `settings.yaml` + `events/`
+   directory (events mode) following the
+   [configuration section](/docs/v4/category/configuration).
+
+2. Run the container, mounting your configuration into
+   `/home/appuser/.config/SuiviBourse` and pointing it at your InfluxDB:
+
+```bash
+docker run -d \
+  -p 8081:8081 \
+  -v <config_path>:/home/appuser/.config/SuiviBourse \
+  -e INFLUXDB_HOST=http://my-influxdb:8181 \
+  -e INFLUXDB_TOKEN=<your-token> \
+  -e INFLUXDB_DATABASE=suivi_bourse \
+  ghcr.io/pbrissaud/suivi-bourse-app:latest
+```
+
+If you set up **events mode** in step 1, also pass `-e SB_CONFIG_MODE=events`
+(it defaults to `manual` and would otherwise ignore your `settings.yaml`).
+
+Port `8081` exposes the legacy Prometheus `/metrics` endpoint; you can omit the
+`-p` flag if you don't use it.
+
+## Environment variables
+
+Use the `-e` / `--env` flags to override defaults. The most common ones:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+| `SB_CONFIG_MODE` | `manual` | Configuration mode (`manual` or `events`) |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) while a symbol's market is open (closed markets sleep to the next open) |
+| `SB_SCRAPING_INTERVAL` | _(deprecated)_ | Deprecated fallback for `SB_REGULAR_INTERVAL` (honored with a warning) |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+See the [configuration overview](/docs/v4/configuration/overview#environment-variables)
+for the complete list (ingestion, backfill and legacy Prometheus options).

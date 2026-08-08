@@ -48,15 +48,28 @@ const config = {
           editUrl:
             `https://github.com/${organizationName}/${projectName}/tree/master/website/`,
           // Docs versioning:
-          //  - `current` (the ./docs folder) documents v4 (InfluxDB 3 +
-          //    backfill + events mode) and is served as the default at /docs.
+          //  - `current` (the ./docs folder) is v5. Its content is still the
+          //    v4 corpus until the rewrite lands; the label is the destination.
+          //  - `4.x` is the frozen snapshot of the last v4 release (InfluxDB 3
+          //    + Grafana + config files), served at /docs/v4.
           //  - `3.x` is the frozen snapshot of the last v3 release
           //    (Prometheus/Grafana + manual config), served at /docs/v3.
+          //
+          // ADR-0025: every version gets a path segment, the newest included —
+          // `current.path` becomes 'v5' and /docs redirects to it, so the
+          // in-app ADR-0016 bubble can link to a page that stays v5's forever.
+          // It moves with the corpus rewrite, which is what supplies the
+          // redirect; leaving `path: ''` before then would 404 on /docs.
           lastVersion: 'current',
           versions: {
             current: {
-              label: 'v4',
+              label: 'v5',
               path: '',
+            },
+            '4.x': {
+              label: 'v4',
+              path: 'v4',
+              banner: 'unmaintained',
             },
             '3.x': {
               label: 'v3',

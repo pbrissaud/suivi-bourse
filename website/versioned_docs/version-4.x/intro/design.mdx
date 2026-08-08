@@ -1,0 +1,108 @@
+---
+title: Design
+description: How SuiviBourse works under the hood
+sidebar_position: 1
+---
+
+## How it works
+
+1. SuiviBourse loads your portfolio from either a `config.yaml` file
+   (**manual mode**) or from CSV/XLSX transaction files (**events mode**).
+2. Independent scheduled jobs run in parallel:
+   - **Scraping** — fetches current prices from Yahoo! Finance. There is **one
+     self-rescheduling job per held symbol**, and each one is
+     [market-aware](/docs/v4/advanced/market-aware-scraping): it polls only while
+     the symbol's market is open and sleeps until the next open otherwise.
+   - **Ingestion** — reloads and re-aggregates your portfolio configuration.
+   - **Backfill** — progressively fills in historical prices, in
+     [both directions](/docs/v4/backfill): backward to your first purchase, and
+     forward to recover a session missed while the app was down (events mode
+     only).
+   - **Performance** — recomputes the per-account and global return series
+     (events mode, opt-in accounts only).
+3. Every data point is written to **InfluxDB 3 Core** in the
+   `portfolio_metrics` measurement.
+4. **Grafana** reads InfluxDB (SQL datasource) to display your portfolio in a
+   ready-made dashboard.
+5. A **legacy Prometheus `/metrics` endpoint** is also exposed for backward
+   compatibility with pre-v4 deployments.
+
+## Architecture
+
+```
+                                    SuiviBourse (app)
+┌────────────────────┬────────────────────┬────────────────────┬────────────────────┐
+│      SCRAPING      │     INGESTION      │      BACKFILL      │    PERFORMANCE     │
+│  (per symbol,      │    (every 300s)    │    (every 60s)     │  (SB_PERF_INTERVAL)│
+│   market-aware)    │                    │  events mode only  │  events mode only  │
+│ • yfinance.Ticker()│ • Load config or   │ • Backward: to the │ • Only when data   │
+│ • marketState →    │   event files      │   first BUY event  │   changed          │
+│   poll or sleep    │ • Validate         │ • Forward: recover │ • Recompute XIRR / │
+│ • Open: write pt   │ • Aggregate        │   missed sessions  │   TWR / value      │
+│ • Closed: sleep to │ • Cache (by mtime) │ • 1 chunk / cycle  │ • Write account_/  │
+│   next open        │ • Update shares[]  │ • Enrich + write   │   portfolio series │
+└─────────┬──────────┴─────────┬──────────┴─────────┬──────────┴─────────┬──────────┘
+          │                    │                    │                    │
+          └────────────────────┴─────────┬──────────┴────────────────────┘
+                                         ▼
+                        ┌───────────────────┐        ┌──────────────────┐
+                        │  InfluxDB 3 Core  │◄──────►│     Grafana      │
+                        │ portfolio_metrics │  SQL   │    dashboard     │
+                        └───────────────────┘        └──────────────────┘
+                                  ▲
+                                  │ (legacy, snapshot only)
+                        ┌───────────────────┐
+                        │ Prometheus /metrics│  :8081
+                        └───────────────────┘
+```
+
+## Independent schedules
+
+The application runs several scheduled jobs that operate independently. Because
+they are decoupled, an error in one never blocks the others.
+
+| Job | Cadence | Env variable | Purpose | Error handling |
+|-----|---------|--------------|---------|----------------|
+| **Scraping** | Per symbol, market-aware | `SB_REGULAR_INTERVAL` | Fetch live prices from Yahoo! Finance | Sleeps closed markets to next open; backs a dead ticker off exponentially |
+| **Ingestion** | Every 300 s | `SB_INGESTION_INTERVAL` | Reload & re-aggregate the portfolio | Keeps the previous valid configuration |
+| **Backfill** | Every 60 s | `SB_BACKFILL_INTERVAL` | Fill historical price data (events mode) | Retries the same chunk on the next cycle |
+| **Performance** | Every `SB_PERF_INTERVAL` s (gated) | `SB_PERF_INTERVAL` | Recompute per-account & global returns (events mode, opt-in) | Skips the run when nothing changed |
+
+Scraping is no longer a single global loop: SuiviBourse schedules **one
+self-rescheduling job per held symbol**, and each job re-arms on its own cadence
+from the symbol's live `marketState`. An open (`REGULAR`) market re-polls every
+`SB_REGULAR_INTERVAL`; a closed one sleeps until the next open. See
+[market-aware scraping](/docs/v4/advanced/market-aware-scraping) for the full model,
+the worker-pool dials and the resulting weekend/holiday chart gaps.
+
+:::tip Why separate schedules?
+- **Isolation** — if your event files contain an error, price scraping keeps
+  running with the last valid configuration.
+- **Different frequencies** — stock prices change only while markets are open,
+  your portfolio rarely changes, and backfill only needs to nibble away at
+  history over time.
+- **Efficient caching** — ingestion only reprocesses when files actually change
+  (based on their modification time), and the performance job only recomputes
+  when something new has landed.
+:::
+
+## Storage & visualization
+
+- **InfluxDB 3 Core** is the primary datastore. All live and historical points
+  land in a single measurement, `portfolio_metrics`. See the
+  [InfluxDB data model](/docs/v4/advanced/influxdb) for the full tag/field schema.
+- **Grafana** connects to InfluxDB through its SQL query mode and ships with a
+  provisioned dashboard in the Docker Compose stack.
+- The **legacy Prometheus endpoint** (`:8081/metrics`) still exposes the
+  `sb_*` gauges for the current snapshot of each share. See
+  [Legacy Prometheus endpoint](/docs/v4/advanced/prometheus-legacy).
+
+## Configuration modes
+
+SuiviBourse supports two **mutually exclusive** configuration modes. See the
+[Configuration](/docs/v4/category/configuration) section for details.
+
+| Mode | Source | Use case |
+|------|--------|----------|
+| **Manual** | `config.yaml` | Simple, static portfolio |
+| **Events** | `events/*.csv`, `*.xlsx` | Transaction history, automatic aggregation, historical backfill |

@@ -1,0 +1,208 @@
+---
+title: Standalone
+description: Run the Python app directly with uv
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Standalone mode runs **only the Python app**. You must provide your own
+**InfluxDB 3** instance (and Grafana, if you want dashboards) to build the stack
+described in the [Design](/docs/v4/intro/design) section.
+
+:::tip
+If you don't already run InfluxDB and Grafana, prefer the
+[Docker Compose](/docs/v4/deployment/docker-compose) stack.
+:::
+
+## Requirements
+
+- Windows, Linux or macOS
+- Python **3.10+**
+- [uv](https://docs.astral.sh/uv/) (used to manage dependencies)
+- A reachable **InfluxDB 3 Core** instance and an API token
+
+## Preparing steps
+
+1. Download the source code from the
+   [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest)
+   and extract it.
+
+2. Install the dependencies from the **`app`** folder (uv creates an isolated
+   `.venv` from the lockfile):
+
+```bash
+cd app
+uv sync
+```
+
+3. Write a `config.yaml` (manual mode) — or a `settings.yaml` + `events/`
+   directory (events mode) — following the
+   [configuration section](/docs/v4/category/configuration), in the SuiviBourse
+   config directory:
+
+<Tabs>
+<TabItem value="linux" label="Linux / macOS">
+
+- `~/.config/SuiviBourse/`
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+- `%APPDATA%\SuiviBourse\` (falls back to `%HOME%\AppData\Roaming` if `APPDATA`
+  is undefined)
+
+</TabItem>
+</Tabs>
+
+:::info
+Manual mode resolves the config location through the
+[confuse library](https://confuse.readthedocs.io/en/latest/usage.html#search-paths),
+so other standard search paths are supported too.
+:::
+
+## Running the app
+
+From the `app` folder, provide at least the InfluxDB token and run:
+
+```bash
+INFLUXDB_HOST=http://localhost:8181 \
+INFLUXDB_TOKEN=<your-token> \
+uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+```
+
+:::info
+The app is served by **gunicorn**: the web API and the scheduler share a single
+process, so there is one command and one process for both. `gunicorn.conf.py`
+is the boot sequence — it binds the web port (`SB_WEB_PORT`, default `8080`) and
+the legacy `/metrics` port, and refuses to start with more than one worker.
+Raise `threads`, never `workers`: each extra worker would run a second scraper
+and duplicate every write.
+:::
+
+For production, choose one of the following methods.
+
+Replace `<installation_path>` with the folder where you extracted the project,
+and `<your-token>` with your InfluxDB API token.
+
+<Tabs>
+<TabItem value="systemd" label="SystemD (Linux)">
+
+1. Create a service unit file in `/etc/systemd/system/suivi-bourse.service`
+   (replace `<user>`/`<group>` and the token):
+
+    ```ini
+    [Unit]
+    Description=SuiviBourse
+    After=network-online.target
+
+    [Service]
+    Type=simple
+    Restart=always
+    WorkingDirectory=<installation_path>/app
+    ExecStart=uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+    User=<user>
+    Group=<group>
+    Environment=PYTHONUNBUFFERED=1
+    Environment=INFLUXDB_HOST=http://localhost:8181
+    Environment=INFLUXDB_TOKEN=<your-token>
+    Environment=INFLUXDB_DATABASE=suivi_bourse
+    SyslogIdentifier=suivi-bourse
+
+    [Install]
+    WantedBy=default.target
+    ```
+
+    :::note
+    `ExecStart` must use an absolute path to the `uv` binary (e.g.
+    `/usr/local/bin/uv`) — run `which uv` to find it.
+    :::
+
+2. Reload systemd:
+    ```bash
+    systemctl daemon-reload
+    ```
+
+3. Enable the service at boot:
+    ```bash
+    systemctl enable suivi-bourse
+    ```
+
+4. Start the service:
+    ```bash
+    systemctl start suivi-bourse
+    ```
+
+Logs go to `/var/log/syslog`; check the status with
+`systemctl status suivi-bourse`.
+
+</TabItem>
+<TabItem value="cron" label="Cron (Linux + macOS)">
+
+Using `cron` and `nohup`, you can run the app at boot:
+
+1. Edit your crontab:
+    ```bash
+    crontab -e
+    ```
+
+2. Add the following line (adjust the path and token):
+    ```
+    @reboot cd <installation_path>/app && INFLUXDB_HOST=http://localhost:8181 INFLUXDB_TOKEN=<your-token> nohup uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()' > $HOME/suivi-bourse.log 2>&1 &
+    ```
+
+The application logs will be written to `$HOME/suivi-bourse.log`.
+
+:::warning macOS
+A standalone run on macOS crashes as soon as a symbol is scraped: gunicorn
+forks its worker, and libcurl's macOS-only initialisation (`Curl_macos_init`,
+reached from `curl_easy_init` inside yfinance's HTTP backend) reads the system
+proxy configuration through CoreFoundation, which is not safe in a process
+forked without `exec`. Linux is unaffected — there is no `Curl_macos_init`
+there. On macOS, run the stack with Docker instead.
+:::
+
+</TabItem>
+<TabItem value="windows" label="Windows Service">
+
+:::danger
+This section is untested. Open a
+[GitHub PR](https://github.com/pbrissaud/suivi-bourse/pulls) to complete it.
+:::
+
+</TabItem>
+</Tabs>
+
+## Environment variables
+
+At minimum you must set the InfluxDB connection variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
+| `INFLUXDB_TOKEN` | _(required)_ | InfluxDB API token |
+| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
+| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) while a symbol's market is open (closed markets sleep to the next open) |
+| `SB_SCRAPING_INTERVAL` | _(deprecated)_ | Deprecated fallback for `SB_REGULAR_INTERVAL` (honored with a warning) |
+| `SB_WEB_PORT` | `8080` | Port for the web API and its `/health` endpoint |
+| `SB_METRICS_PORT` | `8081` | Port for the legacy Prometheus `/metrics` endpoint |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+See the [configuration overview](/docs/v4/configuration/overview#environment-variables)
+for the full list.
+
+## Grafana dashboard
+
+Point Grafana at your InfluxDB instance using an **InfluxDB datasource in SQL
+query mode**, then import the provisioned dashboard from the repository:
+
+- [`docker-compose/grafana_provisioning/dashboards/suivi_bourse.json`](https://github.com/pbrissaud/suivi-bourse/blob/master/docker-compose/grafana_provisioning/dashboards/suivi_bourse.json)
+
+An example datasource definition is available in
+[`grafana_provisioning/datasources/all.yml`](https://github.com/pbrissaud/suivi-bourse/blob/master/docker-compose/grafana_provisioning/datasources/all.yml).
+
+:::tip Prefer Prometheus?
+If you still rely on a Prometheus/Grafana stack, the app keeps exposing a legacy
+`/metrics` endpoint. See [Legacy Prometheus endpoint](/docs/v4/advanced/prometheus-legacy).
+:::

@@ -1,0 +1,8 @@
+{
+  "label": "Configuration",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Configure your portfolio (manual or events mode) and tune the app with environment variables."
+  }
+}
