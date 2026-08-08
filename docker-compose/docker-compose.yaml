@@ -38,10 +38,6 @@ services:
     # directory through `~`.
     user: "${SB_UID:-1000}:${SB_GID:-1000}"
     environment:
-      # Configuration mode. Left empty on purpose: the app then reads
-      # settings.yaml and, failing an explicit `mode:`, infers the mode from
-      # whether the config dir holds event files. Set to manual/events to force.
-      SB_CONFIG_MODE: ${SB_CONFIG_MODE:-}
       # Scheduling
       SB_REGULAR_INTERVAL: ${SB_REGULAR_INTERVAL:-120}
       SB_PERF_INTERVAL: ${SB_PERF_INTERVAL:-120}
