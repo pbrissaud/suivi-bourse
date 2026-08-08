@@ -34,6 +34,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0021](./0021-the-app-asks-one-question.md) | The app asks one question, and not at boot |
 | [0022](./0022-the-navigation-is-a-sidebar.md) | The navigation is a sidebar, and width was never the question |
 | [0023](./0023-the-preset-owns-the-chrome-the-product-owns-the-meaning.md) | The preset owns the chrome, the product owns the meaning |
+| [0024](./0024-the-english-catalogue-is-not-a-translation.md) | The English catalogue is not a translation of the French one |
 
 > These records describe **v5**, which is being designed on `preview/v5`. Where they
 > contradict the code on `master`, the code is v4 and the record is the destination.
