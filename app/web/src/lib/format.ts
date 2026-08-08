@@ -1,32 +1,38 @@
 /**
- * Rendering, and the one rule that runs through all of it: **absence is not
- * zero**.
+ * Rendering, and the two rules that run through all of it.
  *
- * Every formatter below returns an em dash for `null`. That is trap 3 and #652
- * déc. 6 ("empty states that mean something") enforced at the last possible
- * moment — the place where a `?? 0` would otherwise sneak in and put a
+ * **Absence is not zero.** Every formatter below returns an em dash for `null`
+ * — the last possible moment where a `?? 0` would otherwise sneak in and put a
  * confident `0,00 €` where the honest answer is "we have never observed this".
  *
- * Amounts arrive as raw numbers plus a `currency` read from the account
- * declaration (#655's minor conventions; trap 14 — the baseline hardcodes
- * `currencyEUR`), so the locale formatting is the front's job and happens here.
+ * **The format follows the language, not the currency** (ADR-0024). `const
+ * LOCALE = 'fr-FR'` is gone: every `Intl` site below takes the locale as its
+ * first argument, and the eight of them — six numbers, two dates — read the
+ * reader's current language through `useFormatters()`. ADR-0002's *a currency is
+ * a unit, not a locale* is what licenses this rather than what contradicts it:
+ * precisely because a currency is a unit, it cannot dictate a decimal
+ * separator. The same amount in the same currency is `1 234,56 €` for a French
+ * reader and `€1,234.56` for an English one — the separators are the language's,
+ * the symbol's position is the locale's own convention and not ours to place.
  */
+import { useMemo } from 'react'
+
+import { useI18n } from '@/lib/i18n'
 
 /** What absence looks like. One glyph, one place to change it. */
 export const ABSENT = '—'
 
-const LOCALE = 'fr-FR'
-
 export function formatCurrency(
+  locale: string,
   value: number | null | undefined,
   currency: string | null | undefined,
   fractionDigits = 2,
 ): string {
   if (value === null || value === undefined) return ABSENT
-  // Without a declared currency, render a bare number rather than guessing
-  // EUR — guessing is exactly what the Grafana baseline does.
-  if (!currency) return formatNumber(value, fractionDigits)
-  return new Intl.NumberFormat(LOCALE, {
+  // Without a declared currency, render a bare number rather than guessing EUR
+  // — guessing is exactly what the Grafana baseline did.
+  if (!currency) return formatNumber(locale, value, fractionDigits)
+  return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: fractionDigits,
@@ -35,26 +41,27 @@ export function formatCurrency(
 }
 
 export function formatNumber(
+  locale: string,
   value: number | null | undefined,
   fractionDigits = 2,
 ): string {
   if (value === null || value === undefined) return ABSENT
-  return new Intl.NumberFormat(LOCALE, {
+  return new Intl.NumberFormat(locale, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value)
 }
 
 /** Quantities can be fractional (fractional shares) but are usually whole. */
-export function formatQuantity(value: number | null | undefined): string {
+export function formatQuantity(locale: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return ABSENT
-  return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 4 }).format(value)
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(value)
 }
 
 /** A ratio (0.1234) rendered as a percentage. Signed, because it is a change. */
-export function formatPercent(value: number | null | undefined): string {
+export function formatPercent(locale: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return ABSENT
-  return new Intl.NumberFormat(LOCALE, {
+  return new Intl.NumberFormat(locale, {
     style: 'percent',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -66,50 +73,64 @@ export function formatPercent(value: number | null | undefined): string {
  * A yield already expressed in percent points (the writer multiplies by 100),
  * so it is *not* a ratio and must not go through `formatPercent`.
  */
-export function formatPercentPoints(value: number | null | undefined): string {
+export function formatPercentPoints(locale: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return ABSENT
-  return `${formatNumber(value, 2)} %`
+  return `${formatNumber(locale, value, 2)} %`
 }
 
 /** Market cap: billions, not fifteen digits. */
 export function formatCompact(
+  locale: string,
   value: number | null | undefined,
   currency: string | null | undefined,
 ): string {
   if (value === null || value === undefined) return ABSENT
-  return new Intl.NumberFormat(LOCALE, {
+  return new Intl.NumberFormat(locale, {
     notation: 'compact',
     maximumFractionDigits: 2,
     ...(currency ? { style: 'currency' as const, currency } : {}),
   }).format(value)
 }
 
-export function formatDateTime(value: string | null | undefined): string {
+export function formatDateTime(locale: string, value: string | null | undefined): string {
   if (!value) return ABSENT
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
-  return new Intl.DateTimeFormat(LOCALE, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-export function formatDate(value: string | number | null | undefined): string {
+export function formatDate(
+  locale: string,
+  value: string | number | Date | null | undefined,
+): string {
   if (value === null || value === undefined) return ABSENT
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
-  return new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium' }).format(date)
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date)
 }
 
 /**
- * The colour of a signed figure — and `null` is deliberately *neutral*, not
- * green. A position with no cost price has no gain to be happy about.
+ * The eight sites, bound to the reader's language. A component calls
+ * `formatCurrency(value, currency)` and never learns which locale it got, which
+ * is what keeps the language out of every call site.
  */
-export function signClass(value: number | null | undefined): string {
-  if (value === null || value === undefined || value === 0) return 'text-muted-foreground'
-  // `text-[var(--gain)]`, not `text-[--gain]`: the bare-variable shorthand is
-  // not a colour utility Tailwind v4 resolves, and it fails *silently* — the
-  // class is emitted, nothing is coloured, and a screen of black numbers looks
-  // like a design choice rather than a bug. Caught by looking at the page.
-  return value > 0 ? 'text-[var(--gain)]' : 'text-[var(--loss)]'
+export function useFormatters() {
+  const { locale } = useI18n()
+  return useMemo(
+    () => ({
+      locale,
+      currency: (value: number | null | undefined, currency: string | null | undefined, digits?: number) =>
+        formatCurrency(locale, value, currency, digits),
+      number: (value: number | null | undefined, digits?: number) =>
+        formatNumber(locale, value, digits),
+      quantity: (value: number | null | undefined) => formatQuantity(locale, value),
+      percent: (value: number | null | undefined) => formatPercent(locale, value),
+      percentPoints: (value: number | null | undefined) => formatPercentPoints(locale, value),
+      compact: (value: number | null | undefined, currency: string | null | undefined) =>
+        formatCompact(locale, value, currency),
+      dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
+      date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+    }),
+    [locale],
+  )
 }

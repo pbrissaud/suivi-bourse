@@ -1,0 +1,40 @@
+{
+  "app.name": "SuiviBourse",
+
+  "nav.label": "Sections",
+  "nav.dashboard": "Dashboard",
+  "nav.shares": "Shares",
+  "nav.accounts": "Accounts",
+  "nav.data": "Data",
+
+  "header.toggleSidebar": "Show or hide the navigation",
+  "header.language": "Language",
+  "header.theme": "Theme",
+
+  "lang.auto": "Automatic",
+  "lang.fr": "Français",
+  "lang.en": "English",
+
+  "theme.auto": "Automatic",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+
+  "status.link": "Installation status",
+  "status.dot": "{state, select, ok {The installation is fine} attention {The installation needs a look} unreachable {The app is not answering} other {The installation state is unknown}}",
+
+  "page.dashboard": "Dashboard",
+  "page.shares": "Shares",
+  "page.accounts": "Accounts",
+  "page.data": "Data",
+  "page.pending": "This page is not built yet.",
+
+  "notFound.title": "No such page",
+  "notFound.body": "This address matches no page.",
+  "notFound.link": "Back to the dashboard",
+
+  "problem.storageUnavailable": "The data cannot be read right now. The app is running, its store is not answering.",
+  "problem.notFound": "The app answered that this does not exist.",
+  "problem.badRequest": "The app refused the request this page made.",
+  "problem.internal": "The app hit an error it did not expect.",
+  "problem.unreachable": "The app is not answering. Nothing on screen comes from it."
+}
