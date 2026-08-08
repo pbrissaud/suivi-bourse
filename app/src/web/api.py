@@ -18,7 +18,7 @@ So the rules here are thin on purpose. What the routes *do* own:
 * **Symbols as identity.** Trap 9 / déc. 3 — ``share_name`` is display only.
 """
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from flask import Blueprint, jsonify, request
 from logfmt_logger import getLogger
@@ -26,17 +26,6 @@ from logfmt_logger import getLogger
 import portfolio_view
 import runtime_state
 import runtime_view
-from config_writer import (
-    Clobber,
-    ConfigWriteError,
-    InvalidCandidate,
-    ReadOnlySource,
-    SourceUnwritable,
-    StaleFingerprint,
-    UnknownRow,
-    WrongMode,
-)
-from events.editor import EventEditorReader
 from influx_reads import (
     MEASUREMENT,
     TOTALS_MEASUREMENT,
@@ -45,15 +34,8 @@ from influx_reads import (
 )
 from web.problem import (
     bad_request,
-    conflict,
-    invalid_configuration,
     not_found,
-    precondition_required,
-    read_only_source,
-    source_unwritable,
-    stale_fingerprint,
     storage_unavailable,
-    wrong_mode,
 )
 
 logger = getLogger("web.api")
@@ -405,133 +387,62 @@ def get_account_history(account_id: str):
 
 
 # --------------------------------------------------------------------- #
-# Events — read-only in this slice; the write half belongs to the Data page
+# Events — read-only, and read-only is now the whole of it (issue #711)
 # --------------------------------------------------------------------- #
 
 @api_bp.get('/events')
 def list_events():
-    """The event ledger, addressable row by row.
+    """The event ledger, as the published snapshot holds it.
 
-    Two consumers already, which is why it is a resource and not a page
-    endpoint: the data page's ledger (#652 déc. 14) and *this* slice's chart
-    markers (déc. 11) — the single thing Grafana structurally cannot draw, since
-    it reads one datasource and the events are files.
+    Two consumers, which is why it is a resource and not a page endpoint: the
+    data page's ledger (#652 déc. 14) and the chart markers (déc. 11) — the
+    single thing Grafana structurally cannot draw, since it reads one datasource
+    and the events are files.
+
+    Served from :meth:`ConfigurationManager.current` rather than from a second
+    read of the files. #662's editor was that second read, and it existed for
+    one reason: **the file was the address**, so a row needed an opaque token
+    over ``(file, sheet, row)`` and a fingerprint to guard it. #711 removes the
+    apparatus without a row-by-row successor — the rows here are the ones the
+    aggregator actually ran on, in the order it sorted them, and nothing
+    addresses them.
 
     ``?symbol=`` narrows to one share's events. Cash events (DEPOSIT /
     WITHDRAWAL) carry no symbol and are therefore excluded by that filter, which
     is what the chart wants.
 
-    Manual mode has no events at all: ``200`` + ``[]``, the empty-collection
-    state, not an error.
+    An install whose events directory is still empty is ``200`` + ``[]``, the
+    empty-collection state, not an error.
     """
-    from web import current_runtime
-    manager = current_runtime().config_manager
-    if manager.get_mode() != manager.MODE_EVENTS:
-        return jsonify([])
-
-    source = manager.get_events_source()
-    if not source:
-        return jsonify([])
-
-    records = EventEditorReader(source).list_records()
+    events = _snapshot().events
 
     symbol = request.args.get('symbol')
     if symbol:
-        records = [
-            r for r in records
-            if r.event is not None and r.event.symbol == symbol
-        ]
+        events = [event for event in events if event.symbol == symbol]
 
-    return jsonify([record.to_dict() for record in records])
+    return jsonify([_event_to_dict(event) for event in events])
 
 
-@api_bp.post('/events')
-def create_event():
-    """Append one event to the ledger.
+def _event_to_dict(event) -> dict:
+    """One :class:`events.schemas.Event`, on the wire.
 
-    The body is the *event*, never a file and a row (#653) — the server decides
-    where it lands and the response says where that was, so the front can name
-    the file without the contract ever mentioning one.
+    No id and no etag: both were properties of an address, and there is no
+    address any more. ``account`` is reported as the aggregator resolves it —
+    blank means ``default``, which is the rule for an install that declared no
+    account.
     """
-    values = _json_object()
-    if values is None:
-        return bad_request("Expected a JSON object describing one event.")
-    return _write(lambda: _writer().add_event(values), status=201)
-
-
-@api_bp.patch('/events/<token>')
-def update_event(token: str):
-    """Edit one row, under ``If-Match``.
-
-    Partial: only the fields the body names move. The guard is required, not
-    optional — an unguarded write is exactly the silent edit of the wrong row
-    the fingerprint exists to prevent.
-    """
-    values = _json_object()
-    if values is None:
-        return bad_request("Expected a JSON object of fields to change.")
-
-    if_match = _if_match()
-    if if_match is None:
-        return precondition_required(
-            "An If-Match header carrying the row's etag is required to edit it.")
-
-    return _write(lambda: _writer().update_event(token, if_match, values))
-
-
-@api_bp.delete('/events/<token>')
-def delete_event(token: str):
-    """Remove one row, under ``If-Match``."""
-    if_match = _if_match()
-    if if_match is None:
-        return precondition_required(
-            "An If-Match header carrying the row's etag is required to delete it.")
-    return _write(lambda: _writer().delete_event(token, if_match))
-
-
-@api_bp.get('/events/files')
-def list_event_files():
-    """The event files behind the ledger — the lock badge's source.
-
-    File-shaped on purpose, and it is the *only* file-shaped resource here.
-    #653 keeps the **event** contract free of files so the store stays
-    replaceable; a workbook that cannot be written and the conversion that fixes
-    it are properties of a file and of nothing else, so pretending otherwise
-    would have bought nothing.
-    """
-    try:
-        return jsonify(_writer().list_files())
-    except WrongMode:
-        return jsonify([])
-
-
-@api_bp.post('/events/files')
-def import_event_file():
-    """Upload a whole event file.
-
-    Refused as a whole if it introduces an error the directory did not already
-    have — which is not the rule an in-place edit follows, and the asymmetry is
-    the point: the user still holds the file they uploaded and can correct it,
-    where a refused edit would leave them unable to repair the ledger at all.
-    """
-    upload = request.files.get('file')
-    if upload is None or not upload.filename:
-        return bad_request(
-            "Expected a multipart upload with a 'file' part.")
-    return _write(
-        lambda: _writer().import_file(upload.filename, upload.read()),
-        status=201)
-
-
-@api_bp.post('/events/files/<name>/convert')
-def convert_event_file(name: str):
-    """Convert a workbook to the CSV that replaces it.
-
-    The workbook is kept, renamed out of the loader's view rather than deleted:
-    it is read-only here *because* its owner may still compute in it, so
-    destroying it would contradict the reason the restriction exists.
-    """
-    return _write(lambda: _writer().convert_file(name))
+    return {
+        'date': event.date.isoformat() if event.date else None,
+        'event_type': event.event_type.value,
+        'symbol': event.symbol,
+        'name': event.name,
+        'quantity': event.quantity,
+        'unit_price': event.unit_price,
+        'fee': event.fee,
+        'amount': event.amount,
+        'notes': event.notes,
+        'account': event.account,
+    }
 
 
 # --------------------------------------------------------------------- #
@@ -571,9 +482,8 @@ def get_runtime():
     from web import current_runtime
 
     runtime = current_runtime()
-    manager = runtime.config_manager
     recorder = runtime.recorder
-    snapshot = manager.current()
+    snapshot = runtime.config_manager.current()
 
     scrape = {}
     backfill = {}
@@ -595,7 +505,6 @@ def get_runtime():
         ingest=recorder.ingest(),
         perf=recorder.perf(),
         now=datetime.now(timezone.utc),
-        mode=manager.get_mode(),
         scheduler_running=runtime.scheduler is not None,
     ))
 
@@ -633,20 +542,16 @@ def _next_runs(scheduler) -> dict:
 
 @api_bp.get('/config')
 def get_config():
-    """What kind of installation this is, and whether it can be edited.
+    """What this installation is configured with.
 
-    Asked once by the data page, which has two entirely different screens to
-    choose between. ``mode`` decides which; ``editable`` decides whether the
-    events one offers buttons at all, and stating it up front is what keeps an
-    unwritable mount — the map's open PaaS fog, where a platform that never ran
-    ``make init`` runs as ``1000:1000`` — a sentence instead of a mystery on
-    first save.
+    ``shares`` is the published snapshot's aggregate — what the event ledger
+    *declares*, as opposed to ``/api/shares``, which is what has been *observed*
+    of it. Two different questions, and this is the one that can be answered
+    with no database at all.
 
-    ``shares`` is the published snapshot's aggregate, and it is the manual-mode
-    screen's whole content: an install with no events still has a portfolio, and
-    it is `config.yaml`'s. Reading it from the snapshot rather than from
-    InfluxDB is deliberate — the question here is *what is declared*, not what
-    has been observed.
+    ``mode``, ``editable`` and ``read_only_reason`` left with #711: there is one
+    loading path, so there is no mode to report, and the config directory has no
+    write path left to be refused by.
 
     ``settings`` is #654's read-only **effective configuration**, and it lands
     here rather than on ``/api/runtime`` on #661's argument: one noun, two
@@ -662,13 +567,8 @@ def get_config():
     import main
 
     runtime = current_runtime()
-    manager = runtime.config_manager
-    editable, reason = runtime.config_writer.can_write()
 
     return jsonify({
-        'mode': manager.get_mode(),
-        'editable': editable,
-        'read_only_reason': reason,
         'log_level': main.current_log_level(),
         'settings': main.effective_settings(runtime.metrics),
         'shares': _snapshot().shares,
@@ -697,43 +597,9 @@ def put_log_level():
     return jsonify({'log_level': level})
 
 
-@api_bp.put('/accounts')
-def put_accounts():
-    """Rewrite the ``accounts:`` block of ``settings.yaml``.
-
-    Hot since #658 — the file joined the mtime cache key — so this takes effect
-    on the next reload rather than the next restart, which is what makes it an
-    editor rather than a form that lies.
-
-    The rejection worth knowing about is not the malformed block: it is dropping
-    an account that events still reference. ``validator.py:128-138`` makes every
-    event carry a *declared* id once any account is declared, so removing one
-    invalidates every event that names it — and since #658 an invalid
-    configuration is fatal at boot. The candidate is therefore validated against
-    the events on disk, and a removal that would strand them comes back as a
-    ``422`` with the events named.
-    """
-    values = _json_object()
-    if values is None or 'accounts' not in values:
-        return bad_request(
-            "Expected a JSON object with an 'accounts' list "
-            "(send an empty list to remove the declaration).")
-    return _write(lambda: _writer().set_accounts(values['accounts'] or None))
-
-
 # --------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------- #
-
-def _writer():
-    """The process's single :class:`config_writer.ConfigWriter`.
-
-    One instance, because the mutex *is* the instance: two writers would each
-    validate a candidate against a directory the other is about to change.
-    """
-    from web import current_runtime
-    return current_runtime().config_writer
-
 
 def _json_object() -> Optional[dict]:
     """The request body as a JSON object, or ``None`` if it is not one.
@@ -746,79 +612,18 @@ def _json_object() -> Optional[dict]:
     return body if isinstance(body, dict) else None
 
 
-def _if_match() -> Optional[str]:
-    """The ``If-Match`` etag, unwrapped, or ``None`` when absent.
-
-    A conforming client quotes it and may mark it weak; the front sends it bare.
-    Both are accepted and normalised here rather than in the writer, which
-    compares fingerprints and should not also know HTTP's syntax.
-    """
-    raw = (request.headers.get('If-Match') or '').strip()
-    if not raw:
-        return None
-    if raw.startswith('W/'):
-        raw = raw[2:].strip()
-    return raw.strip('"')
-
-
-def _write(action: Callable[[], Any], status: int = 200):
-    """Run a write and translate its refusals into problem+json.
-
-    One place for the mapping, because the statuses are a contract the front
-    branches on and scattering them across six routes is how two of them end up
-    disagreeing. The order of the clauses is load-bearing: every one of these is
-    a :class:`ConfigWriteError`, so the general case must come last.
-    """
-    try:
-        result = action()
-    except InvalidCandidate as exc:
-        return invalid_configuration(exc.errors)
-    except StaleFingerprint as exc:
-        return stale_fingerprint(str(exc))
-    except (ReadOnlySource,) as exc:
-        return read_only_source(str(exc))
-    except SourceUnwritable as exc:
-        return source_unwritable(str(exc))
-    except WrongMode as exc:
-        return wrong_mode(str(exc))
-    except Clobber as exc:
-        return conflict(str(exc))
-    except UnknownRow as exc:
-        return not_found(str(exc))
-    except ValueError as exc:
-        # The `accounts:` block's own validation, which raises rather than
-        # collecting — a malformed declaration is still an invalid
-        # configuration, and the front reads it in the same place as the rest.
-        return invalid_configuration([str(exc)])
-    except ConfigWriteError as exc:
-        return bad_request(str(exc))
-    except OSError as exc:
-        # The write itself failed on the filesystem. Not a storage outage and
-        # not the client's fault: the mount is the thing to look at.
-        logger.error(f"Configuration write failed: {exc}", exc_info=True)
-        return source_unwritable(str(exc))
-
-    response = jsonify(result.to_dict())
-    response.status_code = status
-    return response
-
-
 def _portfolio_mode() -> Tuple[str, Optional[Any]]:
     """Which dashboard head this install gets, plus the declaration behind it.
 
-    A read of the published snapshot (#658) and of the configuration mode —
-    no InfluxDB. That is deliberate: deciding the mode from the *data* would
-    make an install whose first perf cycle has not run yet indistinguishable
-    from one that never declared accounts, which is exactly the collapse #655
-    déc. 8's discriminator exists to prevent.
+    A read of the published snapshot (#658) — no InfluxDB. That is deliberate:
+    deciding the mode from the *data* would make an install whose first perf
+    cycle has not run yet indistinguishable from one that never declared
+    accounts, which is exactly the collapse #655 déc. 8's discriminator exists
+    to prevent.
     """
-    from web import current_runtime
-    manager = current_runtime().config_manager
-    accounts = manager.current().accounts
+    accounts = _snapshot().accounts
     currencies = [a.currency for a in accounts.accounts] if accounts else None
-    mode = portfolio_view.portfolio_mode(
-        currencies, manager.get_mode() == manager.MODE_EVENTS)
-    return mode, accounts
+    return portfolio_view.portfolio_mode(currencies), accounts
 
 
 def _parse_window(default: timedelta = DEFAULT_WINDOW) -> Tuple[datetime, datetime]:
