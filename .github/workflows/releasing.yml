@@ -45,9 +45,14 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           # list of Docker images to use as base name for tags
+          # The `-app` suffix named which of three services this was; there is
+          # only one now. No compatibility alias: nothing migrates from v4, so
+          # `suivi-bourse-app:5` never exists and a v4 install that bumps its
+          # tag out of habit fails at the pull instead of starting on a store
+          # that dies with the container.
           images: |
-            paulbrissaud/suivi-bourse-app
-            ghcr.io/pbrissaud/suivi-bourse-app
+            paulbrissaud/suivi-bourse
+            ghcr.io/pbrissaud/suivi-bourse
           # generate Docker tags based on the following events/attributes
           tags: |
             type=semver,pattern={{version}},value=${{needs.create-release.outputs.tag_name}}
@@ -82,6 +87,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Registry cache, carried by a dedicated tag of the published image
+          # (version-free, so it never depends on a tag that does not exist
+          # yet). It aims at the PaaS rebuilding from zero — a different public
+          # from the Dockerfile's --mount=type=cache, which aims at the
+          # contributor rebuilding; confusing the two optimises neither.
+          cache-from: type=registry,ref=ghcr.io/pbrissaud/suivi-bourse:buildcache
+          cache-to: type=registry,ref=ghcr.io/pbrissaud/suivi-bourse:buildcache,mode=max
 
   doc:
     runs-on: ubuntu-latest
