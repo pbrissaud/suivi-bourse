@@ -1,74 +1,37 @@
-import { Link, Outlet } from '@tanstack/react-router'
-
-import { RuntimeBanner } from '@/components/RuntimeBanner'
-
 /**
- * The app shell: the nav the four pages hang off, and the only thing that
- * outlives a page.
+ * The shell: the sidebar, the content header bar, the one band, and the capped
+ * content column. Everything that outlives a page.
  *
- * Real URLs rather than tab state, and that is not a detail — Flask's catch-all
- * was built for client-side routing (it falls through to `index.html` for every
- * unknown path, guarding only `/api` and `/metrics`), and a test in
- * `test_web_api.py` already reaches for `/titres/AAPL`. Tab state would have
- * left that machinery unused and cost the deep link, the back button and
- * survival across a refresh.
+ * The `max-w-7xl` cap is kept as a **measured decision**, not as an
+ * inheritance: uncapping gives the content 1 616 px at 1 920 (+31,2 %), a width
+ * neither paying page — the twelve-slice allocation, the eight-column accounts
+ * table — was ever judged at, and the dashboard head visibly loosens there
+ * (ADR-0022). The known, uncorrected cost of the cap is the other way round:
+ * above 1 536 px the content is off-centre, 472 px of margin on the left
+ * against 216 on the right.
  */
+import { Outlet } from '@tanstack/react-router'
 
-const LINKS = [
-  { to: '/', label: 'Tableau de bord' },
-  { to: '/titres', label: 'Titres' },
-  { to: '/comptes', label: 'Comptes' },
-  { to: '/donnees', label: 'Données' },
-] as const
+import { AppSidebar } from '@/components/AppSidebar'
+import { Banner } from '@/components/Banner'
+import { ContentHeader } from '@/components/ContentHeader'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 
 export function Shell() {
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-7xl items-center gap-6 px-6 py-3">
-          <span className="font-semibold tracking-tight">SuiviBourse</span>
-          <nav className="flex gap-1">
-            {LINKS.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                // `exact` on the index route only: without it "/" matches every
-                // path and both links would light up at once.
-                activeOptions={{ exact: link.to === '/' }}
-                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                activeProps={{ className: 'bg-secondary text-foreground font-medium' }}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <ContentHeader />
+        {/* Inside the column and full width of it: mounted across the viewport
+            its left edge would run behind the sidebar (ADR-0022). */}
+        <Banner />
+        {/* `SidebarInset` is already the `<main>` landmark, so this is a plain
+            column — the cap, and nothing else. */}
+        <div className="mx-auto w-full max-w-7xl p-6">
+          <Outlet />
         </div>
-      </header>
-
-      {/* Global on purpose (#652 déc. 15): background work is not a property of
-          any one page, and the question it answers — "is the app broken, or is
-          the market just asleep?" — gets asked in front of whichever page
-          happens to look odd. Silent when there is nothing to say. */}
-      <RuntimeBanner />
-
-      <main className="mx-auto max-w-7xl p-6">
-        <Outlet />
-      </main>
-    </div>
-  )
-}
-
-export function NotFound() {
-  return (
-    <div className="space-y-2">
-      <h1 className="text-2xl font-semibold tracking-tight">Page introuvable</h1>
-      <p className="text-sm text-muted-foreground">
-        Cette adresse ne correspond à aucune page.{' '}
-        <Link to="/" className="underline">
-          Revenir au tableau de bord
-        </Link>
-        .
-      </p>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
