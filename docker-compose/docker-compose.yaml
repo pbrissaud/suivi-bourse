@@ -29,9 +29,9 @@ services:
       influxdb:
         condition: service_healthy
     # The config mount is writable (see below), so the container has to run as
-    # whoever owns those files on the host — otherwise every file the app writes
-    # comes back owned by uid 1000 and the user can no longer edit their own
-    # events. `make init` writes the invoking uid/gid into .env; an existing .env
+    # whoever owns those files on the host — otherwise anything created under
+    # the mount comes back owned by uid 1000 and the user can no longer edit
+    # their own events. `make init` writes the invoking uid/gid into .env; an existing .env
     # without them falls back to 1000:1000, which is exactly today's behaviour.
     # The image sets HOME explicitly for this reason: a uid absent from
     # /etc/passwd gets HOME=/ from Docker, and the app resolves its config
@@ -60,15 +60,13 @@ services:
       INFLUXDB_DATABASE: ${INFLUXDB_DATABASE:-suivi_bourse}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-    # One mount for the whole config directory: settings.yaml, config.yaml and
-    # events/ all live in there, so switching modes is a file drop rather than a
+    # One mount for the whole config directory: settings.yaml and events/ both
+    # live in there, so adding a broker export is a file drop rather than a
     # compose edit.
     #
-    # Writable since #658. It was read-only on the strength of "the app never
-    # writes to its config", which the web UI's data page ends: editing events
-    # and the accounts block writes here, validated in memory first and then
-    # committed with an atomic os.replace. `user:` above is the other half of
-    # that decision — the files stay owned by the human who edits them too.
+    # Writable since #658, and it stays that way now that #711 has removed the
+    # app's write path: the human edits these files by hand, and `user:` above
+    # is what keeps them owned by that human rather than by uid 1000.
     #
     # Long syntax on purpose. Coolify's compose parser rewrites bind-mount
     # sources at parse time, and for the *short* syntax it substitutes the

@@ -11,12 +11,16 @@ cp -r data.example data      # or: make init
 `/home/appuser/.config/SuiviBourse` inside the app container. Point the stack at
 a different location with `SB_CONFIG_DIR` in `.env`.
 
-| File | Used in | Purpose |
-|------|---------|---------|
-| `settings.yaml` | both modes | Mode override, events options, opt-in accounts |
-| `config.yaml` | manual mode | Your static portfolio |
-| `events/` | events mode | Your broker exports (`.csv` / `.xlsx`) |
+| File | Purpose |
+|------|---------|
+| `settings.yaml` | Events options and the opt-in `accounts:` block |
+| `events/` | Your broker exports (`.csv` / `.xlsx`) — the portfolio itself |
 
-**Switching to events mode is a copy, not a config change**: drop a `.csv` or
-`.xlsx` into `events/` and the app detects it on the next boot. Nothing else to
-edit — see `../examples/events-example.csv` for the format.
+**A portfolio is a ledger of dated events and nothing else** (issue #711). There
+is no mode to pick and no static portfolio file: drop a `.csv` or `.xlsx` into
+`events/` and it is loaded on the next ingestion cycle — see
+`../examples/events-example.csv` for the columns.
+
+Coming from a v4 install, a `config.yaml` left in this folder is **named at
+startup and never read**. Nothing is migrated: typing a position means creating
+dated events, because an aggregated position carries no dates.

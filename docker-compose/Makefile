@@ -33,7 +33,7 @@ init:  ## Create .env (with a unique token) and data/ from the templates
 		echo "        Linux/macOS: COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml"; \
 		echo "        Windows:     COMPOSE_FILE=docker-compose.yaml;docker-compose.expose.yaml"; \
 	}
-	@echo "Ready. Edit data/config.yaml, or drop broker exports into data/events/."
+	@echo "Ready. Drop your broker exports (.csv / .xlsx) into data/events/."
 
 up: init  ## Start the stack
 	$(COMPOSE) up -d
