@@ -312,7 +312,16 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
     Returns ``True`` when the file was brand new (the DDL had something to
     create), which is what decides the one seed that happens **once**.
 
-    The order matters and is the whole design of the function:
+    It opens by **pinning the session to UTC**, which is the other half of
+    "``TIMESTAMPTZ``, always UTC" and is *not* bought by the type. DuckDB takes
+    ``TimeZone`` from the host, so a bare literal — ``ts = '2024-01-01
+    10:00:00'`` — is read in whatever the host says and stored an hour off on a
+    machine in ``Europe/Paris``, silently, and differently from the container.
+    An *aware* datetime round-trips correctly either way; the literal is the
+    trap, and the writers that follow are written in literals (the backfill's
+    ``DELETE … WHERE ts >= ? AND ts < ?`` range, spec #695 § 5).
+
+    The rest of the order matters and is the whole design of the function:
 
     1. **is it new?** — asked of ``information_schema`` rather than of the file
        system, so a file that exists but carries no schema (an interrupted first
@@ -326,6 +335,8 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
        version cost no migration at all: the key that did not exist yesterday is
        inserted today, and the key the user has already answered is left alone.
     """
+    connection.execute("SET TimeZone='UTC'")
+
     existing = {
         row[0] for row in connection.execute(
             "SELECT table_name FROM information_schema.tables "

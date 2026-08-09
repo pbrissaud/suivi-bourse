@@ -86,8 +86,13 @@ services:
       # Probes /health on the web port, unconditionally. It used to probe
       # /metrics, which turned trivially green whenever SB_PROMETHEUS_ENABLED
       # was false — a deployment with the legacy endpoint off had no healthcheck
-      # at all. /health is deliberately shallow and never reaches InfluxDB: the
-      # app is meant to survive a database outage, not be restarted for one.
+      # at all. Since #696 the route also *touches the store*: the old rule
+      # — never reach the database, the app is meant to survive an outage rather
+      # than be restarted for one — lost its subject the day the database became
+      # a file this very process opens (ADR-0015). A store that does not answer
+      # is not someone else's outage to ride out, it is this container unable to
+      # do its job, so /health answers 503 and urlopen raises on it: that is what
+      # turns the probe red.
       test:
       - CMD-SHELL
       - >-

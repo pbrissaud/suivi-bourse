@@ -140,9 +140,13 @@ docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.e
 The stack owns exactly two user-writable things, both git-ignored: `.env` (every
 setting, names identical to the app's own env vars) and the **config directory**
 (`SB_CONFIG_DIR`, default `./data`) mounted as a single volume at
-`/home/appuser/.config/SuiviBourse`. The app itself no longer writes to that
-mount (#711 removed `config_writer.py`), but the human who edits the files by
-hand must own them — so the service still runs
+`/home/appuser/.config/SuiviBourse`. That mount is **writable**, for two
+independent reasons since #696: the app no longer writes the *event files*
+(#711 removed `config_writer.py`), but it does write **in** that directory —
+`SB_STORE_DIR` defaults to it, and `suivi-bourse.duckdb` is created and written
+there from the first boot on (#679 is what moves the store to a volume of its
+own). The human who edits the event files by hand must own them all the same —
+so the service runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
 invoking `id -u`/`id -g` in `.env`. The image sets `ENV HOME=/home/appuser` for the same
 reason: a uid absent from `/etc/passwd` (501 on macOS) gets `HOME=/` from

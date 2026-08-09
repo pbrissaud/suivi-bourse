@@ -13,11 +13,13 @@ tickets that follow will build on and could silently break:
   base, because a DuckDB ART index is a second copy whose buffers the buffer
   manager does not own;
 * an observed instant is ``TIMESTAMPTZ`` and a calendar day is ``DATE``, never
-  the reverse;
+  the reverse — and the connection is pinned to UTC, which the type does not
+  buy: a bare literal is read in the *host's* zone;
 * a setting absent from the table reads as the code's default (ADR-0014), and
   the boot completes the table without ever overwriting an answer.
 """
 
+import time
 from pathlib import Path
 
 import pytest
@@ -172,6 +174,40 @@ def test_an_observed_instant_is_timestamptz_and_a_calendar_day_is_a_date(store):
     # No naive timestamp anywhere: a stored instant with no zone is the one
     # shape that reads as correct and is wrong by hours.
     assert 'TIMESTAMP' not in set(types.values())
+
+
+def test_the_connection_speaks_utc_whatever_the_host_says(tmp_path, monkeypatch):
+    """The other half of "always UTC", and the type does not buy it.
+
+    DuckDB takes ``TimeZone`` from the host, and a **literal** is read in
+    whatever it says: from ``Australia/Sydney``, inserting
+    ``'2024-01-01 10:00:00'`` into a ``TIMESTAMPTZ`` stores the previous day at
+    23:00 UTC, without an error and differently from the container. An *aware*
+    datetime round-trips correctly on its own — the literal is the trap, and the
+    writers that follow are written in literals (the backfill's
+    ``DELETE … WHERE ts >= ? AND ts < ?`` range, spec #695 § 5). Hence the host
+    zone is forced to a non-UTC one here: on a UTC machine the assertion would
+    hold for free and pin nothing.
+    """
+    monkeypatch.setenv('TZ', 'Australia/Sydney')
+    time.tzset()
+    try:
+        opened = store_module.open_store(tmp_path / 'store.duckdb')
+        try:
+            assert opened.query("SELECT current_setting('TimeZone')") == [('UTC',)]
+
+            opened.execute(
+                "INSERT INTO price_point (symbol, ts, price_native) "
+                "VALUES ('A', '2024-01-01 10:00:00', 1.0)")
+
+            assert opened.query(
+                "SELECT strftime(ts AT TIME ZONE 'UTC', '%Y-%m-%d %H:%M:%S') "
+                "FROM price_point") == [('2024-01-01 10:00:00',)]
+        finally:
+            opened.close()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
 
 
 # --------------------------------------------------------------------------- #
