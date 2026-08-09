@@ -14,7 +14,7 @@
 import '@testing-library/jest-dom/vitest'
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
-import { installMatchMedia } from '@/test/media'
+import { installMatchMedia, setViewportWidth } from '@/test/media'
 import { server } from '@/test/server'
 
 // Neither jsdom 30 nor the Node it runs on provides Web Storage here, and the
@@ -76,6 +76,9 @@ afterAll(() => server.close())
 
 beforeEach(() => {
   installMatchMedia()
+  // jsdom's own default, restated so a test that narrows the viewport cannot
+  // leave the next one under the drawer breakpoint.
+  setViewportWidth(1024)
 })
 
 afterEach(() => {

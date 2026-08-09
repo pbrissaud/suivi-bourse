@@ -21,7 +21,7 @@ import {
   anAccountsPayload,
   defaultAccounts,
 } from '@/test/factories'
-import { setPrefersDark } from '@/test/media'
+import { setPrefersDark, setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -234,5 +234,42 @@ describe('the content header', () => {
     // It is the one surface that survives the three sidebar states, so it is
     // the one that has to be on all four pages.
     expect(objects().every(Boolean)).toBe(true)
+  })
+})
+
+describe('the chrome the component library ships', () => {
+  // The criterion is "no hard string in a component", and the components most
+  // likely to break it are the ones nobody wrote: the vendored `Sidebar` shipped
+  // four English strings, one of them a **visible** native tooltip on the rail.
+  // Covering them at the call site was not enough — these three surfaces have no
+  // call site — so the strings were moved into the catalogues, and this is what
+  // holds them there.
+  it('names the rail in the reader’s language, tooltip included', async () => {
+    const { user } = renderApp()
+    await screen.findByRole('heading', { name: 'Tableau de bord' })
+
+    const rail = screen.getByRole('button', { name: 'Replier ou déplier la navigation' })
+    // `title` is the one string here a sighted reader actually sees.
+    expect(rail).toHaveAttribute('title', 'Replier ou déplier la navigation')
+
+    await chooseInMenu(user, 'Langue', 'English')
+    expect(
+      await screen.findByRole('button', { name: 'Collapse or expand the navigation' }),
+    ).toHaveAttribute('title', 'Collapse or expand the navigation')
+  })
+
+  it('opens the drawer under 768 px, and it speaks French too', async () => {
+    // jsdom has no layout, so this decides *which shell mounts*, not how it
+    // looks — the look stays an acceptance criterion checked by eye.
+    setViewportWidth(390)
+    const { user } = renderApp()
+    await screen.findByRole('heading', { name: 'Tableau de bord' })
+
+    await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
+
+    const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
+    expect(drawer).toHaveAccessibleDescription('Les sections de l’application, dans un tiroir.')
+    expect(within(drawer).getByRole('navigation', { name: 'Sections' })).toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: 'Fermer' })).toBeInTheDocument()
   })
 })

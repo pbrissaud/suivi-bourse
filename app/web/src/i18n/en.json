@@ -11,6 +11,11 @@
   "header.language": "Language",
   "header.theme": "Theme",
 
+  "sidebar.rail": "Collapse or expand the navigation",
+  "sidebar.drawer.title": "Navigation",
+  "sidebar.drawer.description": "The sections of the app, in a drawer.",
+  "sheet.close": "Close",
+
   "lang.auto": "Automatic",
   "lang.fr": "Français",
   "lang.en": "English",

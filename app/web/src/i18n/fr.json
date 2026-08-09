@@ -11,6 +11,11 @@
   "header.language": "Langue",
   "header.theme": "Thème",
 
+  "sidebar.rail": "Replier ou déplier la navigation",
+  "sidebar.drawer.title": "Navigation",
+  "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
+  "sheet.close": "Fermer",
+
   "lang.auto": "Automatique",
   "lang.fr": "Français",
   "lang.en": "English",

@@ -32,6 +32,20 @@ export function installMatchMedia() {
   }
 }
 
+/**
+ * The width jsdom reports. shadcn's `useIsMobile` reads `window.innerWidth`
+ * rather than the media query it also listens to, so this — not `matchMedia` —
+ * is what puts the shell under its 768 px breakpoint. It says nothing about
+ * layout, which jsdom has none of: it decides which of the two shells mounts.
+ */
+export function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  })
+}
+
 /** Flip the system preference, listeners included. */
 export function setPrefersDark(value: boolean) {
   prefersDark = value

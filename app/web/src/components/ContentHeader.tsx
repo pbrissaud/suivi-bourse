@@ -22,9 +22,11 @@ export function ContentHeader() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-      {/* The vendored trigger ships an English sr-only label; the accessible
-          name is taken over here so the chrome speaks the reader's language. */}
-      <SidebarTrigger aria-label={t('header.toggleSidebar')} />
+      {/* No `aria-label` here: the trigger names itself from `header.toggleSidebar`
+          — the vendored English was fixed in the component rather than covered
+          over at this one call site, which left the rail and the drawer speaking
+          English (#713). */}
+      <SidebarTrigger />
       <div className="ml-auto flex items-center gap-1">
         <StatusDot />
         <PreferenceMenu<LanguageChoice>
