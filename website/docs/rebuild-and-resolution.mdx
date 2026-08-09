@@ -3,14 +3,116 @@ title: Rebuild and resolution
 description: How history is rebuilt, how it is aged, and what no backup ever recovers
 ---
 
-This page will carry the rebuild of past prices, the resolution ladder that
-ages them, and the one thing a late backup never gets back.
+Your events say what you held and when. The prices behind them are not yours —
+they are fetched, and on a fresh install they are fetched **backwards**, from
+today towards your first purchase. Once they are here, they are aged: the older
+a point, the coarser it is kept.
 
-:::info Not written yet
-It is the subject of its own ticket. What it will hold:
+Both halves are the same function of the age of a point, applied on either side
+of the present. That is why a five-year-old install and a five-day-old one
+converge instead of merely being declared similar.
 
-- the three backfill passes — backward, forward, lateral — and when each is terminal;
-- the ladder: as written under a year, hourly to two years, daily beyond, collapsed in place;
-- why the ladder is a ceiling and never a floor, and why there is no setting for it;
-- fine resolution can only be obtained by having been there.
+## The rebuild replays holding windows
+
+It does not iterate the positions you hold **today**. It iterates everything the
+portfolio has **ever** held, each symbol over its own window — from its first
+acquisition to its last exit, or to today if you still hold it.
+
+The difference is not cosmetic. A share bought in 2020 and sold in 2022 is not in
+today's positions, so a rebuild driven by them fetches no price for it at all —
+and the holdings value of 2020 to 2022 is missing, which makes the account's
+money- and time-weighted returns wrong **permanently**, not just while the
+rebuild runs.
+
+This is also where fetching and rebuilding stop being the same list of symbols.
+*What we poll live* and *whose history we need* are two different questions the
+moment a position can close.
+
+Three passes run, each independent of the others:
+
+- **Backward** — from the oldest point already stored towards the first
+  acquisition, one chunk per cycle, until it arrives.
+- **Forward** — fills the sessions missed while the app was off. It is a no-op
+  during live trading, where the newest point is minutes old.
+- **Lateral** — repairs points whose conversion is missing, without fetching a
+  price again. It exists so that a missing exchange rate can be a `NULL` in a row
+  that is otherwise complete rather than a lost quote; see
+  [How prices are collected](./how-prices-are-collected.mdx).
+
+## It takes about twenty-five minutes
+
+**Roughly 25 minutes for 30 symbols over 5 years.** One chunk per cycle, with a
+delay between requests, and **there is no accelerated mode**.
+
+The delay is a courtesy to Yahoo at the exact moment the app makes more requests
+than at any other point in its life. An accelerated mode would also be a code
+path that runs once per install and is therefore never exercised again.
+
+While it runs, the app is not waiting: today's figures are correct from the first
+cycle. What fills in is the past, leftwards — the performance series is written
+over a **sliding horizon**, the earliest day on which every security an account
+held has a price. A page filling in from the right is the best progress bar
+available, and it is the reason nothing is gated on the rebuild being finished.
+
+## The resolution ladder
+
+A point's fineness is a function of its age, and there is **not a single setting**
+for it:
+
+| Age of the point | Resolution kept |
+|---|---|
+| under one year | as it was written |
+| one to two years | hourly |
+| beyond two years | daily |
+
+The collapse happens **in place**, as a step of the backward pass — the purge
+writes into the price series, so it belongs to the job that already owns those
+rows and never to a job of its own. It advances by one day of wall per cycle, and
+that wall is an **age bound and not a counter**: an install switched back on after
+six months of downtime catches up in a single pass. The survivor of a collapsed
+day is its **last** point, which is also what every read already means by "the
+price on that day", so nothing jumps as the wall goes by.
+
+:::tip The ladder is a ceiling, never a floor
+It says *no finer than X at age Y*. It fabricates nothing. A gap filled at nine
+months of age arrives hourly and **stays** hourly — the ladder will not
+interpolate it up to the live cadence, and no later pass will either.
 :::
+
+The API announces the **effective** resolution it is serving, so a sparse chart
+reads as a sparse chart and not as an outage. The rung boundaries themselves are
+not drawn on screen: they produce no wrong figure, only fewer points.
+
+## Fine resolution cannot be caught up
+
+This is the sentence to read twice. **Fine resolution is only ever obtained by
+having been there.**
+
+Yahoo sells nothing below hourly past 60 days. So a rebuild started today can
+recover the *shape* of the last five years, and it can never recover the
+minute-by-minute detail of a day you were not running. No backup taken late
+brings it back either — there is nowhere to buy it.
+
+That is what makes sampling at write time the only irreversible decision on the
+subject, and therefore the one decision that was refused: the app writes what it
+sees, and ages it afterwards.
+
+It is also why backing up is a pair of gestures and not one — the events export
+covers the portfolio, the cold copy covers the installation. That pair is
+described where you first meet it, on [Get started](./get-started.mdx).
+
+## A purge does not give a byte back
+
+Worth knowing before you go looking for the disk you expected to reclaim.
+Deleting 79 % of the rows measured **126 MB before and 126 MB after**, where the
+same content built fresh occupies 26 MB. The store reuses its blocks; it removes
+rows, not bytes.
+
+The ladder therefore **caps** rather than reclaims, and that is exactly its
+product: everything becomes constant in the age of the install rather than
+growing with it. At twenty years, the daily pass works over 34 MB in 584 ms
+instead of 500 MB in 6 673 ms.
+
+One consequence goes the other way: prices for a symbol **no event names any
+more** are kept. Forgetting an import is reversible, a fine-grained series is
+not. They stay visible, and you can purge them on demand.
