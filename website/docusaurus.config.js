@@ -63,23 +63,6 @@ const config = {
           // in-app ADR-0016 bubble can link to a page that stays v5's forever.
           // It moves with the corpus rewrite, which is what supplies the
           // redirect; leaving `path: ''` before then would 404 on /docs.
-          //
-          // The `unmaintained` banner below is one of the **two** devices that
-          // warn a v4 reader, and neither is sufficient alone (ADR-0025):
-          //  - the banner's real product is its *link*, the only thing that
-          //    catches a deep landing from a search engine. Docusaurus points
-          //    it at the same doc id in the latest version, falling back to
-          //    that version's main doc — and under the rewritten corpus no v4
-          //    or v3 page has a v5 counterpart, so all 33 of them land on the
-          //    v5 home. That is the general case here, not the exception.
-          //  - the admonition on the frozen `4.x` home says what the theme
-          //    text cannot: *v5 exists and is not an upgrade*, rather than
-          //    *this version is unmaintained*.
-          //
-          // A `4.2.3` whose only content is that announcement was refused: it
-          // charges a restart and a changelog read to someone who asked for
-          // nothing, and engraves into a frozen version a sentence nobody can
-          // later correct. Both devices ship with the site, not with a release.
           lastVersion: 'current',
           versions: {
             current: {

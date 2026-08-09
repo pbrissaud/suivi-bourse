@@ -3,125 +3,19 @@ title: Coming from v4
 description: Everything is redone, accounts are redeclared, and which figures are meant to differ
 ---
 
-You are the only reader of this documentation with nothing to install. Version 4
-is running, it keeps running, and nothing here takes it away from you — this page
-is about the four things that are different once you decide to try version 5
-beside it.
+This page will carry what a version 4 owner has to do — which is a re-import
+and a rebuild, never an upgrade — and which figures are meant to differ
+afterwards.
 
-## Everything is redone
+:::info Not written yet
+It is the subject of its own ticket. What it will hold:
 
-There is **no upgrade**. A version 5 install is a new install whose import folder
-happens to be full: you re-import your event files, and the app rebuilds the
-price history behind them from scratch.
+- everything is redone: re-import, then rebuild — about 25 minutes for 30 symbols over five years;
+- a single-account v4's event files import without one edit; accounts are redeclared in a file of the event format, and `settings.yaml` is named but never read;
+- copy your old configuration directory, never share it between the two versions;
+- a reconciliation table: quantity, cash balance and net contribution must coincide, the rest is deliberately corrected;
+- what to do with the InfluxDB and Grafana volumes — a documented gesture, never an action of the app.
 
-That is the whole procedure, and it is deliberate rather than unfinished. There
-is no version detection, no migration command and no special startup path — v5
-never opens an InfluxDB database, and the history it rebuilds is fetched again
-from Yahoo! Finance rather than copied.
-
-- **Install v5 as anyone would**, following [Get started](./get-started.mdx).
-- **Import your event files** — the same `.csv` and `.xlsx` you already have.
-  See [Import your events](./import-your-events.mdx).
-- **Let it rebuild.** Prices appear as they are fetched, oldest last: count
-  **about 25 minutes for 30 symbols over five years**. Figures that depend on a
-  price the app does not have yet say so rather than guessing, so a page that
-  looks incomplete for the first half-hour is working, not broken.
-
-:::note Your v4 image tag will not take you here
-The image was renamed — v4 pulls `ghcr.io/pbrissaud/suivi-bourse-app`, v5 is
-published as `ghcr.io/pbrissaud/suivi-bourse`. No `5` tag is ever published
-under the old name, so a v4 deployment that bumps its tag out of habit **fails
-at the pull** instead of starting on a store it never mounted.
-:::
-
-## Your files import as they are; your accounts are redeclared
-
-The event files are the one continuity that survives, and it survives whole: a
-**single-account** v4's files import **without a single edit**. An empty
-`account` column means `default` for as long as no account is declared, which is
-exactly the shape a v4 that never opted into accounts produces.
-
-If you did opt in, one thing has to be redone. Accounts are no longer a block of
-a settings file — they are user data with a provenance, declared like events are:
-**in a file of the event format**, or from the interface. The v4
-`settings.yaml` is **named, never read**: v5 tells you it saw it and tells you it
-ignored it.
-
-:::warning Redeclare the accounts before importing a multi-account export
-An event naming an account that does not exist is refused, and refusal is by
-file — so a multi-account v4 whose accounts have not been declared sees its
-files rejected in one block rather than line by line. Declare the accounts
-first, then import. [Import your events](./import-your-events.mdx) carries the
-format of both files.
-:::
-
-Everything else the v4 configuration directory holds stops being read:
-`config.yaml` (manual mode has no successor — a position without dates cannot be
-replayed) and the `SB_*` variables that described the scheduler, which now live
-in the store and are turned on the [Settings](./settings.mdx) page.
-
-## Running both at once: copy the folder, never share it
-
-Nothing stops you from running v4 and v5 side by side — two projects, two ports,
-two volumes — and it is a reasonable thing to want while you check the numbers.
-Two cautions make it safe rather than confusing.
-
-**Copy the configuration directory; never point both versions at the same one.**
-v5 reads your files as *provenance* and records where each event came from; v4's
-own tooling writes into that directory. Sharing it makes the two versions
-disagree about a file's identity, and the disagreement is invisible — nothing
-errors, the numbers simply drift.
-
-**And expect the figures to differ.** This is the part that reads as a
-regression if nobody says it first: v5 changed three conventions on purpose
-(weighted-average cost with fees absorbed, a position with no price carried at
-its cost, and one reporting currency for the whole portfolio). Comparing v4 and
-v5 is therefore not a way to reassure yourself. The reassurance is elsewhere, and
-it is stronger: **your original event files are never touched**. They are still
-there, beside both installs, while v5 rebuilds.
-
-### Reconciliation table
-
-| Figure | v4 → v5 | Why |
-| --- | --- | --- |
-| **`quantity`** held | **must coincide** | The same events, replayed. Compare it against v4's `owned_quantity`, not against `purchased_quantity` — v4's "purchased" counted everything ever bought, and v5 has no such figure. |
-| **`cash_balance`** | **must coincide** | The same per-account ledger arithmetic, from the same events. |
-| **`net_contributed`** | **must coincide** | Deposits minus withdrawals, fees excluded, in both versions. |
-| Unit cost / cost basis | *corrected on purpose* | Cost is matched by weighted average and **acquisition fees are absorbed into the basis** (disposal fees into the proceeds). v4 kept fees in a field of their own, so every unit cost moves. |
-| Latent gain | *corrected on purpose* | It follows the cost basis above, and a held position with no price is now **carried at its own unit cost** instead of being left blank. |
-| Realized gain | *new* | v4 recorded a sale's price without aggregating it. v5 states realized gain as its own term — a breakdown of the total gain, never something added on top of it, since the proceeds are already in the cash balance. |
-| Dividends | *corrected on purpose* | They leave the profit-and-loss entirely and are reported as their own term rather than folded into one composite. |
-| Total gain / v4's `gain_absolu` | *corrected on purpose* | It is the sum of the three terms above, all of which moved. |
-| `xirr`, `twr_index` | *corrected on purpose* | Computed over the rebuilt history and the corrected cost basis. |
-| Every amount, if you hold several currencies | *corrected on purpose* | v5 converts everything into one base currency; v4 reported each account in its own. |
-
-[Read your figures](./read-your-figures.mdx) states each of these conventions on
-the figure itself, which is where you will want them while you compare.
-
-## What to do with the v4 volumes
-
-v5 never opens them. Your InfluxDB and Grafana data stay in the two named volumes
-the v4 Compose stack declared — `sb_influxdb_data` and `sb_grafana_data`, prefixed
-by the Compose project name, so `docker volume ls` shows them as
-`suivi-bourse_sb_influxdb_data` and `suivi-bourse_sb_grafana_data` unless you
-renamed the project.
-
-Because v5 never sees them, reclaiming that disk is **a gesture you make, never
-an action of the app** — nothing here deletes data you did not ask it to delete.
-Keep them for as long as the side-by-side comparison is useful, then, once v5
-holds what you want and your event files are safely copied:
-
-```bash
-docker compose -p suivi-bourse down
-docker volume rm suivi-bourse_sb_influxdb_data suivi-bourse_sb_grafana_data
-```
-
-Deleting them costs no event and no position: everything those volumes held was
-derived from files you still have, plus prices that are fetched again.
-
-:::note This page is frozen at 5.0
-It is the only page here whose expiry does not follow the release cycle. It
-describes one crossing, from one version to one other, and that crossing does not
-change when 5.1 ships — so this page stays as written while
-[Release notes](./release-notes.mdx) accrue above it.
+This is the only page whose expiry does not follow the release cycle: it is
+frozen at 5.0 while [release notes](./release-notes.mdx) accrue above it.
 :::

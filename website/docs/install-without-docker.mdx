@@ -15,8 +15,9 @@ Python process.
 
 ## What you need
 
-- **Python 3.10 or later.** The published image ships 3.14; nothing here needs
-  it.
+- **Python 3.14 or later.** The same floor the published image ships, and the
+  same one `app/pyproject.toml` declares — there is one answer to this question,
+  not a lenient one for the source and a strict one for the image.
 - **[uv](https://docs.astral.sh/uv/)**, which creates the virtual environment
   from the lockfile.
 - **A directory to keep the store in.** Anything you back up and do not delete.
@@ -126,6 +127,6 @@ this deployment never did.
 
 The published image is built for `linux/amd64` and `linux/arm64`. Installed this
 way there is no image, so the answer is Python's: anything your platform has a
-Python 3.10+ and a DuckDB wheel for. If you need an architecture the image does
+Python 3.14+ and a DuckDB wheel for. If you need an architecture the image does
 not cover,
 [open an issue](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
