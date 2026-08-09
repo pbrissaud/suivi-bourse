@@ -41,6 +41,8 @@ Docker build context is `./app`; it is **not** a pnpm workspace with `website/`.
 ```bash
 cd app/web
 pnpm install
+pnpm lint      # tsc -b --noEmit
+pnpm test      # vitest, no network and no configuration required
 pnpm build     # → app/src/static/, which Flask serves. Git-ignored.
 pnpm dev       # Vite on :5173, proxying /api to http://localhost:8080
 
@@ -53,7 +55,53 @@ cd docker-compose && SB_UID=$(id -u) SB_GID=$(id -g) docker compose -f docker-co
 The image builds the bundle itself in a first `node` stage and `COPY --from`s
 `dist/`; the runtime image stays Python-only. `app/.dockerignore` keeps the
 host's `node_modules` and a locally built `src/static` out of the context — the
-latter would otherwise shadow the image's own build.
+latter would otherwise shadow the image's own build. The install layer copies
+`package.json`, `pnpm-lock.yaml` **and `pnpm-workspace.yaml`**: pnpm 11 reads
+its `allowBuilds` verdicts from the workspace file and `pnpm install` is what
+asks for them, so leaving it out fails the build on `ERR_PNPM_IGNORED_BUILDS`
+while every gate run *from* `app/web` stays green. A pull request touching
+`app/**` now builds the image for that reason — it is the only gate that reads
+the Dockerfile, which was otherwise built by the release workflow alone, i.e.
+after the merge.
+
+**The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
+theme, the two catalogues and the shell, with the four routes reachable and the
+four pages still placeholders — they are **redesigned, not ported**, one ticket
+each. Four things about it are decisions, not defaults:
+
+- **One test seam, the outermost.** The real router, the real pages, the real
+  catalogues, the real theme and a real `QueryClient` mount in jsdom; **HTTP is
+  the only faked edge** (MSW), which is the exact parallel of `tests/test_e2e.py`
+  (real runtime, faked yfinance). `src/test/factories.ts` is one *parameterised*
+  factory in the taste of `conftest.py`'s `fake_ticker`, and it covers the three
+  shapes the real portfolio cannot show — N ≥ 3 accounts, a held position in a
+  foreign currency, a held position with no price. No fixture carries a real
+  symbol, amount or label. Assertions are on the accessible rendering — never a
+  class, a component name, or a DOM snapshot.
+- **`index.css` has exactly three blocks** (ADR-0023): the tweakcn `Vercel`
+  primitives, **never hand-edited** and regenerated with `pnpm dlx shadcn@latest
+  add https://tweakcn.com/r/themes/vercel.json`; the domain layer, which holds
+  only what the preset cannot say (`--price` = `--chart-2` and `--grant` =
+  `--chart-1` verbatim, `--dividend` and `--attention` added, `--loss` distinct
+  from `--destructive` and lower in chroma); and an `@theme inline` bridge, so
+  `text-gain` is written like `bg-card`. The twelve `--alloc-*` are **generated**
+  in `lib/alloc.ts` and written onto the root element by `ThemeProvider` — rank 1
+  is the most contrasted on **both** grounds, which is why the lightness ramp
+  reverses between them.
+- **The theme and the language are the reader's two preferences, one mechanism**
+  (ADR-0024): three states each (`light|dark|auto`, `fr|en|auto`), absence
+  meaning `auto`, two `localStorage` keys of identical shape, and **no dial in
+  the store** — the app asks one question at first run, and that one is not it.
+  The catalogues are ICU, one JSON per language, keyed semantically, English the
+  source. Numbers and dates follow the **language**, not the currency: `LOCALE`
+  is gone and the eight `Intl` sites take a locale. The front branches on
+  `problem.type` and renders `detail` nowhere.
+- **The shell is shadcn's `Sidebar`** (ADR-0022) — `collapsible="icon"` wide, a
+  drawer under 768 px, nothing hand-written for the narrow case — plus the
+  **content header bar** carrying four objects on all four pages (collapse,
+  status dot, language, theme), and a banner that lives *in the content column*
+  and shows **one band or none**. `lib/api.ts` is the only module that knows a
+  URL, and the paths it exports are what the test handlers fake.
 
 ### Documentation Website (in `website/` directory)
 
@@ -555,6 +603,18 @@ app/src/
 
 app/web/                    # Front-end workspace — Vite + React 19 + TS, Tailwind/shadcn,
                             # TanStack Table & Query, Recharts. Builds into app/src/static.
+├── src/index.css           # Three blocks: preset · domain · @theme inline bridge (#713)
+├── src/app.tsx             # The providers, mounted identically by main.tsx and the tests
+├── src/router.tsx          # Four code-based routes; the history is an argument
+├── src/i18n/{en,fr}.json   # ICU catalogues, semantic keys, English the source
+├── src/lib/api.ts          # The only module that knows a URL
+├── src/lib/i18n.tsx        # Language: three states, localStorage, ICU
+├── src/lib/theme.tsx       # Theme: three states, localStorage, writes the alloc ramp
+├── src/lib/alloc.ts        # The twelve allocation stops, generated per ground
+├── src/lib/format.ts       # The eight Intl sites, locale as an argument
+├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
+├── src/lib/status.ts       # The dot's state and the banner's one band, pure
+└── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 
 ## Prometheus Metrics (legacy)

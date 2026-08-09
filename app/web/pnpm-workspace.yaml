@@ -1,0 +1,6 @@
+# pnpm 11 asks for a verdict on every install script rather than running it.
+# `msw` only has one to copy its **browser** service worker into a public
+# folder, and the seam here is `msw/node`: nothing in this repository serves
+# that worker, so the answer is no.
+allowBuilds:
+  msw: false

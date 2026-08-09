@@ -17,7 +17,13 @@ RUN npm install -g corepack@latest && corepack enable
 # `--frozen-lockfile` makes a lockfile that disagrees with package.json a build
 # failure rather than a silent resolution — the same contract `uv sync --locked`
 # gives the Python half.
-COPY web/package.json web/pnpm-lock.yaml ./web/
+#
+# `pnpm-workspace.yaml` belongs to this layer and not to the source copy below:
+# it is where pnpm 11 reads the `allowBuilds` verdicts, and `pnpm install` is
+# what asks for them. Without it here the install stops on
+# `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: msw`, and nothing on a pull
+# request sees it — the image is only built by the release workflow.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
 RUN cd web && pnpm install --frozen-lockfile
 
 COPY web ./web

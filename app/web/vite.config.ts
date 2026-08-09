@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -7,6 +8,16 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
+  },
+  // The suite runs on the same config as the app — same alias, same plugins —
+  // so a test imports `@/lib/api` exactly as a component does. `jsdom` is the
+  // environment because the seam is the screen; `setup.ts` is what makes the
+  // run offline and configuration-free.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
   build: {
     // Straight into the Python source tree. One path serves both worlds: Flask
