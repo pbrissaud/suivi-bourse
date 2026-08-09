@@ -3,14 +3,175 @@ title: Import your events
 description: The file format, the six kinds of event, declaring accounts, and the drop folder
 ---
 
-This page will carry the file format, the six kinds of event, how accounts are
-declared, and how the drop folder is read.
+This page is for people who already have files — a broker export, the event
+files of a version 4 install, a spreadsheet you keep yourself. **It is not a
+step of the installation.** A new install needs no file at all: you record your
+first position in the app, and the form that records it is the onboarding.
+[Get started](./get-started.mdx) never shows a file, and that is deliberate.
 
-:::info Not written yet
-It is the subject of its own ticket. What it will hold:
+## The format
 
-- the columns of an event file, and what each kind of event needs;
-- `BUY`, `SELL`, `GRANT`, `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL`, one paragraph each;
-- declaring accounts in a file of the same format, and what provenance records;
-- the drop folder: read-only, optional, and what happens when a file changes.
+An event file is a `.csv` or an `.xlsx` with one header row and one event per
+row. Every file in the drop folder is read, and every sheet of a workbook; the
+rows are merged and **sorted by date**, so the order inside a file — and the
+split across files — is yours to choose. Organise by year, by broker, by
+account, or not at all.
+
+| Column | Required | What it holds |
+|---|---|---|
+| `date` | yes | ISO format, `YYYY-MM-DD` |
+| `event_type` | yes | one of the six below |
+| `account` | see [accounts](#declaring-your-accounts) | the id of a declared account |
+| `symbol` | share events | the Yahoo! Finance ticker, e.g. `AAPL`, `AI.PA` |
+| `name` | share events | the display name, e.g. `Apple Inc.` |
+| `quantity` | `BUY`, `SELL`, `GRANT` | number of shares; fractions are allowed |
+| `unit_price` | `BUY`, `SELL` | price per share, **in your base currency** |
+| `fee` | no | transaction fee; never negative |
+| `amount` | `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` | the sum received or moved |
+| `notes` | no | free text, kept and shown, never interpreted |
+
+**Amounts are in your base currency, as you paid them.** An event records the
+debit — what actually left your account — rather than a foreign amount to be
+re-converted later at a rate nobody kept. That is what makes a cost basis exact
+instead of reconstructed, and it is why only *prices* are ever converted. If
+you have not answered [the base currency question](./settings.mdx#the-base-currency)
+yet, the amounts are still recorded; nothing is interpreted until you do.
+
+**A direction is carried by the event type, never by a sign.** Every amount and
+every quantity is positive: `WITHDRAWAL` is what makes money leave, not a
+negative `DEPOSIT`.
+
+```csv
+date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-02,DEPOSIT,pea,,,,,,2000.00,January transfer
+2024-01-15,BUY,pea,AI.PA,Air Liquide,10,168.40,2.50,,
+2024-03-01,DIVIDEND,pea,AI.PA,Air Liquide,,,,32.00,2023 dividend
+2024-05-20,GRANT,pea,AI.PA,Air Liquide,1,,,,Bonus share
+2024-09-15,SELL,pea,AI.PA,Air Liquide,4,181.20,2.50,,
+```
+
+## The six kinds of event
+
+**`BUY`** — needs `quantity` and `unit_price`. It adds to the position and adds
+`quantity × unit_price + fee` to its cost basis: **acquisition fees are absorbed
+into the basis** rather than kept as a fourth figure. The same amount leaves the
+account's cash balance.
+
+**`SELL`** — needs `quantity` and `unit_price`. It removes shares, removes the
+matching share of the cost basis at the weighted average, books the difference
+as **realized gain**, and credits `quantity × unit_price − fee` to cash —
+disposal fees are absorbed into the proceeds, symmetrically. Selling more than
+you hold is refused. A position sold down to zero is not deleted and is not
+flagged: it simply has a quantity of zero, and keeps its realized gain and its
+dividends.
+
+**`GRANT`** — needs `quantity`; `unit_price` is optional and it is the whole
+distinction. With a price, the shares are treated as received *and* paid for:
+the contribution and the cost basis move together, which is what a taxed award
+is. Without one, it is **dilution** — the quantity rises and the basis does not,
+which is what a bonus share or a stock split is.
+
+**`DIVIDEND`** — needs `amount`. It credits `amount − fee` to cash and counts in
+the *dividends* term of your gain. It never enters the profit and loss of the
+position: a dividend is not a price movement, and mixing the two produces a
+figure whose terms have different definitions.
+
+**`DEPOSIT`** — needs `account` and `amount`; carries no share. It is money
+arriving from outside the portfolio: cash rises by `amount − fee`, and the
+**net contribution** rises by `amount` — the gross sum, the fee excluded. That
+distinction is the one performance rests on: an external flow is something you
+put in, never something the portfolio earned.
+
+**`WITHDRAWAL`** — needs `account` and `amount`; carries no share. The mirror
+image, and it is symmetrical down to the fee: cash falls by `amount + fee`, and
+the net contribution falls by `amount`.
+
+**A transfer fee is never absorbed into the net contribution**, and that is a
+decision rather than an oversight. Absorbing it would make the books close on
+three terms, at the price of making the money disappear from the product: it
+left your pocket, and it belongs to no position — it is neither an acquisition
+cost, nor a disposal cost, nor a dividend. So your gain carries it as a term of
+its own, and an install whose broker moves money for free never meets that term.
+
+`DEPOSIT` and `WITHDRAWAL` are **cash events and carry no share at all**:
+`symbol`, `name`, `quantity` and `unit_price` are refused on them rather than
+ignored, because a deposit that names a ticker means something was misfiled.
+
+## Declaring your accounts
+
+An account is user data with a source and a history — not a setting. So it is
+declared the way an event is: **by a file, in the same format**, or from the
+app. The columns are the columns of an account, and there are three.
+
+| Column | What it holds |
+|---|---|
+| `id` | the id your events name in their `account` column, e.g. `pea` |
+| `type` | `PEA`, `CTO`, … — free text, used for grouping and display |
+| `label` | the name shown on screen, e.g. `PEA Boursorama` |
+
+It is a file rather than an interface-only gesture for one reason: an install
+whose owner never opens the page has nothing to click. Reserving accounts to
+the interface would forbid multi-account to every headless install — and with
+it the import of any broker export that names accounts. It is the same format
+as the events rather than a third one because nobody should have to learn YAML
+to declare two accounts.
+
+A few rules follow, and each of them exists to keep a mistake a refusal:
+
+- **Account files are imported before event files**, always. An event naming an
+  account that does not exist yet has nothing to attach to.
+- **An event file naming an undeclared account is not imported at all** — not
+  partially — and the message names the account you have to declare.
+- **An empty `account` column means `default`** for as long as no account file
+  has been imported. Once one has, an empty column is an **error**: at that
+  point a blank cell is far more likely to be an omission than a choice, and
+  guessing would silently pile a second account's events onto the first.
+- **There is always at least one account.** When you have declared none, it is
+  called `default`. Nothing in the app branches on whether accounts exist.
+- **An account cannot be removed while an event names it.** Nothing is left
+  behind as a residue you can neither read nor delete.
+- What came from a file is **read-only** in the app; what you create in the app
+  is editable. Where a row came from is always visible.
+
+Version 4's `settings.yaml` is **named and never read**. Its `accounts:` block
+mixed deployment settings with user data, which is exactly the seam v5 separates;
+redeclaring two or three accounts in a three-column file costs less than keeping
+a version 4 format alive forever. See [Coming from v4](./coming-from-v4.mdx).
+
+## The drop folder
+
+The drop folder is a directory you mount **read-only** on `/import`. Drop a
+file in it and it is imported — no click, no dial, no interval. It is watched
+that way permanently, because an install with no interface has nobody to press
+*Import*.
+
+**It is optional, and its absence is a normal state rather than a degraded
+one.** The app never creates it, never writes to it, and never complains about
+it. An install that has no file to drop is a complete install; the only thing a
+missing drop folder means is that you record your events in the app.
+
+Three rules govern what a file does, and the third is the one that surprises:
+
+1. **Dropping the same file name again replaces its rows.** A source is
+   identified by its file name, so a re-drop corrects rather than duplicates —
+   fix a line, drop the file again, done. Renaming the file makes it a *new*
+   source, which is repaired by forgetting the old one.
+2. **You forget a whole import, never a single row.** Read-only rules out
+   editing one line in place, so the unit of revocation is the import. Without
+   that, a row provisioned by a file would be both unalterable and
+   indestructible.
+3. **Removing the file from disk does nothing.** The store is the truth once the
+   import has happened; the file is where the rows came from, not where they
+   live. Backups, therefore, are of the store — or of your exported events, which
+   is the other form and re-imports cleanly.
+
+Where a row came from is kept and shown — *line 14 of `2024.csv`* — so you can
+find the source of a figure. It is provenance for reading, never an address the
+app writes back to.
+
+:::note Coming from a single-account version 4
+Your event files import **without a single edit**. That is the one continuity
+that survives between the two versions, and it survives because "an empty
+account column means `default`" is version 4's rule minus its opt-in.
+[Coming from v4](./coming-from-v4.mdx) has the rest.
 :::
