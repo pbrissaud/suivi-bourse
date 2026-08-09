@@ -122,10 +122,15 @@ A few rules follow, and each of them exists to keep a mistake a refusal:
   account that does not exist yet has nothing to attach to.
 - **An event file naming an undeclared account is not imported at all** — not
   partially — and the message names the account you have to declare.
-- **An empty `account` column means `default`** for as long as no account file
-  has been imported. Once one has, an empty column is an **error**: at that
+- **An empty `account` column means `default`** for as long as no *real*
+  account exists — real meaning any account that is not the seeded `default`,
+  whether a file declared it or you created it in the interface (ADR-0008,
+  ADR-0013). From the moment one does, an empty column is an **error**: at that
   point a blank cell is far more likely to be an omission than a choice, and
-  guessing would silently pile a second account's events onto the first.
+  guessing would silently pile a second account's events onto the first. Note
+  the two edges: an accounts file that declares nothing but `default` is not a
+  declaration and changes nothing, and an account created from the interface
+  arms the rule with no file imported at all.
 - **There is always at least one account.** When you have declared none, it is
   called `default`. Nothing in the app branches on whether accounts exist.
 - **An account cannot be removed while an event names it.** Nothing is left
