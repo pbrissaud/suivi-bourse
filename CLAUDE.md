@@ -55,7 +55,14 @@ cd docker-compose && SB_UID=$(id -u) SB_GID=$(id -g) docker compose -f docker-co
 The image builds the bundle itself in a first `node` stage and `COPY --from`s
 `dist/`; the runtime image stays Python-only. `app/.dockerignore` keeps the
 host's `node_modules` and a locally built `src/static` out of the context — the
-latter would otherwise shadow the image's own build.
+latter would otherwise shadow the image's own build. The install layer copies
+`package.json`, `pnpm-lock.yaml` **and `pnpm-workspace.yaml`**: pnpm 11 reads
+its `allowBuilds` verdicts from the workspace file and `pnpm install` is what
+asks for them, so leaving it out fails the build on `ERR_PNPM_IGNORED_BUILDS`
+while every gate run *from* `app/web` stays green. A pull request touching
+`app/**` now builds the image for that reason — it is the only gate that reads
+the Dockerfile, which was otherwise built by the release workflow alone, i.e.
+after the merge.
 
 **The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
 theme, the two catalogues and the shell, with the four routes reachable and the

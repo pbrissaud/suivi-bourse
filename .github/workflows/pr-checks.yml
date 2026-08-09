@@ -80,6 +80,30 @@ jobs:
           pnpm test
           pnpm build
 
+  image:
+    name: "Image"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Get changed files in the app folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v47
+        with:
+          files: |
+            app/**
+      # The jobs above run each half where every file of its directory is
+      # present. The image's install layer sees only what the Dockerfile copies
+      # into it, so a workspace file left out of that COPY breaks the build with
+      # all the other gates green — which is how #713 shipped a broken image.
+      # Until now the image was built only by the release workflow, i.e. after
+      # the merge. This is the one gate that reads the Dockerfile.
+      - name: Build the image if the app changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: app
+        run: docker build -t suivi-bourse:pr .
+
   build-docs:
     name: "Building doc"
     runs-on: ubuntu-latest
