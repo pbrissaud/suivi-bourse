@@ -291,8 +291,10 @@ registry.
 
 **One embedded store, and the app does not boot without it** (issue #696, spec
 #695, ADR-0001). `store.py` owns the file: the connection, the DDL of the
-**twelve** tables, and the seed. It is the socle of v5 — nothing reads or writes
-domain rows through it yet, and every ticket that follows branches off it.
+**twelve** tables, and the seed. It is the socle of v5, and every ticket that
+follows branches off it: the configuration path fills `import_source`/`account`/
+`symbol`/`event` (#697, #698) and the **replay fills `position`/`account_state`**
+(#699, `positions.py`).
 
 Four things about it are decisions rather than defaults:
 
@@ -495,9 +497,32 @@ accounts source in the drop folder is imported first, so the accounts a build
 publishes are the ones its events were just validated against. `settings.yaml`
 is not read at all any more, so nothing about the configuration is boot-only.
 
+**And the replay writes** (issue #699). `ConfigurationManager._load_from_store`
+replays the ledger once and hands the result to `positions.write_state`, which
+lays down `position` and `account_state` in **one transaction** — the two tables
+the ingestion owns, and it is their only writer (a test asserts that on the
+source: `tests/test_positions.py`). Three properties come from *where* the call
+sits rather than from the function: it is **after the validation**, so a ledger
+that does not replay writes nothing and the previous rows stand; it runs on the
+same timeline the snapshot is built from, so the store and what the app
+publishes cannot be two generations of the ledger; and it is a **replacement**,
+so an import forgotten takes its positions with it instead of leaving a table
+that goes on describing a portfolio nobody declares. A whole-table rewrite is
+affordable here for a reason of *rhythm*, not size: a replay happens on the
+boot, on a file landing, and on a write — never every 120 s, which is the
+measurement ADR-0011's `UPSERT` argument rests on.
+
 The application runs independent scheduled jobs on a single APScheduler:
 - **Scraping**: one **self-rescheduling job per held symbol**, market-aware
-  (issue #616). Each job fetches its symbol from Yahoo Finance, writes a point
+  (issue #616). *Held* is a filter on `quantity` since #699, which is what
+  finally makes `_held_symbols()`'s docstring true: a position sold four years
+  ago used to go on being polled at Yahoo for the life of the process. Its
+  departure also `.remove()`s its quote gauges (see Prometheus below), and a
+  buy-back revives it through `_reconcile_jobs`' ordinary revive path with
+  nothing to remember. The **write loop is per holding**, not per symbol: a
+  share still held in one account keeps its job while the account that sold out
+  stops being written, or that account collects a point of zeros every cycle and
+  the shares page grows a phantom row. Each job fetches its symbol from Yahoo Finance, writes a point
   per account holding it, then re-arms on its own cadence: `REGULAR` markets
   re-poll every `SB_REGULAR_INTERVAL` (default 120s); closed markets sleep to
   the next open (capped 24h). A **dead-ticker guard** (issue #617) backs a
@@ -557,6 +582,14 @@ The application runs independent scheduled jobs on a single APScheduler:
   a missed open session comes back with rows. `_backfill_complete` gates **only**
   the backward pass. Recovered points carry the same tags/series identity as live
   points, so perf `holdings_value` picks them up.
+  **The two passes part company on a sold position** (issue #699, #672 D5): the
+  backward one keeps running (the chart wants the history of a line the user
+  held, and the watermark bounds it, so it finishes and stops), the forward one
+  stops at the same predicate as the scrape. It exists to catch a live writer
+  up, and that writer has just been removed — and its own `< 1 day` no-op guard
+  is precisely what that writer was keeping true, so left running it would
+  refetch `[newest → now]` from Yahoo **every day, forever**, for every symbol
+  the owner has ever sold out of.
 - **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
   (opt-in accounts only) as its **own gated interval job** at `SB_PERF_INTERVAL`
   (default 120s), decoupled from the per-symbol scrape jobs (issue #618). Each
@@ -570,6 +603,27 @@ The application runs independent scheduled jobs on a single APScheduler:
   (#606) and there is no closed-day Parquet drip (#597).
 
 Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
+
+**The InfluxDB path stays intact through one disposable adapter** (issue #699 is
+an *expand* step). `legacy_influx_shape.legacy_position_fields` renders the five
+v4 portfolio fields out of the v5 position state, and it is written to be
+deleted by the ticket that moves the price path off `influxdb_writer.py` —
+without it, changing the position's shape while P1 still reads InfluxDB would
+mean joining two stores to render one table. The mapping is arithmetic rather
+than a rename: `purchased_quantity` and `owned_quantity` **collapse onto the
+held quantity**, `purchased_price` is the derived unit cost — so
+`purchased_quantity × purchased_price` comes out to `cost_basis` exactly, and to
+zero on a sold position — and `purchased_fee` is **`None`, i.e. not written at
+all**. Not `0.0`: the provisioned Grafana dashboard reads that field with
+`lastNotNull` in a *Fees* panel, so a zero would tell a user who pays fees on
+every trade that they pay none, while an absent field keeps the last true value
+showing. `realized_gain` has no legacy field and is not smuggled into one.
+
+**What no adapter can hide**, and it is worth naming rather than discovering:
+`purchased_quantity` changes meaning on a field the *historical* series also
+reads, so the "Investissement" curve steps once at the upgrade instant and the
+old points are never rewritten. It is the price of the expand step, bounded by
+the ticket that deletes the path.
 
 ### Scheduled Jobs
 ```text
@@ -662,8 +716,8 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 | `symbol` | Yes | Yahoo Finance ticker (e.g., `AAPL`, `MSFT`) |
 | `name` | Yes | Display name for the share |
 | `quantity` | For BUY/SELL/GRANT | Number of shares |
-| `unit_price` | For BUY/SELL | Price per share |
-| `fee` | Optional | Transaction fee |
+| `unit_price` | For BUY/SELL; **optional on GRANT** | Price per share. On a GRANT it says *valued award* (it feeds the contribution and the cost basis together); leaving it empty says *dilution* (#699) |
+| `fee` | Optional | Transaction fee. On a BUY it is absorbed into the cost basis; on a SELL it reduces the proceeds and lands in the realized gain |
 | `amount` | For DIVIDEND | Dividend amount received |
 | `notes` | Optional | Free text comment |
 
@@ -706,30 +760,86 @@ The rules, each of them keeping a mistake a refusal:
 
 | Type | Effect on Portfolio |
 |------|---------------------|
-| `BUY` | +purchase.quantity, +estate.quantity, recalculates weighted avg cost_price, +purchase.fee, −cash |
-| `SELL` | -estate.quantity, +purchase.fee, +cash (proceeds `qty×price − fee`) |
-| `GRANT` | +estate.quantity only (free shares, no impact on purchase); cash-neutral |
-| `DIVIDEND` | +estate.received_dividend, +cash (`amount − fee`) |
+| `BUY` | +quantity, +cost_basis (`qty×price + fee` — the acquisition fee is absorbed), −cash |
+| `SELL` | −quantity, −cost_basis (`qty × PMP`), +realized_gain (`qty×price − fee − qty×PMP`), +cash |
+| `GRANT` | +quantity; +cost_basis `qty×unit_price` **if the row declares one**; cash-neutral |
+| `DIVIDEND` | +received_dividend, +cash (`amount − fee`) |
 | `DEPOSIT` | +cash (`amount − fee`), +net_contributed (cash event: `amount` required, no share) |
 | `WITHDRAWAL` | −cash (`amount + fee`), −net_contributed (cash event) |
 
 Cash is a per-account ledger (starts at `0.00`). Negative balances are allowed
 (non-blocking warning); overselling stays blocking.
 
-#### Aggregation Logic
+#### Aggregation Logic — a position is one stock (issue #699, ADR-0003)
 
-**BUY** - Weighted average cost price:
-```
-new_cost_price = (old_qty × old_price + new_qty × new_price) / total_qty
-```
+A position is **a `quantity` and a `cost_basis` stored as an amount**; the unit
+price (the *PMP*) is derived by `events.schemas.unit_cost`, the one place in the
+product that divides. `purchase.quantity` and `purchase.fee` are gone as state
+*and* as names: *"how much did I ever buy"* is `SUM(quantity) WHERE event_type =
+'BUY'` and *"how much did I pay in fees"* is `SUM(fee)`, both queries over the
+events. Three things fall out at once:
 
-**SELL** - Validation:
-- Cannot sell more shares than currently owned
-- Sale price is recorded in the event but not aggregated (realized gains not tracked)
+- **a sale is a subtraction** — no average is rebuilt, so ten years of partial
+  sales accumulate no rounding drift;
+- **a fully sold position reports zero invested by construction** (quantity 0 →
+  basis 0), which is where the phantom **−932 €** on a sold line disappears;
+- **the unit price of a sold position is undefined**, which is the truth: it has
+  a realized gain instead.
 
-**GRANT** - Free shares:
-- Only increases estate.quantity
-- Does not affect purchase.quantity or cost_price
+**The matching convention is the weighted average (PMP), with no dial** — it is
+the French tax rule (CGI art. 150-0 D), and offering FIFO alongside would make
+the app carry two conventions at once.
+
+**There is no `closed` flag**: the predicate is `quantity == 0`. *Closed* and
+*temporarily flat* differ only by a **future** event, so nothing computable
+today separates them — and the guess is free, because `_reconcile_jobs` re-arms
+any held symbol without a live job. The filtering line is `_held_symbols()`,
+never `Timeline.current()`: a sold position must stay in the snapshot so the
+replay writes its realized gain and the page shows it.
+
+Three named figures replace one composite, each with its own domain:
+
+| Figure | Formula | Defined when |
+|---|---|---|
+| Latent gain | `holdings_value − cost_basis` | position open (`None` with no observed quote) |
+| Realized gain | Σ sales `(net proceeds − basis removed)` | from the first sale, **permanently** |
+| Dividends received | `position.received_dividend` | always |
+
+> **The rule a contributor will break:** the realized gain is a **decomposition**
+> of the absolute gain, never a term added to it. The sale's proceeds are already
+> in the cash balance, so `gain_absolu + realized` shows a winning account losing,
+> perfectly plausibly. `tests/test_performance.py` pins #672's worked example to
+> the cent — `latent +497,00 · realized −335,89 · dividends +20,00 = +181,11 €` —
+> **and** pins the forbidden operation's `−154,78 €`.
+
+**A `GRANT` carries an optional `unit_price`** feeding the external contribution
+*and* the cost basis **together** — one function, `events.schemas.declared_value`,
+read by the aggregator and by `performance` alike, because two spellings of
+*"was a price declared?"* would eventually disagree by a few euros and the
+symptom is an identity that quietly stops holding. Present is a valued award
+(latent gain nil on the day), absent is dilution (both zero). It also takes
+`price_at` out of the contribution path, which is what stops `gain_absolu`
+drifting as the backfill advances with no event having moved.
+
+No format change, and **no new validation** — a value that cannot be a price
+(zero, negative) is normalised to dilution where it is read, never refused. The
+validator runs over the **whole stored ledger** on every build, not only over a
+file someone just dropped, and the column was parsed and silently discarded
+before v5: a refusal there would be retroactive, and a row that was legal when
+it was imported would fail the boot in the gunicorn master — in an app the user
+then cannot reach to repair it.
+
+**Dust normalisation** (ADR-0017): a sale emptying a position to under
+`10⁻⁹ × Σ acquired` sets `quantity` **and** `cost_basis` to exact zero. A real
+broker export writes `0.34898399999999996` and leaves `4×10⁻¹⁷` of a share
+standing; the noise is in the file, not in the arithmetic, so the clamp is
+applied where the file's number lands (the SELL) and nowhere else. **The
+oversell guard carries the same tolerance**, because the same file rounds the
+other way just as often: a tolerance on the leftover and none on the guard makes
+the refusal a coin toss on the last bit of a float — and this replay runs in the
+gunicorn master, so raising there takes the whole portfolio down over `4×10⁻¹⁷`
+of a share, on a ledger with no row-level edit to repair it with. A real
+oversell is still blocking.
 
 ---
 
@@ -788,6 +898,8 @@ app/src/
 ├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
 ├── ledger.py               # The import: import_source/symbol/event, provenance, revocation (#697)
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
+├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
+├── legacy_influx_shape.py  # DISPOSABLE: the v4 field shape out of the v5 position (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, default, parse (#696, ADR-0014)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
@@ -797,10 +909,10 @@ app/src/
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
     ├── __init__.py
-    ├── schemas.py          # Dataclasses: Event, EventType, ShareState
+    ├── schemas.py          # Dataclasses: Event, EventType, ShareState + unit_cost (#699)
     ├── loader.py           # CSV/XLSX loading
     ├── validator.py        # Event validation
-    ├── aggregator.py       # Aggregation logic
+    ├── aggregator.py       # Aggregation logic — the PMP, the realized gain, the dust clamp
     └── watcher.py          # File watcher (watchdog)
 
 app/web/                    # Front-end workspace — Vite + React 19 + TS, Tailwind/shadcn,
@@ -832,14 +944,45 @@ scraper. `prometheus_exporter.py` owns the registry only; its `start()` and its
 `ThreadingHTTPServer` are gone.
 
 Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_price`,
-`sb_purchased_quantity`, `sb_purchased_price`, `sb_purchased_fee`,
-`sb_owned_quantity`, `sb_received_dividend`, `sb_dividend_yield`, `sb_pe_ratio`,
+`sb_cost_basis`, `sb_owned_quantity`, `sb_received_dividend`,
+`sb_realized_gain`, `sb_dividend_yield`, `sb_pe_ratio`,
 `sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
 `share_currency`/`share_exchange`/`quote_type`). `sb_price_staleness` is the
 price-freshness liveness sonde (issue #628): `1` when a symbol's stored price is
 silently stale (frozen past `SB_STALENESS_HORIZON` during `REGULAR` while the
 live quote moves), `0` otherwise — a gauge so it auto-clears when the writer
 recovers.
+
+**Two feeders, two lives** (issue #699). `update_position` publishes what the
+events say — `sb_owned_quantity`, `sb_cost_basis`, `sb_received_dividend` and
+`sb_realized_gain` — and it is called by the **replay**, for every position,
+sold ones included. `update_quote` publishes what the market says, on the
+fetch-success gate. Riding the realized gain on the scrape's write path would
+never publish it at all: the path is removed at the exact instant the figure is
+born.
+
+**Two removals, on two different predicates.** `forget_quotes(symbol)` drops
+every market series of a symbol whose scrape job departs (`_reconcile_jobs`):
+without it `sb_share_price{share_symbol="ALO"}` sits at its last observed price
+for the life of the process, never saying it stopped moving. And
+`retain_positions(shares)` — what the replay calls — drops the position series
+of a position the ledger **no longer produces at all** (a forgotten import); a
+loop that only ever set would leave a cost basis standing for a holding nobody
+declares, quietly counted by every `sum()` over the metric until a restart.
+Zero quantity is *not* what takes a position series away: a sold position is
+still declared, and its realized gain is the figure it has left to say.
+
+**All three `sb_purchased_*` gauges are gone** — renamed rather than redefined
+(spec #695 § 12, `website/docs/headless-gauges.mdx`), and none of them into a
+survivor, because each would have changed *meaning* under its old name:
+`_quantity` counted *"ever bought"* and v5 has no such state; `_fee` counted a
+fee that now lives inside the cost basis, so the only value left to publish
+would be a zero reading as *"no fees paid"*; `_price` went from fee-excluded to
+fee-included. What replaces them is the state itself — `sb_cost_basis`, an
+**amount** — and the unit average is that divided by `sb_owned_quantity`, a
+division PromQL does perfectly well and which stays honestly undefined on a
+position nobody holds. A sold position publishes `0` for both: a zero is a
+figure, and absence is kept for what could not be computed at all.
 
 ## InfluxDB Data Model
 
@@ -892,7 +1035,12 @@ Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
 computed in `app/src/performance.py` — a pure module taking a `Timeline` and an
 injected `price_at` callable (no InfluxDB/yfinance). External flows
 (DEPOSIT/WITHDRAWAL/GRANT) are the contribution; internal flows (BUY/SELL/
-DIVIDEND/fees) are the performance.
+DIVIDEND/fees) are the performance — which is why a sale needs nothing here: the
+proceeds land in cash and `total_value` is continuous across it. A **GRANT is
+valued at the price its own event declares** since #699, never through
+`price_at`: the old valuation made an account's `gain_absolu` change as the
+backfill advanced with no event having moved, and a grant-only position had no
+price at its date at all.
 
 Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
 (labels `account_type`/`account_currency`) and global `sb_portfolio_*` gauges

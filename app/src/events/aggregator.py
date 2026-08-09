@@ -8,8 +8,20 @@ from typing import Dict, List, Tuple
 
 from .schemas import (
     CASH_EVENT_TYPES, DEFAULT_ACCOUNT, Event, EventType, ShareState,
-    PurchaseState, EstateState, Timeline, InKindFlow, CashFlow, CashState,
+    Timeline, InKindFlow, CashFlow, CashState, declared_value, unit_cost,
 )
+
+
+#: The share of a position's total acquired quantity below which what a sale
+#: leaves behind is **noise from the file, not a holding** (spec #695 § 8,
+#: ADR-0017). A real broker export writes a sale of ``0.34898399999999996``
+#: against a purchase of ``0.348984`` and leaves ``4×10⁻¹⁷`` of a share standing
+#: — enough to keep the position out of the sold state, to keep its scrape job
+#: armed forever, and to leave a cost basis of a few billionths of a cent
+#: reported as *invested*. The bruise is in the file; the arithmetic is exact,
+#: so the normalisation is applied where the file's number lands and nowhere
+#: else.
+DUST_FRACTION = 1e-9
 
 
 class AggregationError(Exception):
@@ -73,6 +85,13 @@ class EventAggregator:
         timeline = Timeline()
         states: Dict[Tuple[str, str], ShareState] = {}
         cash_states: Dict[str, CashState] = {}
+        # Σ acquired per position — BUY *and* GRANT, every quantity that ever
+        # entered. It is the scale the dust threshold is read against and it is
+        # **not** position state: it never leaves this replay and has no column,
+        # because "how much did I ever buy" is a query over the events
+        # (``SUM(quantity) WHERE event_type = 'BUY'``) and not a figure the store
+        # keeps a second copy of.
+        acquired: Dict[Tuple[str, str], float] = {}
 
         for event in events:
             account = self._event_account(event)
@@ -96,9 +115,8 @@ class EventAggregator:
                     name=event.name,
                     symbol=event.symbol,
                     account=account,
-                    purchase=PurchaseState(),
-                    estate=EstateState(),
                 )
+                acquired[key] = 0.0
                 timeline.snapshots[key] = []
                 timeline.order.append(key)
 
@@ -111,14 +129,18 @@ class EventAggregator:
             # Process based on event type
             if event.event_type == EventType.BUY:
                 self._process_buy(state, event)
+                acquired[key] += event.quantity
             elif event.event_type == EventType.SELL:
-                self._process_sell(state, event)
+                self._process_sell(state, event, acquired[key])
             elif event.event_type == EventType.GRANT:
                 self._process_grant(state, event)
-                # GRANT is an external in-kind flow, emitted non-valued.
+                acquired[key] += event.quantity
+                # GRANT is an external in-kind flow, carrying the price it was
+                # declared at — which is also its cost basis, or neither (#672 D7).
                 timeline.flows.append(InKindFlow(
                     date=event.date, account=account,
-                    symbol=event.symbol, quantity=event.quantity))
+                    symbol=event.symbol, quantity=event.quantity,
+                    unit_price=event.unit_price))
             elif event.event_type == EventType.DIVIDEND:
                 self._process_dividend(state, event)
 
@@ -181,60 +203,89 @@ class EventAggregator:
             snaps.append((on_date, snap))
 
     def _process_buy(self, state: ShareState, event: Event) -> None:
-        """
-        Process a BUY event.
+        """Process a BUY: the quantity and the amount it cost, fee absorbed.
 
-        Updates purchase.quantity, purchase.cost_price (weighted average),
-        purchase.fee, and estate.quantity.
+        There is no average to rebuild. ``cost_basis`` is an amount and a
+        purchase adds to it, so the weighted average survives only as the
+        *derivation* :func:`~events.schemas.unit_cost` — which is the whole
+        point of storing the amount rather than the unit price.
+
+        **The acquisition fee raises the cost basis**, and therefore the unit
+        price (the French rule, and the one that needs no apportionment). It
+        used to accumulate in a ``purchase.fee`` that also collected *sale*
+        fees and never decreased; making that decrease would have reopened
+        matching — which of the buy fees leave with the sold shares? — on a
+        field nobody read as a convention.
+        """
+        state.quantity += event.quantity
+        state.cost_basis += event.quantity * event.unit_price + (event.fee or 0.0)
+
+    def _process_sell(self, state: ShareState, event: Event,
+                      acquired: float) -> None:
+        """Process a SELL: a subtraction, and the realized gain it produces.
+
+        The basis removed is ``quantity × PMP`` at this instant, so the
+        remaining basis stays the amount paid for the remaining shares and
+        nothing has to be rebuilt. **The disposal fee reduces the proceeds**,
+        which is what puts it inside the realized gain instead of leaving it
+        floating in a term of its own.
+
+        The dust normalisation is applied here and only here (``acquired`` is
+        Σ of everything that ever entered the position): a sale that empties a
+        position to under :data:`DUST_FRACTION` of it sets ``quantity`` **and**
+        ``cost_basis`` to exact zero. It is deliberately not a general clamp —
+        the noise arrives on this line, from a file, and a position that is
+        genuinely tiny because it is genuinely tiny is not this case.
         """
         quantity = event.quantity
-        unit_price = event.unit_price
         fee = event.fee or 0.0
 
-        # Calculate weighted average cost price
-        old_total = state.purchase.quantity * state.purchase.cost_price
-        new_total = quantity * unit_price
-
-        state.purchase.quantity += quantity
-        state.estate.quantity += quantity
-
-        if state.purchase.quantity > 0:
-            state.purchase.cost_price = (old_total + new_total) / state.purchase.quantity
-        else:
-            state.purchase.cost_price = 0.0
-
-        state.purchase.fee += fee
-
-    def _process_sell(self, state: ShareState, event: Event) -> None:
-        """
-        Process a SELL event.
-
-        Decreases estate.quantity and adds fees to purchase.fee.
-        """
-        quantity = event.quantity
-        fee = event.fee or 0.0
-
-        # Validate we're not selling more than we own
-        if quantity > state.estate.quantity:
+        # Overselling stays blocking — but by the same dust threshold, and for
+        # the same reason. The file that writes a sale of `0.34898399999999996`
+        # against a purchase of `0.348984` writes it the other way round just as
+        # often, and refusing *that* one would abort the replay in the gunicorn
+        # master over 4×10⁻¹⁷ of a share, leaving the whole portfolio
+        # unreachable and unfixable from an app that is down. A tolerance on one
+        # side and none on the other is not caution, it is a coin toss on the
+        # last bit of a float.
+        if quantity > state.quantity + DUST_FRACTION * acquired:
             raise AggregationError(
                 f"Cannot sell {quantity} shares of {event.symbol} "
-                f"(only {state.estate.quantity} owned) on {event.date}")
+                f"(only {state.quantity} owned) on {event.date}")
+        quantity = min(quantity, state.quantity)
 
-        state.estate.quantity -= quantity
-        state.purchase.fee += fee
+        unit = unit_cost(state.quantity, state.cost_basis) or 0.0
+        basis_removed = quantity * unit
+        proceeds = quantity * event.unit_price - fee
+
+        state.realized_gain += proceeds - basis_removed
+        state.quantity -= quantity
+        state.cost_basis -= basis_removed
+
+        if state.quantity <= DUST_FRACTION * acquired:
+            state.quantity = 0.0
+            state.cost_basis = 0.0
 
     def _process_grant(self, state: ShareState, event: Event) -> None:
-        """
-        Process a GRANT event.
+        """Process a GRANT: the quantity, and the price it was declared at.
 
-        Only increases estate.quantity (free shares).
+        ``unit_price`` present is a **valued award** — the same number the
+        performance engine counts as an external contribution, so the latent
+        gain is nil on the day of the grant. Absent is **dilution**: no
+        contribution and no basis, so the latent gain is the whole value. The
+        two feed together or neither — which is why both read the same
+        :func:`~events.schemas.declared_value`, the *only* place the optional
+        price is interpreted.
         """
-        state.estate.quantity += event.quantity
+        state.quantity += event.quantity
+        state.cost_basis += declared_value(event.quantity, event.unit_price)
 
     def _process_dividend(self, state: ShareState, event: Event) -> None:
-        """
-        Process a DIVIDEND event.
+        """Process a DIVIDEND: it leaves the profit-and-loss entirely.
 
-        Increases estate.received_dividend.
+        ``received_dividend`` accumulates for life and is its own named figure.
+        Folding it into a composite made a sold position report a *positive
+        latent gain* on shares it no longer held — the quieter half of the same
+        −932 € lie.
         """
-        state.estate.received_dividend += event.amount
+        state.received_dividend += event.amount

@@ -313,7 +313,7 @@ def build_symbols(
     now: datetime,
     scheduler_running: bool = True,
 ) -> List[SymbolRuntime]:
-    """One entry per held symbol, folded from the **configuration snapshot**.
+    """One entry per **held** symbol, folded from the configuration snapshot.
 
     The row set is the snapshot's, never the recorder's key set, and that is
     #656 déc. 3's rule doing two jobs at once: it keeps the reader from
@@ -321,6 +321,14 @@ def build_symbols(
     answer for free — a symbol the scheduler has not reached yet is a row with
     an *unknown* pill rather than a missing line. #661's "the declaration
     drives", one map over.
+
+    *Held* is the filter on ``quantity``, the same one ``_held_symbols`` applies
+    (issue #699), and it has to be applied here too or the rule above turns
+    against itself. A sold position stays in the snapshot on purpose, but its
+    scrape job is removed and its last-pass record forgotten with it — so it
+    would render as a symbol the scheduler has *never reached*, permanently, and
+    no future event could clear it. Reading that page, every line the user ever
+    sold would look like a scheduler that is stuck.
 
     ``next_runs`` maps a symbol to the jobstore's ``next_run_time``. A **missing
     key** is not the same as a ``None`` value here only in intent; both render
@@ -331,7 +339,7 @@ def build_symbols(
     names: Dict[str, Optional[str]] = {}
     for share in shares:
         symbol = share.get('symbol')
-        if not symbol:
+        if not symbol or not share.get('quantity'):
             continue
         account = str(share.get('account') or DEFAULT_ACCOUNT)
         accounts = by_symbol.setdefault(symbol, [])

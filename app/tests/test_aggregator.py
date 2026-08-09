@@ -4,6 +4,11 @@ Unit tests for events.aggregator.EventAggregator.
 These tests build Event objects directly from events.schemas and exercise the
 pure aggregation logic. No network, no InfluxDB, no filesystem: EventAggregator
 is a pure function of its input list.
+
+Since #699 a position is **one stock** — a ``quantity`` and a ``cost_basis``
+stored as an amount — so what is asserted here is the amount, never a
+reconstructed average: the unit price is derived and has exactly one
+implementation (``events.schemas.unit_cost``).
 """
 
 from datetime import date
@@ -11,7 +16,7 @@ from datetime import date
 import pytest
 
 from events import EventAggregator
-from events.schemas import Event, EventType
+from events.schemas import Event, EventType, unit_cost
 from events.aggregator import AggregationError
 
 
@@ -36,7 +41,7 @@ def aggregator():
 # aggregate(): single BUY
 # ---------------------------------------------------------------------------
 
-def test_single_buy_sets_purchase_estate_costprice_and_fee(aggregator):
+def test_single_buy_absorbs_its_fee_into_the_cost_basis(aggregator):
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
               quantity=10, unit_price=150.0, fee=2.5),
@@ -48,17 +53,15 @@ def test_single_buy_sets_purchase_estate_costprice_and_fee(aggregator):
     share = result[0]
     assert share["symbol"] == "AAPL"
     assert share["name"] == "Apple Inc"
-    # A single BUY: cost_price equals the unit_price paid.
-    assert share["purchase"]["quantity"] == 10
-    assert share["purchase"]["cost_price"] == 150.0
-    assert share["purchase"]["fee"] == 2.5
-    # Estate quantity mirrors the purchased quantity; no dividends yet.
-    assert share["estate"]["quantity"] == 10
-    assert share["estate"]["received_dividend"] == 0.0
+    assert share["quantity"] == 10
+    # The acquisition fee is *in* the basis, so it is also in the unit price.
+    assert share["cost_basis"] == pytest.approx(1502.5)
+    assert unit_cost(share["quantity"], share["cost_basis"]) == pytest.approx(150.25)
+    assert share["realized_gain"] == 0.0
+    assert share["received_dividend"] == 0.0
 
 
 def test_single_buy_missing_fee_defaults_to_zero(aggregator):
-    # fee is Optional; _process_buy does `fee = event.fee or 0.0`.
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
               quantity=4, unit_price=100.0),
@@ -66,16 +69,28 @@ def test_single_buy_missing_fee_defaults_to_zero(aggregator):
 
     share = aggregator.aggregate(events)[0]
 
-    assert share["purchase"]["fee"] == 0.0
-    assert share["purchase"]["quantity"] == 4
-    assert share["purchase"]["cost_price"] == 100.0
+    assert share["quantity"] == 4
+    assert share["cost_basis"] == pytest.approx(400.0)
+
+
+def test_a_position_carries_no_purchase_quantity_and_no_fee(aggregator):
+    """Both names are gone — as state and as a key (#672 D2/D3)."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=4, unit_price=100.0, fee=1.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert set(share) == {'name', 'symbol', 'account', 'quantity', 'cost_basis',
+                          'realized_gain', 'received_dividend'}
 
 
 # ---------------------------------------------------------------------------
-# aggregate(): two BUYs -> weighted average
+# aggregate(): two BUYs -> weighted average, derived
 # ---------------------------------------------------------------------------
 
-def test_two_buys_weighted_average_cost_and_summed_fees(aggregator):
+def test_two_buys_add_up_to_one_basis(aggregator):
     q1, p1, f1 = 10, 150.0, 2.5
     q2, p2, f2 = 5, 175.0, 2.0
     events = [
@@ -87,20 +102,17 @@ def test_two_buys_weighted_average_cost_and_summed_fees(aggregator):
 
     share = aggregator.aggregate(events)[0]
 
-    expected_cost = (q1 * p1 + q2 * p2) / (q1 + q2)
-    assert share["purchase"]["quantity"] == q1 + q2
-    assert share["purchase"]["cost_price"] == pytest.approx(expected_cost)
-    # Fees are summed across the two buys.
-    assert share["purchase"]["fee"] == pytest.approx(f1 + f2)
-    # Estate quantity reflects both purchases.
-    assert share["estate"]["quantity"] == q1 + q2
+    assert share["quantity"] == q1 + q2
+    assert share["cost_basis"] == pytest.approx(q1 * p1 + f1 + q2 * p2 + f2)
+    assert unit_cost(share["quantity"], share["cost_basis"]) == pytest.approx(
+        (q1 * p1 + f1 + q2 * p2 + f2) / (q1 + q2))
 
 
 # ---------------------------------------------------------------------------
-# aggregate(): GRANT
+# aggregate(): GRANT — the optional unit_price and its two tax cases (#672 D7)
 # ---------------------------------------------------------------------------
 
-def test_grant_increases_only_estate_quantity(aggregator):
+def test_grant_without_a_price_is_dilution_and_costs_nothing(aggregator):
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
               quantity=10, unit_price=150.0, fee=2.5),
@@ -110,12 +122,59 @@ def test_grant_increases_only_estate_quantity(aggregator):
 
     share = aggregator.aggregate(events)[0]
 
-    # Estate quantity grows by the grant.
-    assert share["estate"]["quantity"] == 13
-    # Purchase side is untouched by a grant.
-    assert share["purchase"]["quantity"] == 10
-    assert share["purchase"]["cost_price"] == 150.0
-    assert share["purchase"]["fee"] == 2.5
+    assert share["quantity"] == 13
+    assert share["cost_basis"] == pytest.approx(1502.5)
+
+
+def test_grant_with_a_price_is_a_valued_award_and_enters_the_basis(aggregator):
+    events = [
+        Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+              quantity=10, unit_price=100.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 10
+    # Priced at 100 on the day: the latent gain is nil, not +1 000.
+    assert share["cost_basis"] == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize("price", [0.0, -999.0])
+def test_a_grant_price_that_cannot_be_one_reads_as_dilution(aggregator, price):
+    """Normalised where it is read, never refused — the column predates v5.
+
+    The validator sees the **whole stored ledger** on every build, so refusing
+    a value that was legal when it was imported would fail the boot on a store
+    nobody can then reach to repair.
+    """
+    events = [
+        Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+              quantity=10, unit_price=price),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 10
+    assert share["cost_basis"] == 0.0
+
+
+def test_grant_flow_carries_the_declared_price(aggregator):
+    from events import InKindFlow
+    events = [
+        Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+              quantity=2, unit_price=50.0),
+        Event(date(2024, 7, 1), EventType.GRANT, "MSFT", "Microsoft",
+              quantity=4),
+    ]
+
+    tl = aggregator.replay(events)
+
+    valued, diluted = tl.flows
+    assert isinstance(valued, InKindFlow)
+    assert (valued.date, valued.account, valued.symbol, valued.quantity,
+            valued.unit_price) == (date(2024, 6, 1), "default", "AAPL", 2, 50.0)
+    # Absent is the *other* case, not a hole to fill in from a quote later.
+    assert diluted.unit_price is None
 
 
 # ---------------------------------------------------------------------------
@@ -134,20 +193,18 @@ def test_dividend_increases_only_received_dividend(aggregator):
 
     share = aggregator.aggregate(events)[0]
 
-    # Dividends accumulate.
-    assert share["estate"]["received_dividend"] == pytest.approx(6.0)
-    # Nothing else moves.
-    assert share["estate"]["quantity"] == 10
-    assert share["purchase"]["quantity"] == 10
-    assert share["purchase"]["cost_price"] == 150.0
-    assert share["purchase"]["fee"] == 2.5
+    assert share["received_dividend"] == pytest.approx(6.0)
+    # A dividend is outside the profit-and-loss: nothing else moves.
+    assert share["quantity"] == 10
+    assert share["cost_basis"] == pytest.approx(1502.5)
+    assert share["realized_gain"] == 0.0
 
 
 # ---------------------------------------------------------------------------
-# aggregate(): SELL
+# aggregate(): SELL — a subtraction, and a realized gain
 # ---------------------------------------------------------------------------
 
-def test_sell_decreases_estate_and_adds_fee_but_keeps_purchase(aggregator):
+def test_sell_subtracts_the_basis_it_consumes_and_books_the_gain(aggregator):
     events = [
         Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
               quantity=10, unit_price=150.0, fee=2.5),
@@ -157,13 +214,13 @@ def test_sell_decreases_estate_and_adds_fee_but_keeps_purchase(aggregator):
 
     share = aggregator.aggregate(events)[0]
 
-    # Estate quantity drops by the sold amount.
-    assert share["estate"]["quantity"] == 7
-    # Sell fee is added to the accumulated purchase fee.
-    assert share["purchase"]["fee"] == pytest.approx(4.5)
-    # Purchase quantity and cost_price are NOT changed by a sell.
-    assert share["purchase"]["quantity"] == 10
-    assert share["purchase"]["cost_price"] == 150.0
+    unit = 1502.5 / 10
+    assert share["quantity"] == 7
+    # What is left is what the remaining shares cost: no average was rebuilt.
+    assert share["cost_basis"] == pytest.approx(1502.5 - 3 * unit)
+    assert unit_cost(share["quantity"], share["cost_basis"]) == pytest.approx(unit)
+    # The disposal fee reduces the proceeds, so it lands inside the figure.
+    assert share["realized_gain"] == pytest.approx(3 * 190.0 - 2.0 - 3 * unit)
 
 
 def test_sell_more_than_owned_raises_aggregation_error(aggregator):
@@ -178,20 +235,107 @@ def test_sell_more_than_owned_raises_aggregation_error(aggregator):
         aggregator.aggregate(events)
 
 
-def test_sell_exactly_owned_is_allowed(aggregator):
-    # Boundary: selling exactly what is owned must NOT raise (uses `>` not `>=`).
+def test_selling_everything_leaves_zero_invested_by_construction(aggregator):
+    """The phantom −932 €: a sold line reporting its whole cost as a loss."""
     events = [
-        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
-              quantity=5, unit_price=150.0, fee=2.5),
-        Event(date(2024, 9, 15), EventType.SELL, "AAPL", "Apple Inc",
-              quantity=5, unit_price=190.0, fee=2.0),
+        Event(date(2021, 10, 5), EventType.BUY, "ALO", "Alstom",
+              quantity=50, unit_price=18.50, fee=5.0),
+        Event(date(2023, 3, 15), EventType.DIVIDEND, "ALO", "Alstom", amount=20.0),
+        Event(date(2025, 4, 20), EventType.SELL, "ALO", "Alstom",
+              quantity=50, unit_price=11.93, fee=2.39),
     ]
 
     share = aggregator.aggregate(events)[0]
 
-    assert share["estate"]["quantity"] == 0
-    assert share["purchase"]["quantity"] == 5
-    assert share["purchase"]["cost_price"] == 150.0
+    assert share["quantity"] == 0.0
+    assert share["cost_basis"] == 0.0
+    assert unit_cost(share["quantity"], share["cost_basis"]) is None
+    assert share["realized_gain"] == pytest.approx(-335.89)
+    # The dividends stay their own figure, and never a positive "latent" gain.
+    assert share["received_dividend"] == pytest.approx(20.0)
+
+
+def test_a_position_sold_and_bought_back_comes_back_on_its_own(aggregator):
+    """No flag was set, so nothing has to be unset (#672 D5)."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=5, unit_price=100.0),
+        Event(date(2024, 3, 1), EventType.SELL, "AAPL", "Apple Inc",
+              quantity=5, unit_price=120.0),
+        Event(date(2024, 9, 1), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=2, unit_price=130.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 2
+    assert share["cost_basis"] == pytest.approx(260.0)
+    # The gain booked while it was flat is kept — realized is permanent.
+    assert share["realized_gain"] == pytest.approx(100.0)
+
+
+def test_broker_dust_is_normalised_to_exact_zero(aggregator):
+    """A real export: 0.348984 bought, 0.34898399999999996 sold (ADR-0017)."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "BTC", "Bitcoin",
+              quantity=0.348984, unit_price=40000.0),
+        Event(date(2024, 9, 15), EventType.SELL, "BTC", "Bitcoin",
+              quantity=0.34898399999999996, unit_price=50000.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 0.0
+    assert share["cost_basis"] == 0.0
+
+
+def test_broker_dust_the_other_way_round_does_not_refuse_the_file(aggregator):
+    """The same file, the same last bit of a float, rounded the other way.
+
+    A tolerance on the leftover and none on the guard would make the refusal a
+    coin toss: this replay runs in the gunicorn master, so raising here takes
+    the whole portfolio down over 4×10⁻¹⁷ of a share — and the ledger has no
+    row-level edit to repair it with.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "BTC", "Bitcoin",
+              quantity=0.348984, unit_price=40000.0),
+        Event(date(2024, 9, 15), EventType.SELL, "BTC", "Bitcoin",
+              quantity=0.34898400000000004, unit_price=50000.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 0.0
+    assert share["cost_basis"] == 0.0
+
+
+def test_a_real_oversell_is_still_refused(aggregator):
+    """The tolerance is the file's noise, never a licence to sell what is gone."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=2, unit_price=150.0),
+        Event(date(2024, 9, 15), EventType.SELL, "AAPL", "Apple Inc",
+              quantity=2.001, unit_price=190.0),
+    ]
+
+    with pytest.raises(AggregationError):
+        aggregator.aggregate(events)
+
+
+def test_a_genuinely_remaining_sliver_is_not_dust(aggregator):
+    """The clamp is a threshold on the file's noise, not a rounding of holdings."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "BTC", "Bitcoin",
+              quantity=1.0, unit_price=40000.0),
+        Event(date(2024, 9, 15), EventType.SELL, "BTC", "Bitcoin",
+              quantity=0.999999, unit_price=50000.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == pytest.approx(1e-6)
+    assert share["cost_basis"] == pytest.approx(0.04)
 
 
 # ---------------------------------------------------------------------------
@@ -279,22 +423,19 @@ def test_full_pipeline_matches_expected_state(aggregator):
     assert [s["symbol"] for s in result] == ["AAPL", "MSFT"]
 
     aapl = _find(result, "AAPL")
-    # Purchases: 10 @150 then 5 @175 -> qty 15, weighted cost.
-    assert aapl["purchase"]["quantity"] == 15
-    assert aapl["purchase"]["cost_price"] == pytest.approx(
-        (10 * 150.0 + 5 * 175.0) / 15)
-    # Fees: 2.5 (buy) + 2.0 (buy) + 2.0 (sell) = 6.5.
-    assert aapl["purchase"]["fee"] == pytest.approx(6.5)
-    # Estate: +10 buy, +1 grant, +5 buy, -3 sell = 13.
-    assert aapl["estate"]["quantity"] == 13
-    assert aapl["estate"]["received_dividend"] == pytest.approx(2.40)
+    # 10 @150 (+2,50) then a free share then 5 @175 (+2) = 16 shares for 2 379,50.
+    basis_before_sale = 10 * 150.0 + 2.5 + 5 * 175.0 + 2.0
+    unit = basis_before_sale / 16
+    assert aapl["quantity"] == 13  # 10 + 1 grant + 5 − 3 sold
+    assert aapl["cost_basis"] == pytest.approx(basis_before_sale - 3 * unit)
+    assert aapl["realized_gain"] == pytest.approx(3 * 190.0 - 2.0 - 3 * unit)
+    assert aapl["received_dividend"] == pytest.approx(2.40)
 
     msft = _find(result, "MSFT")
-    assert msft["purchase"]["quantity"] == 5
-    assert msft["purchase"]["cost_price"] == 380.0
-    assert msft["purchase"]["fee"] == 2.5
-    assert msft["estate"]["quantity"] == 5
-    assert msft["estate"]["received_dividend"] == pytest.approx(5.0)
+    assert msft["quantity"] == 5
+    assert msft["cost_basis"] == pytest.approx(5 * 380.0 + 2.5)
+    assert msft["realized_gain"] == 0.0
+    assert msft["received_dividend"] == pytest.approx(5.0)
 
 
 # ---------------------------------------------------------------------------
@@ -331,10 +472,9 @@ def test_position_at_boundary_is_inclusive(aggregator):
 
     assert result is not None
     assert result["symbol"] == "AAPL"
-    assert result["purchase"]["quantity"] == 10
-    assert result["estate"]["quantity"] == 10
-    assert result["purchase"]["cost_price"] == 150.0
-    assert result["estate"]["received_dividend"] == 0.0
+    assert result["quantity"] == 10
+    assert result["cost_basis"] == pytest.approx(1502.5)
+    assert result["received_dividend"] == 0.0
 
 
 def test_position_at_forward_fills_date_without_event(aggregator):
@@ -344,24 +484,19 @@ def test_position_at_forward_fills_date_without_event(aggregator):
     # after the first BUY but BEFORE the second AAPL BUY and the SELL.
     mid = tl.position_at("default", "AAPL", date(2024, 5, 1))
     assert mid is not None
-    assert mid["purchase"]["quantity"] == 10
-    assert mid["purchase"]["cost_price"] == 150.0
-    assert mid["purchase"]["fee"] == 2.5
-    assert mid["estate"]["quantity"] == 10
-    assert mid["estate"]["received_dividend"] == pytest.approx(2.40)
+    assert mid["quantity"] == 10
+    assert mid["cost_basis"] == pytest.approx(1502.5)
+    assert mid["received_dividend"] == pytest.approx(2.40)
+    assert mid["realized_gain"] == 0.0
 
     # Final date: includes the second BUY and the SELL, so it must differ.
+    basis_before_sale = 1502.5 + 5 * 175.0 + 2.0
+    unit = basis_before_sale / 15
     final = tl.position_at("default", "AAPL", date(2024, 12, 31))
     assert final is not None
-    assert final["purchase"]["quantity"] == 15
-    assert final["purchase"]["cost_price"] == pytest.approx(
-        (10 * 150.0 + 5 * 175.0) / 15)
-    assert final["purchase"]["fee"] == pytest.approx(6.5)  # 2.5 + 2.0 + 2.0
-    assert final["estate"]["quantity"] == 12  # 10 + 5 - 3
-
-    # Sanity: the intermediate state is genuinely different from the final.
-    assert mid["purchase"]["quantity"] != final["purchase"]["quantity"]
-    assert mid["purchase"]["cost_price"] != final["purchase"]["cost_price"]
+    assert final["quantity"] == 12  # 10 + 5 − 3
+    assert final["cost_basis"] == pytest.approx(basis_before_sale - 3 * unit)
+    assert final["realized_gain"] == pytest.approx(3 * 190.0 - 2.0 - 3 * unit)
 
 
 def test_position_at_isolates_symbol(aggregator):
@@ -371,9 +506,8 @@ def test_position_at_isolates_symbol(aggregator):
 
     assert result is not None
     assert result["symbol"] == "MSFT"
-    assert result["purchase"]["quantity"] == 5
-    assert result["purchase"]["cost_price"] == 380.0
-    assert result["estate"]["quantity"] == 5
+    assert result["quantity"] == 5
+    assert result["cost_basis"] == pytest.approx(5 * 380.0 + 2.5)
 
 
 def test_replay_timeline_is_sparse(aggregator):
@@ -392,32 +526,49 @@ def test_replay_snapshots_are_immutable_copies(aggregator):
     snaps = tl.snapshots[("default", "AAPL")]
     first_state = snaps[0][1]      # state as of 2024-01-15
     last_state = snaps[-1][1]      # state as of 2024-09-15
-    assert first_state.estate.quantity == 10
-    assert last_state.estate.quantity == 12
+    assert first_state.quantity == 10
+    assert last_state.quantity == 12
     assert first_state is not last_state
-
-
-def test_replay_emits_grant_as_non_valued_inkind_flow():
-    from events import EventAggregator, InKindFlow
-    events = [
-        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
-              quantity=10, unit_price=150.0, fee=2.5),
-        Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc", quantity=2),
-    ]
-    tl = EventAggregator().replay(events)
-    assert len(tl.flows) == 1
-    flow = tl.flows[0]
-    assert isinstance(flow, InKindFlow)
-    assert (flow.date, flow.account, flow.symbol, flow.quantity) == (
-        date(2024, 6, 1), "default", "AAPL", 2)
-    # Non-valued: the flow carries no price.
-    assert not hasattr(flow, "price")
 
 
 def test_aggregate_matches_timeline_current(aggregator):
     """Non-regression: aggregate() == replay().current() (same values/order)."""
     events = _timeline()
     assert aggregator.aggregate(events) == aggregator.replay(events).current()
+
+
+def test_current_keeps_a_sold_position(aggregator):
+    """The filter is on the scrape's symbol list, never on the timeline."""
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=5, unit_price=100.0),
+        Event(date(2024, 3, 1), EventType.SELL, "AAPL", "Apple Inc",
+              quantity=5, unit_price=120.0),
+    ]
+
+    current = aggregator.replay(events).current()
+
+    assert [s["symbol"] for s in current] == ["AAPL"]
+    assert current[0]["quantity"] == 0.0
+    assert current[0]["realized_gain"] == pytest.approx(100.0)
+
+
+def test_current_cash_is_the_latest_ledger_of_every_account(aggregator):
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, account="pea", amount=1000.0),
+        Event(date(2024, 1, 2), EventType.DEPOSIT, account="cto", amount=500.0,
+              fee=1.0),
+        Event(date(2024, 2, 1), EventType.BUY, "AAPL", "Apple Inc", account="pea",
+              quantity=2, unit_price=100.0, fee=1.0),
+    ]
+
+    cash = aggregator.replay(events).current_cash()
+
+    assert set(cash) == {"pea", "cto"}
+    assert cash["pea"].cash_balance == pytest.approx(799.0)
+    assert cash["pea"].net_contributed == pytest.approx(1000.0)
+    assert cash["cto"].cash_balance == pytest.approx(499.0)
+    assert cash["cto"].net_contributed == pytest.approx(500.0)
 
 
 def test_at_returns_all_positions_forward_filled(aggregator):
@@ -429,8 +580,8 @@ def test_at_returns_all_positions_forward_filled(aggregator):
     # 2024-05-01: AAPL present (forward-filled from 03-01), MSFT present (02-01).
     mid = {s["symbol"]: s for s in tl.at(date(2024, 5, 1))}
     assert set(mid) == {"AAPL", "MSFT"}
-    assert mid["AAPL"]["estate"]["quantity"] == 10
-    assert mid["MSFT"]["estate"]["quantity"] == 5
+    assert mid["AAPL"]["quantity"] == 10
+    assert mid["MSFT"]["quantity"] == 5
 
     # 2024-01-20: only AAPL has appeared yet.
     early = tl.at(date(2024, 1, 20))

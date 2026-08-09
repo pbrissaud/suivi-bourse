@@ -24,7 +24,9 @@ from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
 import ledger
+import legacy_influx_shape
 import performance
+import positions
 import runtime_state
 import scheduling
 import store
@@ -51,7 +53,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 #: cannot accidentally turn a dependency's own logger up with it.
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'influxdb_writer',
-    'influx_reads', 'ledger', 'prometheus_exporter', 'web.api',
+    'influx_reads', 'ledger', 'positions', 'prometheus_exporter', 'web.api',
 )
 
 
@@ -730,6 +732,13 @@ class ConfigurationManager:
         an import validates *the ledger that import would make*, this validates
         the ledger that is — which is what gets published. It is also what keeps
         a hand-edited store from being published without a word.
+
+        **This is where the replay writes** (issue #699). ``position`` and
+        ``account_state`` are laid down here, from the same timeline the
+        snapshot is built out of, so the rows in the store and the rows the app
+        publishes cannot be two different generations of the ledger. The write
+        comes after the validation for the same reason the publication does: a
+        ledger the validator refuses never becomes state anywhere.
         """
         events = ledger.read_events(opened_store)
 
@@ -737,6 +746,10 @@ class ConfigurationManager:
             app_logger.warning(
                 f"The ledger is empty; running on an empty portfolio until a "
                 f".csv/.xlsx lands in {self._events_source}")
+            # Emptiness is a result and is written as one: forgetting the last
+            # import has to take the positions with it, and a table left
+            # standing would go on describing a portfolio nobody declares.
+            positions.write_state(opened_store, [], {})
             return [], []
 
         # The account rules read the store, which is where the declaration is
@@ -749,7 +762,9 @@ class ConfigurationManager:
             accounts_declared=accounts_module.accounts_are_declared(opened_store))
         validator.validate_or_raise(events)
 
-        shares = EventAggregator().aggregate(events)
+        timeline = EventAggregator().replay(events)
+        shares = timeline.current()
+        positions.write_state(opened_store, shares, timeline.current_cash())
 
         app_logger.info(f"Replayed {len(events)} events for {len(shares)} shares")
         return shares, events
@@ -1097,20 +1112,43 @@ class SuiviBourseMetrics:
         return None
 
     def _update_share_prometheus(self, share, last_quote, info) -> None:
-        """Update the legacy Prometheus ``sb_share_*`` gauges for one share.
+        """Update one share's **market** gauges from a fetched quote.
 
         Kept independent of the InfluxDB write so ``/metrics`` stays populated
         even if InfluxDB errors, and gated by the caller on **fetch success**
         (price present) rather than the write/REGULAR gate — a closed-market
         restart must still leave the share gauges populated (design #609).
+
+        The position half left with #699: it is fed by the replay
+        (:meth:`_publish_position_gauges`), because a sold position's figures
+        change at the very instant its scrape stops.
         """
         if self.prometheus is None:
             return
         try:
-            self.prometheus.update_share(share, last_quote, info)
+            self.prometheus.update_quote(share, last_quote, info)
         except Exception as e:
             app_logger.error(
                 f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
+
+    def _publish_position_gauges(self, shares) -> None:
+        """Publish every position's state gauges after a replay (issue #699).
+
+        Every position, sold ones included — ``sb_realized_gain`` and
+        ``sb_received_dividend`` are what a sold line has left to say, and the
+        scrape that used to carry them is gone by then. It is a **retain**: a
+        position the replay no longer produces (a forgotten import) has its
+        series removed rather than left standing at its last value.
+
+        Guarded like every other Prometheus call: ``/metrics`` is a mirror, and
+        a mirror must never be able to abort the ingestion it reflects.
+        """
+        if self.prometheus is None:
+            return
+        try:
+            self.prometheus.retain_positions(shares)
+        except Exception as e:
+            app_logger.error(f"Failed to publish the position gauges: {e}")
 
     def _write_share_metrics(self, share, last_quote, info) -> bool:
         """Write one share's live metrics point to InfluxDB.
@@ -1129,11 +1167,7 @@ class SuiviBourseMetrics:
                 share_symbol=share['symbol'],
                 account=share.get('account', DEFAULT_ACCOUNT),
                 share_price=last_quote,
-                purchased_quantity=share['purchase']['quantity'],
-                purchased_price=share['purchase']['cost_price'],
-                purchased_fee=share['purchase']['fee'],
-                owned_quantity=share['estate']['quantity'],
-                received_dividend=share['estate']['received_dividend'],
+                **legacy_influx_shape.legacy_position_fields(share),
                 share_currency=info['currency'],
                 share_exchange=info['exchange'],
                 quote_type=info['quoteType'],
@@ -1155,9 +1189,17 @@ class SuiviBourseMetrics:
         Synchronous whole-portfolio scrape, kept as a driver for the end-to-end
         harness; the scheduled runtime drives per-symbol jobs via
         ``_scrape_symbol``.
+
+        Scoped to the **held** positions, like the scheduled path (issue #699):
+        a position at zero quantity is one the app has stopped following, and
+        this driver would otherwise be the one place a sold line still reached
+        Yahoo — and the one place an account that sold out still received a
+        point of zeros.
         """
         for share in self.shares:
             share_symbol = share['symbol']
+            if not share.get('quantity'):
+                continue
 
             last_quote, info = self._fetch_ticker_data(share_symbol)
             self._update_share_prometheus(share, last_quote, info)
@@ -1176,8 +1218,21 @@ class SuiviBourseMetrics:
     # ------------------------------------------------------------------ #
 
     def _held_symbols(self) -> set:
-        """The set of symbols currently held across all accounts."""
-        return {s['symbol'] for s in self.shares if s.get('symbol')}
+        """The set of symbols currently held across all accounts.
+
+        The filter on ``quantity`` is what finally makes this docstring true
+        (issue #699, #672 D5). It used to be every symbol the configuration
+        named, so a position sold four years ago went on being polled at Yahoo
+        for as long as the process lived.
+
+        **The filtering line is here and not in the timeline.** A sold position
+        must stay in ``self.shares``: the replay writes its realized gain and
+        the page shows it. What departs is the scrape job — and the pair is
+        free, because ``_reconcile_jobs`` arms any held symbol without a live
+        job, so a buy-back revives on the next replay with nothing to remember.
+        """
+        return {s['symbol'] for s in self.shares
+                if s.get('symbol') and s.get('quantity')}
 
     @staticmethod
     def _exchange_from_info(info: Optional[dict]) -> Optional[str]:
@@ -1337,6 +1392,16 @@ class SuiviBourseMetrics:
                 # them all, and #597 is this app's story of a structure that
                 # grew without bound.
                 self.recorder.forget_symbol(symbol)
+                # And the market gauges (issue #699, #672 D6). Nothing will
+                # ever fetch this symbol again, so ``sb_share_price`` would sit
+                # at its last observed value for the life of the process,
+                # indistinguishable from a price that is simply not moving.
+                if self.prometheus is not None:
+                    try:
+                        self.prometheus.forget_quotes(symbol)
+                    except Exception as e:
+                        app_logger.error(
+                            f"Failed to remove quote gauges for {symbol}: {e}")
 
     def _check_price_freshness(self, holdings: List[dict], live_price,
                                now: datetime) -> Tuple[str, ...]:
@@ -1436,7 +1501,13 @@ class SuiviBourseMetrics:
         last_quote, info = self._fetch_ticker_data(symbol)
         price_present = last_quote is not None and info is not None
 
-        holdings = [s for s in self.shares if s.get('symbol') == symbol]
+        # Held, per **(symbol, account)** — `_held_symbols` is per symbol, so a
+        # share still held in one account keeps its job while the account that
+        # sold out must stop being written (issue #699). Without the quantity
+        # here, that account goes on receiving a point of zeros every cycle and
+        # the shares page grows a phantom row under the symbol.
+        holdings = [s for s in self.shares
+                    if s.get('symbol') == symbol and s.get('quantity')]
 
         # Prometheus sb_share_* gauges stay on the fetch-success gate (#609),
         # never the write/REGULAR gate.
@@ -1636,6 +1707,10 @@ class SuiviBourseMetrics:
             snapshot = (self.config_manager.reload() if import_files
                         else self.config_manager.replay())
             after = snapshot.shares
+            # The gauges the replay owns (issue #699). Published on every
+            # ingest, not only on a change: a restart replays an unchanged
+            # ledger and must still leave ``/metrics`` populated.
+            self._publish_position_gauges(after)
             if after != before:
                 app_logger.info("Shares configuration updated from events")
             else:
@@ -1716,6 +1791,17 @@ class SuiviBourseMetrics:
         recent session missed while the app was down. The two directions are
         **independent** — a completed backward watermark never suppresses the
         forward pass (issue #627). Returns points written this cycle.
+
+        **The two directions part company on a sold position** (issue #699,
+        #672 D5). The backward pass keeps running: the chart wants the history
+        of a line the user held, and the watermark bounds it, so it finishes and
+        stops. The forward pass stops at the same predicate as the scrape — it
+        exists to catch a writer up, and that writer has just been removed.
+        Left running it would be *worse than useless*: its own no-op guard is
+        "the newest point is under a day old", which only the live writer keeps
+        true, so the moment the job departs the anchor ages past the guard and
+        the pass fetches ``[newest → now]`` from Yahoo **every day, forever**,
+        for every symbol the user has ever sold out of.
         """
         symbol = share['symbol']
         account = share.get('account', DEFAULT_ACCOUNT)
@@ -1752,8 +1838,11 @@ class SuiviBourseMetrics:
         else:
             written += self._backfill_backward(share, first_buy_date, timeline)
 
-        # Forward pass — independent of the backward-completion watermark.
-        written += self._backfill_forward(share, timeline)
+        # Forward pass — independent of the backward-completion watermark, but
+        # not of the holding: there is no live writer to catch up with once the
+        # position is sold out.
+        if share.get('quantity'):
+            written += self._backfill_forward(share, timeline)
         return written
 
     def _ensure_share_info(self, symbol: str) -> Optional[Dict]:
@@ -1801,11 +1890,8 @@ class SuiviBourseMetrics:
                         account, symbol, point_date)
                 state = state_by_date[point_date]
                 if state:
-                    price_point['purchased_quantity'] = state['purchase']['quantity']
-                    price_point['purchased_price'] = state['purchase']['cost_price']
-                    price_point['purchased_fee'] = state['purchase']['fee']
-                    price_point['owned_quantity'] = state['estate']['quantity']
-                    price_point['received_dividend'] = state['estate']['received_dividend']
+                    price_point.update(
+                        legacy_influx_shape.legacy_position_fields(state))
 
         try:
             written = self.influxdb.write_historical_prices(

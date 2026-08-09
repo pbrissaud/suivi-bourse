@@ -80,60 +80,116 @@ class Event:
             self.event_type = EventType(self.event_type.upper())
 
 
-@dataclass
-class PurchaseState:
-    """Aggregated purchase state for a share."""
-    quantity: float = 0.0
-    cost_price: float = 0.0
-    fee: float = 0.0
+def unit_cost(quantity: float, cost_basis: float) -> Optional[float]:
+    """The weighted-average unit price of a position — **derived, never stored**.
 
+    The one named helper the matching convention lives in (ADR-0003, #672 D1):
+    cost is matched by *prix moyen pondéré* (CGI art. 150-0 D), which is the
+    French tax rule and not a dial, so there is exactly one place that divides.
 
-@dataclass
-class EstateState:
-    """Aggregated estate state for a share."""
-    quantity: float = 0.0
-    received_dividend: float = 0.0
+    ``None`` when the quantity is zero, and that is the truth rather than a
+    guard: a position nobody holds has no unit cost price, it has a realized
+    gain. Returning ``0.0`` there would read as *"bought for nothing"*, which is
+    the class of plausible-looking wrong figure this whole ticket removes.
+    """
+    return cost_basis / quantity if quantity else None
 
 
 @dataclass
 class ShareState:
-    """Complete aggregated state for a share."""
+    """One position: **a quantity and a cost basis**, and nothing else (ADR-0003).
+
+    A position stopped being two quantities and a unit price with #699. It is a
+    *stock*: ``quantity`` of a security, and ``cost_basis`` — the amount paid for
+    exactly that quantity, acquisition fees absorbed. The unit price is derived
+    by :func:`unit_cost`, which makes three things fall out at once:
+
+    * **a sale is a subtraction**, so ten years of partial sales accumulate no
+      rounding drift from rebuilding an average;
+    * **a fully sold position reports zero invested by construction** — quantity
+      zero, basis zero — rather than through an ``if closed`` branch, which is
+      where the phantom −932 € on a sold line came from;
+    * **the unit price of a sold position is undefined**, which is what it is.
+
+    There is **no ``closed`` flag** and there is no room for one: *closed* and
+    *temporarily flat* differ only by a future event, so the predicate is
+    ``quantity == 0`` and nothing computable today separates them.
+
+    ``realized_gain`` is written here by the replay — never by the price scrape,
+    whose write path is removed at the exact instant the figure is born. And it
+    is a **breakdown** of the absolute gain, never a term added to it: the
+    proceeds of the sale are already in the cash balance.
+    """
     name: str
     symbol: str
     account: str = DEFAULT_ACCOUNT
-    purchase: PurchaseState = field(default_factory=PurchaseState)
-    estate: EstateState = field(default_factory=EstateState)
+    quantity: float = 0.0
+    cost_basis: float = 0.0
+    realized_gain: float = 0.0
+    received_dividend: float = 0.0
+
+    @property
+    def unit_cost(self) -> Optional[float]:
+        """This position's derived unit price — see :func:`unit_cost`."""
+        return unit_cost(self.quantity, self.cost_basis)
 
     def to_dict(self) -> dict:
-        """Convert to dictionary format compatible with the config schema."""
+        """The position as a plain dict — the columns of the ``position`` table."""
         return {
             'name': self.name,
             'symbol': self.symbol,
             'account': self.account,
-            'purchase': {
-                'quantity': self.purchase.quantity,
-                'cost_price': self.purchase.cost_price,
-                'fee': self.purchase.fee,
-            },
-            'estate': {
-                'quantity': self.estate.quantity,
-                'received_dividend': self.estate.received_dividend,
-            },
+            'quantity': self.quantity,
+            'cost_basis': self.cost_basis,
+            'realized_gain': self.realized_gain,
+            'received_dividend': self.received_dividend,
         }
+
+
+def declared_value(quantity: Optional[float],
+                   unit_price: Optional[float]) -> float:
+    """What a GRANT declares it was worth — its contribution *and* its basis.
+
+    The one place the optional price is read, so the two terms it feeds cannot
+    drift apart (#672 D7): they move **together or neither**, which is what
+    keeps ``latent + realized + dividends`` a decomposition of the absolute gain
+    rather than three figures that nearly add up.
+
+    A price that cannot be one — absent, zero, negative — is *dilution*, worth
+    ``0.0``. It is normalised here rather than refused by the validator because
+    that validator runs over the **whole stored ledger** on every build, and the
+    column was parsed and silently discarded before #699: a refusal would be
+    retroactive, and a row that was legal when imported would fail the boot.
+    """
+    if not quantity or not unit_price or unit_price <= 0:
+        return 0.0
+    return quantity * unit_price
 
 
 @dataclass
 class InKindFlow:
-    """A non-valued in-kind external flow (currently a GRANT).
+    """An in-kind external flow (a GRANT), carrying the price it was declared at.
 
-    The aggregator emits it *without* a price — valuation at the day's price is
-    resolved downstream (performance module), which is why the aggregator never
-    needs to know a price.
+    ``unit_price`` is the ``unit_price`` cell of the GRANT row — **optional**,
+    and its two states are the two tax cases (#672 D7):
+
+    * **present** — a valued award: the contribution *and* the cost basis are
+      both ``quantity × unit_price``, so the latent gain is nil on the day of
+      the grant;
+    * **absent** — free shares by dilution: both are zero, so the latent gain is
+      the whole value.
+
+    It feeds the two terms **together or neither**, which is what keeps
+    ``latent + realized + dividends`` a decomposition of the absolute gain. The
+    number comes from the event and never from ``price_at``: valuing a grant at
+    the day's quote made an account's absolute gain *drift as the backfill
+    advanced*, with no event having moved.
     """
     date: date
     account: str
     symbol: str
     quantity: float
+    unit_price: Optional[float] = None
 
 
 @dataclass
@@ -274,8 +330,27 @@ class Timeline:
         return result
 
     def current(self) -> List[dict]:
-        """The latest state of every position (replaces the old full aggregate)."""
+        """The latest state of every position — **sold ones included**.
+
+        Deliberately unfiltered (#672 D5). A position whose quantity has fallen
+        to zero must stay here: the replay has to write its realized gain, and
+        the page has to show it. What departs on a sold position is its *scrape
+        job*, and the filtering line is :meth:`main.SuiviBourseMetrics._held_symbols`
+        — never this method, which would take the row away from the two readers
+        that need it most.
+        """
         return [self.snapshots[key][-1][1].to_dict() for key in self.order]
+
+    def current_cash(self) -> Dict[str, "CashState"]:
+        """The latest cash ledger of every account the events touched.
+
+        The other half of what the replay lays down: :meth:`current` is the
+        ``position`` table, this is ``account_state``. An account with no event
+        is absent rather than zeroed — it has no ledger yet, and inventing one
+        would make *"never deposited"* and *"deposited nothing"* the same row.
+        """
+        return {account: snaps[-1][1]
+                for account, snaps in self.cash_snapshots.items() if snaps}
 
 
 @dataclass

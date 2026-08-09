@@ -26,13 +26,15 @@ from urllib3.exceptions import NewConnectionError
 # Local helpers / fakes
 # ---------------------------------------------------------------------------
 
-def _valid_shares(symbol="AAPL", name="Apple"):
-    """A single valid share dict matching schema.yaml requirements."""
+def _valid_shares(symbol="AAPL", name="Apple", quantity=10):
+    """A single position dict in the v5 shape (#699)."""
     return {
         "name": name,
         "symbol": symbol,
-        "purchase": {"quantity": 10, "fee": 2.5, "cost_price": 150.0},
-        "estate": {"quantity": 10, "received_dividend": 2.4},
+        "quantity": quantity,
+        "cost_basis": 150.0 * quantity + 2.5,
+        "realized_gain": 0.0,
+        "received_dividend": 2.4,
     }
 
 
@@ -606,6 +608,32 @@ def test_backfill_forward_fills_recent_gap(mock_influx, mocker):
     assert kwargs["share_currency"] == "USD"
     assert kwargs["share_exchange"] == "NMS"
     assert kwargs["prices"] == canned
+
+
+def test_a_sold_position_keeps_its_history_but_stops_chasing_the_present(
+        mock_influx, mocker):
+    """The two directions part company at the sale (#699, #672 D5).
+
+    The backward pass still runs — the chart wants the history of a line the
+    user held, and the watermark bounds it. The forward pass stops: it exists
+    to catch a live writer up, that writer has just been removed, and its own
+    no-op guard ("the newest point is under a day old") is the very thing the
+    writer was keeping true — so left running it would refetch
+    ``[newest → now]`` from Yahoo every day, forever.
+    """
+    metrics, _ = _build_metrics(
+        [_valid_shares("ALO", "Alstom", quantity=0)], mock_influx,
+        mode="events", first_buy_dates={"ALO": date(2021, 10, 5)}, events=None)
+    metrics._share_info_cache["ALO"] = {
+        "currency": "EUR", "exchange": "PAR", "quoteType": "EQUITY"}
+    mock_influx.get_oldest_timestamp.return_value = datetime(
+        2022, 1, 1, tzinfo=timezone.utc)
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+
+    mock_influx.get_oldest_timestamp.assert_called()      # backward ran
+    mock_influx.get_newest_timestamp.assert_not_called()  # forward did not
 
 
 def test_backfill_forward_empty_window_writes_nothing(

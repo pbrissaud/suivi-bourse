@@ -32,13 +32,15 @@ def _no_jitter(mocker):
     mocker.patch("main.random.uniform", return_value=0.0)
 
 
-def _share(symbol="AAPL", name="Apple", account="default"):
+def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
     return {
         "name": name,
         "symbol": symbol,
         "account": account,
-        "purchase": {"quantity": 10, "fee": 2.5, "cost_price": 150.0},
-        "estate": {"quantity": 10, "received_dividend": 2.4},
+        "quantity": quantity,
+        "cost_basis": 150.0 * quantity + 2.5,
+        "realized_gain": 0.0,
+        "received_dividend": 2.4,
     }
 
 

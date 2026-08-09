@@ -8,9 +8,9 @@ from events.schemas import (
     Event,
     EventType,
     ShareState,
-    PurchaseState,
-    EstateState,
+    unit_cost,
 )
+from positions import POSITION_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -114,75 +114,61 @@ def test_event_optional_fields_accept_values():
 
 
 # ---------------------------------------------------------------------------
-# PurchaseState / EstateState numeric defaults are 0.0
+# unit_cost — the one place the matching convention divides (ADR-0003)
 # ---------------------------------------------------------------------------
 
-def test_purchase_state_defaults_are_zero():
-    ps = PurchaseState()
-    assert ps.quantity == 0.0
-    assert ps.cost_price == 0.0
-    assert ps.fee == 0.0
+def test_unit_cost_is_the_basis_divided_by_the_quantity():
+    assert unit_cost(50.0, 930.0) == 18.6
 
 
-def test_estate_state_defaults_are_zero():
-    es = EstateState()
-    assert es.quantity == 0.0
-    assert es.received_dividend == 0.0
-
-
-def test_purchase_state_accepts_overrides():
-    ps = PurchaseState(quantity=5.0, cost_price=100.0, fee=1.0)
-    assert (ps.quantity, ps.cost_price, ps.fee) == (5.0, 100.0, 1.0)
-
-
-def test_estate_state_accepts_overrides():
-    es = EstateState(quantity=3.0, received_dividend=8.5)
-    assert (es.quantity, es.received_dividend) == (3.0, 8.5)
+def test_unit_cost_of_a_position_nobody_holds_is_undefined():
+    """Not 0.0 — a sold position has no unit cost price, it has a realized gain."""
+    assert unit_cost(0.0, 0.0) is None
 
 
 # ---------------------------------------------------------------------------
-# ShareState default_factory -> independent nested state
+# ShareState — one stock, and no closed flag
 # ---------------------------------------------------------------------------
 
-def test_share_state_default_nested_states_are_zero():
+def test_share_state_numeric_defaults_are_zero():
     s = ShareState(name="Apple", symbol="AAPL")
-    assert isinstance(s.purchase, PurchaseState)
-    assert isinstance(s.estate, EstateState)
-    assert s.purchase.quantity == 0.0
-    assert s.estate.quantity == 0.0
+    assert (s.quantity, s.cost_basis, s.realized_gain,
+            s.received_dividend) == (0.0, 0.0, 0.0, 0.0)
 
 
-def test_two_share_states_have_independent_purchase_objects():
-    a = ShareState(name="Apple", symbol="AAPL")
-    b = ShareState(name="Microsoft", symbol="MSFT")
-    assert a.purchase is not b.purchase
-    assert a.estate is not b.estate
+def test_share_state_carries_no_closed_flag():
+    """The predicate is ``quantity == 0``; no field is allowed to disagree."""
+    assert not hasattr(ShareState(name="Apple", symbol="AAPL"), 'closed')
+
+
+def test_share_state_has_no_purchase_or_estate_halves():
+    s = ShareState(name="Apple", symbol="AAPL")
+    assert not hasattr(s, 'purchase')
+    assert not hasattr(s, 'estate')
 
 
 def test_mutating_one_share_state_does_not_affect_another():
     a = ShareState(name="Apple", symbol="AAPL")
     b = ShareState(name="Microsoft", symbol="MSFT")
 
-    a.purchase.quantity = 42.0
-    a.purchase.cost_price = 100.0
-    a.purchase.fee = 5.0
-    a.estate.quantity = 7.0
-    a.estate.received_dividend = 3.5
+    a.quantity = 42.0
+    a.cost_basis = 100.0
+    a.realized_gain = 5.0
+    a.received_dividend = 3.5
 
-    # b must remain at its own independent defaults
-    assert b.purchase.quantity == 0.0
-    assert b.purchase.cost_price == 0.0
-    assert b.purchase.fee == 0.0
-    assert b.estate.quantity == 0.0
-    assert b.estate.received_dividend == 0.0
+    assert (b.quantity, b.cost_basis, b.realized_gain,
+            b.received_dividend) == (0.0, 0.0, 0.0, 0.0)
 
 
-def test_explicit_nested_state_is_used():
-    ps = PurchaseState(quantity=1.0)
-    es = EstateState(quantity=2.0)
-    s = ShareState(name="Apple", symbol="AAPL", purchase=ps, estate=es)
-    assert s.purchase is ps
-    assert s.estate is es
+def test_share_state_unit_cost_is_derived():
+    s = ShareState(name="Alstom", symbol="ALO", quantity=50.0, cost_basis=930.0)
+    assert s.unit_cost == 18.6
+
+
+def test_share_state_unit_cost_of_a_sold_position_is_undefined():
+    s = ShareState(name="Alstom", symbol="ALO", quantity=0.0, cost_basis=0.0,
+                   realized_gain=-335.89)
+    assert s.unit_cost is None
 
 
 # ---------------------------------------------------------------------------
@@ -195,48 +181,32 @@ def test_to_dict_default_structure():
         'name': 'Apple',
         'symbol': 'AAPL',
         'account': 'default',
-        'purchase': {
-            'quantity': 0.0,
-            'cost_price': 0.0,
-            'fee': 0.0,
-        },
-        'estate': {
-            'quantity': 0.0,
-            'received_dividend': 0.0,
-        },
+        'quantity': 0.0,
+        'cost_basis': 0.0,
+        'realized_gain': 0.0,
+        'received_dividend': 0.0,
     }
 
 
 def test_to_dict_reflects_populated_values():
-    s = ShareState(name="Microsoft", symbol="MSFT", account="PEA")
-    s.purchase.quantity = 10.0
-    s.purchase.cost_price = 250.0
-    s.purchase.fee = 4.0
-    s.estate.quantity = 12.0
-    s.estate.received_dividend = 15.75
-
+    s = ShareState(name="Microsoft", symbol="MSFT", account="PEA",
+                   quantity=12.0, cost_basis=2504.0, realized_gain=41.5,
+                   received_dividend=15.75)
     assert s.to_dict() == {
         'name': 'Microsoft',
         'symbol': 'MSFT',
         'account': 'PEA',
-        'purchase': {
-            'quantity': 10.0,
-            'cost_price': 250.0,
-            'fee': 4.0,
-        },
-        'estate': {
-            'quantity': 12.0,
-            'received_dividend': 15.75,
-        },
+        'quantity': 12.0,
+        'cost_basis': 2504.0,
+        'realized_gain': 41.5,
+        'received_dividend': 15.75,
     }
 
 
-def test_to_dict_exact_key_set():
+def test_to_dict_keys_are_the_position_columns():
+    """The dict the replay speaks and the table it writes are one shape."""
     s = ShareState(name="Apple", symbol="AAPL")
-    d = s.to_dict()
-    assert set(d.keys()) == {'name', 'symbol', 'account', 'purchase', 'estate'}
-    assert set(d['purchase'].keys()) == {'quantity', 'cost_price', 'fee'}
-    assert set(d['estate'].keys()) == {'quantity', 'received_dividend'}
+    assert set(s.to_dict()) == set(POSITION_COLUMNS)
 
 
 def test_to_dict_default_account_when_unset():

@@ -137,8 +137,21 @@ def test_no_external_flow_no_xirr_no_gain():
     assert perf.gain_absolu is None
 
 
-def test_grant_is_external_and_valued_at_day_price():
-    """GRANT is an external in-kind contribution valued at the day's price."""
+def test_a_valued_grant_contributes_the_price_its_event_declares():
+    """A valued award: contribution 10 × 50, terminal 10 × 50, gain nil (#672 D7)."""
+    events = [
+        Event(date(2024, 1, 1), EventType.GRANT, "AAPL", "Apple", quantity=10,
+              unit_price=50.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 50.0}})
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at,
+                           start=date(2024, 1, 1), today=date(2024, 1, 1))
+    assert perf.gain_absolu == pytest.approx(0.0)
+
+
+def test_a_grant_without_a_price_contributes_nothing():
+    """Dilution: no contribution, so the whole value is the gain."""
     events = [
         Event(date(2024, 1, 1), EventType.GRANT, "AAPL", "Apple", quantity=10,
               account="PEA"),
@@ -147,8 +160,116 @@ def test_grant_is_external_and_valued_at_day_price():
     price_at = _price_at({"AAPL": {date(2024, 1, 1): 50.0}})
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
                            start=date(2024, 1, 1), today=date(2024, 1, 1))
-    # Contributed = 10 * 50 (in-kind); terminal = 10 * 50; gain = 0.
-    assert perf.gain_absolu == pytest.approx(0.0)  # GRANT counts as an external flow
+    assert perf.gain_absolu == pytest.approx(500.0)
+
+
+def test_a_grants_contribution_does_not_move_with_the_backfill():
+    """The declared price is read; no quote is, so nothing drifts (#672 D7).
+
+    Valuing a grant through ``price_at`` made an account's absolute gain change
+    as history was filled in, with no event having moved — the same portfolio
+    reporting two different gains an hour apart.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.GRANT, "AAPL", "Apple", quantity=10,
+              unit_price=50.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    quote = {"AAPL": {date(2024, 1, 1): 50.0}}
+
+    def compute(prices):
+        return compute_account(tl, PEA, {"AAPL"}, _price_at(prices),
+                               start=date(2024, 1, 1),
+                               today=date(2024, 1, 1)).gain_absolu
+
+    # Before the backfill reaches the grant's date there is no price at all;
+    # afterwards there is. The contribution is the same either way.
+    assert compute({}) == pytest.approx(-500.0)
+    assert compute(quote) == pytest.approx(0.0)
+
+
+# --------------------------------------------------------------------------- #
+# The three figures decompose the absolute gain — #672's worked example
+# --------------------------------------------------------------------------- #
+#
+# One CTO, two positions, one of them sold out. Read this table against the
+# resolution of #672: it is the same one, to the cent.
+#
+#   01/10/2021  DEPOSIT 3 000 €                cash 3 000,00
+#   05/10/2021  BUY 50 ALO @ 18,50, fee 5      cash 2 070,00   basis 930,00
+#   10/10/2021  BUY 10 AAPL @ 150, fee 3       cash   567,00   basis 1 503,00
+#   15/03/2023  DIVIDEND ALO 20 €              cash   587,00
+#   20/04/2025  SELL 50 ALO @ 11,93, fee 2,39  cash 1 181,11   realized −335,89
+#
+# AAPL quotes 200 € today, so holdings are 2 000,00 €.
+
+WORKED_EXAMPLE_ACCOUNT = Account("CTO", "CTO", "Mon CTO", "EUR")
+TODAY = date(2025, 4, 20)
+
+
+def _worked_example():
+    return EventAggregator().replay([
+        Event(date(2021, 10, 1), EventType.DEPOSIT, amount=3000.0, account="CTO"),
+        Event(date(2021, 10, 5), EventType.BUY, "ALO", "Alstom", quantity=50,
+              unit_price=18.50, fee=5.0, account="CTO"),
+        Event(date(2021, 10, 10), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=150.0, fee=3.0, account="CTO"),
+        Event(date(2023, 3, 15), EventType.DIVIDEND, "ALO", "Alstom",
+              amount=20.0, account="CTO"),
+        Event(date(2025, 4, 20), EventType.SELL, "ALO", "Alstom", quantity=50,
+              unit_price=11.93, fee=2.39, account="CTO"),
+    ])
+
+
+def _worked_example_figures():
+    """(latent, realized, dividends, gain_absolu), each rounded to the cent."""
+    timeline = _worked_example()
+    price_at = _price_at({
+        "AAPL": {date(2021, 10, 10): 150.0, TODAY: 200.0},
+        "ALO": {date(2021, 10, 5): 18.50, TODAY: 11.93},
+    })
+    perf = compute_account(timeline, WORKED_EXAMPLE_ACCOUNT, {"ALO", "AAPL"},
+                           price_at, start=date(2021, 10, 1), today=TODAY)
+
+    positions = {p["symbol"]: p for p in timeline.current()}
+    latent = sum(
+        p["quantity"] * price_at(symbol, TODAY) - p["cost_basis"]
+        for symbol, p in positions.items() if p["quantity"]
+    )
+    realized = sum(p["realized_gain"] for p in positions.values())
+    dividends = sum(p["received_dividend"] for p in positions.values())
+    return (round(latent, 2), round(realized, 2), round(dividends, 2),
+            round(perf.gain_absolu, 2))
+
+
+def test_the_three_figures_sum_to_the_absolute_gain():
+    latent, realized, dividends, gain = _worked_example_figures()
+
+    assert (latent, realized, dividends) == (497.00, -335.89, 20.00)
+    assert gain == 181.11
+    assert round(latent + realized + dividends, 2) == gain
+
+
+def test_adding_the_realized_gain_is_the_forbidden_operation():
+    """The rule a contributor will break, pinned so it breaks a test instead.
+
+    The proceeds of the sale are already in the cash balance, so the realized
+    gain is a **breakdown** of the absolute gain and never a term added to it.
+    The result of adding it stays perfectly plausible — a winning account shown
+    losing — which is why nothing but an assertion catches it.
+    """
+    _latent, realized, _dividends, gain = _worked_example_figures()
+
+    assert round(gain + realized, 2) == -154.78
+
+
+def test_the_sold_position_reports_no_investment_at_all():
+    """The phantom −932 €: v4 read ``0 + 20 − 925 − 7,39`` on this very row."""
+    alo = {p["symbol"]: p for p in _worked_example().current()}["ALO"]
+
+    assert alo["quantity"] == 0.0
+    assert alo["cost_basis"] == 0.0
+    assert round(alo["realized_gain"], 2) == -335.89
 
 
 # --------------------------------------------------------------------------- #

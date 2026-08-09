@@ -22,8 +22,10 @@ UTC = timezone.utc
 NOW = datetime(2026, 8, 5, 15, 0, tzinfo=UTC)
 
 
-def _share(symbol='AAPL', name='Apple Inc', account='pea'):
-    return {'name': name, 'symbol': symbol, 'account': account}
+def _share(symbol='AAPL', name='Apple Inc', account='pea', quantity=10):
+    """One position. ``quantity=0`` is a sold one — no job, so no row (#699)."""
+    return {'name': name, 'symbol': symbol, 'account': account,
+            'quantity': quantity}
 
 
 def _scrape(**overrides):

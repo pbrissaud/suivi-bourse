@@ -39,13 +39,20 @@ def _no_jitter(mocker):
     mocker.patch("main.random.uniform", return_value=0.0)
 
 
-def _share(symbol="AAPL", name="Apple", account="default"):
+def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
+    """One position in the v5 shape — a quantity and a cost basis (#699).
+
+    ``quantity=0`` is what a sold position looks like, and the only thing that
+    takes a symbol out of ``_held_symbols`` and therefore out of the scrape.
+    """
     return {
         "name": name,
         "symbol": symbol,
         "account": account,
-        "purchase": {"quantity": 10, "fee": 2.5, "cost_price": 150.0},
-        "estate": {"quantity": 10, "received_dividend": 2.4},
+        "quantity": quantity,
+        "cost_basis": 150.0 * quantity + 2.5,
+        "realized_gain": 0.0,
+        "received_dividend": 2.4,
     }
 
 
@@ -456,9 +463,11 @@ def test_prometheus_updates_on_closed_market_probe(
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    # Closed -> no write, but the sb_share_* gauges still update (fetch success).
+    # Closed -> no write, but the market gauges still update (fetch success).
     mock_influx.write_metrics.assert_not_called()
-    prom.update_share.assert_called_once()
+    prom.update_quote.assert_called_once()
+    # And the scrape never touches the position half — the replay owns it (#699).
+    prom.update_position.assert_not_called()
 
 
 def test_prometheus_not_updated_when_fetch_fails(
@@ -637,6 +646,97 @@ def test_reconcile_removes_departed_symbols(
 
     m.scheduler.add_job.assert_not_called()            # AAPL untouched
     m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
+
+
+def test_a_sold_position_is_not_a_held_symbol(mock_influx, mocker):
+    """The filter is on ``quantity``, which is what makes the docstring true (#699)."""
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx, mocker)
+
+    assert m._held_symbols() == {"AAPL"}
+    # And the row itself has not gone anywhere: the replay still writes its
+    # realized gain and the page still shows it.
+    assert {s["symbol"] for s in m.shares} == {"AAPL", "ALO"}
+
+
+def test_an_account_that_sold_out_stops_being_written(
+        mock_influx, fake_ticker, mocker, monkeypatch):
+    """`_held_symbols` is per symbol; the write loop has to be per holding (#699).
+
+    Held in the PEA, sold out in the CTO: the job stays armed for the symbol,
+    and without the quantity here the CTO would receive a point of zeros every
+    cycle — a phantom row of em dashes under the symbol on the shares page.
+    """
+    m = _metrics([_share("AAPL", account="pea"),
+                  _share("AAPL", account="cto", quantity=0)],
+                 mock_influx, mocker)
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert [c.kwargs["account"]
+            for c in mock_influx.write_metrics.call_args_list] == ["pea"]
+
+
+def test_the_synchronous_driver_skips_a_sold_position_too(
+        mock_influx, fake_ticker, mocker, monkeypatch):
+    """The one place a sold line could still have reached Yahoo (#699)."""
+    fetched = []
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx, mocker)
+
+    def ticker(symbol):
+        fetched.append(symbol)
+        return fake_ticker()
+    monkeypatch.setattr(main.yf, "Ticker", ticker)
+
+    m.expose_metrics()
+
+    assert fetched == ["AAPL"]
+    assert [c.kwargs["share_symbol"]
+            for c in mock_influx.write_metrics.call_args_list] == ["AAPL"]
+
+
+def test_selling_out_removes_the_scrape_job_and_its_quote_gauges(
+        mock_influx, mocker):
+    prom = mocker.MagicMock()
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx,
+                 mocker, prometheus=prom)
+    m.scheduler.get_jobs.return_value = [
+        _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("ALO"))]
+
+    m._reconcile_jobs()
+
+    m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("ALO"))
+    # A frozen sb_share_price is unreadable; an absent one is not (#672 D6).
+    prom.forget_quotes.assert_called_once_with("ALO")
+
+
+def test_a_failing_gauge_removal_never_aborts_the_reconcile(
+        mock_influx, mocker):
+    prom = mocker.MagicMock()
+    prom.forget_quotes.side_effect = RuntimeError("registry is unhappy")
+    m = _metrics([_share("AAPL", quantity=0), _share("MSFT", quantity=0)],
+                 mock_influx, mocker, prometheus=prom)
+    m.scheduler.get_jobs.return_value = [
+        _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
+
+    m._reconcile_jobs()
+
+    assert m.scheduler.remove_job.call_count == 2
+
+
+def test_buying_back_re_arms_the_job_with_nothing_to_unset(mock_influx, mocker):
+    """No flag was written, so the revival is the ordinary revive path (#672 D5)."""
+    m = _metrics([_share("ALO", quantity=0)], mock_influx, mocker)
+    m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("ALO"))]
+    m._reconcile_jobs()
+    m.scheduler.reset_mock()
+
+    m.shares[0]["quantity"] = 4
+    m.scheduler.get_jobs.return_value = []
+    m._reconcile_jobs()
+
+    m.scheduler.add_job.assert_called_once()
+    assert m.scheduler.add_job.call_args.kwargs["args"] == ["ALO"]
 
 
 def test_reconcile_revives_missing_job(mock_influx, mocker):

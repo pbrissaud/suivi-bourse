@@ -7,10 +7,22 @@ outside world is the ``price_at(symbol, date) -> Optional[float]`` callable.
 
 Definitions (see issue #563):
   * External flows (the *contribution*, NOT performance): DEPOSIT, WITHDRAWAL,
-    GRANT (in-kind, valued at the day's price).
+    GRANT (in-kind, valued at **the price its event declares**, or not at all).
   * Internal flows (they ARE performance): BUY, SELL, DIVIDEND and every fee.
+    A sale is internal, which is why a realized gain needs nothing here: the
+    proceeds land in cash and ``total_value`` is continuous across it.
   * Daily valuation: V = cash + Σ(quantity × price), prices forward-filled.
   * TWR return convention: flows land end-of-day, r_D = (V_D - F_D) / V_{D-1}.
+
+A grant used to be valued through ``price_at`` (issue #699 / #672 D7). Two
+defects went with it: a grant-only position has no BUY, so no point existed at
+its date and the guard for that was *"skip unvalued grants"*; and the valuation
+was **asynchronous** — the same grant counted as nothing until the backfill
+reached its date and as something afterwards, so an account's ``gain_absolu``
+moved with the reconstruction while no event had changed. The declared
+``unit_price`` is the same number the cost basis takes, which is what makes
+``latent + realized + dividends`` a decomposition of the absolute gain instead
+of three figures that nearly add up.
 """
 
 from collections import defaultdict
@@ -18,7 +30,9 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
-from events.schemas import CashFlow, InKindFlow, Timeline, Account
+from events.schemas import (
+    CashFlow, InKindFlow, Timeline, Account, declared_value,
+)
 
 
 PriceAt = Callable[[str, date], Optional[float]]
@@ -116,7 +130,7 @@ def _holdings_value(timeline: Timeline, account: str, symbols,
         if not pos:
             continue
         has_position = True
-        qty = pos['estate']['quantity']
+        qty = pos['quantity']
         if not qty:
             continue
         price = price_at(sym, day)
@@ -125,57 +139,64 @@ def _holdings_value(timeline: Timeline, account: str, symbols,
     return total, has_position
 
 
-def _account_flows(timeline: Timeline, account: str, price_at: PriceAt):
+def _account_flows(timeline: Timeline, account: str):
     """Return (cash_flows, grant_flows) for one account.
 
     cash_flows: list of (date, amount) with amount signed (+deposit, -withdrawal).
-    grant_flows: list of (date, symbol, quantity).
+    grant_flows: list of (date, value) — the value the grant's own event
+    declared, already ``quantity × unit_price``. A grant with no declared price
+    contributes ``0.0``, which is the dilution case and not an absence to fill
+    in later.
     """
     cash_flows, grant_flows = [], []
     for flow in timeline.flows:
         if isinstance(flow, CashFlow) and flow.account == account:
             cash_flows.append((flow.date, flow.amount))
         elif isinstance(flow, InKindFlow) and flow.account == account:
-            grant_flows.append((flow.date, flow.symbol, flow.quantity))
+            grant_flows.append((flow.date, _grant_value(flow)))
     return cash_flows, grant_flows
 
 
-def _external_flow_by_date(cash_flows, grant_flows, price_at: PriceAt) -> Dict[date, float]:
-    """Net external inflow value per date (deposits +, withdrawals -, grants
-    valued at the day's price). Unvalued grants (no price yet) are skipped."""
+def _grant_value(flow: InKindFlow) -> float:
+    """What a grant contributed: its declared value, or nothing.
+
+    The same :func:`~events.schemas.declared_value` the cost basis reads, on
+    purpose: the two terms feed together or neither, and two spellings of "was
+    a price declared?" would eventually disagree — silently, since the symptom
+    is an identity that stops holding by a few euros.
+    """
+    return declared_value(flow.quantity, flow.unit_price)
+
+
+def _external_flow_by_date(cash_flows, grant_flows) -> Dict[date, float]:
+    """Net external inflow value per date (deposits +, withdrawals -, grants at
+    their declared value)."""
     by_date: Dict[date, float] = defaultdict(float)
     for d, amount in cash_flows:
         by_date[d] += amount
-    for d, sym, qty in grant_flows:
-        price = price_at(sym, d)
-        if price is not None:
-            by_date[d] += qty * price
+    for d, value in grant_flows:
+        by_date[d] += value
     return by_date
 
 
-def _xirr_cashflows(cash_flows, grant_flows, price_at: PriceAt,
+def _xirr_cashflows(cash_flows, grant_flows,
                     terminal_value: float, today: date) -> List[Tuple[date, float]]:
     """Build the investor-perspective cashflows for XIRR: contributions negative,
     terminal value positive."""
     cfs: List[Tuple[date, float]] = []
     for d, amount in cash_flows:
         cfs.append((d, -amount))               # deposit(+)→pay in(-); withdrawal(-)→receive(+)
-    for d, sym, qty in grant_flows:
-        price = price_at(sym, d)
-        if price is not None:
-            cfs.append((d, -qty * price))      # in-kind contribution
+    for d, value in grant_flows:
+        if value:
+            cfs.append((d, -value))            # in-kind contribution
     cfs.append((today, terminal_value))
     return cfs
 
 
-def _base_contributed(cash_flows, grant_flows, price_at: PriceAt) -> float:
-    """Total external contribution (deposits - withdrawals + valued grants)."""
-    base = sum(amount for _, amount in cash_flows)
-    for d, sym, qty in grant_flows:
-        price = price_at(sym, d)
-        if price is not None:
-            base += qty * price
-    return base
+def _base_contributed(cash_flows, grant_flows) -> float:
+    """Total external contribution (deposits - withdrawals + declared grants)."""
+    cash = sum(amount for _, amount in cash_flows)
+    return cash + sum(value for _, value in grant_flows)
 
 
 def _daily_range(start: date, today: date):
@@ -189,8 +210,8 @@ def compute_account(timeline: Timeline, account: Account, symbols,
                     price_at: PriceAt, start: date, today: date) -> Performance:
     """Compute one account's daily valuation series, TWR, XIRR and absolute gain."""
     acc = account.id
-    cash_flows, grant_flows = _account_flows(timeline, acc, price_at)
-    flow_by_date = _external_flow_by_date(cash_flows, grant_flows, price_at)
+    cash_flows, grant_flows = _account_flows(timeline, acc)
+    flow_by_date = _external_flow_by_date(cash_flows, grant_flows)
 
     daily: List[DailyPerf] = []
     started = False
@@ -219,8 +240,8 @@ def compute_account(timeline: Timeline, account: Account, symbols,
     has_external = bool(cash_flows or grant_flows)
     if has_external and daily:
         terminal = daily[-1].total_value
-        perf.xirr = xirr(_xirr_cashflows(cash_flows, grant_flows, price_at, terminal, today))
-        perf.gain_absolu = terminal - _base_contributed(cash_flows, grant_flows, price_at)
+        perf.xirr = xirr(_xirr_cashflows(cash_flows, grant_flows, terminal, today))
+        perf.gain_absolu = terminal - _base_contributed(cash_flows, grant_flows)
     return perf
 
 
@@ -258,7 +279,7 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
     # Global XIRR / gain from all accounts' flows combined + one global terminal.
     all_cash, all_grant = [], []
     for account in accounts:
-        cf, gf = _account_flows(timeline, account.id, price_at)
+        cf, gf = _account_flows(timeline, account.id)
         all_cash.extend(cf)
         all_grant.extend(gf)
 
@@ -266,6 +287,6 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
     has_external = bool(all_cash or all_grant)
     if has_external and daily:
         terminal = daily[-1].total_value
-        total.xirr = xirr(_xirr_cashflows(all_cash, all_grant, price_at, terminal, today))
-        total.gain_absolu = terminal - _base_contributed(all_cash, all_grant, price_at)
+        total.xirr = xirr(_xirr_cashflows(all_cash, all_grant, terminal, today))
+        total.gain_absolu = terminal - _base_contributed(all_cash, all_grant)
     return total

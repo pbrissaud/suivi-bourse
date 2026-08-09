@@ -673,8 +673,8 @@ def test_the_manager_publishes_the_declaration_from_the_store(tmp_path):
     assert snapshot.accounts.ids() == {'pea', 'cto'}
     by_account = {s["account"]: s for s in snapshot.shares}
     assert set(by_account) == {'pea', 'cto'}
-    assert by_account['pea']["estate"]["quantity"] == 10
-    assert by_account['cto']["estate"]["quantity"] == 5
+    assert by_account["pea"]["quantity"] == 10
+    assert by_account['cto']["quantity"] == 5
 
 
 def test_a_declaration_changing_republishes_the_snapshot(tmp_path):
@@ -799,9 +799,9 @@ def test_aggregate_keys_by_account_symbol():
 
     by_account = {s["account"]: s for s in shares}
     assert set(by_account) == {"pea", "cto"}
-    # Each account keeps its own weighted cost price.
-    assert by_account["pea"]["purchase"]["cost_price"] == 150.0
-    assert by_account["cto"]["purchase"]["cost_price"] == 160.0
+    # Each account keeps its own cost basis (the PMP is per account anyway).
+    assert by_account["pea"]["cost_basis"] == 10 * 150.0 + 2.5
+    assert by_account["cto"]["cost_basis"] == 5 * 160.0 + 1.0
 
 
 def test_aggregate_falls_back_to_default_for_a_blank_column():
@@ -812,7 +812,7 @@ def test_aggregate_falls_back_to_default_for_a_blank_column():
 
     assert len(shares) == 1
     assert shares[0]["account"] == DEFAULT_ACCOUNT
-    assert shares[0]["estate"]["quantity"] == 15
+    assert shares[0]["quantity"] == 15
 
 
 def test_position_at_scoped_to_account():
@@ -821,8 +821,8 @@ def test_position_at_scoped_to_account():
     pea = timeline.position_at("pea", "AAPL", date(2024, 2, 1))
     cto = timeline.position_at("cto", "AAPL", date(2024, 2, 1))
 
-    assert pea["estate"]["quantity"] == 10
-    assert cto["estate"]["quantity"] == 5
+    assert pea["quantity"] == 10
+    assert cto["quantity"] == 5
     # CTO's first event is 2024-01-16: before it, no state (never an error).
     assert timeline.position_at("cto", "AAPL", date(2024, 1, 15)) is None
 

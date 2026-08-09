@@ -1,16 +1,23 @@
-"""Tests for the legacy Prometheus exporter (/metrics backward compatibility)."""
+"""Tests for the legacy Prometheus exporter (/metrics backward compatibility).
+
+Since #699 the gauges have **two feeders and two lives**: the replay publishes
+what the events say about a position, the scrape publishes what the market says
+about its price — and only the second half leaves when a symbol's job departs.
+"""
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
 from prometheus_exporter import PrometheusExporter
 
 
-def _share():
+def _share(quantity=18.0, cost_basis=2587.5, realized_gain=0.0):
     return {
         'name': 'Apple',
         'symbol': 'AAPL',
-        'purchase': {'quantity': 20.0, 'cost_price': 143.75, 'fee': 7.5},
-        'estate': {'quantity': 18.0, 'received_dividend': 2.4},
+        'quantity': quantity,
+        'cost_basis': cost_basis,
+        'realized_gain': realized_gain,
+        'received_dividend': 2.4,
     }
 
 
@@ -30,6 +37,8 @@ def _info(**overrides):
 
 # A share without an 'account' key resolves to the 'default' account label.
 AAPL = {'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default'}
+AAPL_INFO = dict(AAPL, share_currency='USD', share_exchange='NMS',
+                 quote_type='EQUITY')
 
 
 @pytest.fixture
@@ -49,12 +58,26 @@ def _val(exp, name, **extra_labels):
 def test_all_expected_gauges_are_registered(exporter):
     text = generate_latest(exporter.registry).decode()
     for name in (
-        'sb_share_price', 'sb_purchased_quantity', 'sb_purchased_price',
-        'sb_purchased_fee', 'sb_owned_quantity', 'sb_received_dividend',
-        'sb_share_info', 'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap',
-        'sb_volume', 'sb_price_staleness',
+        'sb_share_price', 'sb_cost_basis', 'sb_owned_quantity',
+        'sb_received_dividend', 'sb_realized_gain', 'sb_share_info',
+        'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap', 'sb_volume',
+        'sb_price_staleness',
     ):
         assert f'# HELP {name} ' in text
+
+
+def test_the_three_purchased_gauges_are_gone(exporter):
+    """Renamed rather than redefined: a dashboard sees a gauge *leave* (#695 §12).
+
+    ``sb_purchased_quantity`` counted "ever bought" and v5 has no such state;
+    ``sb_purchased_fee`` counted a fee that now lives inside the cost basis;
+    ``sb_purchased_price`` went from fee-excluded to fee-included. Keeping any
+    of the three names would change what the number means without saying so.
+    """
+    text = generate_latest(exporter.registry).decode()
+    assert 'sb_purchased_quantity' not in text
+    assert 'sb_purchased_fee' not in text
+    assert 'sb_purchased_price' not in text
 
 
 def test_uses_dedicated_registry_by_default():
@@ -64,46 +87,128 @@ def test_uses_dedicated_registry_by_default():
     PrometheusExporter()
 
 
-# --- update_share on a successful fetch -------------------------------------
+# --- update_position: the gauges the replay feeds ---------------------------
 
-def test_update_share_sets_portfolio_and_market_gauges(exporter):
-    exporter.update_share(_share(), 150.0, _info())
+def test_update_position_sets_the_position_gauges(exporter):
+    exporter.update_position(_share(realized_gain=-335.89))
 
-    assert _val(exporter, 'sb_purchased_quantity') == 20.0
-    assert _val(exporter, 'sb_purchased_price') == 143.75
-    assert _val(exporter, 'sb_purchased_fee') == 7.5
     assert _val(exporter, 'sb_owned_quantity') == 18.0
+    # An *amount*: the unit average is this divided by the quantity, a division
+    # the scraper does and which stays undefined where it should.
+    assert _val(exporter, 'sb_cost_basis') == 2587.5
     assert _val(exporter, 'sb_received_dividend') == 2.4
+    assert _val(exporter, 'sb_realized_gain') == -335.89
+
+
+def test_update_position_needs_no_quote(exporter):
+    """The events say what a position is; the market has no say in it."""
+    exporter.update_position(_share())
+
+    assert _val(exporter, 'sb_owned_quantity') == 18.0
+    assert _val(exporter, 'sb_share_price') is None
+
+
+def test_a_sold_position_publishes_zeros_and_keeps_its_realized_gain(exporter):
+    """Zero invested by construction — and a zero is a figure, not an absence."""
+    exporter.update_position(_share(quantity=0.0, cost_basis=0.0,
+                                    realized_gain=-335.89))
+
+    assert _val(exporter, 'sb_owned_quantity') == 0.0
+    assert _val(exporter, 'sb_cost_basis') == 0.0
+    assert _val(exporter, 'sb_realized_gain') == -335.89
+    assert _val(exporter, 'sb_received_dividend') == 2.4
+
+
+def test_selling_out_brings_a_published_cost_basis_back_to_zero(exporter):
+    exporter.update_position(_share())
+    assert _val(exporter, 'sb_cost_basis') == 2587.5
+
+    exporter.update_position(_share(quantity=0.0, cost_basis=0.0))
+
+    assert _val(exporter, 'sb_cost_basis') == 0.0
+
+
+# --- retain_positions: the replay's set, not just its rows -------------------
+
+def test_retain_positions_publishes_every_position_it_is_given(exporter):
+    exporter.retain_positions([_share(), dict(_share(), symbol='MSFT',
+                                              name='Microsoft')])
+
+    assert _val(exporter, 'sb_owned_quantity') == 18.0
+    assert exporter.registry.get_sample_value('sb_owned_quantity', {
+        'share_name': 'Microsoft', 'share_symbol': 'MSFT',
+        'account': 'default'}) == 18.0
+
+
+def test_a_position_that_leaves_the_ledger_takes_its_gauges_with_it(exporter):
+    """A forgotten import, and the half of /metrics that carries money.
+
+    Nothing else would ever touch these four again: ``forget_quotes`` covers the
+    market series, and a loop that only sets would leave a cost basis standing
+    for a holding nobody declares — quietly counted by every `sum()` over the
+    metric until the process restarts.
+    """
+    exporter.retain_positions([_share(), dict(_share(), symbol='ALO',
+                                              name='Alstom')])
+
+    exporter.retain_positions([_share()])
+
+    for gauge in ('sb_owned_quantity', 'sb_cost_basis', 'sb_realized_gain',
+                  'sb_received_dividend'):
+        assert exporter.registry.get_sample_value(gauge, {
+            'share_name': 'Alstom', 'share_symbol': 'ALO',
+            'account': 'default'}) is None
+        assert _val(exporter, gauge) is not None
+
+
+def test_a_sold_position_is_retained_because_it_is_still_declared(exporter):
+    """Zero quantity is not what takes a series away — leaving the ledger is."""
+    exporter.retain_positions([_share(quantity=0.0, cost_basis=0.0,
+                                      realized_gain=-335.89)])
+
+    assert _val(exporter, 'sb_realized_gain') == -335.89
+    assert _val(exporter, 'sb_owned_quantity') == 0.0
+
+
+def test_retaining_nothing_clears_every_position_series(exporter):
+    exporter.retain_positions([_share()])
+
+    exporter.retain_positions([])
+
+    assert _val(exporter, 'sb_owned_quantity') is None
+    assert _val(exporter, 'sb_cost_basis') is None
+
+
+# --- update_quote on a successful fetch -------------------------------------
+
+def test_update_quote_sets_the_market_gauges(exporter):
+    exporter.update_quote(_share(), 150.0, _info())
+
     assert _val(exporter, 'sb_share_price') == 150.0
     assert _val(exporter, 'sb_pe_ratio') == 30.0
     assert _val(exporter, 'sb_market_cap') == 3_000_000_000.0
     assert _val(exporter, 'sb_volume') == 123456
+    # And touches nothing the replay owns.
+    assert _val(exporter, 'sb_owned_quantity') is None
+    assert _val(exporter, 'sb_realized_gain') is None
 
 
 def test_dividend_yield_is_scaled_to_percentage(exporter):
-    exporter.update_share(_share(), 150.0, _info(dividendYield=0.5))
+    exporter.update_quote(_share(), 150.0, _info(dividendYield=0.5))
     assert _val(exporter, 'sb_dividend_yield') == 50.0
 
 
 def test_share_info_gauge_carries_tag_labels(exporter):
-    exporter.update_share(_share(), 150.0, _info())
-    assert exporter.registry.get_sample_value('sb_share_info', {
-        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default',
-        'share_currency': 'USD', 'share_exchange': 'NMS', 'quote_type': 'EQUITY',
-    }) == 1.0
+    exporter.update_quote(_share(), 150.0, _info())
+    assert exporter.registry.get_sample_value('sb_share_info', AAPL_INFO) == 1.0
 
 
 # --- account label ----------------------------------------------------------
 
 def test_same_symbol_in_two_accounts_produces_distinct_series(exporter):
     """A symbol held in two accounts must not collapse onto one series."""
-    pea = dict(_share(), account='PEA')
-    pea['estate'] = {'quantity': 10.0, 'received_dividend': 0.0}
-    cto = dict(_share(), account='CTO')
-    cto['estate'] = {'quantity': 5.0, 'received_dividend': 0.0}
-
-    exporter.update_share(pea, 150.0, _info())
-    exporter.update_share(cto, 150.0, _info())
+    exporter.update_position(dict(_share(quantity=10.0), account='PEA'))
+    exporter.update_position(dict(_share(quantity=5.0), account='CTO'))
 
     assert exporter.registry.get_sample_value('sb_owned_quantity', {
         'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'PEA'}) == 10.0
@@ -132,34 +237,87 @@ def test_price_staleness_labelled_per_account(exporter):
         'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'PEA'}) == 1
 
 
+# --- forget_quotes: an absent gauge is readable, a frozen one is not --------
+
+def test_forget_quotes_removes_every_market_series_of_the_symbol(exporter):
+    exporter.update_quote(_share(), 11.93, _info())
+    exporter.update_price_staleness(_share(), False)
+
+    exporter.forget_quotes('AAPL')
+
+    assert _val(exporter, 'sb_share_price') is None
+    assert _val(exporter, 'sb_dividend_yield') is None
+    assert _val(exporter, 'sb_pe_ratio') is None
+    assert _val(exporter, 'sb_market_cap') is None
+    assert _val(exporter, 'sb_volume') is None
+    assert _val(exporter, 'sb_price_staleness') is None
+    assert exporter.registry.get_sample_value('sb_share_info', AAPL_INFO) is None
+
+
+def test_forget_quotes_keeps_what_the_replay_feeds(exporter):
+    """The realized gain survives its scrape job — it is the figure left to read."""
+    exporter.update_position(_share(quantity=0.0, cost_basis=0.0,
+                                    realized_gain=-335.89))
+    exporter.update_quote(_share(), 11.93, _info())
+
+    exporter.forget_quotes('AAPL')
+
+    assert _val(exporter, 'sb_share_price') is None
+    assert _val(exporter, 'sb_realized_gain') == -335.89
+    assert _val(exporter, 'sb_received_dividend') == 2.4
+    assert _val(exporter, 'sb_owned_quantity') == 0.0
+
+
+def test_forget_quotes_leaves_another_symbol_alone(exporter):
+    exporter.update_quote(_share(), 150.0, _info())
+    exporter.update_quote(dict(_share(), symbol='MSFT', name='Microsoft'),
+                          380.0, _info())
+
+    exporter.forget_quotes('AAPL')
+
+    assert _val(exporter, 'sb_share_price') is None
+    assert exporter.registry.get_sample_value('sb_share_price', {
+        'share_name': 'Microsoft', 'share_symbol': 'MSFT',
+        'account': 'default'}) == 380.0
+
+
+def test_forget_quotes_removes_every_account_of_the_symbol(exporter):
+    """The scrape job is per symbol, so its departure takes every holding with it."""
+    exporter.update_quote(dict(_share(), account='PEA'), 150.0, _info())
+    exporter.update_quote(dict(_share(), account='CTO'), 150.0, _info())
+
+    exporter.forget_quotes('AAPL')
+
+    for account in ('PEA', 'CTO'):
+        assert exporter.registry.get_sample_value('sb_share_price', {
+            'share_name': 'Apple', 'share_symbol': 'AAPL',
+            'account': account}) is None
+
+
+def test_forget_quotes_on_a_symbol_never_published_is_a_no_op(exporter):
+    exporter.forget_quotes('NOSUCH')
+
+
 # --- None handling ----------------------------------------------------------
 
 def test_none_optional_fields_are_not_set(exporter):
-    exporter.update_share(
+    exporter.update_quote(
         _share(), 150.0,
         _info(dividendYield=None, peRatio=None, marketCap=None, volume=None))
     assert _val(exporter, 'sb_dividend_yield') is None
     assert _val(exporter, 'sb_pe_ratio') is None
     assert _val(exporter, 'sb_market_cap') is None
     assert _val(exporter, 'sb_volume') is None
-    # Price and portfolio are still present.
+    # The price is still present.
     assert _val(exporter, 'sb_share_price') == 150.0
-    assert _val(exporter, 'sb_owned_quantity') == 18.0
 
 
-def test_failed_fetch_still_sets_portfolio_but_no_market(exporter):
-    exporter.update_share(_share(), None, None)
-    # Portfolio gauges available without a live quote (retro-compat behaviour).
-    assert _val(exporter, 'sb_purchased_quantity') == 20.0
-    assert _val(exporter, 'sb_owned_quantity') == 18.0
-    assert _val(exporter, 'sb_received_dividend') == 2.4
-    # No market data.
+def test_failed_fetch_sets_no_market_gauge_at_all(exporter):
+    exporter.update_quote(_share(), None, None)
+
     assert _val(exporter, 'sb_share_price') is None
     assert _val(exporter, 'sb_dividend_yield') is None
-    assert exporter.registry.get_sample_value('sb_share_info', {
-        'share_name': 'Apple', 'share_symbol': 'AAPL', 'account': 'default',
-        'share_currency': 'USD', 'share_exchange': 'NMS', 'quote_type': 'EQUITY',
-    }) is None
+    assert exporter.registry.get_sample_value('sb_share_info', AAPL_INFO) is None
 
 
 # The exporter no longer serves anything: since issue #651 its registry is
@@ -167,27 +325,28 @@ def test_failed_fetch_still_sets_portfolio_but_no_market(exporter):
 # behind /metrics is asserted in test_web_boot.py.
 
 
-# --- wiring through SuiviBourseMetrics.scrape() ------------------------------
+# --- wiring through SuiviBourseMetrics ---------------------------------------
 
-def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
-                                            fake_ticker):
+def test_scrape_publishes_the_price_and_ingest_the_position(
+        monkeypatch, mock_influx, fake_ticker, store):
+    """The two feeders, each doing its own half (#699)."""
     import main
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda symbol: fake_ticker(close=150.0))
 
     class FakeConfigManager:
         def current(self):
-            return main.ConfigSnapshot(shares=[_share()], events=None,
+            return main.ConfigSnapshot(shares=[_share()], events=[],
                                        accounts=None, cache_key=None)
 
         def reload(self, force=False):
             return self.current()
 
+        def replay(self):
+            return self.current()
+
         def load_shares(self, force=False):
             return [_share()]
-
-        def get_mode(self):
-            return 'events'
 
         def get_first_buy_date(self, symbol):
             return None
@@ -204,8 +363,13 @@ def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
         influxdb_writer=mock_influx, prometheus_exporter=exporter)
 
     metrics.scrape()
-
     assert exporter.registry.get_sample_value('sb_share_price', AAPL) == 150.0
+    # The scrape knows nothing of the position any more.
+    assert exporter.registry.get_sample_value('sb_owned_quantity', AAPL) is None
+
+    metrics.ingest()
     assert exporter.registry.get_sample_value('sb_owned_quantity', AAPL) == 18.0
+    assert exporter.registry.get_sample_value('sb_realized_gain', AAPL) == 0.0
+
     # The InfluxDB write still happened too (dual export).
     assert mock_influx.write_metrics.called

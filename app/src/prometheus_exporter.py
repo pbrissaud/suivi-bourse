@@ -24,6 +24,11 @@ logger = getLogger("prometheus_exporter", level=LOG_LEVEL)
 # accounts would collapse onto the same series and silently overwrite itself.
 COMMON_LABELS = ['share_name', 'share_symbol', 'account']
 
+#: Where the label values sit in a sample, so a series can be removed without
+#: reaching into ``Gauge._labelnames``.
+SHARE_INFO_LABELS = COMMON_LABELS + ['share_currency', 'share_exchange',
+                                     'quote_type']
+
 
 class PrometheusExporter:
     """
@@ -39,25 +44,44 @@ class PrometheusExporter:
         self.share_price = Gauge(
             "sb_share_price", "Price of the share", COMMON_LABELS,
             registry=self.registry)
-        self.purchased_quantity = Gauge(
-            "sb_purchased_quantity", "Quantity of purchased share", COMMON_LABELS,
-            registry=self.registry)
-        self.purchased_price = Gauge(
-            "sb_purchased_price", "Price of purchased share", COMMON_LABELS,
-            registry=self.registry)
-        self.purchased_fee = Gauge(
-            "sb_purchased_fee", "Fees", COMMON_LABELS,
-            registry=self.registry)
+        # The three ``sb_purchased_*`` gauges are **gone** (issue #699, spec
+        # #695 § 12, `website/docs/headless-gauges.mdx`), and none of them was
+        # renamed into a survivor: every one would have changed *meaning* under
+        # its old name. "Ever bought" is not "held at this cost";
+        # ``purchased_fee`` counted a fee that now lives inside the basis, so
+        # the only value left to publish would be a zero reading as "no fees
+        # paid"; and the unit average went from fee-excluded to fee-included. A
+        # headless dashboard must see a series **leave**, never see a number
+        # quietly start meaning something else.
+        #
+        # What replaces them is the state itself: ``sb_cost_basis`` is an
+        # **amount**, and the unit average is that divided by
+        # ``sb_owned_quantity`` — a division the scraper's own query language
+        # does perfectly well, and which stays honestly undefined on a position
+        # nobody holds instead of being published as a zero.
+        self.cost_basis = Gauge(
+            "sb_cost_basis",
+            "What the held quantity cost, as an amount (acquisition fees "
+            "included); the unit average is this divided by sb_owned_quantity",
+            COMMON_LABELS, registry=self.registry)
         self.owned_quantity = Gauge(
             "sb_owned_quantity", "Owned quantity of the share", COMMON_LABELS,
             registry=self.registry)
         self.received_dividend = Gauge(
             "sb_received_dividend", "Sum of received dividend for the share",
             COMMON_LABELS, registry=self.registry)
+        # Fed by the **replay**, never by the scrape (#672 D4): a position's
+        # realized gain is born at the sale, which is the exact instant its
+        # scrape job is removed. Riding on the price path, the figure would
+        # never be published at all.
+        self.realized_gain = Gauge(
+            "sb_realized_gain",
+            "Realized gain on the share (net proceeds minus the cost basis "
+            "the sales consumed)",
+            COMMON_LABELS, registry=self.registry)
         self.share_info = Gauge(
             "sb_share_info", "Share informations as label",
-            COMMON_LABELS + ['share_currency', 'share_exchange', 'quote_type'],
-            registry=self.registry)
+            SHARE_INFO_LABELS, registry=self.registry)
         self.dividend_yield = Gauge(
             "sb_dividend_yield", "Dividend yield percentage of the share",
             COMMON_LABELS, registry=self.registry)
@@ -79,6 +103,37 @@ class PrometheusExporter:
             "sb_price_staleness",
             "1 when the stored price is silently stale while the live quote moves",
             COMMON_LABELS, registry=self.registry)
+
+        # Everything a live quote feeds, and therefore everything that has to
+        # **leave** when a symbol's scrape job does (#672 D6). Without the
+        # removal, ``sb_share_price`` of a share sold four years ago sits at its
+        # last observed price for as long as the process lives, never saying it
+        # stopped moving: an absent gauge is readable, a frozen one is not. The
+        # sonde rides along — it is a statement about a write path that no
+        # longer exists. The position gauges are **not** here: the replay feeds
+        # them, and it goes on doing so for a position at zero.
+        self._quote_gauges = (
+            (self.share_price, COMMON_LABELS),
+            (self.share_info, SHARE_INFO_LABELS),
+            (self.dividend_yield, COMMON_LABELS),
+            (self.pe_ratio, COMMON_LABELS),
+            (self.market_cap, COMMON_LABELS),
+            (self.volume, COMMON_LABELS),
+            (self.price_staleness, COMMON_LABELS),
+        )
+
+        # The replay's four, and the label sets it last published. A position
+        # can leave the ledger outright — a forgotten import — and then no
+        # `update_position` ever touches its series again: it would go on
+        # publishing a cost basis for a holding nobody declares, and a
+        # `sum(sb_cost_basis)` would go on counting it. The scrape's half has
+        # `forget_quotes`; this is the same closure for the half that carries
+        # money (see :meth:`retain_positions`).
+        self._position_gauges = (
+            self.owned_quantity, self.cost_basis, self.received_dividend,
+            self.realized_gain,
+        )
+        self._published_positions = set()
 
         # Per-account cash & value gauges (opt-in accounts feature). Labelled by
         # account so each account is its own series.
@@ -128,31 +183,83 @@ class PrometheusExporter:
             "sb_portfolio_twr_index", "Global time-weighted return index (base 100)",
             registry=self.registry)
 
-    def update_share(self, share: dict, last_quote, info) -> None:
-        """
-        Update the gauges for a single share.
+    @staticmethod
+    def _share_labels(share: dict) -> tuple:
+        """The three-label series identity of one position."""
+        return (share['name'], share['symbol'],
+                share.get('account', DEFAULT_ACCOUNT))
 
-        Portfolio gauges (purchased/owned/dividend) are always set from the
-        share configuration. Market gauges (price, info labels, yield, P/E,
-        market cap, volume) are only set when a live quote was fetched, matching
-        the original behaviour.
+    def update_position(self, share: dict) -> None:
+        """Publish one position's state — the gauges the **replay** feeds.
+
+        Called after a replay, for every position the ledger holds, sold ones
+        included: a position at zero quantity still has a realized gain and its
+        dividends, and those are precisely the figures left to read once the
+        holding is gone. It is deliberately not called from the scrape, which no
+        longer knows anything about a position beyond its price.
+
+        Every figure here is published as a **zero** rather than withheld when
+        the position is sold out, and that is not the same decision as §11's
+        *"a gauge whose field is absent is not published"*: a sold position's
+        quantity and cost basis genuinely **are** zero, and a zero is a figure.
+        Absence is kept for what could not be computed at all — which is exactly
+        why the unit average is not a gauge here: it is undefined on a sold
+        position, and a scraper that wants it divides two series that are not.
 
         Args:
-            share: Share configuration dict (name, symbol, purchase, estate).
+            share: one position dict (name, symbol, account, quantity,
+                cost_basis, realized_gain, received_dividend).
+        """
+        labels = self._share_labels(share)
+
+        self.owned_quantity.labels(*labels).set(share.get('quantity') or 0.0)
+        self.cost_basis.labels(*labels).set(share.get('cost_basis') or 0.0)
+        self.received_dividend.labels(*labels).set(
+            share.get('received_dividend') or 0.0)
+        self.realized_gain.labels(*labels).set(share.get('realized_gain') or 0.0)
+        self._published_positions.add(labels)
+
+    def retain_positions(self, shares) -> None:
+        """Publish these positions, and **remove every series not among them**.
+
+        The replay's own gesture, and it is a *retain* rather than an update
+        because the set is what changes: forgetting an import takes positions
+        away, and a loop that only ever sets would leave their gauges standing —
+        a cost basis for a holding nobody declares any more, quietly counted by
+        every `sum()` over the metric until the process restarts.
+
+        Zero quantity is **not** what takes a series away: a sold position is
+        still declared and still has a realized gain to publish. What takes it
+        away is the ledger no longer producing the row at all.
+        """
+        for share in shares:
+            self.update_position(share)
+
+        keep = {self._share_labels(share) for share in shares}
+        for labels in sorted(self._published_positions - keep):
+            for gauge in self._position_gauges:
+                self._remove(gauge, labels)
+            self._published_positions.discard(labels)
+
+    def update_quote(self, share: dict, last_quote, info) -> None:
+        """Publish one position's market gauges, from a successful fetch.
+
+        Gated by the caller on **fetch success** rather than on the write gate,
+        so a closed-market restart still leaves them populated (design #609).
+        Does nothing at all without a quote — the position half is
+        :meth:`update_position`'s, and it does not depend on the market being
+        reachable.
+
+        Args:
+            share: one position dict (name, symbol, account).
             last_quote: Latest price, or None if the fetch failed.
             info: Enriched ticker info dict, or None if the fetch failed.
         """
-        account = share.get('account', DEFAULT_ACCOUNT)
-        labels = (share['name'], share['symbol'], account)
-
-        self.purchased_quantity.labels(*labels).set(share['purchase']['quantity'])
-        self.purchased_price.labels(*labels).set(share['purchase']['cost_price'])
-        self.purchased_fee.labels(*labels).set(share['purchase']['fee'])
-        self.owned_quantity.labels(*labels).set(share['estate']['quantity'])
-        self.received_dividend.labels(*labels).set(share['estate']['received_dividend'])
-
         if last_quote is None or info is None:
             return
+
+        account = share.get('account', DEFAULT_ACCOUNT)
+        labels = self._share_labels(share)
 
         self.share_price.labels(*labels).set(last_quote)
         self.share_info.labels(
@@ -169,6 +276,34 @@ class PrometheusExporter:
         if info.get('volume') is not None:
             self.volume.labels(*labels).set(info['volume'])
 
+    def forget_quotes(self, symbol: str) -> None:
+        """Remove every market series of a symbol whose scrape job has departed.
+
+        The counterpart of :meth:`update_quote`, and the reason it exists is
+        stated on :attr:`_quote_gauges`: the last price of a symbol nobody polls
+        any more is not a current price, and Prometheus has no way to say so
+        other than by the series not being there.
+
+        Works off ``collect()`` rather than the label sets of the current
+        portfolio, because the position may have left the ledger entirely (a
+        forgotten import) and there would then be nothing left to name it with.
+        """
+        for gauge, labelnames in self._quote_gauges:
+            for metric in gauge.collect():
+                for sample in metric.samples:
+                    if sample.labels.get('share_symbol') != symbol:
+                        continue
+                    self._remove(
+                        gauge, tuple(sample.labels[name] for name in labelnames))
+
+    @staticmethod
+    def _remove(gauge: Gauge, labels: tuple) -> None:
+        """Drop one series, tolerating a label set that was never created."""
+        try:
+            gauge.remove(*labels)
+        except KeyError:
+            pass
+
     def update_price_staleness(self, share: dict, stale: bool) -> None:
         """Set the price-freshness sonde gauge for one share (issue #628).
 
@@ -176,9 +311,8 @@ class PrometheusExporter:
         (share_name, share_symbol, account), ``0`` clears it once the stored
         price tracks the live quote again.
         """
-        account = share.get('account', DEFAULT_ACCOUNT)
-        labels = (share['name'], share['symbol'], account)
-        self.price_staleness.labels(*labels).set(1 if stale else 0)
+        self.price_staleness.labels(*self._share_labels(share)).set(
+            1 if stale else 0)
 
     def update_account(self, point) -> None:
         """Update the per-account gauges from a computed account_metrics point.

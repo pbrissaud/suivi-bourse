@@ -34,17 +34,23 @@ from datetime import datetime, timezone
 # Canonical events CSV used by the events-mode tests.
 #
 # Columns match docker-compose/events/example.csv. Hand-computed end state
-# (verified against the real EventAggregator):
+# (verified against the real EventAggregator), in the v5 shape — one quantity
+# and a cost basis that has absorbed the acquisition fees (#699):
 #
-#   AAPL: purchase.quantity=20, cost_price=143.75, fee=7.50
-#         estate.quantity=18, received_dividend=2.40
-#   MSFT: purchase.quantity=5,  cost_price=380.0,  fee=2.50
-#         estate.quantity=5,  received_dividend=5.00
+#   AAPL: quantity=18, cost_basis=2 469.00, realized_gain=+156.50,
+#         received_dividend=2.40
+#   MSFT: quantity=5,  cost_basis=1 902.50, realized_gain=0,
+#         received_dividend=5.00
 #
 # Intermediate AAPL state on 2024-06-20 (before the 2024-09-15 SELL):
-#   purchase.quantity=20, cost_price=143.75, fee=5.50
-#   estate.quantity=21, received_dividend=2.40
+#   quantity=21, cost_basis=2 880.50, received_dividend=2.40
 # --------------------------------------------------------------------------- #
+# 5×100 + 1 · 10×150 + 2,50 · a free share · 5×175 + 2 = 21 shares, 2 880,50 €.
+AAPL_BASIS_BEFORE_SALE = 2880.50
+AAPL_QUANTITY_BEFORE_SALE = 21
+AAPL_UNIT_COST = AAPL_BASIS_BEFORE_SALE / AAPL_QUANTITY_BEFORE_SALE
+AAPL_BASIS = AAPL_BASIS_BEFORE_SALE - 3 * AAPL_UNIT_COST
+MSFT_BASIS = 5 * 380.0 + 2.50
 EVENTS_CSV = (
     "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
     "2023-06-01,BUY,AAPL,Apple Inc,5,100.00,1.00,,Very early purchase\n"
@@ -135,11 +141,10 @@ def test_the_full_chain_drives_write_metrics(
     assert set(shares_by_symbol) == {"AAPL", "MSFT"}
 
     aapl = shares_by_symbol["AAPL"]
-    assert aapl["purchase"]["quantity"] == pytest.approx(20.0)
-    assert aapl["purchase"]["cost_price"] == pytest.approx(143.75)
-    assert aapl["purchase"]["fee"] == pytest.approx(7.5)
-    assert aapl["estate"]["quantity"] == pytest.approx(18.0)
-    assert aapl["estate"]["received_dividend"] == pytest.approx(2.4)
+    assert aapl["quantity"] == pytest.approx(18.0)
+    assert aapl["cost_basis"] == pytest.approx(AAPL_BASIS)
+    assert aapl["realized_gain"] == pytest.approx(3 * 190.0 - 2.0 - 3 * AAPL_UNIT_COST)
+    assert aapl["received_dividend"] == pytest.approx(2.4)
 
     # Drive the real scrape (fetch prices -> write metrics).
     sb.scrape()
@@ -153,10 +158,15 @@ def test_the_full_chain_drives_write_metrics(
     aapl_call = calls["AAPL"]
     assert aapl_call["share_name"] == "Apple Inc"
     assert aapl_call["share_price"] == pytest.approx(190.0)  # fake ticker close
-    assert aapl_call["purchased_quantity"] == pytest.approx(20.0)
-    assert aapl_call["purchased_price"] == pytest.approx(143.75)
-    assert aapl_call["purchased_fee"] == pytest.approx(7.5)
+    # The InfluxDB path is intact, fed through the disposable adapter (#699):
+    # the two quantities collapse onto the held one and the fees have moved
+    # into the basis, so `quantity × price` is the cost basis exactly.
+    assert aapl_call["purchased_quantity"] == pytest.approx(18.0)
+    assert aapl_call["purchased_price"] == pytest.approx(AAPL_BASIS / 18.0)
+    assert aapl_call["purchased_fee"] is None       # absent, never a false zero
     assert aapl_call["owned_quantity"] == pytest.approx(18.0)
+    assert (aapl_call["purchased_quantity"] *
+            aapl_call["purchased_price"]) == pytest.approx(AAPL_BASIS)
     assert aapl_call["received_dividend"] == pytest.approx(2.4)
     # Enrichment tags/fields sourced from ticker.info (fake_ticker defaults).
     assert aapl_call["share_currency"] == "USD"
@@ -168,8 +178,8 @@ def test_the_full_chain_drives_write_metrics(
     assert msft_call["share_name"] == "Microsoft"
     assert msft_call["share_price"] == pytest.approx(400.0)
     assert msft_call["purchased_quantity"] == pytest.approx(5.0)
-    assert msft_call["purchased_price"] == pytest.approx(380.0)
-    assert msft_call["purchased_fee"] == pytest.approx(2.5)
+    assert msft_call["purchased_price"] == pytest.approx(MSFT_BASIS / 5.0)
+    assert msft_call["purchased_fee"] is None
     assert msft_call["owned_quantity"] == pytest.approx(5.0)
     assert msft_call["received_dividend"] == pytest.approx(5.0)
 
@@ -231,23 +241,25 @@ def test_backfill_writes_historical_state_for_intermediate_date(
     assert point["timestamp"] == intermediate
     assert point["price"] == pytest.approx(180.0)
 
-    # Portfolio state enriched from events == aggregate_until_date(2024-06-20).
-    assert point["purchased_quantity"] == pytest.approx(20.0)
-    assert point["purchased_price"] == pytest.approx(143.75)
-    assert point["purchased_fee"] == pytest.approx(5.5)   # SELL not yet applied
-    assert point["owned_quantity"] == pytest.approx(21.0)  # GRANT+BUYs, no SELL
+    # Portfolio state enriched from the events, as of 2024-06-20: the SELL has
+    # not happened yet, so the position still holds its 21 shares.
+    assert point["purchased_quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
+    assert point["purchased_price"] == pytest.approx(AAPL_UNIT_COST)
+    assert point["purchased_fee"] is None
+    assert point["owned_quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
     assert point["received_dividend"] == pytest.approx(2.4)
 
     # Cross-check against the real replay timeline to prove the state is not
-    # hardcoded (and identical to the pre-refactor aggregate_until_date values).
+    # hardcoded.
     from events.aggregator import EventAggregator
     from datetime import date as _date
     expected = EventAggregator().replay(
         config_manager.get_events()
     ).position_at("default", "AAPL", _date(2024, 6, 20))
-    assert point["purchased_quantity"] == expected["purchase"]["quantity"]
-    assert point["owned_quantity"] == expected["estate"]["quantity"]
-    assert point["received_dividend"] == expected["estate"]["received_dividend"]
+    assert point["owned_quantity"] == expected["quantity"]
+    assert point["received_dividend"] == expected["received_dividend"]
+    assert (point["purchased_quantity"] * point["purchased_price"]
+            ) == pytest.approx(expected["cost_basis"])
 
 
 # --------------------------------------------------------------------------- #

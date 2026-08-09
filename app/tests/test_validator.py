@@ -232,13 +232,41 @@ def test_grant_negative_quantity(validator):
     assert "quantity must be positive for GRANT" in errors[0]
 
 
-def test_grant_ignores_unit_price_and_fee(validator):
-    # GRANT validation only checks quantity; a negative fee here is not flagged.
+def test_grant_ignores_fee(validator):
+    # A GRANT is cash-neutral, so its fee column is not a figure anyone reads.
     ev = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
-               quantity=1, unit_price=-999.0, fee=-999.0)
+               quantity=1, fee=-999.0)
     is_valid, errors = validator.validate([ev])
     assert is_valid is True
     assert errors == []
+
+
+def test_grant_accepts_an_optional_unit_price(validator):
+    """Present it is a valued award, absent it is dilution — both are legal."""
+    valued = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+                   quantity=1, unit_price=100.0)
+    diluted = Event(date(2024, 6, 2), EventType.GRANT, "AAPL", "Apple Inc",
+                    quantity=1)
+    is_valid, errors = validator.validate([valued, diluted])
+    assert is_valid is True
+    assert errors == []
+
+
+def test_grant_does_not_refuse_a_nonsense_unit_price(validator):
+    """It is normalised where it is read, never refused here (#699).
+
+    This validator runs over the **whole stored ledger** on every build, not
+    only over a file someone just dropped, and the column was parsed and
+    discarded before v5 — so a refusal would be retroactive and would fail the
+    boot on a row that was legal when it was imported, in an app the user then
+    cannot reach to fix it. `test_aggregator` pins what the replay does with
+    such a value instead.
+    """
+    for price in (-999.0, 0.0):
+        ev = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+                   quantity=1, unit_price=price)
+        is_valid, errors = validator.validate([ev])
+        assert (is_valid, errors) == (True, [])
 
 
 # ---------------------------------------------------------------------------

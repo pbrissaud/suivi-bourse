@@ -205,8 +205,8 @@ def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
     assert second is not first
     aapl_after = next(s for s in second if s["symbol"] == "AAPL")
     # Replaced, not doubled: 10 BUY + 5 BUY + 1 GRANT - 3 SELL = 13 became 14.
-    assert aapl_before["estate"]["quantity"] == 13.0
-    assert aapl_after["estate"]["quantity"] == 14.0
+    assert aapl_before["quantity"] == 13.0
+    assert aapl_after["quantity"] == 14.0
 
 
 # --------------------------------------------------------------------------- #

@@ -203,7 +203,21 @@ class EventValidator:
         return errors
 
     def _validate_grant(self, event: Event, prefix: str) -> List[str]:
-        """Validate a GRANT event."""
+        """Validate a GRANT event.
+
+        ``unit_price`` becomes **meaningful** with #699 — present it is a valued
+        award, absent it is dilution — and it is deliberately **not validated**
+        here. The column was already parsed and silently thrown away, so a
+        stored ledger may hold any value in it, and this validator runs over the
+        *whole store* on every build (``_load_from_store``), not only over a
+        file someone just dropped. A new refusal here is therefore retroactive:
+        a row that was legal when it was imported would fail the boot in the
+        gunicorn master, with no way to repair it from an app that is down. A
+        value that cannot be a price is normalised where it is read instead —
+        ``aggregator._process_grant`` and ``performance._grant_value``, together
+        — which is also the pair the spec's *"no format change is necessary"*
+        asks for.
+        """
         errors = []
 
         if event.quantity is None:
