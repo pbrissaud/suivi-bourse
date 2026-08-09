@@ -98,22 +98,40 @@ sum of `BUY` quantities, total fees the sum of fees.
 
 ## Accounts and the portfolio
 
-Per account, with an `account` label:
+**Nothing in this section is published until the base currency is answered.**
+Both families below are read out of the performance series, and while the
+currency is unanswered that series is not computed at all — not a series, not
+zeros, not `NULL`s. Every gauge here is therefore **absent**, exactly as
+`sb_share_price` is above and for the same reason seen from the other end: these
+are all amounts, and an amount whose unit is unsettled is not a metric. Prices
+keep being collected the whole time, so nothing is lost by answering late — and
+the condition needs no acknowledgement, it lifts by itself on the cycle after
+the currency is posted.
+
+That is the state a fresh headless install is in before anyone has run the one
+`curl` that answers the question. If you are scraping an empty accounts section,
+this is the first thing to check — [Settings](./settings.mdx) has the call.
+
+Per account, with an `account` label. Each condition below applies **once the
+base currency is answered**:
 
 | Gauge | Published when |
 |---|---|
-| `sb_account_cash_balance` | always |
 | `sb_account_holdings_value` | always |
-| `sb_account_net_contributed` | always |
-| `sb_account_total_value` | the account has both halves of it |
-| `sb_account_gain_absolu` | the account has a value to compare to its contributions |
+| `sb_account_gain_absolu` | always — with no transfer at all, cash is minus what was invested, and the figure is still exact |
+| `sb_account_cash_balance` | the account has at least one cash event — a deposit or a withdrawal |
+| `sb_account_net_contributed` | the account has at least one cash event |
+| `sb_account_total_value` | the account has at least one cash event; it is the sum of the two above |
 | `sb_account_twr_index` | it follows `sb_account_total_value` |
 | `sb_account_xirr` | the account has at least one external flow to weight |
 | `sb_account_info` | always; value `1`, carrying `account_type` as a label |
 
 The same seven figures exist at the **portfolio** level as `sb_portfolio_*`, with
 **no `account` label at all**. A synthetic label there would double every `sum()`
-a reader writes across the two families.
+a reader writes across the two families. They are under the same currency
+condition, and carry one of their own on top: a global figure is published only
+where it is writable for **every** declared account. Summing whichever accounts
+happen to be ready would draw a step nothing caused.
 
 ## The install itself
 
