@@ -42,6 +42,7 @@ from typing import Iterable, List, Optional, Sequence, Set
 
 from logfmt_logger import getLogger
 
+import store as store_module
 from events.schemas import Account, DEFAULT_ACCOUNT, Portfolio
 
 logger = getLogger("accounts")
@@ -388,22 +389,45 @@ def apply_source(store, source_id: int, rows: Sequence[AccountRow]) -> int:
       write;
     * an id this source declared before and no longer does, while an event names
       it (:class:`AccountInUse`) — the cascade ADR-0013 refuses.
+
+    **A row that is already there is updated, never rewritten.** The upsert this
+    replaced wrote the three columns unconditionally, ``source_id`` included, and
+    that last one is why correcting a label and dropping the file again — the
+    repair :class:`ReadOnlyAccount` tells the user to make — was impossible for
+    every account an event named: DuckDB turns a write to a foreign-key column
+    into a delete plus an insert, and the delete trips ``event.account``. The
+    key is gone from the DDL for that reason (see :mod:`store`), and the write
+    is split here for the other half of it: a re-drop of the same file finds its
+    own ``import_source`` row, so ``source_id`` does not move, and the statement
+    that does not move it is the one that says what actually changed.
     """
     _refuse_duplicates(rows)
     _refuse_taken(store, source_id, rows)
 
     incoming = {row.id for row in rows}
-    retired = [i for i in source_account_ids(store, source_id)
-               if i not in incoming]
+    declared = set(source_account_ids(store, source_id))
+    retired = [i for i in declared if i not in incoming]
     _retire(store, retired)
 
+    # Read after `_retire`: the ids it removed are gone, and an id this file now
+    # declares that it did not declare before is an insert even when the row
+    # existed a moment ago.
+    existing = account_ids(store)
     for row in rows:
+        if row.id in existing:
+            store.execute(
+                'UPDATE account SET type = ?, label = ? WHERE id = ?',
+                [row.type, row.label, row.id])
+            if row.id not in declared:
+                # Ownership moves. `_refuse_taken` has already refused every id
+                # another source or the app declares, so what reaches this line
+                # is the seeded `default` row a file is allowed to take over.
+                store.execute('UPDATE account SET source_id = ? WHERE id = ?',
+                              [source_id, row.id])
+            continue
         store.execute(
             'INSERT INTO account (id, type, label, source_id) '
-            'VALUES (?, ?, ?, ?) '
-            'ON CONFLICT (id) DO UPDATE SET type = excluded.type, '
-            'label = excluded.label, source_id = excluded.source_id',
-            [row.id, row.type, row.label, source_id])
+            'VALUES (?, ?, ?, ?)', [row.id, row.type, row.label, source_id])
     return len(rows)
 
 
@@ -466,8 +490,12 @@ def _retire(store, ids: Iterable[str]) -> None:
 
     ``default`` is never removed and never refused. It is the row every install
     has (ADR-0013: *there is always at least one account*), so a file that
-    declared it hands it back rather than taking it away — the ownership goes,
-    the row stays.
+    declared it hands it back rather than taking it away — and it hands back the
+    **whole** row: ``type`` and ``label`` return to what the seed wrote, not to
+    the file's own pair. Dropping the ownership alone would leave the install
+    with an account nobody declares still wearing the name a forgotten file gave
+    it, editable in the app and impossible to explain from anything the store
+    still holds.
     """
     retiring = list(ids)
 
@@ -480,9 +508,10 @@ def _retire(store, ids: Iterable[str]) -> None:
 
     for account_id in retiring:
         if account_id == DEFAULT_ACCOUNT:
+            _, seeded_type, seeded_label, _ = store_module.DEFAULT_ACCOUNT_ROW
             store.execute(
-                'UPDATE account SET source_id = NULL WHERE id = ?',
-                [DEFAULT_ACCOUNT])
+                'UPDATE account SET type = ?, label = ?, source_id = NULL '
+                'WHERE id = ?', [seeded_type, seeded_label, DEFAULT_ACCOUNT])
             continue
         store.execute('DELETE FROM account WHERE id = ?', [account_id])
 

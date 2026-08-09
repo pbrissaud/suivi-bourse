@@ -146,6 +146,31 @@ def test_the_foreign_keys_hold(store):
             "VALUES ('nope', 0, 0)")
 
 
+def test_an_account_can_change_hands_while_an_event_names_it(store):
+    """Why ``account.source_id`` carries no foreign key of its own (#698).
+
+    DuckDB runs an ``UPDATE`` that touches a foreign-key column as a delete plus
+    an insert, and the delete then trips the *incoming* ``event.account`` key. A
+    key here would therefore freeze the ownership of exactly the accounts that
+    are in use: an accounts file could not be corrected and re-dropped, could not
+    grow a second account, and the seeded ``default`` row it took over could
+    never be handed back — the forget raising halfway, outside any transaction.
+    Integrity moves to the writer, as it does for ``price_point``.
+    """
+    store.execute(
+        "INSERT INTO import_source (id, filename, kind, imported_at, fingerprint) "
+        "VALUES (1, 'accounts.csv', 'accounts', now(), 'abc')")
+    store.execute("UPDATE account SET source_id = 1 WHERE id = 'default'")
+    store.execute(
+        "INSERT INTO event (id, date, event_type, account, amount) "
+        "VALUES (1, DATE '2024-01-02', 'DEPOSIT', 'default', 100.0)")
+
+    store.execute("UPDATE account SET source_id = NULL WHERE id = 'default'")
+
+    assert store.query("SELECT source_id FROM account WHERE id = 'default'") \
+        == [(None,)]
+
+
 # --------------------------------------------------------------------------- #
 # Two kinds of time, never mixed
 # --------------------------------------------------------------------------- #

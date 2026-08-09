@@ -310,12 +310,21 @@ Four things about it are decisions rather than defaults:
   foreign key +153 MB more, and the rebuild 15× slower. Uniqueness moves to the
   writers; the integrity an index would buy is bought for free on the event row,
   where a typo'd ticker actually enters. The reason is written next to the table
-  in `store.py`, not only in the ADR.
+  in `store.py`, not only in the ADR. **`account.source_id` is the one other
+  column with no key** (#698), for a reason that is not memory: DuckDB executes
+  an `UPDATE` touching a foreign-key column as a delete plus an insert, and that
+  delete trips the incoming `event.account` key — so a key here would freeze the
+  ownership of exactly the accounts that are in use, making an accounts file
+  impossible to correct and re-drop, impossible to grow, and the seeded `default`
+  row it took over impossible to hand back. Integrity moves to the writer the
+  same way: `accounts` is the table's only writer and retires every row of an
+  import before `ledger.forget_import` deletes the source it points at.
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
   instant, `DATE` for a calendar day.
 - **The seed has two halves.** The `default` account row is written **at
   creation only**, and since #698 it is also never removed — a file may take it
-  over, and forgetting that file hands the row back rather than taking it away.
+  over, and forgetting that file hands the row back **whole**, `type` and `label`
+  restored to what the seed wrote, rather than taking it away.
   There is always at least one account, which is what lets nothing branch on
   *"are accounts declared"* (ADR-0013). The `setting` defaults are inserted **at every start** with `ON
   CONFLICT DO NOTHING`, which is what makes adding a dial in a later version

@@ -85,12 +85,27 @@ CREATE TABLE IF NOT EXISTS import_source (
     fingerprint  VARCHAR     NOT NULL);
 """
 
+# ``account.source_id`` is the one provenance column that carries **no** foreign
+# key, and the reason is measured rather than stylistic (issue #698). DuckDB
+# executes an ``UPDATE`` that touches a column participating in a foreign key as
+# a delete followed by an insert; the delete then trips the *incoming*
+# ``event.account → account(id)`` key, so on DuckDB 1.5.5 any write to this
+# column on a row an event names is refused with
+# ``Violates foreign key constraint because key "account: pea" is still
+# referenced``. Declaring it would therefore freeze the ownership of exactly the
+# accounts that are in use: a file could no longer be corrected and re-dropped,
+# it could no longer grow a second account, and the seeded ``default`` row a
+# file took over could never be handed back — the forget would raise halfway
+# through, outside any transaction. Integrity moves to the writer, as it does
+# for ``price_point`` (ADR-0007): :mod:`accounts` is the only module that writes
+# this table, and ``accounts.forget_source`` retires every row of an import
+# before ``ledger.forget_import`` deletes the ``import_source`` row it points at.
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
     type       VARCHAR NOT NULL,                    -- PEA | CTO | …
     label      VARCHAR NOT NULL,
-    source_id  INTEGER REFERENCES import_source(id));   -- NULL = created in the UI
+    source_id  INTEGER);                            -- NULL = created in the UI
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 
@@ -214,7 +229,9 @@ TABLES = (
 #: ``account`` column means ``default``, which is what lets a single-account v4's
 #: files import without a single edit). Seeded **at creation only**, and since
 #: #698 never removed either: an accounts file may take the row over, and
-#: forgetting that file hands it back rather than taking it away. There is
+#: forgetting that file hands it back — the *whole* row, this tuple included, so
+#: an account nobody declares does not go on wearing the name a forgotten file
+#: gave it (``accounts._retire``) — rather than taking it away. There is
 #: always at least one account (ADR-0013), which is what lets nothing in the app
 #: branch on "are accounts declared" — so the seed happens once and the row then
 #: has no way of disappearing that would need it to happen twice.

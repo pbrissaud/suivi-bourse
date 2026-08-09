@@ -248,6 +248,62 @@ def test_a_re_drop_removes_the_accounts_the_file_stopped_declaring(store, tmp_pa
     assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea'}
 
 
+def test_a_declaration_is_corrected_by_re_dropping_it_while_events_name_it(
+        store, tmp_path):
+    """The repair ``ReadOnlyAccount`` tells the user to make has to work.
+
+    *"Correct the file and drop it again"* is the only way to fix a label or a
+    type that came from a file, and the accounts worth fixing are precisely the
+    ones a year of events already names. The first version of this module wrote
+    the row with one upsert, ``source_id`` included, and DuckDB executes a write
+    to a foreign-key column as a delete plus an insert — so the re-drop came back
+    ``refused`` with the engine's own ``still referenced`` message and the wrong
+    label stayed on screen. The key is gone from the DDL and the update writes
+    what changed; this is the test that was missing when that shipped.
+    """
+    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE,
+                              '2024_csv': TWO_ACCOUNTS_UNDECLARED})
+    ledger.sync_drop_folder(store, drop)
+    assert _event_accounts(store) == ['pea', 'cto']
+
+    (drop / 'accounts.csv').write_text(
+        "id,type,label\npea,PEA,PEA Boursorama\ncto,CTO,CTO Degiro\n",
+        encoding="utf-8")
+    outcomes = ledger.sync_drop_folder(store, drop)
+
+    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
+    assert _accounts(store) == [
+        ('cto', 'CTO', 'CTO Degiro', 1),
+        (DEFAULT_ACCOUNT, 'OTHER', 'Default account', None),
+        ('pea', 'PEA', 'PEA Boursorama', 1),
+    ]
+    # The events are still where they were: a correction of the declaration is
+    # not a migration of the ledger.
+    assert _event_accounts(store) == ['pea', 'cto']
+
+
+def test_a_declaration_grows_after_the_events_that_rest_on_it(store, tmp_path):
+    """Declaring a second account later is the whole point of multi-account.
+
+    Same cause as the correction above and a worse symptom: the file was refused
+    **whole**, so the account being added never entered either — an install could
+    declare accounts only before its first event, which empties headless
+    multi-account of its object.
+    """
+    drop = _drop(tmp_path, **{
+        'accounts_csv': "id,type,label\npea,PEA,PEA Bourso\n",
+        '2024_csv': ("date,event_type,symbol,name,quantity,unit_price,account\n"
+                     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n")})
+    ledger.sync_drop_folder(store, drop)
+
+    (drop / 'accounts.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
+    outcomes = ledger.sync_drop_folder(store, drop)
+
+    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
+    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea', 'cto'}
+    assert _event_accounts(store) == ['pea']
+
+
 def test_overwriting_an_accounts_file_with_events_retires_its_accounts(store, tmp_path):
     """A source declares one kind of thing at a time.
 
@@ -490,8 +546,39 @@ def test_the_default_account_is_never_removed(store, tmp_path):
     (source,) = ledger.list_imports(store)
     ledger.forget_import(store, source.id)
 
-    assert [row[0] for row in _accounts(store)] == [DEFAULT_ACCOUNT]
+    # The **whole** row comes back, not only its id: an account nobody declares
+    # must not go on wearing the name a forgotten file gave it.
+    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
     assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
+
+
+def test_the_default_row_is_handed_back_while_events_name_it(store, tmp_path):
+    """The hand-back is a write to ``source_id`` on a row events reference.
+
+    The case is ordinary — a v4 install's events land under ``default``, a file
+    later declares it alongside a real account — and it is the one the seeded row
+    cannot refuse its way out of: ``default`` is exempt from *"an account an event
+    names cannot go"*, so the forget has to succeed. It runs outside a
+    transaction, so failing here left the import half forgotten with nothing able
+    to restore it.
+    """
+    drop = _drop(tmp_path, **{
+        '2024_csv': ("date,event_type,symbol,name,quantity,unit_price,account\n"
+                     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,default\n")})
+    ledger.sync_drop_folder(store, drop)
+
+    (drop / 'accounts.csv').write_text(
+        "id,type,label\naaa,CTO,First\ndefault,CTO,Renamed\n", encoding="utf-8")
+    outcomes = ledger.sync_drop_folder(store, drop)
+    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
+
+    declaring = next(i for i in ledger.list_imports(store)
+                     if i.kind == ledger.KIND_ACCOUNTS)
+    ledger.forget_import(store, declaring.id)
+
+    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
+    assert _event_accounts(store) == [DEFAULT_ACCOUNT]
+    assert [i.kind for i in ledger.list_imports(store)] == [ledger.KIND_EVENTS]
 
 
 # --------------------------------------------------------------------------- #
