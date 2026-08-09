@@ -11,6 +11,11 @@ real ``SuiviBourseMetrics`` drives the full pipeline
 loader -> validator -> aggregator -> scrape / backfill. Assertions compare the
 values the writer receives against portfolio state hand-computed from the CSV.
 
+This is the seam v5 descends from (spec #695) and the one thing it changes is
+the second line above: the store replaces the mock, and the assertions move
+from *what the job meant to write* to *what the store contains*. Until the store
+gains a writer, the mock stays.
+
 No network is ever touched.
 """
 
@@ -105,7 +110,7 @@ def _config_with_default_source(tmp_path, csv_text=EVENTS_CSV):
 # 1. The full chain: loader -> validator -> aggregator -> scrape
 # --------------------------------------------------------------------------- #
 def test_the_full_chain_drives_write_metrics(
-    tmp_path, monkeypatch, fake_ticker, mock_influx, shares_validator
+    tmp_path, monkeypatch, fake_ticker, mock_influx
 ):
     """The whole pipeline feeds correct portfolio state into write_metrics."""
     _no_sleep(monkeypatch)
@@ -117,7 +122,7 @@ def test_the_full_chain_drives_write_metrics(
     assert config_manager.get_events_source().endswith("/events")
 
     sb = SuiviBourseMetrics(
-        config_manager, shares_validator, influxdb_writer=mock_influx
+        config_manager, influxdb_writer=mock_influx
     )
 
     # __init__ connected to (mocked) InfluxDB and loaded shares through the
@@ -133,9 +138,6 @@ def test_the_full_chain_drives_write_metrics(
     assert aapl["purchase"]["fee"] == pytest.approx(7.5)
     assert aapl["estate"]["quantity"] == pytest.approx(18.0)
     assert aapl["estate"]["received_dividend"] == pytest.approx(2.4)
-
-    # Aggregated portfolio must satisfy the production cerberus schema.
-    assert shares_validator.validate({"shares": sb.shares}), shares_validator.errors
 
     # Drive the real scrape (fetch prices -> write metrics).
     sb.scrape()
@@ -174,7 +176,7 @@ def test_the_full_chain_drives_write_metrics(
 # 2. Backfill writes historically-correct portfolio state for an intermediate date
 # --------------------------------------------------------------------------- #
 def test_backfill_writes_historical_state_for_intermediate_date(
-    tmp_path, monkeypatch, fake_ticker, mock_influx, shares_validator
+    tmp_path, monkeypatch, fake_ticker, mock_influx
 ):
     """backfill() enriches each price point with the replay timeline state."""
     _no_sleep(monkeypatch)
@@ -182,7 +184,7 @@ def test_backfill_writes_historical_state_for_intermediate_date(
 
     config_manager = _config_with_default_source(tmp_path)
     sb = SuiviBourseMetrics(
-        config_manager, shares_validator, influxdb_writer=mock_influx
+        config_manager, influxdb_writer=mock_influx
     )
 
     # No existing data in InfluxDB -> backfill fetches a fresh chunk.

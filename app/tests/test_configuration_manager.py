@@ -305,38 +305,33 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
 # --------------------------------------------------------------------------- #
 # One published state: a rejected configuration changes nothing, anywhere
 # --------------------------------------------------------------------------- #
-class _AcceptingThenRejecting:
-    """Accepts the first document, rejects every later one."""
-
-    errors = {"shares": ["nope"]}
-
-    def __init__(self):
-        self.calls = 0
-
-    def validate(self, document):
-        self.calls += 1
-        return self.calls == 1
-
-
 def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     """The split-brain, closed.
 
     The cache used to be written by the loader and validated afterwards by
     ``ingest()``, so a refused configuration was already sitting in it: scraping
     kept the old shares while **backfill and the performance recompute** read
-    the very config the validator had just rejected. Validation now happens
-    inside snapshot construction, so a rejected one is never published and there
-    is nothing for anyone to read.
+    the very config the validator had just rejected. Everything fallible now
+    happens on the candidate, before the rebind, so a rejected one is never
+    published and there is nothing for anyone to read.
+
+    The rejection is a refused *ledger* since #696 — the schema that checked the
+    aggregated share list left with Cerberus — and the assertion is unchanged,
+    because it was never about which check said no.
     """
-    cm = ConfigurationManager(
-        config_dir=str(tmp_path), validator_=_AcceptingThenRejecting())
+    cm = ConfigurationManager(config_dir=str(tmp_path))
     published = cm.current()
 
     csv_file = events_dir / "2024.csv"
     st = csv_file.stat()
     os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
 
-    with pytest.raises(main.InvalidConfigFile):
+    def _refuse(accounts):
+        raise EventValidationError("row 4: SELL of 40 with 18 owned")
+
+    cm._load_from_events = _refuse
+
+    with pytest.raises(EventValidationError):
         cm.reload()
 
     # Every read path — not just the one ingest() used to guard — still sees the
@@ -347,25 +342,27 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     assert cm.load_accounts() is published.accounts
 
 
-def test_the_real_schema_is_the_gate(tmp_path, events_dir):
-    """A share list that fails schema.yaml is refused, with InvalidConfigFile."""
+def test_nothing_is_published_when_the_first_build_fails(tmp_path):
+    """A candidate that raises leaves ``_config`` untouched — here, at ``None``."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    # The aggregator can no longer produce this shape, so it is injected at the
-    # seam: what is under test is the validator standing between a candidate and
-    # publication, not the way the candidate was built.
-    cm._load_from_events = lambda accounts: (
-        [{"name": "Broken", "symbol": "BAD"}], [])  # no purchase/estate blocks
 
-    with pytest.raises(main.InvalidConfigFile):
+    def _refuse(accounts):
+        raise EventValidationError("row 2: unknown event_type")
+
+    cm._load_from_events = _refuse
+
+    with pytest.raises(EventValidationError):
         cm.reload()
     assert cm._config is None  # nothing was published
 
 
 def test_an_empty_portfolio_is_not_a_rejection(tmp_path):
-    """`empty: False` in schema.yaml must not turn a fresh install into a crash.
+    """A fresh install runs on nothing rather than refusing to boot.
 
-    Events mode starts life with an empty events/ directory — the app is
-    expected to run, warn, and pick up the first file that lands.
+    An install starts life with an empty events/ directory — the app is
+    expected to run, warn, and pick up the first file that lands. (What used to
+    make this worth a test was ``schema.yaml``'s ``empty: False``, written for a
+    hand-edited share list; the schema is gone and the property is not.)
     """
     (tmp_path / "events").mkdir()
     cm = ConfigurationManager(config_dir=str(tmp_path))

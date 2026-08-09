@@ -17,6 +17,7 @@ import pytest
 
 import main
 from main import SuiviBourseMetrics
+from events.validator import EventValidationError
 from yfinance.exceptions import YFRateLimitError
 from urllib3.exceptions import NewConnectionError
 
@@ -108,11 +109,11 @@ class _RaisingTicker:
         raise self._exc
 
 
-def _build_metrics(shares, mock_influx, shares_validator, mode="manual",
+def _build_metrics(shares, mock_influx, mode="manual",
                    first_buy_dates=None, events=None):
     cfg = FakeConfigManager(shares, mode=mode,
                             first_buy_dates=first_buy_dates, events=events)
-    metrics = SuiviBourseMetrics(cfg, shares_validator, influxdb_writer=mock_influx)
+    metrics = SuiviBourseMetrics(cfg, influxdb_writer=mock_influx)
     return metrics, cfg
 
 
@@ -126,8 +127,8 @@ def _no_sleep(monkeypatch):
 # Constructor
 # ---------------------------------------------------------------------------
 
-def test_constructor_loads_shares_and_connects(mock_influx, shares_validator):
-    metrics, cfg = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+def test_constructor_loads_shares_and_connects(mock_influx):
+    metrics, cfg = _build_metrics([_valid_shares()], mock_influx)
     assert metrics.shares == [_valid_shares()]
     mock_influx.connect.assert_called_once()
 
@@ -136,9 +137,9 @@ def test_constructor_loads_shares_and_connects(mock_influx, shares_validator):
 # _fetch_ticker_data
 # ---------------------------------------------------------------------------
 
-def test_fetch_ticker_data_success_and_mapping(mock_influx, shares_validator,
+def test_fetch_ticker_data_success_and_mapping(mock_influx,
                                                fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
@@ -157,9 +158,9 @@ def test_fetch_ticker_data_success_and_mapping(mock_influx, shares_validator,
     assert metrics._share_info_cache["AAPL"] == info
 
 
-def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(mock_influx, shares_validator,
+def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(mock_influx,
                                                           fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(info={"trailingPE": None}))
 
@@ -168,8 +169,8 @@ def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(mock_influx, shares_va
 
 
 def test_fetch_ticker_data_none_dividend_yield_preserved(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, fake_ticker, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
@@ -178,8 +179,8 @@ def test_fetch_ticker_data_none_dividend_yield_preserved(
 
 
 def test_fetch_ticker_data_empty_history_returns_none(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, fake_ticker, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     empty = fake_ticker(history_df=pd.DataFrame())
     monkeypatch.setattr(main.yf, "Ticker", lambda s: empty)
 
@@ -187,7 +188,7 @@ def test_fetch_ticker_data_empty_history_returns_none(
 
 
 def test_fetch_ticker_data_uses_last_non_nan_close(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
+        mock_influx, fake_ticker, monkeypatch):
     """Yahoo returns the most recent daily bar with a NaN close for a while
     after a session ends (the daily aggregate lags the intraday data). The fetch
     must fall back to the last row that actually has a close — and still cache
@@ -205,7 +206,7 @@ def test_fetch_ticker_data_uses_last_non_nan_close(
         },
         index=idx,
     )
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
@@ -218,7 +219,7 @@ def test_fetch_ticker_data_uses_last_non_nan_close(
 
 
 def test_fetch_ticker_data_all_nan_close_returns_none(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
+        mock_influx, fake_ticker, monkeypatch):
     """A frame with no usable close at all is still rejected as no-data, so a
     NaN price never reaches InfluxDB."""
     idx = pd.date_range("2024-01-02", periods=2, freq="D", tz=timezone.utc)
@@ -232,7 +233,7 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
         },
         index=idx,
     )
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
@@ -240,8 +241,8 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
 
 
 def test_fetch_ticker_data_retries_after_rate_limit(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, fake_ticker, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     tickers = iter([_RaisingTicker(YFRateLimitError()), fake_ticker()])
     monkeypatch.setattr(main.yf, "Ticker", lambda s: next(tickers))
 
@@ -251,8 +252,8 @@ def test_fetch_ticker_data_retries_after_rate_limit(
 
 
 def test_fetch_ticker_data_exhausts_retries_returns_none(
-        mock_influx, shares_validator, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: _RaisingTicker(YFRateLimitError()))
 
@@ -260,8 +261,8 @@ def test_fetch_ticker_data_exhausts_retries_returns_none(
 
 
 def test_fetch_ticker_data_runtime_error_returns_none(
-        mock_influx, shares_validator, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: _RaisingTicker(RuntimeError("kaboom")))
 
@@ -269,8 +270,8 @@ def test_fetch_ticker_data_runtime_error_returns_none(
 
 
 def test_fetch_ticker_data_connection_error_returns_none(
-        mock_influx, shares_validator, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: _RaisingTicker(NewConnectionError(None, "no route")))
 
@@ -282,8 +283,8 @@ def test_fetch_ticker_data_connection_error_returns_none(
 # ---------------------------------------------------------------------------
 
 def test_expose_metrics_writes_dividend_yield_times_100(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, fake_ticker, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
 
     metrics.expose_metrics()
@@ -301,8 +302,8 @@ def test_expose_metrics_writes_dividend_yield_times_100(
 
 
 def test_expose_metrics_none_dividend_yield_is_none(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, fake_ticker, monkeypatch):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
@@ -313,8 +314,8 @@ def test_expose_metrics_none_dividend_yield_is_none(
 
 
 def test_expose_metrics_skips_write_when_fetch_fails(
-        mock_influx, shares_validator, mocker):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+        mock_influx, mocker):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx)
     mocker.patch.object(metrics, "_fetch_ticker_data", return_value=(None, None))
 
     metrics.expose_metrics()
@@ -323,9 +324,9 @@ def test_expose_metrics_skips_write_when_fetch_fails(
 
 
 def test_expose_metrics_write_error_does_not_abort_remaining_shares(
-        mock_influx, shares_validator, fake_ticker, monkeypatch):
+        mock_influx, fake_ticker, monkeypatch):
     shares = [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")]
-    metrics, _ = _build_metrics(shares, mock_influx, shares_validator)
+    metrics, _ = _build_metrics(shares, mock_influx)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
     # First write raises, second must still be attempted.
     mock_influx.write_metrics.side_effect = [Exception("influx down"), None]
@@ -339,9 +340,8 @@ def test_expose_metrics_write_error_does_not_abort_remaining_shares(
 # ingest
 # ---------------------------------------------------------------------------
 
-def test_ingest_updates_shares_when_valid_and_different(mock_influx, shares_validator):
-    metrics, cfg = _build_metrics([_valid_shares("AAPL", "Apple")], mock_influx,
-                                  shares_validator)
+def test_ingest_updates_shares_when_valid_and_different(mock_influx):
+    metrics, cfg = _build_metrics([_valid_shares("AAPL", "Apple")], mock_influx)
     new_shares = [_valid_shares("MSFT", "Microsoft")]
     cfg._shares = new_shares
 
@@ -350,7 +350,7 @@ def test_ingest_updates_shares_when_valid_and_different(mock_influx, shares_vali
     assert metrics.shares == new_shares
 
 
-def test_ingest_keeps_previous_when_publication_fails(mock_influx, shares_validator):
+def test_ingest_keeps_previous_when_publication_fails(mock_influx):
     """A refused configuration never reaches this class.
 
     Since #658 the rejection happens in the manager, before publication, so
@@ -359,17 +359,17 @@ def test_ingest_keeps_previous_when_publication_fails(mock_influx, shares_valida
     tested against the real manager in ``test_configuration_manager.py``.
     """
     original = [_valid_shares("AAPL", "Apple")]
-    metrics, cfg = _build_metrics(original, mock_influx, shares_validator)
-    cfg.raise_on_load = main.InvalidConfigFile({"shares": "required"})
+    metrics, cfg = _build_metrics(original, mock_influx)
+    cfg.raise_on_load = EventValidationError("row 4: SELL of 40 with 18 owned")
 
     metrics.ingest()
 
     assert metrics.shares == original
 
 
-def test_ingest_swallows_exceptions(mock_influx, shares_validator):
+def test_ingest_swallows_exceptions(mock_influx):
     original = [_valid_shares("AAPL", "Apple")]
-    metrics, cfg = _build_metrics(original, mock_influx, shares_validator)
+    metrics, cfg = _build_metrics(original, mock_influx)
     cfg.raise_on_load = True
 
     # Must not raise
@@ -382,21 +382,20 @@ def test_ingest_swallows_exceptions(mock_influx, shares_validator):
 # One snapshot per cycle (issue #658)
 # ---------------------------------------------------------------------------
 
-def test_shares_is_a_read_of_the_published_snapshot(mock_influx, shares_validator):
+def test_shares_is_a_read_of_the_published_snapshot(mock_influx):
     """Not a copy: a republication is visible without anyone assigning it here.
 
     The second copy is what let scraping and backfill run on two different
     configurations for a cycle.
     """
-    metrics, cfg = _build_metrics([_valid_shares("AAPL")], mock_influx,
-                                  shares_validator)
+    metrics, cfg = _build_metrics([_valid_shares("AAPL")], mock_influx)
     cfg._shares = [_valid_shares("MSFT", "Microsoft")]
 
     assert [s["symbol"] for s in metrics.shares] == ["MSFT"]
 
 
 def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """Shares, events and accounts must come from the same generation.
 
     They used to be fetched one call at a time (``self.shares``, then
@@ -406,7 +405,7 @@ def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
     """
     metrics, cfg = _build_metrics(
         [_valid_shares("AAPL"), _valid_shares("MSFT")], mock_influx,
-        shares_validator, mode="events")
+        mode="events")
     spy = mocker.spy(cfg, "current")
 
     metrics.backfill()
@@ -415,10 +414,10 @@ def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
 
 
 def test_recompute_perf_hands_its_snapshot_to_the_recompute(
-        mock_influx, shares_validator, mocker, sample_events):
+        mock_influx, mocker, sample_events):
     """The gate and the recompute must judge the same configuration."""
     metrics, cfg = _build_metrics([_valid_shares("AAPL")], mock_influx,
-                                  shares_validator, mode="events",
+                                  mode="events",
                                   events=sample_events)
     recompute = mocker.patch.object(metrics, "update_account_metrics")
 
@@ -432,8 +431,8 @@ def test_recompute_perf_hands_its_snapshot_to_the_recompute(
 # scrape
 # ---------------------------------------------------------------------------
 
-def test_scrape_returns_when_no_shares(mock_influx, shares_validator, mocker):
-    metrics, cfg = _build_metrics([_valid_shares()], mock_influx, shares_validator)
+def test_scrape_returns_when_no_shares(mock_influx, mocker):
+    metrics, cfg = _build_metrics([_valid_shares()], mock_influx)
     cfg._shares = []
     spy = mocker.spy(metrics, "expose_metrics")
 
@@ -447,8 +446,8 @@ def test_scrape_returns_when_no_shares(mock_influx, shares_validator, mocker):
 # backfill
 # ---------------------------------------------------------------------------
 
-def test_backfill_returns_when_no_shares(mock_influx, shares_validator):
-    metrics, cfg = _build_metrics([_valid_shares()], mock_influx, shares_validator,
+def test_backfill_returns_when_no_shares(mock_influx):
+    metrics, cfg = _build_metrics([_valid_shares()], mock_influx,
                                   mode="events")
     cfg._shares = []
 
@@ -458,8 +457,8 @@ def test_backfill_returns_when_no_shares(mock_influx, shares_validator):
     mock_influx.write_historical_prices.assert_not_called()
 
 
-def test_backfill_returns_when_mode_not_events(mock_influx, shares_validator):
-    metrics, _ = _build_metrics([_valid_shares()], mock_influx, shares_validator,
+def test_backfill_returns_when_mode_not_events(mock_influx):
+    metrics, _ = _build_metrics([_valid_shares()], mock_influx,
                                 mode="manual")
 
     metrics.backfill()
@@ -469,10 +468,10 @@ def test_backfill_returns_when_mode_not_events(mock_influx, shares_validator):
 
 
 def test_backfill_marks_complete_when_oldest_reaches_first_buy(
-        mock_influx, shares_validator):
+        mock_influx):
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy})
     # Pre-populate info cache so no yfinance call happens.
     metrics._share_info_cache["AAPL"] = {
@@ -490,10 +489,10 @@ def test_backfill_marks_complete_when_oldest_reaches_first_buy(
     assert metrics._backfill_complete[("AAPL", "default")] == expected
 
 
-def test_backfill_fetches_chunk_when_gap_exists(mock_influx, shares_validator, mocker):
+def test_backfill_fetches_chunk_when_gap_exists(mock_influx, mocker):
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -516,13 +515,13 @@ def test_backfill_fetches_chunk_when_gap_exists(mock_influx, shares_validator, m
 
 
 def test_backfill_does_single_replay_per_cycle(
-        mock_influx, shares_validator, mocker, sample_events):
+        mock_influx, mocker, sample_events):
     """One replay serves every symbol, regardless of the number of shares."""
     import main
     first_buys = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 2, 1)}
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
-        mock_influx, shares_validator, mode="events",
+        mock_influx, mode="events",
         first_buy_dates=first_buys, events=sample_events)
     for sym in ("AAPL", "MSFT"):
         metrics._share_info_cache[sym] = {
@@ -542,11 +541,11 @@ def test_backfill_does_single_replay_per_cycle(
 
 
 def test_backfill_write_failure_does_not_abort_remaining_shares(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     first_buys = {"AAPL": date(2024, 1, 15), "MSFT": date(2024, 1, 15)}
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
-        mock_influx, shares_validator, mode="events",
+        mock_influx, mode="events",
         first_buy_dates=first_buys, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -574,13 +573,13 @@ def test_backfill_write_failure_does_not_abort_remaining_shares(
 # backfill — forward gap-fill pass (issue #627)
 # ---------------------------------------------------------------------------
 
-def test_backfill_forward_fills_recent_gap(mock_influx, shares_validator, mocker):
+def test_backfill_forward_fills_recent_gap(mock_influx, mocker):
     """A session missed while down (old newest) is recovered by the forward pass,
     carrying the same tags/account as live points, even when the backward pass is
     already complete (the two directions are independent)."""
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -610,12 +609,12 @@ def test_backfill_forward_fills_recent_gap(mock_influx, shares_validator, mocker
 
 
 def test_backfill_forward_empty_window_writes_nothing(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """A weekend/holiday gap: yfinance returns no rows for the forward window, so
     nothing is written (self-classifying, no calendar logic)."""
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -634,12 +633,12 @@ def test_backfill_forward_empty_window_writes_nothing(
 
 
 def test_backfill_forward_noop_when_series_empty(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """No stored point yet (newest None): the forward pass has no anchor and the
     backward pass owns seeding the series, so no forward fetch happens."""
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -656,12 +655,12 @@ def test_backfill_forward_noop_when_series_empty(
 
 
 def test_backfill_runs_both_directions_in_one_cycle(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """When both an older gap (backward) and a recent gap (forward) exist, a
     single cycle fills both for the same symbol."""
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy}, events=None)
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}
@@ -684,10 +683,10 @@ def test_backfill_runs_both_directions_in_one_cycle(
     assert ("AAPL", "default") not in metrics._backfill_complete
 
 
-def test_backfill_empty_window_marks_complete(mock_influx, shares_validator, mocker):
+def test_backfill_empty_window_marks_complete(mock_influx, mocker):
     first_buy = date(2024, 1, 15)
     metrics, _ = _build_metrics(
-        [_valid_shares("AAPL", "Apple")], mock_influx, shares_validator,
+        [_valid_shares("AAPL", "Apple")], mock_influx,
         mode="events", first_buy_dates={"AAPL": first_buy})
     metrics._share_info_cache["AAPL"] = {
         "currency": "USD", "exchange": "NMS", "quoteType": "EQUITY"}

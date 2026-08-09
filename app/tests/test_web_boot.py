@@ -6,12 +6,18 @@ side of a ``fork()``. What is worth pinning here is not that Flask serves JSON �
 it is the *split*:
 
 * :func:`main.build_runtime` runs in the master under ``preload_app``: it must
-  load and validate the configuration (so a broken one still ends the process
-  once) and must not open a thread, a socket or an InfluxDB client, none of
-  which survive a fork.
+  **open the store** and load the configuration (so an unreadable store or a
+  broken ledger still ends the process once) and must not leave behind a
+  thread, a socket, an InfluxDB client or a store connection, none of which
+  survive a fork.
 * :func:`main.start_runtime` runs in ``post_fork`` and owns all of that.
 * the two failure paths differ on purpose — the master exits 1 before any fork,
   ``post_fork`` re-raises so gunicorn halts the arbiter instead of respawning.
+
+The store took the place #658 gave the Cerberus validation (#696): same side of
+the fork, different cause, and one extra rule of its own — the master *closes*
+what it opened, because DuckDB refuses a second process and a forked child would
+be exactly that.
 
 ``gunicorn.conf.py`` is exercised as a module: it is executable configuration
 (the bind list, the one-worker guard), not a static file.
@@ -25,6 +31,7 @@ from types import SimpleNamespace
 import pytest
 
 import main
+import store
 import web
 from events.validator import EventValidationError
 from prometheus_exporter import PrometheusExporter
@@ -43,9 +50,6 @@ class _FakeConfigManager:
         self.named_unread = 0
         self.watcher_started_with = None
         self.watcher_stopped = False
-        # The manager owns the shares schema since #658; the master reads it off
-        # the manager rather than building a second one.
-        self.validator = main.load_shares_schema()
 
     def reload(self, force=False):
         self.load_calls += 1
@@ -89,12 +93,32 @@ def _forget_runtime_singleton():
     web._runtime = None
 
 
+@pytest.fixture(autouse=True)
+def _store_in_tmp(monkeypatch, tmp_path):
+    """Point the store at ``tmp_path`` for every test in this module.
+
+    ``build_runtime`` opens the store before it does anything else, so without
+    this the suite would create one under the developer's real home.
+    """
+    monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "store"))
+
+
 @pytest.fixture
 def fake_config(monkeypatch):
     """Install a _FakeConfigManager as the one ``build_runtime`` constructs."""
     cfg = _FakeConfigManager()
     monkeypatch.setattr(main, "ConfigurationManager", lambda: cfg)
     return cfg
+
+
+@pytest.fixture
+def open_store(tmp_path):
+    """A real, open store, for the routes that must reach one."""
+    opened = store.open_store(tmp_path / "served.duckdb")
+    try:
+        yield opened
+    finally:
+        opened.close()
 
 
 def _load_gunicorn_conf(monkeypatch, **env):
@@ -140,6 +164,39 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert threading.active_count() == threads_before
 
 
+def test_build_runtime_opens_the_store_and_hands_on_its_path_not_its_connection(
+        fake_config, monkeypatch):
+    """The store is created in the master — and left closed behind it (#696).
+
+    Opening it here is what makes an unreadable store a single named exit. Not
+    *keeping* it open is the other half: DuckDB refuses a second process, and a
+    worker forked from a master still holding the file is precisely that.
+    """
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+
+    runtime = main.build_runtime()
+
+    assert runtime.store_path.exists()
+    assert runtime.store is None
+    # The proof the master let go: a second connection can be opened, which is
+    # exactly what ``post_fork`` will do.
+    reopened = store.open_store(runtime.store_path)
+    assert sorted(reopened.table_names()) == sorted(store.TABLES)
+    reopened.close()
+
+
+def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
+    """Nothing is loaded past a store that will not open."""
+    mocker.patch.object(
+        main.store, "open_store",
+        side_effect=store.StoreUnavailable("disk is read-only"))
+
+    with pytest.raises(store.StoreUnavailable):
+        main.build_runtime()
+
+    assert fake_config.load_calls == 0
+
+
 def test_build_runtime_builds_the_exporter_registry_only(fake_config, monkeypatch):
     """The gauges are pure Python; the HTTP server they used to run is gone."""
     monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
@@ -172,8 +229,8 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
 @pytest.mark.parametrize("error,expected_message", [
     (EventValidationError("row 3 is malformed"),
      "An error occurred while loading events"),
-    (main.InvalidConfigFile({"shares": "required"}),
-     "Shares field of the config file is invalid"),
+    (store.StoreUnavailable("the file is not a DuckDB database"),
+     "The store could not be opened"),
     (ValueError("Invalid value for SB_PERF_INTERVAL"),
      "Configuration error"),
     (RuntimeError("something else entirely"),
@@ -204,7 +261,7 @@ def test_start_background_reraises_rather_than_exiting(monkeypatch, mocker):
     halts the whole arbiter; an ``exit(1)`` would read as an ordinary worker
     death and be respawned forever, failing identically each time.
     """
-    web.create_app(runtime=main.Runtime(_FakeConfigManager(), mocker.MagicMock(), None))
+    web.create_app(runtime=main.Runtime(_FakeConfigManager(), None))
     boom = ValueError("Invalid value for SB_BACKFILL_DELAY")
     monkeypatch.setattr(main, "start_runtime", mocker.Mock(side_effect=boom))
     fatal = mocker.patch.object(main.app_logger, "fatal")
@@ -228,7 +285,7 @@ def test_start_background_refuses_to_run_without_a_preloaded_runtime():
 def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     cfg = _FakeConfigManager()
     exporter = mocker.MagicMock()
-    runtime = main.Runtime(cfg, mocker.MagicMock(), exporter)
+    runtime = main.Runtime(cfg, exporter)
 
     metrics = mocker.MagicMock()
     metrics.shares = []
@@ -257,6 +314,24 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
         {"ingest", "backfill", "perf"}
 
 
+def test_start_runtime_opens_the_workers_own_store(mocker, tmp_path):
+    """The connection the process lives on belongs on this side of the fork."""
+    metrics = mocker.MagicMock()
+    metrics.shares = []
+    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    mocker.patch.object(main, "BackgroundScheduler")
+    runtime = main.Runtime(_FakeConfigManager(), None,
+                           store_path=tmp_path / "worker.duckdb")
+
+    main.start_runtime(runtime)
+
+    assert runtime.store is not None
+    runtime.store.ping()
+    # ... and ``worker_exit`` gives it back.
+    main.shutdown_runtime(runtime)
+    assert runtime.store is None
+
+
 def test_start_runtime_uses_a_background_scheduler(mocker):
     """Blocking would never return, and gunicorn's worker owns the foreground."""
     metrics = mocker.MagicMock()
@@ -264,7 +339,7 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
     mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
 
-    main.start_runtime(main.Runtime(_FakeConfigManager(), mocker.MagicMock(), None))
+    main.start_runtime(main.Runtime(_FakeConfigManager(), None))
 
     scheduler_cls.assert_called_once()
     assert "executors" in scheduler_cls.call_args.kwargs
@@ -272,7 +347,7 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
 
 def test_shutdown_runtime_stops_the_scheduler_the_watcher_and_the_client(mocker):
     cfg = _FakeConfigManager()
-    runtime = main.Runtime(cfg, mocker.MagicMock(), None)
+    runtime = main.Runtime(cfg, None)
     runtime.scheduler = mocker.MagicMock(running=True)
     runtime.metrics = mocker.MagicMock()
 
@@ -289,7 +364,7 @@ def test_shutdown_runtime_tolerates_a_worker_that_never_booted(mocker):
     """worker_exit runs even when post_fork died on its first line."""
     cfg = _FakeConfigManager()
 
-    main.shutdown_runtime(main.Runtime(cfg, mocker.MagicMock(), None))
+    main.shutdown_runtime(main.Runtime(cfg, None))
 
     assert cfg.watcher_stopped
 
@@ -298,10 +373,11 @@ def test_shutdown_runtime_tolerates_a_worker_that_never_booted(mocker):
 # The served surface
 # ---------------------------------------------------------------------------
 
-def test_health_answers_without_reaching_influxdb(mocker):
-    """Shallow on purpose: a deep probe would restart the app for InfluxDB's sake."""
-    app = web.create_app(
-        runtime=main.Runtime(_FakeConfigManager(), mocker.MagicMock(), None))
+def test_health_answers_when_the_store_answers(open_store):
+    """The probe reaches the store (#696) — there is no longer anyone else."""
+    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
 
     response = app.test_client().get("/health")
 
@@ -309,11 +385,35 @@ def test_health_answers_without_reaching_influxdb(mocker):
     assert response.get_json() == {"status": "ok"}
 
 
+def test_health_fails_when_the_store_does_not_answer(open_store):
+    """A green probe over a dead store is the blind spot the probe exists for.
+
+    The old rule — never touch the database, an outage is someone else's — lost
+    its subject when the database became a file this process opens.
+    """
+    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
+    open_store.close()
+
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 503
+    assert response.mimetype == "application/problem+json"
+
+
+def test_health_fails_when_no_store_is_open():
+    """Before ``post_fork`` there is nothing to be healthy about."""
+    app = web.create_app(runtime=main.Runtime(_FakeConfigManager(), None))
+
+    assert app.test_client().get("/health").status_code == 503
+
+
 def test_metrics_is_served_from_the_exporters_own_registry(mocker):
     """PrometheusExporter keeps a dedicated registry; the global one is empty."""
     exporter = PrometheusExporter()
     app = web.create_app(
-        runtime=main.Runtime(_FakeConfigManager(), mocker.MagicMock(), exporter))
+        runtime=main.Runtime(_FakeConfigManager(), exporter))
 
     response = app.test_client().get("/metrics")
 
@@ -321,10 +421,11 @@ def test_metrics_is_served_from_the_exporters_own_registry(mocker):
     assert b"sb_share_price" in response.data
 
 
-def test_metrics_is_not_mounted_when_the_endpoint_is_disabled(mocker):
+def test_metrics_is_not_mounted_when_the_endpoint_is_disabled(open_store):
     """SB_PROMETHEUS_ENABLED no longer stops a server; it unmounts a route."""
-    app = web.create_app(
-        runtime=main.Runtime(_FakeConfigManager(), mocker.MagicMock(), None))
+    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
 
     assert app.test_client().get("/metrics").status_code == 404
     assert app.test_client().get("/health").status_code == 200

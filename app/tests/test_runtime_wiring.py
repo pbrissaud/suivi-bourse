@@ -69,10 +69,10 @@ class _FakeConfigManager:
         return self._events
 
 
-def _metrics(shares, mock_influx, shares_validator, mocker, **manager):
+def _metrics(shares, mock_influx, mocker, **manager):
     cfg = _FakeConfigManager(shares, **manager)
     m = main.SuiviBourseMetrics(
-        cfg, shares_validator, influxdb_writer=mock_influx,
+        cfg, influxdb_writer=mock_influx,
         prometheus_exporter=mocker.MagicMock())
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
@@ -84,8 +84,8 @@ def _metrics(shares, mock_influx, shares_validator, mocker, **manager):
 # ===================================================================== #
 
 def test_a_regular_pass_records_the_state_it_acted_on_and_its_counter(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share(account="pea")], mock_influx, shares_validator, mocker)
+        mock_influx, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share(account="pea")], mock_influx, mocker)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
 
@@ -103,7 +103,7 @@ def test_a_regular_pass_records_the_state_it_acted_on_and_its_counter(
 
 
 def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """#656 trap 3, at the call site.
 
     ``_share_info_cache`` is written **only on a successful fetch**, so a symbol
@@ -112,7 +112,7 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
     app has not reached in hours — the exact case the pill exists to show. The
     record carries what this cycle read, which on a failure is nothing.
     """
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m = _metrics([_share()], mock_influx, mocker)
     m._share_info_cache["AAPL"] = {"marketState": "REGULAR"}
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
@@ -125,11 +125,11 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
 
 
 def test_an_unrecognised_state_records_the_coercion_beside_the_raw_value(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+        mock_influx, fake_ticker, mocker, monkeypatch):
     """#656 trap 2. ``decide`` fail-opens to REGULAR while yfinance's raw string
     stays whatever it was, so the record carries both and the pill reads the
     coercion — otherwise the row would claim a state the scheduler ignored."""
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m = _metrics([_share()], mock_influx, mocker)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(market_state="SOMETHING_NEW"))
 
@@ -142,7 +142,7 @@ def test_an_unrecognised_state_records_the_coercion_beside_the_raw_value(
 
 
 def test_a_refused_influx_write_is_recorded_although_617s_counter_stays_zero(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+        mock_influx, fake_ticker, mocker, monkeypatch):
     """The finding this record makes visible.
 
     ``scheduling.decide`` resets the failure counter whenever a price was
@@ -151,7 +151,7 @@ def test_a_refused_influx_write_is_recorded_although_617s_counter_stays_zero(
     keeps, and persisting nothing. The dead-ticker guard watches yfinance by
     design; without ``SCRAPE_WRITE_FAILED`` nothing in the app would say this.
     """
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m = _metrics([_share()], mock_influx, mocker)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
     mock_influx.write_metrics.side_effect = Exception("connection refused")
@@ -169,8 +169,8 @@ def test_a_refused_influx_write_is_recorded_although_617s_counter_stays_zero(
 
 
 def test_a_closed_pass_is_recorded_without_touching_the_counter(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+        mock_influx, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], mock_influx, mocker)
     m._failure_counts["AAPL"] = 2
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(market_state="CLOSED"))
@@ -185,7 +185,7 @@ def test_a_closed_pass_is_recorded_without_touching_the_counter(
 
 
 def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
+        mock_influx, fake_ticker, mocker, monkeypatch):
     """The sonde's memory belongs to the scrape thread, so its verdict must too.
 
     Recomputing "is this series frozen" from a request thread would need
@@ -193,7 +193,7 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
     composed read #656 déc. 4 exists to forbid, and it would disagree with the
     warning already in the log.
     """
-    m = _metrics([_share(account="pea")], mock_influx, shares_validator, mocker)
+    m = _metrics([_share(account="pea")], mock_influx, mocker)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(close=185.0, market_state="REGULAR"))
     # The stored price is frozen while the live quote moved, and the sonde's
@@ -212,8 +212,8 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
 
 
 def test_a_departed_symbol_loses_its_records_with_its_counter(
-        mock_influx, shares_validator, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share("AAPL")], mock_influx, shares_validator, mocker)
+        mock_influx, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share("AAPL")], mock_influx, mocker)
     monkeypatch.setattr(main.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
     m._scrape_symbol("AAPL", now=NOW)
@@ -233,14 +233,14 @@ def test_a_departed_symbol_loses_its_records_with_its_counter(
 # ===================================================================== #
 
 def test_a_rejected_configuration_is_recorded_as_kept_previous(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """The silent failure #656 singled out.
 
     Since #658 an invalid configuration is never published, so the app keeps
     running on its previous snapshot — correctly, and with no trace anywhere but
     a log line. This record is that trace.
     """
-    m = _metrics([_share()], mock_influx, shares_validator, mocker,
+    m = _metrics([_share()], mock_influx, mocker,
                  raises=ValueError("Invalid 'accounts' block"))
 
     m.ingest()
@@ -251,10 +251,10 @@ def test_a_rejected_configuration_is_recorded_as_kept_previous(
 
 
 def test_an_unchanged_ingestion_is_told_apart_from_an_updated_one(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     events = [Event(datetime(2024, 1, 15).date(), EventType.BUY, "AAPL",
                     "Apple", quantity=10, unit_price=150.0)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
 
     m.ingest()
     record = m.recorder.ingest()
@@ -270,7 +270,7 @@ def test_an_unchanged_ingestion_is_told_apart_from_an_updated_one(
 # ===================================================================== #
 
 def test_a_symbol_with_no_buy_records_its_own_terminal(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """A GRANT-only position: nothing to reach back to, and never was.
 
     Distinct from ``complete`` (which means the reaching finished) and from
@@ -278,7 +278,7 @@ def test_a_symbol_with_no_buy_records_its_own_terminal(
     """
     events = [Event(datetime(2024, 6, 1).date(), EventType.GRANT, "AAPL",
                     "Apple", quantity=1)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
 
     m.backfill()
     record = m.recorder.backfill_of("AAPL", "default", runtime_state.BACKWARD)
@@ -287,10 +287,10 @@ def test_a_symbol_with_no_buy_records_its_own_terminal(
 
 
 def test_a_completed_backward_pass_records_both_dates_of_the_bar(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     events = [Event(datetime(2024, 1, 15).date(), EventType.BUY, "AAPL",
                     "Apple", quantity=10, unit_price=150.0)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
     m._share_info_cache["AAPL"] = {"currency": "USD", "exchange": "NMS",
                                    "quoteType": "EQUITY"}
     mock_influx.get_oldest_timestamp.return_value = datetime(
@@ -305,7 +305,7 @@ def test_a_completed_backward_pass_records_both_dates_of_the_bar(
 
 
 def test_a_failed_history_fetch_raises_the_consecutive_counter(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """#656's driving question, answered at last.
 
     ``_backfill_backward`` logs a warning and returns ``0`` here — the same value
@@ -314,7 +314,7 @@ def test_a_failed_history_fetch_raises_the_consecutive_counter(
     """
     events = [Event(datetime(2020, 1, 15).date(), EventType.BUY, "AAPL",
                     "Apple", quantity=10, unit_price=150.0)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
     m._share_info_cache["AAPL"] = {"currency": "USD", "exchange": "NMS",
                                    "quoteType": "EQUITY"}
     mock_influx.get_oldest_timestamp.return_value = datetime(
@@ -331,12 +331,12 @@ def test_a_failed_history_fetch_raises_the_consecutive_counter(
 
 
 def test_an_empty_window_is_recorded_without_raising_the_counter(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """A weekend classifies itself by coming back empty (#606). Counting it
     would have every Monday morning read as wedged."""
     events = [Event(datetime(2020, 1, 15).date(), EventType.BUY, "AAPL",
                     "Apple", quantity=10, unit_price=150.0)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
     m._share_info_cache["AAPL"] = {"currency": "USD", "exchange": "NMS",
                                    "quoteType": "EQUITY"}
     mock_influx.get_oldest_timestamp.return_value = datetime(
@@ -352,7 +352,7 @@ def test_an_empty_window_is_recorded_without_raising_the_counter(
 
 
 def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """Two no-ops meaning opposite things.
 
     ``no_series`` is waiting on the backward pass to seed it; ``too_recent`` is
@@ -361,7 +361,7 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
     """
     events = [Event(datetime(2024, 1, 15).date(), EventType.BUY, "AAPL",
                     "Apple", quantity=10, unit_price=150.0)]
-    m = _metrics([_share()], mock_influx, shares_validator, mocker, events=events)
+    m = _metrics([_share()], mock_influx, mocker, events=events)
     m._share_info_cache["AAPL"] = {"currency": "USD", "exchange": "NMS",
                                    "quoteType": "EQUITY"}
     mock_influx.get_oldest_timestamp.return_value = datetime(
@@ -384,7 +384,7 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
 # ===================================================================== #
 
 def test_a_skipped_perf_run_is_recorded_because_its_signal_is_consumed(
-        mock_influx, shares_validator, mocker):
+        mock_influx, mocker):
     """#656 trap 4, and the reason this record cannot be replaced by a pull.
 
     ``recompute_perf`` reads **and clears** ``_perf_dirty_live`` under
@@ -392,7 +392,7 @@ def test_a_skipped_perf_run_is_recorded_because_its_signal_is_consumed(
     is pending and nothing at all about the one that just happened. The verdict
     has to be recorded.
     """
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m = _metrics([_share()], mock_influx, mocker)
     m._perf_dirty_live = False
     # Align with the published events so `events_changed` is False: the gate is
     # an identity check, so a different (even equal) list reads as a reload.
@@ -407,8 +407,8 @@ def test_a_skipped_perf_run_is_recorded_because_its_signal_is_consumed(
 
 
 def test_a_perf_run_records_which_of_618s_three_signals_fired(
-        mock_influx, shares_validator, mocker):
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+        mock_influx, mocker):
+    m = _metrics([_share()], mock_influx, mocker)
     m._perf_dirty_live = True
     m._perf_last_events = m.config_manager.get_events()
 
@@ -421,8 +421,8 @@ def test_a_perf_run_records_which_of_618s_three_signals_fired(
 
 
 def test_a_failed_perf_recompute_records_the_error_it_only_logged(
-        mock_influx, shares_validator, mocker):
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+        mock_influx, mocker):
+    m = _metrics([_share()], mock_influx, mocker)
     m._perf_dirty_live = True
     mocker.patch.object(m, "update_account_metrics",
                         side_effect=Exception("influx down"))
@@ -452,12 +452,12 @@ def test_the_token_is_redacted_by_name_never_by_value(monkeypatch):
 
 
 def test_a_runtime_dial_is_reported_from_the_attribute_not_the_environment(
-        mock_influx, shares_validator, mocker, monkeypatch):
+        mock_influx, mocker, monkeypatch):
     """#654 §2.1: five dials are held on a mutable attribute re-read every cycle,
     so the effective value and the environment can diverge. The attribute is the
     one the app is actually running on."""
     monkeypatch.setenv("SB_BACKFILL_CHUNK_DAYS", "365")
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
+    m = _metrics([_share()], mock_influx, mocker)
     m.backfill_chunk_days = 180
 
     entry = {s["name"]: s

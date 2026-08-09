@@ -28,7 +28,6 @@ Two boundaries the design leans on:
   and ``performance.py`` pleasant to test.
 """
 import os
-import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
@@ -95,13 +94,14 @@ _POINT_TAGS = (
     'quote_type',
 )
 
-#: An InfluxDB 3 measurement exists only once a point has been written to it, and
-#: a tag column only once a point carried that tag. Querying either before the
-#: first write is not a failure, it is a **fresh install** — the "empty
-#: collection" state, which must be ``[]`` and never a 503. Matched on the
-#: message because the client raises a generic exception for both.
-_ABSENT_SCHEMA = re.compile(
-    r"(table|schema) .*not found|no field named|does not exist", re.IGNORECASE)
+# ``_ABSENT_SCHEMA`` — the regular expression that read "this measurement was
+# never written to" out of a query error and answered ``[]`` — is gone with
+# #696. It existed because in InfluxDB 3 a measurement, and a column, come into
+# being only on their first write, so absence and failure arrived down the same
+# channel and had to be told apart by matching an error message. The store
+# declares its twelve tables at creation and a column that was never written
+# reads as ``NULL``, not as missing (ADR-0001), so the whole class of defensive
+# "select only what exists" reading retires with it.
 
 
 class PortfolioReader:
@@ -138,17 +138,13 @@ class PortfolioReader:
     def _rows(self, sql: str) -> List[Dict[str, Any]]:
         """Run ``sql`` and return plain rows, NaN normalised to ``None``.
 
-        The only place pandas is touched. Errors propagate — with the single
-        exception of a measurement or column that does not exist yet, which is
-        a fresh install rather than a fault (see :data:`_ABSENT_SCHEMA`).
+        The only place pandas is touched. Errors propagate, without exception
+        since #696: the "measurement that does not exist yet" tolerance was the
+        one place where a query *error* was read as an empty collection, and it
+        left with :data:`_ABSENT_SCHEMA`. Absence is now a shape of the data —
+        no rows, or a ``NULL`` column — never a raised exception.
         """
-        try:
-            table = self._query(sql)
-        except Exception as exc:
-            if _ABSENT_SCHEMA.search(str(exc)):
-                logger.debug(f"No data written yet, returning empty: {exc}")
-                return []
-            raise
+        table = self._query(sql)
 
         if table is None or len(table) == 0:
             return []
@@ -411,10 +407,10 @@ class PortfolioReader:
         ``gain_absolu`` need an external flow, ``twr_index`` needs a non-zero
         valuation — and in InfluxDB 3 a field that was never written is a
         *column that does not exist*. Naming it in the SELECT would turn "this
-        portfolio has no deposits" into a query error, which
-        :data:`_ABSENT_SCHEMA` then reports as an empty install: the entire head
-        would vanish because one rate happened to be undefined. An absent field
-        has to arrive as an absent key, and ``SELECT *`` is what delivers that.
+        portfolio has no deposits" into a query error — and, since #696, into a
+        ``503``: the entire head would vanish because one rate happened to be
+        undefined. An absent field has to arrive as an absent key, and
+        ``SELECT *`` is what delivers that.
 
         No time window, per #652 déc. 1 — "current" is absolute. It matters more
         here than on the shares page: the perf job is gated (#618) and a
@@ -462,9 +458,8 @@ class PortfolioReader:
         seen per account: ``xirr`` and ``gain_absolu`` are written only once an
         external flow exists, ``twr_index`` only once the valuation is non-zero,
         and a field never written is a *column that does not exist*. Naming them
-        would turn "this account has no deposits" into a query error, which
-        :data:`_ABSENT_SCHEMA` would then report as an empty install — the whole
-        table gone because one rate is undefined.
+        would turn "this account has no deposits" into a query error, and so
+        into a ``503`` — the whole table gone because one rate is undefined.
 
         **Trap 2** lives here rather than in the SQL: the series is daily and
         midnight-stamped, and *today's point is rewritten in place* through the
