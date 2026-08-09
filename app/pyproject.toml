@@ -3,7 +3,7 @@ name = "suivi-bourse"
 version = "0.0.0"
 description = "Monitors stock shares with yfinance and stores metrics in InfluxDB 3 Core for Grafana, with historical backfill."
 readme = "../README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     "APScheduler==3.11.3",
     "PyYAML==6.0.3",
