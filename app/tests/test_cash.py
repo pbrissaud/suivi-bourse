@@ -44,8 +44,24 @@ def test_cash_event_requires_positive_amount():
     assert not ok and any("amount must be positive" in e for e in errors)
 
 
-def test_cash_event_requires_account_when_not_declared():
+def test_a_cash_event_without_an_account_falls_into_default(tmp_path):
+    """v4 demanded an account here even with none declared. #698 does not.
+
+    Under the new rule a blank ``account`` column *means* ``default`` until
+    something is declared, so keeping the per-type requirement would have forced
+    a single-account v4 user to write ``default`` into a cell whose only legal
+    value is the one it already implies — and their files are supposed to import
+    without a single edit.
+    """
     ok, errors = EventValidator().validate([_deposit(account=None)])
+    assert ok, errors
+
+
+def test_a_cash_event_without_an_account_is_refused_once_accounts_exist():
+    """The other half of the same rule: after a declaration, blank is an error."""
+    validator = EventValidator(account_ids={"default", "PEA"},
+                               accounts_declared=True)
+    ok, errors = validator.validate([_deposit(account=None)])
     assert not ok and any("account is required" in e for e in errors)
 
 
@@ -95,7 +111,7 @@ def test_ledger_applies_the_six_rules():
         Event(date(2024, 1, 5), EventType.GRANT, "AAPL", "Apple", quantity=1, account="A"),
         Event(date(2024, 1, 6), EventType.WITHDRAWAL, amount=100.0, fee=2.0, account="A"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
 
     # DEPOSIT +999; BUY -202; DIVIDEND +4.5; SELL +118.5; GRANT 0; WITHDRAWAL -102
     assert _cash(tl, "A", date(2024, 1, 1)) == pytest.approx(999.0)
@@ -111,7 +127,7 @@ def test_net_contributed_excludes_fees():
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, fee=5.0, account="A"),
         Event(date(2024, 1, 2), EventType.WITHDRAWAL, amount=300.0, fee=2.0, account="A"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     state = tl.cash_at("A", date(2024, 1, 2))
     # net_contributed = 1000 - 300 (fees excluded); cash = 995 - 302 = 693
     assert state.net_contributed == pytest.approx(700.0)
@@ -123,14 +139,14 @@ def test_cash_is_siloed_per_account():
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 2), EventType.DEPOSIT, amount=500.0, account="CTO"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     assert _cash(tl, "PEA", date(2024, 1, 2)) == pytest.approx(1000.0)
     assert _cash(tl, "CTO", date(2024, 1, 2)) == pytest.approx(500.0)
 
 
 def test_cash_at_none_before_first_event():
     events = [Event(date(2024, 6, 1), EventType.DEPOSIT, amount=100.0, account="A")]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     assert tl.cash_at("A", date(2024, 1, 1)) is None
     assert tl.cash_at("A", date(2024, 6, 1)).cash_balance == pytest.approx(100.0)
 
@@ -141,7 +157,7 @@ def test_negative_balance_allowed():
         Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=1,
               unit_price=100.0, account="A"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     assert _cash(tl, "A", date(2024, 1, 2)) == pytest.approx(-100.0)
 
 
@@ -150,7 +166,7 @@ def test_replay_emits_signed_cashflows():
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="A"),
         Event(date(2024, 1, 2), EventType.WITHDRAWAL, amount=300.0, account="A"),
     ]
-    flows = [f for f in EventAggregator().replay(events, accounts_declared=True).flows
+    flows = [f for f in EventAggregator().replay(events).flows
              if isinstance(f, CashFlow)]
     assert [(f.account, f.amount) for f in flows] == [("A", 1000.0), ("A", -300.0)]
 
@@ -277,7 +293,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
     shares = [{"name": "Apple", "symbol": "AAPL", "account": "PEA",
                "purchase": {"quantity": 2, "cost_price": 100.0, "fee": 0.0},
                "estate": {"quantity": 2, "received_dividend": 0.0}}]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     # Price series: AAPL at 110 from 2024-01-02.
     mock_influx.get_price_series.return_value = {date(2024, 1, 2): 110.0}
 
@@ -313,7 +329,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
 def test_update_account_metrics_is_idempotent(mock_influx, mocker):
     """Two cycles with no new event produce the identical (tags, time) point set."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
 
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
@@ -357,7 +373,7 @@ def test_write_portfolio_totals_is_untagged(mocker):
 def test_update_account_metrics_writes_portfolio_totals_single_currency(
         mock_influx, mocker):
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
 
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
@@ -382,8 +398,8 @@ def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
     ]
     portfolio = Portfolio([
-        Account("PEA", "PEA", "EUR", "Mon PEA"),
-        Account("CTO", "CTO", "USD", "My CTO"),
+        Account("PEA", "PEA", "Mon PEA", "EUR"),
+        Account("CTO", "CTO", "My CTO", "USD"),
     ])
     mock_influx.get_price_series.return_value = {}
 
@@ -413,7 +429,7 @@ def test_account_metrics_perf_fields_only_on_latest_point(
     shares = [{"name": "Apple", "symbol": "AAPL", "account": "PEA",
                "purchase": {"quantity": 10, "cost_price": 100.0, "fee": 0.0},
                "estate": {"quantity": 10, "received_dividend": 0.0}}]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {
         date(2024, 1, 1): 100.0, date(2024, 1, 2): 110.0}
 
@@ -458,7 +474,7 @@ def test_update_account_metrics_second_cycle_writes_only_today(
     """First cycle writes the full series; a steady second cycle (no backfill,
     no event change) rewrites ONLY today's point — the fix for #597."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
@@ -476,7 +492,7 @@ def test_backfill_dirty_mark_widens_the_incremental_window(
     cycle rewrites the whole tail from that day through today (TWR compounds
     forward, so the tail must be recomputed)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
@@ -496,7 +512,7 @@ def test_update_account_metrics_full_rewrite_on_event_reload(
     the full series — a new/edited event can shift any past day (cash, holdings,
     contributions), not just today."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
@@ -517,7 +533,7 @@ def test_write_failure_re_arms_the_dirty_watermark(
     """If the account_metrics write raises, the stale tail must not be lost: the
     watermark is re-armed so the next cycle retries the same slice (#597)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
@@ -537,7 +553,7 @@ def test_portfolio_totals_second_cycle_writes_only_today(
         mock_influx, mocker):
     """The global portfolio_totals series is incremental too (same #597 fix)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "EUR", "Mon PEA")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     mock_influx.get_price_series.return_value = {}
     m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)

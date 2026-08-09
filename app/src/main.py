@@ -8,13 +8,13 @@ import os
 import random
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
-import yaml
 import yfinance as yf
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -22,6 +22,7 @@ from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
+import accounts as accounts_module
 import ledger
 import performance
 import runtime_state
@@ -34,7 +35,7 @@ from events import (
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
-from events.schemas import EventType, Account, Portfolio, DEFAULT_ACCOUNT
+from events.schemas import EventType, Portfolio, DEFAULT_ACCOUNT
 from influxdb_writer import InfluxDBWriter
 from prometheus_exporter import PrometheusExporter
 
@@ -87,18 +88,6 @@ def set_log_level(level: str) -> str:
 def current_log_level() -> str:
     """The level the app's own logger is at, whatever set it."""
     return logging.getLevelName(logging.getLogger('suivi_bourse').level)
-
-
-# The shape of the opt-in `accounts:` block of settings.yaml. Declaring the
-# block turns on first-class accounts; its absence leaves behaviour strictly
-# unchanged.
-#
-# Checked by hand rather than by a schema library since #696: Cerberus left with
-# `schema.yaml`, whose subject — the hand-written `config.yaml` — no longer
-# exists, and the store's DDL is where a constraint belongs now (ADR-0007). Two
-# call sites did not justify keeping a dependency for one of them.
-ACCOUNT_REQUIRED_FIELDS = ('id', 'type', 'currency')
-ACCOUNT_OPTIONAL_FIELDS = ('label',)
 
 
 # Per-symbol scrape jobs are keyed ``scrape:<symbol>`` in the APScheduler
@@ -407,9 +396,14 @@ class ConfigurationManager:
       is gone with the hand-written file it was written for.
     """
 
-    #: The v4 file this version no longer reads (issue #711). Named at startup
-    #: when it is found — see :meth:`report_unread_files`.
+    #: The two v4 files this version no longer reads. ``config.yaml`` went with
+    #: the manual mode (#711); ``settings.yaml`` goes with the accounts block
+    #: (#698) — reading it would keep a v4 format alive in v5 forever, and it
+    #: mixes deployment (``events.*``, ``mode:``) with user data, which is the
+    #: seam ADR-0006 exists to separate. Both are **named, never read** — see
+    #: :meth:`report_unread_files`.
     LEGACY_MANUAL_FILE = 'config.yaml'
+    LEGACY_SETTINGS_FILE = 'settings.yaml'
 
     def __init__(self, config_dir: Optional[str] = None, opened_store=None):
         """
@@ -429,9 +423,10 @@ class ConfigurationManager:
         else:
             self.config_dir = Path('~/.config/SuiviBourse').expanduser()
 
-        self.settings_path = self.config_dir / 'settings.yaml'
-        self._settings_loaded: bool = False
-        self._events_source: Optional[str] = None
+        # Named, never read (issue #698). The attribute survives so the startup
+        # observation has a path to name and the tests have one to write to.
+        self.settings_path = self.config_dir / self.LEGACY_SETTINGS_FILE
+        self._events_source: Optional[str] = str(self.config_dir / 'events')
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
         self._store = opened_store
@@ -447,6 +442,25 @@ class ConfigurationManager:
     # ------------------------------------------------------------------ #
     # The store the ledger lives in (issue #697)
     # ------------------------------------------------------------------ #
+
+    @contextmanager
+    def writing(self):
+        """Hold the writers' mutex while a caller writes to the store.
+
+        The ingestion's import is a ``BEGIN``/``COMMIT`` on the **one** DuckDB
+        connection this process owns (the engine refuses a second), and a Flask
+        handler runs in another thread of that same process. A write landing
+        between another thread's ``BEGIN`` and its ``ROLLBACK`` is not a
+        concurrent write — it is *part of that transaction*, and disappears with
+        it, after the handler has already answered ``201``.
+
+        So a route that writes takes the same lock :meth:`reload` takes. The
+        lock is **not** reentrant: the replay that follows a write has to happen
+        after the block, never inside it, or the handler deadlocks against
+        itself.
+        """
+        with self._write_lock:
+            yield self._require_store()
 
     def attach_store(self, opened_store) -> None:
         """Hand the manager the connection it should read the ledger through.
@@ -473,52 +487,8 @@ class ConfigurationManager:
                 self.config_dir / store.STORE_FILENAME)
         return self._store
 
-    def _read_settings_file(self) -> dict:
-        """Parse ``settings.yaml``, or ``{}`` when there is none."""
-        if not self.settings_path.exists():
-            return {}
-        with open(self.settings_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f) or {}
-
-    def _load_settings(self) -> None:
-        """Resolve the *deployment* setting that is left: where events are dropped.
-
-        Read exactly once, on purpose — it describes how this deployment is
-        wired, and changing it means restarting the container. The
-        ``accounts:`` block used to be read here too, which quietly made it
-        boot-only as well: editing it had no effect without a restart. It is
-        data, not deployment, so it moved to :meth:`_read_accounts`, which every
-        snapshot build re-runs.
-
-        What used to sit here and no longer does is the mode resolution (issue
-        #711). ``SB_CONFIG_MODE``, the ``mode:`` key and the auto-detection that
-        arbitrated between them are gone with the manual mode they chose
-        between: an aggregated position carries no dates, so it can carry
-        neither a realised gain nor a historical weighted average cost, and the
-        product's headline figure is built out of both.
-        """
-        settings = self._read_settings_file()
-
-        # `source` says where the drop folder is. It falls back to the events/
-        # folder next to settings.yaml, which is the setup every install that
-        # never declared one runs.
-        #
-        # ``watch`` left with #697 and has no heir. It was a dial on whether the
-        # folder was observed, and a dial on that only makes sense while the
-        # files are the truth and re-reading them is expensive; now that the
-        # ledger is the store, watching is how a **headless** install imports at
-        # all — there is nobody there to click *import* — and an import that
-        # finds an unchanged fingerprint costs one hash. So the folder is
-        # watched always, and the value found here is ignored rather than
-        # honoured: a v5 that read it would let a v4 file decide whether the
-        # product works.
-        events_settings = settings.get('events') or {}
-        self._events_source = events_settings.get('source') or \
-            str(self.config_dir / 'events')
-        self._settings_loaded = True
-
     def report_unread_files(self) -> List[str]:
-        """Name the v4 files this version finds and does not read (issue #711).
+        """Name the v4 files this version finds and does not read (#711, #698).
 
         Four empty pages read as *"the update erased my portfolio"* unless the
         app says out loud which file it stopped reading. This is that sentence,
@@ -526,10 +496,17 @@ class ConfigurationManager:
         renamed, nothing is deleted — the file the user wrote stays exactly
         where they put it (ADR-0008).
 
+        Two files now, and the second one is #698's. ``settings.yaml`` held a
+        deployment setting (``events.source``) *and* user data (the ``accounts:``
+        block) in one document, which is the seam v5 separates: the accounts are
+        declared by a file in the events' format, and the drop folder is a mount.
+        Reading it would keep a v4 format alive in v5 indefinitely.
+
         Returns the paths it named, so a caller can test the observation rather
         than the log line.
         """
         named = []
+
         legacy = self.config_dir / self.LEGACY_MANUAL_FILE
         if legacy.exists():
             named.append(str(legacy))
@@ -538,107 +515,42 @@ class ConfigurationManager:
                 f"portfolio is described by dated events only. Your positions "
                 f"are loaded from {self.get_events_source()} — the file above "
                 f"is left untouched.")
+
+        settings = self.config_dir / self.LEGACY_SETTINGS_FILE
+        if settings.exists():
+            named.append(str(settings))
+            app_logger.warning(
+                f"Found {settings}, and this version does not read it: "
+                f"accounts are declared by a file in the events' format "
+                f"({', '.join(accounts_module.ACCOUNT_COLUMNS)}) or in the app, "
+                f"and the drop folder is {self.get_events_source()}. The file "
+                f"above is left untouched.")
+
         return named
 
-    def _read_accounts(self) -> Optional[Portfolio]:
-        """Re-read the opt-in ``accounts:`` block from ``settings.yaml``.
-
-        Called on every snapshot build, so a declared account added or relabelled
-        on disk takes effect on the next reload rather than the next restart.
-        Raises ``ValueError`` on a malformed block or duplicate ids — which is
-        the whole point of running it *before* publication.
-        """
-        return self._parse_accounts(self._read_settings_file().get('accounts'))
-
-    #: Event-file extensions recognised by the loader and by the cache key.
-    EVENT_SUFFIXES = ('.csv', '.xlsx')
-
-    @staticmethod
-    def _accounts_block_errors(raw) -> List[str]:
-        """Everything wrong with the raw ``accounts:`` block, as messages.
-
-        Returns *all* of them rather than the first: an operator editing a YAML
-        block by hand should get one round-trip, not one per typo. Empty list
-        means the block is well formed.
-        """
-        if not isinstance(raw, list):
-            return [f"'accounts' must be a list, got {type(raw).__name__}"]
-
-        errors: List[str] = []
-        for index, entry in enumerate(raw):
-            where = f"accounts[{index}]"
-            if not isinstance(entry, dict):
-                errors.append(f"{where}: must be a mapping, got "
-                              f"{type(entry).__name__}")
-                continue
-            for field in ACCOUNT_REQUIRED_FIELDS:
-                value = entry.get(field)
-                if not isinstance(value, str) or not value.strip():
-                    errors.append(f"{where}.{field}: required, must be a "
-                                  f"non-empty string")
-            label = entry.get('label')
-            if label is not None and not isinstance(label, str):
-                errors.append(f"{where}.label: must be a string")
-            unknown = sorted(
-                set(entry) - set(ACCOUNT_REQUIRED_FIELDS) - set(ACCOUNT_OPTIONAL_FIELDS))
-            if unknown:
-                errors.append(f"{where}: unknown field(s) {unknown}")
-        return errors
-
-    def _parse_accounts(self, raw) -> Optional[Portfolio]:
-        """Validate and build the declared accounts from the raw settings block.
-
-        Returns None when no accounts are declared (opt-out). Raises ValueError
-        on a malformed block or duplicate account ids.
-        """
-        if not raw:
-            return None
-
-        errors = self._accounts_block_errors(raw)
-        if errors:
-            raise ValueError(
-                f"Invalid 'accounts' block in settings.yaml: {errors}")
-
-        accounts = [
-            Account(
-                id=a['id'],
-                type=a['type'],
-                currency=a['currency'],
-                label=a.get('label', a['id']),
-            )
-            for a in raw
-        ]
-
-        ids = [a.id for a in accounts]
-        duplicates = sorted({i for i in ids if ids.count(i) > 1})
-        if duplicates:
-            raise ValueError(
-                f"Duplicate account id(s) in settings.yaml: {duplicates}")
-
-        return Portfolio(accounts=accounts)
-
     def load_accounts(self) -> Optional[Portfolio]:
-        """Return the declared accounts, or None when none are declared.
+        """The declared accounts, or ``None`` when nothing has been declared.
 
-        The None return is the single signal that later gates per-account series
-        publication (see the accounts roadmap). Served from the published
-        snapshot once there is one, so a caller never sees accounts from a
-        different generation than the shares they were aggregated with.
+        Served from the published snapshot once there is one, so a caller never
+        sees accounts from a different generation than the shares they were
+        aggregated with. ``None`` is ergonomics rather than a discriminant
+        (ADR-0013): the store always holds at least one account, and no write
+        path asks this question — only the pages do.
         """
         snap = self._config
         if snap is not None:
             return snap.accounts
-        return self._read_accounts()
+        return accounts_module.declared_portfolio(self._require_store())
 
     def get_events_source(self) -> str:
-        """Where the event files are read from.
+        """Where files are dropped to be imported.
 
-        Always a path since #711: there is one loading path, so every caller
-        that wants to name the ledger's location gets the same answer the loader
-        is given rather than a value that could be ``None``.
+        The configuration directory's ``events/`` folder, and nothing overrides
+        it any more: ``events.source`` was the last thing ``settings.yaml`` was
+        read for, and a v5 that read it would let a v4 file decide where the
+        product looks (issue #698). The container names the mount instead
+        (ADR-0015), which is #740's business.
         """
-        if not self._settings_loaded:
-            self._load_settings()
         return self._events_source
 
     def _compute_cache_key(self) -> Optional[str]:
@@ -647,23 +559,19 @@ class ConfigurationManager:
         The mtime fingerprint of #658 moved to its new subject. The files are no
         longer the truth, so what a published snapshot has to be invalidated
         against is the store: :func:`ledger.stamp` moves when a re-drop changed
-        content, when an import is forgotten, and on nothing else. ``settings``
-        still joins it, because the ``accounts:`` block is re-read on every
-        build and must be able to invalidate the snapshot it shaped.
+        content, when an import is forgotten, when the declaration changes, and
+        on nothing else.
 
-        ``None`` when there is neither a settings file nor a single imported
-        source — a fresh install with nothing to fingerprint yet.
+        **One part, and no file left in it** (issue #698). ``settings.yaml``'s
+        mtime used to join the key because the ``accounts:`` block was re-read
+        from it on every build; the accounts now live in the store, so the store
+        alone says whether a snapshot is stale — and a v4 file being touched can
+        no longer invalidate anything.
+
+        ``None`` when nothing has been imported and nothing declared — a fresh
+        install with nothing to fingerprint yet.
         """
-        parts = []
-        if self.settings_path.exists():
-            parts.append(
-                f"{self.settings_path}:{self.settings_path.stat().st_mtime}")
-
-        ledger_stamp = ledger.stamp(self._require_store())
-        if ledger_stamp:
-            parts.append(f"ledger:{ledger_stamp}")
-
-        return "|".join(parts) if parts else None
+        return ledger.stamp(self._require_store())
 
     # ------------------------------------------------------------------ #
     # Publication (issue #658)
@@ -722,7 +630,6 @@ class ConfigurationManager:
         Raises:
             EventLoaderError, EventValidationError, AggregationError: the event
                 files could not be read, validated or aggregated.
-            ValueError: the ``accounts:`` block is malformed.
         """
         with self._write_lock:
             published = self._config
@@ -740,18 +647,7 @@ class ConfigurationManager:
         Runs under ``_write_lock``. Never touches ``self._config``: publication
         is :meth:`reload`'s business.
         """
-        if not self._settings_loaded:
-            self._load_settings()
-
-        # Accounts first: their ids decide whether events must carry an account,
-        # so the two are necessarily read together. Since #697 they are also
-        # what the ledger's foreign key needs to already exist, which is why
-        # they are declared into the store *before* a single event is imported —
-        # the ordering rule #698 states as "all account sources before all event
-        # sources", arriving here one ticket early because the key cannot wait.
-        accounts = self._read_accounts()
         opened = self._require_store()
-        ledger.declare_accounts(opened, accounts)
 
         # The import. Idempotent and fingerprinted, so running it on every
         # build costs one hash per unchanged file — which is what lets the
@@ -759,8 +655,15 @@ class ConfigurationManager:
         # it should have. Skipped by :meth:`replay` alone, and only because a
         # scan there would re-import the file a revocation has just revoked
         # (issue #697).
+        #
+        # It is also what **declares the accounts**, which is why nothing is
+        # read before it: an accounts source in the folder is imported first
+        # (issue #698), so the declaration this build publishes is the one the
+        # events were just validated against, not the one from before the scan.
         if do_import:
-            self._import_drop_folder(opened, accounts)
+            self._import_drop_folder(opened)
+
+        accounts = accounts_module.declared_portfolio(opened)
 
         cache_key = self._compute_cache_key()
         if not force and published is not None and published.cache_key == cache_key:
@@ -770,7 +673,7 @@ class ConfigurationManager:
         # An empty portfolio is a legitimate state, not a broken ledger: an
         # install starts life with an empty drop folder and must keep running
         # (with a warning) until the first file lands.
-        shares, events = self._load_from_store(opened, accounts)
+        shares, events = self._load_from_store(opened)
 
         accounts_are_new = published is None or published.accounts != accounts
         if accounts is not None and accounts_are_new:
@@ -781,8 +684,7 @@ class ConfigurationManager:
         return ConfigSnapshot(shares=shares, events=events, accounts=accounts,
                               cache_key=cache_key)
 
-    def _import_drop_folder(self, opened_store,
-                            accounts: Optional[Portfolio]) -> None:
+    def _import_drop_folder(self, opened_store) -> None:
         """Bring the drop folder into the store, and say what happened.
 
         A folder that does not exist yet is a **fresh install**, not a broken
@@ -797,11 +699,13 @@ class ConfigurationManager:
         portfolio. With the store as the truth the refused file simply never
         entered it, so the ledger standing behind it is whole and the app goes
         on serving it.
+
+        The account sources in the same folder are imported first and by the
+        same call (issue #698) — the ordering is a property of the sync, not of
+        its caller, so no caller can get it wrong.
         """
         source = Path(self._events_source).expanduser()
-        account_ids = accounts.ids() if accounts else None
-        outcomes = ledger.sync_drop_folder(
-            opened_store, source, account_ids=account_ids)
+        outcomes = ledger.sync_drop_folder(opened_store, source)
 
         tally = ledger.import_counts(outcomes)
         if tally[ledger.IMPORTED]:
@@ -812,8 +716,7 @@ class ConfigurationManager:
                 f"Refused {refused.filename}, nothing from it was imported: "
                 f"{refused.error}")
 
-    def _load_from_store(self, opened_store,
-                         accounts: Optional[Portfolio]) -> Tuple[List[Dict], List]:
+    def _load_from_store(self, opened_store) -> Tuple[List[Dict], List]:
         """Replay the ledger the store holds. Returns ``(shares, events)``.
 
         The heir of ``_load_from_events``, and the change of subject is the
@@ -836,16 +739,17 @@ class ConfigurationManager:
                 f".csv/.xlsx lands in {self._events_source}")
             return [], []
 
-        # When accounts are declared, every event must carry a valid account and
-        # positions are keyed per account; otherwise everything falls under
-        # 'default' (a single code path either way).
-        account_ids = accounts.ids() if accounts else None
-
-        validator = EventValidator(account_ids=account_ids)
+        # The account rules read the store, which is where the declaration is
+        # (issue #698): every event must name an account that exists, and a
+        # blank column means 'default' only until something is declared. One
+        # code path either way — the replay keys by ``(account, symbol)``
+        # unconditionally, because there is always at least one account.
+        validator = EventValidator(
+            account_ids=accounts_module.account_ids(opened_store),
+            accounts_declared=accounts_module.accounts_are_declared(opened_store))
         validator.validate_or_raise(events)
 
-        aggregator = EventAggregator()
-        shares = aggregator.aggregate(events, accounts_declared=account_ids is not None)
+        shares = EventAggregator().aggregate(events)
 
         app_logger.info(f"Replayed {len(events)} events for {len(shares)} shares")
         return shares, events
@@ -1787,15 +1691,14 @@ class SuiviBourseMetrics:
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
-        # Accounts are resolved per (symbol, account) so a symbol held in two
-        # accounts backfills each series independently.
-        accounts_declared = snapshot.accounts is not None
-
         # A single replay per cycle serves every symbol and every date; each
         # per-date lookup below is a forward-fill on this timeline, never a
         # re-replay (backfill drops from O(days × events) to O(events + days)).
+        # Positions are keyed per (account, symbol) unconditionally since #698,
+        # so a symbol held in two accounts backfills each series independently
+        # without anyone having to ask whether accounts were declared.
         events = snapshot.events
-        timeline = EventAggregator().replay(events, accounts_declared) if events else None
+        timeline = EventAggregator().replay(events) if events else None
 
         for share in snapshot.shares:
             backfilled_count += self._backfill_share(share, snapshot, timeline)
@@ -2218,7 +2121,7 @@ class SuiviBourseMetrics:
         if not events:
             return
 
-        timeline = EventAggregator().replay(events, accounts_declared=True)
+        timeline = EventAggregator().replay(events)
 
         # Injected price source: per-symbol daily closes, forward-filled. The
         # performance module never touches InfluxDB — it only calls price_at.

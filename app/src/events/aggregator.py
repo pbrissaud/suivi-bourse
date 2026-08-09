@@ -20,18 +20,18 @@ class AggregationError(Exception):
 class EventAggregator:
     """Aggregates portfolio events into share states."""
 
-    def _event_account(self, event: Event, accounts_declared: bool) -> str:
+    def _event_account(self, event: Event) -> str:
         """Resolve the account bucket for an event.
 
-        When accounts are declared, positions are keyed by the event's own
-        account (guaranteed present by validation). Otherwise everything falls
-        into the implicit ``default`` account — a single code path either way.
+        One line and no branch, which is the point (issue #698, ADR-0013): an
+        event's own account, or ``default`` when it names none. **Nothing here
+        asks whether accounts are declared** — the store always holds at least
+        one account, and whether a blank column was allowed to stay blank is a
+        question the validator already answered before the row could get here.
         """
-        if accounts_declared and event.account:
-            return event.account
-        return DEFAULT_ACCOUNT
+        return event.account or DEFAULT_ACCOUNT
 
-    def aggregate(self, events: List[Event], accounts_declared: bool = False) -> List[Dict]:
+    def aggregate(self, events: List[Event]) -> List[Dict]:
         """
         Aggregate events into share configurations (latest state).
 
@@ -40,9 +40,6 @@ class EventAggregator:
 
         Args:
             events: List of events sorted by date.
-            accounts_declared: When True, positions are keyed by
-                ``(account, symbol)``. When False, everything is aggregated
-                under the implicit ``default`` account.
 
         Returns:
             List of share dictionaries compatible with the config schema.
@@ -50,9 +47,9 @@ class EventAggregator:
         Raises:
             AggregationError: If aggregation fails (e.g., selling more than owned).
         """
-        return self.replay(events, accounts_declared).current()
+        return self.replay(events).current()
 
-    def replay(self, events: List[Event], accounts_declared: bool = False) -> Timeline:
+    def replay(self, events: List[Event]) -> Timeline:
         """
         Replay events once into a sparse :class:`Timeline`.
 
@@ -61,11 +58,11 @@ class EventAggregator:
         forward-fills on query (``Timeline.at`` / ``position_at``). External
         flows are emitted **without** a price (the aggregator never reads one).
 
+        Positions are keyed by ``(account, symbol)``, the account being the
+        event's own or ``default`` (issue #698).
+
         Args:
             events: List of events sorted by date.
-            accounts_declared: When True, positions are keyed by
-                ``(account, symbol)``; otherwise everything falls under
-                ``default``.
 
         Returns:
             A Timeline covering all positions.
@@ -78,7 +75,7 @@ class EventAggregator:
         cash_states: Dict[str, CashState] = {}
 
         for event in events:
-            account = self._event_account(event, accounts_declared)
+            account = self._event_account(event)
 
             # Every account gets a cash ledger, starting at 0.00, on first sight.
             if account not in cash_states:

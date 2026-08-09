@@ -30,36 +30,42 @@ follows the write (:meth:`main.SuiviBourseMetrics.ingest`), and the drop folder
 stays watched with no dial at all: a headless install has nobody to click
 *import*.
 
-**Not in this module**: the accounts source (#698 owns the ``id``/``type``/
-``label`` file, the cascade refusal and the "empty ``account`` column becomes an
-error once a source exists" rule) and the replay into ``position`` /
-``account_state`` (#699). What is here writes ``import_source``, ``symbol`` and
-``event``, which is exactly the set of tables whose one writer is the import.
+Since #698 the drop folder holds **two kinds of source**, and the order between
+them is a rule rather than a convenience: *all account sources are imported
+before all event sources*, or the events' foreign key has nothing to point at.
+The ``account`` table itself is :mod:`accounts`' — this module owns
+``import_source``, hands it a ``source_id``, and never writes an account row of
+its own.
+
+**Not in this module**: the replay into ``position`` / ``account_state`` (#699).
+What is here writes ``import_source``, ``symbol`` and ``event``, which is
+exactly the set of tables whose one writer is the import.
 """
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence
 
 from logfmt_logger import getLogger
 
+import accounts as accounts_module
 from events import EventAggregator, EventLoader, EventValidator
 from events.schemas import DEFAULT_ACCOUNT, Event, EventType
 
 logger = getLogger("ledger")
 
-#: The two kinds of source ``import_source.kind`` distinguishes. ``accounts`` is
-#: declared here — the column is ``NOT NULL`` and the DDL is shared — but it is
-#: #698 that gives it a reader.
+#: The two kinds of source ``import_source.kind`` distinguishes. Which one a
+#: file is, is read off its **header** (:func:`accounts.is_accounts_file`) and
+#: never off its name — no filename has a special meaning in v5.
 KIND_EVENTS = 'events'
 KIND_ACCOUNTS = 'accounts'
 
-#: What counts as a droppable file. The extension is the only thing that does:
-#: **no filename has a special meaning in v5** (spec #695 § 6), so ``ui.csv`` is
-#: a file like any other and ``settings.yaml`` sitting in the same folder is
-#: simply not one of these.
-EVENT_SUFFIXES = ('.csv', '.xlsx')
+#: What counts as a droppable file, of either kind. The extension is the only
+#: thing that does: **no filename has a special meaning in v5** (spec #695 § 6),
+#: so ``ui.csv`` is a file like any other and ``settings.yaml`` sitting in the
+#: same folder is simply not one of these.
+IMPORT_SUFFIXES = ('.csv', '.xlsx')
 
 #: The outcomes :func:`sync_drop_folder` reports, one per file it looked at.
 IMPORTED = 'imported'
@@ -89,11 +95,26 @@ class ImportRecord:
 
 @dataclass(frozen=True)
 class SyncOutcome:
-    """What one file in the drop folder led to, for logs and for the API."""
+    """What one file in the drop folder led to, for logs and for the API.
+
+    ``kind`` says which of the two sources it was taken for, which is what makes
+    a refusal readable: *"refused, as an accounts file"* names the header the
+    app read, and a user who meant to drop events knows immediately that their
+    ``event_type`` column is missing.
+
+    ``rows`` counts what the file carried — events for an event source, accounts
+    for an accounts source.
+    """
     filename: str
     outcome: str
-    events: int = 0
+    rows: int = 0
     error: Optional[str] = None
+    kind: str = KIND_EVENTS
+
+    @property
+    def events(self) -> int:
+        """Rows, when the source is an event source. ``0`` otherwise."""
+        return self.rows if self.kind == KIND_EVENTS else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -217,15 +238,27 @@ def stamp(store) -> Optional[str]:
     event count, so it moves on a re-drop that changed content (the fingerprint
     changes), on a forget (a source disappears) and on nothing else.
 
-    ``None`` when the ledger is empty — the fresh install with nothing yet
-    dropped, which is a legitimate state and not a hole to report.
+    **The declaration joins it** (issue #698). An account created or relabelled
+    in the app changes no import and no event, so a stamp built from the imports
+    alone would leave the published snapshot showing the previous list — and the
+    snapshot is where every reader takes its accounts from.
+
+    ``None`` when there is neither an import nor a declaration — the fresh
+    install with nothing yet dropped, which is a legitimate state and not a hole
+    to report. The seeded ``default`` row is not a declaration and does not
+    count, or no install would ever be fresh.
     """
     rows = store.query(
         'SELECT id, filename, fingerprint FROM import_source ORDER BY id')
-    if not rows:
+    declared = store.query(
+        'SELECT id, type, label, source_id FROM account '
+        'WHERE id <> ? ORDER BY id', [DEFAULT_ACCOUNT])
+    if not rows and not declared:
         return None
     (count,) = store.query('SELECT count(*) FROM event')[0:1][0]
-    payload = '|'.join(f'{r[0]}:{r[1]}:{r[2]}' for r in rows) + f'#{count}'
+    imports = '|'.join(f'{r[0]}:{r[1]}:{r[2]}' for r in rows)
+    declarations = '|'.join(str(tuple(a)) for a in declared)
+    payload = f'{imports}#{declarations}#{count}'
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
@@ -233,10 +266,9 @@ def stamp(store) -> Optional[str]:
 # Writing — the import, and the one destructive gesture
 # --------------------------------------------------------------------------- #
 
-def sync_drop_folder(store, directory, *,
-                     account_ids: Optional[Set[str]] = None,
+def sync_drop_folder(store, directory,
                      now: Optional[datetime] = None) -> List[SyncOutcome]:
-    """Import every event file the drop folder holds. Idempotent.
+    """Import every file the drop folder holds, accounts first. Idempotent.
 
     Called on every write that could have changed the folder — the watcher's
     callback and the boot — and it is safe to call on a filesystem event that
@@ -248,55 +280,172 @@ def sync_drop_folder(store, directory, *,
     answer as an empty folder, and never a boot failure.
 
     Each file is its own transaction and its own verdict. A refusal is per
-    source on purpose — #698 needs one bad file not to hold the whole folder
-    hostage — and the refused file leaves no row behind at all, not even the
-    ``symbol`` rows it would have needed.
+    source on purpose — one bad file must not hold the whole folder hostage —
+    and the refused file leaves no row behind at all, not even the ``symbol``
+    rows it would have needed.
 
-    Args:
-        account_ids: the declared account ids, or ``None`` when none are
-            declared. Passed through to the validator and to the account the
-            row is written under, so the store agrees with what the aggregator
-            would have computed. #698 is what turns this into a table read.
+    Two rules of order, both from issue #698:
+
+    * **all account sources before all event sources.** An event's ``account``
+      references ``account(id)``, so a file naming ``pea`` needs the row to
+      already be there — the foreign key is not a check that runs later, it is
+      the reason the ordering exists. It is *all* before *all*, not a
+      per-directory alphabetical shuffle: two files sorted ``events.csv`` then
+      ``pea.csv`` would otherwise refuse on the first pass and succeed on the
+      second, which is a folder whose meaning depends on how many times it was
+      scanned.
+    * **a declaration that moved re-imports the events**, fingerprint or not.
+      An event file imported before its accounts existed had its rows written
+      under ``default``; leaving them there would show the user the accounts
+      they declared next to a ledger that ignores them. Re-importing is how the
+      column stops being a label and becomes a key — and a file that cannot pay
+      the new rule (a blank column, now that accounts exist) is refused *then*,
+      with the previous rows left exactly where they were.
+
+    **The forced pass happens once, and that is deliberate.** A refusal rolls
+    back, so the refused file keeps its stored fingerprint and later scans
+    report it ``unchanged`` — its rows stay under ``default`` and the error is
+    logged once, when the user made the change that caused it. The retry comes
+    with the file's next edit, which is exactly what the fix is: a file refused
+    for a blank ``account`` column can only be repaired by writing that column,
+    and writing it moves the fingerprint. The alternative — re-reading and
+    re-validating every unchanged file on every filesystem event — would put a
+    parse of the whole drop folder behind a watch that exists to cost one hash.
     """
     source = Path(directory).expanduser()
     if not source.is_dir():
         return []
 
-    outcomes: List[SyncOutcome] = []
+    declaring, eventful = [], []
     for path in sorted(source.iterdir()):
-        if path.suffix.lower() not in EVENT_SUFFIXES or not path.is_file():
+        if path.suffix.lower() not in IMPORT_SUFFIXES or not path.is_file():
             continue
-        outcomes.append(_sync_one(store, path, account_ids=account_ids, now=now))
+        # Read once: the header is what classifies a file, and asking twice
+        # would open every workbook in the folder a second time.
+        bucket = declaring if accounts_module.is_accounts_file(path) else eventful
+        bucket.append(path)
+
+    before = _declaration_stamp(store)
+    outcomes = [_sync_accounts_file(store, path, now) for path in declaring]
+    force = _declaration_stamp(store) != before
+
+    outcomes.extend(_sync_event_file(store, path, now, force=force)
+                    for path in eventful)
     return outcomes
 
 
-def _sync_one(store, path: Path, *, account_ids: Optional[Set[str]],
-              now: Optional[datetime]) -> SyncOutcome:
-    """Import one file if its content moved, and report what happened."""
-    try:
-        digest = fingerprint_of(path)
-    except OSError as exc:
-        return SyncOutcome(path.name, REFUSED, error=f"cannot read: {exc}")
+def _declaration_stamp(store) -> List[tuple]:
+    """The account table as a comparable value, to see a declaration move."""
+    return store.query(
+        'SELECT id, type, label, source_id FROM account ORDER BY id')
 
-    known = store.query(
-        'SELECT id, fingerprint FROM import_source WHERE filename = ?',
-        [path.name])
-    if known and known[0][1] == digest:
+
+def _sync_event_file(store, path: Path, now: Optional[datetime], *,
+                     force: bool = False) -> SyncOutcome:
+    """Import one event file if its content moved, and report what happened."""
+    digest = _digest_or_none(path)
+    if digest is None:
+        return SyncOutcome(path.name, REFUSED, error="cannot read the file")
+
+    if not force and _fingerprint_in_store(store, path.name) == digest:
         return SyncOutcome(path.name, UNCHANGED)
 
     try:
-        count = import_file(store, path, fingerprint=digest,
-                            account_ids=account_ids, now=now)
+        count = import_file(store, path, fingerprint=digest, now=now)
     except Exception as exc:
         logger.warning(f"Refused {path.name}: {exc}")
         return SyncOutcome(path.name, REFUSED, error=str(exc))
 
     logger.info(f"Imported {path.name}: {count} event(s)")
-    return SyncOutcome(path.name, IMPORTED, events=count)
+    return SyncOutcome(path.name, IMPORTED, rows=count)
+
+
+def _sync_accounts_file(store, path: Path,
+                        now: Optional[datetime]) -> SyncOutcome:
+    """Import one accounts file if its content moved (issue #698)."""
+    digest = _digest_or_none(path)
+    if digest is None:
+        return SyncOutcome(path.name, REFUSED, kind=KIND_ACCOUNTS,
+                           error="cannot read the file")
+
+    if _fingerprint_in_store(store, path.name) == digest:
+        return SyncOutcome(path.name, UNCHANGED, kind=KIND_ACCOUNTS)
+
+    try:
+        count = import_accounts_file(store, path, fingerprint=digest, now=now)
+    except Exception as exc:
+        logger.warning(f"Refused accounts file {path.name}: {exc}")
+        return SyncOutcome(path.name, REFUSED, kind=KIND_ACCOUNTS,
+                           error=str(exc))
+
+    logger.info(f"Imported {path.name}: {count} account(s)")
+    return SyncOutcome(path.name, IMPORTED, rows=count, kind=KIND_ACCOUNTS)
+
+
+def _digest_or_none(path: Path) -> Optional[str]:
+    try:
+        return fingerprint_of(path)
+    except OSError as exc:
+        logger.warning(f"Cannot read {path.name}: {exc}")
+        return None
+
+
+def _fingerprint_in_store(store, filename: str) -> Optional[str]:
+    known = store.query(
+        'SELECT fingerprint FROM import_source WHERE filename = ?', [filename])
+    return known[0][0] if known else None
+
+
+def import_accounts_file(store, path: Path, *, fingerprint: Optional[str] = None,
+                         now: Optional[datetime] = None) -> int:
+    """Import one accounts file, replacing whatever it declared before.
+
+    The same shape as :func:`import_file` and for the same reasons — one
+    transaction, keyed on the filename, all-or-nothing — with the account rows
+    themselves written by :mod:`accounts`, which owns that table.
+
+    Returns the number of accounts declared.
+
+    Raises:
+        AccountSourceError: the file cannot be read, or what it declares
+            collides with a declaration that already stands.
+        AccountInUse: it stopped declaring an account an event still names.
+            The cascade is refused rather than performed (ADR-0013).
+        AggregationError: dropping this source's events leaves a ledger that
+            does not replay.
+    """
+    stamped = now or datetime.now(timezone.utc)
+    digest = fingerprint or fingerprint_of(path)
+    rows = accounts_module.load_account_rows(path)
+
+    store.execute('BEGIN TRANSACTION')
+    try:
+        source_id = _upsert_source(store, path.name, KIND_ACCOUNTS, stamped,
+                                   digest)
+        # The mirror of what :func:`import_file` does with accounts: a source
+        # declares one kind of thing at a time, so a file whose header flipped
+        # from events to accounts leaves its event rows behind unless they go
+        # here. Without it they would hang off a source marked ``accounts``,
+        # invisible to every gesture that reasons about kinds and removable only
+        # by forgetting an import that no longer claims them.
+        store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
+        written = accounts_module.apply_source(store, source_id, rows)
+
+        # The ledger the drop would leave, replayed before the commit — the
+        # same assertion :func:`import_file` makes, and for a sharper reason:
+        # the DELETE above can remove the BUYs another file's SELLs rest on, and
+        # an unreplayable ledger committed here is a store that raises on every
+        # reload. That raise is fatal at boot (``build_runtime`` exits), so the
+        # API that could forget this import would never come up to be asked.
+        EventAggregator().aggregate(read_events(store))
+    except Exception:
+        store.execute('ROLLBACK')
+        raise
+    store.execute('COMMIT')
+    return written
 
 
 def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
-                account_ids: Optional[Set[str]] = None,
                 now: Optional[datetime] = None) -> int:
     """Import one event file into the store, replacing whatever it left before.
 
@@ -307,12 +456,17 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
        rename is a new source, repairable by forgetting the old one;
     2. ``DELETE FROM event WHERE source_id = ?`` — this is *replaces*, and it is
        why a correction does not double the ledger;
-    3. **the ``symbol`` rows, before the events.** Not an optimisation: a row
+    3. **whatever this source used to declare is retired** (issue #698). A
+       source declares one kind of thing at a time, so overwriting an accounts
+       file with events takes its accounts with it — and if an event still names
+       one, this raises and the re-drop is refused whole, which is the cascade
+       refusal seen from its other side. A no-op on the common path;
+    4. **the ``symbol`` rows, before the events.** Not an optimisation: a row
        naming ``AAPL`` would violate its foreign key otherwise, which is the
        acceptance criterion saying that a symbol gets its row at ingestion,
        before any yfinance call could have created one;
-    4. the event rows;
-    5. **the whole prospective ledger is validated and replayed** before the
+    5. the event rows;
+    6. **the whole prospective ledger is validated and replayed** before the
        commit. Per-row validation is not enough — overselling is a property of
        the ledger, not of a file — and a file that only breaks in company must
        be refused as squarely as one that breaks alone. A failure rolls the
@@ -325,28 +479,40 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
         EventLoaderError: the file could not be read or parsed.
         EventValidationError: the file, or the ledger it would make, is invalid.
         AggregationError: the resulting ledger does not replay (an oversell).
+        accounts.AccountInUse: it stopped declaring an account an event names.
     """
     stamped = now or datetime.now(timezone.utc)
     digest = fingerprint or fingerprint_of(path)
     parsed = EventLoader(str(path)).load()
 
-    # Refuse the file on its own terms first, so the message names the file the
-    # user just dropped rather than the ledger as a whole.
-    EventValidator(account_ids=account_ids).validate_or_raise(parsed)
-
     store.execute('BEGIN TRANSACTION')
     try:
         source_id = _upsert_source(store, path.name, KIND_EVENTS, stamped, digest)
         store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
-        _insert_symbols(store, parsed)
-        written = _insert_events(store, parsed, source_id, account_ids)
+        accounts_module.forget_source(store, source_id)
 
-        # The ledger as it would stand. Validated and replayed here, inside the
-        # transaction, which is what makes the rollback below a real refusal.
+        # The account rules read the table, never a parameter (issue #698), and
+        # they read it **here** rather than before the transaction: the two
+        # statements above are part of this drop, so a file that used to declare
+        # the accounts it is now dropping must be judged against the declaration
+        # it leaves behind, not the one it is replacing. Otherwise a file could
+        # be refused for breaking a rule it had just repealed.
+        validator = EventValidator(
+            account_ids=accounts_module.account_ids(store),
+            accounts_declared=accounts_module.accounts_are_declared(store))
+
+        # The file on its own terms first, so the message names what the user
+        # just dropped rather than the ledger as a whole.
+        validator.validate_or_raise(parsed)
+
+        _insert_symbols(store, parsed)
+        written = _insert_events(store, parsed, source_id)
+
+        # The ledger as it would stand. Validated and replayed here too, which
+        # is what makes the rollback below a real refusal.
         whole = read_events(store)
-        EventValidator(account_ids=account_ids).validate_or_raise(whole)
-        EventAggregator().aggregate(
-            whole, accounts_declared=account_ids is not None)
+        validator.validate_or_raise(whole)
+        EventAggregator().aggregate(whole)
     except Exception:
         store.execute('ROLLBACK')
         raise
@@ -381,44 +547,34 @@ def forget_import(store, source_id: int) -> int:
     again, which then succeeds. The alternative — deleting the source first — is
     the one the engine forbids outright.
 
+    An **accounts** import takes its accounts with it, and that is where the one
+    refusal lives: forgetting is refused outright while an event names one of
+    them (:class:`accounts.AccountInUse`, ADR-0013). Cascading — deleting the
+    events too, or orphaning them — is what the refusal exists instead of. The
+    user's move is the same either way: forget the event imports first, then
+    the declaration they rest on.
+
     Raises:
         UnknownImport: no import has that id.
+        accounts.AccountInUse: it declared an account an event still names.
     """
-    known = store.query('SELECT id FROM import_source WHERE id = ?', [source_id])
+    known = store.query(
+        'SELECT id, kind FROM import_source WHERE id = ?', [source_id])
     if not known:
         raise UnknownImport(f"No import with id {source_id}")
+
+    # Refuse before anything is removed. `forget_source` raises on the first
+    # account an event names, and it is called first precisely so that a refusal
+    # leaves the import whole rather than half-forgotten.
+    retired = accounts_module.forget_source(store, source_id)
 
     (removed,) = store.query(
         'SELECT count(*) FROM event WHERE source_id = ?', [source_id])[0:1][0]
     store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
     store.execute('DELETE FROM import_source WHERE id = ?', [source_id])
-    logger.info(f"Forgot import {source_id}: {removed} event(s) removed")
+    logger.info(f"Forgot import {source_id}: {removed} event(s) and "
+                f"{len(retired)} account(s) removed")
     return removed
-
-
-def declare_accounts(store, accounts) -> None:
-    """Make sure the declared accounts have their row, so the ledger's FK holds.
-
-    **A bridge, and #698 is its owner.** An event names an account and
-    ``event.account`` references ``account(id)``, so the accounts have to exist
-    before the events do — which is the same ordering rule #698 states as *"all
-    account sources before all event sources"*. Until that ticket replaces the
-    v4 ``accounts:`` block with a file of its own, this is what puts the
-    declared ids in the table; when it lands, this function's caller changes and
-    the ordering rule stays exactly where it is.
-
-    ``source_id`` is left ``NULL`` — spec #695 § 6 reads that as "created in the
-    UI", i.e. not owned by any import, which is the honest description of a row
-    that came from the deployment's settings rather than from the drop folder.
-    """
-    if accounts is None:
-        return
-    for account in accounts.accounts:
-        store.execute(
-            'INSERT INTO account (id, type, label, source_id) VALUES (?, ?, ?, NULL) '
-            'ON CONFLICT (id) DO UPDATE SET type = excluded.type, '
-            'label = excluded.label',
-            [account.id, account.type, account.label])
 
 
 # --------------------------------------------------------------------------- #
@@ -466,23 +622,19 @@ def _insert_symbols(store, events: Sequence[Event]) -> None:
             [symbol])
 
 
-def _insert_events(store, events: Sequence[Event], source_id: int,
-                   account_ids: Optional[Set[str]]) -> int:
+def _insert_events(store, events: Sequence[Event], source_id: int) -> int:
     """Write the file's events, carrying their provenance.
 
-    The account written is the one the aggregator would have resolved: the
-    event's own when accounts are declared, ``default`` otherwise. Writing the
-    raw column instead would put a v4 file's ``account`` value in the store
-    while every downstream reader still folded it into ``default`` — two
-    answers to the same question, which is the divergence the single store
-    exists to end. It is also what keeps a single-account v4's files importing
-    without a single edit.
+    The account written is the one the aggregator resolves, and since #698 that
+    is one expression with no branch in it: the event's own account, or
+    ``default`` when the column is blank. The validator has already refused a
+    blank column when accounts are declared and an unknown id in every case, so
+    what reaches this line is always an id the foreign key will accept.
     """
-    declared = account_ids is not None
     (next_id,) = store.query('SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
 
     for offset, event in enumerate(events):
-        account = event.account if (declared and event.account) else DEFAULT_ACCOUNT
+        account = event.account or DEFAULT_ACCOUNT
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
             '                   quantity, unit_price, fee, amount, notes, '
@@ -505,10 +657,10 @@ def import_counts(outcomes: Sequence[SyncOutcome]) -> Dict[str, int]:
 
 __all__ = [
     'ImportRecord', 'SyncOutcome', 'UnknownImport',
-    'KIND_EVENTS', 'KIND_ACCOUNTS', 'EVENT_SUFFIXES',
+    'KIND_EVENTS', 'KIND_ACCOUNTS', 'IMPORT_SUFFIXES',
     'IMPORTED', 'UNCHANGED', 'REFUSED',
     'fingerprint_of', 'provenance_label',
     'read_events', 'list_imports', 'stamp',
-    'sync_drop_folder', 'import_file', 'forget_import', 'declare_accounts',
+    'sync_drop_folder', 'import_file', 'import_accounts_file', 'forget_import',
     'import_counts',
 ]

@@ -380,7 +380,8 @@ class AccountSummary:
 
     A **declaration joined to an observation**, and the join direction is the
     decision: the declaration drives. #652 déc. 4 settled where the account list
-    comes from (``settings.yaml``, not ``DISTINCT account``), and it decides two
+    comes from (the declaration — since #698, the store's ``account`` table —
+    and never ``DISTINCT account`` on the series), and it decides two
     cases at once here — a declared account whose perf cycle has not run yet is a
     row with an em dash in every figure rather than a missing line, and a series
     left behind by an account since removed from the declaration is not a row at
@@ -408,6 +409,16 @@ class AccountSummary:
     gain_absolu: Optional[float]
     xirr: Optional[float]
     twr_index: Optional[float]
+    #: Where the declaration came from: the import that carried it, or ``None``
+    #: for one created in the app (issue #698). It rides on the row because the
+    #: page has to render the difference — what came from a file is read-only
+    #: and revoked with its import, and a table that offered an edit button on
+    #: it would offer a gesture the API refuses.
+    source_id: Optional[int] = None
+
+    @property
+    def editable(self) -> bool:
+        return self.source_id is None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -415,6 +426,8 @@ class AccountSummary:
             'label': self.label,
             'type': self.type,
             'currency': self.currency,
+            'source_id': self.source_id,
+            'editable': self.editable,
             'as_of': _iso(self.as_of),
             'cash_balance': self.cash_balance,
             'holdings_value': self.holdings_value,
@@ -436,9 +449,9 @@ def build_accounts(
     published snapshot (#658) — and ``rows`` is
     :meth:`influx_reads.PortfolioReader.latest_account_metrics`'s output.
 
-    Declaration order is kept: it is the order the human wrote in
-    ``settings.yaml``, which is a better default than any sort this module could
-    invent, and the table sorts on demand anyway.
+    Declaration order is kept — since #698 that is the store's ``ORDER BY id``,
+    stable across restarts and across a re-drop, and the table sorts on demand
+    anyway.
 
     Nothing is summed across accounts here, deliberately. The consolidated
     figures have exactly one source — ``portfolio_totals``, read by
@@ -468,6 +481,7 @@ def build_accounts(
             gain_absolu=row.get('gain_absolu'),
             xirr=row.get('xirr'),
             twr_index=row.get('twr_index'),
+            source_id=getattr(account, 'source_id', None),
         ))
     return summaries
 

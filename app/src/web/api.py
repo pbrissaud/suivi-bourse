@@ -23,6 +23,7 @@ from typing import Any, Optional, Tuple
 from flask import Blueprint, jsonify, request
 from logfmt_logger import getLogger
 
+import accounts as accounts_module
 import ledger
 import main
 import portfolio_view
@@ -36,6 +37,7 @@ from influx_reads import (
 )
 from web.problem import (
     bad_request,
+    conflict,
     not_found,
     storage_unavailable,
 )
@@ -313,7 +315,7 @@ def get_portfolio_movers():
 
 
 # --------------------------------------------------------------------- #
-# Accounts — read-only in this slice
+# Accounts — declared by a file or here (issue #698)
 # --------------------------------------------------------------------- #
 
 @api_bp.get('/accounts')
@@ -322,13 +324,13 @@ def list_accounts():
 
     #652 déc. 4 corrects trap 12 here, and it matters for the shares page's
     global filter. The obvious source would be a ``DISTINCT`` on the ``account``
-    tag, but ``validator.py:128-138`` makes every event carry a *declared*
-    account once any account is declared — so an account that holds shares
-    without being declared cannot exist, and the two lists differ only on
-    historical residue (an account since removed, the pre-v4.1 ``default``
-    bucket). Reading the declaration also hands over ``label``, ``type`` and
-    ``currency``: three fields the app writes and **zero** Grafana panel reads
-    (it hardcodes ``currencyEUR``).
+    tag, but the validator makes every event name an account that exists — so an
+    account that holds shares without being declared cannot exist, and the two
+    lists differ only on historical residue (an account since removed, the
+    pre-v4.1 ``default`` bucket). Reading the declaration also hands over
+    ``label`` and ``type``, which the tags on the series only record as they
+    *were*, plus ``source_id``/``editable``: where the row came from, which is
+    what tells the page whether it may offer an edit at all (issue #698).
 
     The figures ride the *same* resource rather than a second one, which is
     #655's REST rule doing what it was adopted for: there is one accounts
@@ -404,6 +406,109 @@ def get_account_history(account_id: str):
             for row in _reader().account_series(account_id, start, stop)
         ],
     })
+
+
+@api_bp.post('/accounts')
+def create_account():
+    """Declare an account from the app — the other half of the file (issue #698).
+
+    The file exists so that a **headless** install can declare accounts at all;
+    this exists so that an install with a page does not have to write a file to
+    do it. Neither is the primary one, and the row they produce differs in
+    exactly one column: ``source_id``, ``NULL`` here, which is what makes this
+    row editable and a file's row read-only.
+
+    The replay follows the write, in this process: declaring an account changes
+    what an event file is allowed to say, so the caller must see the effect of
+    their own gesture without waiting for anything.
+    """
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    runtime = current_runtime()
+    try:
+        # Under the writers' mutex, and the replay strictly after it: the lock
+        # is what keeps this row out of an ingestion transaction that could roll
+        # it back (:meth:`main.ConfigurationManager.writing`), and it is not
+        # reentrant, so the replay cannot happen inside the block.
+        with runtime.config_manager.writing() as opened:
+            account = accounts_module.create_account(
+                opened, body.get('id'), body.get('type'), body.get('label'))
+    except accounts_module.DuplicateAccount as exc:
+        return conflict(str(exc))
+    except accounts_module.AccountSourceError as exc:
+        return bad_request(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify(_account_to_dict(account)), 201
+
+
+@api_bp.patch('/accounts/<account_id>')
+def update_account(account_id: str):
+    """Relabel or retype an account created in the app.
+
+    The id is **not** among what can change: it is the value events name, so
+    renaming it would be an edit of every imported row that names it — and
+    imported rows are read-only. Rename by declaring the new id and forgetting
+    the import that carried the old one.
+    """
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            account = accounts_module.update_account(
+                opened, account_id,
+                account_type=body.get('type'), label=body.get('label'))
+    except accounts_module.UnknownAccount as exc:
+        return not_found(str(exc))
+    except accounts_module.ReadOnlyAccount as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify(_account_to_dict(account))
+
+
+@api_bp.delete('/accounts/<account_id>')
+def delete_account(account_id: str):
+    """Remove an account created in the app.
+
+    ``409`` on the three refusals, and they are the ticket's spine: an account
+    **an event names** cannot go (ADR-0013 — no orphan historical residue), an
+    account a **file** declared is revoked by forgetting that import, and the
+    ``default`` account is the one row every install has.
+    """
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            accounts_module.delete_account(opened, account_id)
+    except accounts_module.UnknownAccount as exc:
+        return not_found(str(exc))
+    except (accounts_module.AccountInUse,
+            accounts_module.ReadOnlyAccount) as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify({'id': account_id, 'removed': True})
+
+
+def _account_to_dict(account) -> dict:
+    """One :class:`events.schemas.Account`, on the wire.
+
+    ``editable`` is published rather than left to the client to derive from
+    ``source_id``: it is the rule, and a rule the front re-implements is a rule
+    that can disagree with the API that enforces it.
+    """
+    return {
+        'id': account.id,
+        'type': account.type,
+        'label': account.label,
+        'source_id': account.source_id,
+        'editable': account.editable,
+    }
 
 
 # --------------------------------------------------------------------- #
@@ -521,12 +626,25 @@ def forget_import(source_id: int):
 
     Removing the *file* from disk is not this gesture and never will be — the
     store is the truth, so a deleted file changes nothing at all.
+
+    **An accounts import is refused while an event names one of its accounts**
+    (``409``, issue #698). Cascading — taking the events with it — is what the
+    refusal exists instead of: the gesture is meant to be reversible by
+    re-dropping the file, and one that deleted a year of events on the way out
+    would not be. The answer names the account, so the order to follow is
+    readable from the error: forget the event imports first.
     """
     runtime = current_runtime()
     try:
-        removed = ledger.forget_import(_store(), source_id)
+        # The same mutex the account writes take: a revocation is two
+        # statements, and an ingestion transaction running between them in
+        # another thread would take them into its own rollback.
+        with runtime.config_manager.writing() as opened:
+            removed = ledger.forget_import(opened, source_id)
     except ledger.UnknownImport as exc:
         return not_found(str(exc))
+    except accounts_module.AccountInUse as exc:
+        return conflict(str(exc))
 
     main.replay_after_write(runtime)
     return jsonify({'id': source_id, 'events_removed': removed})

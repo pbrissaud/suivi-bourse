@@ -4,7 +4,9 @@ Event validator for validating portfolio events.
 
 from typing import List, Optional, Set, Tuple
 
-from .schemas import CASH_EVENT_TYPES, Event, EventType
+from .schemas import (
+    ACCOUNT_FILE_COLUMNS, CASH_EVENT_TYPES, Event, EventType,
+)
 
 
 class EventValidationError(Exception):
@@ -13,17 +15,35 @@ class EventValidationError(Exception):
 
 
 class EventValidator:
-    """Validates portfolio events."""
+    """Validates portfolio events.
 
-    def __init__(self, account_ids: Optional[Set[str]] = None):
+    The account rules are issue #698's, and they are two halves of one sentence:
+
+    * **an ``account`` value must name a declared account.** The store always
+      holds at least one (``default``), so this is checked whether or not the
+      user ever declared anything — a typo'd id is refused the same way in every
+      install, and the message names the account to declare.
+    * **a blank ``account`` means ``default`` until an account is declared, and
+      is an error afterwards.** That is v4's rule minus its opt-in, which is
+      what makes a single-account v4's event files import without a single edit;
+      after a declaration, a blank cell is far likelier to be an omission than a
+      choice, and guessing would pile a second account's events onto the first.
+    """
+
+    def __init__(self, account_ids: Optional[Set[str]] = None,
+                 accounts_declared: bool = False):
         """
         Args:
-            account_ids: Set of declared account ids. When provided (accounts are
-                declared, opt-in feature), every event must carry an ``account``
-                matching one of these ids. When ``None``, accounts are not
-                declared and the ``account`` column is ignored.
+            account_ids: Every account id the store holds — ``default`` among
+                them. ``None`` means no store was consulted, and the account
+                column is then only checked for shape (the pure-format tests,
+                and any caller validating a file before it has a ledger).
+            accounts_declared: True once something beyond the seeded ``default``
+                account exists, which is what turns a blank ``account`` column
+                from "means default" into an error.
         """
         self.account_ids = account_ids
+        self.accounts_declared = accounts_declared
 
     def validate(self, events: List[Event]) -> Tuple[bool, List[str]]:
         """
@@ -65,9 +85,7 @@ class EventValidator:
         context = event.symbol or event.account or "?"
         prefix = f"Event #{event_num} ({event.date}, {event.event_type.value}, {context})"
 
-        # When accounts are declared, every event must carry a valid account
-        if self.account_ids is not None:
-            errors.extend(self._validate_account(event, prefix))
+        errors.extend(self._validate_account(event, prefix))
 
         if event.event_type in CASH_EVENT_TYPES:
             errors.extend(self._validate_cash(event, prefix))
@@ -93,16 +111,16 @@ class EventValidator:
     def _validate_cash(self, event: Event, prefix: str) -> List[str]:
         """Validate a DEPOSIT / WITHDRAWAL event.
 
-        Required: account + amount (> 0). Optional: fee (>= 0). Forbidden:
-        symbol / name / quantity / unit_price (cash events carry no share).
+        Required: amount (> 0). Optional: fee (>= 0). Forbidden: symbol / name /
+        quantity / unit_price (cash events carry no share).
+
+        The account is **not** a per-type requirement any more (issue #698).
+        v4 demanded one here even with no account declared, which under the new
+        rule would force a single-account v4 user to write ``default`` in a
+        column that means ``default`` when blank — a required cell whose only
+        legal value is the one it already implies.
         """
         errors = []
-
-        # account is always required for cash events. When accounts are declared
-        # _validate_account already enforced presence + validity, so only add the
-        # requirement here when accounts are not declared (avoids a duplicate).
-        if self.account_ids is None and not event.account:
-            errors.append(f"{prefix}: account is required for {event.event_type.value}")
 
         if event.amount is None:
             errors.append(f"{prefix}: amount is required for {event.event_type.value}")
@@ -126,19 +144,25 @@ class EventValidator:
         return errors
 
     def _validate_account(self, event: Event, prefix: str) -> List[str]:
-        """Validate the account of an event against the declared account ids."""
-        errors = []
+        """Validate the ``account`` column of one event (issue #698).
 
+        The message on an unknown id **names the account to declare**, because
+        that is the whole gesture the user has left to make: drop a file with
+        ``id``, ``type``, ``label``, or declare it in the app.
+        """
         if not event.account:
-            errors.append(
-                f"{prefix}: account is required (accounts are declared in settings.yaml)")
-        elif event.account not in self.account_ids:
-            declared = ", ".join(sorted(self.account_ids)) or "none"
-            errors.append(
-                f"{prefix}: account '{event.account}' is not a declared account id "
-                f"(declared: {declared})")
+            if self.accounts_declared:
+                return [f"{prefix}: account is required now that accounts are "
+                        f"declared (blank meant 'default' only while none were)"]
+            return []
 
-        return errors
+        if self.account_ids is None or event.account in self.account_ids:
+            return []
+
+        declared = ", ".join(sorted(self.account_ids)) or "none"
+        return [f"{prefix}: account '{event.account}' is not declared — declare "
+                f"it in an accounts file ({', '.join(ACCOUNT_FILE_COLUMNS)}) or "
+                f"in the app (declared: {declared})"]
 
     def _validate_buy(self, event: Event, prefix: str) -> List[str]:
         """Validate a BUY event."""
