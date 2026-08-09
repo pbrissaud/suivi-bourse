@@ -1,0 +1,140 @@
+---
+title: How prices are collected
+description: Market-aware cadence, the back-off of a silent symbol, and currency conversion
+---
+
+Every symbol you hold has **its own job**. Not one scrape loop over a list — one
+self-rescheduling job per symbol, which decides its own next run each time it
+finishes. That is what lets a Paris listing and a New York one be on entirely
+different clocks without either of them knowing about the other.
+
+## The cadence follows the market
+
+Each pass fetches the symbol, writes a point, and then asks what the market is
+doing:
+
+* **Market open** — poll again in a couple of minutes. The interval is a setting;
+  see [Settings](./settings.mdx).
+* **Market closed** — sleep until it reopens, capped at 24 hours. There is no
+  point asking a closed exchange the same question every two minutes, and the
+  cap is there so a listing whose next open is never announced still wakes up.
+
+Every re-arming is offset by a few seconds of jitter. Without it, thirty symbols
+on the same exchange would share one next-open instant and hit Yahoo in
+lockstep — at the reopening of every session, forever.
+
+**Fetching and writing are the same gesture.** There is no cadence for one and a
+cadence for the other; a point is written because a quote was fetched, and the
+quote was fetched because the point was due.
+
+When a position closes, its job leaves. Nothing keeps polling a symbol you no
+longer hold — and its gauges go with it, because a missing gauge is readable
+whereas a frozen one is not (see
+[Headless: the gauges](./headless-gauges.mdx)). Its *history* stays: the rebuild
+still needs it, and it is still part of your returns. That is the subject of
+[Rebuild and resolution](./rebuild-and-resolution.mdx).
+
+## A symbol that stops answering backs off
+
+A ticker can be misspelled, delisted, or replaced overnight. The job does not
+retry it every two minutes forever:
+
+* the first three unsuccessful cycles re-arm at the normal interval — a hiccup
+  should cost nothing;
+* from the fourth, the delay doubles each time, capped at 24 hours;
+* the counter resets to zero on the first successful write.
+
+A cycle that failed **because the market was closed** never counts. Closing is
+the normal state of an exchange, not a failure of a symbol.
+
+So a dead ticker settles at one request a day, and a symbol that was merely
+unreachable for ten minutes is back on its normal cadence as soon as it answers.
+
+## Terminal is not "not yet"
+
+This is the distinction the whole page exists for, because the two look identical
+on screen — a figure with no price behind it — and they mean opposite things.
+
+**Not yet arrived.** The rebuild has not reached that far back. The price is
+coming; the app says the figure is not computable *yet* rather than guessing a
+value for it. Nothing about the position is wrong, and nothing is asked of you.
+
+**Terminal.** The symbol's backward pass has walked, chunk by chunk, all the way
+to its first acquisition and stopped. It is done — including the case where it
+arrived having stored **zero points**, which is exactly what a delisted or
+mistyped symbol looks like. From that moment the missing price is **permanent**,
+not late, and the app stops emitting requests for it.
+
+The boundary between the two is the **rebuild's own watermark**, never the
+leading edge of the series. It is a real state the app holds, which is why it can
+be told to you rather than inferred from an empty chart.
+
+What changes once a symbol is terminal is that a held position with no price is
+valued at its own unit cost — its **carrying price** — instead of at zero or at
+its last execution price. That convention is stated on the figure that uses it;
+see [Read your figures](./read-your-figures.mdx).
+
+:::note Three states, not two
+A **failure to fetch** retries forever under the back-off above — it is a
+transport problem, and transport problems end.
+A **terminal rebuild** never retries — there is nothing left to ask for.
+A pair of currencies that **does not resolve** is a third thing: it is an
+*answer*, not a failure, and it is the one that asks you to act.
+:::
+
+## Conversion happens at write time
+
+Your figures are reported in one base currency; securities are quoted in
+whatever their exchange quotes them in. The conversion happens **when the point
+is written**, and the point stores three things side by side:
+
+| Stored on every point   |                                               |
+| ----------------------- | --------------------------------------------- |
+| the **native** price    | as quoted, in the security's own currency     |
+| the **converted** price | the same price, in your base currency         |
+| the **rate used**       | the one that turned the first into the second |
+
+Storing the rate rather than joining a rate table at read time is deliberate: the
+join is unaffordable at the volume of a price series, and eighteen bytes a row is
+cheaper than the query it removes. It also means a figure from three years ago
+can always be explained — the rate that produced it is still there.
+
+Two consequences worth knowing:
+
+* **A missing rate writes a `NULL` converted price rather than losing the quote.**
+  The lateral pass repairs it later. That is only viable because the pass exists;
+  it is not a hole you have to work around.
+* **A currency pair that never resolves is terminal too**, and distinct from a
+  fetch failure. It says so, with its reason, because a blank line with no
+  explanation asks the reader to guess.
+
+While your base currency is still unanswered, nothing is converted: prices are
+fetched and stored natively, the converted column stays empty, and no
+performance series is written at all — not zeros, not blanks. Answering the
+question **triggers the repair over everything already collected**, so nothing
+scraped in the meantime is lost.
+
+:::warning London pence
+Some London listings quote in `GBp` — pence, not pounds. They are normalised as
+`GBP ÷ 100`. A tracker that got this wrong would report those positions at a
+hundred times their value, and it would look plausible on the way past.
+:::
+
+Your *events*, by contrast, record the debit **in your base currency**. That is
+what keeps the cost basis exact instead of re-estimated from a historical rate,
+and it removes historical exchange rates from the past entirely: only prices are
+ever converted.
+
+## A price that stops moving
+
+A writer can fetch happily and still persist a value that never changes. Nothing
+fails, no counter rises, and the chart looks like a flat market.
+
+A freshness sonde rides the live write path for that case: when a stored price
+stays frozen across consecutive open-market cycles while the live quote moves, it
+raises `sb_price_staleness` and logs a warning. It watches the **native** price,
+never a converted one — a conversion that is waiting on a rate must not read as a
+stale quote.
+
+It is purely diagnostic. It never changes the cadence, the writing, or the
+back-off above.
