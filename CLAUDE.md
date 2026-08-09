@@ -470,9 +470,14 @@ The application runs independent scheduled jobs on a single APScheduler:
   `min(RESERVED + ceil(largest_cohort × 5 / 30), 50)` with `RESERVED` 3 — one
   figure since #711, there being one job set. `exchange_of` is captured by a pre-scheduler fetch
   (`capture_exchange_of`) only on the auto path.
-- **Ingestion**: Reloads portfolio events from files (default: every 300s) and
-  reconciles the per-symbol scrape jobs against the new symbol set (add / remove
-  / revive).
+- **Ingestion**: **not a job** (issue #697). It polled the drop folder every
+  300s because the files were the truth; the store is the truth now, so the
+  ledger only changes when a write changes it. Ingestion still happens — armed
+  by the boot and by the always-on drop-folder watcher — and each run
+  reconciles the per-symbol scrape jobs against the new symbol set (add /
+  remove / revive). A write through the API (forgetting an import) replays with
+  `import_files=False`: the ledger has just been changed by hand, and
+  re-scanning the folder would import the revoked file straight back.
 - **Backfill**: **bidirectional** (issue #626), every 60s, both passes run per
   share each cycle and are independent. **Backward** (pre-existing): oldest
   stored point → first `BUY`, one `SB_BACKFILL_CHUNK_DAYS` chunk per cycle,
@@ -507,13 +512,13 @@ Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
-│  SCRAPE  (per symbol,    │  │    INGESTION      │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │   (every 300s)    │  │   (every 60s)    │  │ (SB_PERF_INTERVAL) │
+│  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
+│  self-rescheduling)      │  │  (NOT a job)      │  │   (every 60s)    │  │ (SB_PERF_INTERVAL) │
 │                          │  │                   │  │                  │  │                    │
-│ • yfinance.Ticker()      │  │ • Load events CSV │  │ • Backward pass  │  │ • perf_should_run? │
-│ • marketState → cadence  │  │ • Recalc state    │  │ • Forward pass   │  │ • Recompute perf   │
-│ • REGULAR: poll & write  │  │ • Update shares[] │  │ • Chunk 1 yr/req │  │   series (opt-in   │
-│ • Closed: sleep to open  │  │ • Reconcile jobs  │  │ • Rate limit 10s │  │   accounts only)   │
+│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • perf_should_run? │
+│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │ • Recompute perf   │
+│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │   series (opt-in   │
+│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │   accounts only)   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -633,7 +638,7 @@ Events are **sorted by date** before processing, regardless of their order in fi
 All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use this to organize by year, broker, or account. **No filename has a special meaning** (issue #711).
 
 #### Caching
-Ingestion uses **file modification time (mtime)** to detect changes — of the event files *and* of `settings.yaml`, so an edited `accounts:` block is not hidden behind an unchanged events directory. If nothing changed, the published snapshot is reused unchanged (same object).
+Since #697 the ledger lives in the store and the files are no longer re-read on a timer, so there is nothing to poll and nothing to invalidate on a schedule: an import is triggered by the boot, by the always-on watcher, or by a write. `settings.yaml`'s `accounts:` block still joins the cache key, so editing it does not need a restart.
 
 #### Error Resilience
 If ingestion fails (invalid event, file error, `accounts:` malformed), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
@@ -653,7 +658,6 @@ If ingestion fails (invalid event, file error, `accounts:` malformed), the **pre
 | `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
 | `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
 | `SB_WEB_PORT` | `8080` | Port for the Flask web API and its `/health` route — the container healthcheck's only target (issue #651). Since #696 the probe **reaches the store**: "survive a database outage" has no subject once the database is a file this process opens (ADR-0015) |
-| `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
