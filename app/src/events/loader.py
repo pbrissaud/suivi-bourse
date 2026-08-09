@@ -102,6 +102,9 @@ class EventLoader:
 
             for row_num, row in enumerate(reader, start=2):
                 try:
+                    # start=2: row 1 is the header, so the number carried onto
+                    # the event is the one the user's editor shows them. It is
+                    # a display (issue #697), so it has to match what they see.
                     event = self._parse_row(row, file_path, row_num)
                     events.append(event)
                 except ValueError as e:
@@ -143,7 +146,8 @@ class EventLoader:
 
                 row = dict(zip(headers, row_values))
                 try:
-                    event = self._parse_row(row, file_path, row_num)
+                    event = self._parse_row(row, file_path, row_num,
+                                            sheet=sheet.title)
                     events.append(event)
                 except ValueError as e:
                     raise EventLoaderError(
@@ -152,8 +156,15 @@ class EventLoader:
         workbook.close()
         return events
 
-    def _parse_row(self, row: dict, file_path: Path, row_num: int) -> Event:
-        """Parse a row into an Event object."""
+    def _parse_row(self, row: dict, file_path: Path, row_num: int,
+                   sheet: Optional[str] = None) -> Event:
+        """Parse a row into an Event object.
+
+        ``sheet``/``row_num`` are carried onto the event as **displayable
+        provenance** (issue #697): a CSV has no sheet and leaves it ``None``, a
+        workbook names the tab the row came from. Neither is ever used to write
+        back — the store's primary key is what addresses a row.
+        """
         # Parse date
         date_value = row.get('date')
         if not date_value:
@@ -214,6 +225,8 @@ class EventLoader:
             amount=amount,
             notes=notes if notes else None,
             account=account if account else None,
+            source_sheet=sheet,
+            source_row=row_num,
         )
 
     def _parse_float(self, value, field_name: str) -> Optional[float]:
