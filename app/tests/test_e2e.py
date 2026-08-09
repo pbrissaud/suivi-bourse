@@ -19,11 +19,13 @@ gains a writer, the mock stays.
 No network is ever touched.
 """
 
+from pathlib import Path
+
 import pytest
 
+import ledger
 import main
 from main import ConfigurationManager, SuiviBourseMetrics
-from events.aggregator import AggregationError
 
 from datetime import datetime, timezone
 
@@ -251,12 +253,18 @@ def test_backfill_writes_historical_state_for_intermediate_date(
 # --------------------------------------------------------------------------- #
 # 3. Negative path: an over-selling CSV surfaces as AggregationError
 # --------------------------------------------------------------------------- #
-def test_oversell_csv_raises_aggregation_error_through_config_manager(tmp_path):
-    """A SELL exceeding holdings must propagate as AggregationError.
+def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
+    """A SELL exceeding holdings is caught, and the whole file is refused.
 
     The SELL is otherwise valid (positive quantity/unit_price) so it clears the
-    EventValidator and fails only at aggregation time -- proving the error is
-    an AggregationError, not an EventValidationError.
+    EventValidator and fails only at aggregation time -- proving the check that
+    stops it is the replay, not the row validator.
+
+    Since #697 the failure lands at the **import**: the import replays the
+    ledger it would make before it commits, so an oversell rolls the whole file
+    back. What the user gets is not an exception through ``load_shares`` but an
+    unchanged store — including the BUY on the line above the bad one, which is
+    the point of refusing a file whole.
     """
     bad_csv = (
         "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
@@ -265,5 +273,13 @@ def test_oversell_csv_raises_aggregation_error_through_config_manager(tmp_path):
     )
     config_manager = _config_with_default_source(tmp_path, csv_text=bad_csv)
 
-    with pytest.raises(AggregationError):
-        config_manager.load_shares()
+    assert config_manager.load_shares() == []
+
+    opened = config_manager._require_store()
+    assert ledger.read_events(opened) == []
+    assert ledger.list_imports(opened) == []
+
+    (outcome,) = ledger.sync_drop_folder(
+        opened, Path(config_manager.get_events_source()))
+    assert outcome.outcome == ledger.REFUSED
+    assert "Cannot sell" in outcome.error or "sell" in outcome.error.lower()

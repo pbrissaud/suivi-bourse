@@ -50,6 +50,14 @@ class _FakeConfigManager:
         self.named_unread = 0
         self.watcher_started_with = None
         self.watcher_stopped = False
+        # The store the ledger is read through (issue #697): handed in on the
+        # master's side of the fork and again, as the worker's own connection,
+        # on the far side. Recorded rather than used, so the boot's handling of
+        # it stays observable here.
+        self.attached = []
+
+    def attach_store(self, opened_store):
+        self.attached.append(opened_store)
 
     def reload(self, force=False):
         self.load_calls += 1
@@ -107,7 +115,7 @@ def _store_in_tmp(monkeypatch, tmp_path):
 def fake_config(monkeypatch):
     """Install a _FakeConfigManager as the one ``build_runtime`` constructs."""
     cfg = _FakeConfigManager()
-    monkeypatch.setattr(main, "ConfigurationManager", lambda: cfg)
+    monkeypatch.setattr(main, "ConfigurationManager", lambda **kwargs: cfg)
     return cfg
 
 
@@ -216,7 +224,8 @@ def test_build_runtime_skips_the_exporter_when_disabled(fake_config, monkeypatch
 def test_build_runtime_propagates_a_broken_config(monkeypatch):
     boom = EventValidationError("row 3: unknown event_type")
     monkeypatch.setattr(
-        main, "ConfigurationManager", lambda: _FakeConfigManager(load_error=boom))
+        main, "ConfigurationManager",
+        lambda **kwargs: _FakeConfigManager(load_error=boom))
 
     with pytest.raises(EventValidationError):
         main.build_runtime()
@@ -244,7 +253,8 @@ def test_create_app_exits_once_on_every_fatal_branch(
     so ``sys.exit(1)`` here reproduces exactly what the old ``__main__`` did.
     """
     monkeypatch.setattr(
-        main, "ConfigurationManager", lambda: _FakeConfigManager(load_error=error))
+        main, "ConfigurationManager",
+        lambda **kwargs: _FakeConfigManager(load_error=error))
     fatal = mocker.patch.object(main.app_logger, "fatal")
 
     with pytest.raises(SystemExit) as excinfo:
@@ -309,9 +319,12 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     # ingest() arms the per-symbol scrape jobs (#616), so it must land before the
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
-    # ... plus the three fixed-cadence interval jobs.
+    # ... plus the fixed-cadence interval jobs, of which there are now **two**:
+    # the ``ingest`` job left with SB_INGESTION_INTERVAL (issue #697). The
+    # ingestion still happens — it is the ``ingest()`` above and the always-on
+    # drop-folder watcher — but nothing polls the folder on a timer.
     assert {c.kwargs["id"] for c in scheduler.add_job.call_args_list} == \
-        {"ingest", "backfill", "perf"}
+        {"backfill", "perf"}
 
 
 def test_start_runtime_opens_the_workers_own_store(mocker, tmp_path):

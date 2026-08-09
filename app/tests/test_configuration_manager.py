@@ -46,20 +46,33 @@ def test_events_source_defaults_to_config_dir_events(tmp_path):
 
 
 def test_events_source_honours_settings_yaml(tmp_path):
-    """settings.yaml's events block still says where to read and whether to watch."""
+    """settings.yaml's events block still says *where* the drop folder is."""
     src = str(tmp_path / "my_events")
-    _write_settings(tmp_path, f"events:\n  source: {src}\n  watch: true\n")
+    _write_settings(tmp_path, f"events:\n  source: {src}\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     assert cm.get_events_source() == src
-    assert cm._watch_enabled is True
 
 
 def test_events_source_defaults_when_settings_omits_source(tmp_path):
     """A settings.yaml without a source falls back to <config_dir>/events."""
-    _write_settings(tmp_path, "events:\n  watch: false\n")
+    _write_settings(tmp_path, "events:\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     assert cm.get_events_source() == str(tmp_path / "events")
-    assert cm._watch_enabled is False
+
+
+def test_the_watch_dial_is_gone_and_a_stale_one_is_ignored(tmp_path):
+    """``events.watch`` has no heir and no reader (issue #697).
+
+    The folder is watched always: dropping a file is how a headless install
+    imports, and a dial on that would be a dial on whether the product works
+    without a UI. A v4 settings.yaml that still carries ``watch: false`` must
+    therefore not be able to switch it off — the value is not read at all.
+    """
+    _write_settings(tmp_path, "events:\n  watch: false\n")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm.get_events_source()
+
+    assert not hasattr(cm, "_watch_enabled")
 
 
 # --------------------------------------------------------------------------- #
@@ -96,41 +109,53 @@ def test_nothing_is_named_when_there_is_no_legacy_file(tmp_path, mocker):
 # --------------------------------------------------------------------------- #
 # _compute_cache_key
 # --------------------------------------------------------------------------- #
-def test_cache_key_reflects_event_file_mtimes(tmp_path, events_dir):
-    """The key references the event files and their mtimes."""
+def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
+    """The key fingerprints the **store** now (issue #697).
+
+    Its subject moved with the truth. An mtime key described the files, which
+    are no longer what a snapshot is built from — so a key that still named
+    them would invalidate on a ``touch`` and miss a re-drop that changed
+    content under an older timestamp.
+    """
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_events_source()  # populate _events_source
+    cm.load_shares()
 
     key = cm._compute_cache_key()
     assert key is not None
-    assert str(events_dir / "2024.csv") in key
+    assert str(events_dir / "2024.csv") not in key
+    assert "ledger:" in key
 
 
-def test_cache_key_changes_when_file_mtime_changes(tmp_path, events_dir):
-    """Touching an event file to a new mtime changes the cache key."""
+def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
+    """A touch changes nothing; a changed line changes the key."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_events_source()
-
+    cm.load_shares()
     key_before = cm._compute_cache_key()
 
     csv_file = events_dir / "2024.csv"
     st = csv_file.stat()
     os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
+    cm.reload()
+    assert cm._compute_cache_key() == key_before
 
-    key_after = cm._compute_cache_key()
-    assert key_before != key_after
+    csv_file.write_text(
+        csv_file.read_text(encoding="utf-8").replace(
+            "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
+        encoding="utf-8")
+    cm.reload()
+    assert cm._compute_cache_key() != key_before
 
 
-def test_cache_key_none_when_events_source_missing(tmp_path):
-    """No events directory and no settings.yaml yields a None key (nothing to hash)."""
+def test_cache_key_none_when_the_ledger_is_empty(tmp_path):
+    """Nothing imported and no settings.yaml yields a None key."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.get_events_source()
-    # <config_dir>/events was never created.
+    # <config_dir>/events was never created, so nothing was ever imported.
     assert cm._compute_cache_key() is None
 
 
 # --------------------------------------------------------------------------- #
-# Caching contract of _load_from_events (real loader/validator/aggregator run)
+# Caching contract of _load_from_store (real loader/validator/aggregator run)
 # --------------------------------------------------------------------------- #
 def test_events_load_produces_expected_shares(tmp_path, events_dir):
     """The real events pipeline runs and yields AAPL + MSFT shares."""
@@ -160,20 +185,25 @@ def test_force_reload_bypasses_cache(tmp_path, events_dir):
     assert forced == first
 
 
-def test_file_change_invalidates_cache(tmp_path, events_dir):
-    """A changed file mtime invalidates the cache on the next (non-forced) load."""
+def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
+    """A corrected file replaces its rows, so the next load rebuilds."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     first = cm.load_shares()
+    aapl_before = next(s for s in first if s["symbol"] == "AAPL")
 
-    # Simulate an edit by bumping the file's mtime so the cache key differs.
     csv_file = events_dir / "2024.csv"
-    st = csv_file.stat()
-    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
+    csv_file.write_text(
+        csv_file.read_text(encoding="utf-8").replace(
+            "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
+        encoding="utf-8")
 
     second = cm.load_shares()
-    assert second is not first  # reloaded because the key changed
-    assert second == first      # same content (file body unchanged)
+    assert second is not first
+    aapl_after = next(s for s in second if s["symbol"] == "AAPL")
+    # Replaced, not doubled: 10 BUY + 5 BUY + 1 GRANT - 3 SELL = 13 became 14.
+    assert aapl_before["estate"]["quantity"] == 13.0
+    assert aapl_after["estate"]["quantity"] == 14.0
 
 
 # --------------------------------------------------------------------------- #
@@ -236,16 +266,12 @@ def test_current_publishes_on_first_use_and_then_returns_the_same_object(tmp_pat
     assert first.cache_key is not None
 
 
-def test_snapshot_is_swapped_whole_when_files_change(tmp_path, events_dir):
+def test_snapshot_is_swapped_whole_when_the_ledger_changes(tmp_path, events_dir):
     """A reload replaces the snapshot; it never edits the published one."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
     before = cm.current()
-    csv_file = events_dir / "2024.csv"
-    st = csv_file.stat()
-    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
-
-    after = cm.reload()
+    after = cm.reload(force=True)
     assert after is not before
     assert after.shares == before.shares
     # The old snapshot is untouched — whoever still holds it holds a whole,
@@ -269,13 +295,13 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
 
     # Make the rebuild slow enough that the reader is guaranteed to observe the
     # window during which the candidate is being assembled.
-    real_load = cm._load_from_events
+    real_load = cm._load_from_store
 
-    def slow_load(accounts):
+    def slow_load(opened_store, accounts):
         time.sleep(0.005)
-        return real_load(accounts)
+        return real_load(opened_store, accounts)
 
-    cm._load_from_events = slow_load
+    cm._load_from_store = slow_load
 
     observations = []
     stop = threading.Event()
@@ -317,22 +343,20 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
 
     The rejection is a refused *ledger* since #696 — the schema that checked the
     aggregated share list left with Cerberus — and the assertion is unchanged,
-    because it was never about which check said no.
+    because it was never about which check said no. Since #697 the refusal is
+    reached with ``force``: the ledger's own fingerprint is what invalidates a
+    snapshot now, and this test is about the rebind, not about the key.
     """
     cm = ConfigurationManager(config_dir=str(tmp_path))
     published = cm.current()
 
-    csv_file = events_dir / "2024.csv"
-    st = csv_file.stat()
-    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
-
-    def _refuse(accounts):
+    def _refuse(opened_store, accounts):
         raise EventValidationError("row 4: SELL of 40 with 18 owned")
 
-    cm._load_from_events = _refuse
+    cm._load_from_store = _refuse
 
     with pytest.raises(EventValidationError):
-        cm.reload()
+        cm.reload(force=True)
 
     # Every read path — not just the one ingest() used to guard — still sees the
     # previous generation, and sees the *same* object.
@@ -346,10 +370,10 @@ def test_nothing_is_published_when_the_first_build_fails(tmp_path):
     """A candidate that raises leaves ``_config`` untouched — here, at ``None``."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
-    def _refuse(accounts):
+    def _refuse(opened_store, accounts):
         raise EventValidationError("row 2: unknown event_type")
 
-    cm._load_from_events = _refuse
+    cm._load_from_store = _refuse
 
     with pytest.raises(EventValidationError):
         cm.reload()

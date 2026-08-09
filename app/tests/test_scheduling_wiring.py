@@ -428,11 +428,13 @@ def test_register_interval_jobs_registers_perf_at_its_own_interval(
     scheduler = mocker.MagicMock(spec=BackgroundScheduler)
 
     register_interval_jobs(
-        scheduler, m, ingestion_interval=300, backfill_interval=60,
-        perf_interval=90)
+        scheduler, m, backfill_interval=60, perf_interval=90)
 
     by_id = {c.kwargs["id"]: c for c in scheduler.add_job.call_args_list}
-    assert set(by_id) == {"ingest", "backfill", "perf"}
+    # Two, not three: the ``ingest`` job left with SB_INGESTION_INTERVAL
+    # (issue #697). The replay follows the write now, so there is no cadence
+    # for it to be registered at.
+    assert set(by_id) == {"backfill", "perf"}
     perf = by_id["perf"]
     # perf is an interval job at SB_PERF_INTERVAL, bound to recompute_perf.
     assert perf.args[0].__func__ is SuiviBourseMetrics.recompute_perf

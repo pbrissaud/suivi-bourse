@@ -17,9 +17,9 @@ from datetime import date
 
 import pytest
 
+import ledger
 from events import EventAggregator, EventLoader, EventValidator, Portfolio, Account
 from events.schemas import Event, EventType, ShareState, DEFAULT_ACCOUNT
-from events.validator import EventValidationError
 from main import ConfigurationManager
 
 
@@ -255,7 +255,14 @@ def test_events_pipeline_without_accounts_uses_default(tmp_path):
     assert shares[0]["estate"]["quantity"] == 15  # 10 (PEA) + 5 (CTO) merged
 
 
-def test_events_pipeline_missing_account_raises_when_declared(tmp_path):
+def test_events_file_missing_an_account_is_refused_whole(tmp_path):
+    """The rejection moved from the load to the **import** (issue #697).
+
+    Both rows are refused, not just the second: an import is all-or-nothing, so
+    a file with one bad line never half-loads a portfolio (#695 user story 9).
+    The exception no longer reaches ``load_shares`` because nothing invalid ever
+    entered the store — the ledger the snapshot is published from is whole.
+    """
     _write(tmp_path / "settings.yaml", _SETTINGS_TWO_ACCOUNTS)
     d = tmp_path / "events"
     d.mkdir()
@@ -266,11 +273,21 @@ def test_events_pipeline_missing_account_raises_when_declared(tmp_path):
            "2024-01-16,BUY,AAPL,Apple Inc,5,160.00,1.00,,,\n")
 
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    with pytest.raises(EventValidationError, match="account is required"):
-        cm.load_shares()
+    assert cm.load_shares() == []
+
+    opened = cm._require_store()
+    assert ledger.read_events(opened) == []
+    assert ledger.list_imports(opened) == []
+
+    # And the app says why, which is the other half of the user story.
+    (outcome,) = ledger.sync_drop_folder(
+        opened, d, account_ids={"PEA", "CTO"})
+    assert outcome.outcome == ledger.REFUSED
+    assert "account is required" in outcome.error
 
 
-def test_events_pipeline_unknown_account_raises_when_declared(tmp_path):
+def test_events_file_naming_an_unknown_account_is_refused_whole(tmp_path):
+    """A typo'd account is refused, and the message names what is declared."""
     _write(tmp_path / "settings.yaml", _SETTINGS_TWO_ACCOUNTS)
     d = tmp_path / "events"
     d.mkdir()
@@ -279,8 +296,15 @@ def test_events_pipeline_unknown_account_raises_when_declared(tmp_path):
            "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,,LIVRETA\n")
 
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    with pytest.raises(EventValidationError, match="not a declared account id"):
-        cm.load_shares()
+    assert cm.load_shares() == []
+
+    opened = cm._require_store()
+    assert ledger.read_events(opened) == []
+
+    (outcome,) = ledger.sync_drop_folder(
+        opened, d, account_ids={"PEA", "CTO"})
+    assert outcome.outcome == ledger.REFUSED
+    assert "not a declared account id" in outcome.error
 
 
 # --------------------------------------------------------------------------- #
