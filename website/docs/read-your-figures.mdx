@@ -88,7 +88,7 @@ your transfers, and it is zero for anyone whose broker moves money for free.
 
 ### Latent gain {#latent-gain}
 
-What your holdings are worth today, minus what they cost you.
+What your positions are worth today, minus what they cost you.
 
 It covers the shares you still hold, and only those: the market value of the
 quantity you own, less the cost of that same quantity ([weighted
@@ -98,7 +98,7 @@ It is not money you have. It becomes money only when you sell, at which point it
 stops being latent and becomes [realized](#realized-gain) — the two never count
 the same shares at the same time.
 
-A holding whose price the app could never fetch is [carried at its
+A position whose price the app could never fetch is [carried at its
 cost](#carrying-price), and its latent gain is then exactly zero rather than a
 loss.
 
@@ -155,7 +155,7 @@ It left your pocket, so it is counted.
 
 ## Time-weighted return {#twr}
 
-**Time-weighted return: how the holdings themselves performed, independent of
+**Time-weighted return: how the positions themselves performed, independent of
 your deposits.**
 
 It is an index on base 100 over the period shown: 100 at the start, and what a
@@ -192,9 +192,9 @@ ever paid in there is no schedule to solve, and the app leaves the figure
 one as under the time-weighted return, deliberately: both rates are read off the
 dates you recorded, and the two are far more often misread together than apart.
 
-## A holding with no price {#carrying-price}
+## A position with no price {#carrying-price}
 
-A holding whose price the app could never obtain is **valued at its own cost** —
+A position whose price the app could never obtain is **valued at its own cost** —
 not at the price of your last transaction, and not at zero.
 
 The rule is keyed to the absence of a price and never to a calendar. A market
@@ -213,7 +213,7 @@ being rebuilt behind a symbol, nothing is carried at cost: the figure says it is
 waiting instead (see [below](#absence)). Confusing the two would turn "not yet"
 into "never", permanently.
 
-A holding valued this way carries no badge of its own. The em dash where its
+A position valued this way carries no badge of its own. The em dash where its
 price would be is already the whole signal, and after a rebuild the case is
 common enough that a marker on every such line would be noise across the page
 rather than information.
