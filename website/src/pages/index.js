@@ -19,11 +19,13 @@ function HomepageHeader() {
             The call to action points at the guide, which is one command and one
             screen. `onBrokenLinks: 'throw'` checks this target like any other
             link, so it dies with the page it names — which is what it did to
-            /docs/intro/getting-started.
+            /docs/intro/getting-started. It carries the version segment for the
+            same reason every other link does (ADR-0025): /docs is now a
+            redirect, not a route.
           */}
           <Link
             className="button button--secondary button--lg"
-            to="/docs/get-started">
+            to="/docs/v5/get-started">
             Get started — one command ⏱️
           </Link>
         </div>
@@ -44,9 +46,16 @@ function HomepageHeader() {
 
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
+  /*
+    The `title` below is the document's <title>: the browser tab, the search
+    result and the OpenGraph card of the product's front page. Docusaurus
+    renders it as `<title> | Suivi Bourse`, so it says what the product does
+    rather than repeating its name — the scaffold's "Hello from Suivi Bourse"
+    greeted the reader and described nothing.
+  */
   return (
     <Layout
-      title={`Hello from ${siteConfig.title}`}
+      title="Track your portfolio"
       description={siteConfig.tagline}>
       <HomepageHeader />
       <main>
