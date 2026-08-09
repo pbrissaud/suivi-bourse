@@ -37,6 +37,17 @@ class Event:
 
     ``symbol``/``name`` are Optional because cash events (DEPOSIT/WITHDRAWAL)
     carry no share.
+
+    The last four fields are **provenance, and provenance is a display** (issue
+    #697, spec #695 § 6). ``(source_id, source_sheet, source_row)`` are the
+    store's own columns and exist to say *"row 14 of 2024.csv"*; they are never
+    an address to write back to. What made #662's opaque token an address was
+    that the *file* was the address — in the store a row has a primary key,
+    which does not go stale, so nothing here needs to survive an edit.
+
+    ``source_filename`` is the one derived field: it is joined on at read time
+    (:func:`ledger.read_events`) so that whoever holds an event can render its
+    provenance without going back to the store for the name.
     """
     date: date
     event_type: EventType
@@ -48,6 +59,10 @@ class Event:
     amount: Optional[float] = None
     notes: Optional[str] = None
     account: Optional[str] = None
+    source_id: Optional[int] = None
+    source_sheet: Optional[str] = None
+    source_row: Optional[int] = None
+    source_filename: Optional[str] = None
 
     def __post_init__(self):
         # Convert string event_type to enum if needed

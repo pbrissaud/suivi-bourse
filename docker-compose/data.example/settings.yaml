@@ -10,9 +10,9 @@ events:
   # events/ folder next to this file — no need to set it.
   # source: /home/appuser/.config/SuiviBourse/events/
 
-  # Reload the portfolio as soon as an event file changes, instead of waiting
-  # for the next ingestion cycle (SB_INGESTION_INTERVAL).
-  watch: true
+  # The folder is watched **always** since v5 — dropping a file is how a
+  # headless install imports, so there is no dial for it and `watch:` is no
+  # longer read.
 
 # Accounts are opt-in. Declaring them turns on the per-account performance
 # series (account_metrics / portfolio_totals) and makes the `account` column
