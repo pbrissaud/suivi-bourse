@@ -1,0 +1,159 @@
+---
+title: Settings
+description: The dials that live in the store, the base currency, and the six boot variables
+---
+
+Two halves, one page. The line between them is not *infrastructure on one side,
+preferences on the other* — that is an intention, and it decides nothing about a
+metrics port. The line is a test you can apply name by name:
+
+> What stays in the environment is what the process must know **before** it can
+> open the store. Everything else lives in the store.
+
+## What you set in the app
+
+The dials live in the store and **nowhere else**. There is no environment form
+for them, no precedence rule, no seed on first boot, no settings file: exactly
+one place says what a setting is worth, and that place is the one the app shows
+you. A key that has never been written is not a hole — it reads as the default
+written in the code, which is what lets a later version add a dial without
+migrating anything.
+
+**None of them requires a restart.** A dial that would have needed one was
+deleted rather than moved, so the settings form has a single class of field.
+
+| Dial                  | Default | What it decides                                                            |
+| --------------------- | ------- | -------------------------------------------------------------------------- |
+| `base_currency`       | *none*  | the currency every figure is reported in                                   |
+| `regular_interval`    | `120`   | seconds between two polls of a symbol whose market is open                 |
+| `backfill_interval`   | `60`    | seconds between two runs of the rebuild job                                |
+| `backfill_delay`      | `10`    | seconds of politeness between two requests to Yahoo! Finance               |
+| `backfill_chunk_days` | `365`   | days of history fetched per request                                        |
+| `staleness_horizon`   | `900`   | seconds before a frozen price is reported as stale; `0` disables the check |
+
+That is the whole list. You turn them on the installation panel of the app, or
+with one call on the write API, which is always served — see
+[Headless: the gauges](./headless-gauges.mdx).
+
+### The base currency
+
+It is the one setting with **no default**, and the only thing the app ever asks
+you. It has no default on purpose: a default would silently interpret every
+amount you have already recorded, so *not answered yet* and *answered* have to
+stay two different states.
+
+It is **changeable while your ledger is empty and fixed from your first event**.
+With no event there is no held symbol and therefore no stored price, so nothing
+has been interpreted and nothing can be reinterpreted; what is unrecoverable is
+reinterpreting amounts, never answering late or thinking again beforehand.
+
+Until it is answered, nothing refuses: prices are still fetched in their native
+currency, nothing is converted, and no performance figure is written at all —
+not zeros, not blanks. The app says so on screen rather than showing you a
+number it cannot justify. An import that declares its own currency **sets** it,
+which is what lets a headless install answer the question without a single call.
+
+### Two of these are not decorative
+
+**Changing `regular_interval` reaches only the symbols whose market is open
+right now.** Each symbol schedules its own next poll; a symbol whose market is
+closed is asleep until it reopens and reads the new value when it wakes. So the
+change is not portfolio-wide the instant you save it, and nothing is broken when
+it is not.
+
+**It also rescales, retroactively, the back-off of a symbol that is already
+failing.** When a symbol stops returning a usable price, the wait between
+attempts grows as a *multiple of this interval* — `regular_interval × 2^(n−3)`
+after the third consecutive failure, capped at 24 hours — rather than as an
+absolute delay stored somewhere. Lowering the interval therefore shortens the
+wait of a symbol that has been silent since this morning, and raising it
+lengthens it. No interface can hide that, because the number in the form is the
+number in the formula. [How prices are collected](./how-prices-are-collected.mdx)
+has the rest of the back-off.
+
+## What the container imposes
+
+Six names. This is the complete list of what the app reads from its
+environment; nothing else in it is consulted.
+
+| Variable                | Default   | What it decides                            |
+| ----------------------- | --------- | ------------------------------------------ |
+| `SB_STORE_DIR`          | `/data`   | the directory the store lives in           |
+| `SB_IMPORT_DIR`         | `/import` | the directory the drop folder is read from |
+| `SB_WEB_PORT`           | `8080`    | the port the app and its API are served on |
+| `SB_METRICS_PORT`       | `8081`    | the port `/metrics` is served on           |
+| `SB_PROMETHEUS_ENABLED` | `true`    | whether `/metrics` is mounted at all       |
+| `LOG_LEVEL`             | `INFO`    | how loudly the app logs                    |
+
+* **The two paths are directories, never files.** The app names its own store
+  file inside the one and reads whatever it finds in the other. That removes the
+  entire class of mistake where you point at a file whose parent directory is
+  not mounted.
+* **The defaults describe the container**, and it is the deployment *without*
+  Docker that overrides them — see
+  [Install without Docker](./install-without-docker.mdx). A plain `docker run`
+  sets none of these.
+* **A blank value counts as unset.** An undefined substitution renders as an
+  empty string, and an empty string is not an answer.
+* **The two ports pass the test twice.** They are read in the server's master
+  process before the app is even imported, so they cannot come from the store;
+  and a port changed from the interface would cut the connection the interface
+  arrived by. That is a nature, not only a sequence.
+* **`LOG_LEVEL` is here because the most likely failure of this app is the store
+  failing to open**, and a log level kept inside the store cannot report that.
+* **No secret lives in the environment any more.** There was exactly one, the
+  database token, and it has no subject left.
+
+## There is no switch that turns the page off
+
+Running headless is a **usage, not a setting**. There is no variable that
+disables the interface, and there will not be one: an install that publishes
+only the metrics port and never opens the other is a full install, not a variant
+to maintain. What an operator stops serving is the page — **never the API**,
+which is the only non-interactive way to post the base currency.
+
+`SB_PROMETHEUS_ENABLED` looks like a counter-example and is not. It decides a
+**socket to bind**, and the list of sockets is fixed when the server starts, so
+it has to be answered before the store is open. Set it to `false` and
+`SB_METRICS_PORT` is simply never bound. The page has no port of its own — it is
+served on the API's — so there is nothing equivalent to turn off.
+
+## What version 4 said, and is no longer read
+
+Every `SB_*` or `INFLUXDB_*` variable that is present in the environment and is
+not one of the six above is **named at start-up and never obeyed**. It produces
+**one grouped notice**, not one line per variable, saying which names were found
+and that these settings now live in the app. The list is computed — what is
+present, minus the six boot variables, minus the dials — so it cannot drift out
+of date the way a hard-coded list of names would.
+
+| No longer read             | Where it lives now                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `SB_REGULAR_INTERVAL`      | the `regular_interval` dial                                                                                                         |
+| `SB_BACKFILL_INTERVAL`     | the `backfill_interval` dial                                                                                                        |
+| `SB_BACKFILL_DELAY`        | the `backfill_delay` dial                                                                                                           |
+| `SB_BACKFILL_CHUNK_DAYS`   | the `backfill_chunk_days` dial                                                                                                      |
+| `SB_STALENESS_HORIZON`     | the `staleness_horizon` dial                                                                                                        |
+| `SB_INGESTION_INTERVAL`    | nowhere — there is no polling left: a replay follows the write that changed the ledger, and the drop folder is watched with no dial |
+| `SB_SCRAPING_INTERVAL`     | nowhere — already deprecated in version 4, and its heir is a dial                                                                   |
+| `SB_PERF_INTERVAL`         | nowhere — the performance series is recomputed when something changed, not on a clock                                               |
+| `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic                                                                                                |
+| `SB_EXECUTOR_POOL`         | nowhere — same reason; it was the one dial that needed a restart, so it was deleted rather than moved                               |
+| `SB_CONFIG_MODE`           | nowhere — there is one mode, and files are no longer the truth                                                                      |
+| `INFLUXDB_HOST`            | nowhere — the store is embedded                                                                                                     |
+| `INFLUXDB_TOKEN`           | nowhere — the app has no secret to be given                                                                                         |
+| `INFLUXDB_DATABASE`        | nowhere — same reason                                                                                                               |
+
+`SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID` and `SB_GID` are a different case
+again: they carry the prefix but were **never read by the app**. They belonged
+to the Compose file, and the Compose file is gone. They are not in the notice,
+because naming them there would suggest the app once obeyed them.
+
+:::note There is no `.env.example`
+This inventory has two readers — this page and the app — and one source. A file
+of example variables would be a third writer of the same list, and the one
+nobody re-reads at release time.
+:::
+
+Coming from a version 4 install? [Coming from v4](./coming-from-v4.mdx) covers
+what to do with the rest of it.
