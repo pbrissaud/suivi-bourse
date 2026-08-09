@@ -37,6 +37,14 @@ const ACK = new Set((input && input.acknowledgedRouting) || [])
 // prévu, pas une dérive silencieuse.
 const ACK_UNMET = new Set((input && input.acknowledgedUnmet) || [])
 
+// **La fusion n'est pas le travail d'un agent.** Six tentatives de merge par
+// sous-agent ont été arrêtées : écrire dans une branche d'intégration partagée
+// et publique est un geste qui mérite un humain, et le harnais a raison de le
+// dire. Le workflow s'arrête donc sur « vérifié, prêt à fusionner » et rend les
+// commandes. `merge: true` restaure l'ancien comportement pour un dépôt où ça
+// ne pose pas de question.
+const MERGE = !!(input && input.merge)
+
 const unmetCriteria = (impl) => (impl.criteria || []).filter(
   c => c.status === 'partial' ||
        c.status === 'not_met' ||
@@ -439,10 +447,11 @@ const results = await pipeline(
 )
 
 // ---------------------------------------------------------------- intégrer, en série
-phase('Intégrer')
+phase(MERGE ? 'Intégrer' : 'Conclure')
 
 const merged = []
 const held = []
+const ready = []   // vérifié, prêt à fusionner par un humain
 const routed = []   // défauts appartenant à un autre ticket de la carte
 
 for (const r of results.filter(Boolean)) {
@@ -528,6 +537,20 @@ for (const r of results.filter(Boolean)) {
     continue
   }
 
+  if (!MERGE) {
+    ready.push({
+      issue,
+      branch: impl.branch,
+      worktree: impl.worktree_path,
+      gates: impl.gates.map(g => g.cmd),
+      flagged: impl.flagged,
+      fixed: fix ? fix.fixed : [],
+      summary: impl.summary,
+    })
+    log(`#${issue} vérifié et prêt : ${impl.branch}`)
+    continue
+  }
+
   const out = await agent(mergePrompt(issue, impl), {
     label: `merge:#${issue}`,
     phase: 'Intégrer',
@@ -558,14 +581,17 @@ for (const r of results.filter(Boolean)) {
   }
 }
 
-log(`Vague terminée — ${merged.length} fusionné(s), ${held.length} retenu(s), ${routed.length} défaut(s) à router`)
+log(`Vague terminée — ${ready.length} prêt(s), ${merged.length} fusionné(s), ${held.length} retenu(s), ${routed.length} à router`)
 
 return {
   base: BASE,
   wave: WAVE,
   merged,
+  ready,
   held,
   routed,
+  merge_commands: ready.map(r =>
+    `git switch ${BASE} && git merge --no-ff ${r.branch} -m "feat: <sujet> (#${r.issue})"`),
   details: results.filter(Boolean).map(r => ({
     issue: r.issue,
     branch: r.impl && r.impl.branch,

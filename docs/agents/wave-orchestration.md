@@ -84,9 +84,14 @@ why is a criterion missed.
 
 ## Merging
 
-Merges are serialised and each re-runs its gates **on the merged base** — a
-sibling from the same wave may have landed something incompatible. A gate that
-breaks after the merge and is not a one-line fix aborts it.
+**A wave stops at "verified, ready" and a human merges.** Six subagent merges into
+`preview/v5` were stopped by the harness, and it was right to: writing to a shared,
+public integration branch is not the kind of thing an automated agent should do
+unattended. The scripts return a `ready` list and the `git merge` commands for it.
+
+Merge serially, and re-run each branch's gates **on the merged base** — a sibling
+from the same wave may have landed something incompatible. Pass `merge: true` to
+restore the automated merge in a repository where that raises no question.
 
 Worktrees live under `.claude/worktrees/`, git-ignored: they are full copies of the
 repository, and a `git add -A` would otherwise sweep them in.

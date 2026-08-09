@@ -22,6 +22,10 @@ const ITEMS = (input && input.items) || []
 // tickets acquittés.
 const ACK = new Set((input && input.acknowledgedRouting) || [])
 
+// Même règle que `v5-wave.js` : la fusion n'est pas le travail d'un agent. Le
+// workflow s'arrête sur « réparé, re-vérifié, prêt » et rend les commandes.
+const MERGE = !!(input && input.merge)
+
 if (!ITEMS.length) {
   log(`Rien à réparer — args reçu : ${JSON.stringify(args)}`)
   return { merged: [], held: [], error: 'items vide' }
@@ -255,10 +259,11 @@ const results = await pipeline(
   }
 )
 
-phase('Intégrer')
+phase(MERGE ? 'Intégrer' : 'Conclure')
 
 const merged = []
 const held = []
+const ready = []   // réparé et re-vérifié, prêt à fusionner par un humain
 const routed = []
 
 for (const r of results.filter(Boolean)) {
@@ -315,6 +320,20 @@ for (const r of results.filter(Boolean)) {
     continue
   }
 
+  if (!MERGE) {
+    ready.push({
+      issue: it.issue,
+      branch: it.branch,
+      worktree: it.worktree,
+      gates: rep.gates.map(g => g.cmd),
+      addressed: rep.addressed,
+      declined: rep.declined,
+      summary: rep.summary,
+    })
+    log(`#${it.issue} réparé, re-vérifié et prêt : ${it.branch}`)
+    continue
+  }
+
   const out = await agent(mergePrompt(it, rep), {
     label: `merge:#${it.issue}`,
     phase: 'Intégrer',
@@ -335,13 +354,16 @@ for (const r of results.filter(Boolean)) {
   }
 }
 
-log(`Réparation terminée — ${merged.length} fusionné(s), ${held.length} retenu(s), ${routed.length} à router`)
+log(`Réparation terminée — ${ready.length} prêt(s), ${merged.length} fusionné(s), ${held.length} retenu(s), ${routed.length} à router`)
 
 return {
   base: BASE,
   merged,
+  ready,
   held,
   routed,
+  merge_commands: ready.map(r =>
+    `git switch ${BASE} && git merge --no-ff ${r.branch} -m "feat: <sujet> (#${r.issue})"`),
   details: results.filter(Boolean).map(r => ({
     issue: r.it.issue,
     branch: r.it.branch,
