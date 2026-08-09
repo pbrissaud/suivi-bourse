@@ -136,3 +136,16 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
+
+      # `pnpm build` never opens crowdin.yml, and a YAML parser is not a
+      # substitute: the Crowdin CLI compiles each source pattern into a regex,
+      # so `*.{md,mdx}` — valid YAML, valid shell — is refused at upload time
+      # with `Illegal repetition`, and the whole corpus silently never reaches
+      # the project. This is the only gate that runs the tool that consumes the
+      # file. It reads the file alone, over no network, so the placeholder
+      # credentials baked into the script are the honest shape here — no secret
+      # is needed and a fork's pull request is checked like any other.
+      - name: Lint the Crowdin configuration if the site changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: pnpm crowdin:lint

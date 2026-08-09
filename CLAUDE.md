@@ -151,6 +151,13 @@ catalogues, which `.gitignore` keeps out of the repository as well. `editUrl`
 splits by locale — GitHub for English, Crowdin otherwise — since a pull request
 on a French file is lost at the next import.
 
+**`pnpm crowdin:lint` runs the tool that consumes `crowdin.yml`, and `pnpm
+build` never opens it.** The CLI compiles each `source:` into a regex, so
+`'/docs/**/*.{md,mdx}'` — valid YAML, valid shell — is refused with `Illegal
+repetition` (`{` opens a quantifier); Crowdin has no brace expansion, hence
+**one extension per entry**. Checking the file with a YAML parser passes it, and
+the symptom is an upload that carries nothing.
+
 The cost no configuration removes: Docusaurus falls back to the source for an
 **untranslated** string, never for a translated one whose source moved, so a
 superseded French rule can be served. It is written in `website/README.md`
@@ -164,6 +171,7 @@ pnpm start    # Development server (no /docs redirect — see above)
 pnpm build    # Production build, every locale (fails on broken links)
 pnpm build --locale fr   # French alone — still builds with no translation file
 pnpm write-translations  # Refresh the English sources Crowdin uploads
+pnpm crowdin:lint        # Validate crowdin.yml with the Crowdin CLI
 ```
 
 ### Docker Compose (in `docker-compose/` directory)

@@ -41,8 +41,18 @@ preserve_hierarchy: true
 # regenerating them before an upload is what keeps the navbar and this pipeline
 # in step. Nothing under `i18n/fr/` is written by hand: it is Crowdin's output,
 # landing here through an import.
+#
+# **One extension per entry, never a brace list.** Crowdin's globs are not a
+# shell's: the CLI compiles a source pattern into a regex, and `*.{md,mdx}`
+# becomes `.+\.{md,mdx}`, where `{` opens a repetition quantifier and the whole
+# file is refused — `❌ Illegal repetition near index 5`. The failure is *at
+# the tool*, not in the YAML, which is why `pnpm crowdin:lint` exists and is a
+# gate: a YAML parser reads this file happily and Crowdin then uploads nothing.
 files:
-  - source: '/docs/**/*.{md,mdx}'
+  - source: '/docs/**/*.md'
+    translation: '/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current/**/%original_file_name%'
+
+  - source: '/docs/**/*.mdx'
     translation: '/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current/**/%original_file_name%'
 
   - source: '/i18n/en/code.json'

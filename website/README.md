@@ -73,6 +73,24 @@ page once its English text has settled, never while it is being written. That
 is why translation starts at v5 rather than before it — translating the v4
 corpus would have translated the 16 255 words the rewrite deletes.
 
+### `crowdin.yml` is checked by Crowdin, never by a YAML parser
+
+```
+$ pnpm crowdin:lint
+```
+
+The CLI compiles every `source:` pattern into a **regex**, so a glob that is
+valid YAML and valid shell can still be refused: `'/docs/**/*.{md,mdx}'` becomes
+`.+\.{md,mdx}` and dies on `Illegal repetition`, because `{` opens a repetition
+quantifier. Crowdin has no brace expansion — **one extension per entry**. The
+failure is invisible to `pnpm build`, which never opens this file, and its
+symptom at upload time is an empty project rather than an error anyone reads.
+
+The lint reads the file alone and calls nothing, so the script supplies
+placeholder credentials when the real ones are absent; it validates the
+configuration, never the token. CI runs it on every pull request touching
+`website/`.
+
 [crowdin]: https://crowdin.com/project/suivi-bourse-docs
 [cli]: https://crowdin.github.io/crowdin-cli/
 
