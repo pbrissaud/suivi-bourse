@@ -33,6 +33,14 @@ cd app && uv run flake8 src/ --ignore=E501
 cd app && uv run pytest tests/            # add --cov=src for coverage
 ```
 
+The v5 seam is **a real store in `tmp_path` with a faked yfinance** (spec #695):
+the `store` fixture opens a genuine DuckDB *file* — never `:memory:`, since
+DuckDB refuses a second process and persistence is part of what is asserted —
+with the DDL applied and the seed in place. Assertions go on the store's
+contents or on the API's JSON, never on the fact that a method was called; the
+`mock_influx` fixture is the counter-example and leaves with
+`influxdb_writer.py`. `shares_validator` is already gone with `schema.yaml`.
+
 ### Web UI (in `app/web/` directory)
 
 The front is a packaged SPA (issue #659). It lives under `app/` because the
@@ -167,19 +175,29 @@ nothing published.
 one container, one process, one scheduler. gunicorn is not just a server here,
 it is the boot sequence, split either side of its `fork()`:
 
-- **master, under `preload_app`** — `main.build_runtime()`: `ConfigurationManager`
-  (which owns the Cerberus validator), the **first publication** of the config
-  snapshot **that validates it**, and the `PrometheusExporter` registry. Pure
-  work only: no thread, no socket, no fd survives a fork. Publishing the config
-  here is what keeps a broken one a single clean exit — the arbiter has not
-  forked yet, so there is nothing to respawn — and the worker inherits the
-  published snapshot through the fork, so `post_fork`'s `ingest()` is a cache
-  hit that only arms the jobs.
-- **`post_fork`** — `main.start_runtime()`: the InfluxDB client (a connection
-  pool the master must not share), `BackgroundScheduler` (not Blocking — the
-  worker owns the foreground), `start_watcher()`, and the first `ingest()` that
-  arms the per-symbol scrape jobs.
-- **`worker_exit`** — `main.shutdown_runtime()`, the heir of the old `finally`.
+- **master, under `preload_app`** — `main.build_runtime()`: **the store**
+  (issue #696), then `ConfigurationManager`, the **first publication** of the
+  config snapshot, and the `PrometheusExporter` registry. Pure work only: no
+  thread, no socket, no fd survives a fork. Opening the store here is what keeps
+  an unreadable one a single clean exit — same place #658 gave the Cerberus
+  validation, different cause — and publishing the config here does the same for
+  a broken ledger; the arbiter has not forked yet, so there is nothing to
+  respawn, and the worker inherits the published snapshot through the fork, so
+  `post_fork`'s `ingest()` is a cache hit that only arms the jobs.
+- **`post_fork`** — `main.start_runtime()`: the **store connection**, the
+  InfluxDB client (a connection pool the master must not share),
+  `BackgroundScheduler` (not Blocking — the worker owns the foreground),
+  `start_watcher()`, and the first `ingest()` that arms the per-symbol scrape
+  jobs.
+- **`worker_exit`** — `main.shutdown_runtime()`, the heir of the old `finally`,
+  closing the store last.
+
+**The store connection does not cross the fork.** The master opens the file,
+applies the DDL, seeds it and **closes it again**; the worker opens its own.
+Keeping the master's open would leave the file locked by the parent while the
+child used buffers it no longer owns — and DuckDB refuses a second process
+precisely because that is not survivable. What crosses the fork is
+`Runtime.store_path`, never `Runtime.store`.
 
 The two failure paths differ on purpose: the master calls `sys.exit(1)`, while
 `post_fork` **re-raises**, because gunicorn reads an exception there as
@@ -199,6 +217,44 @@ serves the app, `SB_METRICS_PORT` keeps `/metrics` exactly where scrapers expect
 it. `PrometheusExporter` no longer runs an HTTP server of its own; the endpoint
 is a `DispatcherMiddleware` mount on the Flask app, fed the exporter's dedicated
 registry.
+
+**One embedded store, and the app does not boot without it** (issue #696, spec
+#695, ADR-0001). `store.py` owns the file: the connection, the DDL of the
+**twelve** tables, and the seed. It is the socle of v5 — nothing reads or writes
+domain rows through it yet, and every ticket that follows branches off it.
+
+Four things about it are decisions rather than defaults:
+
+- **The DDL is applied with `IF NOT EXISTS` and there is no migration
+  machinery.** The rule that generates the schema is *declaration and derived
+  state never share a row*, so every row has exactly one writer: the
+  configuration path owns `import_source`/`account`/`symbol`/`event`/`setting`/
+  `advisory`, the ingestion owns `position`/`account_state`, the scrape and
+  backfill own `symbol_quote`/`price_point`, the perf job owns
+  `account_metrics`/`portfolio_totals`.
+- **`price_point` carries no primary key and no foreign key** while the other
+  eleven keep theirs (ADR-0007). Not negligence, measurement: a DuckDB ART index
+  is a second copy of the data whose buffers the buffer manager does not own, so
+  a primary key here is **+563 MB of resident memory on a 319 MB base**, a
+  foreign key +153 MB more, and the rebuild 15× slower. Uniqueness moves to the
+  writers; the integrity an index would buy is bought for free on the event row,
+  where a typo'd ticker actually enters. The reason is written next to the table
+  in `store.py`, not only in the ADR.
+- **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
+  instant, `DATE` for a calendar day.
+- **The seed has two halves.** The `default` account row is written **at
+  creation only** — resurrecting it at every boot would undo a deliberate
+  deletion. The `setting` defaults are inserted **at every start** with `ON
+  CONFLICT DO NOTHING`, which is what makes adding a dial in a later version
+  cost no migration: the missing key appears, an answered one is left alone. A
+  key absent from the table reads as **the code's default**, from
+  `settings_registry.py` — the table is the mirror, never the source (ADR-0014).
+  `base_currency` has no default and is therefore never seeded: "not answered
+  yet" and "answered" have to stay two states.
+
+`schema.yaml`, Cerberus, `InvalidConfigFile`, `load_shares_schema`,
+`SuiviBourseMetrics.validate()` and `_ABSENT_SCHEMA` are deleted with the same
+ticket; the `accounts:` block is now checked by hand in `main.py`.
 
 **The web UI reads through a sibling of the writer** (issue #659, design #655).
 The layer between the UI and InfluxDB is the *for-keeps* half of the prototype;
@@ -248,8 +304,13 @@ right for a scheduler surviving a flaky query and wrong for a UI, where it makes
 "the database is unreachable" and "you own nothing yet" the same screen. Here
 query errors **propagate** and `web/problem.py` turns them into `503` +
 `application/problem+json`; absence stays three distinct states (`200`+`null` /
-`200`+`[]` / `503`). The one exception is a measurement that does not exist yet
-— a fresh install, answered `[]`.
+`200`+`[]` / `503`). It has **no exception** since #696: `_ABSENT_SCHEMA` — the
+regex that read "this measurement was never written to" out of an error message
+and answered `[]` — is gone. It existed because in InfluxDB 3 a measurement (and
+a column) comes into being on its first write, so absence and failure arrived
+down the same channel; the store declares its tables at creation and an unwritten
+column reads as `NULL` (ADR-0001), so absence is a shape of the data and an
+exception means a fault.
 
 **The app's own runtime state is a fourth pair, and it reads no InfluxDB at all**
 (issue #668, design #656). `GET /api/runtime` answers from process memory, the
@@ -330,14 +391,18 @@ after a file edit). Two rules follow:
   argument (`reload(force=True)`). The old pair nulled all three cache fields
   *before* `ingest()` refilled them, and a backfill landing in that window read
   `events = None` → no first-BUY date → its backward pass silently neutralised.
-- **Never publish what is not validated.** Cerberus runs *inside* snapshot
-  construction, closing a split-brain that predated the UI: the cache was
-  written by the loader and validated afterwards by `ingest()`, so a rejected
-  file still fed **backfill and the perf recompute** while scraping ran on the
-  previous one. `SuiviBourseMetrics.shares` is now a *read* of the snapshot, not
-  a second copy, and `backfill()` / `recompute_perf()` take one snapshot per
-  cycle. An **empty portfolio is exempt** from `schema.yaml`'s `empty: False` —
-  events mode legitimately starts with an empty `events/` directory.
+- **Never publish what is not validated.** Loading, validating and aggregating
+  all run *inside* snapshot construction, closing a split-brain that predated
+  the UI: the cache was written by the loader and validated afterwards by
+  `ingest()`, so a rejected file still fed **backfill and the perf recompute**
+  while scraping ran on the previous one. `SuiviBourseMetrics.shares` is now a
+  *read* of the snapshot, not a second copy, and `backfill()` /
+  `recompute_perf()` take one snapshot per cycle. What validates is
+  `events/validator.py` and, since #696, the store's DDL — `schema.yaml`,
+  Cerberus, `InvalidConfigFile` and `load_shares_schema` are gone with the
+  hand-written share list they were written for. An **empty portfolio** is a
+  legitimate state, not a rejection: an install legitimately starts with an
+  empty `events/` directory.
 
 The `accounts:` block is re-read on every build (`settings.yaml`'s mtime joined
 the cache key), so editing it no longer needs a restart; `events.source` /
@@ -546,7 +611,7 @@ All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use 
 Ingestion uses **file modification time (mtime)** to detect changes — of the event files *and* of `settings.yaml`, so an edited `accounts:` block is not hidden behind an unchanged events directory. If nothing changed, the published snapshot is reused unchanged (same object).
 
 #### Error Resilience
-If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.yaml` rejected), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
+If ingestion fails (invalid event, file error, `accounts:` malformed), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
 
 ---
 
@@ -554,6 +619,7 @@ If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.ya
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `SB_STORE_DIR` | `~/.config/SuiviBourse` | Directory holding the DuckDB store `suivi-bourse.duckdb` (issue #696). Boot-scope by nature: the process must know it before it can open the store, and therefore before it can ask the store anything (ADR-0014). The default is today's mounted config directory; #679 moves it to a volume of its own. |
 | `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
 | `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
@@ -561,7 +627,7 @@ If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.ya
 | `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
 | `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
 | `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
-| `SB_WEB_PORT` | `8080` | Port for the Flask web API and its shallow `/health` route — the container healthcheck's only target (issue #651) |
+| `SB_WEB_PORT` | `8080` | Port for the Flask web API and its `/health` route — the container healthcheck's only target (issue #651). Since #696 the probe **reaches the store**: "survive a database outage" has no subject once the database is a file this process opens (ADR-0015) |
 | `SB_INGESTION_INTERVAL` | `300` | Event ingestion interval (seconds) |
 | `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
@@ -586,13 +652,14 @@ app/src/
 ├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
 ├── runtime_view.py         # Pure: records + snapshot + jobstore → pills and the banner (#668)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
-├── schema.yaml             # Cerberus validation schema
+├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
+├── settings_registry.py    # Pure: the one list of dials — key, default, parse (#696, ADR-0014)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
 │   ├── api.py              # /api blueprint (read-only since #711): shares, prices, portfolio, accounts (+ history), events, config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
-│   └── health.py           # /health blueprint
+│   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState
