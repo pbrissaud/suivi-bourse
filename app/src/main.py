@@ -19,12 +19,10 @@ import yfinance as yf
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from cerberus import Validator
-from confuse import Configuration, exceptions as ConfuseExceptions
 from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
-import config_writer
 import performance
 import runtime_state
 import scheduling
@@ -51,7 +49,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 #: cannot accidentally turn a dependency's own logger up with it.
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'influxdb_writer',
-    'influx_reads', 'prometheus_exporter', 'web.api', 'config_writer',
+    'influx_reads', 'prometheus_exporter', 'web.api',
 )
 
 
@@ -164,36 +162,7 @@ def env_flag(name: str, default: bool) -> bool:
     return raw.lower() in ('1', 'true', 'yes', 'on')
 
 
-def resolve_regular_interval() -> int:
-    """Resolve the REGULAR-state poll interval (``base_interval``) from the env.
-
-    Precedence (design #607): ``SB_REGULAR_INTERVAL`` > ``SB_SCRAPING_INTERVAL``
-    (deprecated fallback) > ``120``. ``SB_SCRAPING_INTERVAL`` is the direct heir
-    of the removed global scrape interval, so it is still honored as a fallback
-    but a warning is logged whenever it is present — whether used or ignored.
-    """
-    new_val = env_str('SB_REGULAR_INTERVAL')
-    old_val = env_str('SB_SCRAPING_INTERVAL')
-    if old_val is not None:
-        if new_val is not None:
-            app_logger.warning(
-                "SB_SCRAPING_INTERVAL is deprecated and ignored because "
-                "SB_REGULAR_INTERVAL is set; remove SB_SCRAPING_INTERVAL.")
-        else:
-            app_logger.warning(
-                "SB_SCRAPING_INTERVAL is deprecated; prefer SB_REGULAR_INTERVAL. "
-                "Honoring it as a fallback for now.")
-    # Resolve precedence first, then parse through env_int so a non-numeric
-    # value raises the same named error as every other interval dial.
-    if new_val is not None:
-        return env_int('SB_REGULAR_INTERVAL', 120)
-    if old_val is not None:
-        return env_int('SB_SCRAPING_INTERVAL', 120)
-    return 120
-
-
-def resolve_executor_pool_size(mode: str, shares: List[dict],
-                               capture_exchange_of) -> int:
+def resolve_executor_pool_size(shares: List[dict], capture_exchange_of) -> int:
     """Resolve the APScheduler executor-pool size from the two dials (issue #619).
 
     ``SB_DYNAMIC_EXECUTOR_POOL`` (default ``false``) picks fixed vs auto:
@@ -219,7 +188,7 @@ def resolve_executor_pool_size(mode: str, shares: List[dict],
         app_logger.warning(
             "SB_EXECUTOR_POOL is ignored because SB_DYNAMIC_EXECUTOR_POOL is "
             "enabled; the executor pool is sized automatically.")
-    return scheduling.compute_pool_size(mode, shares, capture_exchange_of())
+    return scheduling.compute_pool_size(shares, capture_exchange_of())
 
 
 # --------------------------------------------------------------------- #
@@ -229,17 +198,15 @@ def resolve_executor_pool_size(mode: str, shares: List[dict],
 #: Every environment variable **this application reads**, with its own default.
 #:
 #: The list has to be chosen and named, because "what the app reads" and "what
-#: compose sends" are *different lists* (#654 trap 11). ``SB_SCRAPING_INTERVAL``
-#: is still honored here yet appears in neither ``docker-compose.yaml`` nor
-#: ``.env.example``; conversely ``SB_VERSION`` and ``SB_CONFIG_DIR`` carry the
-#: ``SB_`` prefix and are consumed by the docker daemon, never by Python (trap
-#: 13) — a page listing "the SB_* settings" that showed them would imply they are
-#: reachable from in here, and they are not: from inside the container the config
-#: directory is *always* ``/home/appuser/.config/SuiviBourse``.
+#: compose sends" are *different lists* (#654 trap 11): ``SB_VERSION`` and
+#: ``SB_CONFIG_DIR`` carry the ``SB_`` prefix and are consumed by the docker
+#: daemon, never by Python (trap 13) — a page listing "the SB_* settings" that
+#: showed them would imply they are reachable from in here, and they are not:
+#: from inside the container the config directory is *always*
+#: ``/home/appuser/.config/SuiviBourse``.
 #:
-#: ``default`` is ``None`` for the four that have no scalar fallback: the mode is
-#: resolved through ``settings.yaml`` and auto-detection, the token is required,
-#: and the other two simply have no value when unset.
+#: ``default`` is ``None`` for the two that have no scalar fallback: the token is
+#: required, and ``SB_STATIC_DIR`` simply has no value when unset.
 #:
 #: ``scope`` is ``runtime`` for the dials held on a mutable attribute and re-read
 #: every cycle — the effective value can in principle diverge from the
@@ -251,15 +218,7 @@ SETTINGS_INVENTORY = (
     ('INFLUXDB_HOST', 'http://influxdb:8181', 'boot', False, False),
     ('INFLUXDB_TOKEN', None, 'boot', True, False),
     ('INFLUXDB_DATABASE', 'suivi_bourse', 'boot', False, False),
-    ('SB_CONFIG_MODE', None, 'boot', False, False),
     ('SB_REGULAR_INTERVAL', '120', 'runtime', False, False),
-    # Deliberately **not** reported from ``regular_interval``: this variable is
-    # a *fallback*, ignored outright when ``SB_REGULAR_INTERVAL`` is also set
-    # (``resolve_regular_interval`` warns and drops it), so showing the live
-    # cadence beside its name would claim it took effect when it did not. All
-    # this can honestly say is whether it is present — which is the one thing
-    # worth saying about a deprecated dial.
-    ('SB_SCRAPING_INTERVAL', None, 'boot', False, True),
     ('SB_INGESTION_INTERVAL', '300', 'boot', False, False),
     ('SB_BACKFILL_INTERVAL', '60', 'boot', False, False),
     ('SB_PERF_INTERVAL', '120', 'boot', False, False),
@@ -317,8 +276,8 @@ def effective_settings(metrics=None) -> List[Dict]:
         elif default is not None:
             source, value = 'default', default
         else:
-            # No scalar fallback: the mode is resolved through settings.yaml and
-            # auto-detection, the token is required, the last two have no value.
+            # No scalar fallback: the token is required, the static dir
+            # override simply has no value when unset.
             source, value = 'unset', None
 
         attribute = _LIVE_ATTRIBUTES.get(name)
@@ -405,14 +364,16 @@ class ConfigSnapshot:
     Frozen, and treated as immutable all the way down: the lists inside are
     rebuilt by every load and never edited in place.
 
-    ``events`` is ``None`` in manual mode (there are no events to speak of) and
-    ``[]`` in events mode with an empty source; ``accounts`` is ``None`` unless
-    an ``accounts:`` block is declared. ``cache_key`` is the mtime fingerprint
-    this snapshot was built from — ``None`` when nothing cacheable was read.
+    ``events`` is always a list — ``[]`` when the source holds no file yet
+    (issue #711: the event ledger is the only way a portfolio is described, so
+    there is no longer a shape of configuration that has no events at all);
+    ``accounts`` is ``None`` unless an ``accounts:`` block is declared.
+    ``cache_key`` is the mtime fingerprint this snapshot was built from —
+    ``None`` when nothing cacheable was read.
     """
 
     shares: List[Dict]
-    events: Optional[List]
+    events: List
     accounts: Optional[Portfolio]
     cache_key: Optional[str]
 
@@ -422,8 +383,6 @@ class ConfigSnapshot:
         The backfill target. A pure read of this snapshot's events, so a
         concurrent reload can never turn it into ``None`` mid-cycle.
         """
-        if self.events is None:
-            return None
         buy_dates = [
             e.date for e in self.events
             if e.symbol == symbol and e.event_type == EventType.BUY
@@ -434,9 +393,13 @@ class ConfigSnapshot:
 class ConfigurationManager:
     """Publishes the configuration as an immutable snapshot (issue #658).
 
-    Reads either the manual ``config.yaml`` or the event files, validates the
-    result, and publishes it as a :class:`ConfigSnapshot`. Two rules shape the
-    class, both from design #653:
+    Reads the event files, validates the result, and publishes it as a
+    :class:`ConfigSnapshot`. **One loading path** since #711: a portfolio is a
+    dated event ledger and nothing else, so there is no mode to resolve, no
+    ``config.yaml`` to fall back to, and no branch anywhere downstream that has
+    to ask which of two configurations it is looking at.
+
+    Two rules shape the class, both from design #653:
 
     * **Never mutate published state in place.** ``_config`` is rebound, never
       edited, so the read path takes no lock at all — a reader holding a
@@ -452,8 +415,9 @@ class ConfigurationManager:
       performance recompute while scraping ran on the previous one.
     """
 
-    MODE_MANUAL = 'manual'
-    MODE_EVENTS = 'events'
+    #: The v4 file this version no longer reads (issue #711). Named at startup
+    #: when it is found — see :meth:`report_unread_files`.
+    LEGACY_MANUAL_FILE = 'config.yaml'
 
     def __init__(self, config_dir: Optional[str] = None,
                  validator_: Optional[Validator] = None):
@@ -471,10 +435,9 @@ class ConfigurationManager:
             self.config_dir = Path('~/.config/SuiviBourse').expanduser()
 
         self.settings_path = self.config_dir / 'settings.yaml'
-        self._mode: Optional[str] = None
+        self._settings_loaded: bool = False
         self._events_source: Optional[str] = None
         self._watch_enabled: bool = False
-        self._confuse_config: Optional[Configuration] = None
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
 
@@ -496,45 +459,55 @@ class ConfigurationManager:
             return yaml.safe_load(f) or {}
 
     def _load_settings(self) -> None:
-        """Resolve the *deployment* settings: mode, events source, watch.
+        """Resolve the *deployment* settings: events source and watch.
 
-        Read exactly once, on purpose — these three describe how this
-        deployment is wired, and changing them means restarting the container.
-        The ``accounts:`` block used to be read here too, which quietly made it
+        Read exactly once, on purpose — both describe how this deployment is
+        wired, and changing them means restarting the container. The
+        ``accounts:`` block used to be read here too, which quietly made it
         boot-only as well: editing it had no effect without a restart. It is
         data, not deployment, so it moved to :meth:`_read_accounts`, which every
         snapshot build re-runs.
+
+        What used to sit here and no longer does is the mode resolution (issue
+        #711). ``SB_CONFIG_MODE``, the ``mode:`` key and the auto-detection that
+        arbitrated between them are gone with the manual mode they chose
+        between: an aggregated position carries no dates, so it can carry
+        neither a realised gain nor a historical weighted average cost, and the
+        product's headline figure is built out of both.
         """
         settings = self._read_settings_file()
 
-        # The events block is parsed unconditionally: `source` and `watch`
-        # describe *how* to read events, not *whether* to. Gating them behind the
-        # settings.yaml branch of the mode resolution meant that selecting events
-        # mode through SB_CONFIG_MODE — the documented compose path — silently
-        # dropped a custom source and left the file watcher off despite
-        # `watch: true` sitting right there in settings.yaml.
+        # `source` and `watch` describe *how* to read events. The source falls
+        # back to the events/ folder next to settings.yaml, which is the setup
+        # every install that never declared one runs.
         events_settings = settings.get('events') or {}
-        self._events_source = events_settings.get('source')
+        self._events_source = events_settings.get('source') or \
+            str(self.config_dir / 'events')
         self._watch_enabled = events_settings.get('watch', False)
+        self._settings_loaded = True
 
-        # Priority 1: Environment variable
-        env_mode = env_str('SB_CONFIG_MODE')
-        if env_mode:
-            self._mode = env_mode.lower()
-            app_logger.info(f"Using config mode from environment: {self._mode}")
-        # Priority 2: an explicit `mode:` in settings.yaml
-        elif settings.get('mode'):
-            self._mode = str(settings['mode']).lower()
-            app_logger.info(f"Using config mode from settings.yaml: {self._mode}")
-        # Priority 3: infer it from what the config directory actually holds, so
-        # dropping event files in is enough to run in events mode — no second
-        # declaration to keep in sync in settings.yaml and the deployment.
-        else:
-            self._mode = self._detect_mode()
+    def report_unread_files(self) -> List[str]:
+        """Name the v4 files this version finds and does not read (issue #711).
 
-        # Default events source if not specified
-        if self._mode == self.MODE_EVENTS and not self._events_source:
-            self._events_source = str(self.config_dir / 'events')
+        Four empty pages read as *"the update erased my portfolio"* unless the
+        app says out loud which file it stopped reading. This is that sentence,
+        and it is deliberately only a sentence: nothing is migrated, nothing is
+        renamed, nothing is deleted — the file the user wrote stays exactly
+        where they put it (ADR-0008).
+
+        Returns the paths it named, so a caller can test the observation rather
+        than the log line.
+        """
+        named = []
+        legacy = self.config_dir / self.LEGACY_MANUAL_FILE
+        if legacy.exists():
+            named.append(str(legacy))
+            app_logger.warning(
+                f"Found {legacy}, and this version does not read it: a "
+                f"portfolio is described by dated events only. Your positions "
+                f"are loaded from {self.get_events_source()} — the file above "
+                f"is left untouched.")
+        return named
 
     def _read_accounts(self) -> Optional[Portfolio]:
         """Re-read the opt-in ``accounts:`` block from ``settings.yaml``.
@@ -546,37 +519,8 @@ class ConfigurationManager:
         """
         return self._parse_accounts(self._read_settings_file().get('accounts'))
 
-    #: Event-file extensions recognised by the loader and by mode auto-detection.
+    #: Event-file extensions recognised by the loader and by the cache key.
     EVENT_SUFFIXES = ('.csv', '.xlsx')
-
-    def _detect_mode(self) -> str:
-        """Infer the mode from the config directory's contents.
-
-        Events mode as soon as the events source holds at least one loadable
-        file, manual otherwise. This is the lowest-priority rule — an explicit
-        ``SB_CONFIG_MODE`` or ``mode:`` always wins — so it can only ever pick a
-        mode for a deployment that never stated one.
-        """
-        source = Path(self._events_source).expanduser() if self._events_source \
-            else self.config_dir / 'events'
-
-        found = False
-        if source.is_file():
-            found = source.suffix.lower() in self.EVENT_SUFFIXES
-        elif source.is_dir():
-            found = any(f.suffix.lower() in self.EVENT_SUFFIXES
-                        for f in source.iterdir())
-
-        if found:
-            app_logger.info(
-                f"No mode declared; detected event files in {source}, "
-                f"using mode: {self.MODE_EVENTS}")
-            return self.MODE_EVENTS
-
-        app_logger.info(
-            f"No mode declared and no event files in {source}, "
-            f"using default mode: {self.MODE_MANUAL}")
-        return self.MODE_MANUAL
 
     def _parse_accounts(self, raw) -> Optional[Portfolio]:
         """Validate and build the declared accounts from the raw settings block.
@@ -610,16 +554,6 @@ class ConfigurationManager:
 
         return Portfolio(accounts=accounts)
 
-    def accounts_on_disk(self) -> Optional[Portfolio]:
-        """The declared accounts as ``settings.yaml`` holds them right now.
-
-        Distinct from :meth:`load_accounts`, which serves the *published*
-        snapshot and is therefore one generation behind a file that has just
-        been edited. The write path (issue #662) validates a candidate against
-        the disk it is about to join, not against what the app last accepted.
-        """
-        return self._read_accounts()
-
     def load_accounts(self) -> Optional[Portfolio]:
         """Return the declared accounts, or None when none are declared.
 
@@ -633,20 +567,14 @@ class ConfigurationManager:
             return snap.accounts
         return self._read_accounts()
 
-    def get_mode(self) -> str:
-        """Get the current configuration mode."""
-        if self._mode is None:
-            self._load_settings()
-        return self._mode
+    def get_events_source(self) -> str:
+        """Where the event files are read from.
 
-    def get_events_source(self) -> Optional[str]:
-        """Where the event files are read from, or ``None`` in manual mode.
-
-        The editor read path (issue #659) needs the same source the loader is
-        given, so that a ledger row and the aggregated position it feeds are two
-        views of one file rather than two guesses at where the files live.
+        Always a path since #711: there is one loading path, so every caller
+        that wants to name the ledger's location gets the same answer the loader
+        is given rather than a value that could be ``None``.
         """
-        if self._mode is None:
+        if not self._settings_loaded:
             self._load_settings()
         return self._events_source
 
@@ -658,13 +586,9 @@ class ConfigurationManager:
         invalidate the cache, or an edited account would sit unnoticed behind an
         unchanged events directory.
 
-        ``None`` in manual mode — ``config.yaml`` is read through confuse, which
-        does its own reload, so manual mode has never cached and does not start
-        now.
+        ``None`` when neither ``settings.yaml`` nor a single event file exists —
+        a fresh install with nothing to fingerprint yet.
         """
-        if self._mode != self.MODE_EVENTS:
-            return None
-
         mtimes = []
         if self.settings_path.exists():
             mtimes.append(
@@ -713,8 +637,8 @@ class ConfigurationManager:
         snapshot published.
 
         Raises:
-            EventLoaderError, EventValidationError, AggregationError: events mode.
-            ConfuseExceptions.NotFoundError: manual mode.
+            EventLoaderError, EventValidationError, AggregationError: the event
+                files could not be read, validated or aggregated.
             InvalidConfigFile: the aggregated shares failed ``schema.yaml``.
             ValueError: the ``accounts:`` block is malformed.
         """
@@ -734,28 +658,24 @@ class ConfigurationManager:
         Runs under ``_write_lock``. Never touches ``self._config``: publication
         is :meth:`reload`'s business.
         """
-        if self._mode is None:
+        if not self._settings_loaded:
             self._load_settings()
 
         cache_key = self._compute_cache_key()
-        cacheable = published is not None and self._mode == self.MODE_EVENTS
-        if not force and cacheable and published.cache_key == cache_key:
+        if not force and published is not None and published.cache_key == cache_key:
             app_logger.debug("Using cached configuration (no file changes detected)")
             return published
 
-        # Accounts first: in events mode their ids decide whether events must
-        # carry an account, so the two are necessarily read together.
+        # Accounts first: their ids decide whether events must carry an account,
+        # so the two are necessarily read together.
         accounts = self._read_accounts()
 
-        if self._mode == self.MODE_EVENTS:
-            shares, events = self._load_from_events(accounts)
-        else:
-            shares, events = self._load_from_manual(), None
+        shares, events = self._load_from_events(accounts)
 
-        # An empty portfolio is a legitimate state, not a broken file: events
-        # mode starts life with an empty events/ directory and must keep running
-        # (with a warning) until the first file lands. schema.yaml's
-        # `empty: False` was written for a hand-edited config.yaml, where an
+        # An empty portfolio is a legitimate state, not a broken file: an
+        # install starts life with an empty events/ directory and must keep
+        # running (with a warning) until the first file lands. schema.yaml's
+        # `empty: False` was written for a hand-edited share list, where an
         # empty `shares:` really is a mistake; applying it to a fresh install
         # would turn "no events yet" into a boot failure.
         if shares and not self.validator.validate({'shares': shares}):
@@ -774,6 +694,17 @@ class ConfigurationManager:
         """Load and aggregate the event files. Returns ``(shares, events)``."""
         source = Path(self._events_source).expanduser()
         app_logger.info(f"Loading events from: {source}")
+
+        # A source that does not exist yet is a **fresh install**, not a broken
+        # one, and it is the case the manual fallback used to absorb (#711): the
+        # user has not dropped a file in the folder the compose mount will
+        # create for them. Same answer as an empty folder — run empty, say so —
+        # rather than a boot failure that would respawn forever.
+        if not source.exists():
+            app_logger.warning(
+                f"No events source at {source} yet; running on an empty "
+                f"portfolio until a .csv/.xlsx lands there")
+            return [], []
 
         loader = EventLoader(str(source))
         events = loader.load()
@@ -796,15 +727,6 @@ class ConfigurationManager:
         app_logger.info(f"Loaded {len(events)} events for {len(shares)} shares")
         return shares, events
 
-    def _load_from_manual(self) -> List[Dict]:
-        """Load shares from manual config.yaml."""
-        if self._confuse_config is None:
-            self._confuse_config = Configuration('SuiviBourse', __name__)
-        else:
-            self._confuse_config.reload()
-
-        return self._confuse_config['shares'].get()
-
     def load_shares(self, force: bool = False) -> List[Dict]:
         """Publish a snapshot and return its shares.
 
@@ -822,7 +744,7 @@ class ConfigurationManager:
     def get_first_buy_date(self, symbol: str) -> Optional[date]:
         """Date of the first BUY event for a symbol, from the published snapshot.
 
-        ``None`` before anything is published, and in manual mode.
+        ``None`` before anything is published.
         """
         snap = self._config
         return snap.first_buy_date(symbol) if snap is not None else None
@@ -831,7 +753,7 @@ class ConfigurationManager:
         """The published snapshot's events.
 
         Returns:
-            List of events, or None if not in events mode or nothing published.
+            List of events, or None if nothing has been published yet.
         """
         snap = self._config
         return snap.events if snap is not None else None
@@ -843,13 +765,13 @@ class ConfigurationManager:
         Args:
             reload_callback: Function to call when files change.
         """
-        if self._mode != self.MODE_EVENTS or not self._watch_enabled:
+        if not self._watch_enabled:
             return
 
         if self._watcher is not None:
             return
 
-        source = Path(self._events_source).expanduser()
+        source = Path(self.get_events_source()).expanduser()
         if not source.exists():
             app_logger.warning(f"Events directory does not exist, skipping watcher: {source}")
             return
@@ -881,12 +803,10 @@ class SuiviBourseMetrics:
     """
 
     def __init__(self, config_manager: ConfigurationManager, validator_: Validator,
-                 configuration_: Optional[Configuration] = None,
                  influxdb_writer: Optional[InfluxDBWriter] = None,
                  prometheus_exporter: Optional[PrometheusExporter] = None,
                  recorder: Optional[runtime_state.RuntimeRecorder] = None):
         self.config_manager = config_manager
-        self.configuration = configuration_  # For backward compatibility
         # Kept for the legacy ``validate()`` below. It is no longer this class's
         # job: since #658 the configuration manager validates inside snapshot
         # construction, so what this object holds has already passed the schema.
@@ -1202,8 +1122,9 @@ class SuiviBourseMetrics:
         """
         Expose the metrics for each stock share to InfluxDB.
 
-        Synchronous whole-portfolio scrape kept for the manual/backward-compat
-        path; the scheduled runtime drives per-symbol jobs via ``_scrape_symbol``.
+        Synchronous whole-portfolio scrape, kept as a driver for the end-to-end
+        harness; the scheduled runtime drives per-symbol jobs via
+        ``_scrape_symbol``.
         """
         for share in self.shares:
             share_symbol = share['symbol']
@@ -1721,18 +1642,6 @@ class SuiviBourseMetrics:
             app_logger.debug("No shares configured, skipping backfill")
             return
 
-        # Only backfill in events mode where we have event history
-        if self.config_manager.get_mode() != ConfigurationManager.MODE_EVENTS:
-            app_logger.debug("Backfill only available in events mode")
-            # #656 trap 6: this early return is the *whole* backward pass in
-            # manual mode, so "no progress" here is nominal and must never
-            # render as a stall. The job that knows it returned early is the one
-            # that says so — the reader is not left to infer a terminal state
-            # from the absence of a record, which is what would collapse it onto
-            # "never scraped yet".
-            self._record_manual_mode(snapshot)
-            return
-
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
@@ -1754,27 +1663,6 @@ class SuiviBourseMetrics:
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-    def _record_manual_mode(self, snapshot: ConfigSnapshot) -> None:
-        """Publish the ``manual_mode`` terminal for every held series (#668).
-
-        One record per ``(symbol, account)``, on the backward pass only: the
-        forward pass is gated the same way, but it has no target and its healthy
-        steady state is already a no-op, so a terminal there would say nothing
-        the summary does not.
-        """
-        now = datetime.now(timezone.utc)
-        for share in snapshot.shares:
-            symbol = share.get('symbol')
-            if not symbol:
-                continue
-            self.recorder.record_backfill(runtime_state.BackfillRecord(
-                symbol=symbol,
-                account=share.get('account', DEFAULT_ACCOUNT),
-                direction=runtime_state.BACKWARD,
-                at=now,
-                terminal=runtime_state.TERMINAL_MANUAL_MODE,
-            ))
-
     def _backfill_share(self, share, snapshot: ConfigSnapshot, timeline) -> int:
         """Backfill one share in both directions (issue #626).
 
@@ -1791,10 +1679,9 @@ class SuiviBourseMetrics:
         first_buy_date = snapshot.first_buy_date(symbol)
         if not first_buy_date:
             app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
-            # The second of the three terminals (#656 trap 6). A GRANT-only
-            # position is the ordinary case, and it has no history to reach back
-            # to — distinct from "complete" (it never started) and from manual
-            # mode (the pass exists here, it simply has no target).
+            # The second terminal (#656 trap 6). A GRANT-only position is the
+            # ordinary case, and it has no history to reach back to — distinct
+            # from "complete", which it never started.
             self.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol, account=account,
                 direction=runtime_state.BACKWARD,
@@ -2105,8 +1992,8 @@ class SuiviBourseMetrics:
         """
         Scrape stock prices from Yahoo Finance and expose metrics.
 
-        Synchronous whole-portfolio path kept for the manual/backward-compat and
-        e2e harness; the scheduled runtime drives per-symbol jobs + the perf job.
+        Synchronous whole-portfolio path kept for the e2e harness; the scheduled
+        runtime drives per-symbol jobs + the perf job.
         The perf recompute is **detached** from scrape (issue #618): it is its
         own gated interval job, never piggybacked here.
         """
@@ -2358,17 +2245,10 @@ class Runtime:
         self.metrics: Optional['SuiviBourseMetrics'] = None
         self.scheduler: Optional[BackgroundScheduler] = None
 
-        # The config directory's writer (issue #662). Master-side on purpose:
-        # it is a mutex and a reference, and a ``threading.Lock`` crosses
-        # ``fork()`` unharmed — the master is single-threaded at that instant,
-        # so the worker inherits an unlocked one. Built here rather than in
-        # ``start_runtime`` because the routes must reach the *same* instance
-        # the lock lives in, and there is only ever one worker (#651).
-        self.config_writer = config_writer.ConfigWriter(config_manager)
-
-        # The scheduler's last-pass records (issue #668). Master-side for the
-        # ConfigWriter's reason — a mutex and three references, and a
-        # ``threading.Lock`` crosses ``fork()`` unharmed — plus one of its own:
+        # The scheduler's last-pass records (issue #668). Master-side on
+        # purpose — a mutex and three references, and a ``threading.Lock``
+        # crosses ``fork()`` unharmed, the master being single-threaded at that
+        # instant — plus a reason of its own:
         # ``GET /api/runtime`` must answer *before* and *without* a working
         # scheduler, since explaining a screen that is not working is the entire
         # reason the resource exists (#656 déc. 6). A recorder that only came
@@ -2385,10 +2265,7 @@ def log_fatal(exc: BaseException) -> None:
     gunicorn reports WORKER_BOOT_ERROR and halts the arbiter instead of
     respawning a worker that would fail identically.
     """
-    if isinstance(exc, ConfuseExceptions.NotFoundError):
-        app_logger.fatal(
-            'An error occurred while loading the configuration file : ' + str(exc))
-    elif isinstance(exc, (EventLoaderError, EventValidationError, AggregationError)):
+    if isinstance(exc, (EventLoaderError, EventValidationError, AggregationError)):
         app_logger.fatal(f'An error occurred while loading events : {exc}')
     elif isinstance(exc, InvalidConfigFile):
         app_logger.fatal(exc.message)
@@ -2411,6 +2288,13 @@ def build_runtime() -> Runtime:
     # snapshot construction, so it cannot be handed a validator too late to
     # matter.
     config_manager = ConfigurationManager()
+
+    # Before anything is loaded, name what is *not* going to be (issue #711).
+    # An install coming from a manual v4 has a config.yaml and no events, so
+    # every page it opens is empty — and an empty page is indistinguishable
+    # from a portfolio the update erased unless the app says which file it
+    # stopped reading.
+    config_manager.report_unread_files()
 
     # First publication, in the master. Reading, aggregating and validating all
     # happen here, which is what keeps a broken configuration a single clean
@@ -2437,10 +2321,9 @@ def start_runtime(runtime: Runtime) -> Runtime:
     which is also what arms the per-symbol scrape jobs (issue #616), their
     immediate first fire being the bootstrap.
     """
-    # Get intervals from environment. SB_REGULAR_INTERVAL is the heir of the
-    # removed global SB_SCRAPING_INTERVAL (design #607); resolve_regular_interval
-    # applies the precedence + deprecation warning.
-    regular_interval = resolve_regular_interval()
+    # Get intervals from environment. SB_REGULAR_INTERVAL is the REGULAR-state
+    # poll cadence (design #607); its deprecated predecessor is gone with #711.
+    regular_interval = env_int('SB_REGULAR_INTERVAL', 120)
     ingestion_interval = env_int('SB_INGESTION_INTERVAL', 300)
     backfill_interval = env_int('SB_BACKFILL_INTERVAL', 60)
     perf_interval = env_int('SB_PERF_INTERVAL', 120)
@@ -2455,7 +2338,7 @@ def start_runtime(runtime: Runtime) -> Runtime:
     sb_metrics.regular_interval = regular_interval
     runtime.metrics = sb_metrics
 
-    # Start file watcher for hot-reload if in events mode
+    # Start the file watcher for hot-reload (settings.yaml's `events.watch`)
     runtime.config_manager.start_watcher(sb_metrics.ingest)
     # Size the executor pool from the two dials (issue #619). Default
     # (SB_DYNAMIC_EXECUTOR_POOL=false) is a fixed pool of SB_EXECUTOR_POOL
@@ -2464,8 +2347,7 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # path (a pre-scheduler fetch; the executor is fixed once at
     # construction, no hot resize).
     pool_size = resolve_executor_pool_size(
-        runtime.config_manager.get_mode(), sb_metrics.shares,
-        sb_metrics.capture_exchange_of)
+        sb_metrics.shares, sb_metrics.capture_exchange_of)
     # Wire the scheduler before bootstrapping so ingest() can arm the
     # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
     # bootstrap — no separate initial scrape. Background, not Blocking: the

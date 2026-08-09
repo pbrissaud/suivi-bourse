@@ -243,9 +243,9 @@ def _build_share(symbol: str, group: List[Dict[str, Any]]) -> SharePosition:
 #: is **Gain** — total value − net contributed.
 MODE_ACCOUNTS = 'accounts'
 
-#: No declared accounts (or manual mode): the head falls back to **plus-value
-#: latente**, computable from ``portfolio_metrics`` alone. This is what a default
-#: install runs, so it is a designed mode, not a failure.
+#: No declared accounts: the head falls back to **plus-value latente**,
+#: computable from ``portfolio_metrics`` alone. This is what a default install
+#: runs, so it is a designed mode, not a failure.
 MODE_TITRES = 'titres'
 
 #: Declared accounts in more than one currency. ``portfolio_totals`` is not
@@ -257,28 +257,24 @@ MODE_TITRES = 'titres'
 MODE_MULTI_CURRENCY = 'multi_currency'
 
 
-def portfolio_mode(
-    account_currencies: Optional[Sequence[str]],
-    events_mode: bool,
-) -> str:
+def portfolio_mode(account_currencies: Optional[Sequence[str]]) -> str:
     """Which head this portfolio gets. Pure — the page's first decision.
 
     ``account_currencies`` is ``None`` when no ``accounts:`` block is declared,
-    and the currencies of the declared accounts otherwise.
-
-    The two conditions are #652 déc. 6's, read off their source: ``account_metrics``
-    and ``portfolio_totals`` are written by ``update_account_metrics``, which
-    returns early both when no ``Portfolio`` is declared *and* when the snapshot
-    carries no events — so a declared ``accounts:`` block in manual mode produces
-    no series either, and answering ``accounts`` there would leave the dashboard
-    waiting forever on a computation that is never going to run.
+    and the currencies of the declared accounts otherwise. That single condition
+    is #652 déc. 6's, read off its source: ``account_metrics`` and
+    ``portfolio_totals`` are written by ``update_account_metrics``, which returns
+    early when no ``Portfolio`` is declared. The second half of the old test —
+    *and the snapshot carries events* — went with manual mode (#711): a portfolio
+    is a dated ledger, so there is no longer a configuration that declares
+    accounts and can never produce a series.
 
     Deliberately decided from the **configuration**, never from whether the
     series happens to have rows. That is what keeps "no declared accounts" and
     "the perf job has not run yet" from rendering the same screen: the first is a
     mode, the second is a mode whose figures are still absent.
     """
-    if not account_currencies or not events_mode:
+    if not account_currencies:
         return MODE_TITRES
     return MODE_ACCOUNTS if len(set(account_currencies)) == 1 else MODE_MULTI_CURRENCY
 

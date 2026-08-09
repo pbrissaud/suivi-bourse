@@ -15,7 +15,7 @@ SuiviBourse is a Python application that monitors stock shares using yfinance fo
 # Install runtime + dev deps into a uv-managed .venv:
 cd app && uv sync
 
-# Run the app locally (requires config at ~/.config/SuiviBourse/config.yaml or events/)
+# Run the app locally (requires an events folder at ~/.config/SuiviBourse/events/)
 # Also requires INFLUXDB_TOKEN environment variable. gunicorn is the only boot
 # path: the web API and the scheduler share one process (issue #651), and
 # src/gunicorn.conf.py holds the boot sequence. `main.py` has no __main__ block.
@@ -77,18 +77,18 @@ make init                         # .env from .env.example, data/ from data.exam
 docker compose up -d              # Full stack: app + InfluxDB + Grafana
 docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.example/)
 
-# Events mode: drop a .csv/.xlsx into the config dir's events/ folder — the mode
-# is auto-detected. SB_CONFIG_MODE only forces it.
+# A portfolio is a ledger: drop a .csv/.xlsx into the config dir's events/
+# folder and it is loaded. There is no mode to choose (issue #711).
 ```
 
 The stack owns exactly two user-writable things, both git-ignored: `.env` (every
 setting, names identical to the app's own env vars) and the **config directory**
 (`SB_CONFIG_DIR`, default `./data`) mounted as a single volume at
-`/home/appuser/.config/SuiviBourse`. That mount is **writable** since #658 — the
-web UI's data page edits events and the `accounts:` block — so the service runs
+`/home/appuser/.config/SuiviBourse`. The app itself no longer writes to that
+mount (#711 removed `config_writer.py`), but the human who edits the files by
+hand must own them — so the service still runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
-invoking `id -u`/`id -g` in `.env`, keeping the files owned by the human who
-also edits them by hand. The image sets `ENV HOME=/home/appuser` for the same
+invoking `id -u`/`id -g` in `.env`. The image sets `ENV HOME=/home/appuser` for the same
 reason: a uid absent from `/etc/passwd` (501 on macOS) gets `HOME=/` from
 Docker, which would send `Path('~/.config/SuiviBourse').expanduser()` away from
 the mount. `docker-compose.yaml` is never edited by
@@ -233,66 +233,42 @@ when it is the only thing able to explain the empty table**. #659's reserved
   "departed"); the cached `marketState` is **never** the pill (`decide`
   fail-opens it, and the cache is written only on a successful fetch, so a
   failing symbol reports the state from before its failure); and the three
-  terminal backfill states — `complete` / `no_buy` / `manual_mode` — are never
-  collapsed, manual mode having no backward pass at all.
+  terminal backfill states — `complete` / `no_buy` — are never collapsed, and
+  the third (`manual_mode`) left with the mode it named (#711).
 
-`/api/config` gains #654's read-only **effective configuration** — there rather
-than on `/api/runtime`, one noun two consumers — listing the variables *the app
-reads* (not the ones compose sends) with `INFLUXDB_TOKEN` redacted by name.
+`/api/config` carries #654's read-only **effective configuration** — there
+rather than on `/api/runtime`, one noun two consumers — listing the variables
+*the app reads* (not the ones compose sends) with `INFLUXDB_TOKEN` redacted by
+name, plus the published snapshot's declared `shares`.
 
-`events/editor.py` is a **second read of the event files, as files**, beside the
-loader: `Event`, the aggregator and the validator stay byte-identical. Each row
-gets an **opaque token** over `(file, sheet, row)` — never `(file, row)`, since
-`row_num` restarts at 2 in every xlsx worksheet — plus a content fingerprint
-exposed as `ETag`, which is what makes a stale address a `409` instead of a
-silently mis-edited row. Reads are tolerant of a malformed row (it comes back
-with its error **and its raw cells**, or the ledger could name a defect it
-cannot show) so the ledger can be used to *fix* it. It also owns the **bytes
-half** of a write: rendering a CSV back, and `write_atomic` — same-directory
-temp under a suffix the loader ignores, `fsync`, `os.replace`.
+**The config directory has no write path** (issue #711). `config_writer.py` and
+`events/editor.py` are deleted, together with the routes they served: the row
+edit, the opaque token over `(file, sheet, row)`, the `ETag`, the `409`, the
+file import and conversion, and `PUT /api/accounts`. The whole apparatus existed
+because **the file was the address**; in the store a row will have a primary
+key, which does not go stale, so nothing it did has a row-by-row successor. The
+front therefore has **no data-editing gestures** until block 2 rewrites it
+around the import as the unit. `GET /api/events` survives as a read of the
+published snapshot — the rows the aggregator ran on, with no id and no etag.
 
-**`config_writer.py` is the write half of the config directory** (issue #662),
-sibling of `influxdb_writer.py`: each is the only module allowed to put bytes
-where its half of the system reads them. The sequence is #653's and **its order
-is the design** — build the candidate in memory → validate it → `os.replace` →
-republish via `reload(force=True)`, a *re-read of the disk* rather than a
-hand-off, so the published snapshot is always what a restart would load. Since
-#658 made a schema-invalid config fatal at boot, one transition is what the
-module exists to prevent, and one is what it must permit:
-
-- **valid → invalid is refused** — `422` + the validator's messages verbatim,
-  nothing written.
-- **invalid → invalid is allowed.** Refusing every edit while the files are
-  already rejected locks the user out of the only tool that repairs them; the
-  app is already on its previous snapshot, so the write cannot make it worse.
-  The response then carries `reloaded: false` plus what is still broken — the
-  page has to say "saved, still broken" rather than pick one.
-- The **submitted row** is the exception: it must parse on its own, always.
-- **Import is stricter than editing** — a file must introduce **no new error**
-  (a multiset difference on provenance-stripped messages, since renumbering an
-  event or renaming a file changes every message that mentions it). An upload
-  the user still holds costs a correction to refuse; an edit costs them the way
-  out.
-
-An event created from the UI lands in `ui.csv` — the client never names a file
-(#653 keeps the contract in *events*), so the server picks one destination and
-the response says which. Converting a workbook writes the `.csv` and renames the
-`.xlsx` to `.xlsx.bak`, **in that order**: the reverse doubles every event for
-as long as both are visible, and a duplicate event is legitimate, so nothing
-downstream would object. `PUT /api/accounts` splices only the `accounts:` block
-of `settings.yaml`, leaving every other byte and comment — and refuses a
-well-formed block that drops an id the events still name (`validator.py:128-138`
-makes that fatal at the *next* boot, long after the click).
-
-**Manual mode is a different page, not an empty one**: the ledger does not
-exist, `config.yaml`'s positions are shown read-only, and no conversion to
-events is offered — an aggregated position carries no dates, so synthesising
-events would mean inventing a purchase date that then drives `first_buy_date`
-and the money-weighted return.
+Its consequence for the config directory: no filename has a special meaning any
+more (`ui.csv` was the last one), and `settings.yaml` is edited by hand alone.
 
 Flask serves the built SPA with a catch-all that must **not** swallow `/api` or
 `/metrics`: without those guards a typo'd endpoint returns the HTML shell with a
 `200`, and a Prometheus scraper reads `200` as a healthy target.
+
+**A portfolio is a dated event ledger, and only that** (issue #711). There is
+one loading path: `SB_CONFIG_MODE`, the `mode:` key and the auto-detection that
+arbitrated between them are gone, and so is `config.yaml` — an aggregated
+position carries no dates, so it can carry neither a realised gain nor a
+historical weighted average cost, and the product's headline figure is built out
+of both. A `config.yaml` found in the config directory is **named at startup and
+never read** (`ConfigurationManager.report_unread_files`, ADR-0008): four empty
+pages otherwise read as *"the update erased my portfolio"*. An events source
+that does not exist yet is a fresh install — a warning and an empty portfolio,
+never a boot failure. `SB_SCRAPING_INTERVAL`, the deprecated fallback for
+`SB_REGULAR_INTERVAL`, is removed too (v5 is breaking).
 
 **Configuration is one immutable snapshot** (issue #658, design #653).
 `ConfigurationManager` holds a single `ConfigSnapshot` — `shares`, `events`,
@@ -316,8 +292,8 @@ after a file edit). Two rules follow:
   events mode legitimately starts with an empty `events/` directory.
 
 The `accounts:` block is re-read on every build (`settings.yaml`'s mtime joined
-the cache key), so editing it no longer needs a restart; `mode` / `events.source`
-/ `events.watch` stay boot-only — they are deployment settings.
+the cache key), so editing it no longer needs a restart; `events.source` /
+`events.watch` stay boot-only — they are deployment settings.
 
 The application runs independent scheduled jobs on a single APScheduler:
 - **Scraping**: one **self-rescheduling job per held symbol**, market-aware
@@ -352,9 +328,9 @@ The application runs independent scheduled jobs on a single APScheduler:
   and `max_instances=1`. The APScheduler **executor pool** is sized at boot from
   two dials: `SB_DYNAMIC_EXECUTOR_POOL` (default `false` → fixed
   `SB_EXECUTOR_POOL`, default 10) or, when `true`, the pure
-  `scheduling.compute_pool_size(mode, shares, exchange_of)` =
-  `min(reserved + ceil(largest_cohort × 5 / 30), 50)` with `reserved` 3 (events)
-  / 1 (manual). `exchange_of` is captured by a pre-scheduler fetch
+  `scheduling.compute_pool_size(shares, exchange_of)` =
+  `min(RESERVED + ceil(largest_cohort × 5 / 30), 50)` with `RESERVED` 3 — one
+  figure since #711, there being one job set. `exchange_of` is captured by a pre-scheduler fetch
   (`capture_exchange_of`) only on the auto path.
 - **Ingestion**: Reloads portfolio events from files (default: every 300s) and
   reconciles the per-symbol scrape jobs against the new symbol set (add / remove
@@ -416,48 +392,23 @@ or yfinance, `now` injected.
 
 ## Configuration
 
-### Configuration Modes
+### One loading path (issue #711)
 
-SuiviBourse supports two **mutually exclusive** configuration modes:
+A portfolio is described by `events/*.csv` and `events/*.xlsx`, and by nothing
+else. There is no mode: `SB_CONFIG_MODE`, the `mode:` key and the auto-detection
+between them are gone, and `config.yaml` is **named at startup, never read**.
 
-| Mode | Source | Description |
-|------|--------|-------------|
-| `manual` | `config.yaml` | Traditional static configuration |
-| `events` | `events/*.csv`, `events/*.xlsx` | Event-based portfolio tracking |
-
-**Mode selection priority:**
-1. Environment variable `SB_CONFIG_MODE` (`manual` or `events`)
-2. `~/.config/SuiviBourse/settings.yaml` → `mode` field
-3. Auto-detection: `events` if the events source holds ≥1 `.csv`/`.xlsx`
-4. Default: `manual`
-
-The `events:` block (`source`, `watch`) is parsed regardless of *how* the mode
-was selected — it describes how to read events, not whether to. Every `SB_*`
+The `events:` block (`source`, `watch`) says how to read the ledger. Every `SB_*`
 variable treats a blank value as unset (`env_str`/`env_int`/`env_flag`), because
 compose renders an undefined substitution as an empty string.
 
-> **Note**: The two modes are mutually exclusive. Switching to `events` mode ignores `config.yaml` entirely. There is no automatic migration between modes.
+> **Coming from a manual v4**: nothing is migrated. Typing a position means
+> creating dated events — an aggregated position carries no dates, so it can
+> carry neither a realised gain nor a historical weighted average cost.
 
 ---
 
-### Manual Mode (config.yaml)
-
-```yaml
-shares:
-- name: Apple
-  symbol: AAPL
-  purchase:
-    quantity: 1
-    fee: 2
-    cost_price: 119.98
-  estate:
-    quantity: 2
-    received_dividend: 2.85
-```
-
----
-
-### Events Mode (CSV/XLSX)
+### Events (CSV/XLSX)
 
 Import portfolio events from files and automatically compute aggregated positions.
 
@@ -475,7 +426,6 @@ Import portfolio events from files and automatically compute aggregated position
 #### settings.yaml
 
 ```yaml
-mode: events
 events:
   source: ~/.config/SuiviBourse/events/
   watch: true  # Optional: enable file watcher for immediate reload
@@ -542,7 +492,7 @@ new_cost_price = (old_qty × old_price + new_qty × new_price) / total_qty
 Events are **sorted by date** before processing, regardless of their order in files or across multiple files. You can add events in any order.
 
 #### Multi-file Support
-All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use this to organize by year, broker, or account.
+All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use this to organize by year, broker, or account. **No filename has a special meaning** (issue #711).
 
 #### Caching
 Ingestion uses **file modification time (mtime)** to detect changes — of the event files *and* of `settings.yaml`, so an edited `accounts:` block is not hidden behind an unchanged events directory. If nothing changed, the published snapshot is reused unchanged (same object).
@@ -560,7 +510,6 @@ If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.ya
 | `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is in `REGULAR` state (per-symbol scheduling). Closed markets sleep to next open instead. |
-| `SB_SCRAPING_INTERVAL` | — | **Deprecated** heir of the removed global scrape interval. Honored as a fallback for `SB_REGULAR_INTERVAL` when the latter is unset; logs a warning whenever present. |
 | `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
 | `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
 | `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
@@ -570,7 +519,6 @@ If ingestion fails (invalid event, file error, `accounts:` malformed, `schema.ya
 | `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
 | `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
 | `SB_STALENESS_HORIZON` | `900` | Price-freshness liveness sonde horizon (seconds): during `REGULAR`, flag a symbol whose stored price stays frozen this long across consecutive polling cycles while the live quote moves (issue #628). Diagnostic only — never changes cadence/write gating/#617 backoff. `0` disables the sonde. |
-| `SB_CONFIG_MODE` | _(unset)_ | Force the configuration mode (`manual` or `events`). Unset/blank → `settings.yaml`, then auto-detection, then `manual`. |
 | `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint. Since #651 it unmounts a Flask route rather than skipping an HTTP server, so `false` also leaves `SB_METRICS_PORT` unbound |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint — a second gunicorn socket on the same app, so existing scrapers see no change |
 | `LOG_LEVEL` | `INFO` | Logging level |
@@ -584,7 +532,6 @@ app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── influxdb_writer.py      # InfluxDB 3 client wrapper — the scheduler's writes + its 5 anchor reads
-├── config_writer.py        # The config directory's write half: validate → os.replace → republish (#662)
 ├── influx_sql.py           # Shared SQL rule: COALESCE(account,'default') + escaping, NaN guard, UTC-Z (#659)
 ├── influx_reads.py         # PortfolioReader — the UI read primitives; errors propagate (#659)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
@@ -595,14 +542,13 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (+ history), events, config, runtime
-│   ├── problem.py          # RFC 9457 application/problem+json responses (#659, #662)
+│   ├── api.py              # /api blueprint (read-only since #711): shares, prices, portfolio, accounts (+ history), events, config, runtime
+│   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState
     ├── loader.py           # CSV/XLSX loading
-    ├── editor.py           # Addressable rows (opaque id + ETag) + the CSV write mechanics (#659, #662)
     ├── validator.py        # Event validation
     ├── aggregator.py       # Aggregation logic
     └── watcher.py          # File watcher (watchdog)

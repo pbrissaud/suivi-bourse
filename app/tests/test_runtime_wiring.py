@@ -43,13 +43,11 @@ def _share(symbol="AAPL", name="Apple", account="default"):
 
 
 class _FakeConfigManager:
-    """Enough of ``ConfigurationManager`` for the four jobs, with a switchable
-    mode — manual mode is not decoration here, it is trap 6's whole subject."""
+    """Enough of ``ConfigurationManager`` for the four jobs."""
 
-    def __init__(self, shares, mode="events", events=None, raises=None):
+    def __init__(self, shares, events=None, raises=None):
         self._shares = shares
-        self._mode = mode
-        self._events = events
+        self._events = events if events is not None else []
         self._raises = raises
 
     def current(self):
@@ -63,9 +61,6 @@ class _FakeConfigManager:
 
     def load_shares(self, force=False):
         return self._shares
-
-    def get_mode(self):
-        return self._mode
 
     def load_accounts(self):
         return None
@@ -274,23 +269,6 @@ def test_an_unchanged_ingestion_is_told_apart_from_an_updated_one(
 # The backfill records — the three terminals at their call sites
 # ===================================================================== #
 
-def test_manual_mode_records_its_terminal_rather_than_recording_nothing(
-        mock_influx, shares_validator, mocker):
-    """#656 trap 6. ``backfill()`` returns early in manual mode, so the backward
-    pass does not exist at all — and "no record" would render identically to
-    "never reached yet". The job that knows it returned early is the one that
-    says so."""
-    m = _metrics([_share("AAPL"), _share("MSFT")], mock_influx,
-                 shares_validator, mocker, mode="manual")
-
-    m.backfill()
-
-    for symbol in ("AAPL", "MSFT"):
-        record = m.recorder.backfill_of(
-            symbol, "default", runtime_state.BACKWARD)
-        assert record.terminal == runtime_state.TERMINAL_MANUAL_MODE
-
-
 def test_a_symbol_with_no_buy_records_its_own_terminal(
         mock_influx, shares_validator, mocker):
     """A GRANT-only position: nothing to reach back to, and never was.
@@ -416,7 +394,9 @@ def test_a_skipped_perf_run_is_recorded_because_its_signal_is_consumed(
     """
     m = _metrics([_share()], mock_influx, shares_validator, mocker)
     m._perf_dirty_live = False
-    m._perf_last_events = None
+    # Align with the published events so `events_changed` is False: the gate is
+    # an identity check, so a different (even equal) list reads as a reload.
+    m._perf_last_events = m.config_manager.get_events()
 
     m.recompute_perf()
     record = m.recorder.perf()
@@ -430,7 +410,7 @@ def test_a_perf_run_records_which_of_618s_three_signals_fired(
         mock_influx, shares_validator, mocker):
     m = _metrics([_share()], mock_influx, shares_validator, mocker)
     m._perf_dirty_live = True
-    m._perf_last_events = None
+    m._perf_last_events = m.config_manager.get_events()
 
     m.recompute_perf()
     record = m.recorder.perf()
@@ -487,23 +467,6 @@ def test_a_runtime_dial_is_reported_from_the_attribute_not_the_environment(
     assert entry["scope"] == "runtime"
 
 
-def test_the_deprecated_dial_never_claims_the_live_cadence(
-        mock_influx, shares_validator, mocker, monkeypatch):
-    """``SB_SCRAPING_INTERVAL`` is *ignored* when ``SB_REGULAR_INTERVAL`` is
-    also set, so showing the live cadence beside its name would claim it took
-    effect. All it can honestly report is that it is present."""
-    monkeypatch.setenv("SB_SCRAPING_INTERVAL", "60")
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "120")
-    m = _metrics([_share()], mock_influx, shares_validator, mocker)
-    m.regular_interval = 120
-
-    settings = {s["name"]: s for s in main.effective_settings(m)}
-
-    assert settings["SB_SCRAPING_INTERVAL"]["value"] == "60"
-    assert settings["SB_SCRAPING_INTERVAL"]["deprecated"] is True
-    assert settings["SB_REGULAR_INTERVAL"]["value"] == "120"
-
-
 def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     """#654 trap 13. ``SB_VERSION`` and ``SB_CONFIG_DIR`` carry the prefix and
     are consumed by the docker daemon — from inside the container the config
@@ -517,12 +480,11 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
 
 
 def test_a_variable_with_no_scalar_fallback_reads_unset_not_default(monkeypatch):
-    """The mode is resolved through ``settings.yaml`` then auto-detection, so
-    there is no default value to show — and showing one would be a guess about
-    which mode this install ends up in."""
-    monkeypatch.delenv("SB_CONFIG_MODE", raising=False)
+    """``INFLUXDB_TOKEN`` is required and has no default, so there is nothing to
+    show — and showing one would be a guess about a value the app cannot know."""
+    monkeypatch.delenv("INFLUXDB_TOKEN", raising=False)
 
-    entry = {s["name"]: s for s in main.effective_settings()}["SB_CONFIG_MODE"]
+    entry = {s["name"]: s for s in main.effective_settings()}["INFLUXDB_TOKEN"]
 
     assert entry["source"] == "unset"
     assert entry["value"] is None

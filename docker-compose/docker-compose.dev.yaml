@@ -21,9 +21,6 @@ services:
       influxdb:
         condition: service_healthy
     environment:
-      # Empty by default: exercises the same mode resolution as production
-      # (settings.yaml, then auto-detection from the config dir contents).
-      SB_CONFIG_MODE: ${SB_CONFIG_MODE:-}
       SB_REGULAR_INTERVAL: ${SB_REGULAR_INTERVAL:-60}
       SB_PERF_INTERVAL: ${SB_PERF_INTERVAL:-60}
       SB_INGESTION_INTERVAL: ${SB_INGESTION_INTERVAL:-30}

@@ -55,8 +55,7 @@ JITTER_SECONDS = 30
 # Executor pool auto-sizing (issue #619, design #611) — see ``compute_pool_size``.
 POOL_CAP = 50              # hard bound on the *auto* formula only (not the dial)
 FETCH_EST_SECONDS = 5      # rough wall-clock of one _fetch_ticker_data cycle
-RESERVED_EVENTS = 3        # backfill + perf (+ headroom) exist in events mode
-RESERVED_MANUAL = 1        # backfill only in manual mode
+RESERVED = 3               # backfill + perf (+ headroom), the non-scrape jobs
 
 
 def is_closed(state) -> bool:
@@ -284,7 +283,7 @@ def price_freshness_step(
     return SondeState(stored_price, frozen_since, now), stale
 
 
-def compute_pool_size(mode: str, shares: List[dict],
+def compute_pool_size(shares: List[dict],
                       exchange_of: Dict[str, Optional[str]]) -> int:
     """Auto executor-pool size for ``SB_DYNAMIC_EXECUTOR_POOL`` (#619, #611).
 
@@ -295,18 +294,16 @@ def compute_pool_size(mode: str, shares: List[dict],
     ``JITTER_SECONDS`` window, so ``ceil(N × FETCH_EST_SECONDS / JITTER_SECONDS)``
     workers keep up::
 
-        min(reserved + ceil(largest_cohort × FETCH_EST / JITTER), POOL_CAP)
+        min(RESERVED + ceil(largest_cohort × FETCH_EST / JITTER), POOL_CAP)
 
-    ``reserved`` covers the non-scrape jobs — ``RESERVED_EVENTS`` (backfill + perf
-    + headroom) in events mode, ``RESERVED_MANUAL`` (backfill only) otherwise.
+    ``RESERVED`` covers the non-scrape jobs (backfill + perf + headroom) — one
+    value since #711, there being one loading path and therefore one job set.
     ``exchange_of`` maps each held symbol to its exchange; a symbol with no known
     exchange (``None``/missing/falsy) is its own **solo market** (cohort of 1),
     never grouped — so an all-unknown portfolio never inflates into one giant
     cohort. The result is clamped to ``[1, POOL_CAP]``: ``POOL_CAP`` bounds only
     this auto formula, never the fixed ``SB_EXECUTOR_POOL`` dial.
     """
-    reserved = RESERVED_EVENTS if mode == 'events' else RESERVED_MANUAL
-
     symbols = {s['symbol'] for s in shares if s.get('symbol')}
     cohorts: Dict[str, int] = {}
     solo = 0
@@ -323,7 +320,7 @@ def compute_pool_size(mode: str, shares: List[dict],
     largest = max(cohort_sizes, default=0)
 
     scrape_workers = ceil(largest * FETCH_EST_SECONDS / JITTER_SECONDS)
-    return max(1, min(reserved + scrape_workers, POOL_CAP))
+    return max(1, min(RESERVED + scrape_workers, POOL_CAP))
 
 
 def extract_market_context(info: Optional[dict], history_meta: Optional[dict],

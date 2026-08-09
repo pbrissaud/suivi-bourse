@@ -30,30 +30,21 @@ make init
 It creates `.env` (with a freshly generated InfluxDB token) and `data/`, skipping
 whatever already exists — re-running it never overwrites your configuration.
 
-### 3. Modify config
-Edit `data/config.yaml` with the current state of your portfolio, or visit the
-[configuration documentation](https://pbrissaud.github.io/suivi-bourse/docs/configuration/overview)
-to know more about writing a config file.
+### 3. Describe your portfolio
+A portfolio is a ledger of dated events and nothing else: drop your broker
+exports (`.csv` / `.xlsx`) into `data/events/` and SuiviBourse loads them.
+There is no mode to pick and no static portfolio file.
 
-*Example Config:*
-```yaml
----
-shares:
-- name: Apple
-  symbol: AAPL
-  purchase:
-    quantity: 1
-    fee: 2
-    cost_price: 119.98
-  estate:
-    quantity: 2
-    received_dividend: 2.85
+*Example event file* (see also `docker-compose/examples/events-example.csv`):
+```csv
+date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase
+2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,8.50,Q1 2024
 ```
 
-To track transactions instead, drop your broker exports (`.csv` / `.xlsx`) into
-`data/events/` — SuiviBourse detects them and switches to
-[events mode](https://pbrissaud.github.io/suivi-bourse/docs/configuration/events-mode)
-by itself.
+Options — where events are read from, whether a file change reloads immediately,
+and the opt-in `accounts:` block — live in `data/settings.yaml`. The
+[documentation](https://pbrissaud.github.io/suivi-bourse/docs) has the details.
 
 ### 4. Run the stack
 Run the following command in the `docker-compose` folder :

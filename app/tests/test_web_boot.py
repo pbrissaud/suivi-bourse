@@ -23,7 +23,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from confuse import exceptions as ConfuseExceptions
 
 import main
 import web
@@ -41,6 +40,7 @@ class _FakeConfigManager:
         self._shares = [] if shares is None else shares
         self._load_error = load_error
         self.load_calls = 0
+        self.named_unread = 0
         self.watcher_started_with = None
         self.watcher_stopped = False
         # The manager owns the shares schema since #658; the master reads it off
@@ -54,20 +54,21 @@ class _FakeConfigManager:
         return self.current()
 
     def current(self):
-        return main.ConfigSnapshot(shares=self._shares, events=None,
+        return main.ConfigSnapshot(shares=self._shares, events=[],
                                    accounts=None, cache_key=None)
 
     def load_shares(self, force=False):
         return self.reload(force=force).shares
 
-    def get_mode(self):
-        return "manual"
+    def report_unread_files(self):
+        self.named_unread += 1
+        return []
 
     def load_accounts(self):
         return None
 
     def get_events(self):
-        return None
+        return []
 
     def start_watcher(self, reload_callback):
         self.watcher_started_with = reload_callback
@@ -126,8 +127,10 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     runtime = main.build_runtime()
 
     # The configuration IS loaded here — that is what makes a bad one fatal
-    # before the arbiter has anything to respawn.
+    # before the arbiter has anything to respawn — and the v4 file this version
+    # no longer reads is named before that (#711).
     assert fake_config.load_calls == 1
+    assert fake_config.named_unread == 1
     # ... and nothing else is.
     assert fake_config.watcher_started_with is None
     assert influx_cls.call_count == 0
@@ -167,8 +170,6 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("error,expected_message", [
-    (ConfuseExceptions.NotFoundError("shares not found"),
-     "An error occurred while loading the configuration file"),
     (EventValidationError("row 3 is malformed"),
      "An error occurred while loading events"),
     (main.InvalidConfigFile({"shares": "required"}),

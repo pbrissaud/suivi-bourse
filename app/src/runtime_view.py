@@ -3,9 +3,9 @@
 Records + snapshot + job list in, page objects out, ``now`` injected — the taste
 of :mod:`scheduling` and :mod:`portfolio_view`, and here it buys something
 specific: the three cases that are hardest to get right are all unit-testable
-without a scheduler. An ambiguous ``next_run_time``, the three terminal backfill
-states, and manual mode's *nominal* absence of a backward pass are decided by
-functions that take dataclasses and a clock.
+without a scheduler. An ambiguous ``next_run_time``, the two terminal backfill
+states and the boot window in which no series has been observed yet are decided
+by functions that take dataclasses and a clock.
 
 The contract this module is built to honour (#656 déc. 4): **it reports
 observations and never derives a verdict across two items.** Every verdict it
@@ -84,11 +84,10 @@ BACKFILL_FAILING = 'failing'
 class BackfillProgress:
     """One ``(symbol, account, direction)`` pass, made into a bar.
 
-    ``state`` is either a terminal from the record (``complete`` / ``no_buy`` /
-    ``manual_mode``), a skip reason, or one of the three above. The three
-    terminals are carried through **verbatim and never collapsed**: they mean
-    "there is nothing left to fetch", "this symbol was never bought" and "this
-    installation has no backward pass at all", and only the first is progress.
+    ``state`` is either a terminal from the record (``complete`` / ``no_buy``),
+    a skip reason, or one of the three above. The terminals are carried through
+    **verbatim and never collapsed**: they mean "there is nothing left to fetch"
+    and "this symbol was never bought", and only the first is progress.
     """
 
     account: str
@@ -409,23 +408,21 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
 
     total = sum(states.values())
     complete = states.get(runtime_state.TERMINAL_COMPLETE, 0)
-    # Three kinds of series are outside the bar's denominator, for two reasons.
+    # Two kinds of series are outside the bar's denominator, for two reasons.
     #
-    # `no_buy` and `manual_mode` are not progress and not stalls — they are
-    # series with nothing to fetch. Counting them as pending would leave the bar
-    # permanently short on a manual install, which is trap 6 rendered wrong.
+    # `no_buy` is not progress and not a stall — it is a series with nothing to
+    # fetch. Counting it as pending would leave the bar permanently short on a
+    # portfolio held entirely by grant, which is trap 6 rendered wrong.
     #
     # `unknown` is the one found by looking, and it is a **boot window**: the
     # backfill job runs every 60 s, so for the first cycle after a restart no
-    # series has a record at all — and counting them as pending made a manual
-    # install announce « 0 séries sur 2 » for a reprise d'historique that was
-    # never going to happen. An unobserved series is not known to be pending; it
-    # is not known to be anything, which is what the word says.
+    # series has a record at all — and counting them as pending made an install
+    # announce « 0 séries sur 2 » for a reprise d'historique that had not
+    # started. An unobserved series is not known to be pending; it is not known
+    # to be anything, which is what the word says.
     nothing_to_do = sum(
         states.get(state, 0)
-        for state in (runtime_state.TERMINAL_NO_BUY,
-                      runtime_state.TERMINAL_MANUAL_MODE,
-                      BACKFILL_UNKNOWN))
+        for state in (runtime_state.TERMINAL_NO_BUY, BACKFILL_UNKNOWN))
     in_scope = total - nothing_to_do
 
     return {
@@ -436,7 +433,6 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
         'running': states.get(BACKFILL_RUNNING, 0),
         'unknown': states.get(BACKFILL_UNKNOWN, 0),
         'no_buy': states.get(runtime_state.TERMINAL_NO_BUY, 0),
-        'manual_mode': states.get(runtime_state.TERMINAL_MANUAL_MODE, 0),
         'ratio': complete / in_scope if in_scope > 0 else None,
     }
 
@@ -540,19 +536,17 @@ def build_runtime(
     ingest: Optional[runtime_state.IngestRecord],
     perf: Optional[runtime_state.PerfRecord],
     now: datetime,
-    mode: str,
     scheduler_running: bool = True,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload.
 
-    ``mode`` rides along because manual mode changes what an *absent* backward
-    pass means, and the front has to be able to say so without a second request.
+    No ``mode`` since #711: there is one loading path, so an absent backward
+    pass has exactly one reading and the front has nothing left to branch on.
     """
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
     return {
         'now': _iso(now),
-        'mode': mode,
         'scheduler_running': scheduler_running,
         'symbols': [symbol.to_dict() for symbol in symbols],
         'backfill': build_backfill_summary(symbols),
