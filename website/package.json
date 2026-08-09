@@ -12,8 +12,7 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
-    "write-heading-ids": "docusaurus write-heading-ids",
-    "crowdin:lint": "CROWDIN_DOCS_PROJECT_ID=${CROWDIN_DOCS_PROJECT_ID:-0} CROWDIN_DOCS_PERSONAL_TOKEN=${CROWDIN_DOCS_PERSONAL_TOKEN:-config-lint-only} pnpm dlx @crowdin/cli@4.15.0 config lint"
+    "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
     "@docusaurus/core": "^3.0.1",

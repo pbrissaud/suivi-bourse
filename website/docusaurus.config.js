@@ -11,12 +11,13 @@ const projectName = 'suivi-bourse';
 // The **documentation** Crowdin project, and it is not the front's (ADR-0024).
 // Two projects rather than one: the two corpora have different formats (ICU
 // JSON against Markdown) and different rhythms — the front's catalogues move
-// with a component, a doc page moves with a release — and a single project
-// would put one review queue in front of both. The slug is written here
-// because `editUrl` below is what sends a French reader to it; `crowdin.yml`
-// names the same project through its own credentials
-// (`CROWDIN_DOCS_PROJECT_ID`).
-const crowdinDocsProject = 'suivi-bourse-docs';
+// One project for the whole product, not one per surface (ADR-0024, amended by
+// #739): a translation memory is per-project by default, so splitting them
+// would let the interface and the page that explains it name the same figure
+// two ways. The slug is written here because `editUrl` below is what sends a
+// French reader to it; the root `crowdin.yml` names the same project through
+// `CROWDIN_PROJECT_ID`.
+const crowdinProject = 'suivi-bourse';
 
 // Named once, read by `i18n` and by `editUrl`: the rule is "the default locale
 // is the source", not "English is special", so a third language added to
@@ -93,7 +94,7 @@ const config = {
           editUrl: ({locale, versionDocsDirPath, docPath}) =>
             locale === defaultLocale
               ? `https://github.com/${organizationName}/${projectName}/tree/master/website/${versionDocsDirPath}/${docPath}`
-              : `https://crowdin.com/project/${crowdinDocsProject}/${locale}`,
+              : `https://crowdin.com/project/${crowdinProject}/${locale}`,
           // Docs versioning:
           //  - `current` (the ./docs folder) is v5: a flat thread of eleven
           //    entries, ordered by ./sidebars.js and carrying no category,

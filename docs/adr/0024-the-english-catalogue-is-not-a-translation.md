@@ -65,12 +65,25 @@ showed does not survive the drawer.
   *stale* translation: Docusaurus falls back to source for an untranslated string, never
   for a translated one whose source moved, so a superseded French rule can ship.
 - **The catalogues are ICU, keyed semantically, one JSON file per language**, English
-  being the Crowdin source, in two projects (front and docs have different formats and
-  different rhythms). Plurals are real here — a header counter, `Forget this import (214)`,
+  being the Crowdin source, in **one** project. Plurals are real here — a header counter, `Forget this import (214)`,
   `N consecutive readings` — and French carries gendered agreement (`latente`, `réalisée`,
   `soldée`) that English does not, so a shared string across contexts is not available.
   A third language is admitted by this shape without redoing it, which was the ticket's
   own test.
+
+  **Amended (issue #739).** This decision first said *two* projects, front and docs,
+  "different formats and different rhythms". Setting it up showed the reason does not
+  hold: the documentation's own configuration already mixes Markdown and ICU JSON, and
+  serving several formats in one project is what Crowdin is for — so the argument
+  forbids the very project it was written to justify. The rhythms do differ, but that
+  decides *when* one translates, not where the files live; a project organises by path.
+  What settles it is the vocabulary this ADR exists to protect: a translation memory
+  carries `defaultProjectIds`, so isolation is Crowdin's default and sharing is an
+  explicit step. Two projects means *plus-value latente*, translated once in the
+  interface, never suggests itself in the page that explains it — this ADR's own defect,
+  two languages in one box, one storey up as two vocabularies for one product. One
+  project, one `crowdin.yml` at the repository root, covering `website/` and
+  `app/web/src/i18n/`.
 
 [Full argument: #692](https://github.com/pbrissaud/suivi-bourse/issues/692) ·
 [the labels it re-examined: #683](https://github.com/pbrissaud/suivi-bourse/issues/683),

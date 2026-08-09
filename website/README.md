@@ -68,23 +68,31 @@ landing in the repository through an import. The repository holds no French
 file today, and that is the expected state until the first import: `pnpm build`
 serves the English source under `/fr/` in the meantime.
 
-Syncing is the [Crowdin CLI][cli] run against `crowdin.yml`, with the project
-and its token supplied by the environment — `CROWDIN_DOCS_PROJECT_ID` and
-`CROWDIN_DOCS_PERSONAL_TOKEN`, distinct from the front project's:
+Syncing is the [Crowdin CLI][cli] run against `crowdin.yml`, which lives at the
+**repository root** and covers the whole product in one project — the site and
+the interface's catalogue alike (ADR-0024, amended by #739). The project and its
+token come from the environment, `CROWDIN_PROJECT_ID` and
+`CROWDIN_PERSONAL_TOKEN`, so the file carries no secret and the GitHub
+integration can read the same one:
 
 ```
-$ pnpm write-translations --override && crowdin upload sources  # English → Crowdin
-$ crowdin download                                              # French → i18n/fr/
+$ pnpm write-translations --override    # from website/, refresh the English sources
+$ cd .. && crowdin upload sources       # English → Crowdin
+$ crowdin download                      # French → website/i18n/fr/ and app/web/src/i18n/fr.json
 ```
 
 ### `crowdin.yml` is checked by Crowdin, never by a YAML parser
 
 ```
-$ pnpm crowdin:lint
+$ CROWDIN_PROJECT_ID=0 CROWDIN_PERSONAL_TOKEN=config-lint-only \
+    npx @crowdin/cli@4.15.0 config lint
 ```
 
+The placeholder credentials are honest: `config lint` reads the file alone and
+touches no network, which is what lets the CI run it on a fork's pull request.
+
 The CLI compiles every `source:` pattern into a **regex**, so a glob that is
-valid YAML and valid shell can still be refused: `'/docs/**/*.{md,mdx}'` becomes
+valid YAML and valid shell can still be refused: `'/website/docs/**/*.{md,mdx}'` becomes
 `.+\.{md,mdx}` and dies on `Illegal repetition`, because `{` opens a repetition
 quantifier. Crowdin has no brace expansion — **one extension per entry**. The
 failure is invisible to `pnpm build`, which never opens this file, and its

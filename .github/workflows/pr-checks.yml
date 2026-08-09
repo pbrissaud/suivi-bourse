@@ -143,12 +143,16 @@ jobs:
       # with `Illegal repetition`, and the whole corpus silently never reaches
       # the project. This is the only gate that runs the tool that consumes the
       # file. It reads the file alone, over no network, so the placeholder
-      # credentials baked into the script are the honest shape here — no secret
-      # is needed and a fork's pull request is checked like any other.
+      # credentials set here are the honest shape — no secret is needed and a
+      # fork's pull request is checked like any other. It runs from the
+      # repository root because `crowdin.yml` covers both halves of the product,
+      # the site and the interface, in one project (ADR-0024).
       - name: Lint the Crowdin configuration if the site changed
         if: steps.changed-files-specific.outputs.any_changed == 'true'
-        working-directory: website
-        run: pnpm crowdin:lint
+        env:
+          CROWDIN_PROJECT_ID: '0'
+          CROWDIN_PERSONAL_TOKEN: config-lint-only
+        run: npx --yes @crowdin/cli@4.15.0 config lint
 
       # The English catalogues under i18n/en are generated *and* committed, and
       # at build time they win over docusaurus.config.js — for English too. So a
