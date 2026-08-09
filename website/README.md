@@ -42,8 +42,26 @@ already banded *unmaintained* on the site.
 The English catalogues under `i18n/en/` are **generated**, never hand-written:
 
 ```
-$ pnpm write-translations     # refresh i18n/en/** before uploading sources
+$ pnpm write-translations --override    # refresh i18n/en/** before uploading
 ```
+
+`--override` is not optional. Plain `write-translations` only *adds* keys it
+cannot find; it never refreshes one that already exists. Without the flag, a
+string changed in `docusaurus.config.js` leaves the catalogue untouched — and
+the catalogue is what the build reads.
+
+Which is the second thing to know about these files: **they are the authority
+for the English strings, not `docusaurus.config.js`.** At build time the
+catalogue wins over the config, for the default locale as much as for French.
+Two consequences, and both are gated in CI (`.github/workflows/pr-checks.yml`):
+
+- a theme string edited in the config and not regenerated here is **ignored**,
+  with every other check green — so the workflow re-runs
+  `write-translations --override` and fails on any diff under `i18n/en/`;
+- a **computed** value in such a string is frozen the day the catalogue is
+  generated. There is none left: the footer copyright carries no year, because
+  `new Date().getFullYear()` would have gone on reading 2026 into 2027 with
+  nobody editing anything.
 
 Nothing under `i18n/fr/` is written by hand either — it is Crowdin's output,
 landing in the repository through an import. The repository holds no French
@@ -55,23 +73,9 @@ and its token supplied by the environment — `CROWDIN_DOCS_PROJECT_ID` and
 `CROWDIN_DOCS_PERSONAL_TOKEN`, distinct from the front project's:
 
 ```
-$ pnpm write-translations && crowdin upload sources     # English → Crowdin
-$ crowdin download                                      # French → i18n/fr/
+$ pnpm write-translations --override && crowdin upload sources  # English → Crowdin
+$ crowdin download                                              # French → i18n/fr/
 ```
-
-### The limit: a stale translation is served with no fallback
-
-Docusaurus falls back to the English source for a string that has **no**
-translation. It does not fall back for a string that **has** one whose source
-has since moved — the French page keeps serving the older text, silently. A
-superseded French rule can therefore ship, and no configuration removes this:
-it is a property of the fallback, which has no way to know that an English
-sentence changed after its French counterpart was approved.
-
-What it costs is a **rhythm**, and the rhythm is the mitigation: translate a
-page once its English text has settled, never while it is being written. That
-is why translation starts at v5 rather than before it — translating the v4
-corpus would have translated the 16 255 words the rewrite deletes.
 
 ### `crowdin.yml` is checked by Crowdin, never by a YAML parser
 
@@ -88,8 +92,21 @@ symptom at upload time is an empty project rather than an error anyone reads.
 
 The lint reads the file alone and calls nothing, so the script supplies
 placeholder credentials when the real ones are absent; it validates the
-configuration, never the token. CI runs it on every pull request touching
-`website/`.
+configuration, never the token.
+
+### The limit: a stale translation is served with no fallback
+
+Docusaurus falls back to the English source for a string that has **no**
+translation. It does not fall back for a string that **has** one whose source
+has since moved — the French page keeps serving the older text, silently. A
+superseded French rule can therefore ship, and no configuration removes this:
+it is a property of the fallback, which has no way to know that an English
+sentence changed after its French counterpart was approved.
+
+What it costs is a **rhythm**, and the rhythm is the mitigation: translate a
+page once its English text has settled, never while it is being written. That
+is why translation starts at v5 rather than before it — translating the v4
+corpus would have translated the 16 255 words the rewrite deletes.
 
 [crowdin]: https://crowdin.com/project/suivi-bourse-docs
 [cli]: https://crowdin.github.io/crowdin-cli/

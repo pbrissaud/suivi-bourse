@@ -245,7 +245,22 @@ const config = {
         style: 'dark',
         links: [
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Suivi Bourse made by @pbrissaud. Built with Docusaurus.`,
+        // **No computed value in a string the catalogues mirror.** Every theme
+        // string below is extracted by `pnpm write-translations` into
+        // `i18n/en/docusaurus-theme-classic/*.json`, and at build time the
+        // catalogue *wins* over this file — for English too, not only for
+        // French. A `new Date().getFullYear()` here was therefore frozen the
+        // day the catalogue was generated: the English site would still read
+        // 2026 on 1 January 2027, silently, and `write-translations` would
+        // start producing a diff on a file nobody touched.
+        //
+        // The fix is at the cause rather than at the symptom — a year is the
+        // only value here that changes without an author, so it goes. What
+        // remains are literals, which drift only if someone edits this file
+        // and forgets to regenerate; that is caught by the `i18n/en` no-diff
+        // gate in .github/workflows/pr-checks.yml.
+        copyright:
+          'Copyright © Suivi Bourse made by @pbrissaud. Built with Docusaurus.',
       },
       prism: {
         theme: lightTheme,

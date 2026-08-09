@@ -151,12 +151,21 @@ catalogues, which `.gitignore` keeps out of the repository as well. `editUrl`
 splits by locale — GitHub for English, Crowdin otherwise — since a pull request
 on a French file is lost at the next import.
 
-**`pnpm crowdin:lint` runs the tool that consumes `crowdin.yml`, and `pnpm
-build` never opens it.** The CLI compiles each `source:` into a regex, so
-`'/docs/**/*.{md,mdx}'` — valid YAML, valid shell — is refused with `Illegal
-repetition` (`{` opens a quantifier); Crowdin has no brace expansion, hence
-**one extension per entry**. Checking the file with a YAML parser passes it, and
-the symptom is an upload that carries nothing.
+Two gates guard it, and neither is `pnpm build` — which opens neither file:
+
+- **`pnpm crowdin:lint` runs the tool that consumes `crowdin.yml`.** The CLI
+  compiles each `source:` into a regex, so `'/docs/**/*.{md,mdx}'` — valid YAML,
+  valid shell — is refused with `Illegal repetition` (`{` opens a quantifier);
+  Crowdin has no brace expansion, hence **one extension per entry**. Checking
+  the file with a YAML parser passes it, and the symptom is an upload that
+  carries nothing.
+- **`pnpm write-translations --override` must leave `i18n/en/` unchanged.** The
+  committed English catalogues **win over `docusaurus.config.js` at build time,
+  for English too**, so a theme string edited in the config and not regenerated
+  is ignored with every check green. `--override` is what makes the check real:
+  plain `write-translations` only adds missing keys. It is also why the footer
+  copyright carries no year — a `new Date().getFullYear()` frozen into a
+  catalogue goes on reading 2026 into 2027 with nobody having edited anything.
 
 The cost no configuration removes: Docusaurus falls back to the source for an
 **untranslated** string, never for a translated one whose source moved, so a
@@ -170,8 +179,8 @@ pnpm install
 pnpm start    # Development server (no /docs redirect — see above)
 pnpm build    # Production build, every locale (fails on broken links)
 pnpm build --locale fr   # French alone — still builds with no translation file
-pnpm write-translations  # Refresh the English sources Crowdin uploads
-pnpm crowdin:lint        # Validate crowdin.yml with the Crowdin CLI
+pnpm write-translations --override  # Refresh the English sources Crowdin uploads
+pnpm crowdin:lint                   # Validate crowdin.yml with the Crowdin CLI
 ```
 
 ### Docker Compose (in `docker-compose/` directory)

@@ -149,3 +149,16 @@ jobs:
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         working-directory: website
         run: pnpm crowdin:lint
+
+      # The English catalogues under i18n/en are generated *and* committed, and
+      # at build time they win over docusaurus.config.js — for English too. So a
+      # string edited in the config and not regenerated here is simply ignored,
+      # with every other gate green. `--override` is required: plain
+      # write-translations only adds missing keys and never refreshes one that
+      # already exists, which is exactly how the divergence stays invisible.
+      - name: Check i18n/en is what write-translations generates
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: |
+          pnpm write-translations --override
+          git diff --exit-code -- i18n/en
