@@ -77,12 +77,21 @@ position: a dividend is not a price movement, and mixing the two produces a
 figure whose terms have different definitions.
 
 **`DEPOSIT`** — needs `account` and `amount`; carries no share. It is money
-arriving from outside the portfolio: cash rises by `amount − fee`, and so does
-the **net contribution**. That distinction is the one performance rests on — an
-external flow is something you put in, never something the portfolio earned.
+arriving from outside the portfolio: cash rises by `amount − fee`, and the
+**net contribution** rises by `amount` — the gross sum, the fee excluded. That
+distinction is the one performance rests on: an external flow is something you
+put in, never something the portfolio earned.
 
 **`WITHDRAWAL`** — needs `account` and `amount`; carries no share. The mirror
-image: cash falls by `amount + fee`, and the net contribution falls by `amount`.
+image, and it is symmetrical down to the fee: cash falls by `amount + fee`, and
+the net contribution falls by `amount`.
+
+**A transfer fee is never absorbed into the net contribution**, and that is a
+decision rather than an oversight. Absorbing it would make the books close on
+three terms, at the price of making the money disappear from the product: it
+left your pocket, and it belongs to no position — it is neither an acquisition
+cost, nor a disposal cost, nor a dividend. So your gain carries it as a term of
+its own, and an install whose broker moves money for free never meets that term.
 
 `DEPOSIT` and `WITHDRAWAL` are **cash events and carry no share at all**:
 `symbol`, `name`, `quantity` and `unit_price` are refused on them rather than
