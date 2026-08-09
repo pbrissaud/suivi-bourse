@@ -8,6 +8,22 @@ const darkTheme = themes.dracula;
 const organizationName = 'pbrissaud';
 const projectName = 'suivi-bourse';
 
+// The **documentation** Crowdin project, and it is not the front's (ADR-0024).
+// Two projects rather than one: the two corpora have different formats (ICU
+// JSON against Markdown) and different rhythms — the front's catalogues move
+// with a component, a doc page moves with a release — and a single project
+// would put one review queue in front of both. The slug is written here
+// because `editUrl` below is what sends a French reader to it; `crowdin.yml`
+// names the same project through its own credentials
+// (`CROWDIN_DOCS_PROJECT_ID`).
+const crowdinDocsProject = 'suivi-bourse-docs';
+
+// Named once, read by `i18n` and by `editUrl`: the rule is "the default locale
+// is the source", not "English is special", so a third language added to
+// `locales` gets the Crowdin destination without anyone remembering to widen a
+// comparison.
+const defaultLocale = 'en';
+
 /** @type {import('@docusaurus/types').Config} */
 
 const config = {
@@ -31,12 +47,29 @@ const config = {
   organizationName: organizationName, // Usually your GitHub org/user name.
   projectName: projectName, // Usually your repo name.
 
-  // Even if you don't use internalization, you can use this field to set useful
-  // metadata like html lang. For example, if your site is Chinese, you may want
-  // to replace "en" with "zh-Hans".
+  // The site is bilingual, and English is the **source** rather than one of two
+  // translations (ADR-0024): the corpus is written in English, Crowdin reads it
+  // and produces French. That is the same posture as the front's catalogues,
+  // for the same reason — a source that is itself a translation has no author.
+  //
+  // `defaultLocale: 'en'` is also half of the link contract the product
+  // consumes (ADR-0025): the locale segment is **absent** for the default
+  // locale and `fr/` for French, which is exactly what Docusaurus emits — the
+  // default locale at the baseUrl root, every other locale under its own
+  // segment. `docusaurus build` builds **all** the declared locales, so /fr/
+  // exists in the published output from this commit on; without it an in-app
+  // bubble following a French reader's language would 404.
+  //
+  // The shape admits a third language without being redone — declare it here,
+  // add it to `crowdin.yml`'s target, done — but adding one is not this
+  // ticket's business.
   i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
+    defaultLocale: defaultLocale,
+    locales: [defaultLocale, 'fr'],
+    localeConfigs: {
+      en: {label: 'English'},
+      fr: {label: 'Français'},
+    },
   },
 
   presets: [
@@ -46,10 +79,21 @@ const config = {
       ({
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            `https://github.com/${organizationName}/${projectName}/tree/master/website/`,
+          // "Edit this page" has **two destinations, one per locale**, and the
+          // split is not cosmetic: a French page is not a file of this
+          // repository that anyone may edit, it is the output of a Crowdin
+          // import. Sending a French reader to GitHub invites a pull request
+          // on a file the next import overwrites — the contribution is lost
+          // and nobody is told. So English goes to the source file on GitHub,
+          // and every other locale goes to the project that owns its strings.
+          //
+          // `editLocalizedFiles` stays at its default (false): there is no
+          // localized file to point at, since translations live in Crowdin
+          // until an import lands them.
+          editUrl: ({locale, versionDocsDirPath, docPath}) =>
+            locale === defaultLocale
+              ? `https://github.com/${organizationName}/${projectName}/tree/master/website/${versionDocsDirPath}/${docPath}`
+              : `https://crowdin.com/project/${crowdinDocsProject}/${locale}`,
           // Docs versioning:
           //  - `current` (the ./docs folder) is v5: a flat thread of eleven
           //    entries, ordered by ./sidebars.js and carrying no category,
@@ -179,6 +223,16 @@ const config = {
             type: 'docsVersionDropdown',
             position: 'right',
             dropdownActiveClassDisabled: true,
+          },
+          // The language is reachable from the site itself, not only from the
+          // app's link. `/fr/` is published (the build covers every declared
+          // locale), so the reader an in-app bubble lands there needs the way
+          // back — and the reader who wants French needs the way in. An
+          // untranslated page under /fr/ shows its English source: that is the
+          // fallback, not a hole.
+          {
+            type: 'localeDropdown',
+            position: 'right',
           },
           {
             href: `https://github.com/${organizationName}/${projectName}`,

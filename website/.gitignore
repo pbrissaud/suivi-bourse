@@ -8,6 +8,15 @@
 .docusaurus
 .cache-loader
 
+# The theme catalogues of the **frozen** versions. `pnpm write-translations`
+# regenerates them beside the ones we keep, and they are the one thing the
+# translation pipeline must never see: they hold the sidebar categories of
+# `versioned_docs/version-3.x` and `version-4.x`, i.e. the taxonomy the v5
+# rewrite killed (ADR-0024, ADR-0025). `crowdin.yml` already lists sources one
+# by one rather than by glob; this line makes the exclusion survive an edit of
+# that list.
+/i18n/*/docusaurus-plugin-content-docs/version-*.json
+
 # Misc
 .DS_Store
 .env.local
