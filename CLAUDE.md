@@ -113,15 +113,36 @@ each. Four things about it are decisions, not defaults:
 
 ### Documentation Website (in `website/` directory)
 
-Dependencies are managed with pnpm. The docs are versioned: `docs/` holds the
-current **v4** docs (served at `/docs`), `versioned_docs/version-3.x/` holds the
-frozen **v3** docs (served at `/docs/v3`). Use the navbar version selector to
+Dependencies are managed with pnpm. The docs are versioned and **every version
+has an address, the current one included** (ADR-0025, issue #733): `docs/` holds
+**v5** at `/docs/v5`, `versioned_docs/version-4.x/` and
+`versioned_docs/version-3.x/` hold the frozen **v4** and **v3** at `/docs/v4`
+and `/docs/v3`. `lastVersion` is still `current` — v5 is the default version, it
+simply no longer sits at the bare root. Use the navbar version selector to
 switch. Snapshot a new version with `pnpm docusaurus docs:version <name>`.
+
+The scheme is uniform rather than *everything is versioned except the newest*,
+which is the rule that made ADR-0016's in-app convention bubble impossible: with
+`/docs` meaning *latest*, a link a v5 install emits serves v6's page the day v6
+ships — a correct page about another product. **The link contract the product
+consumes** (issue #712) is therefore:
+
+```
+https://pbrissaud.github.io/suivi-bourse/{locale}/docs/v5/<page>#<anchor>
+```
+
+locale segment absent for the default locale (English), `fr/` for French, and
+the version frozen at the **major** (a 5.1 install still reads `/docs/v5`).
+
+`/docs` is kept alive by `@docusaurus/plugin-client-redirects`, which points it
+at `/docs/v5/`. That redirect is **client-side and only exists in the built
+output** — under `pnpm start` `/docs` 404s, so a manual check in development
+concludes the opposite of the truth; verify it on `build/docs/index.html`.
 
 ```bash
 cd website
 pnpm install
-pnpm start    # Development server
+pnpm start    # Development server (no /docs redirect — see above)
 pnpm build    # Production build (fails on broken links)
 ```
 
