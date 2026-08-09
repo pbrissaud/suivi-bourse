@@ -214,7 +214,18 @@ TABLES = (
 #: ``account`` column means ``default``, which is what lets a single-account v4's
 #: files import without a single edit). Seeded **at creation only** — resurrecting
 #: it at every boot would undo a deliberate deletion.
-DEFAULT_ACCOUNT_ROW = ('default', 'CTO', 'Compte par défaut', None)
+#:
+#: Both strings here are **documentation, not display**. ``label`` and ``type``
+#: are ``NOT NULL``, so this row cannot decline to name itself, and it is the one
+#: row *every* install owns — the default setup and the headless one alike. A
+#: value seeded once into a file can never follow the reader's language, so the
+#: interface renders this pair from its own catalogue whenever ``id`` is
+#: ``default`` (#745) and never reads what is stored. What is stored is what a
+#: person dumping the database should see, which is why it is English like the
+#: rest of the code: seeding ``Compte par défaut`` — as spec #695 first wrote it
+#: — put a French noun in the English interface, the exact fault ADR-0024 exists
+#: against.
+DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account', None)
 
 
 class Store:
