@@ -16,6 +16,7 @@ import pytest
 
 import main
 import runtime_state
+import store
 import web as web_module
 from web import create_app
 
@@ -84,7 +85,11 @@ def build_client_and_influx(tmp_path, frame=None, error=None, settings=None,
         (events_dir / '2024.csv').write_text(events, encoding='utf-8')
 
     manager = main.ConfigurationManager(config_dir=str(tmp_path))
-    runtime = main.Runtime(manager, manager.validator, None)
+    runtime = main.Runtime(manager, None)
+    # A real store under tmp_path, as ``post_fork`` would have opened (#696).
+    # ``/health`` reaches it, and every other route here has to keep answering
+    # with one present.
+    runtime.store = store.open_store(tmp_path / 'store.duckdb')
     influx = FakeClient(frame, error, frames)
     runtime.metrics = FakeMetrics(influx)
     return create_app(runtime).test_client(), influx

@@ -103,6 +103,12 @@ celerybeat-schedule
 # templates (data.example/, .env.example) are the versioned ones.
 docker-compose/data/
 
+# The store (issue #696). The app creates one wherever SB_STORE_DIR points, and
+# the default is the config directory — so a dev run against the versioned
+# data.example/ template leaves one there. It is state, never a template.
+*.duckdb
+*.duckdb.wal
+
 # Environments
 .env
 .venv

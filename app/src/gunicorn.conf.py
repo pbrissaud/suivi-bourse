@@ -2,9 +2,9 @@
 
 The web API lives inside the scraper process, so this file is not merely a
 server configuration: it *is* the boot sequence. ``preload_app`` runs the
-application factory in the master before any fork, which keeps a fatal
-configuration error a single clean exit rather than an arbiter respawn loop;
-``post_fork`` then starts everything a fork would have broken, and
+application factory in the master before any fork, which keeps an unreadable
+store (issue #696) or a broken ledger a single clean exit rather than an arbiter
+respawn loop; ``post_fork`` then starts everything a fork would have broken, and
 ``worker_exit`` tears it back down.
 
 Local run, from ``app/``::
@@ -89,12 +89,12 @@ def on_starting(server):
 
 
 def post_fork(server, worker):
-    """Start the scheduler, the InfluxDB client and the watcher in the worker."""
+    """Open the store and start the scheduler, the client and the watcher."""
     from web import start_background
     start_background()
 
 
 def worker_exit(server, worker):
-    """Stop the scheduler and close the InfluxDB connection."""
+    """Stop the scheduler and close the InfluxDB and store connections."""
     from web import stop_background
     stop_background()

@@ -18,7 +18,6 @@ import yaml
 import yfinance as yf
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
-from cerberus import Validator
 from logfmt_logger import getLogger
 from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
@@ -26,6 +25,7 @@ from yfinance.exceptions import YFRateLimitError
 import performance
 import runtime_state
 import scheduling
+import store
 from events import (
     EventLoader, EventValidator, EventAggregator, EventWatcher,
     AccountMetricPoint, PortfolioTotalPoint,
@@ -88,25 +88,16 @@ def current_log_level() -> str:
     return logging.getLevelName(logging.getLogger('suivi_bourse').level)
 
 
-# Cerberus schema for the opt-in `accounts:` block of settings.yaml. Declaring
-# this block turns on first-class accounts; its absence leaves behaviour
-# strictly unchanged.
-ACCOUNTS_SCHEMA = {
-    'accounts': {
-        'type': 'list',
-        'required': True,
-        'empty': False,
-        'schema': {
-            'type': 'dict',
-            'schema': {
-                'id': {'type': 'string', 'required': True, 'empty': False},
-                'type': {'type': 'string', 'required': True, 'empty': False},
-                'currency': {'type': 'string', 'required': True, 'empty': False},
-                'label': {'type': 'string', 'required': False},
-            },
-        },
-    },
-}
+# The shape of the opt-in `accounts:` block of settings.yaml. Declaring the
+# block turns on first-class accounts; its absence leaves behaviour strictly
+# unchanged.
+#
+# Checked by hand rather than by a schema library since #696: Cerberus left with
+# `schema.yaml`, whose subject — the hand-written `config.yaml` — no longer
+# exists, and the store's DDL is where a constraint belongs now (ADR-0007). Two
+# call sites did not justify keeping a dependency for one of them.
+ACCOUNT_REQUIRED_FIELDS = ('id', 'type', 'currency')
+ACCOUNT_OPTIONAL_FIELDS = ('label',)
 
 
 # Per-symbol scrape jobs are keyed ``scrape:<symbol>`` in the APScheduler
@@ -215,6 +206,10 @@ def resolve_executor_pool_size(shares: List[dict], capture_exchange_of) -> int:
 SETTINGS_INVENTORY = (
     # name, default, scope, secret, deprecated
     ('LOG_LEVEL', 'INFO', 'runtime', False, False),
+    # Where the store is. Boot-scope by nature and not by choice (ADR-0014): it
+    # is one of the few things the process must know *before* it can open the
+    # store, and therefore before it can ask the store anything.
+    (store.STORE_DIR_VAR, store.DEFAULT_STORE_DIR, 'boot', False, False),
     ('INFLUXDB_HOST', 'http://influxdb:8181', 'boot', False, False),
     ('INFLUXDB_TOKEN', None, 'boot', True, False),
     ('INFLUXDB_DATABASE', 'suivi_bourse', 'boot', False, False),
@@ -330,23 +325,12 @@ def register_interval_jobs(scheduler, sb_metrics, ingestion_interval: int,
         name='Performance recompute')
 
 
-class InvalidConfigFile(Exception):
-    def __init__(self, errors_):
-        self.errors = errors_
-        self.message = 'Shares field of the config file is invalid :' + \
-            str(self.errors)
-        super().__init__(self.message)
-
-
-def load_shares_schema() -> Validator:
-    """Build the Cerberus validator for the aggregated share list.
-
-    Lives next to ``ConfigurationManager`` because the manager is what validates
-    now (issue #658): a configuration snapshot exists only if it passed this
-    schema, so nothing downstream can read a rejected one.
-    """
-    with open(Path(__file__).parent / 'schema.yaml', encoding='UTF-8') as f:
-        return Validator(yaml.safe_load(f))
+# ``InvalidConfigFile`` and ``load_shares_schema`` left with ``schema.yaml``
+# (issue #696). The schema validated the *aggregated share list*, which since
+# #711 is no longer read from a file at all — it is computed from the event
+# ledger, whose own validation is ``events/validator.py``. Where a real
+# constraint is wanted, it now goes in the store's DDL, at the point the error
+# enters (ADR-0007).
 
 
 @dataclass(frozen=True)
@@ -407,27 +391,27 @@ class ConfigurationManager:
       mutex, ``_write_lock``, serialises the writers (the ingestion job, the
       watchdog callback, and — once it exists — a web handler reloading
       synchronously after a file edit).
-    * **Never publish what is not validated.** Cerberus runs *inside* snapshot
-      construction, so a rejected configuration never becomes a snapshot and
-      therefore cannot be read by anyone. This closes a split-brain that
-      predates the web UI: the cache used to be written before validation, so a
-      file the validator refused was still consumed by backfill and by the
-      performance recompute while scraping ran on the previous one.
+    * **Never publish what is not validated.** Loading, validating and
+      aggregating all run *inside* snapshot construction, so a rejected
+      configuration never becomes a snapshot and therefore cannot be read by
+      anyone. This closes a split-brain that predates the web UI: the cache used
+      to be written before validation, so a file the validator refused was still
+      consumed by backfill and by the performance recompute while scraping ran
+      on the previous one. What validates is ``events/validator.py`` and, from
+      #696, the store's own DDL — the schema that checked the *aggregated* list
+      is gone with the hand-written file it was written for.
     """
 
     #: The v4 file this version no longer reads (issue #711). Named at startup
     #: when it is found — see :meth:`report_unread_files`.
     LEGACY_MANUAL_FILE = 'config.yaml'
 
-    def __init__(self, config_dir: Optional[str] = None,
-                 validator_: Optional[Validator] = None):
+    def __init__(self, config_dir: Optional[str] = None):
         """
         Initialize the configuration manager.
 
         Args:
             config_dir: Override configuration directory (for testing).
-            validator_: Override the shares validator (for testing). Defaults to
-                the production ``schema.yaml``.
         """
         if config_dir:
             self.config_dir = Path(config_dir).expanduser()
@@ -440,8 +424,6 @@ class ConfigurationManager:
         self._watch_enabled: bool = False
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
-
-        self.validator = validator_ or load_shares_schema()
 
         # The published snapshot, and the mutex that serialises publishers.
         # Both are created here, which under gunicorn's ``preload_app`` means
@@ -522,6 +504,38 @@ class ConfigurationManager:
     #: Event-file extensions recognised by the loader and by the cache key.
     EVENT_SUFFIXES = ('.csv', '.xlsx')
 
+    @staticmethod
+    def _accounts_block_errors(raw) -> List[str]:
+        """Everything wrong with the raw ``accounts:`` block, as messages.
+
+        Returns *all* of them rather than the first: an operator editing a YAML
+        block by hand should get one round-trip, not one per typo. Empty list
+        means the block is well formed.
+        """
+        if not isinstance(raw, list):
+            return [f"'accounts' must be a list, got {type(raw).__name__}"]
+
+        errors: List[str] = []
+        for index, entry in enumerate(raw):
+            where = f"accounts[{index}]"
+            if not isinstance(entry, dict):
+                errors.append(f"{where}: must be a mapping, got "
+                              f"{type(entry).__name__}")
+                continue
+            for field in ACCOUNT_REQUIRED_FIELDS:
+                value = entry.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{where}.{field}: required, must be a "
+                                  f"non-empty string")
+            label = entry.get('label')
+            if label is not None and not isinstance(label, str):
+                errors.append(f"{where}.label: must be a string")
+            unknown = sorted(
+                set(entry) - set(ACCOUNT_REQUIRED_FIELDS) - set(ACCOUNT_OPTIONAL_FIELDS))
+            if unknown:
+                errors.append(f"{where}: unknown field(s) {unknown}")
+        return errors
+
     def _parse_accounts(self, raw) -> Optional[Portfolio]:
         """Validate and build the declared accounts from the raw settings block.
 
@@ -531,10 +545,10 @@ class ConfigurationManager:
         if not raw:
             return None
 
-        validator = Validator(ACCOUNTS_SCHEMA)
-        if not validator.validate({'accounts': raw}):
+        errors = self._accounts_block_errors(raw)
+        if errors:
             raise ValueError(
-                f"Invalid 'accounts' block in settings.yaml: {validator.errors}")
+                f"Invalid 'accounts' block in settings.yaml: {errors}")
 
         accounts = [
             Account(
@@ -639,7 +653,6 @@ class ConfigurationManager:
         Raises:
             EventLoaderError, EventValidationError, AggregationError: the event
                 files could not be read, validated or aggregated.
-            InvalidConfigFile: the aggregated shares failed ``schema.yaml``.
             ValueError: the ``accounts:`` block is malformed.
         """
         with self._write_lock:
@@ -670,16 +683,10 @@ class ConfigurationManager:
         # so the two are necessarily read together.
         accounts = self._read_accounts()
 
-        shares, events = self._load_from_events(accounts)
-
         # An empty portfolio is a legitimate state, not a broken file: an
         # install starts life with an empty events/ directory and must keep
-        # running (with a warning) until the first file lands. schema.yaml's
-        # `empty: False` was written for a hand-edited share list, where an
-        # empty `shares:` really is a mistake; applying it to a fresh install
-        # would turn "no events yet" into a boot failure.
-        if shares and not self.validator.validate({'shares': shares}):
-            raise InvalidConfigFile(self.validator.errors)
+        # running (with a warning) until the first file lands.
+        shares, events = self._load_from_events(accounts)
 
         accounts_are_new = published is None or published.accounts != accounts
         if accounts is not None and accounts_are_new:
@@ -802,15 +809,11 @@ class SuiviBourseMetrics:
     Class for managing and exposing metrics related to stock shares.
     """
 
-    def __init__(self, config_manager: ConfigurationManager, validator_: Validator,
+    def __init__(self, config_manager: ConfigurationManager,
                  influxdb_writer: Optional[InfluxDBWriter] = None,
                  prometheus_exporter: Optional[PrometheusExporter] = None,
                  recorder: Optional[runtime_state.RuntimeRecorder] = None):
         self.config_manager = config_manager
-        # Kept for the legacy ``validate()`` below. It is no longer this class's
-        # job: since #658 the configuration manager validates inside snapshot
-        # construction, so what this object holds has already passed the schema.
-        self.validator = validator_
 
         # InfluxDB writer
         self.influxdb = influxdb_writer or InfluxDBWriter()
@@ -913,17 +916,9 @@ class SuiviBourseMetrics:
         """
         return self.config_manager.current().shares
 
-    def validate(self) -> bool:
-        """
-        Validate the configuration for the stock shares.
-
-        Legacy: a published snapshot has already passed this schema, so this
-        can only ever return True. Kept for backward compatibility.
-
-        Returns:
-            bool: True if the configuration is valid, False otherwise.
-        """
-        return self.validator.validate({"shares": self.shares})
+    # ``validate()`` left with ``schema.yaml`` (issue #696). It could only ever
+    # answer True — a published snapshot has been validated by construction
+    # since #658 — and the schema it called no longer exists.
 
     def _fetch_ticker_data(self, symbol: str, max_retries: int = 3):
         """
@@ -2230,20 +2225,29 @@ class Runtime:
     """The application's long-lived objects, filled in on both sides of the fork.
 
     :func:`build_runtime` supplies the pure half — configuration manager,
-    validator, Prometheus registry — and :func:`start_runtime` then attaches the
-    half that could not have survived a fork: the InfluxDB client (inside
+    Prometheus registry, and the *path* the store was proved openable at — and
+    :func:`start_runtime` then attaches the half that could not have survived a
+    fork: the store connection, the InfluxDB client (inside
     ``SuiviBourseMetrics``), the scheduler and its threads, the watchdog
     observer.
     """
 
     def __init__(self, config_manager: ConfigurationManager,
-                 validator_: Validator,
-                 prometheus: Optional[PrometheusExporter]):
+                 prometheus: Optional[PrometheusExporter],
+                 store_path: Optional[Path] = None):
         self.config_manager = config_manager
-        self.validator = validator_
         self.prometheus = prometheus
         self.metrics: Optional['SuiviBourseMetrics'] = None
         self.scheduler: Optional[BackgroundScheduler] = None
+
+        # The store (issue #696). The *path* crosses the fork; the connection
+        # never does. ``build_runtime`` opens the file in the master — which is
+        # what makes an unreadable store one named exit instead of a respawn
+        # loop — and closes it again, because DuckDB's buffers are not something
+        # two processes may inherit from one another. ``start_runtime`` opens
+        # the connection the worker will actually use.
+        self.store_path: Optional[Path] = store_path
+        self.store: Optional[store.Store] = None
 
         # The scheduler's last-pass records (issue #668). Master-side on
         # purpose — a mutex and three references, and a ``threading.Lock``
@@ -2265,10 +2269,12 @@ def log_fatal(exc: BaseException) -> None:
     gunicorn reports WORKER_BOOT_ERROR and halts the arbiter instead of
     respawning a worker that would fail identically.
     """
-    if isinstance(exc, (EventLoaderError, EventValidationError, AggregationError)):
+    if isinstance(exc, store.StoreUnavailable):
+        # Named first because it is the earliest thing that can go wrong, and
+        # because it must never read as "the portfolio is empty" (issue #696).
+        app_logger.fatal(f'The store could not be opened : {exc}')
+    elif isinstance(exc, (EventLoaderError, EventValidationError, AggregationError)):
         app_logger.fatal(f'An error occurred while loading events : {exc}')
-    elif isinstance(exc, InvalidConfigFile):
-        app_logger.fatal(exc.message)
     elif isinstance(exc, ValueError):
         app_logger.fatal(f'Configuration error: {exc}')
     else:
@@ -2284,9 +2290,20 @@ def build_runtime() -> Runtime:
     """
     app_logger.info('SuiviBourse is running !')
 
-    # The manager owns the schema now (issue #658): validation happens inside
-    # snapshot construction, so it cannot be handed a validator too late to
-    # matter.
+    # The store, first and before anything else (issue #696). It takes the exact
+    # place #658 gave the Cerberus validation — same side of the fork, same
+    # "nothing has been spawned yet, so a failure is one clean exit" — for a
+    # different cause: the app has one store, everything downstream branches off
+    # it, and a file it cannot open is not a degraded mode.
+    #
+    # Opened, brought to its schema, seeded, and closed again. The connection
+    # the worker uses is opened in ``start_runtime``; leaving this one open
+    # would hand the child a buffer manager its parent still holds, which is the
+    # exact arrangement DuckDB refuses.
+    store_path = store.store_path()
+    opened = store.open_store(store_path)
+    opened.close()
+
     config_manager = ConfigurationManager()
 
     # Before anything is loaded, name what is *not* going to be (issue #711).
@@ -2310,7 +2327,7 @@ def build_runtime() -> Runtime:
     prometheus = PrometheusExporter() \
         if env_flag('SB_PROMETHEUS_ENABLED', True) else None
 
-    return Runtime(config_manager, config_manager.validator, prometheus)
+    return Runtime(config_manager, prometheus, store_path=store_path)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:
@@ -2328,11 +2345,18 @@ def start_runtime(runtime: Runtime) -> Runtime:
     backfill_interval = env_int('SB_BACKFILL_INTERVAL', 60)
     perf_interval = env_int('SB_PERF_INTERVAL', 120)
 
+    # The worker's own store connection (issue #696). The master proved the file
+    # openable and closed it; this is the connection that lives for the process,
+    # and it belongs on this side of the fork for the same reason the InfluxDB
+    # pool does.
+    if runtime.store_path is not None:
+        runtime.store = store.open_store(runtime.store_path)
+
     # Init SuiviBourseMetrics (connects to InfluxDB). The exporter comes from the
     # master so the gauges the Flask app already publishes are the ones the
     # scrape path updates; passing None when it is disabled leaves it disabled.
     sb_metrics = SuiviBourseMetrics(
-        runtime.config_manager, runtime.validator,
+        runtime.config_manager,
         prometheus_exporter=runtime.prometheus,
         recorder=runtime.recorder)
     sb_metrics.regular_interval = regular_interval
@@ -2387,3 +2411,8 @@ def shutdown_runtime(runtime: Runtime) -> None:
     runtime.config_manager.stop_watcher()
     if runtime.metrics is not None:
         runtime.metrics.close()
+    # The store last: it is the thing every job was writing into, so it closes
+    # once nothing is left running to write.
+    if runtime.store is not None:
+        runtime.store.close()
+        runtime.store = None

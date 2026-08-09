@@ -39,9 +39,11 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
 
     Import-time work only: nothing built here may hold a thread, a socket or a
     file descriptor, because only the calling thread survives ``fork()``.
-    Loading and validating the configuration *is* import-time work, and
-    deliberately so — it is the only place left where a bad config still exits
-    the process once and cleanly, before the arbiter has anything to respawn.
+    Opening the store and loading the configuration *is* import-time work, and
+    deliberately so — it is the only place left where an unreadable store or a
+    bad ledger still exits the process once and cleanly, before the arbiter has
+    anything to respawn. The store is closed again before this returns: the file
+    descriptor is exactly what must not cross the fork (issue #696).
 
     Args:
         runtime: an already-built :class:`main.Runtime`, for tests. Absent — the

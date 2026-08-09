@@ -170,7 +170,7 @@ def test_failed_fetch_still_sets_portfolio_but_no_market(exporter):
 # --- wiring through SuiviBourseMetrics.scrape() ------------------------------
 
 def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
-                                            shares_validator, fake_ticker):
+                                            fake_ticker):
     import main
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda symbol: fake_ticker(close=150.0))
@@ -200,7 +200,7 @@ def test_scrape_populates_injected_exporter(monkeypatch, mock_influx,
 
     exporter = PrometheusExporter(registry=CollectorRegistry())
     metrics = main.SuiviBourseMetrics(
-        FakeConfigManager(), shares_validator,
+        FakeConfigManager(),
         influxdb_writer=mock_influx, prometheus_exporter=exporter)
 
     metrics.scrape()

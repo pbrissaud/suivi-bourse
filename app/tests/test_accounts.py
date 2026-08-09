@@ -356,8 +356,15 @@ def test_get_oldest_timestamp_no_account_filter_when_omitted(mocker):
 
 
 # --------------------------------------------------------------------------- #
-# schema.yaml accepts the account key on a share dict
+# The account key survives the aggregated share dict
 # --------------------------------------------------------------------------- #
-def test_share_schema_accepts_account_key(shares_validator):
+# What used to be here asserted that ``schema.yaml`` accepted the ``account``
+# key. The schema left with Cerberus (#696) — it validated a *hand-written*
+# share list, and there is no longer one — so what remains worth pinning is the
+# shape the rest of the app reads: the account rides on the dict, spelled the
+# way every consumer spells it.
+def test_the_aggregated_share_dict_carries_its_account():
     share = ShareState(name="Apple", symbol="AAPL", account="PEA").to_dict()
-    assert shares_validator.validate({"shares": [share]}), shares_validator.errors
+
+    assert share["account"] == "PEA"
+    assert share["symbol"] == "AAPL"

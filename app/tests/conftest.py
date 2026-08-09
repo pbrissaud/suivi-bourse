@@ -13,21 +13,15 @@ All fixtures below are project-wide (auto-discovered by any ``test_*.py`` under
 ``app/tests/``). Keep them generic; put test-specific data in the test module.
 """
 
-from pathlib import Path
 from datetime import date, timezone
 
 import pandas as pd
 import pytest
-import yaml
-from cerberus import Validator
 
+import store as store_module
 from events.schemas import Event, EventType
 from influxdb_writer import InfluxDBWriter
 
-
-# Path to app/src/schema.yaml, resolved relative to this conftest (app/tests/).
-_SRC_DIR = Path(__file__).resolve().parent.parent / "src"
-_SCHEMA_PATH = _SRC_DIR / "schema.yaml"
 
 # Canonical valid events CSV. Same columns as docker-compose/events/example.csv:
 #   date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
@@ -102,8 +96,14 @@ def events_dir(tmp_path):
 def mock_influx(mocker):
     """A MagicMock standing in for InfluxDBWriter (spec-checked).
 
+    **On its way out** (#695 Testing Decisions): it asserts *what the job meant
+    to write*, which is not connected to *what the store contains*, and the
+    ``store`` fixture above is what replaces it. It survives this ticket only
+    because its subject does — ``influxdb_writer.py`` is still the writer until
+    the store gains one — and it goes with that module, not before it.
+
     Wired with sensible return values so it can be passed as
-    ``SuiviBourseMetrics(config_manager, validator, influxdb_writer=mock_influx)``
+    ``SuiviBourseMetrics(config_manager, influxdb_writer=mock_influx)``
     without real I/O:
       - connect() / close() / write_metrics(): no-op (return None)
       - get_oldest_timestamp(): None (no existing data)
@@ -129,15 +129,28 @@ def mock_influx(mocker):
 
 
 @pytest.fixture
-def shares_validator():
-    """A real cerberus.Validator built from app/src/schema.yaml.
+def store(tmp_path):
+    """A **real** DuckDB store in ``tmp_path``, DDL applied and seeded (#696).
 
-    Validate an aggregated portfolio with ``shares_validator.validate({"shares": shares})``
-    (True/False); read ``shares_validator.errors`` on failure.
+    The one seam of the v5 suite, and it is deliberately the highest one the
+    design allows: the store is embedded, so mocking it would mock half the
+    product. A transaction, an ``UPSERT`` and a pruning ``DELETE`` are exactly
+    the kind of thing a mock reports as *having happened* and only a database
+    reports as *correct* — and "one writer per row" is checkable on the row, not
+    on the intention of writing it.
+
+    On a **file**, never ``:memory:``. Three reasons, all of them things the
+    suite has to be able to assert: DuckDB refuses a second process, persistence
+    and checkpointing are part of what is claimed (the file not drifting over N
+    cycles, notably), and a file under ``tmp_path`` is thrown away for free.
+
+    Closed after the test, so the next one opens a store nothing is holding.
     """
-    with open(_SCHEMA_PATH, encoding="utf-8") as f:
-        schema = yaml.safe_load(f)
-    return Validator(schema)
+    opened = store_module.open_store(tmp_path / "store.duckdb")
+    try:
+        yield opened
+    finally:
+        opened.close()
 
 
 @pytest.fixture

@@ -210,14 +210,25 @@ def test_timestamps_come_back_utc_aware():
     assert rows[0]['time'] == datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)
 
 
-def test_a_missing_measurement_is_an_empty_install_not_a_failure():
-    """A fresh database has no ``portfolio_metrics`` until the first write.
+def test_a_query_error_propagates_with_no_exception_at_all():
+    """Every failure is a failure, since #696.
 
-    #655's three states: this is the *empty collection*, so it must be ``[]``.
-    Answering 503 here would make every brand-new install look broken.
+    The reader used to read "this measurement was never written to" out of the
+    error *message* and answer ``[]``, because in InfluxDB 3 a measurement comes
+    into being on its first write, so absence and failure arrived down the same
+    channel. The store declares its tables at creation and an unwritten column
+    reads as ``NULL``, so the empty collection is now a shape of the data —
+    ``[]`` rows — and an exception has nothing left to mean but a fault.
     """
     executor = FakeExecutor(error=Exception("table 'portfolio_metrics' not found"))
-    assert PortfolioReader(executor).latest_per_account() == []
+
+    with pytest.raises(Exception, match="not found"):
+        PortfolioReader(executor).latest_per_account()
+
+
+def test_no_rows_is_still_the_empty_collection():
+    """#655's three states survive structurally: this is ``[]``, never a 503."""
+    assert PortfolioReader(FakeExecutor(pd.DataFrame())).latest_per_account() == []
 
 
 # --------------------------------------------------------------------- #
