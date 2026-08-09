@@ -136,3 +136,29 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
+
+      # `pnpm build` never opens crowdin.yml, and a YAML parser is not a
+      # substitute: the Crowdin CLI compiles each source pattern into a regex,
+      # so `*.{md,mdx}` — valid YAML, valid shell — is refused at upload time
+      # with `Illegal repetition`, and the whole corpus silently never reaches
+      # the project. This is the only gate that runs the tool that consumes the
+      # file. It reads the file alone, over no network, so the placeholder
+      # credentials baked into the script are the honest shape here — no secret
+      # is needed and a fork's pull request is checked like any other.
+      - name: Lint the Crowdin configuration if the site changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: pnpm crowdin:lint
+
+      # The English catalogues under i18n/en are generated *and* committed, and
+      # at build time they win over docusaurus.config.js — for English too. So a
+      # string edited in the config and not regenerated here is simply ignored,
+      # with every other gate green. `--override` is required: plain
+      # write-translations only adds missing keys and never refreshes one that
+      # already exists, which is exactly how the divergence stays invisible.
+      - name: Check i18n/en is what write-translations generates
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: |
+          pnpm write-translations --override
+          git diff --exit-code -- i18n/en
