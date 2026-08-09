@@ -720,3 +720,8 @@ The five canonical triage roles, each label string equal to its name. See
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
+
+### Wave orchestration
+
+The v5 tickets are implemented in waves off `preview/v5` by the two scripts in
+`.claude/workflows/`. See `docs/agents/wave-orchestration.md`.

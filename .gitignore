@@ -127,3 +127,8 @@ venv.bak/
 .dmypy.json
 dmypy.json
 .vercel
+
+# Worktrees jetables créés par l'orchestration de vagues (.claude/workflows/v5-wave.js).
+# Ils contiennent une copie complète du dépôt : sans cette ligne, un `git add -A`
+# lancé par un agent les emporterait.
+.claude/worktrees/
