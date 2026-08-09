@@ -1,0 +1,514 @@
+"""The ledger in the store, with its provenance (issue #697, spec #695 § 6).
+
+The store becomes the truth of the ledger. Dropping a ``.csv``/``.xlsx`` into
+the drop folder imports it on its own; the events land in the database with
+their **provenance**, and the files stop being what gets re-read.
+
+Three rules carry the whole module, and the third is the surprising one:
+
+1. **Re-dropping the same filename replaces its rows** — a re-drop does not
+   double the ledger.
+2. **An import is forgotten, never a line.** Read-only forbids the pointwise
+   edit, not the bulk revocation; without it, a line provisioned by a file
+   would be at once *unalterable* and *indestructible*. There is therefore no
+   function here that updates one event row, and its absence is asserted by the
+   suite rather than left to good intentions.
+3. **Removing the file from disk does nothing.** :func:`sync_drop_folder` only
+   ever adds or replaces what it finds; it has no branch that reacts to a file
+   that is gone, which is what makes the rule true by construction instead of
+   by care.
+
+What survives of #662 is not an address but a display: ``(source_id,
+source_sheet, source_row)`` exists to say *"row 14 of 2024.csv"* and never to
+write. The opaque token and the ``ETag`` died with #711 because **the file was
+the address**; in the store a row has a primary key, which does not go stale.
+
+And the polling dies with its subject. In v4 the ingestion re-read the files
+every 300 s *because they were the truth*. The ledger now changes only when a
+write changes it — a quiet, synchronous, in-process gesture — so the replay
+follows the write (:meth:`main.SuiviBourseMetrics.ingest`), and the drop folder
+stays watched with no dial at all: a headless install has nobody to click
+*import*.
+
+**Not in this module**: the accounts source (#698 owns the ``id``/``type``/
+``label`` file, the cascade refusal and the "empty ``account`` column becomes an
+error once a source exists" rule) and the replay into ``position`` /
+``account_state`` (#699). What is here writes ``import_source``, ``symbol`` and
+``event``, which is exactly the set of tables whose one writer is the import.
+"""
+import hashlib
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Set
+
+from logfmt_logger import getLogger
+
+from events import EventAggregator, EventLoader, EventValidator
+from events.schemas import DEFAULT_ACCOUNT, Event, EventType
+
+logger = getLogger("ledger")
+
+#: The two kinds of source ``import_source.kind`` distinguishes. ``accounts`` is
+#: declared here — the column is ``NOT NULL`` and the DDL is shared — but it is
+#: #698 that gives it a reader.
+KIND_EVENTS = 'events'
+KIND_ACCOUNTS = 'accounts'
+
+#: What counts as a droppable file. The extension is the only thing that does:
+#: **no filename has a special meaning in v5** (spec #695 § 6), so ``ui.csv`` is
+#: a file like any other and ``settings.yaml`` sitting in the same folder is
+#: simply not one of these.
+EVENT_SUFFIXES = ('.csv', '.xlsx')
+
+#: The outcomes :func:`sync_drop_folder` reports, one per file it looked at.
+IMPORTED = 'imported'
+UNCHANGED = 'unchanged'
+REFUSED = 'refused'
+
+
+class UnknownImport(Exception):
+    """Asked to forget an import that is not in the store.
+
+    Its own class because its answer is its own: the API turns it into a 404,
+    and it must never be confused with "forgot nothing because there was
+    nothing to forget", which is a successful revocation of an empty import.
+    """
+
+
+@dataclass(frozen=True)
+class ImportRecord:
+    """One row of ``import_source`` — the provenance of everything it carried."""
+    id: int
+    filename: str
+    kind: str
+    imported_at: Optional[datetime]
+    fingerprint: str
+    events: int = 0
+
+
+@dataclass(frozen=True)
+class SyncOutcome:
+    """What one file in the drop folder led to, for logs and for the API."""
+    filename: str
+    outcome: str
+    events: int = 0
+    error: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Provenance — displayable, never an address
+# --------------------------------------------------------------------------- #
+
+def fingerprint_of(path: Path) -> str:
+    """A content hash of the file, which is what makes a re-drop detectable.
+
+    Content and not mtime. The v4 ingestion fingerprinted by mtime because it
+    re-read the files on a timer and only needed to know *whether* to bother;
+    here the fingerprint decides whether rows are rewritten, and a ``touch``
+    that rewrote the ledger would make the always-on watch expensive for no
+    reason. It is also what a re-drop of an identical file has to be a no-op
+    against — down to ``imported_at``, so the provenance a user is shown does
+    not creep forward on its own.
+    """
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(65536), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def provenance_label(event: Event) -> Optional[str]:
+    """*"2024.csv, row 14"* — the one string the interface shows.
+
+    ``None`` for a row with no source, which is what a line created in the UI
+    is (``source_id IS NULL`` means "created in the UI", spec #695 § 6). The
+    sheet only appears when there is one, so a CSV does not carry an empty
+    parenthesis around for the sake of a uniform format.
+    """
+    if not event.source_filename:
+        return None
+    parts = [event.source_filename]
+    if event.source_sheet:
+        parts.append(f"sheet {event.source_sheet}")
+    if event.source_row is not None:
+        parts.append(f"row {event.source_row}")
+    return ", ".join(parts)
+
+
+# --------------------------------------------------------------------------- #
+# Reading
+# --------------------------------------------------------------------------- #
+
+_EVENT_COLUMNS = (
+    'e.date, e.event_type, e.symbol, e.name, e.quantity, e.unit_price, '
+    'e.fee, e.amount, e.notes, e.account, e.source_id, e.source_sheet, '
+    'e.source_row, s.filename'
+)
+
+
+def read_events(store) -> List[Event]:
+    """Every event in the ledger, as :class:`events.schemas.Event`, date-sorted.
+
+    Sorted in SQL by ``(date, id)`` rather than in Python: ``id`` is monotonic
+    per import, so two events on the same date come back in the order their
+    file wrote them, and a replay is reproducible across restarts. The
+    aggregator assumes a date-sorted list and nothing more.
+
+    The join to ``import_source`` is what carries the filename onto the event,
+    so a caller holding an event can render its provenance without going back
+    to the store for it.
+    """
+    rows = store.query(
+        f'SELECT {_EVENT_COLUMNS} FROM event e '
+        'LEFT JOIN import_source s ON s.id = e.source_id '
+        'ORDER BY e.date, e.id')
+    return [_event_from_row(row) for row in rows]
+
+
+def _event_from_row(row: Sequence) -> Event:
+    """One ``event`` row (joined to its source) back into an :class:`Event`."""
+    (day, event_type, symbol, name, quantity, unit_price, fee, amount,
+     notes, account, source_id, source_sheet, source_row, filename) = row
+    return Event(
+        date=day,
+        event_type=EventType(event_type),
+        symbol=symbol,
+        name=name,
+        quantity=quantity,
+        unit_price=unit_price,
+        fee=fee,
+        amount=amount,
+        notes=notes,
+        account=account,
+        source_id=source_id,
+        source_sheet=source_sheet,
+        source_row=source_row,
+        source_filename=filename,
+    )
+
+
+def list_imports(store, kind: Optional[str] = None) -> List[ImportRecord]:
+    """The imports the store holds, newest name last, with their event counts.
+
+    The count is what makes the revocation gesture answerable *before* it is
+    made — "forget this import" is destructive in bulk, so the number of rows
+    it takes with it belongs next to the button that offers it.
+    """
+    clause = 'WHERE s.kind = ?' if kind else ''
+    rows = store.query(
+        'SELECT s.id, s.filename, s.kind, s.imported_at, s.fingerprint, '
+        '       count(e.id) '
+        'FROM import_source s LEFT JOIN event e ON e.source_id = s.id '
+        f'{clause} '
+        'GROUP BY s.id, s.filename, s.kind, s.imported_at, s.fingerprint '
+        'ORDER BY s.filename',
+        [kind] if kind else None)
+    return [ImportRecord(id=r[0], filename=r[1], kind=r[2], imported_at=r[3],
+                         fingerprint=r[4], events=r[5]) for r in rows]
+
+
+def stamp(store) -> Optional[str]:
+    """A fingerprint of the whole ledger, for the snapshot's cache key.
+
+    The heir of the mtime fingerprint #658 built, moved to its new subject: the
+    files are no longer the truth, so what a snapshot must be invalidated
+    against is the *store*. Built from the sources' own fingerprints plus the
+    event count, so it moves on a re-drop that changed content (the fingerprint
+    changes), on a forget (a source disappears) and on nothing else.
+
+    ``None`` when the ledger is empty — the fresh install with nothing yet
+    dropped, which is a legitimate state and not a hole to report.
+    """
+    rows = store.query(
+        'SELECT id, filename, fingerprint FROM import_source ORDER BY id')
+    if not rows:
+        return None
+    (count,) = store.query('SELECT count(*) FROM event')[0:1][0]
+    payload = '|'.join(f'{r[0]}:{r[1]}:{r[2]}' for r in rows) + f'#{count}'
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+# --------------------------------------------------------------------------- #
+# Writing — the import, and the one destructive gesture
+# --------------------------------------------------------------------------- #
+
+def sync_drop_folder(store, directory, *,
+                     account_ids: Optional[Set[str]] = None,
+                     now: Optional[datetime] = None) -> List[SyncOutcome]:
+    """Import every event file the drop folder holds. Idempotent.
+
+    Called on every write that could have changed the folder — the watcher's
+    callback and the boot — and it is safe to call on a filesystem event that
+    changed nothing, because an unchanged fingerprint costs one hash and no
+    write at all.
+
+    **A folder that does not exist is a fresh install**, not a broken one: the
+    user has not dropped a file into what the mount will create for them. Same
+    answer as an empty folder, and never a boot failure.
+
+    Each file is its own transaction and its own verdict. A refusal is per
+    source on purpose — #698 needs one bad file not to hold the whole folder
+    hostage — and the refused file leaves no row behind at all, not even the
+    ``symbol`` rows it would have needed.
+
+    Args:
+        account_ids: the declared account ids, or ``None`` when none are
+            declared. Passed through to the validator and to the account the
+            row is written under, so the store agrees with what the aggregator
+            would have computed. #698 is what turns this into a table read.
+    """
+    source = Path(directory).expanduser()
+    if not source.is_dir():
+        return []
+
+    outcomes: List[SyncOutcome] = []
+    for path in sorted(source.iterdir()):
+        if path.suffix.lower() not in EVENT_SUFFIXES or not path.is_file():
+            continue
+        outcomes.append(_sync_one(store, path, account_ids=account_ids, now=now))
+    return outcomes
+
+
+def _sync_one(store, path: Path, *, account_ids: Optional[Set[str]],
+              now: Optional[datetime]) -> SyncOutcome:
+    """Import one file if its content moved, and report what happened."""
+    try:
+        digest = fingerprint_of(path)
+    except OSError as exc:
+        return SyncOutcome(path.name, REFUSED, error=f"cannot read: {exc}")
+
+    known = store.query(
+        'SELECT id, fingerprint FROM import_source WHERE filename = ?',
+        [path.name])
+    if known and known[0][1] == digest:
+        return SyncOutcome(path.name, UNCHANGED)
+
+    try:
+        count = import_file(store, path, fingerprint=digest,
+                            account_ids=account_ids, now=now)
+    except Exception as exc:
+        logger.warning(f"Refused {path.name}: {exc}")
+        return SyncOutcome(path.name, REFUSED, error=str(exc))
+
+    logger.info(f"Imported {path.name}: {count} event(s)")
+    return SyncOutcome(path.name, IMPORTED, events=count)
+
+
+def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
+                account_ids: Optional[Set[str]] = None,
+                now: Optional[datetime] = None) -> int:
+    """Import one event file into the store, replacing whatever it left before.
+
+    One transaction, and the order inside it is the design:
+
+    1. the ``import_source`` row, keyed on the **filename** — the identity of a
+       source is its name (spec #695 § 6), so a re-drop finds its own row and a
+       rename is a new source, repairable by forgetting the old one;
+    2. ``DELETE FROM event WHERE source_id = ?`` — this is *replaces*, and it is
+       why a correction does not double the ledger;
+    3. **the ``symbol`` rows, before the events.** Not an optimisation: a row
+       naming ``AAPL`` would violate its foreign key otherwise, which is the
+       acceptance criterion saying that a symbol gets its row at ingestion,
+       before any yfinance call could have created one;
+    4. the event rows;
+    5. **the whole prospective ledger is validated and replayed** before the
+       commit. Per-row validation is not enough — overselling is a property of
+       the ledger, not of a file — and a file that only breaks in company must
+       be refused as squarely as one that breaks alone. A failure rolls the
+       whole transaction back, so a bad file is *not imported at all* and what
+       was already good is untouched.
+
+    Returns the number of event rows written.
+
+    Raises:
+        EventLoaderError: the file could not be read or parsed.
+        EventValidationError: the file, or the ledger it would make, is invalid.
+        AggregationError: the resulting ledger does not replay (an oversell).
+    """
+    stamped = now or datetime.now(timezone.utc)
+    digest = fingerprint or fingerprint_of(path)
+    parsed = EventLoader(str(path)).load()
+
+    # Refuse the file on its own terms first, so the message names the file the
+    # user just dropped rather than the ledger as a whole.
+    EventValidator(account_ids=account_ids).validate_or_raise(parsed)
+
+    store.execute('BEGIN TRANSACTION')
+    try:
+        source_id = _upsert_source(store, path.name, KIND_EVENTS, stamped, digest)
+        store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
+        _insert_symbols(store, parsed)
+        written = _insert_events(store, parsed, source_id, account_ids)
+
+        # The ledger as it would stand. Validated and replayed here, inside the
+        # transaction, which is what makes the rollback below a real refusal.
+        whole = read_events(store)
+        EventValidator(account_ids=account_ids).validate_or_raise(whole)
+        EventAggregator().aggregate(
+            whole, accounts_declared=account_ids is not None)
+    except Exception:
+        store.execute('ROLLBACK')
+        raise
+    store.execute('COMMIT')
+    return written
+
+
+def forget_import(store, source_id: int) -> int:
+    """Forget an import: every row it laid down, in one gesture.
+
+    The **only** destructive gesture in this module, and it is deliberately in
+    bulk. Read-only forbids editing line 42 of ``broker.csv``; it does not
+    forbid revoking the file. Without this, a line provisioned by a file would
+    be both unalterable and indestructible, which is the trap #697 exists to
+    avoid.
+
+    What it does **not** remove is the ``symbol`` rows the import created.
+    Forgetting an import is reversible — re-drop the file — while the price
+    series hanging off a symbol is not, and #695 § 10 keeps those orphans
+    deliberately, named and purgeable on demand.
+
+    Returns the number of event rows removed (``0`` is a legitimate answer: an
+    import that carried no event is still an import).
+
+    **Two transactions, and not by preference.** DuckDB refuses to delete a
+    referenced key in the same transaction that deleted the rows referencing it
+    — its foreign-key index still holds them — so the events are committed away
+    before the source row is touched. The window between the two is one
+    statement wide in a single-threaded process, and what it can leave behind is
+    an ``import_source`` row carrying zero events: visible in
+    :func:`list_imports` with ``events == 0``, and repaired by forgetting it
+    again, which then succeeds. The alternative — deleting the source first — is
+    the one the engine forbids outright.
+
+    Raises:
+        UnknownImport: no import has that id.
+    """
+    known = store.query('SELECT id FROM import_source WHERE id = ?', [source_id])
+    if not known:
+        raise UnknownImport(f"No import with id {source_id}")
+
+    (removed,) = store.query(
+        'SELECT count(*) FROM event WHERE source_id = ?', [source_id])[0:1][0]
+    store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
+    store.execute('DELETE FROM import_source WHERE id = ?', [source_id])
+    logger.info(f"Forgot import {source_id}: {removed} event(s) removed")
+    return removed
+
+
+def declare_accounts(store, accounts) -> None:
+    """Make sure the declared accounts have their row, so the ledger's FK holds.
+
+    **A bridge, and #698 is its owner.** An event names an account and
+    ``event.account`` references ``account(id)``, so the accounts have to exist
+    before the events do — which is the same ordering rule #698 states as *"all
+    account sources before all event sources"*. Until that ticket replaces the
+    v4 ``accounts:`` block with a file of its own, this is what puts the
+    declared ids in the table; when it lands, this function's caller changes and
+    the ordering rule stays exactly where it is.
+
+    ``source_id`` is left ``NULL`` — spec #695 § 6 reads that as "created in the
+    UI", i.e. not owned by any import, which is the honest description of a row
+    that came from the deployment's settings rather than from the drop folder.
+    """
+    if accounts is None:
+        return
+    for account in accounts.accounts:
+        store.execute(
+            'INSERT INTO account (id, type, label, source_id) VALUES (?, ?, ?, NULL) '
+            'ON CONFLICT (id) DO UPDATE SET type = excluded.type, '
+            'label = excluded.label',
+            [account.id, account.type, account.label])
+
+
+# --------------------------------------------------------------------------- #
+# The row-level gestures the two writers above are made of
+# --------------------------------------------------------------------------- #
+
+def _upsert_source(store, filename: str, kind: str, stamped: datetime,
+                   digest: str) -> int:
+    """The ``import_source`` row for this filename, created or refreshed.
+
+    Ids are allocated as ``max(id) + 1`` rather than by a sequence: the table
+    holds a handful of rows, it is written under a transaction that already
+    serialises its writers (one process, one ingestion), and a sequence would be
+    a second thing to keep in step with the DDL for no gain.
+    """
+    known = store.query(
+        'SELECT id FROM import_source WHERE filename = ?', [filename])
+    if known:
+        source_id = known[0][0]
+        store.execute(
+            'UPDATE import_source SET kind = ?, imported_at = ?, fingerprint = ? '
+            'WHERE id = ?', [kind, stamped, digest, source_id])
+        return source_id
+
+    (next_id,) = store.query(
+        'SELECT coalesce(max(id), 0) + 1 FROM import_source')[0:1][0]
+    store.execute(
+        'INSERT INTO import_source (id, filename, kind, imported_at, fingerprint) '
+        'VALUES (?, ?, ?, ?, ?)', [next_id, filename, kind, stamped, digest])
+    return next_id
+
+
+def _insert_symbols(store, events: Sequence[Event]) -> None:
+    """Give every symbol the file names its row — before the events reference it.
+
+    ``symbol`` is a bare one-column table whose only job is to be the target of
+    a foreign key (spec #695 § 3). It pays for the integrity that keeps a typo'd
+    ticker out of the price table without an index on the price table, and it is
+    the ingestion that creates it, never the scrape: two writers on one row is
+    the thing the schema's generating rule exists to forbid.
+    """
+    for symbol in sorted({e.symbol for e in events if e.symbol}):
+        store.execute(
+            'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
+            [symbol])
+
+
+def _insert_events(store, events: Sequence[Event], source_id: int,
+                   account_ids: Optional[Set[str]]) -> int:
+    """Write the file's events, carrying their provenance.
+
+    The account written is the one the aggregator would have resolved: the
+    event's own when accounts are declared, ``default`` otherwise. Writing the
+    raw column instead would put a v4 file's ``account`` value in the store
+    while every downstream reader still folded it into ``default`` — two
+    answers to the same question, which is the divergence the single store
+    exists to end. It is also what keeps a single-account v4's files importing
+    without a single edit.
+    """
+    declared = account_ids is not None
+    (next_id,) = store.query('SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+
+    for offset, event in enumerate(events):
+        account = event.account if (declared and event.account) else DEFAULT_ACCOUNT
+        store.execute(
+            'INSERT INTO event (id, date, event_type, account, symbol, name, '
+            '                   quantity, unit_price, fee, amount, notes, '
+            '                   source_id, source_sheet, source_row) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [next_id + offset, event.date, event.event_type.value, account,
+             event.symbol, event.name, event.quantity, event.unit_price,
+             event.fee, event.amount, event.notes,
+             source_id, event.source_sheet, event.source_row])
+    return len(events)
+
+
+def import_counts(outcomes: Sequence[SyncOutcome]) -> Dict[str, int]:
+    """Tally the outcomes of a sync, for one log line and for ``/api/runtime``."""
+    tally = {IMPORTED: 0, UNCHANGED: 0, REFUSED: 0}
+    for outcome in outcomes:
+        tally[outcome.outcome] = tally.get(outcome.outcome, 0) + 1
+    return tally
+
+
+__all__ = [
+    'ImportRecord', 'SyncOutcome', 'UnknownImport',
+    'KIND_EVENTS', 'KIND_ACCOUNTS', 'EVENT_SUFFIXES',
+    'IMPORTED', 'UNCHANGED', 'REFUSED',
+    'fingerprint_of', 'provenance_label',
+    'read_events', 'list_imports', 'stamp',
+    'sync_drop_folder', 'import_file', 'forget_import', 'declare_accounts',
+    'import_counts',
+]
