@@ -38,3 +38,46 @@ See `git help commit`:
 
 **You don't need to bump any version number, this will be done automatically once PR merged**
 
+## Releasing
+
+Release Please cuts the releases from the conventional commits landed on
+`master`. `version.txt` and `.release-please-manifest.json` are its files: they
+are bumped by `release-type: simple`, never edited by hand.
+
+Two gestures happen at merge time rather than in a file, which is why they are
+written down here. They are **separate**: the merge carries no trailer, and the
+trailer rides its own commit.
+
+* **A major is declared, not deduced.** A `!` on a commit makes the version
+  number depend on one character in a commit message. When the next version is
+  a decision rather than a consequence — v5 is — an empty **conventional**
+  commit on `master` carries the trailer in its body:
+
+  ```bash
+  git commit -s --allow-empty \
+    -m "chore: release 5.0.0" \
+    -m "Release-As: 5.0.0"
+  ```
+
+  **The trailer must not ride the merge commit**, and the reason is mechanical:
+  release-please reads `Release-As` from `commit.notes` only, and notes exist
+  only on a commit its conventional parser **accepts**. GitHub's default merge
+  subject — `Merge pull request #N from owner/branch` — raises
+  `ParseError: unexpected token ' ' at 1:6, valid tokens [(, !, :]` and the
+  commit is discarded **whole**, so the trailer is never read. The version then
+  falls back to whatever the landed commits deduce, which for a branch of
+  `feat:` without a `!` is a *minor* — the silent 4.3.0 in place of the 5.0.0
+  that was decided. `chore:` is hidden from the changelog
+  (`release-please-config.json`), so the declaring commit costs no release note.
+
+* **An integration branch reaches `master` as a merge, not a squash.**
+  `preview/v5` holds the history of the rewrite, and that history has value;
+  squashing trades twenty-three commits for one line. This gesture is only
+  about history: it declares nothing, and its message is left alone.
+
+`docs:` commits are hidden from the generated `CHANGELOG.md`
+(`release-please-config.json`). On a branch where twelve of them are the map's
+own ADRs, the generated notes would serve the journal of the work as the
+release notes of the product. The hand-written release-notes page of the
+documentation is the surface that tells a reader what the release changes.
+
