@@ -185,6 +185,22 @@ def test_empty_csv_no_header_raises(tmp_path):
     assert "Empty CSV" in str(exc.value)
 
 
+def test_an_excel_utf8_export_loads_despite_its_byte_order_mark(tmp_path):
+    """Excel's "CSV UTF-8" writes a BOM, and it used to hide the first column.
+
+    Under plain ``utf-8`` the header reads ``﻿date``, so the file was
+    refused for a missing required column that is visibly there — the least
+    debuggable refusal the loader can produce (issue #698).
+    """
+    path = tmp_path / "2024.csv"
+    path.write_text(
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n", encoding="utf-8-sig")
+
+    (event,) = EventLoader(str(path)).load()
+    assert event.symbol == "AAPL"
+
+
 def test_unsupported_extension_through_load_file_raises(tmp_path):
     path = tmp_path / "data.txt"
     path.write_text("whatever", encoding="utf-8")

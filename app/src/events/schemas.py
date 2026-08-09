@@ -15,6 +15,12 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 # all reference this constant so the tag, the label and the aggregation agree.
 DEFAULT_ACCOUNT = "default"
 
+# The columns of an accounts file (issue #698) — the columns of the ``account``
+# table. Named here rather than in :mod:`accounts` because the validator quotes
+# them in the refusal it raises when an event names an account nobody declared,
+# and ``accounts`` imports this module: one direction, no cycle.
+ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
+
 
 class EventType(Enum):
     """Types of portfolio events."""
@@ -270,11 +276,30 @@ class Timeline:
 
 @dataclass
 class Account:
-    """A declared account (opt-in feature, configured in settings.yaml)."""
+    """A declared account — a row of the store's ``account`` table (issue #698).
+
+    Declared by a **file** in the events' format, or from the app; never by a
+    settings block, which is the inheritance ADR-0013 corrects. ``source_id`` is
+    where it came from: the import that carried it, or ``NULL`` for one created
+    in the app — which is also what makes it editable, since what came from a
+    file is read-only and revoked with its import.
+
+    ``currency`` no longer has a column to come from: the ``account`` table
+    declares ``id``/``type``/``label`` and nothing else. It survives as an
+    optional field, always ``None`` on a stored account, because the currency
+    machinery it feeds is still the v4 one until the reporting currency lands
+    (#702) and takes both with it.
+    """
     id: str
     type: str
-    currency: str
-    label: str
+    label: str = ''
+    currency: Optional[str] = None
+    source_id: Optional[int] = None
+
+    @property
+    def editable(self) -> bool:
+        """Can the app change this account? Only if no file provisioned it."""
+        return self.source_id is None
 
 
 @dataclass

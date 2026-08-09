@@ -33,8 +33,8 @@ def _price_at(prices):
     return price_at
 
 
-PEA = Account("PEA", "PEA", "EUR", "Mon PEA")
-CTO = Account("CTO", "CTO", "USD", "My CTO")
+PEA = Account("PEA", "PEA", "Mon PEA", "EUR")
+CTO = Account("CTO", "CTO", "My CTO", "USD")
 
 
 # --------------------------------------------------------------------------- #
@@ -69,7 +69,7 @@ def test_daily_valuation_and_twr_base_100():
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
               unit_price=100.0, account="PEA"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0, date(2024, 1, 2): 110.0}})
 
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
@@ -96,7 +96,7 @@ def test_xirr_computed_over_realistic_horizon():
         Event(date(2023, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
               unit_price=100.0, account="PEA"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     # Price 100 -> 110 over the year: terminal holdings 1100.
     price_at = _price_at({"AAPL": {date(2023, 1, 1): 100.0, date(2024, 1, 1): 110.0}})
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
@@ -111,7 +111,7 @@ def test_twr_neutral_to_external_flow():
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 2), EventType.DEPOSIT, amount=500.0, account="PEA"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     perf = compute_account(tl, PEA, set(), _price_at({}),
                            start=date(2024, 1, 1), today=date(2024, 1, 2))
     d0, d1 = perf.daily
@@ -129,7 +129,7 @@ def test_no_external_flow_no_xirr_no_gain():
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
               unit_price=100.0, account="PEA"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0}})
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
                            start=date(2024, 1, 1), today=date(2024, 1, 1))
@@ -143,7 +143,7 @@ def test_grant_is_external_and_valued_at_day_price():
         Event(date(2024, 1, 1), EventType.GRANT, "AAPL", "Apple", quantity=10,
               account="PEA"),
     ]
-    tl = EventAggregator().replay(events, accounts_declared=True)
+    tl = EventAggregator().replay(events)
     price_at = _price_at({"AAPL": {date(2024, 1, 1): 50.0}})
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
                            start=date(2024, 1, 1), today=date(2024, 1, 1))
@@ -158,7 +158,7 @@ def test_portfolio_total_none_on_mixed_currencies():
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
-    ], accounts_declared=True)
+    ])
     price_at = _price_at({})
     per_account = {
         "PEA": compute_account(tl, PEA, set(), price_at, date(2024, 1, 1), date(2024, 1, 1)),
@@ -170,11 +170,11 @@ def test_portfolio_total_none_on_mixed_currencies():
 
 
 def test_portfolio_total_aggregates_same_currency():
-    pea2 = Account("PEA2", "PEA", "EUR", "PEA 2")
+    pea2 = Account("PEA2", "PEA", "PEA 2", "EUR")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="PEA2"),
-    ], accounts_declared=True)
+    ])
     price_at = _price_at({})
     per_account = {
         "PEA": compute_account(tl, PEA, set(), price_at, date(2024, 1, 1), date(2024, 1, 1)),

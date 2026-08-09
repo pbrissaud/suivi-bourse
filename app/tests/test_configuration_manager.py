@@ -2,9 +2,10 @@
 Unit tests for main.ConfigurationManager.
 
 These tests exercise ConfigurationManager in isolation:
-  * events-source resolution (settings.yaml `events.source`, else <dir>/events)
-  * naming the v4 `config.yaml` this version no longer reads (issue #711)
-  * _compute_cache_key behaviour (mtime-based, settings.yaml included)
+  * events-source resolution (always <config_dir>/events since #698)
+  * naming the two v4 files this version no longer reads — `config.yaml`
+    (issue #711) and `settings.yaml` (issue #698)
+  * _compute_cache_key behaviour (the store's stamp, and no file at all)
   * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
   * get_first_buy_date / get_events
@@ -45,17 +46,16 @@ def test_events_source_defaults_to_config_dir_events(tmp_path):
     assert cm.get_events_source() == str(tmp_path / "events")
 
 
-def test_events_source_honours_settings_yaml(tmp_path):
-    """settings.yaml's events block still says *where* the drop folder is."""
-    src = str(tmp_path / "my_events")
-    _write_settings(tmp_path, f"events:\n  source: {src}\n")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_events_source() == src
+def test_events_source_ignores_a_v4_settings_yaml(tmp_path):
+    """``events.source`` was the last thing settings.yaml was read for (#698).
 
-
-def test_events_source_defaults_when_settings_omits_source(tmp_path):
-    """A settings.yaml without a source falls back to <config_dir>/events."""
-    _write_settings(tmp_path, "events:\n")
+    A v5 that still honoured it would let a v4 file decide where the product
+    looks — and the file also carries an ``accounts:`` block v5 must not read,
+    so reading half of it would be the harder rule to explain, not the softer
+    one. The drop folder is ``<config_dir>/events`` here and a mount in the
+    container (ADR-0015).
+    """
+    _write_settings(tmp_path, f"events:\n  source: {tmp_path / 'my_events'}\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
     assert cm.get_events_source() == str(tmp_path / "events")
 
@@ -123,7 +123,10 @@ def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
     key = cm._compute_cache_key()
     assert key is not None
     assert str(events_dir / "2024.csv") not in key
-    assert "ledger:" in key
+    # And no file at all is named in it since #698: settings.yaml's mtime left
+    # with the accounts block it used to carry, so the store alone decides
+    # whether a published snapshot is stale.
+    assert str(tmp_path) not in key
 
 
 def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
@@ -297,9 +300,9 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
     # window during which the candidate is being assembled.
     real_load = cm._load_from_store
 
-    def slow_load(opened_store, accounts):
+    def slow_load(opened_store):
         time.sleep(0.005)
-        return real_load(opened_store, accounts)
+        return real_load(opened_store)
 
     cm._load_from_store = slow_load
 
@@ -350,7 +353,7 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     cm = ConfigurationManager(config_dir=str(tmp_path))
     published = cm.current()
 
-    def _refuse(opened_store, accounts):
+    def _refuse(opened_store):
         raise EventValidationError("row 4: SELL of 40 with 18 owned")
 
     cm._load_from_store = _refuse
@@ -370,7 +373,7 @@ def test_nothing_is_published_when_the_first_build_fails(tmp_path):
     """A candidate that raises leaves ``_config`` untouched — here, at ``None``."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
 
-    def _refuse(opened_store, accounts):
+    def _refuse(opened_store):
         raise EventValidationError("row 2: unknown event_type")
 
     cm._load_from_store = _refuse
@@ -396,42 +399,51 @@ def test_an_empty_portfolio_is_not_a_rejection(tmp_path):
     assert snap.events == []
 
 
-def test_a_malformed_accounts_block_is_refused_before_publication(tmp_path, events_dir):
-    """`accounts:` is validated on the candidate too, not after publication."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    published = cm.current()
-
-    _write_settings(tmp_path, "accounts:\n  - id: PEA\n    type: PEA\n")  # no currency
-
-    with pytest.raises(ValueError, match="Invalid 'accounts' block"):
-        cm.reload()
-    assert cm.current() is published
-
-
 # --------------------------------------------------------------------------- #
-# The accounts block is re-read on every build (it used to be boot-only)
+# The v4 settings.yaml: named, never read (issue #698)
 # --------------------------------------------------------------------------- #
-def test_accounts_are_re_read_on_reload(tmp_path, events_dir):
-    """Editing `accounts:` used to need a restart: _load_settings ran once."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.current().accounts is None
+def test_a_settings_yaml_is_named_at_startup(tmp_path, mocker):
+    """The same gesture ``config.yaml`` gets: name it, do not read it, keep it.
 
+    A v4 owner opening v5 has to be told which file stopped being read, or the
+    accounts they declared in it look like accounts the update lost.
+    """
+    settings = tmp_path / "settings.yaml"
+    settings.write_text("accounts:\n- id: PEA\n  type: PEA\n  currency: EUR\n",
+                        encoding="utf-8")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    assert cm.report_unread_files() == [str(settings)]
+
+    message = warn.call_args.args[0]
+    assert "settings.yaml" in message
+    assert "id, type, label" in message   # says how to declare them instead
+    assert settings.exists()              # and touches nothing
+
+
+def test_a_v4_accounts_block_declares_nothing(tmp_path, events_dir):
+    """Never read means never obeyed, and the observable proof is the ledger.
+
+    The fixture's events carry no ``account`` column. If the block were read,
+    declaring ``PEA`` would make every one of those rows invalid; instead they
+    import exactly as before and fall into ``default``.
+    """
     _write_settings(
         tmp_path,
         "accounts:\n  - id: PEA\n    type: PEA\n    currency: EUR\n")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
 
-    # Every event in the fixture omits `account`, which is only legal while no
-    # account is declared — so a successful reload here proves the new block was
-    # actually read and applied.
-    with pytest.raises(EventValidationError):
-        cm.reload()
+    snapshot = cm.reload()
+    assert snapshot.accounts is None
+    assert {s["account"] for s in snapshot.shares} == {"default"}
 
 
-def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, events_dir):
-    """settings.yaml joins the event files in the cache key.
+def test_touching_settings_yaml_does_not_invalidate_the_cache(tmp_path, events_dir):
+    """It used to join the key, because the accounts block was read from it.
 
-    Without it an edited `accounts:` block would sit unnoticed behind an
-    unchanged events directory, and the re-read above would never fire.
+    Now that nothing reads it, a key that still watched it would rebuild the
+    whole configuration every time a v4 file was touched by anything at all.
     """
     _write_settings(tmp_path, "mode: events\n")
     cm = ConfigurationManager(config_dir=str(tmp_path))
@@ -441,4 +453,4 @@ def test_settings_yaml_mtime_invalidates_the_cache(tmp_path, events_dir):
     st = settings.stat()
     os.utime(settings, (st.st_atime, st.st_mtime + 100))
 
-    assert cm._compute_cache_key() != key_before
+    assert cm._compute_cache_key() == key_before

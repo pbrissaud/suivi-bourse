@@ -87,20 +87,25 @@ class FakeMetrics:
             self._config_manager.replay()
 
 
-def build_client(tmp_path, frame=None, error=None, settings=None, events=None,
+def build_client(tmp_path, frame=None, error=None, accounts=None, events=None,
                  frames=None):
     """A Flask test client over a real ConfigurationManager on ``tmp_path``."""
     return build_client_and_influx(
-        tmp_path, frame, error, settings, events, frames)[0]
+        tmp_path, frame, error, accounts, events, frames)[0]
 
 
-def build_client_and_influx(tmp_path, frame=None, error=None, settings=None,
+def build_client_and_influx(tmp_path, frame=None, error=None, accounts=None,
                             events=None, frames=None):
-    """As above, plus the fake InfluxDB client so a test can read the SQL back."""
-    if settings is not None:
-        (tmp_path / 'settings.yaml').write_text(settings, encoding='utf-8')
+    """As above, plus the fake InfluxDB client so a test can read the SQL back.
+
+    ``accounts`` is a **file in the drop folder** since #698, not a
+    ``settings.yaml``: the declaration is user data with provenance, so the
+    setup a test writes is the setup a user writes.
+    """
     events_dir = tmp_path / 'events'
     events_dir.mkdir(exist_ok=True)
+    if accounts is not None:
+        (events_dir / 'accounts.csv').write_text(accounts, encoding='utf-8')
     if events is not None:
         (events_dir / '2024.csv').write_text(events, encoding='utf-8')
 
@@ -125,13 +130,11 @@ def build_client_and_influx(tmp_path, frame=None, error=None, settings=None,
     return create_app(runtime).test_client(), influx
 
 
-#: A declared, single-currency setup — the `accounts` mode's precondition.
-ACCOUNTS_SETTINGS = (
-    "accounts:\n"
-    "- id: pea\n"
-    "  type: PEA\n"
-    "  currency: EUR\n"
-    "  label: PEA Bourso\n"
+#: A declared setup — the `accounts` mode's precondition. An accounts **file**
+#: in the drop folder (issue #698), in the events' own format.
+ACCOUNTS_FILE = (
+    "id,type,label\n"
+    "pea,PEA,PEA Bourso\n"
 )
 
 ACCOUNTS_EVENTS = (
@@ -286,24 +289,27 @@ def test_the_head_of_a_default_install_speaks_plus_value_latente(tmp_path):
     assert 'gain_absolu' not in payload
 
 
-def test_the_head_of_a_declared_single_currency_install_speaks_gain(tmp_path):
+def test_the_head_of_a_declared_install_speaks_gain(tmp_path):
     client = build_client(tmp_path, frame=totals_frame(),
-                          settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio').get_json()
 
     assert payload['mode'] == 'accounts'
     assert payload['gain_absolu'] == 2500.0
     assert payload['net_contributed'] == 10000.0
     assert payload['xirr'] == 0.12
-    assert payload['currency'] == 'EUR'
     assert 'plus_value_latente' not in payload
+    # `currency` is null and stays so until the reporting currency lands
+    # (#702): a declaration has three columns since #698, and none is a
+    # currency — a per-account one was never the right home for it (ADR-0002).
+    assert payload['currency'] is None
 
 
 def test_declared_accounts_whose_perf_job_has_not_run_stay_in_accounts_mode(tmp_path):
     """The collapse #655 déc. 8 refuses: "you have not declared accounts" and
     "the computation has not happened yet" must not be one screen. The mode is
     read from the configuration, so it survives an empty series."""
-    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio').get_json()
 
@@ -312,38 +318,40 @@ def test_declared_accounts_whose_perf_job_has_not_run_stay_in_accounts_mode(tmp_
     assert payload['as_of'] is None
 
 
-def test_a_mixed_currency_portfolio_states_the_condition_without_reading_storage(tmp_path):
-    """`portfolio_totals` is not written at all for a mixed portfolio, so there
-    is nothing to query and nothing to invent. #655 déc. 8's third case: the API
-    *says* so, and what a consolidated mixed view should show stays the open
-    product question it has been since #650."""
-    settings = (
-        "mode: events\n"
-        "accounts:\n"
-        "- id: pea\n  type: PEA\n  currency: EUR\n  label: PEA\n"
-        "- id: cto\n  type: CTO\n  currency: USD\n  label: CTO\n"
+def test_two_declared_accounts_share_one_head_because_a_file_declares_no_currency(tmp_path):
+    """The multi-currency head loses its trigger here, and that is #698's doing.
+
+    A declaration is three columns — ``id``, ``type``, ``label`` — so there is
+    nowhere left for a per-account currency to be written, and
+    ``portfolio_mode`` therefore sees one currency (``None``) whatever the user
+    declares. ``MODE_MULTI_CURRENCY`` is not reachable through the API from
+    here on; it stays covered as a pure function in ``test_portfolio_view`` and
+    dies with ``Account.currency`` when the reporting currency lands (#702,
+    ADR-0002), which is the real answer to a mixed portfolio.
+    """
+    accounts = (
+        "id,type,label\n"
+        "pea,PEA,PEA\n"
+        "cto,CTO,CTO\n"
     )
     events = (
         "date,event_type,symbol,name,quantity,unit_price,account\n"
         "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
         "2024-01-16,BUY,MSFT,Microsoft,5,380.00,cto\n"
     )
-    client, influx = build_client_and_influx(
-        tmp_path, settings=settings, events=events)
+    client, _ = build_client_and_influx(
+        tmp_path, accounts=accounts, events=events)
     payload = client.get('/api/portfolio').get_json()
 
-    assert payload['mode'] == 'multi_currency'
-    assert payload['currencies'] == ['EUR', 'USD']
-    assert {a['id'] for a in payload['accounts']} == {'pea', 'cto'}
-    # Not one query: the condition is a property of the declaration.
-    assert influx.queries == []
+    assert payload['mode'] == 'accounts'
+    assert payload['currency'] is None
 
 
 def test_the_relative_delta_reads_the_last_point_before_the_instant(tmp_path):
     """#652 déc. 2's UI preference, and the reason it is a baseline *instant*
     rather than a window: it is deliberately decoupled from the chart's zoom."""
     client, influx = build_client_and_influx(
-        tmp_path, frame=totals_frame(), settings=ACCOUNTS_SETTINGS,
+        tmp_path, frame=totals_frame(), accounts=ACCOUNTS_FILE,
         events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio?since=2026-07-05T00:00:00Z').get_json()
 
@@ -355,7 +363,7 @@ def test_the_relative_delta_reads_the_last_point_before_the_instant(tmp_path):
 
 
 def test_the_head_rejects_an_unparseable_baseline_instant(tmp_path):
-    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     response = client.get('/api/portfolio?since=last-tuesday')
 
@@ -380,7 +388,7 @@ def test_the_history_of_a_declared_install_is_value_versus_contributed(tmp_path)
     """#652 déc. 7: the area between the two curves *is* the Gain. The chart has
     no equivalent at global level in the Grafana baseline."""
     client, influx = build_client_and_influx(
-        tmp_path, frame=totals_frame(), settings=ACCOUNTS_SETTINGS,
+        tmp_path, frame=totals_frame(), accounts=ACCOUNTS_FILE,
         events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio/history').get_json()
 
@@ -423,7 +431,7 @@ def test_the_history_defaults_to_a_year_because_the_series_is_daily(tmp_path):
     """One point per calendar day: the short presets that are natural on the
     shares page hold a single point here."""
     client, influx = build_client_and_influx(
-        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     body = client.get('/api/portfolio/history').get_json()
 
     span = datetime.fromisoformat(body['to']) - datetime.fromisoformat(body['from'])
@@ -483,28 +491,27 @@ def test_accounts_says_undeclared_rather_than_returning_nothing(tmp_path):
 
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
-    """Reading settings.yaml rather than a DISTINCT on the tag (#652 déc. 4)
-    hands over label/type/currency — three fields the app writes and zero
-    Grafana panels read."""
-    settings = (
-        "mode: events\n"
-        "accounts:\n"
-        "- id: pea\n"
-        "  type: PEA\n"
-        "  currency: EUR\n"
-        "  label: PEA Bourso\n"
+    """Reading the declaration rather than a DISTINCT on the tag (#652 déc. 4)
+    hands over label and type — fields the app writes and zero Grafana panels
+    read — plus, since #698, where the row came from."""
+    accounts = (
+        "id,type,label\n"
+        "pea,PEA,PEA Bourso\n"
     )
     events = (
         "date,event_type,symbol,name,quantity,unit_price,account\n"
         "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
     )
-    client = build_client(tmp_path, settings=settings, events=events)
+    client = build_client(tmp_path, accounts=accounts, events=events)
     payload = client.get('/api/accounts').get_json()
 
     assert payload['declared'] is True
     row = payload['accounts'][0]
-    assert (row['id'], row['label'], row['type'], row['currency']) == (
-        'pea', 'PEA Bourso', 'PEA', 'EUR')
+    assert (row['id'], row['label'], row['type']) == ('pea', 'PEA Bourso', 'PEA')
+    # It came from a file, so the page must not offer to edit it: the gesture
+    # on a file-provisioned row is forgetting its import (issue #698).
+    assert row['source_id'] is not None
+    assert row['editable'] is False
     # #661 enriched the resource with the newest perf figures. With nothing
     # written yet they are all null and `as_of` says so — a declared account
     # whose first perf cycle has not run is a row with em dashes, not a missing
@@ -538,7 +545,7 @@ def test_accounts_carries_the_newest_figures_of_each_account(tmp_path):
     the ticket's smallest item and the table's first column.
     """
     client = build_client(tmp_path, frame=account_metrics_frame(),
-                          settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     row = client.get('/api/accounts').get_json()['accounts'][0]
 
     assert row['total_value'] == 12500.0
@@ -546,8 +553,8 @@ def test_accounts_carries_the_newest_figures_of_each_account(tmp_path):
     assert row['twr_index'] == 118.4
     assert row['as_of'].startswith('2026-08-05')
     # The declaration still drives the identity fields — the series' own
-    # `account_currency` tag records what the account *was*, not what it is.
-    assert row['currency'] == 'EUR'
+    # `account_type` tag records what the account *was*, not what it is.
+    assert row['type'] == 'PEA'
 
 
 def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
@@ -556,19 +563,16 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
     Not a missing line: the declaration drives the list (#652 déc. 4), so
     absence of data cannot remove an account the human declared.
     """
-    settings = ACCOUNTS_SETTINGS + (
-        "- id: cto\n"
-        "  type: CTO\n"
-        "  currency: EUR\n"
-        "  label: CTO Degiro\n"
-    )
+    accounts = ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
     client = build_client(tmp_path, frame=account_metrics_frame(),
-                          settings=settings, events=ACCOUNTS_EVENTS)
+                          accounts=accounts, events=ACCOUNTS_EVENTS)
     payload = client.get('/api/accounts').get_json()
 
-    assert [a['id'] for a in payload['accounts']] == ['pea', 'cto']
-    assert payload['accounts'][1]['as_of'] is None
-    assert payload['accounts'][1]['total_value'] is None
+    # Store order, which is `ORDER BY id` — stable across restarts and across a
+    # re-drop, where the file's own order was neither.
+    assert [a['id'] for a in payload['accounts']] == ['cto', 'pea']
+    assert payload['accounts'][0]['as_of'] is None
+    assert payload['accounts'][0]['total_value'] is None
 
 
 def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
@@ -577,7 +581,7 @@ def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
         account_metrics_frame().iloc[0].to_dict(),
         account_metrics_frame(account='old', total_value=999.0).iloc[0].to_dict(),
     ])
-    client = build_client(tmp_path, frame=frame, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, frame=frame, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     payload = client.get('/api/accounts').get_json()
 
@@ -590,7 +594,7 @@ def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
 
 def test_account_history_is_200_and_empty_before_the_first_point(tmp_path):
     """Declared, no series yet: the empty-collection state, not an error."""
-    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     response = client.get('/api/accounts/pea/history')
 
@@ -610,7 +614,7 @@ def test_account_history_returns_the_series_with_its_nulls_intact(tmp_path):
          'cash_balance': 500.0, 'holdings_value': 12000.0, 'total_value': 12500.0,
          'net_contributed': 10000.0, 'twr_index': 118.4},
     ])
-    client = build_client(tmp_path, frame=frame, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, frame=frame, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     points = client.get('/api/accounts/pea/history').get_json()['points']
 
@@ -621,7 +625,7 @@ def test_account_history_returns_the_series_with_its_nulls_intact(tmp_path):
 def test_an_undeclared_account_history_is_404_problem_json(tmp_path):
     """Decided against the declaration, not against the data: a typo must not
     answer with an empty chart."""
-    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     response = client.get('/api/accounts/nope/history')
 
@@ -639,7 +643,7 @@ def test_account_history_without_any_declaration_is_404(tmp_path):
 
 def test_account_history_storage_failure_is_503_problem_json(tmp_path):
     client = build_client(tmp_path, error=Exception("connection refused"),
-                          settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     response = client.get('/api/accounts/pea/history')
 
     assert response.status_code == 503
@@ -648,7 +652,7 @@ def test_account_history_storage_failure_is_503_problem_json(tmp_path):
 
 
 def test_account_history_rejects_an_inverted_window(tmp_path):
-    client = build_client(tmp_path, settings=ACCOUNTS_SETTINGS,
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     response = client.get(
         '/api/accounts/pea/history?from=2026-06-01&to=2026-01-01')
@@ -909,7 +913,7 @@ def test_the_runtime_resource_answers_200_with_influxdb_unreachable(tmp_path):
     """
     client = build_client(
         tmp_path, error=Exception("connection refused"),
-        settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     # The table is dead...
     assert client.get('/api/shares').status_code == 503
@@ -928,7 +932,7 @@ def test_the_runtime_resource_issues_no_query_at_all(tmp_path):
     unreachable InfluxDB rather than merely degrading politely.
     """
     client, influx = build_client_and_influx(
-        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     client.get('/api/runtime')
 
@@ -943,7 +947,7 @@ def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
     position exists, nothing has been observed about it yet.
     """
     client = build_client(
-        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     body = client.get('/api/runtime').get_json()
 
@@ -954,7 +958,7 @@ def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
 
 def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
     client, _ = build_client_and_influx(
-        tmp_path, settings=ACCOUNTS_SETTINGS, events=ACCOUNTS_EVENTS)
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     runtime = web_module.current_runtime()
     runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
         symbol='AAPL', at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
@@ -1056,6 +1060,88 @@ def test_forgetting_an_unknown_import_is_a_404_not_a_503(tmp_path):
     response = build_client(tmp_path, events=_ONE_BUY).delete('/api/imports/4242')
 
     assert response.status_code == 404
+
+
+def test_forgetting_an_accounts_import_an_event_rests_on_is_a_409(tmp_path):
+    """The cascade refusal, on the wire (issue #698).
+
+    ``409`` and not ``400``: the request is well formed and the client did
+    nothing wrong — the store's state is what refuses, and the answer says
+    which gesture has to come first.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    declaring = next(r for r in client.get('/api/imports').get_json()
+                     if r['kind'] == 'accounts')
+
+    response = client.delete(f"/api/imports/{declaring['id']}")
+
+    assert response.status_code == 409
+    assert response.mimetype == 'application/problem+json'
+    assert 'pea' in response.get_json()['detail']
+    # Nothing was half-forgotten on the way to the refusal.
+    assert len(client.get('/api/imports').get_json()) == 2
+    assert len(client.get('/api/events').get_json()) == 1
+
+
+# --------------------------------------------------------------------- #
+# Declaring an account from the app (issue #698)
+# --------------------------------------------------------------------- #
+
+def test_an_account_can_be_declared_here_and_is_editable(tmp_path):
+    """The UI's half of the declaration: ``source_id`` null, so it is editable."""
+    client = build_client(tmp_path)
+
+    created = client.post('/api/accounts',
+                          json={'id': 'pea', 'type': 'PEA', 'label': 'PEA Bourso'})
+
+    assert created.status_code == 201
+    assert created.get_json() == {'id': 'pea', 'type': 'PEA',
+                                  'label': 'PEA Bourso', 'source_id': None,
+                                  'editable': True}
+    # The replay followed the write: the declaration is already published.
+    listed = client.get('/api/accounts').get_json()
+    assert listed['declared'] is True
+    assert [a['id'] for a in listed['accounts']] == ['pea']
+
+    renamed = client.patch('/api/accounts/pea', json={'label': 'PEA Fortuneo'})
+    assert renamed.get_json()['label'] == 'PEA Fortuneo'
+
+    assert client.delete('/api/accounts/pea').status_code == 200
+    assert client.get('/api/accounts').get_json()['declared'] is False
+
+
+def test_declaring_an_id_twice_is_a_409(tmp_path):
+    client = build_client(tmp_path)
+    client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
+
+    response = client.post('/api/accounts', json={'id': 'pea', 'type': 'CTO'})
+
+    assert response.status_code == 409
+
+
+def test_an_account_from_a_file_refuses_the_edit_and_the_delete(tmp_path):
+    """Read-only means read-only: the gesture on it is forgetting its import."""
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE)
+
+    assert client.patch('/api/accounts/pea',
+                        json={'label': 'Renamed'}).status_code == 409
+    assert client.delete('/api/accounts/pea').status_code == 409
+
+
+def test_deleting_an_account_an_event_names_is_a_409(tmp_path):
+    """ADR-0013's construction, on the wire: no orphan historical residue."""
+    client = build_client(tmp_path, events=ACCOUNTS_EVENTS,
+                          accounts=ACCOUNTS_FILE)
+
+    response = client.delete('/api/accounts/pea')
+
+    assert response.status_code == 409
+    assert 'event' in response.get_json()['detail']
+
+
+def test_deleting_an_unknown_account_is_a_404(tmp_path):
+    assert build_client(tmp_path).delete('/api/accounts/nope').status_code == 404
 
 
 def test_no_route_edits_a_single_event(tmp_path):

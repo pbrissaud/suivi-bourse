@@ -314,8 +314,10 @@ Four things about it are decisions rather than defaults:
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
   instant, `DATE` for a calendar day.
 - **The seed has two halves.** The `default` account row is written **at
-  creation only** — resurrecting it at every boot would undo a deliberate
-  deletion. The `setting` defaults are inserted **at every start** with `ON
+  creation only**, and since #698 it is also never removed — a file may take it
+  over, and forgetting that file hands the row back rather than taking it away.
+  There is always at least one account, which is what lets nothing branch on
+  *"are accounts declared"* (ADR-0013). The `setting` defaults are inserted **at every start** with `ON
   CONFLICT DO NOTHING`, which is what makes adding a dial in a later version
   cost no migration: the missing key appears, an answered one is left alone. A
   key absent from the table reads as **the code's default**, from
@@ -325,7 +327,8 @@ Four things about it are decisions rather than defaults:
 
 `schema.yaml`, Cerberus, `InvalidConfigFile`, `load_shares_schema`,
 `SuiviBourseMetrics.validate()` and `_ABSENT_SCHEMA` are deleted with the same
-ticket; the `accounts:` block is now checked by hand in `main.py`.
+ticket; what validates is `events/validator.py` and the DDL, and since #698 the
+accounts are a table rather than a block to check.
 
 **The web UI reads through a sibling of the writer** (issue #659, design #655).
 The layer between the UI and InfluxDB is the *for-keeps* half of the prototype;
@@ -432,7 +435,10 @@ around the import as the unit. `GET /api/events` survives as a read of the
 published snapshot — the rows the aggregator ran on, with no id and no etag.
 
 Its consequence for the config directory: no filename has a special meaning any
-more (`ui.csv` was the last one), and `settings.yaml` is edited by hand alone.
+more (`ui.csv` was the last one). The one write path that came back is the
+account (issue #698) — `POST`/`PATCH`/`DELETE /api/accounts` — and it writes a
+**row**, never a file: a declaration made in the app carries `source_id NULL`,
+which is both "created in the UI" and "editable".
 
 Flask serves the built SPA with a catch-all that must **not** swallow `/api` or
 `/metrics`: without those guards a typo'd endpoint returns the HTML shell with a
@@ -475,9 +481,10 @@ after a file edit). Two rules follow:
   legitimate state, not a rejection: an install legitimately starts with an
   empty `events/` directory.
 
-The `accounts:` block is re-read on every build (`settings.yaml`'s mtime joined
-the cache key), so editing it no longer needs a restart; `events.source` /
-`events.watch` stay boot-only — they are deployment settings.
+The declaration is read **from the store, after the import** (issue #698): an
+accounts source in the drop folder is imported first, so the accounts a build
+publishes are the ones its events were just validated against. `settings.yaml`
+is not read at all any more, so nothing about the configuration is boot-only.
 
 The application runs independent scheduled jobs on a single APScheduler:
 - **Scraping**: one **self-rescheduling job per held symbol**, market-aware
@@ -587,9 +594,18 @@ A portfolio is described by `events/*.csv` and `events/*.xlsx`, and by nothing
 else. There is no mode: `SB_CONFIG_MODE`, the `mode:` key and the auto-detection
 between them are gone, and `config.yaml` is **named at startup, never read**.
 
-The `events:` block (`source`, `watch`) says how to read the ledger. Every `SB_*`
-variable treats a blank value as unset (`env_str`/`env_int`/`env_flag`), because
-compose renders an undefined substitution as an empty string.
+**`settings.yaml` is named and never read either** (issue #698). It was the last
+file the app parsed, and it mixed a deployment setting (`events.source`,
+`events.watch`) with user data (the `accounts:` block) in one document — the
+seam ADR-0006 exists to separate. Its two halves leave in different directions:
+the accounts become a file in the events' own format (below), and the drop
+folder is `<config dir>/events` here and a mount in the container (ADR-0015,
+`SB_IMPORT_DIR` in #740). Nothing is migrated and nothing is deleted: the file
+stays where its owner put it, and startup names it once.
+
+Every `SB_*` variable treats a blank value as unset
+(`env_str`/`env_int`/`env_flag`), because compose renders an undefined
+substitution as an empty string.
 
 > **Coming from a manual v4**: nothing is migrated. Typing a position means
 > creating dated events — an aggregated position carries no dates, so it can
@@ -605,20 +621,17 @@ Import portfolio events from files and automatically compute aggregated position
 
 ```
 ~/.config/SuiviBourse/
-├── settings.yaml         # Mode configuration
-└── events/               # Event files directory
+└── events/               # The drop folder — every .csv/.xlsx in it is imported
+    ├── accounts.csv      # An accounts source: id, type, label (issue #698)
     ├── 2023.csv
     ├── 2024.csv
     └── broker-export.xlsx
 ```
 
-#### settings.yaml
-
-```yaml
-events:
-  source: ~/.config/SuiviBourse/events/
-  watch: true  # Optional: enable file watcher for immediate reload
-```
+A file is an **accounts source** or an **event source** according to its
+**header**, never its name: `id` + `type` and no `event_type` makes it a
+declaration. `settings.yaml` sitting in the same directory is simply not one of
+these.
 
 #### CSV Format
 
@@ -636,6 +649,7 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 |--------|----------|-------------|
 | `date` | Yes | ISO format (YYYY-MM-DD) |
 | `event_type` | Yes | `BUY`, `SELL`, `GRANT`, `DIVIDEND` |
+| `account` | See below | The id of a declared account |
 | `symbol` | Yes | Yahoo Finance ticker (e.g., `AAPL`, `MSFT`) |
 | `name` | Yes | Display name for the share |
 | `quantity` | For BUY/SELL/GRANT | Number of shares |
@@ -643,6 +657,41 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 | `fee` | Optional | Transaction fee |
 | `amount` | For DIVIDEND | Dividend amount received |
 | `notes` | Optional | Free text comment |
+
+#### Declaring accounts (issue #698, ADR-0013)
+
+An account is **user data with provenance, not a setting**, so it is declared
+the way an event is: by a file in the same format, with columns `id`, `type`,
+`label` (`label` falls back to the id), or from the app. The file is what
+multi-account needs in the UI *and* headless: an install with no interface has
+nothing to click, and reserving the declaration to the UI would forbid
+multi-account to every headless install — and with it any broker export that
+names accounts.
+
+The rules, each of them keeping a mistake a refusal:
+
+- **All account sources are imported before all event sources**, never
+  alphabetically — `event.account` references `account(id)`, and a folder whose
+  meaning depended on how many times it was scanned would be the bug.
+- **An event file naming an undeclared account is not imported at all**, and
+  the message names the account to declare.
+- **A blank `account` column means `default` until something is declared, and
+  is an error afterwards.** That is v4's rule *minus its opt-in*, and it is what
+  makes a single-account v4's event files import without a single edit — cash
+  events included, where v4 demanded an account it would now refuse.
+- **A declaration that moves re-imports the event files**, fingerprint or not:
+  rows written under `default` before their accounts existed would otherwise
+  stay there while the page showed the accounts.
+- **There is always at least one account.** The seeded `default` row is never
+  removed — a file may take it over, and forgetting that file hands it back
+  rather than taking it away. Nothing in the app branches on *"are accounts
+  declared"*: `EventAggregator` keys by `(account, symbol)` unconditionally.
+- **An account is undeletable while an event names it**, and so is the import
+  that declared it — the cascade is *refused*, never performed (`409` on the
+  API). Forget the event imports first.
+- What came from a file is **read-only** (`source_id` set); what was created in
+  the app is editable (`source_id NULL`). `POST`/`PATCH`/`DELETE /api/accounts`
+  serve the second and refuse the first.
 
 #### Event Types
 
@@ -652,7 +701,7 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 | `SELL` | -estate.quantity, +purchase.fee, +cash (proceeds `qty×price − fee`) |
 | `GRANT` | +estate.quantity only (free shares, no impact on purchase); cash-neutral |
 | `DIVIDEND` | +estate.received_dividend, +cash (`amount − fee`) |
-| `DEPOSIT` | +cash (`amount − fee`), +net_contributed (cash event: `account`+`amount` required, no share) |
+| `DEPOSIT` | +cash (`amount − fee`), +net_contributed (cash event: `amount` required, no share) |
 | `WITHDRAWAL` | −cash (`amount + fee`), −net_contributed (cash event) |
 
 Cash is a per-account ledger (starts at `0.00`). Negative balances are allowed
@@ -684,10 +733,10 @@ Events are **sorted by date** before processing, regardless of their order in fi
 All `.csv` and `.xlsx` files in the events directory are loaded and merged. Use this to organize by year, broker, or account. **No filename has a special meaning** (issue #711).
 
 #### Caching
-Since #697 the ledger lives in the store and the files are no longer re-read on a timer, so there is nothing to poll and nothing to invalidate on a schedule: an import is triggered by the boot, by the always-on watcher, or by a write. `settings.yaml`'s `accounts:` block still joins the cache key, so editing it does not need a restart.
+Since #697 the ledger lives in the store and the files are no longer re-read on a timer, so there is nothing to poll and nothing to invalidate on a schedule: an import is triggered by the boot, by the always-on watcher, or by a write. The cache key is the store's own stamp (`ledger.stamp`) and **no file joins it** since #698: it moves on a re-drop that changed content, on a forget, and when the declaration changes — including an account created in the app, which changes no import and no event.
 
 #### Error Resilience
-If ingestion fails (invalid event, file error, `accounts:` malformed), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
+If ingestion fails (invalid event, file error, an accounts source that cannot stand), the **previous valid configuration is kept** and scraping continues normally. Errors are logged but don't crash the application. Since #658 this holds for the *whole* app rather than for scraping alone: a snapshot is published only once complete and valid, so backfill and the perf recompute cannot read a configuration the validator refused.
 
 ---
 
@@ -728,11 +777,13 @@ app/src/
 ├── runtime_view.py         # Pure: records + snapshot + jobstore → pills and the banner (#668)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
+├── ledger.py               # The import: import_source/symbol/event, provenance, revocation (#697)
+├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── settings_registry.py    # Pure: the one list of dials — key, default, parse (#696, ADR-0014)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint (read-only since #711): shares, prices, portfolio, accounts (+ history), events, config, runtime
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, imports, config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module

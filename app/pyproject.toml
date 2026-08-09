@@ -6,7 +6,9 @@ readme = "../README.md"
 requires-python = ">=3.14"
 dependencies = [
     "APScheduler==3.11.3",
-    "PyYAML==6.0.3",
+    # PyYAML left with the last file the app parsed (issue #698): `config.yaml`
+    # went with the manual mode and `settings.yaml` with the accounts block, and
+    # both are now named at startup rather than read. v5 parses no YAML at all.
     "duckdb>=1.4.0",       # the one embedded store (ADR-0001); opened before anything else
 
     "logfmt-logger==0.1.2",

@@ -84,10 +84,17 @@ class EventLoader:
             raise EventLoaderError(f"Unsupported file format: {suffix}")
 
     def _load_csv(self, file_path: Path) -> List[Event]:
-        """Load events from a CSV file."""
+        """Load events from a CSV file.
+
+        ``utf-8-sig``, like the accounts loader (issue #698): Excel's *"CSV
+        UTF-8"* export writes a byte-order mark, which under plain ``utf-8``
+        turns ``date`` into ``﻿date`` and gets the file refused for a
+        missing required column it visibly has. A file without a mark reads
+        identically, so the codec costs nothing.
+        """
         events = []
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
 
             if not reader.fieldnames:

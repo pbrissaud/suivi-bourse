@@ -37,6 +37,7 @@ TYPE_UNAVAILABLE = '/problems/storage-unavailable'
 TYPE_NOT_FOUND = '/problems/not-found'
 TYPE_BAD_REQUEST = '/problems/bad-request'
 TYPE_INTERNAL = '/problems/internal-error'
+TYPE_CONFLICT = '/problems/conflict'
 
 # #662's write-path vocabulary — a stale fingerprint, a read-only source, an
 # unwritable directory, a wrong mode — left with the apparatus that raised it
@@ -96,12 +97,25 @@ def bad_request(detail: str):
     return problem(400, 'Bad request', detail, TYPE_BAD_REQUEST)
 
 
+def conflict(detail: str):
+    """409 — the request is well formed and the store's state refuses it.
+
+    The status of every refusal issue #698 introduced: an account an event
+    names, an account a file provisioned, an id already taken, an accounts
+    import something still rests on. None of them is a malformed request (the
+    client did nothing wrong) and none is a missing resource (it is there —
+    that is the problem), so ``409`` is the one that carries *"try this again
+    after removing what it rests on"* rather than *"fix your syntax"*.
+    """
+    return problem(409, 'Conflict', detail, TYPE_CONFLICT)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
 
 
 __all__ = [
-    'problem', 'storage_unavailable', 'not_found', 'bad_request',
+    'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
     'internal_error', 'CONTENT_TYPE',
 ]

@@ -212,8 +212,12 @@ TABLES = (
 
 #: The account every event falls into until one is declared (ADR-0008: an empty
 #: ``account`` column means ``default``, which is what lets a single-account v4's
-#: files import without a single edit). Seeded **at creation only** — resurrecting
-#: it at every boot would undo a deliberate deletion.
+#: files import without a single edit). Seeded **at creation only**, and since
+#: #698 never removed either: an accounts file may take the row over, and
+#: forgetting that file hands it back rather than taking it away. There is
+#: always at least one account (ADR-0013), which is what lets nothing in the app
+#: branch on "are accounts declared" — so the seed happens once and the row then
+#: has no way of disappearing that would need it to happen twice.
 #:
 #: Both strings here are **documentation, not display**. ``label`` and ``type``
 #: are ``NOT NULL``, so this row cannot decline to name itself, and it is the one
