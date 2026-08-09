@@ -16,9 +16,13 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 DEFAULT_ACCOUNT = "default"
 
 # The columns of an accounts file (issue #698) — the columns of the ``account``
-# table. Named here rather than in :mod:`accounts` because the validator quotes
-# them in the refusal it raises when an event names an account nobody declared,
-# and ``accounts`` imports this module: one direction, no cycle.
+# table, and the **one** definition of them. Named here rather than in
+# :mod:`accounts` because the validator quotes them in the refusal it raises
+# when an event names an account nobody declared, and ``accounts`` imports this
+# module: one direction, no cycle. ``accounts.ACCOUNT_COLUMNS`` is this tuple
+# under the name that module's own messages read best, never a copy of it — two
+# lists of columns, both quoted at a user, would drift the day the table gains a
+# fourth.
 ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
 
 

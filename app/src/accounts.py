@@ -43,14 +43,21 @@ from typing import Iterable, List, Optional, Sequence, Set
 from logfmt_logger import getLogger
 
 import store as store_module
-from events.schemas import Account, DEFAULT_ACCOUNT, Portfolio
+from events.schemas import (
+    ACCOUNT_FILE_COLUMNS, Account, DEFAULT_ACCOUNT, Portfolio)
 
 logger = getLogger("accounts")
 
 #: The columns of an account file — the columns of the ``account`` table.
 #: ``label`` is optional and falls back to the id, the way v4's ``accounts:``
 #: block did; the other two are what the DDL declares ``NOT NULL``.
-ACCOUNT_COLUMNS = ('id', 'type', 'label')
+#:
+#: The list itself lives in :mod:`events.schemas`, and this is a second **name**
+#: for it rather than a second value: the validator quotes it in the refusal it
+#: raises when an event names an account nobody declared, and it cannot import
+#: this module — but this one can import that one, so one tuple serves both
+#: messages and neither can drift from the DDL without the other.
+ACCOUNT_COLUMNS = ACCOUNT_FILE_COLUMNS
 REQUIRED_ACCOUNT_COLUMNS = frozenset({'id', 'type'})
 
 #: What tells an accounts file from an event file: its **header**, never its
