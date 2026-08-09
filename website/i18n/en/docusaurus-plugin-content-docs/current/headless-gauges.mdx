@@ -1,0 +1,159 @@
+---
+title: "Headless: the gauges"
+description: The sb_* inventory, including sb_store_ephemeral
+---
+
+Some installs never have their interface opened. The operator publishes the
+metrics port, points a scraper at it, and reads the portfolio in a dashboard they
+already had. That is a **first-class use of the app**, not a stripped-down one —
+which is why this is a page of the same thread as every other, and not a branch
+labelled *advanced*. Give the headless use a branch and you make it optional
+again.
+
+For that reader, the gauges below are the entire contract.
+
+## What "headless" is, and what it is not
+
+**There is no switch that turns the page off.** Headless is a usage, not a
+setting: an operator who wants no interface publishes one port and not the other.
+What can be turned off is `/metrics` itself, with `SB_PROMETHEUS_ENABLED` — and
+turning it off leaves its port unbound rather than serving an empty endpoint.
+
+**The API is always served.** It is the only non-interactive way to answer the
+one question the app asks at first run, so nothing is allowed to take it away.
+[Settings](./settings.mdx) is where that question and the six boot variables
+live.
+
+```yaml title="prometheus.yml"
+scrape_configs:
+  - job_name: 'suivi-bourse'
+    scrape_interval: '120s'
+    static_configs:
+      - targets: ['localhost:8081']
+```
+
+## Two rules the inventory obeys
+
+**Never a gauge whose unit depends on a setting.** A series called
+`sb_share_price` that means dollars on one install, euros on another, and euros
+*from Tuesday onwards* on a third is not a metric — it is a trap with a
+plausible-looking value in it. So the native price and the converted price are
+**two gauges**, each with a fixed meaning, and while the base currency is
+unanswered the converted one is **absent** rather than zero.
+
+**A gauge whose field is absent is not published.** Zero would make "no ledger"
+indistinguishable from "a ledger at zero" — an alert on `\< 100` would fire on an
+account that has declared nothing — and `NaN` propagates through every
+aggregation that touches it. An **absent series** is how Prometheus itself says
+*no value*. The asymmetry is the message: `sb_account_holdings_value` exists for
+every account, and `sb_account_total_value` does not.
+
+The same rule ends a symbol's series. When a position closes, its job leaves and
+its price gauges are removed with it — a gauge that disappears is readable, a
+gauge frozen at last Tuesday's price is not.
+
+Each gauge is named after the value it publishes, so the inventory is readable
+against the app's own vocabulary rather than memorised.
+
+## Prices and symbols
+
+A market price belongs to no account, so these carry no `account` label.
+
+| Gauge                   | Labels                                                           | Meaning                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `sb_share_price`        | `share_symbol`                                                   | last price, **in your base currency**. Absent until the base currency is answered                                                         |
+| `sb_share_price_native` | `share_symbol`                                                   | the same price as quoted, in the security's own currency                                                                                  |
+| `sb_fx_rate`            | `share_symbol`                                                   | the rate that turned the second into the first                                                                                            |
+| `sb_dividend_yield`     | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
+| `sb_pe_ratio`           | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
+| `sb_market_cap`         | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
+| `sb_price_staleness`    | `share_symbol`                                                   | `1` when the stored price is **silently stale** — frozen across consecutive open-market cycles while the live quote moves — `0` otherwise |
+| `sb_share_info`         | `share_symbol`, `share_currency`, `share_exchange`, `quote_type` | always `1`; carries the attributes as labels                                                                                              |
+
+`sb_price_staleness` is a gauge and not a counter on purpose: it clears itself
+when the writer recovers. See
+[How prices are collected](./how-prices-are-collected.mdx).
+
+## Positions
+
+One series per symbol **per account**, since a position is something an account
+holds.
+
+| Gauge                  | Labels                    | Meaning                                                                                              |
+| ---------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `sb_owned_quantity`    | `share_symbol`, `account` | quantity currently held                                                                              |
+| `sb_cost_basis`        | `share_symbol`, `account` | what the held quantity cost, as an **amount**; the unit average cost is that divided by the quantity |
+| `sb_realized_gain`     | `share_symbol`, `account` | gain already realised on what has been sold                                                          |
+| `sb_received_dividend` | `share_symbol`, `account` | dividends received                                                                                   |
+
+:::note Gauges that left in v5, and why they were not simply redefined
+`sb_purchased_quantity`, `sb_purchased_price` and `sb_purchased_fee` are gone,
+and so is `sb_volume`. The first three did not change name because someone
+preferred a new one: their **meaning** would have changed silently — "how much I
+ever bought" is not "how much I hold at this cost" — and a headless dashboard
+must see a series **leave**, never see a number quietly start meaning something
+else. What they answered is now a question over your events: total bought is the
+sum of `BUY` quantities, total fees the sum of fees.
+:::
+
+## Accounts and the portfolio
+
+**Nothing in this section is published until the base currency is answered.**
+Both families below are read out of the performance series, and while the
+currency is unanswered that series is not computed at all — not a series, not
+zeros, not `NULL`s. Every gauge here is therefore **absent**, exactly as
+`sb_share_price` is above and for the same reason seen from the other end: these
+are all amounts, and an amount whose unit is unsettled is not a metric. Prices
+keep being collected the whole time, so nothing is lost by answering late — and
+the condition needs no acknowledgement, it lifts by itself on the cycle after
+the currency is posted.
+
+That is the state a fresh headless install is in before anyone has run the one
+`curl` that answers the question. If you are scraping an empty accounts section,
+this is the first thing to check — [Settings](./settings.mdx) has the call.
+
+Per account, with an `account` label. Each condition below applies **once the
+base currency is answered**:
+
+| Gauge                        | Published when                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `sb_account_holdings_value`  | always                                                                                           |
+| `sb_account_gain_absolu`     | always — with no transfer at all, cash is minus what was invested, and the figure is still exact |
+| `sb_account_cash_balance`    | the account has at least one cash event — a deposit or a withdrawal                              |
+| `sb_account_net_contributed` | the account has at least one cash event                                                          |
+| `sb_account_total_value`     | the account has at least one cash event; it is the sum of the two above                          |
+| `sb_account_twr_index`       | it follows `sb_account_total_value`                                                              |
+| `sb_account_xirr`            | the account has at least one external flow to weight                                             |
+| `sb_account_info`            | always; value `1`, carrying `account_type` as a label                                            |
+
+The same seven figures exist at the **portfolio** level as `sb_portfolio_*`, with
+**no `account` label at all**. A synthetic label there would double every `sum()`
+a reader writes across the two families. They are under the same currency
+condition, and carry one of their own on top: a global figure is published only
+where it is writable for **every** declared account. Summing whichever accounts
+happen to be ready would draw a step nothing caused.
+
+## The install itself
+
+| Gauge                | Labels   | Meaning                                                                                                |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `sb_store_ephemeral` | *(none)* | `1` when the store lives in the container's writable layer and dies with it; `0` when it is on a mount |
+
+This one is not an ornament. **It is the only form of advice a headless install
+ever receives.** Everything else the app has to say about its own condition — the
+question it is waiting for, the file it named and did not read — it says on a
+screen nobody here opens, or in log lines nobody here keeps. The gauge is the
+channel that survives.
+
+It is a gauge and not a counter so that it **switches off by itself**: relaunch
+with a volume and it drops to `0` on the next scrape, with no acknowledgement to
+make anywhere.
+
+```promql
+# The one alert worth having on a headless install
+max(sb_store_ephemeral) > 0
+```
+
+The condition it reports is described where you meet it —
+[Get started](./get-started.mdx) explains what the mount does and what its
+absence costs.
