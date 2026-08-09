@@ -29,6 +29,20 @@ const WAVE = (input && input.wave) || []
 // Une fois l'écriture faite, relancer en listant ici les tickets acquittés.
 const ACK = new Set((input && input.acknowledgedRouting) || [])
 
+// Un critère honnêtement déclaré `partial` n'est ni un `defect` ni un
+// `overstated` : il ne passait par aucun des deux seuils. C'est l'honnêteté de
+// l'agent qui a tenu sur le critère 9 de #696, pas le script. Un critère non
+// tenu retient donc la fusion — **sauf** un `impossible` qui dit ce qu'il faut
+// d'un humain, parce que c'est le mécanisme de signalement fonctionnant comme
+// prévu, pas une dérive silencieuse.
+const ACK_UNMET = new Set((input && input.acknowledgedUnmet) || [])
+
+const unmetCriteria = (impl) => (impl.criteria || []).filter(
+  c => c.status === 'partial' ||
+       c.status === 'not_met' ||
+       (c.status === 'impossible' && !(c.needs_human || '').trim())
+)
+
 if (!WAVE.length) {
   log(`Aucun ticket dans la vague — args reçu : ${JSON.stringify(args)}`)
   return { merged: [], held: [], error: 'wave vide' }
@@ -61,6 +75,12 @@ const IMPL_SCHEMA = {
           text: { type: 'string', description: 'le critère, abrégé à 100 caractères' },
           status: { enum: ['met', 'partial', 'not_met', 'impossible'] },
           evidence: { type: 'string', description: 'fichier:ligne ou commande exécutée qui le prouve' },
+          needs_human: {
+            type: 'string',
+            description:
+              'ce qu’il faut d’un humain, précisément. **Obligatoire quand status vaut `impossible`** — ' +
+              'un `impossible` muet est traité comme un critère non tenu et retient la fusion.',
+          },
         },
       },
     },
@@ -220,6 +240,16 @@ Ta sortie finale est l'objet structuré, pas un message à un humain. Un éléme
 case à cocher du ticket, **dans l'ordre**, avec une preuve vérifiable (\`fichier:ligne\` ou la
 commande exécutée). Sois exact plutôt que flatteur : un \`partial\` honnête vaut infiniment mieux
 qu'un \`met\` optimiste — l'étape suivante relit ton diff pour te contredire.
+
+Ce que les statuts déclenchent, pour que tu saches ce que tu dis :
+
+- **\`partial\` / \`not_met\` retiennent la fusion.** Ce n'est pas une punition de l'honnêteté :
+  c'est ce qui garantit qu'un critère non tenu est *vu*, décidé par un humain, et reporté sur le
+  ticket qui le portera. Déclare-les quand même — les maquiller en \`met\` est la seule faute.
+- **\`impossible\` passe, à une condition : renseigner \`needs_human\`**, précisément (l'exemple
+  type est un binaire qu'aucun agent ne peut produire — une capture d'écran). Un \`impossible\`
+  qui ne dit pas ce qu'il faut d'un humain est traité comme un critère non tenu.
+- Ne **jamais** rétrograder un critère en \`impossible\` pour éviter la retenue.
 `
 
 const verifyPrompt = (n, impl) => `
@@ -436,6 +466,24 @@ for (const r of results.filter(Boolean)) {
   }
   if (fix) {
     for (const d of fix.declined) routed.push({ from: issue, to: 0, severity: 'minor', what: d.what, where: d.why })
+  }
+
+  // Un critère non tenu retient la fusion, même déclaré honnêtement. Le
+  // vérificateur ne l'attrape pas : un `partial` assumé n'est ni un défaut ni
+  // une surdéclaration. Un `impossible` qui nomme ce qu'il faut d'un humain
+  // passe — c'est le signalement, pas la dérive.
+  const unmet = unmetCriteria(impl)
+  if (unmet.length && !ACK_UNMET.has(issue)) {
+    held.push({
+      issue,
+      reason: 'critère(s) d’acceptation non tenu(s)',
+      branch: impl.branch,
+      worktree: impl.worktree_path,
+      unmet: unmet.map(c => ({ status: c.status, text: c.text, evidence: c.evidence })),
+      flagged: impl.flagged,
+    })
+    log(`#${issue} retenu : ${unmet.length} critère(s) non tenu(s) — ${unmet.map(c => c.status).join(', ')}`)
+    continue
   }
 
   // Un `major` routé ailleurs retient la fusion tant qu'il n'est pas écrit sur

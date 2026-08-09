@@ -50,6 +50,13 @@ Each one is here because a wave went wrong without it.
 - **A `major` routed to another ticket holds too**, until a human writes it there.
   Otherwise "routed" quietly means "forgotten": that is how #713 merged with its
   ICU criterion unmet. Re-run with `acknowledgedRouting: [<n>]` once written.
+- **An unmet criterion holds, even an honestly declared one.** A `partial` is
+  neither a defect nor an overstatement, so it passed both thresholds untouched —
+  #696 merged with its ninth criterion unpaid, and only the agent's candour
+  surfaced it. `partial` and `not_met` now hold; `impossible` passes **only when
+  it names what a human must do** (`needs_human`), because that is the flag
+  mechanism working rather than drift. Re-run with `acknowledgedUnmet: [<n>]`
+  once the criterion is decided and written on the ticket that will carry it.
 - **Scope is not widened silently.** A defect belonging to another ticket is
   reported with its owner, never repaired in place — repairing another ticket's
   file here dissolves the decomposition the map is made of.
