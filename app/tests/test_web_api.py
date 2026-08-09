@@ -63,8 +63,28 @@ class FakeWriter:
 
 
 class FakeMetrics:
-    def __init__(self, client):
+    """Stands in for SuiviBourseMetrics: the InfluxDB half, and the replay.
+
+    ``ingest`` is real rather than a spy (issue #697). It is the seam
+    *"the replay follows the write"* lands on, so a route that forgets an
+    import has to be observable through the snapshot it republished — which
+    only a real reload gives. The scrape-job reconciliation the production
+    method also does needs a scheduler and is not what these tests are about.
+    """
+
+    def __init__(self, client, config_manager=None):
         self.influxdb = FakeWriter(client)
+        self._config_manager = config_manager
+        self.ingest_calls = 0
+
+    def ingest(self, import_files=True):
+        self.ingest_calls += 1
+        if self._config_manager is None:
+            return
+        if import_files:
+            self._config_manager.reload()
+        else:
+            self._config_manager.replay()
 
 
 def build_client(tmp_path, frame=None, error=None, settings=None, events=None,
@@ -84,14 +104,24 @@ def build_client_and_influx(tmp_path, frame=None, error=None, settings=None,
     if events is not None:
         (events_dir / '2024.csv').write_text(events, encoding='utf-8')
 
-    manager = main.ConfigurationManager(config_dir=str(tmp_path))
-    runtime = main.Runtime(manager, None)
     # A real store under tmp_path, as ``post_fork`` would have opened (#696).
     # ``/health`` reaches it, and every other route here has to keep answering
-    # with one present.
-    runtime.store = store.open_store(tmp_path / 'store.duckdb')
+    # with one present. Since #697 the ledger lives in it too, so the manager
+    # is handed the **same** connection ``start_runtime`` hands it — two files
+    # here would mean the routes read a different ledger from the one the
+    # snapshot was published from.
+    opened = store.open_store(tmp_path / 'store.duckdb')
+    manager = main.ConfigurationManager(config_dir=str(tmp_path),
+                                        opened_store=opened)
+    runtime = main.Runtime(manager, None)
+    runtime.store = opened
+    # The first publication, as ``build_runtime`` performs it in the master.
+    # Since #697 it is also the **first import**: the drop folder lands in the
+    # store here, so a route that reads the ledger reads the same one the
+    # snapshot was published from.
+    manager.reload()
     influx = FakeClient(frame, error, frames)
-    runtime.metrics = FakeMetrics(influx)
+    runtime.metrics = FakeMetrics(influx, manager)
     return create_app(runtime).test_client(), influx
 
 
@@ -656,10 +686,34 @@ def test_events_are_returned_without_an_address(tmp_path):
 
     assert [row['date'] for row in payload] == [
         '2024-01-15', '2024-02-01', '2024-03-01']
-    assert all(
-        not {'id', 'etag', 'file', 'row'} & set(row) for row in payload)
+    assert all(not {'etag', 'file'} & set(row) for row in payload)
     assert payload[0]['event_type'] == 'BUY'
     assert payload[2]['amount'] == 8.50
+
+
+def test_an_event_carries_its_provenance_all_the_way_to_the_wire(tmp_path):
+    """"row 14 of 2024.csv" reaches the client (issue #697, user story n°13).
+
+    The triplet is a **display**, so what the API owes is the rendered sentence
+    as well as the three columns behind it: a client grouping by import needs
+    ``source_id``, and a client showing a user where to go and fix a line needs
+    the label. Neither is an address — the row has a primary key now.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,\n"
+        "2024-02-01,BUY,MSFT,Microsoft,5,380.00,\n"
+    )
+    payload = build_client(tmp_path, events=events).get('/api/events').get_json()
+
+    # Row 2 is the first data row: row 1 is the header, and the number shown
+    # has to be the one the user's editor shows them.
+    assert [row['source_row'] for row in payload] == [2, 3]
+    assert [row['source_sheet'] for row in payload] == [None, None]
+    assert [row['provenance'] for row in payload] == [
+        '2024.csv, row 2', '2024.csv, row 3']
+    # One file, so one source id, and it is the same on both rows.
+    assert len({row['source_id'] for row in payload}) == 1
 
 
 def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
@@ -945,3 +999,79 @@ def test_the_config_route_carries_the_effective_settings_with_the_token_redacted
     assert settings['SB_REGULAR_INTERVAL']['value'] == '120'
     # Compose-only variables are not app settings (#654 trap 13).
     assert 'SB_VERSION' not in settings
+
+
+# --------------------------------------------------------------------- #
+# Imports: the unit of revocation (issue #697)
+# --------------------------------------------------------------------- #
+
+_ONE_BUY = (
+    "date,event_type,symbol,name,quantity,unit_price,amount\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,\n"
+)
+
+
+def test_imports_are_listed_with_what_each_one_carried(tmp_path):
+    """The count sits next to the gesture that would destroy it."""
+    payload = build_client(tmp_path, events=_ONE_BUY).get('/api/imports').get_json()
+
+    (record,) = payload
+    assert record['filename'] == '2024.csv'
+    assert record['kind'] == 'events'
+    assert record['events'] == 1
+    assert record['imported_at'] is not None
+    assert record['fingerprint']
+
+
+def test_an_install_that_imported_nothing_is_an_empty_collection(tmp_path):
+    """``200`` + ``[]``, never a 404 and never a 503 (#695 user story 69)."""
+    response = build_client(tmp_path).get('/api/imports')
+
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_forgetting_an_import_revokes_it_in_bulk_and_replays(tmp_path):
+    """The one destructive gesture, and the replay follows it synchronously.
+
+    The user has just changed the ledger; they must not wait for a timer to see
+    the effect of their own gesture, which is the 300-second wait #695's user
+    story n°20 asks to be rid of.
+    """
+    client = build_client(tmp_path, events=_ONE_BUY)
+    (record,) = client.get('/api/imports').get_json()
+
+    response = client.delete(f"/api/imports/{record['id']}")
+
+    assert response.status_code == 200
+    assert response.get_json() == {'id': record['id'], 'events_removed': 1}
+    # In bulk, and the replay already happened: the ledger the API serves and
+    # the snapshot the shares come from are both empty, in the same request.
+    assert client.get('/api/imports').get_json() == []
+    assert client.get('/api/events').get_json() == []
+
+
+def test_forgetting_an_unknown_import_is_a_404_not_a_503(tmp_path):
+    """Asking to revoke something absent is a client error, not a broken store."""
+    response = build_client(tmp_path, events=_ONE_BUY).delete('/api/imports/4242')
+
+    assert response.status_code == 404
+
+
+def test_no_route_edits_a_single_event(tmp_path):
+    """Read-only forbids the pointwise edit; the absence is the decision.
+
+    Without it a line provisioned by a file would be at once unalterable and
+    indestructible — so the API offers revocation in bulk and nothing else, and
+    that is asserted on the URL map rather than left to good intentions.
+    """
+    client = build_client(tmp_path, events=_ONE_BUY)
+    rules = [
+        (rule.rule, method)
+        for rule in client.application.url_map.iter_rules()
+        for method in (rule.methods or set())
+        if method in {'PUT', 'PATCH', 'DELETE', 'POST'}
+    ]
+
+    assert not [r for r, _ in rules if r.startswith('/api/events')]
+    assert ('/api/imports/<int:source_id>', 'DELETE') in rules

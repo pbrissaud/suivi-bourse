@@ -23,6 +23,8 @@ from typing import Any, Optional, Tuple
 from flask import Blueprint, jsonify, request
 from logfmt_logger import getLogger
 
+import ledger
+import main
 import portfolio_view
 import runtime_state
 import runtime_view
@@ -63,7 +65,6 @@ def _reader() -> PortfolioReader:
     started, which under gunicorn cannot happen (the socket is not served until
     the worker is up) but does in tests.
     """
-    from web import current_runtime
     runtime = current_runtime()
     if runtime.metrics is None:
         raise RuntimeError(
@@ -73,8 +74,27 @@ def _reader() -> PortfolioReader:
 
 def _snapshot():
     """The published configuration snapshot — the lock-free read (issue #658)."""
-    from web import current_runtime
     return current_runtime().config_manager.current()
+
+
+def _store():
+    """The worker's open store (issue #697).
+
+    Raises when there is none, and the raise is the contract: an absent store is
+    a **failed request**, which the blueprint's error handler turns into a
+    ``503``. It must never be read as "you own nothing yet", which is the
+    ``200`` + ``[]`` a genuinely empty ledger earns.
+    """
+    runtime = current_runtime()
+    if runtime.store is None:
+        raise RuntimeError("the store is not open in this process")
+    return runtime.store
+
+
+def current_runtime():
+    """The process's runtime, imported late to avoid a cycle at import time."""
+    from web import current_runtime as _current
+    return _current()
 
 
 @api_bp.errorhandler(Exception)
@@ -426,10 +446,16 @@ def list_events():
 def _event_to_dict(event) -> dict:
     """One :class:`events.schemas.Event`, on the wire.
 
-    No id and no etag: both were properties of an address, and there is no
-    address any more. ``account`` is reported as the aggregator resolves it —
-    blank means ``default``, which is the rule for an install that declared no
-    account.
+    No etag: it was a property of an address, and there is no address any more.
+    ``account`` is reported as the aggregator resolves it — blank means
+    ``default``, which is the rule for an install that declared no account.
+
+    ``provenance`` is what survives of #662, and it is a **display** (issue
+    #697). The triplet behind it — ``(source_id, source_sheet, source_row)`` —
+    is reported alongside the rendered label so a client can group by source
+    without re-parsing a sentence, and neither is an address: the row has a
+    primary key now, and a key does not go stale. The label is ``null`` for a
+    row with no source, which is what a line created in the UI is.
     """
     return {
         'date': event.date.isoformat() if event.date else None,
@@ -442,7 +468,68 @@ def _event_to_dict(event) -> dict:
         'amount': event.amount,
         'notes': event.notes,
         'account': event.account,
+        'source_id': event.source_id,
+        'source_sheet': event.source_sheet,
+        'source_row': event.source_row,
+        'provenance': ledger.provenance_label(event),
     }
+
+
+# --------------------------------------------------------------------- #
+# Imports: the unit of revocation (issue #697)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/imports')
+def list_imports():
+    """The imports the store holds, each with the number of events it carried.
+
+    The count is not decoration: forgetting an import is destructive in bulk, so
+    how many rows the gesture takes with it belongs next to the gesture that
+    offers it.
+
+    ``200`` + ``[]`` on an install that has imported nothing — the empty
+    collection, never an error.
+    """
+    records = ledger.list_imports(_store())
+    return jsonify([
+        {
+            'id': record.id,
+            'filename': record.filename,
+            'kind': record.kind,
+            'imported_at': _iso(record.imported_at),
+            'fingerprint': record.fingerprint,
+            'events': record.events,
+        }
+        for record in records
+    ])
+
+
+@api_bp.delete('/imports/<int:source_id>')
+def forget_import(source_id: int):
+    """Forget an import: every row it laid down, in one gesture.
+
+    **The only destructive gesture in the API, and there is deliberately no
+    sibling that edits one event.** Read-only forbids editing line 42 of
+    ``broker.csv``; it does not forbid revoking the file. Without this, a line
+    provisioned by a file would be at once unalterable and indestructible —
+    which is the trap #697 exists to avoid, and why the absence of a
+    ``PATCH /api/events/<id>`` is a decision rather than an omission.
+
+    The replay follows the write, synchronously and in this process (issue
+    #697): the caller has just changed the ledger, and must not have to wait for
+    a timer to see the effect of their own gesture.
+
+    Removing the *file* from disk is not this gesture and never will be — the
+    store is the truth, so a deleted file changes nothing at all.
+    """
+    runtime = current_runtime()
+    try:
+        removed = ledger.forget_import(_store(), source_id)
+    except ledger.UnknownImport as exc:
+        return not_found(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify({'id': source_id, 'events_removed': removed})
 
 
 # --------------------------------------------------------------------- #
