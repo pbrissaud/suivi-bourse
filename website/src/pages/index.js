@@ -46,9 +46,16 @@ function HomepageHeader() {
 
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
+  /*
+    The `title` below is the document's <title>: the browser tab, the search
+    result and the OpenGraph card of the product's front page. Docusaurus
+    renders it as `<title> | Suivi Bourse`, so it says what the product does
+    rather than repeating its name — the scaffold's "Hello from Suivi Bourse"
+    greeted the reader and described nothing.
+  */
   return (
     <Layout
-      title={`Hello from ${siteConfig.title}`}
+      title="Track your portfolio"
       description={siteConfig.tagline}>
       <HomepageHeader />
       <main>
