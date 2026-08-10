@@ -701,8 +701,8 @@ cycle idempotent.
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK, ungated)│
-│                          │  │                   │  │   interval dial) │  │                    │
+│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK,       │
+│                          │  │                   │  │   interval dial) │  │   ungated)         │
 │ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • Replay the       │
 │ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
 │ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │ • Full recompute   │

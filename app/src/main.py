@@ -1363,8 +1363,9 @@ class SuiviBourseMetrics:
 
         Guarded so a transient store error on one symbol does not abort the
         surrounding cycle, and returns whether the point actually landed, so a
-        caller can tell a real write from a swallowed failure (issue #618 — an
-        all-failed wave must not raise the perf dirty flag).
+        caller can tell a real write from a swallowed failure — the last-pass
+        ``ScrapeRecord`` publishes it as ``wrote``, and a swallowed failure is
+        what its ``error`` names (issue #668).
 
         Takes the writers' mutex: the write is a transaction on the one DuckDB
         connection this process owns, and an ingestion running between its
