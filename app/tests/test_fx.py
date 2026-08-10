@@ -539,10 +539,10 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     assert metrics._fetch_fx_rate('USDEUR=X') == pytest.approx(0.92)
     assert metrics._fetch_fx_series(
         'USDEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {
-            date(2024, 6, 1): pytest.approx(-1.08),
-            date(2024, 6, 2): pytest.approx(-0.08),
-            date(2024, 6, 3): pytest.approx(0.92),
-        }
+        date(2024, 6, 1): pytest.approx(-1.08),
+        date(2024, 6, 2): pytest.approx(-0.08),
+        date(2024, 6, 3): pytest.approx(0.92),
+    }
     # A pair yfinance cannot answer for is a missing rate, never an exception.
     monkeypatch.setattr(main.yf, 'Ticker',
                         lambda s: (_ for _ in ()).throw(RuntimeError('nope')))
