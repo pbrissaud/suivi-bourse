@@ -12,7 +12,6 @@ boot sequence, and it is split across gunicorn's ``fork()``:
 
 ``gunicorn.conf.py`` wires the three and explains why the split is load-bearing.
 """
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -134,17 +133,20 @@ def current_runtime() -> main.Runtime:
 
 
 def _static_dir() -> Path:
-    """Where the built SPA lives.
+    """Where the built SPA lives — one path, resolved from the package.
 
-    Defaults to ``<parent of this package>/static``, which is one path in both
-    worlds: ``app/src/static`` in a checkout (Vite's ``build.outDir``) and
+    ``<parent of this package>/static`` is one path in both worlds:
+    ``app/src/static`` in a checkout (Vite's ``build.outDir``) and
     ``/home/appuser/static`` in the image, since the Dockerfile copies ``./src``
-    to the home directory. ``SB_STATIC_DIR`` overrides it for anyone serving the
-    bundle from elsewhere.
+    to the home directory.
+
+    **It reads no environment variable** (issue #740). ``SB_STATIC_DIR`` used to
+    override it for "anyone serving the bundle from elsewhere", and that person
+    has no existence left: there is one image and it carries the bundle at that
+    path. The environment says six things and this was never one of them — a
+    seventh name would have to be documented, and the sentence it earns
+    ("normally you leave this alone") is the sentence that says to delete it.
     """
-    override = (os.getenv('SB_STATIC_DIR') or '').strip()
-    if override:
-        return Path(override).expanduser()
     return Path(__file__).resolve().parent.parent / 'static'
 
 

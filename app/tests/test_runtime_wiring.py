@@ -509,13 +509,40 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     assert "COMPOSE_PROJECT_NAME" not in names
 
 
-def test_a_variable_with_no_scalar_fallback_reads_unset_not_default(monkeypatch):
-    """``SB_STATIC_DIR`` overrides where the built SPA is served from and simply
-    has no value when unset — showing one would be a guess about a path the app
-    resolves from the image."""
-    monkeypatch.delenv("SB_STATIC_DIR", raising=False)
+def test_the_inventory_is_the_six_and_no_seventh():
+    """#740. The environment says six things; everything else is a dial.
 
-    entry = {s["name"]: s for s in main.effective_environment()}["SB_STATIC_DIR"]
+    Named here rather than only in ``test_boot_env.py`` because this is the list
+    ``/api/config`` publishes: a seventh name appearing in the payload is a
+    seventh name the documentation would have to explain.
+    """
+    names = [s["name"] for s in main.effective_environment()]
 
-    assert entry["source"] == "unset"
-    assert entry["value"] is None
+    assert len(names) == 6
+    assert set(names) == {
+        "LOG_LEVEL", "SB_STORE_DIR", "SB_IMPORT_DIR",
+        "SB_PROMETHEUS_ENABLED", "SB_METRICS_PORT", "SB_WEB_PORT"}
+
+
+def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):
+    """``SB_STATIC_DIR`` leaves with #740 rather than becoming the seventh name.
+
+    It existed for "anyone serving the bundle from elsewhere", and that person
+    has no existence left: one image, one path, and a checkout resolves it from
+    the package. Setting it now does nothing and is *said* to do nothing.
+    """
+    monkeypatch.setenv("SB_STATIC_DIR", "/somewhere/else")
+
+    assert "SB_STATIC_DIR" not in {
+        s["name"] for s in main.effective_environment()}
+    assert "SB_STATIC_DIR" in main.unread_environment()
+
+
+def test_no_entry_claims_a_secret_could_be_redacted(monkeypatch):
+    """#740. ``INFLUXDB_TOKEN`` was the environment's only credential and it
+    left with the database (#700), so "redact by name, never by value" has had
+    no subject since. A rule kept warm for a credential that may never come back
+    is a rule nobody exercises — and a ``secret: false`` on every row reads as a
+    promise this view knows how to keep."""
+    assert all("secret" not in entry
+               for entry in main.effective_environment())

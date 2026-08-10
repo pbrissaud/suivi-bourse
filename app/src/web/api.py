@@ -782,10 +782,11 @@ def get_config():
       the form that renders it validates on the same rule the write path
       enforces, instead of on a copy of that rule.
     * ``environment`` — what the process had to know before it could open the
-      store: the store's own location, the sockets, the log level. None of it
-      is writable from in here and none of it pretends to be. A secret would be
-      redacted **by name** (#654 trap 12), and since #700 the list holds none —
-      the three ``INFLUXDB_*`` variables left with the database. Alongside it,
+      store: the two directories, the sockets, the log level. **Six names and
+      no seventh** (#740), none of them writable from in here and none of them
+      pretending to be. There is no redaction and no flag for one:
+      ``INFLUXDB_TOKEN`` was the environment's only secret and it left with the
+      database (#700), so the rule died with its subject. Alongside it,
       ``unread_environment`` names what is set in that same environment and no
       longer obeyed — computed, so it cannot drift.
 

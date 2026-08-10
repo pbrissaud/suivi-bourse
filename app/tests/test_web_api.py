@@ -783,6 +783,17 @@ def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
 # --------------------------------------------------------------------- #
 # The catch-all
 # --------------------------------------------------------------------- #
+#
+# The bundle's location is resolved from the package and reads no environment
+# variable since #740 — the environment says six things and this was never one
+# of them. The seam is therefore the resolver itself rather than
+# ``SB_STATIC_DIR``, which is what a test seam should have been all along: the
+# variable existed for an operator who does not exist.
+
+def _serve_bundle_from(monkeypatch, directory):
+    """Point the SPA resolver at ``directory`` for the duration of a test."""
+    monkeypatch.setattr(web_module, '_static_dir', lambda: directory)
+
 
 def test_the_spa_catch_all_does_not_swallow_an_api_404(tmp_path):
     """Without this guard a typo'd endpoint returns the HTML shell with a 200,
@@ -805,7 +816,7 @@ def test_the_catch_all_does_not_serve_html_at_metrics(tmp_path, monkeypatch):
     bundle = tmp_path / 'bundle'
     bundle.mkdir()
     (bundle / 'index.html').write_text('<!doctype html>', encoding='utf-8')
-    monkeypatch.setenv('SB_STATIC_DIR', str(bundle))
+    _serve_bundle_from(monkeypatch, bundle)
 
     response = build_client(tmp_path).get('/metrics')
 
@@ -823,7 +834,7 @@ def test_health_still_wins_over_the_catch_all(tmp_path):
 
 def test_a_build_without_a_bundle_says_so_instead_of_404ing_blankly(tmp_path,
                                                                     monkeypatch):
-    monkeypatch.setenv('SB_STATIC_DIR', str(tmp_path / 'no-bundle-here'))
+    _serve_bundle_from(monkeypatch, tmp_path / 'no-bundle-here')
     response = build_client(tmp_path).get('/')
 
     assert response.status_code == 404
@@ -834,7 +845,7 @@ def test_the_spa_is_served_for_an_unknown_client_route(tmp_path, monkeypatch):
     bundle = tmp_path / 'bundle'
     bundle.mkdir()
     (bundle / 'index.html').write_text('<!doctype html><div id=root>', encoding='utf-8')
-    monkeypatch.setenv('SB_STATIC_DIR', str(bundle))
+    _serve_bundle_from(monkeypatch, bundle)
 
     response = build_client(tmp_path).get('/titres/AAPL')
 
