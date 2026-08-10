@@ -378,11 +378,16 @@ def test_the_day_s_survivor_is_its_last_point(declared):
     ladder inherits: a survivor chosen otherwise makes the value jump when a day
     is collapsed."""
     quotes.record_history(declared, 'AAPL', [
-        {'timestamp': datetime(2024, 6, 3, 9, 0, tzinfo=UTC), 'price': 100.0},
-        {'timestamp': datetime(2024, 6, 3, 17, 30, tzinfo=UTC), 'price': 104.0},
+        {'timestamp': datetime(2024, 6, 3, 9, 0, tzinfo=UTC), 'price': 100.0,
+         'converted': 92.0, 'rate': 0.92},
+        {'timestamp': datetime(2024, 6, 3, 17, 30, tzinfo=UTC), 'price': 104.0,
+         'converted': 95.68, 'rate': 0.92},
     ])
 
-    assert quotes.price_series(declared, 'AAPL') == {date(2024, 6, 3): 104.0}
+    # The **converted** close (#702): everything downstream of this read is
+    # money in the reporting currency, and the cost basis it is compared
+    # against was recorded in it.
+    assert quotes.price_series(declared, 'AAPL') == {date(2024, 6, 3): 95.68}
 
 
 # --------------------------------------------------------------------------- #
@@ -390,7 +395,7 @@ def test_the_day_s_survivor_is_its_last_point(declared):
 # --------------------------------------------------------------------------- #
 
 def test_p1_joins_the_position_to_its_symbol_s_newest_observation(declared):
-    quotes.record_quote(declared, 'AAPL', NOW, 185.0, ATTRIBUTES)
+    quotes.record_quote(declared, 'AAPL', NOW, 185.0, ATTRIBUTES, 170.2, 0.92)
 
     (row,) = store_reads.PortfolioReader(declared).positions()
 
@@ -398,7 +403,12 @@ def test_p1_joins_the_position_to_its_symbol_s_newest_observation(declared):
     assert row['name'] == 'Apple Inc'
     assert row['quantity'] == 10.0
     assert row['cost_basis'] == 1500.0
-    assert row['price'] == 185.0
+    # `price` is the converted one — the money columns are drawn from it — and
+    # the quote the broker shows rides beside it with the rate that produced it
+    # (#702, user story 37).
+    assert row['price'] == 170.2
+    assert row['price_native'] == 185.0
+    assert row['fx_rate'] == 0.92
     assert row['price_time'] == NOW
     assert row['currency'] == 'USD'
 
@@ -408,7 +418,7 @@ def test_p1_has_no_time_window_so_a_long_closure_never_blanks_the_page(declared)
     so a symbol last observed four years ago is still a row with a price — which
     is what a market shut over a long weekend, or a delisting, produces."""
     quotes.record_quote(declared, 'AAPL', NOW - timedelta(days=1500), 185.0,
-                        ATTRIBUTES)
+                        ATTRIBUTES, 185.0, 1.0)
 
     (row,) = store_reads.PortfolioReader(declared).positions()
 
@@ -507,7 +517,7 @@ def test_a_window_on_an_account_series_keeps_it_too(store):
                   "VALUES ('pea', 'PEA', 'PEA')")
     for day in (date(2025, 8, 10), date(2025, 8, 11)):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
-            account='pea', account_type='PEA', account_currency='EUR',
+            account='pea', account_type='PEA',
             day=day, cash_balance=1.0, holdings_value=1.0, total_value=1.0,
             net_contributed=1.0)])
     reader = store_reads.PortfolioReader(store)
@@ -579,7 +589,7 @@ def test_deleting_an_account_takes_its_cached_figures_with_it(store):
     store.execute("INSERT INTO account (id, type, label) "
                   "VALUES ('pea', 'PEA', 'PEA')")
     perf_series.write_account_metrics(store, [AccountMetricPoint(
-        account='pea', account_type='PEA', account_currency='EUR',
+        account='pea', account_type='PEA',
         day=date(2024, 1, 1), cash_balance=1.0, holdings_value=1.0,
         total_value=1.0, net_contributed=1.0)])
 
@@ -615,7 +625,7 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
 
     for cycle in range(3):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
-            account='pea', account_type='PEA', account_currency='EUR',
+            account='pea', account_type='PEA',
             day=day, cash_balance=float(cycle), holdings_value=1.0,
             total_value=1.0, net_contributed=1.0) for day in days])
         perf_series.write_portfolio_totals(store, [PortfolioTotalPoint(

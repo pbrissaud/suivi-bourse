@@ -50,10 +50,20 @@ QUOTE_COLUMNS = (
     'currency', 'exchange', 'quote_type',
     'dividend_yield', 'pe_ratio', 'market_cap',
 )
-#: The two ``latest`` columns, renamed on the way out: what the page means by
-#: "the price" is the newest observed one, and the ``last_`` prefix is a fact
-#: about the row it is stored on rather than about the figure.
-PRICE_COLUMNS = ('price', 'price_time')
+#: The ``latest`` columns, renamed on the way out: what the page means by "the
+#: price" is the newest observed one, and the ``last_`` prefix is a fact about
+#: the row it is stored on rather than about the figure.
+#:
+#: ``price`` is the **converted** one (issue #702) and that is a decision, not a
+#: naming accident: every money column the page puts beside it — market value,
+#: latent gain, the head's total — is in the reporting currency, and the cost
+#: basis it is compared against comes from events already recorded in it. The
+#: native price and the rate ride along rather than replacing it, because a
+#: reader has to be able to recognise the quote their broker shows them and to
+#: see what turned it into the figure (user story 37). While the reporting
+#: currency is unanswered, ``price`` is simply ``NULL`` and the money columns
+#: with it — an unset unit is not a reason to show a number under the wrong one.
+PRICE_COLUMNS = ('price', 'price_native', 'fx_rate', 'price_time')
 
 P1_COLUMNS = POSITION_COLUMNS + QUOTE_COLUMNS + PRICE_COLUMNS
 
@@ -105,7 +115,8 @@ class PortfolioReader:
         parameters = [symbol] if symbol is not None else None
         selected = [f'p.{name}' for name in POSITION_COLUMNS]
         selected += [f'q.{name}' for name in QUOTE_COLUMNS]
-        selected += ['q.last_price_native', 'q.last_price_ts']
+        selected += ['q.last_price_converted', 'q.last_price_native',
+                     'q.last_fx_rate', 'q.last_price_ts']
         rows = self._store.query(
             f'SELECT {", ".join(selected)} '
             '  FROM position p '
@@ -126,11 +137,15 @@ class PortfolioReader:
         no account column to forget. Gaps are **returned as gaps** — a
         non-trading day is by design (#606) and whether to bridge it is the
         chart's call, not the API's.
+
+        The **converted** price, like every other money figure the pages draw
+        (issue #702). A point whose conversion has not landed is a gap of the
+        same kind as a weekend, and the chart treats it the same way.
         """
         clauses, parameters = _window('ts', start, stop)
         return self._series(
-            'SELECT ts, price_native FROM price_point '
-            f' WHERE symbol = ? AND price_native IS NOT NULL{clauses}'
+            'SELECT ts, price_converted FROM price_point '
+            f' WHERE symbol = ? AND price_converted IS NOT NULL{clauses}'
             ' ORDER BY ts',
             [symbol] + parameters, ('t', 'price'))
 
@@ -159,14 +174,14 @@ class PortfolioReader:
 
         clauses, parameters = _window('ts', start, stop)
         return self._series(
-            "SELECT bucket, price_native FROM ("
+            "SELECT bucket, price_converted FROM ("
             f"  SELECT time_bucket(INTERVAL '{interval}', ts) AS bucket,"
-            "         price_native,"
+            "         price_converted,"
             "         ROW_NUMBER() OVER ("
             f"             PARTITION BY time_bucket(INTERVAL '{interval}', ts)"
             "             ORDER BY ts DESC) AS rn"
             "    FROM price_point"
-            f"   WHERE symbol = ? AND price_native IS NOT NULL{clauses}"
+            f"   WHERE symbol = ? AND price_converted IS NOT NULL{clauses}"
             ") WHERE rn = 1 ORDER BY bucket",
             [symbol] + parameters, ('t', 'price'))
 
@@ -194,12 +209,12 @@ class PortfolioReader:
         that had not happened yet.
         """
         return self._series(
-            'SELECT symbol, price_native, ts FROM ('
-            '  SELECT symbol, price_native, ts,'
+            'SELECT symbol, price_converted, ts FROM ('
+            '  SELECT symbol, price_converted, ts,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY symbol ORDER BY ts DESC) AS rn'
             '    FROM price_point'
-            '   WHERE price_native IS NOT NULL AND ts <= ?'
+            '   WHERE price_converted IS NOT NULL AND ts <= ?'
             ') WHERE rn = 1 ORDER BY symbol',
             [moment], ('symbol', 'price', 't'))
 
@@ -222,12 +237,12 @@ class PortfolioReader:
         clauses, parameters = _window('ts', start, stop)
         return self._series(
             'SELECT day, symbol, price FROM ('
-            '  SELECT CAST(ts AS DATE) AS day, symbol, price_native AS price,'
+            '  SELECT CAST(ts AS DATE) AS day, symbol, price_converted AS price,'
             '         ROW_NUMBER() OVER ('
             '             PARTITION BY CAST(ts AS DATE), symbol'
             '             ORDER BY ts DESC) AS rn'
             '    FROM price_point'
-            f'   WHERE price_native IS NOT NULL{clauses}'
+            f'   WHERE price_converted IS NOT NULL{clauses}'
             ') WHERE rn = 1 ORDER BY day, symbol',
             parameters, ('day', 'symbol', 'price'))
 

@@ -102,12 +102,13 @@ INGEST_UPDATED = 'updated'
 INGEST_UNCHANGED = 'unchanged'
 INGEST_FAILED = 'failed'
 
-#: The perf job's verdict — ``scheduling.perf_should_run``'s answer, recorded
-#: rather than inferred: ``_perf_dirty_live`` is *consumed* by its reader
-#: (#656 trap 4), so a request thread reading it learns about a pending run and
-#: nothing about the last one.
+#: The perf job's verdict, and since #707 it has **two** values rather than
+#: three: the recompute is integral and unconditional, so a cycle either laid the
+#: cache down or failed trying. ``PERF_SKIPPED`` left with
+#: ``scheduling.perf_should_run`` — with no gate there is no third outcome to
+#: report, and keeping the name would have left the page a state nothing can
+#: reach.
 PERF_RAN = 'ran'
-PERF_SKIPPED = 'skipped'
 PERF_FAILED = 'failed'
 
 
@@ -225,19 +226,16 @@ class IngestRecord:
 class PerfRecord:
     """The last perf-recompute pass (``recompute_perf``), global.
 
-    The record carries **the three inputs of** ``scheduling.perf_should_run``
-    rather than a single "reason", and that is the honest shape: a skip happens
-    when all three are quiet, so "which reason it skipped for" only answers if
-    the three are shown. A run names the one(s) that fired; a skip names three
-    conditions that did not. Reducing them to one string would be the reader
-    inventing a verdict, which is the one thing #656 déc. 4 forbids.
+    It carried **the three inputs of** ``scheduling.perf_should_run`` beside the
+    verdict, because a skip *was* the three of them being quiet and naming a
+    single "reason" would have been the reader inventing one. The gate is gone
+    (issue #707), and so are they: there is no longer a decision to explain, only
+    a pass that ran — every cycle, in full — or raised. What is left is the same
+    shape every other record has, an observation and its date.
     """
 
     at: datetime
     verdict: str
-    events_changed: bool = False
-    backfill_pending: bool = False
-    live_write: bool = False
     error: Optional[str] = None
 
 
@@ -357,7 +355,7 @@ __all__ = [
     'TERMINAL_COMPLETE',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
-    'PERF_RAN', 'PERF_SKIPPED', 'PERF_FAILED',
+    'PERF_RAN', 'PERF_FAILED',
     'ScrapeRecord', 'BackfillRecord', 'IngestRecord', 'PerfRecord',
     'RuntimeRecorder',
 ]

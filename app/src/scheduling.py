@@ -30,12 +30,16 @@ CLOSED_STATES = frozenset({'CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'})
 SHORT_RETRY = 60           # s: re-probe when woken but still not REGULAR
 MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 
-# How often the perf job *asks* whether anything changed (issue #701). Not a
-# cadence and therefore not a dial: ``perf_should_run`` is the gate, so this
-# number decides how long a recompute waits after the change that earned it, and
-# nothing else. ``SB_PERF_INTERVAL`` was deleted rather than moved for that
-# reason — a dial whose only effect is the latency of a gate is a dial with
-# nothing to say.
+# How often the perf job recomputes, in full and unconditionally (issue #707,
+# ADR-0011). A constant and not a dial (issue #701): the two tables are a
+# **cache** — a pure function of the ledger, the price points and the declared
+# accounts, all three in the store — and a full recompute costs 0,4 % of this
+# tick at five years. There is nothing left for an operator to trade off, so
+# ``SB_PERF_INTERVAL`` was deleted rather than moved into the store.
+#
+# ``perf_should_run`` used to stand here as the real cadence, and it is gone
+# **without a replacement** — not as a query, not reduced to one signal. One does
+# not protect a cache from a faulty recompute; one rebuilds it.
 PERF_TICK = 120            # s
 
 # Dead-ticker guard (design #608, issue #617) — hardcoded, not operator dials.
@@ -88,7 +92,7 @@ def backoff_delay(base_interval: int, failure_count: int) -> float:
 
 def decide(state, price_present: bool, next_open: Optional[datetime],
            now: datetime, failure_count: int,
-           base_interval: int) -> Tuple[bool, float, int, bool]:
+           base_interval: int) -> Tuple[bool, float, int]:
     """Decide one scrape cycle's write gate and next re-arm delay.
 
     Two-gate split (design #608): the **reschedule** gate keys on ``state``
@@ -111,12 +115,14 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     ``base_interval × 2^(n − FAILURE_GRACE)`` capped at ``MAX_SLEEP``, so a dead
     ticker stops hammering yfinance instead of polling every ``base_interval``.
 
-    Returns ``(should_write, next_delay, new_failure_count, mark_dirty)``.
+    Returns ``(should_write, next_delay, new_failure_count)``. A fourth element
+    said *"this write makes the perf series stale"*; it was ``should_write``
+    spelt twice, and it left with the flag it fed (issue #707) — the perf
+    recompute is unconditional, so a scrape has nothing left to tell it.
     """
     closed = is_closed(state)
 
     should_write = (not closed) and price_present
-    mark_dirty = should_write  # a REGULAR write makes the perf series stale
 
     if closed:
         # Market shut: sleep to the next open, counter frozen (not a failure).
@@ -138,31 +144,16 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
         new_failure_count = failure_count + 1
         next_delay = backoff_delay(base_interval, new_failure_count)
 
-    return should_write, next_delay, new_failure_count, mark_dirty
+    return should_write, next_delay, new_failure_count
 
 
-def perf_should_run(events_changed: bool, backfill_pending: bool,
-                    live_write: bool) -> bool:
-    """Gate one run of the perf-recompute interval job (design #605, issue #618).
-
-    Now that ``update_account_metrics`` is its own interval job (it can no longer
-    piggyback on the per-symbol scrape without firing N recomputes per market-open
-    wave), it must stay as quiet as prices do overnight. Run **only when something
-    changed** since the last recompute; skip ⟺ events unchanged **and** no
-    backfill watermark **and** no live ``REGULAR`` write since the last run:
-
-      * ``events_changed`` — the events cache reloaded (a new list object): the
-        whole series is rewritten.
-      * ``backfill_pending`` — a backfill watermark (``_perf_dirty_from``) is set:
-        earlier prices were filled, so the stale tail must be rewritten.
-      * ``live_write`` — a ``REGULAR`` write landed since the last run (the
-        boot-seeded live-write bool): today's close is fresh.
-
-    All-quiet skips, so a fully-closed market wave writes no ``account_metrics`` /
-    ``portfolio_totals`` point — the non-trading-day gap is by design (#606) and
-    there is no closed-day Parquet drip (#597).
-    """
-    return events_changed or backfill_pending or live_write
+# ``perf_should_run`` stood here and is **deleted without a replacement** (issue
+# #707, ADR-0011). It existed because recomputing was expensive on InfluxDB and
+# a closed-market wave dripped never-compacted Parquet files; both subjects left
+# with the database. What it gated is now unconditional, and the three signals it
+# read — a reloaded events cache, a backfill watermark, a live ``REGULAR`` write
+# — no longer exist anywhere: they were the last coupling between the backfill
+# and the perf, and re-deriving any of them "as a query" would rebuild it.
 
 
 def forward_backfill_window(

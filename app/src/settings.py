@@ -130,10 +130,10 @@ def _refuse_a_reinterpretation(store, current, pending) -> None:
     been interpreted, so nothing can be re-interpreted — which is what lets an
     install answer late, or think again before importing.
 
-    What this does *not* do is say what a currency looks like: an ISO-4217
-    check, and the import that answers the question on a headless install, are
-    the currency ticket's. This is only the guard the write path owes the ADR
-    on the day it becomes possible to write the dial at all.
+    What this does *not* do is say what a currency looks like — that is the
+    registry's, in ``settings_registry.CURRENCY``, and it has already run by the
+    time this is called. This is the other half: the shape says *is this a
+    currency*, this says *may this install still answer*.
     """
     if 'base_currency' not in pending:
         return

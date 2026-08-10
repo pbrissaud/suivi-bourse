@@ -183,11 +183,16 @@ def get_share_prices(symbol: str):
 def get_portfolio():
     """The dashboard head, as a **discriminated union** (#655 déc. 8).
 
-    ``mode`` is decided from the configuration — declared accounts, their
-    currencies, whether events are in play — never from whether the series has
-    rows, so "you have not declared accounts" and "the perf job has not run yet"
-    stay two different screens. Each mode carries its own fields; #652 déc. 6's
-    **Gain** and **plus-value latente** therefore never share a key.
+    ``mode`` is decided from the configuration — whether accounts are declared —
+    never from whether the series has rows, so "you have not declared accounts"
+    and "the perf job has not run yet" stay two different screens. Each mode
+    carries its own fields; #652 déc. 6's **Gain** and **plus-value latente**
+    therefore never share a key.
+
+    **Two modes since #702, not three.** The multi-currency one is deleted with
+    ``Account.currency``: an account has no currency, so accounts cannot
+    disagree about one, and a mode published but unreachable is something a
+    front eventually handles for nothing.
 
     ``?since=`` is the relative delta of #652 déc. 2 — a UI preference applied to
     the head, explicitly *decoupled* from the chart's zoom, which is why it is a
@@ -204,23 +209,26 @@ def get_portfolio():
     except ValueError as exc:
         return bad_request(str(exc))
 
-    mode, accounts = _portfolio_mode()
-
-    if mode == portfolio_view.MODE_MULTI_CURRENCY:
-        return jsonify(portfolio_view.build_multi_currency_head(accounts.accounts))
+    mode, _ = _portfolio_mode()
+    # The **reporting** currency, and the only one a head has (issue #702,
+    # ADR-0002). ``None`` while the question is unanswered, and that ``None`` is
+    # how the API states the condition: it is the field the page labels every
+    # figure with, so an absent one is exactly "these figures have no unit yet".
+    # Nothing new is published for it — the two predicates a banner needs were
+    # already on the wire (``/api/config``'s dials, ``/api/runtime``'s pass
+    # records), and a fourth kind of absence would make every page depend on one
+    # preamble (ADR-0021).
+    currency = _base_currency()
 
     reader = _reader()
     if mode == portfolio_view.MODE_TITRES:
         shares = portfolio_view.build_shares(reader.positions())
-        return jsonify(portfolio_view.build_titres_head(shares))
+        return jsonify(portfolio_view.build_titres_head(shares, currency))
 
     baseline_value = None
     if since is not None:
         baseline_value = reader.total_value_at(since)
 
-    # In this mode every declared account shares one currency — that is what
-    # made it this mode — so the first declaration answers for all of them.
-    currency = accounts.accounts[0].currency if accounts.accounts else None
     return jsonify(portfolio_view.build_totals_head(
         reader.latest_totals(), currency, since, baseline_value))
 
@@ -240,10 +248,8 @@ def get_portfolio_history():
     curves telling two different stories; giving them one name is how they would
     end up conflated.
 
-    No ``currency`` in the payload — the head owns it. In ``titres`` mode it can
-    only be learned by reading the shares, and an endpoint whose payload changes
-    shape by mode for an incidental reason is worse than one rule: the page
-    fetches both, and the head is where the currency question is already asked.
+    No ``currency`` in the payload — the head owns it, and since #702 there is
+    exactly one to own: the reporting currency, the same in both modes.
     """
     mode, _ = _portfolio_mode()
     try:
@@ -252,12 +258,6 @@ def get_portfolio_history():
         return bad_request(str(exc))
 
     payload = {'mode': mode, 'from': start.isoformat(), 'to': stop.isoformat()}
-
-    if mode == portfolio_view.MODE_MULTI_CURRENCY:
-        # Nothing to draw and nothing to invent: `portfolio_totals` is not
-        # written for a mixed-currency portfolio, and summing the per-account
-        # series would be adding euros to dollars.
-        return jsonify({**payload, 'points': []})
 
     reader = _reader()
     if mode == portfolio_view.MODE_TITRES:
@@ -300,9 +300,9 @@ def get_portfolio_movers():
     page, which does not want it, and keeps the "since the last close" rule and
     its arithmetic in one tested place instead of half in TypeScript.
 
-    Works in every mode, including the multi-currency one the head refuses:
-    a percentage move carries no currency, and every row states its own for the
-    amounts that do.
+    No ``currency`` on a row since #702: every amount here is in the reporting
+    currency, so it is one fact about the block and the head is where it is
+    published — the same rule ``/api/portfolio/history`` follows.
     """
     reader = _reader()
     rows = reader.positions()
@@ -391,8 +391,10 @@ def get_account_history(account_id: str):
     declared and empty (``200`` + ``[]``), while an id nobody declared does not
     exist. Collapsing the two would answer a typo with an empty chart.
 
-    No ``currency`` in the payload — the collection owns it, per the same rule
-    ``/api/portfolio/history`` follows.
+    No ``currency`` in the payload — the head owns it, per the same rule
+    ``/api/portfolio/history`` follows. Since #702 the collection owns none
+    either: an account has no currency, there is one reporting currency for the
+    whole install, and ``/api/portfolio`` is where it is said.
     """
     accounts = _snapshot().accounts
     declared = accounts.get(account_id) if accounts is not None else None
@@ -910,8 +912,19 @@ def _portfolio_mode() -> Tuple[str, Optional[Any]]:
     to prevent.
     """
     accounts = _snapshot().accounts
-    currencies = [a.currency for a in accounts.accounts] if accounts else None
-    return portfolio_view.portfolio_mode(currencies), accounts
+    return portfolio_view.portfolio_mode(accounts is not None), accounts
+
+
+def _base_currency() -> Optional[str]:
+    """The reporting currency, or ``None`` while the question is unanswered.
+
+    Read through the registry like every other dial (ADR-0014), so *"never
+    answered"* and *"answered"* stay the two states the absence of a default
+    exists to keep apart. A store error propagates, as everywhere else in this
+    blueprint: a head that answered ``200`` with a silent ``null`` currency would
+    label every figure on the page with nothing and say the database was fine.
+    """
+    return _store().setting('base_currency')
 
 
 def _parse_window(default: timedelta = DEFAULT_WINDOW) -> Tuple[datetime, datetime]:

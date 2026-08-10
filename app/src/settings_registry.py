@@ -54,6 +54,12 @@ REARM_BACKFILL_JOB = 'rearm_backfill_job'
 INTEGER = 'integer'
 STRING = 'string'
 
+#: An ISO-4217 alphabetic code. Its own kind rather than a ``STRING`` with a
+#: comment, because the form has to render a currency field and the write path
+#: has to refuse ``EURO`` — and a second list of "which string dials are really
+#: currencies" is the fourth list ADR-0014 exists against.
+CURRENCY = 'currency'
+
 
 class InvalidSetting(ValueError):
     """A value the registry refuses: unknown key, wrong type, out of bounds.
@@ -104,6 +110,19 @@ def _str(raw: str) -> str:
     return raw
 
 
+def _currency(raw: str) -> str:
+    """An ISO-4217 code, upper-cased.
+
+    Upper-casing here and **only** here is what keeps the two currency levels
+    apart (issue #702). A *quote* currency is whatever the exchange spells it —
+    ``GBp`` is London pence and differs from ``GBP`` by a factor of a hundred, so
+    :mod:`fx` matches it case-sensitively and never upper-cases anything. A
+    *reporting* currency is a code someone typed, so ``eur`` and ``EUR`` have to
+    be the same answer or the store would hold two spellings of one dial.
+    """
+    return str(raw).strip().upper()
+
+
 #: A day. Every interval is capped there rather than left open: past 24 hours a
 #: cadence is indistinguishable from *off*, and the app has no *off*.
 _ONE_DAY = 86400
@@ -136,8 +155,10 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'Price-freshness sonde horizon, in seconds. 0 disables it.',
         minimum=0, maximum=_ONE_DAY, attribute='staleness_horizon'),
     SettingSpec(
-        'base_currency', None, STRING, _str, NEXT_CYCLE,
-        'The reporting currency. No default: it is asked, never assumed.'),
+        'base_currency', None, CURRENCY, _currency, NEXT_CYCLE,
+        'The reporting currency, as an ISO-4217 code. No default: it is asked, '
+        'never assumed, and it is fixed from the first recorded event.',
+        attribute='base_currency'),
 )
 
 #: By key, for the O(1) lookups every other function here is built on.
@@ -209,9 +230,31 @@ def validate(key: str, value: Any):
 
     if spec.kind == INTEGER:
         parsed = _validate_integer(spec, value)
+    elif spec.kind == CURRENCY:
+        parsed = _validate_currency(spec, value)
     else:
         parsed = str(value).strip()
 
+    return parsed
+
+
+def _validate_currency(spec: SettingSpec, value: Any) -> str:
+    """Parse one ISO-4217 code. Shape only — never a list of codes.
+
+    Three letters is the whole rule, and stopping there is deliberate. A closed
+    list would have to be maintained, would refuse a currency the day it is
+    created or renamed, and — worse — would be a *second* authority on what a
+    currency is beside the exchange that quotes one. What the shape check buys is
+    the mistake that actually happens: ``EURO``, ``€``, or a symbol pasted out of
+    a broker page, each of which would otherwise become a pair name Yahoo cannot
+    resolve and a portfolio with no converted price and no reason given.
+    """
+    parsed = spec.parse(value)
+    if len(parsed) != 3 or not parsed.isalpha():
+        raise InvalidSetting(
+            spec.key,
+            f"{spec.key} must be a three-letter ISO-4217 code (EUR, USD, GBP), "
+            f"got {value!r}")
     return parsed
 
 
@@ -257,7 +300,8 @@ def stored_form(key: str, value: Any) -> str:
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'STRING', 'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB',
+    'INTEGER', 'STRING', 'CURRENCY',
+    'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB',
     'spec_for', 'seeded_defaults', 'default_for', 'defaults', 'resolve',
     'validate', 'stored_form',
 ]

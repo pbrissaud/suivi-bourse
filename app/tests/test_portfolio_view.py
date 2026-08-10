@@ -20,7 +20,6 @@ from types import SimpleNamespace
 
 from portfolio_view import (
     MODE_ACCOUNTS,
-    MODE_MULTI_CURRENCY,
     MODE_TITRES,
     baseline_reference,
     build_accounts,
@@ -245,19 +244,24 @@ def test_to_dict_emits_iso_timestamps_and_keeps_nulls():
 
 def test_no_declared_accounts_is_the_titres_mode():
     """The default install. A designed mode, not a missing configuration."""
-    assert portfolio_mode(None) == MODE_TITRES
-    assert portfolio_mode([]) == MODE_TITRES
+    assert portfolio_mode(False) == MODE_TITRES
 
 
-def test_one_currency_across_declared_accounts_is_the_accounts_mode():
-    assert portfolio_mode(['EUR', 'EUR']) == MODE_ACCOUNTS
+def test_declared_accounts_are_the_accounts_mode():
+    assert portfolio_mode(True) == MODE_ACCOUNTS
 
 
-def test_mixed_currencies_are_their_own_mode_not_an_empty_head():
-    """`portfolio_totals` is not written for a mixed portfolio at all, so the
-    figures are absent by construction. Stating the condition is #655 déc. 8's
-    third case — the slot, without the product answer."""
-    assert portfolio_mode(['EUR', 'USD']) == MODE_MULTI_CURRENCY
+def test_there_are_two_modes_and_the_currency_decides_neither():
+    """The multi-currency mode is deleted with `Account.currency` (#702).
+
+    Not made unreachable — deleted. An account has no currency, so accounts
+    cannot disagree about one, and the whole third branch of the API, the page
+    and this file was defending a state the model can no longer be in.
+    """
+    import portfolio_view
+
+    assert not hasattr(portfolio_view, 'MODE_MULTI_CURRENCY')
+    assert not hasattr(portfolio_view, 'build_multi_currency_head')
 
 
 def test_the_mode_is_read_from_the_configuration_not_from_the_data():
@@ -359,15 +363,20 @@ def test_the_titres_head_speaks_plus_value_latente_and_never_gain():
     assert head['baseline'] is None
 
 
-def test_the_titres_head_drops_the_currency_when_the_portfolio_mixes_them():
-    """Trap 14 — rendering a mixed total as euros is what the baseline does by
-    hardcoding `currencyEUR`. A bare number is the honest fallback."""
+def test_the_titres_head_states_the_reporting_currency_not_the_quote_one():
+    """#702: the head's unit is the reporting currency, whatever the shares quote in.
+
+    Deriving it from the securities is the three-level model showing through —
+    two accounts in EUR holding only USD-quoted lines produced a head labelled
+    `USD` over figures whose cost basis was in euros. Unanswered, it is `None`,
+    and that `None` is what the page says the condition with.
+    """
     shares = build_shares([
         row(symbol='AAPL', currency='USD'),
         row(symbol='AIR.PA', name='Airbus', currency='EUR'),
     ])
+    assert build_titres_head(shares, 'EUR')['currency'] == 'EUR'
     assert build_titres_head(shares)['currency'] is None
-    assert build_titres_head(build_shares([row()]))['currency'] == 'USD'
 
 
 def test_an_empty_titres_portfolio_is_all_absent_rather_than_zero():
@@ -587,9 +596,15 @@ def test_a_share_whose_price_was_never_observed_is_left_out_too():
     assert movers == []
 
 
-def test_each_mover_carries_its_own_currency():
-    """Which is what lets the block survive the multi-currency mode the head
-    refuses: a percentage carries no currency, and the amounts state theirs."""
+def test_a_mover_carries_no_currency_of_its_own():
+    """#702: every amount on the block is in the reporting currency.
+
+    The row used to state the security's quote currency, which is what let the
+    block survive the mixed-currency mode the head refused. There is no such
+    mode and no such mixture: `price` is converted, so `change` and
+    `contribution` are too, and a column repeating one identical code down the
+    block is a fact about the block.
+    """
     shares = build_shares([
         row(symbol='AAPL', currency='USD', price=110.0),
         row(symbol='AIR.PA', name='Airbus', currency='EUR', price=180.0),
@@ -599,17 +614,19 @@ def test_each_mover_carries_its_own_currency():
         {'symbol': 'AIR.PA', 'price': 200.0},
     ])
 
-    assert {m.symbol: m.currency for m in movers} == {
-        'AAPL': 'USD', 'AIR.PA': 'EUR'}
+    assert movers and all('currency' not in m.to_dict() for m in movers)
 
 
 # --------------------------------------------------------------------- #
 # The accounts comparison table (issue #661)
 # --------------------------------------------------------------------- #
 
-def declared(id='pea', label='PEA Bourso', type='PEA', currency='EUR'):
-    """A declared account — the shape `Portfolio.accounts` holds."""
-    return SimpleNamespace(id=id, label=label, type=type, currency=currency)
+def declared(id='pea', label='PEA Bourso', type='PEA'):
+    """A declared account — the shape `Portfolio.accounts` holds.
+
+    No `currency`: `Account.currency` is deleted (#702, ADR-0002).
+    """
+    return SimpleNamespace(id=id, label=label, type=type)
 
 
 def metrics(account='pea', **overrides):
@@ -648,7 +665,7 @@ def test_a_declared_account_with_no_series_is_a_row_of_absences():
     assert summaries[1].total_value is None
     assert summaries[1].xirr is None
     # The identity fields still come from the declaration.
-    assert (summaries[1].label, summaries[1].currency) == ('CTO', 'EUR')
+    assert (summaries[1].label, summaries[1].type) == ('CTO', 'CTO')
 
 
 def test_a_series_without_a_declaration_is_not_a_row():
@@ -661,11 +678,11 @@ def test_a_series_without_a_declaration_is_not_a_row():
 def test_the_identity_fields_come_from_the_declaration_alone():
     """Since #700 the series has no column for them at all: `account_type` and
     `account_currency` were InfluxDB *tags*, recording what the account was when
-    the point was written. The declaration is what it is."""
-    summaries = build_accounts([declared('pea', currency='EUR')],
-                               [metrics('pea')])
+    the point was written. The declaration is what it is — and since #702 it
+    declares no currency at all, so the row does not carry one."""
+    summaries = build_accounts([declared('pea')], [metrics('pea')])
 
-    assert summaries[0].currency == 'EUR'
+    assert 'currency' not in summaries[0].to_dict()
     assert summaries[0].type == 'PEA'
     assert summaries[0].as_of == date(2026, 8, 5)
     assert summaries[0].to_dict()['as_of'] == '2026-08-05'
@@ -676,7 +693,7 @@ def test_nothing_is_summed_across_accounts():
     and a second arithmetic path to the same number is how two of them come to
     disagree — besides being plain wrong across currencies."""
     summaries = build_accounts(
-        [declared('pea'), declared('cto', 'CTO', 'CTO', 'USD')],
+        [declared('pea'), declared('cto', 'CTO', 'CTO')],
         [metrics('pea', total_value=12500.0), metrics('cto', total_value=3000.0)])
 
     assert [s.total_value for s in summaries] == [12500.0, 3000.0]

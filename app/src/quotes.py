@@ -90,7 +90,9 @@ def truncate(moment: datetime) -> datetime:
 # --------------------------------------------------------------------------- #
 
 def _advance_latest(store, symbol: str, ts: datetime,
-                    price_native: Optional[float]) -> None:
+                    price_native: Optional[float],
+                    price_converted: Optional[float] = None,
+                    fx_rate: Optional[float] = None) -> None:
     """Apply the ``latest`` maintenance rule for one inserted point.
 
     *Any writer inserting a ``price_point`` whose ``ts >= last_price_ts``
@@ -98,10 +100,17 @@ def _advance_latest(store, symbol: str, ts: datetime,
     the ``WHERE``, so a backward chunk — which is entirely older — updates
     nothing, and a forward chunk or a live point updates unconditionally.
 
-    ``price_native`` may be ``NULL``: the invariant is *the most recent point*,
-    not *the most recent point that has a price*. Weakening it to the second
-    would mean reading the row field by field again, which is the whole reason
-    the ``latest`` row exists.
+    **The three price columns move together**, converted and rate included
+    (issue #702). They are one observation, and carrying the newest native price
+    beside a converted one from an earlier point would be exactly the per-field
+    last-non-null row the store exists to avoid — with the added twist that the
+    two would be a price and a *different* price wearing another unit.
+
+    ``price_native`` may be ``NULL``, and so may the other two — that is the
+    ordinary state while the reporting currency is unanswered or a rate could
+    not be had. The invariant is *the most recent point*, not *the most recent
+    point that has a price*; weakening it to the second means reading the row
+    field by field again.
 
     Assumes the ``symbol_quote`` row exists — :func:`_ensure_row` is what the
     writers call first. The row is never created here so the function stays a
@@ -109,10 +118,11 @@ def _advance_latest(store, symbol: str, ts: datetime,
     """
     store.execute(
         'UPDATE symbol_quote '
-        '   SET last_price_native = ?, last_price_ts = ? '
+        '   SET last_price_native = ?, last_price_converted = ?, '
+        '       last_fx_rate = ?, last_price_ts = ? '
         ' WHERE symbol = ? '
         '   AND (last_price_ts IS NULL OR ? >= last_price_ts)',
-        [price_native, ts, symbol, ts])
+        [price_native, price_converted, fx_rate, ts, symbol, ts])
 
 
 def _ensure_row(store, symbol: str) -> None:
@@ -139,7 +149,9 @@ def _ensure_row(store, symbol: str) -> None:
 
 def record_quote(store, symbol: str, moment: datetime,
                  price_native: Optional[float],
-                 attributes: Optional[Mapping] = None) -> None:
+                 attributes: Optional[Mapping] = None,
+                 price_converted: Optional[float] = None,
+                 fx_rate: Optional[float] = None) -> None:
     """One live observation: a ``price_point`` appended, ``symbol_quote`` refreshed.
 
     The scrape's whole write, and it is **one call per symbol** rather than one
@@ -157,12 +169,24 @@ def record_quote(store, symbol: str, moment: datetime,
     did not make. Passing nothing therefore blanks them, which is what a caller
     holding only a price wants and never what the scrape does.
 
+    ``price_converted`` / ``fx_rate`` are the conversion the *caller* performed
+    (issue #702, ADR-0002), never one this module works out: the rate is a
+    journal entry — the number that produced this figure — and a writer that
+    looked one up here would be free to store a rate the price was not actually
+    multiplied by. Both ``None`` is the ordinary state while the reporting
+    currency is unanswered, or when the pair could not be resolved; the point
+    still lands, with its native price, and #704's lateral pass repairs the
+    column afterwards.
+
     Both statements plus the ``latest`` rule run in one transaction, and
     :meth:`store.Store.transaction` holds the connection for its duration — so
     no reader ever sees a point whose ``latest`` row has not caught up with it.
     """
     ts = truncate(moment)
     values = dict(attributes or {})
+    native = finite(price_native)
+    converted = finite(price_converted)
+    rate = finite(fx_rate)
 
     refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
     assignments = ', '.join(f'{name} = excluded.{name}' for name in refreshed)
@@ -174,9 +198,11 @@ def record_quote(store, symbol: str, moment: datetime,
             [symbol, ts,
              *(finite(values.get(name)) for name in QUOTE_ATTRIBUTES)])
         store.execute(
-            'INSERT INTO price_point (symbol, ts, price_native) VALUES (?, ?, ?)',
-            [symbol, ts, finite(price_native)])
-        _advance_latest(store, symbol, ts, finite(price_native))
+            'INSERT INTO price_point '
+            '  (symbol, ts, price_native, price_converted, fx_rate) '
+            'VALUES (?, ?, ?, ?, ?)',
+            [symbol, ts, native, converted, rate])
+        _advance_latest(store, symbol, ts, native, converted, rate)
 
 
 # --------------------------------------------------------------------------- #
@@ -187,8 +213,11 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
     """Write one fetched chunk of history. Returns how many points landed.
 
     ``points`` are ``{'timestamp': datetime, 'price': float}`` rows as the
-    backfill fetched them; rows without a usable close are dropped by the
-    caller, and the whole batch is written in one statement.
+    backfill fetched them, optionally carrying ``'converted'`` and ``'rate'``
+    (issue #702) — the conversion the caller performed at the rate of the
+    point's **own day**, which is why the rebuild fetches the pair's history
+    beside the price history rather than converting a five-year-old close at
+    today's rate. A point with neither lands with a ``NULL`` converted price.
 
     **Deletes its own span, then inserts.** That is where ``price_point``'s
     uniqueness lives now that the table carries no key (ADR-0007, spec #695 § 5),
@@ -227,7 +256,8 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
         price = finite(float(price))
         if price is None:
             continue
-        rows.append((symbol, truncate(point['timestamp']), price))
+        rows.append((symbol, truncate(point['timestamp']), price,
+                     finite(point.get('converted')), finite(point.get('rate'))))
     if not rows:
         return 0
 
@@ -241,15 +271,16 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
             ' WHERE symbol = ? AND ts >= ? AND ts <= ?',
             [symbol, oldest, newest])
         store.executemany(
-            'INSERT INTO price_point (symbol, ts, price_native) VALUES (?, ?, ?)',
+            'INSERT INTO price_point '
+            '  (symbol, ts, price_native, price_converted, fx_rate) '
+            'VALUES (?, ?, ?, ?, ?)',
             rows)
         # The **last** row landing on the newest second, not the first: two
         # points can truncate to the same instant, and the survivor rule this
         # store follows everywhere else — the day's last point — is the one that
         # keeps the ``latest`` line agreeing with what a read of the series says.
-        _advance_latest(
-            store, symbol, newest,
-            [price for _, ts, price in rows if ts == newest][-1])
+        latest = [row for row in rows if row[1] == newest][-1]
+        _advance_latest(store, symbol, newest, latest[2], latest[3], latest[4])
 
     logger.debug(f"Wrote {len(rows)} historical price(s) for {symbol}")
     return len(rows)
@@ -343,21 +374,30 @@ def last_price(store, symbol: str) -> Optional[float]:
 
 
 def price_series(store, symbol: str) -> Dict[date, float]:
-    """``{day: close}`` — one entry per calendar day that has a price.
+    """``{day: close}`` — one entry per calendar day that has a **converted** price.
 
     The shared price source the performance module is fed through. The survivor
     of a day is its **last** point, which is the rule every other daily read in
     the product follows (and the one the retention ladder will inherit in #705):
     a survivor chosen otherwise would make the value jump when a day is
     collapsed.
+
+    **Converted, and it has to be** (issue #702). Everything downstream of this
+    is money in the reporting currency — ``holdings_value``, ``total_value``,
+    the gain — while ``cost_basis`` comes from events already recorded in it. A
+    native price here would add dollars to euros under a label that makes the
+    sum look homogeneous, which is the defect ADR-0002 exists against. A day
+    whose conversion has not landed yet is simply **absent**, and the perf job's
+    horizon is what bounds the consequence rather than a zero appearing in a
+    series.
     """
     table = store.arrow(
         'SELECT day, price FROM ('
-        '  SELECT CAST(ts AS DATE) AS day, price_native AS price,'
+        '  SELECT CAST(ts AS DATE) AS day, price_converted AS price,'
         '         ROW_NUMBER() OVER ('
         '             PARTITION BY CAST(ts AS DATE) ORDER BY ts DESC) AS rn'
         '    FROM price_point'
-        '   WHERE symbol = ? AND price_native IS NOT NULL'
+        '   WHERE symbol = ? AND price_converted IS NOT NULL'
         ') WHERE rn = 1 ORDER BY day', [symbol])
     days = table.column('day').to_pylist()
     prices = table.column('price').to_pylist()
@@ -367,7 +407,8 @@ def price_series(store, symbol: str) -> Dict[date, float]:
 def read_quote(store, symbol: str) -> Optional[Dict]:
     """One ``symbol_quote`` row as a dict, or ``None`` when there is none."""
     columns = ('symbol',) + QUOTE_ATTRIBUTES + (
-        'fetched_at', 'last_price_native', 'last_price_ts')
+        'fetched_at', 'last_price_native', 'last_price_converted',
+        'last_fx_rate', 'last_price_ts')
     rows = store.query(
         f'SELECT {", ".join(columns)} FROM symbol_quote WHERE symbol = ?',
         [symbol])

@@ -153,14 +153,23 @@ def seed_position(opened, symbol='AAPL', name='Apple Inc', account='pea',
 
 def seed_quote(opened, symbol='AAPL', price=200.0,
                at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
-               currency='USD', **attributes):
-    """One observation — what the scrape writes, through the real writer."""
+               currency='USD', converted=None, rate=1.0, **attributes):
+    """One observation — what the scrape writes, through the real writer.
+
+    Converted as well as native (#702). `converted` defaults to the native
+    price at a rate of 1: the pages read the converted column, because every
+    money figure they draw is in the reporting currency. A point with only a
+    native price is one whose conversion has not landed, and the tests that are
+    about *that* say so by passing `converted=None, rate=None`.
+    """
     opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
                    'ON CONFLICT (symbol) DO NOTHING', [symbol])
     values = {'currency': currency, 'exchange': 'NMS', 'quote_type': 'EQUITY',
               'dividend_yield': 0.5, 'pe_ratio': 30.0, 'market_cap': 3.0e12}
     values.update(attributes)
-    quotes.record_quote(opened, symbol, at, price, values)
+    quotes.record_quote(opened, symbol, at, price, values,
+                        price if converted is None and rate is not None
+                        else converted, rate)
 
 
 def seed_totals(opened, day=date(2026, 8, 5), **overrides):
@@ -183,7 +192,7 @@ def seed_account_metrics(opened, account='pea', day=date(2026, 8, 5),
     opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
                    "ON CONFLICT (id) DO NOTHING", [account, account])
     perf_series.write_account_metrics(opened, [AccountMetricPoint(
-        account=account, account_type='CTO', account_currency='EUR',
+        account=account, account_type='CTO',
         day=day, **values)])
 
 
@@ -313,6 +322,34 @@ def test_the_head_of_a_default_install_speaks_plus_value_latente(tmp_path):
     assert payload['mode'] == 'titres'
     assert payload['plus_value_latente'] == pytest.approx(497.5)  # 2000−1502,5
     assert 'gain_absolu' not in payload
+
+
+def test_the_head_states_the_reporting_currency_and_its_absence(tmp_path):
+    """How the API says *"nothing here has a unit yet"* (#702, ADR-0021).
+
+    Nothing new is published for it and no route changes: the head's `currency`
+    is the field every figure on the page is labelled with, so an absent one is
+    the condition itself, and the dial is already on `/api/config` for the
+    banner to read. A fourth kind of absence would make every page depend on one
+    preamble, and a landing route that varies with the data is the one thing a
+    bookmark cannot survive.
+    """
+    def seed(opened):
+        seed_position(opened, account='default')
+        seed_quote(opened)
+
+    client = build_client(tmp_path, seed=seed)
+
+    assert client.get('/api/portfolio').get_json()['currency'] is None
+    dial = _dials(client)['base_currency']
+    assert dial['value'] is None and dial['default'] is None
+    assert dial['stored'] is False
+
+    assert client.put('/api/settings',
+                      json={'base_currency': 'eur'}).status_code == 200
+
+    assert client.get('/api/portfolio').get_json()['currency'] == 'EUR'
+    assert _dials(client)['base_currency']['stored'] is True
 
 
 def test_the_head_of_a_declared_install_speaks_gain(tmp_path):

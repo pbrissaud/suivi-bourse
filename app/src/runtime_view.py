@@ -494,24 +494,20 @@ def build_ingestion(record: Optional[runtime_state.IngestRecord]) -> Optional[Di
 
 
 def build_perf(record: Optional[runtime_state.PerfRecord]) -> Optional[Dict[str, Any]]:
-    """The last ``perf_should_run`` verdict, with its three inputs beside it.
+    """The last perf-recompute pass: when it ran, and whether it went through.
 
-    Three booleans rather than one reason, because a skip *is* the three of them
-    being quiet: "nothing changed since the last run" only means something once
-    the reader can see which three things were checked. #618's gate is the whole
-    story here, and reducing it to a string would be this module deciding
-    something a job already decided.
+    It used to carry ``reasons`` — the three inputs of #618's gate — because a
+    skip *was* the three of them being quiet and no single string could say so.
+    The gate is gone (issue #707) and the field went with it rather than being
+    left as three booleans nothing reads: a recompute that happens every cycle,
+    in full, has no decision to publish. What is left is what the two other
+    global records publish, a date and an outcome.
     """
     if record is None:
         return None
     return {
         'at': _iso(record.at),
         'verdict': record.verdict,
-        'reasons': {
-            'events_changed': record.events_changed,
-            'backfill_pending': record.backfill_pending,
-            'live_write': record.live_write,
-        },
         'error': record.error,
     }
 

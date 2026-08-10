@@ -230,14 +230,17 @@ class AccountMetricPoint:
     and never mixes them (spec #695 § 3), so the field says what it is and every
     reader stops having to un-stamp it.
 
-    ``account_type`` and ``account_currency`` have **no column** — they were
-    InfluxDB tags, and the declaration is where a page reads them from
-    (ADR-0013). They survive on the point because the Prometheus exporter
-    publishes them as labels on ``sb_account_info``.
+    ``account_type`` has **no column** — it was an InfluxDB tag, and the
+    declaration is where a page reads it from (ADR-0013). It survives on the
+    point because the Prometheus exporter publishes it as a label on
+    ``sb_account_info``.
+
+    ``account_currency`` is **gone** with ``Account.currency`` (issue #702,
+    ADR-0002): an account has no currency of its own, there is one reporting
+    currency for the install, and every figure below is already in it.
     """
     account: str
     account_type: str
-    account_currency: str
     day: date
     cash_balance: float
     holdings_value: float
@@ -257,8 +260,12 @@ class PortfolioTotalPoint:
     A table of its own rather than a synthetic ``account`` row: the InfluxDB
     constraint that made it untagged is gone, but its columns will diverge the
     day the global level carries something the per-account level does not.
-    Written only when all accounts share one currency (pooling currencies needs
-    FX, which #702 is about).
+
+    The single-currency condition that used to gate it is **gone** with
+    ``Account.currency`` (issue #702): accounts cannot disagree about a currency
+    they do not have. What gates it now is the reporting currency being answered
+    at all — and that gate is above, on the whole perf recompute, since none of
+    these figures has a unit until it is.
     """
     day: date
     cash_balance: float
@@ -375,16 +382,17 @@ class Account:
     in the app — which is also what makes it editable, since what came from a
     file is read-only and revoked with its import.
 
-    ``currency`` no longer has a column to come from: the ``account`` table
-    declares ``id``/``type``/``label`` and nothing else. It survives as an
-    optional field, always ``None`` on a stored account, because the currency
-    machinery it feeds is still the v4 one until the reporting currency lands
-    (#702) and takes both with it.
+    **There is no ``currency`` field** (issue #702, ADR-0002). It was kept as an
+    always-``None`` placeholder while the v4 currency machinery was still in
+    place; it is deleted with that machinery, and deleted rather than left
+    unused. There are two levels of currency and not three — the reporting
+    currency and the security's quote currency — so *"an account whose positions
+    disagree with its currency"* stops being a sentence with a referent, and the
+    guard, the test and the degraded screen it needed stop with it.
     """
     id: str
     type: str
     label: str = ''
-    currency: Optional[str] = None
     source_id: Optional[int] = None
 
     @property

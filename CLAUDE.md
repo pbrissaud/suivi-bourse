@@ -670,19 +670,36 @@ The application runs independent scheduled jobs on a single APScheduler:
   is a courtesy to Yahoo at the exact moment the app emits more requests than at
   any other time of its life, and a code path that runs once per installation is
   a code path nobody ever tests. ~25 minutes for 30 symbols over 5 years.
-- **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
-  (opt-in accounts only) as its **own gated interval job** on
-  `scheduling.PERF_TICK` (120s, a constant and not a dial since #701 — the gate
-  is the real cadence, so the number only decides how long a recompute waits
-  after the change that earned it), decoupled from the per-symbol scrape jobs (issue #618). Each
-  run is gated by the pure predicate `scheduling.perf_should_run()` — it runs
-  only when something changed since the last run: the events cache reloaded, a
-  backfill watermark is pending, or a `REGULAR` write occurred. The live-write
-  signal is a single global bool set on the `REGULAR` write path in
-  `_scrape_symbol`, checked-and-cleared up front under `_perf_lock` and seeded
-  `True` at boot (so today's point is fresh after an overnight restart). A
-  fully-closed market wave writes nothing — the non-trading-day gap is by design
-  (#606) and there is no closed-day Parquet drip (#597).
+- **Performance**: Rebuilds the `account_metrics` / `portfolio_totals` series
+  (opt-in accounts only until #708) as its **own interval job** on
+  `scheduling.PERF_TICK` — 120s, a constant and not a dial (#701, #707) —
+  decoupled from the per-symbol scrape jobs (issue #618), and firing at the boot
+  rather than one tick later (`next_run_time = now`). The recompute is
+  **integral and unconditional** (ADR-0011): the two tables are a *cache*, a
+  pure function of the ledger, the price points and the declared accounts, and a
+  full pass costs 0,4 % of the tick at five years. `scheduling.perf_should_run`
+  is deleted **without a replacement**, and so are the four things that fed it —
+  `_perf_lock`, `_perf_dirty_from`, `_perf_dirty_live`, `_perf_last_events` —
+  plus `_mark_perf_dirty` / `_consume_perf_dirty_from`, the raise on the
+  `REGULAR` write path, `decide`'s fourth return value, and the `PERF_SKIPPED`
+  verdict. That was **the last coupling between the backfill and the perf**.
+  Three other shapes were refused and each for its own reason: an end-of-backfill
+  step is right only while the reconstruction runs and false the moment it
+  finishes; an event bus rebuilds the coupling one indirection away; a step of
+  the scrape fires N recomputes per market-open wave. The **only inputs are the
+  store and the clock** — the job replays its own `Timeline`, because `position`
+  and `account_state` are *current* states while performance needs the state of
+  every day. The write is a **block `UPSERT` plus a bounded prune** of what falls
+  outside the spans just written (never a replacement, never row by row), which
+  is what keeps the file from drifting: a `DELETE`+`INSERT` reaches 44,8 MB for
+  a 1,6 MB table over a thousand cycles, the upsert plateaus at 1,1. The series
+  is **dense over calendar days**, weekends and holidays included, prices carried
+  forward — "no point on a non-trading day" is a property of *observed* prices,
+  and TWR chains over consecutive days. Deleting the rows is a complete rebuild:
+  the next cycle rewrites them, which is why the administration page has no
+  rebuild gesture to design. The cost accepted: the two tables stop being a trace
+  of what the app believed at an instant — if a figure shown yesterday changed
+  today, the backfill advanced, and nothing remembers.
 
 **The price and the position stopped sharing a row** (issue #700). `quotes.py`
 is the market's own writer — `symbol_quote` and `price_point`, and nothing else
@@ -720,16 +737,72 @@ after a Yahoo hiccup would silently lose the history it failed to re-supply.
 Timestamps stay truncated to the second, which is what makes re-running one
 cycle idempotent.
 
+**There is one reporting currency, and two levels of currency and not three**
+(issue #702, ADR-0002 amended by ADR-0021). `base_currency` is the one dial with
+no default and the one question the app asks; `Account.currency` is **deleted**,
+not converted, and with it `MODE_MULTI_CURRENCY`, `build_multi_currency_head`,
+the `account_currency` tag and the single-currency condition that gated
+`portfolio_totals` — in a three-level model *"a EUR account holding a USD
+security"* is a sentence with a meaning, therefore a bug needing a guard, a test
+and a degraded screen; here it has no referent. Five things about it are
+decisions:
+
+- **`fx.py` is a pure module with a TTL cache**, in the taste of `scheduling.py`
+  / `performance.py`: the fetch is injected, so the whole of it tests against a
+  fake with no network. The TTL is what makes a market-open wave share **one**
+  rate per pair — converted at N slightly different rates, the positions of one
+  wave do not add up to their own total. No pseudo-symbol `EURUSD=X` in the
+  scheduler (a pair has no `marketState` that projects onto the equity cadence
+  model), no `fx_rates` table, no extra job. A failed fetch is cached for the
+  same span: forty symbols in an unresolvable currency would otherwise ask Yahoo
+  forty times a cycle, forever, for a ticker that does not exist.
+- **`GBp` is normalised to `GBP ÷ 100` before any pair is named**, matched
+  **case-sensitively** — `GBp` and `GBP` differ by one letter's case and by a
+  factor of a hundred, so an `upper()` anywhere on that path turns pence into
+  pounds in silence. The hundredth is folded into the **rate**, not applied to
+  the price, so `price_converted == price_native × fx_rate` holds on the stored
+  row: the row is a journal one can read back (*"2 345 € — 10 × 234,50 $ at
+  1,0844 on 5 August"*), not three numbers that do not reconcile.
+- **The conversion happens on the write path and is passed *in* to the writers.**
+  `_scrape_symbol` converts once per pass and hands the pair to `/metrics` and to
+  `quotes.record_quote` alike, so the rate stored beside a price is provably the
+  one that price was multiplied by. The rebuild prefetches the pair's daily
+  history beside the price history — one request per chunk — and converts each
+  point at the rate of **its own day**: at today's rate a five-year-old close
+  would put a currency move into a chart of a share price.
+- **A missing rate writes the point with `price_converted = NULL`**, never *no
+  point*. The quote is what cannot be re-fetched (Yahoo gives nothing under the
+  hour past 60 days); the conversion is repaired by #704's lateral pass, which is
+  the only reason a `NULL` here is viable at all.
+- **Event amounts are never converted.** `unit_price` / `fee` / `amount` are the
+  **debit, in the reporting currency**, which is what makes the cost basis exact
+  instead of re-estimated from a historical rate and removes historical FX from
+  the past entirely. Only prices are converted.
+
+While the currency is unanswered, **nothing refuses**: the scrape runs and stores
+`price_native`, the converted columns stay `NULL`, the perf job writes nothing at
+all (not zeros, not `NULL`s — every figure it computes is money and an amount
+with no settled unit is not a figure), the account gauges are therefore absent,
+and the API states the condition through the head's `currency` being `null` and
+the dial's `stored: false` on `/api/config`. No route and no field is added for
+it (ADR-0021): a fourth kind of absence would make every page depend on one
+preamble. The reads that draw money — P1's `price`, `raw_series`,
+`bucketed_series`, `prices_at`, `daily_closes`, `quotes.price_series` — all read
+the **converted** column for the same reason; the native price and the rate ride
+beside P1's row so a reader can recognise the quote their broker shows them. The
+freshness sonde (#628) is the one read pointed at `price_native`, because a
+currency tick would otherwise pass for a price that is still being refreshed.
+
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK, gated)│
-│                          │  │                   │  │   interval dial) │  │                    │
-│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • perf_should_run? │
-│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │ • Recompute perf   │
-│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │   series (opt-in   │
-│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │   accounts only)   │
+│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK,       │
+│                          │  │                   │  │   interval dial) │  │   ungated)         │
+│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • Replay the       │
+│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
+│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │ • Full recompute   │
+│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │ • Upsert + prune   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -976,7 +1049,7 @@ Four lists would agree on the day they were written and not much longer.
 | `backfill_delay` | `10` | 0–3600 | read by the next backfill cycle |
 | `backfill_chunk_days` | `365` | 1–3650 | read by the next backfill cycle |
 | `staleness_horizon` | `900` | 0–86400 | read by the next scrape cycle; `0` disables the sonde |
-| `base_currency` | *none* | — | the reporting currency; no default, and its own ticket interprets it |
+| `base_currency` | *none* | ISO-4217, 3 letters | the reporting currency. No default, upper-cased on the way in, **fixed from the first recorded event** and free before that; the next cycle converts (#704 repairs the stock) |
 
 `PUT /api/settings` is the **only writer**, and it being HTTP is what keeps a
 headless install whole — *headless means without an interface, not without
@@ -1040,7 +1113,8 @@ app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
-├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert (#700)
+├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
+├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
 ├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
@@ -1096,6 +1170,7 @@ scraper. `prometheus_exporter.py` owns the registry only; its `start()` and its
 `ThreadingHTTPServer` are gone.
 
 Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_price`,
+`sb_share_price_native`, `sb_fx_rate`,
 `sb_cost_basis`, `sb_owned_quantity`, `sb_received_dividend`,
 `sb_realized_gain`, `sb_dividend_yield`, `sb_pe_ratio`,
 `sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
@@ -1104,6 +1179,19 @@ price-freshness liveness sonde (issue #628): `1` when a symbol's stored price is
 silently stale (frozen past `staleness_horizon` during `REGULAR` while the
 live quote moves), `0` otherwise — a gauge so it auto-clears when the writer
 recovers.
+
+**Never a gauge whose unit depends on a setting** (issue #702, spec #695 § 12).
+A single `sb_share_price` would mean dollars on one install, euros on another and
+euros *from Tuesday* on a third — not a metric, a trap with a plausible-looking
+value in it. So there are **two price gauges**: `sb_share_price` publishes the
+converted price, `sb_share_price_native` the quote as the exchange gives it, and
+`sb_fx_rate` the rate between them. While the base currency is unanswered the
+converted one and the rate are **absent** (not zero — a zero is a figure every
+`sum()` counts), and so is every `sb_account_*` / `sb_portfolio_*` series, since
+the perf job writes nothing at all until then. The position gauges are *not*
+under the rule: their amounts come from events **recorded** in the reporting
+currency, so answering the dial names a unit they always had. `sb_account_info`
+lost its `account_currency` label with `Account.currency`.
 
 **Two feeders, two lives** (issue #699). `update_position` publishes what the
 events say — `sb_owned_quantity`, `sb_cost_basis`, `sb_received_dividend` and
@@ -1149,7 +1237,7 @@ the instrument's attributes, which is why there is no second table.
 | `dividend_yield` / `pe_ratio` / `market_cap` | the fundamentals, in **current value only** — yfinance supplies them on the live quote alone, so their v4 "history" was a comb of `NULL` |
 | `fetched_at` | when the attributes above were last refreshed |
 | `last_price_native` / `last_price_ts` | the `latest` row, maintained by the one rule above |
-| `last_price_converted` / `last_fx_rate` | #702's, and `NULL` until it lands |
+| `last_price_converted` / `last_fx_rate` | the same observation in the reporting currency, and the rate used (#702). The three price columns move together — a native price beside a converted one from an earlier point is the per-field last-non-null row the store exists to avoid |
 | `oldest_window_tried` | the backward pass's anchor — the oldest window **tried**, persisted (#703). A `DATE`: a window boundary is a calendar day. Written only when a fetch completed, and only ever backwards |
 
 **`price_point`** — the series, and the one table with **no key of any kind**
@@ -1161,13 +1249,16 @@ costing +563 MB on a 319 MB base. Uniqueness moves to the writers.
 | `symbol` | the ticker. **No account**: a market price belongs to none (#700) |
 | `ts` | `TIMESTAMPTZ` in UTC, truncated to the second |
 | `price_native` | the close, in the security's own currency |
-| `price_converted` / `fx_rate` | #702's; `NULL` means *transient*, repaired by #704's lateral pass |
+| `price_converted` / `fx_rate` | the close in the reporting currency and the rate that produced it (#702). `NULL` means *transient* — no currency answered yet, or a pair that did not resolve — repaired by #704's lateral pass. `price_converted == price_native × fx_rate` holds on every row, which is what makes the row a journal |
 
 **`account_metrics`** (opt-in accounts only; one row per calendar **day**, block
-upsert on `(account, day)`). The series is recomputed in full every cycle but
-only the **stale tail** is written today — a window that loses its subject with
-#707, since an upsert on a primary key does not grow the file the way a
-`DELETE`+`INSERT` replacement does (ADR-0011: 44,8 MB against 1,1).
+upsert on `(account, day)`). The series is recomputed **and rewritten in full**
+every cycle since #707: the stale-tail window lost its subject, an upsert on a
+primary key not growing the file the way a `DELETE`+`INSERT` replacement does
+(ADR-0011: 44,8 MB against 1,1). What follows the upsert is a **bounded prune**
+— every day outside the spans the cycle wrote, per account, so an account that
+computes to nothing loses its days along with the orphaned one. The primary key
+is therefore a **write mechanism** and not only a constraint.
 
 | Column | Description |
 |---|---|
@@ -1181,16 +1272,19 @@ only the **stale tail** is written today — a window that loses its subject wit
 | `twr_index` | time-weighted return, base 100 (per day) |
 | `gain_absolu` | absolute gain (`value − contributions`); latest point only |
 
-`account_type` and `account_currency` have **no column**: they were InfluxDB
-tags, and a page reads them from the declaration (ADR-0013), which is what the
-account *is* rather than what it was when a point was written.
+`account_type` has **no column**: it was an InfluxDB tag, and a page reads it
+from the declaration (ADR-0013), which is what the account *is* rather than what
+it was when a point was written. `account_currency` has none either, and for a
+second reason since #702 — an account has no currency at all.
 
 **`portfolio_totals`** — the same seven figures at the **global** level, keyed by
 `day` alone. A table of its own rather than a synthetic `account` row, and it
 stays one for a forward-looking reason rather than an inherited one: the
 constraint that made it untagged is gone, but its columns will diverge the day
-the global level carries something the per-account level does not. Written only
-when all accounts share one currency (FX is out of scope until #702).
+the global level carries something the per-account level does not. The
+single-currency condition that used to gate it left with `Account.currency`
+(#702): accounts cannot disagree about a currency they do not have. What gates
+**both** tables is the base currency being answered at all.
 
 Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
 computed in `app/src/performance.py` — a pure module taking a `Timeline` and an
@@ -1204,7 +1298,8 @@ backfill advanced with no event having moved, and a grant-only position had no
 price at its date at all.
 
 Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
-(labels `account_type`/`account_currency`) and global `sb_portfolio_*` gauges
+(label `account_type`; `account_currency` left with `Account.currency`, #702)
+and global `sb_portfolio_*` gauges
 (no `account` label). Price history for `holdings_value` is read via
 `quotes.price_series(store, symbol)` — the day's **last** point, queried by
 symbol, which is no longer a rule to remember: there is no account column to

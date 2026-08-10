@@ -33,8 +33,8 @@ def _price_at(prices):
     return price_at
 
 
-PEA = Account("PEA", "PEA", "Mon PEA", "EUR")
-CTO = Account("CTO", "CTO", "My CTO", "USD")
+PEA = Account("PEA", "PEA", "Mon PEA")
+CTO = Account("CTO", "CTO", "My CTO")
 
 
 # --------------------------------------------------------------------------- #
@@ -273,9 +273,16 @@ def test_the_sold_position_reports_no_investment_at_all():
 
 
 # --------------------------------------------------------------------------- #
-# Portfolio total: currency gating
+# Portfolio total: what gates it, now that a currency does not
 # --------------------------------------------------------------------------- #
-def test_portfolio_total_none_on_mixed_currencies():
+def test_two_accounts_pool_because_an_account_has_no_currency():
+    """The mixed-currency refusal is deleted with `Account.currency` (#702).
+
+    It answered `None` whenever two declared accounts named different
+    currencies. They cannot: there is one reporting currency for the install and
+    everything reaching this module is already in it. The only thing that still
+    makes the global series absent is having no account at all.
+    """
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
@@ -287,11 +294,15 @@ def test_portfolio_total_none_on_mixed_currencies():
     }
     total = compute_portfolio_total(tl, [PEA, CTO], set(), price_at,
                                     date(2024, 1, 1), date(2024, 1, 1), per_account)
-    assert total is None  # EUR + USD -> no FX pooling
+
+    assert total is not None
+    assert total.daily[-1].total_value == pytest.approx(1500.0)
+    assert compute_portfolio_total(tl, [], set(), price_at, date(2024, 1, 1),
+                                   date(2024, 1, 1), {}) is None
 
 
-def test_portfolio_total_aggregates_same_currency():
-    pea2 = Account("PEA2", "PEA", "PEA 2", "EUR")
+def test_portfolio_total_aggregates_the_accounts_it_is_given():
+    pea2 = Account("PEA2", "PEA", "PEA 2")
     tl = EventAggregator().replay([
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="PEA2"),
@@ -304,7 +315,6 @@ def test_portfolio_total_aggregates_same_currency():
     total = compute_portfolio_total(tl, [PEA, pea2], set(), price_at,
                                     date(2024, 1, 1), date(2024, 1, 1), per_account)
     assert total is not None
-    assert total.currency == "EUR"
     assert total.daily[-1].total_value == pytest.approx(1500.0)
     assert total.gain_absolu == pytest.approx(0.0)  # 1500 terminal - 1500 contributed
 
