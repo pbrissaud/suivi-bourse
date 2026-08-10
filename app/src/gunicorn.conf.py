@@ -20,7 +20,7 @@ import sys
 # ``gunicorn -c src/gunicorn.conf.py`` work from ``app/`` during development.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import main  # noqa: E402
+import boot_env  # noqa: E402
 
 # --- Sockets ---------------------------------------------------------------
 # One master, two sockets, one application: ``bind`` takes a list, so this is not
@@ -28,13 +28,16 @@ import main  # noqa: E402
 # retired ThreadingHTTPServer did, and that zero regression for existing
 # Prometheus scrapers is the whole reason for the second socket. It is dropped
 # when the endpoint is off, which is what the old exporter did by never starting
-# — and when both dials name the same port, one socket serves both.
-_web_port = main.env_int('SB_WEB_PORT', 8080)
-bind = [f'0.0.0.0:{_web_port}']
-if main.env_flag('SB_PROMETHEUS_ENABLED', True):
-    _metrics_port = main.env_int('SB_METRICS_PORT', 8081)
-    if _metrics_port != _web_port:
-        bind.append(f'0.0.0.0:{_metrics_port}')
+# — and when both variables name the same port, one socket serves both.
+#
+# Read here, in the master, **before the application is imported**: that is one
+# half of why the two ports stay in the environment rather than becoming dials
+# (issue #740, ADR-0014). The other half is that a port changed from the
+# interface would cut the connection the interface arrived by.
+_boot = boot_env.read(os.environ)
+bind = [f'0.0.0.0:{_boot.web_port}']
+if _boot.prometheus_enabled and _boot.metrics_port != _boot.web_port:
+    bind.append(f'0.0.0.0:{_boot.metrics_port}')
 
 # --- Workers ---------------------------------------------------------------
 # Exactly one worker, always — see ``on_starting`` for why it is a hard guard and
@@ -70,7 +73,7 @@ control_socket_disable = True
 # this file, and an unknown value must not turn into a boot failure. The
 # application's loggers read it directly (`logfmt_logger`), unaffected either way.
 _gunicorn_levels = ('debug', 'info', 'warning', 'error', 'critical')
-_log_level = (os.getenv('LOG_LEVEL') or '').strip().lower()
+_log_level = _boot.log_level.lower()
 loglevel = _log_level if _log_level in _gunicorn_levels else 'info'
 
 

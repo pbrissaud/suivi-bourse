@@ -36,6 +36,7 @@ from typing import Any, List, Optional, Sequence
 import duckdb
 from logfmt_logger import getLogger
 
+import boot_env
 import settings_registry
 
 logger = getLogger("store")
@@ -47,11 +48,11 @@ STORE_FILENAME = 'suivi-bourse.duckdb'
 #: Where the store lives when nothing says otherwise. ADR-0015 gives the store
 #: its own boot variable — it is one of the handful of things the environment
 #: still configures, because the process must know it *before* it can open the
-#: store and ask the store anything. The default is the directory v4 already
-#: mounts, so a dev stack keeps persisting across this change; the packaging
-#: ticket (#679) is what moves it to a named volume of its own.
-STORE_DIR_VAR = 'SB_STORE_DIR'
-DEFAULT_STORE_DIR = '~/.config/SuiviBourse'
+#: store and ask the store anything. The name and the default are
+#: :mod:`boot_env`'s since #740, which is where the six of them are said once;
+#: these two aliases stay because the store is where a reader looks for them.
+STORE_DIR_VAR = boot_env.STORE_DIR
+DEFAULT_STORE_DIR = boot_env.DEFAULT_STORE_DIR
 
 
 class StoreUnavailable(Exception):
@@ -457,10 +458,12 @@ def store_path() -> Path:
 
     ``SB_STORE_DIR`` names a **directory**, not a file: the app owns the name of
     what it writes there, and an operator who points two installs at one
-    directory gets two files rather than one silently shared database.
+    directory gets two files rather than one silently shared database. It is
+    also what removes the class of mistake where the path given exists but its
+    parent is not mounted (#740).
     """
-    raw = (os.getenv(STORE_DIR_VAR) or '').strip() or DEFAULT_STORE_DIR
-    return Path(raw).expanduser() / STORE_FILENAME
+    return boot_env.directory(
+        os.environ, STORE_DIR_VAR, DEFAULT_STORE_DIR) / STORE_FILENAME
 
 
 def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:

@@ -193,8 +193,10 @@ def forward_backfill_window(
 
 
 # Price-freshness sonde default horizon (issue #628, design #626). The operator
-# dial ``SB_STALENESS_HORIZON`` (main.py) overrides it; the default is a few
-# ``REGULAR`` poll cycles wide so an ordinary tick never trips the sonde.
+# dial is ``staleness_horizon``, in the **store** — it has had no environment
+# form since #701, and ``SB_STALENESS_HORIZON`` is named at boot and obeyed by
+# nothing (#740). The default is a few ``REGULAR`` poll cycles wide so an
+# ordinary tick never trips the sonde.
 STALENESS_HORIZON = 900  # s
 
 # Relative tolerance for "the stored price is unchanged". A live quote differing
