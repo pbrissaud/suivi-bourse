@@ -181,6 +181,14 @@ class BackfillRecord:
     #: ``GRANT`` (issue #703). Never ``None`` on a backward record: a symbol
     #: with no acquisition has no holding window and no backfill at all.
     target: Optional[datetime] = None
+    #: The top of the holding window the backward pass walks down from — the day
+    #: after the last exit, or *now* while the position is still held (issue
+    #: #703). It rides on the record because it is the **denominator** of the
+    #: progress bar: measuring against ``now`` on a line sold in 2022 counts
+    #: four years nobody held as history left to fetch, and reports 0,82 where
+    #: the pass has covered 0,46. A reader cannot correct that from the outside,
+    #: which is why it is published rather than recomputed.
+    ceiling: Optional[datetime] = None
     oldest: Optional[datetime] = None
     #: The forward pass's anchor: the newest stored point it measured from.
     newest: Optional[datetime] = None

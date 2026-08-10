@@ -100,6 +100,11 @@ class BackfillProgress:
     state: str
     at: Optional[datetime]
     target: Optional[datetime]
+    #: The top of the holding window — the other end of the span ``ratio``
+    #: divides by (issue #703). Published rather than left implicit: a reader
+    #: assuming *now* would inflate the bar of every sold line, and would have
+    #: no way of telling.
+    ceiling: Optional[datetime]
     oldest: Optional[datetime]
     newest: Optional[datetime]
     window: Optional[Tuple[datetime, datetime]]
@@ -116,6 +121,7 @@ class BackfillProgress:
             'state': self.state,
             'at': _iso(self.at),
             'target': _iso(self.target),
+            'ceiling': _iso(self.ceiling),
             'oldest': _iso(self.oldest),
             'newest': _iso(self.newest),
             'window': (
@@ -237,22 +243,23 @@ def backfill_progress(
     """Turn one backfill record into a bar, or into the reason there is none.
 
     The bar answers #656's driving question — *is the backfill advancing, or is
-    it stuck?* — from two dates in **one** record: the oldest stored point and
-    the first acquisition. Both were read by the same pass, so they are coherent with
-    each other, which a reader composing them from the watermark and a fresh
-    query would not be.
+    it stuck?* — from three dates in **one** record: the first acquisition, the
+    top of the holding window, and the oldest stored point. All three were read
+    by the same pass, so they are coherent with each other, which a reader
+    composing them from the watermark and a fresh query would not be.
     """
     if record is None:
         return BackfillProgress(
             direction=direction, state=BACKFILL_UNKNOWN,
-            at=None, target=None, oldest=None, newest=None, window=None,
-            written=0, failures=0, ratio=None, error=None)
+            at=None, target=None, ceiling=None, oldest=None, newest=None,
+            window=None, written=0, failures=0, ratio=None, error=None)
 
     return BackfillProgress(
         direction=direction,
         state=_backfill_state(record),
         at=record.at,
         target=record.target,
+        ceiling=record.ceiling,
         oldest=record.oldest,
         newest=record.newest,
         window=record.window,
@@ -282,7 +289,23 @@ def _backfill_state(record: runtime_state.BackfillRecord) -> str:
 
 def _ratio(record: runtime_state.BackfillRecord,
            now: datetime) -> Optional[float]:
-    """How much of the history since the first acquisition is stored, in ``[0, 1]``.
+    """How much of the **holding window** is stored, in ``[0, 1]``.
+
+    The span is ``[target, ceiling]`` and not ``[target, now]`` (issue #703).
+    The two coincided as long as the backfill only ever ran on what was held
+    today, and this ticket is exactly what parted them: every symbol now carries
+    a window bounded above by its last exit. Dividing by *now* on a line bought
+    2020-03-02 and sold 2022-05-04 counts the four years since the sale as
+    history still to fetch, and reports **0,82** after the first of three chunks
+    where the pass has covered **0,46** — the older the sale, the wider the lie,
+    and a line held 2014-2015 reads ~0,92 on its very first cycle. It is
+    precisely the class of row #703 adds to the payload, and precisely the
+    moment the bar has a use, so the ceiling rides on the record: a consumer
+    given ``target``/``oldest`` alone cannot repair it.
+
+    A still-held position has ``ceiling = now``, so nothing about a live line
+    changes. A record with no ceiling at all falls back to ``now``, which is
+    that same reading.
 
     ``complete`` is ``1.0`` by definition rather than by arithmetic — the
     watermark is set exactly when the anchor reaches the target, and also when
@@ -296,17 +319,18 @@ def _ratio(record: runtime_state.BackfillRecord,
     """
     if record.terminal == runtime_state.TERMINAL_COMPLETE:
         return 1.0
-    # Both sides through `_utc`: `target` comes from an event date and `oldest`
+    # Every side through `_utc`: `target` comes from an event date and `oldest`
     # from the store, and subtracting a naive instant from an aware one raises.
     # See :func:`_utc`.
     target = _utc(record.target)
     oldest = _utc(record.oldest)
     if target is None or oldest is None:
         return None
-    total = (_utc(now) - target).total_seconds()
+    ceiling = _utc(record.ceiling) if record.ceiling is not None else _utc(now)
+    total = (ceiling - target).total_seconds()
     if total <= 0:
         return 1.0
-    covered = (_utc(now) - oldest).total_seconds()
+    covered = (ceiling - oldest).total_seconds()
     return max(0.0, min(1.0, covered / total))
 
 

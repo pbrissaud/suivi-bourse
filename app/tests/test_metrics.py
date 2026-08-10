@@ -25,6 +25,7 @@ import pytest
 
 import main
 import quotes
+import runtime_view
 from main import SuiviBourseMetrics
 from events.schemas import Event, EventType
 from events.validator import EventValidationError
@@ -899,6 +900,48 @@ def test_a_share_bought_in_2020_and_sold_in_2022_is_reconstructed(store, mocker)
                           for day in stored)
     assert metrics._backfill_complete["ALO"] == datetime(
         2020, 3, 2, tzinfo=timezone.utc)
+
+
+def test_the_published_progress_measures_the_holding_window_not_today(
+        store, mocker):
+    """The bar of a sold line is drawn against ``[acquisition, exit]``.
+
+    #703 gave every symbol a window bounded above by its last exit, and the
+    progress ``/api/runtime`` publishes has to divide by *that* span. Measured
+    against *now*, the same ALO — bought 2020-03-02, sold 2022-05-04, one chunk
+    of its three walked down — reports **0,82** where it has covered **0,46**,
+    and the older the sale the wider the gap. The ceiling therefore rides on the
+    record: it is what the reader would otherwise have to invent.
+    """
+    events = [
+        Event(date(2020, 3, 2), EventType.BUY, "ALO", "Alstom",
+              quantity=10, unit_price=30.0),
+        Event(date(2022, 5, 4), EventType.SELL, "ALO", "Alstom",
+              quantity=10, unit_price=25.0),
+    ]
+    metrics, _ = _build_metrics(
+        [_valid_shares("ALO", "Alstom", quantity=0)], store,
+        mode="events", events=events)
+    metrics.backfill_chunk_days = 365
+    _window_recorder(
+        metrics, mocker,
+        prices=lambda s, start, end: [
+            {"timestamp": start + timedelta(days=1), "price": 42.0}])
+
+    # Two cycles: the first seeds the series, the second observes an ``oldest``.
+    metrics.backfill()
+    metrics.backfill()
+
+    record = metrics.recorder.backfill_of("ALO", main.runtime_state.BACKWARD)
+    assert record.ceiling.date() == date(2022, 5, 5)
+
+    now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+    progress = runtime_view.backfill_progress(
+        record, main.runtime_state.BACKWARD, now)
+    assert progress.ratio == pytest.approx(0.458, abs=0.01)
+    # What the pass would have reported measured against today.
+    assert (now - record.oldest) / (now - record.target) == pytest.approx(
+        0.817, abs=0.01)
 
 
 def test_the_backfill_takes_the_whole_timeline_and_the_scrape_only_holdings(

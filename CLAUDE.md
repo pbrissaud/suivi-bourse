@@ -469,6 +469,12 @@ when it is the only thing able to explain the empty table**. #659's reserved
   the held ones, because the backfill's set is no longer the scrape's: a sold
   line is reconstructed and not polled, so the row carries `held: false` and
   `next_run_state: not_held` instead of reading as a scheduler that is stuck.
+  Its **progress bar divides by the holding window**, `[target, ceiling]`, and
+  the ceiling is a field of the record rather than a reader's assumption: with
+  *now* as the denominator a line bought 2020-03-02 and sold 2022-05-04 reads
+  0,82 one chunk in where it has covered 0,46 — inflated for exactly the rows
+  #703 adds to the payload, at exactly the moment the bar has a use, and with
+  nothing published a consumer could correct it from.
 
 `/api/config` carries #654's read-only **effective configuration** — there
 rather than on `/api/runtime`, one noun two consumers — listing the variables

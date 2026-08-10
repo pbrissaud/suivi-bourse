@@ -13,6 +13,8 @@ failure fold, and that fold is the answer to #656's driving question.
 """
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 import runtime_state
 import runtime_view
 import scheduling
@@ -320,6 +322,64 @@ def test_the_bar_is_two_dates_from_one_record():
         runtime_state.BACKWARD, NOW)
 
     assert progress.ratio == 0.5
+
+
+def test_a_sold_line_is_measured_against_its_holding_window_not_against_now():
+    """The denominator is ``[target, ceiling]``, and #703 is what parted them.
+
+    A line bought 2020-03-02 and sold 2022-05-04 has 794 days of history to
+    rebuild, not the 2 352 that separate its purchase from today. After the
+    first of its three chunks the pass has covered 364 of those 794 — **0,458**.
+    Dividing by *now* answers **0,817**, and the older the sale the wider the
+    lie: a line held 2014-2015 reads over 0,9 on its very first cycle, i.e. the
+    bar is inflated for exactly the class of row this ticket adds to the payload
+    and at exactly the moment it has a use.
+
+    The ceiling is asserted on the payload too: without it no consumer could
+    tell the two readings apart, let alone repair the number.
+    """
+    now = datetime(2026, 8, 10, tzinfo=UTC)
+    acquired = datetime(2020, 3, 2, tzinfo=UTC)
+    ceiling = datetime(2022, 5, 5, tzinfo=UTC)   # the day after the last exit
+    oldest = datetime(2021, 5, 6, tzinfo=UTC)    # one chunk down from the ceiling
+
+    progress = runtime_view.backfill_progress(
+        _backfill(target=acquired, ceiling=ceiling, oldest=oldest),
+        runtime_state.BACKWARD, now)
+
+    assert progress.ratio == pytest.approx(0.458, abs=0.001)
+    assert progress.to_dict()['ceiling'] == ceiling.isoformat()
+
+
+def test_a_still_held_line_keeps_reading_against_today():
+    """The ceiling of a position still held **is** now, so nothing moves for it.
+
+    Worth pinning: the fix above changes the denominator of every backward bar,
+    and a live line reading differently afterwards would be a regression dressed
+    up as a fix.
+    """
+    held = runtime_view.backfill_progress(
+        _backfill(target=NOW - timedelta(days=400), ceiling=NOW,
+                  oldest=NOW - timedelta(days=200)),
+        runtime_state.BACKWARD, NOW)
+
+    assert held.ratio == 0.5
+
+
+def test_a_point_stored_after_the_last_exit_floors_the_bar_at_zero():
+    """A pre-#703 install can hold points a scrape wrote after the sale.
+
+    The subtraction then goes the wrong way. Clamping is the honest answer —
+    nothing of the holding window has been rebuilt — where a negative ratio
+    would render as a bar drawn backwards.
+    """
+    progress = runtime_view.backfill_progress(
+        _backfill(target=datetime(2020, 3, 2, tzinfo=UTC),
+                  ceiling=datetime(2022, 5, 5, tzinfo=UTC),
+                  oldest=datetime(2025, 1, 6, tzinfo=UTC)),
+        runtime_state.BACKWARD, datetime(2026, 8, 10, tzinfo=UTC))
+
+    assert progress.ratio == 0.0
 
 
 def test_a_naive_influxdb_timestamp_neither_crashes_nor_shifts_the_page():

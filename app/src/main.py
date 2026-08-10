@@ -2346,15 +2346,19 @@ class SuiviBourseMetrics:
         return ``0`` on failure, which is indistinguishable from the ``0`` a
         healthy weekend returns — so nothing anywhere told "pacing normally"
         apart from "wedged on yfinance". The record carries the window it
-        attempted, the two dates the progress bar is drawn from, and — through
-        the recorder's fold — how many consecutive cycles have now failed.
+        attempted, the **three** dates the progress bar is drawn from — target,
+        ceiling and oldest — and, through the recorder's fold, how many
+        consecutive cycles have now failed. The ceiling is on the record for the
+        same reason the target is: the bar measures ``[target, ceiling]``, and a
+        reader given only two of the three would divide by the wrong span on
+        every sold line.
         """
         def publish(**fields) -> None:
             self.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol,
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
-                target=target, **fields))
+                target=target, ceiling=ceiling, **fields))
 
         # The oldest stored point — reported, not decided upon: it is what the
         # progress bar is drawn from, while the resume point is the anchor below.
