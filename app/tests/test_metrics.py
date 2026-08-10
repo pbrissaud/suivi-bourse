@@ -63,6 +63,11 @@ class FakeConfigManager:
     snapshot readable.
     """
 
+    #: Where the two v4 files an advisory names would sit (issue #709). ``None``
+    #: is *unobservable* rather than *absent*, which is what a fake that has no
+    #: directory at all owes them — see ``advisories.UNOBSERVED``.
+    config_dir = None
+
     def __init__(self, shares, opened_store=None, mode="manual",
                  acquisitions=None, exits=None, events=None, accounts=None):
         self._shares = shares
@@ -1146,3 +1151,131 @@ def test_the_forward_pass_fills_the_gap_of_a_position_bought_back(
     assert metrics.recorder.backfill_of(
         "AAPL", main.runtime_state.FORWARD).skipped == \
         main.runtime_state.SKIP_TOO_RECENT
+
+
+# ---------------------------------------------------------------------------
+# The advisories, and the one the reconstruction produces (issue #709)
+# ---------------------------------------------------------------------------
+
+def test_the_reconstruction_state_is_process_memory(store):
+    """``_backfill_complete`` is where "this pass has reached its target" lives.
+
+    No row says it: a symbol Yahoo answers nothing about ends with a completed
+    pass and an empty series, so a count read off ``price_point`` would report a
+    reconstruction that never finishes.
+    """
+    events = [
+        Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+              quantity=10, unit_price=150.0),
+        Event(date(2022, 1, 3), EventType.BUY, "MSFT", "Microsoft",
+              quantity=5, unit_price=380.0),
+    ]
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")],
+        store, mode="events", events=events)
+
+    assert metrics.reconstruction_state() == (0, 2)
+
+    metrics._backfill_complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
+    assert metrics.reconstruction_state() == (1, 2)
+
+
+def test_nothing_ever_held_has_no_reconstruction_to_report(store):
+    """``None``, not ``(0, 0)``: a fresh install announces no reprise d'historique."""
+    metrics, _ = _build_metrics([], store, mode="events", events=[])
+
+    assert metrics.reconstruction_state() is None
+
+
+def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
+        store, mocker):
+    acquired = (datetime.now(timezone.utc) - timedelta(days=800)).date()
+    events = [Event(acquired, EventType.BUY, "DEAD", "Delisted Co",
+                    quantity=5, unit_price=10.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
+        mode="events", events=events)
+    metrics.backfill_chunk_days = 365
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+
+    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
+        [main.advisories.RECONSTRUCTION_RUNNING]
+
+    # Two chunks later the backward pass has reached its acquisition, and the
+    # advisory has no subject left.
+    for _ in range(3):
+        metrics.backfill()
+
+    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
+
+
+def test_the_end_of_the_reconstruction_produces_the_assumed_currency_advisory(
+        store, mocker):
+    """The one advisory that is an event, born where the comparison first can be.
+
+    At import time no symbol has been fetched, so the app does not know what a
+    line is quoted in; the last backward pass reaching its first acquisition is
+    the earliest instant at which it does.
+    """
+    store.execute(
+        "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    acquired = (datetime.now(timezone.utc) - timedelta(days=300)).date()
+    events = [Event(acquired, EventType.BUY, "AAPL", "Apple",
+                    quantity=10, unit_price=150.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
+    metrics.backfill_chunk_days = 365
+    store.execute(
+        "INSERT INTO event (id, date, event_type, account, symbol, quantity, "
+        "                   unit_price) "
+        "VALUES (1, ?, 'BUY', 'default', 'AAPL', 10, 150.0)", [acquired])
+    quotes.record_quote(store, "AAPL", datetime.now(timezone.utc), 190.0,
+                        attributes={"currency": "USD"})
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+
+    keys = {row[0] for row in store.query("SELECT key FROM advisory")}
+    assert main.advisories.ASSUMED_BASE_CURRENCY in keys
+    # And it is produced once, however many cycles conclude the same way.
+    metrics.backfill()
+    metrics.backfill()
+    assert store.query(
+        "SELECT count(*) FROM advisory WHERE key = ?",
+        [main.advisories.ASSUMED_BASE_CURRENCY])[0][0] == 1
+
+
+def test_the_ingest_and_the_backfill_read_the_same_memory(store):
+    """Both callers see all four sources, so neither drops what the other armed.
+
+    The ingest is the *boot's* review — it runs before the first backfill cycle —
+    and it reads ``_backfill_complete`` from the same object, so it arms the
+    reconstruction advisory rather than saying nothing about it.
+    """
+    events = [Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
+                    quantity=10, unit_price=150.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events", events=events)
+
+    metrics.ingest()
+
+    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
+        [main.advisories.RECONSTRUCTION_RUNNING]
+
+    metrics._backfill_complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
+    metrics.ingest()
+
+    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
+
+
+def test_a_store_failure_never_takes_a_job_with_the_advisories(store, mocker):
+    """A missed review costs one cycle; the next one re-observes from scratch."""
+    metrics, _ = _build_metrics(
+        [_valid_shares("AAPL", "Apple")], store, mode="events", events=[])
+    mocker.patch.object(main.advisories, "refresh",
+                        side_effect=RuntimeError("the file is gone"))
+
+    metrics.review_advisories()  # must not raise

@@ -23,6 +23,7 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
+import advisories
 import fx
 import ledger
 import perf_series
@@ -57,7 +58,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
     'quotes', 'perf_series', 'ledger', 'positions', 'prometheus_exporter',
-    'web.api',
+    'advisories', 'web.api',
 )
 
 
@@ -382,6 +383,30 @@ def effective_environment() -> List[Dict]:
     return reported
 
 
+def advisory_context(config_manager, metrics=None) -> advisories.Context:
+    """Gather what the advisories' predicates read (issue #709).
+
+    The seam between :mod:`advisories`, which holds the text and the predicates,
+    and the three places their sources actually live: the configuration directory
+    on the manager, the environment inventory here, and the reconstruction's
+    progress in the scheduler's own memory. **One builder**, so the observation a
+    job makes and the one a request renders cannot come from two different
+    readings of the same three sources.
+
+    A caller with no ``metrics`` — the gunicorn master, a web request on a
+    runtime that has not started its scheduler — reports the reconstruction as
+    **unobservable** rather than as finished. That distinction is the whole of
+    :data:`advisories.UNOBSERVED`: without it, a page being opened would drop the
+    row a running scheduler armed.
+    """
+    return advisories.Context(
+        config_dir=config_manager.config_dir,
+        unread_variables=tuple(unread_environment()),
+        reconstruction=(None if metrics is None
+                        else metrics.reconstruction_state()),
+    )
+
+
 def register_interval_jobs(scheduler, sb_metrics,
                            backfill_interval: int) -> None:
     """Register the two fixed-cadence interval jobs on ``scheduler``.
@@ -598,6 +623,31 @@ class ConfigSnapshot:
         """
         window = self.backfill_windows().get(symbol)
         return window[0] if window is not None else None
+
+
+def holding_bounds(window: Tuple[date, Optional[date]],
+                   now: Optional[datetime] = None) -> Tuple[datetime, datetime]:
+    """``(target, ceiling)`` as instants, from one :meth:`ConfigSnapshot.backfill_windows` entry.
+
+    One function rather than an expression written twice, and the reason is the
+    ``_backfill_complete`` watermark: it is keyed by the **target**, so a second
+    spelling of "the first acquisition as an instant" would make
+    :meth:`SuiviBourseMetrics.reconstruction_state` compare against a target the
+    backward pass never stored, and announce a reconstruction that never
+    finishes on a portfolio that finished it minutes ago.
+
+    A ``None`` end means *still held*, so the ceiling is **now**; a closed
+    position's ceiling is the day *after* its last sale, yfinance reading the end
+    of a range as exclusive and the price of the day one sells being part of the
+    history one held.
+    """
+    acquired, exited = window
+    target = datetime.combine(acquired, datetime.min.time(), tzinfo=timezone.utc)
+    ceiling = (
+        (now or datetime.now(timezone.utc)) if exited is None
+        else datetime.combine(exited + timedelta(days=1),
+                              datetime.min.time(), tzinfo=timezone.utc))
+    return target, ceiling
 
 
 class ConfigurationManager:
@@ -2202,6 +2252,70 @@ class SuiviBourseMetrics:
         # scheduler is wired in __main__.
         self._reconcile_jobs()
 
+        # Re-observe the advisories (issue #709). Here because this is the
+        # gesture that runs at the boot, on a file landing and after a write —
+        # the three moments the *installation's* advisories can change — and
+        # because it is the only one that runs on an install holding nothing at
+        # all, where the backfill returns before doing anything.
+        self.review_advisories()
+
+    # ------------------------------------------------------------------ #
+    # The advisories (issue #709)
+    # ------------------------------------------------------------------ #
+
+    def reconstruction_state(self) -> Optional[Tuple[int, int]]:
+        """``(series complete, series in the reconstruction)`` — process memory.
+
+        The source of the one advisory that is neither a file nor an environment
+        variable, and it is memory rather than a query for the same reason
+        ``/api/runtime`` reads none: ``_backfill_complete`` is where "this pass
+        has reached its first acquisition" lives, and no row anywhere says it —
+        a symbol Yahoo answers nothing about has a completed pass and an empty
+        series.
+
+        ``None`` when nothing was ever held: there is no reconstruction to run,
+        which the advisory has to tell apart from one that has not started, or a
+        fresh install would announce a reprise d'historique of nothing.
+        """
+        windows = self.config_manager.current().backfill_windows()
+        if not windows:
+            return None
+        complete = sum(
+            1 for symbol, window in windows.items()
+            if self._backfill_complete.get(symbol) == holding_bounds(window)[0])
+        return complete, len(windows)
+
+    def review_advisories(self) -> None:
+        """Re-observe every advisory, and record the one that is an event.
+
+        The whole call-site pattern of the feature: the observation is made where
+        the sources are — the ingest and the backfill cycle — and **never on a
+        ``GET``**, an advisory dated by the moment somebody happened to open a
+        page saying nothing about when the thing it names started.
+
+        Both callers see all four sources, this object being where the
+        reconstruction's memory lives, so neither of them can drop a row the
+        other armed. What cannot see it is a runtime with no scheduler — the
+        gunicorn master, a web request — and :func:`advisory_context` answers
+        *unobservable* for those rather than *finished*.
+
+        Guarded: a store that refuses this must not take a scheduled job with it.
+        A missed review costs one cycle, and the next one re-observes everything
+        from scratch, there being no state to catch up on.
+        """
+        try:
+            context = advisory_context(self.config_manager, self)
+            with self.config_manager.writing() as opened:
+                # Order matters, and only in one direction: the reconstruction
+                # concluding is what *produces* the assumed-currency advisory, so
+                # it is recorded before the refresh that stands its sibling down.
+                if context.reconstruction_concluded:
+                    advisories.record(
+                        opened, advisories.ASSUMED_BASE_CURRENCY, context)
+                advisories.refresh(opened, context)
+        except Exception as e:
+            app_logger.error(f"Failed to review the advisories: {e}")
+
     def backfill(self):
         """
         Backfill historical price data, one series per **symbol**, in both
@@ -2272,6 +2386,16 @@ class SuiviBourseMetrics:
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
+        # The cycle that just moved the reconstruction is the one that re-observes
+        # it (issue #709), and it is also where the *event* advisory is born: the
+        # last backward pass reaching its first acquisition is the earliest
+        # instant at which every symbol's quote currency has been observed, and
+        # therefore the earliest at which the app can say what it assumed of the
+        # amounts it imported. The condition is re-tested every cycle rather than
+        # latched — the currency may be answered long after the reconstruction
+        # ended — and the write is idempotent, so it is produced exactly once.
+        self.review_advisories()
+
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
                          held: bool) -> int:
@@ -2300,13 +2424,7 @@ class SuiviBourseMetrics:
         the pass fetches ``[newest → now]`` from Yahoo **every day, forever**,
         for every symbol the user has ever sold out of.
         """
-        acquired, exited = window
-        target = datetime.combine(
-            acquired, datetime.min.time(), tzinfo=timezone.utc)
-        ceiling = (
-            datetime.now(timezone.utc) if exited is None
-            else datetime.combine(exited + timedelta(days=1),
-                                  datetime.min.time(), tzinfo=timezone.utc))
+        target, ceiling = holding_bounds(window)
 
         written = 0
         # Backward pass — skip once complete to avoid refetching the same window
