@@ -1023,6 +1023,36 @@ def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
     assert body['symbols'][0]['accounts'] == ['pea']
 
 
+def test_a_sold_line_publishes_its_backward_progress_and_says_it_is_not_polled(
+        tmp_path):
+    """The reconstruction the owner is waiting for is the sold one (issue #703).
+
+    The backfill is driven by the replay now, so a closed position has a
+    backward pass of its own. Its row was filtered out of this payload while the
+    two sets were one; leaving it out today hides the only progress there is to
+    show — and the banner's bar would count 1 series out of 1 with a second one
+    still walking back through five years.
+    """
+    events = ACCOUNTS_EVENTS + "2025-02-03,SELL,AAPL,Apple Inc,10,180.00,pea\n"
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=events)
+    runtime = web_module.current_runtime()
+    runtime.recorder.record_backfill(runtime_state.BackfillRecord(
+        symbol='AAPL', direction=runtime_state.BACKWARD,
+        at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
+        target=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        oldest=datetime(2024, 6, 1, tzinfo=timezone.utc), written=42))
+
+    body = client.get('/api/runtime').get_json()
+    row = body['symbols'][0]
+
+    assert row['symbol'] == 'AAPL'
+    assert row['held'] is False
+    assert row['next_run_state'] == 'not_held'
+    assert row['backward']['written'] == 42
+    assert body['backfill']['in_scope'] == 1
+
+
 def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
     client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)

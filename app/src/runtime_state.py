@@ -41,12 +41,12 @@ that only happens in production with forty symbols. So the read path takes the
 row set from the **configuration snapshot** and does one ``get`` per key, which
 is #661's "the declaration drives" and gives the right answer for free: a symbol
 the scheduler has not touched yet is an *unknown* cell, not a missing row. The
-one method that does iterate (:meth:`forget_symbol`) holds the lock while it
-does.
+one method that does iterate (:meth:`RuntimeRecorder.retain`) holds the lock
+while it does.
 """
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 # --------------------------------------------------------------------- #
 # Vocabulary. Every constant below is a value a *job* writes, never one a
@@ -70,12 +70,14 @@ SCRAPE_NO_PRICE = 'no_price'
 BACKWARD = 'backward'
 FORWARD = 'forward'
 
-#: The two terminal states of the backward pass, which **must not be
-#: collapsed** (#656 trap 6): "there is nothing left to fetch" and "this symbol
-#: was never bought" are both nominal, and only the first is progress. A third,
-#: ``manual_mode``, left with the mode it named (#711).
+#: The backward pass's **one** terminal state: there is nothing left to fetch.
+#: It had two others and both lost their subject. ``manual_mode`` left with the
+#: mode it named (#711); ``no_buy`` — "this symbol was never bought" — became
+#: unreachable at #703, where the target became the first **acquisition**,
+#: ``GRANT`` included. A position with neither a ``BUY`` nor a ``GRANT`` cannot
+#: carry a positive quantity, so it has no holding window and never enters the
+#: backfill's set at all: the state is not renamed, it has no instances.
 TERMINAL_COMPLETE = 'complete'
-TERMINAL_NO_BUY = 'no_buy'
 
 #: The forward pass's no-op reasons. ``SKIP_TOO_RECENT`` is the *normal* one
 #: during live trading: ``newest ≈ now``, the window is sub-day, and the pass
@@ -176,9 +178,18 @@ class BackfillRecord:
     direction: str
     at: datetime
     window: Optional[Tuple[datetime, datetime]] = None
-    #: The backward pass's target — the first BUY. ``None`` for a symbol with
-    #: no BUY event.
+    #: The backward pass's target — the first **acquisition**, ``BUY`` or
+    #: ``GRANT`` (issue #703). Never ``None`` on a backward record: a symbol
+    #: with no acquisition has no holding window and no backfill at all.
     target: Optional[datetime] = None
+    #: The top of the holding window the backward pass walks down from — the day
+    #: after the last exit, or *now* while the position is still held (issue
+    #: #703). It rides on the record because it is the **denominator** of the
+    #: progress bar: measuring against ``now`` on a line sold in 2022 counts
+    #: four years nobody held as history left to fetch, and reports 0,82 where
+    #: the pass has covered 0,46. A reader cannot correct that from the outside,
+    #: which is why it is published rather than recomputed.
+    ceiling: Optional[datetime] = None
     oldest: Optional[datetime] = None
     #: The forward pass's anchor: the newest stored point it measured from.
     newest: Optional[datetime] = None
@@ -287,21 +298,37 @@ class RuntimeRecorder:
             self._perf = record
         return record
 
-    def forget_symbol(self, symbol: str) -> None:
-        """Drop a departed symbol's records, mirroring #617's counter cleanup.
+    def forget_scrape(self, symbol: str) -> None:
+        """Drop a departed symbol's **scrape** record, mirroring #617's cleanup.
 
-        Invisible to a reader either way — the row set comes from the snapshot,
-        so a record nobody asks for is never rendered — but a process running for
-        months through many portfolio edits would otherwise accumulate them, and
-        #597 is already this app's story of a structure that grew without bound.
-
-        Iterating the backfill keys is safe **because it holds the lock**: this
-        is a writer, and the rule the module states is that *readers* never
-        iterate.
+        Called when the per-symbol scrape job leaves, which since #703 is no
+        longer the same event as leaving the ledger: a position sold out stops
+        being polled and goes on being *reconstructed*, so taking its backfill
+        records away here would blank the progress of the very pass that is still
+        running — and no future event would ever bring them back.
         """
         with self._lock:
             self._scrape.pop(symbol, None)
-            for key in [k for k in self._backfill if k[0] == symbol]:
+
+    def retain(self, symbols: Iterable[str]) -> None:
+        """Keep only the records of symbols the ledger still names.
+
+        The counterpart of :meth:`forget_scrape`, and the parallel of
+        ``PrometheusExporter.retain_positions``: what takes a *backfill* record
+        away is the symbol leaving the ledger — a forgotten import — and nothing
+        else. Invisible to a reader either way (the row set comes from the
+        snapshot), but a process running for months through many portfolio edits
+        would otherwise accumulate them, and #597 is already this app's story of
+        a structure that grew without bound.
+
+        Iterating the keys is safe **because it holds the lock**: this is a
+        writer, and the rule the module states is that *readers* never iterate.
+        """
+        keep = set(symbols)
+        with self._lock:
+            for symbol in [s for s in self._scrape if s not in keep]:
+                del self._scrape[symbol]
+            for key in [k for k in self._backfill if k[0] not in keep]:
                 del self._backfill[key]
 
     # ------------------------------------------------------------------ #
@@ -325,7 +352,7 @@ class RuntimeRecorder:
 __all__ = [
     'BACKWARD', 'FORWARD',
     'SCRAPE_WROTE', 'SCRAPE_WRITE_FAILED', 'SCRAPE_CLOSED', 'SCRAPE_NO_PRICE',
-    'TERMINAL_COMPLETE', 'TERMINAL_NO_BUY',
+    'TERMINAL_COMPLETE',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
     'PERF_RAN', 'PERF_FAILED',

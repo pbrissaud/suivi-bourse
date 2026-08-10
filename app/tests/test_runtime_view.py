@@ -1,8 +1,8 @@
 """Tests for the app's own runtime state — the pure half (issue #668, #656).
 
 #668's testing criterion is explicit about what this file has to earn: the
-composition is pure, so **the ambiguous ``next_run_time``, the three terminal
-backfill states and manual mode's no-op are all testable without a scheduler**.
+composition is pure, so **the ambiguous ``next_run_time``, the backfill's
+terminal state and the boot window are all testable without a scheduler**.
 Those three are the cases most likely to be rendered wrong, and each of them
 would be rendered wrong in the *reassuring* direction — a stall that reads as
 progress, a nominal absence that reads as a stall — which is the kind of defect
@@ -12,6 +12,8 @@ The recorder is here too, because its one piece of logic is the consecutive
 failure fold, and that fold is the answer to #656's driving question.
 """
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 import runtime_state
 import runtime_view
@@ -23,7 +25,8 @@ NOW = datetime(2026, 8, 5, 15, 0, tzinfo=UTC)
 
 
 def _share(symbol='AAPL', name='Apple Inc', account='pea', quantity=10):
-    """One position. ``quantity=0`` is a sold one — no job, so no row (#699)."""
+    """One position. ``quantity=0`` is a sold one — no scrape job, but a row all
+    the same since #703: its history is still being reconstructed."""
     return {'name': name, 'symbol': symbol, 'account': account,
             'quantity': quantity}
 
@@ -176,60 +179,25 @@ def test_a_scheduled_job_carries_its_instant():
 
 
 # ===================================================================== #
-# The two terminal backfill states, never collapsed (#656 trap 6)
+# The backfill's terminal state, never collapsed with a stall (#656 trap 6)
 # ===================================================================== #
 
-def test_complete_and_no_buy_stay_two_different_answers():
-    """They mean two different things and only one of them is progress.
+def test_complete_is_carried_through_verbatim():
+    """``complete`` — everything back to the first acquisition is stored.
 
-    ``complete`` — everything back to the first BUY is stored.
-    ``no_buy`` — the symbol was never bought (a GRANT-only position), so there is
-    no target and never was.
+    It had two siblings and both lost their subject: ``manual_mode`` with the
+    mode it named (#711), and ``no_buy`` at #703, where the target became the
+    first *acquisition* — ``GRANT`` included — so a symbol that would have
+    carried it has no holding window and never reaches the backfill at all.
 
-    (A third, ``manual_mode``, left with the mode it named — #711.)
-
-    Rendering either of them as a stall accuses the app of a fault it does not
+    Rendering the survivor as a stall accuses the app of a fault it does not
     have.
     """
-    now = NOW
-    states = {
-        runtime_state.TERMINAL_COMPLETE: _backfill(
-            terminal=runtime_state.TERMINAL_COMPLETE),
-        runtime_state.TERMINAL_NO_BUY: _backfill(
-            terminal=runtime_state.TERMINAL_NO_BUY),
-    }
+    progress = runtime_view.backfill_progress(
+        _backfill(terminal=runtime_state.TERMINAL_COMPLETE),
+        runtime_state.BACKWARD, NOW)
 
-    for expected, record in states.items():
-        progress = runtime_view.backfill_progress(
-            record, runtime_state.BACKWARD, now)
-        assert progress.state == expected
-
-
-def test_a_portfolio_with_nothing_to_fetch_never_leaves_the_banner_short():
-    """Trap 6 read at the banner's scale.
-
-    A portfolio held entirely by grant has a ``no_buy`` terminal on every
-    series. Counting those as pending would draw a bar stuck below 100 % forever
-    on an installation that is working exactly as designed, which is the same
-    misreading one storey up.
-    """
-    symbols = runtime_view.build_symbols(
-        [_share('AAPL'), _share('MSFT')],
-        {},
-        {
-            ('AAPL', runtime_state.BACKWARD): _backfill(
-                terminal=runtime_state.TERMINAL_NO_BUY),
-            ('MSFT', runtime_state.BACKWARD): _backfill(
-                symbol='MSFT', terminal=runtime_state.TERMINAL_NO_BUY),
-        },
-        {}, NOW)
-
-    summary = runtime_view.build_backfill_summary(symbols)
-
-    assert summary['no_buy'] == 2
-    assert summary['in_scope'] == 0
-    # No denominator, so no bar — rather than a bar reading 0 %.
-    assert summary['ratio'] is None
+    assert progress.state == runtime_state.TERMINAL_COMPLETE
 
 
 def test_the_boot_window_announces_no_backfill_at_all():
@@ -251,24 +219,61 @@ def test_the_boot_window_announces_no_backfill_at_all():
     assert summary['ratio'] is None
 
 
-def test_a_no_buy_series_is_out_of_the_bar_but_still_counted():
+def test_a_sold_position_is_inside_the_bar_because_it_is_what_is_rebuilt():
+    """The denominator counts sold lines too (issue #703).
+
+    The backfill is driven by the replay now, so a position closed in 2022 has a
+    backward pass of its own — and it is precisely the history nothing else can
+    supply. Leaving it out of the bar would announce « 1 série sur 1 » while a
+    second one is still walking back through five years.
+    """
     symbols = runtime_view.build_symbols(
-        [_share('AAPL'), _share('MSFT')],
+        [_share('AAPL'), _share('ALO', quantity=0)],
         {},
         {
             ('AAPL', runtime_state.BACKWARD): _backfill(
                 terminal=runtime_state.TERMINAL_COMPLETE),
-            ('MSFT', runtime_state.BACKWARD): _backfill(
-                symbol='MSFT', terminal=runtime_state.TERMINAL_NO_BUY),
+            ('ALO', runtime_state.BACKWARD): _backfill(
+                symbol='ALO', oldest=NOW - timedelta(days=200),
+                target=NOW - timedelta(days=1200)),
         },
         {}, NOW)
 
     summary = runtime_view.build_backfill_summary(symbols)
 
     assert summary['total'] == 2
-    assert summary['no_buy'] == 1
-    assert summary['in_scope'] == 1
-    assert summary['ratio'] == 1.0
+    assert summary['in_scope'] == 2
+    assert summary['running'] == 1
+    assert summary['ratio'] == 0.5
+
+
+def test_a_sold_position_says_it_is_not_polled_rather_than_nothing():
+    """Its row is not a stuck scheduler, and has to say so (issue #703).
+
+    The scrape's set and the backfill's stopped being the same one: a sold line
+    keeps no job and no scrape record, so the row would otherwise read as a
+    symbol the scheduler has never reached — permanently, with no future event
+    able to clear it.
+    """
+    rows = runtime_view.build_symbols(
+        [_share('AAPL'), _share('ALO', quantity=0)],
+        {'AAPL': _scrape()}, {}, {'AAPL': NOW}, NOW)
+
+    held, sold = rows[0], rows[1]
+    assert (held.symbol, held.held) == ('AAPL', True)
+    assert held.next_run_state == runtime_view.NEXT_RUN_SCHEDULED
+    assert (sold.symbol, sold.held) == ('ALO', False)
+    assert sold.next_run_state == runtime_view.NEXT_RUN_NOT_HELD
+
+
+def test_a_symbol_held_in_one_account_and_sold_in_another_is_still_held():
+    """One symbol, one job, one series: the holding is asked of the portfolio."""
+    rows = runtime_view.build_symbols(
+        [_share('AAPL', account='pea', quantity=0),
+         _share('AAPL', account='cto', quantity=4)],
+        {}, {}, {}, NOW)
+
+    assert [(row.symbol, row.held) for row in rows] == [('AAPL', True)]
 
 
 def test_a_terminal_outranks_a_stale_failure_count():
@@ -317,6 +322,64 @@ def test_the_bar_is_two_dates_from_one_record():
         runtime_state.BACKWARD, NOW)
 
     assert progress.ratio == 0.5
+
+
+def test_a_sold_line_is_measured_against_its_holding_window_not_against_now():
+    """The denominator is ``[target, ceiling]``, and #703 is what parted them.
+
+    A line bought 2020-03-02 and sold 2022-05-04 has 794 days of history to
+    rebuild, not the 2 352 that separate its purchase from today. After the
+    first of its three chunks the pass has covered 364 of those 794 — **0,458**.
+    Dividing by *now* answers **0,817**, and the older the sale the wider the
+    lie: a line held 2014-2015 reads over 0,9 on its very first cycle, i.e. the
+    bar is inflated for exactly the class of row this ticket adds to the payload
+    and at exactly the moment it has a use.
+
+    The ceiling is asserted on the payload too: without it no consumer could
+    tell the two readings apart, let alone repair the number.
+    """
+    now = datetime(2026, 8, 10, tzinfo=UTC)
+    acquired = datetime(2020, 3, 2, tzinfo=UTC)
+    ceiling = datetime(2022, 5, 5, tzinfo=UTC)   # the day after the last exit
+    oldest = datetime(2021, 5, 6, tzinfo=UTC)    # one chunk down from the ceiling
+
+    progress = runtime_view.backfill_progress(
+        _backfill(target=acquired, ceiling=ceiling, oldest=oldest),
+        runtime_state.BACKWARD, now)
+
+    assert progress.ratio == pytest.approx(0.458, abs=0.001)
+    assert progress.to_dict()['ceiling'] == ceiling.isoformat()
+
+
+def test_a_still_held_line_keeps_reading_against_today():
+    """The ceiling of a position still held **is** now, so nothing moves for it.
+
+    Worth pinning: the fix above changes the denominator of every backward bar,
+    and a live line reading differently afterwards would be a regression dressed
+    up as a fix.
+    """
+    held = runtime_view.backfill_progress(
+        _backfill(target=NOW - timedelta(days=400), ceiling=NOW,
+                  oldest=NOW - timedelta(days=200)),
+        runtime_state.BACKWARD, NOW)
+
+    assert held.ratio == 0.5
+
+
+def test_a_point_stored_after_the_last_exit_floors_the_bar_at_zero():
+    """A pre-#703 install can hold points a scrape wrote after the sale.
+
+    The subtraction then goes the wrong way. Clamping is the honest answer —
+    nothing of the holding window has been rebuilt — where a negative ratio
+    would render as a bar drawn backwards.
+    """
+    progress = runtime_view.backfill_progress(
+        _backfill(target=datetime(2020, 3, 2, tzinfo=UTC),
+                  ceiling=datetime(2022, 5, 5, tzinfo=UTC),
+                  oldest=datetime(2025, 1, 6, tzinfo=UTC)),
+        runtime_state.BACKWARD, datetime(2026, 8, 10, tzinfo=UTC))
+
+    assert progress.ratio == 0.0
 
 
 def test_a_naive_influxdb_timestamp_neither_crashes_nor_shifts_the_page():
@@ -564,13 +627,31 @@ def test_the_two_backfill_directions_keep_separate_counters():
         'AAPL', runtime_state.BACKWARD).failures == 2
 
 
-def test_forgetting_a_departed_symbol_drops_both_of_its_maps():
+def test_a_departed_scrape_job_leaves_the_backfill_records_standing():
+    """The two sets parted company at #703, and so did the two cleanups.
+
+    A sold position loses its scrape job and goes on being *reconstructed*.
+    Dropping its backfill records with the job would blank the progress of a
+    pass still running, permanently — no future event brings it back.
+    """
+    recorder = runtime_state.RuntimeRecorder()
+    recorder.record_scrape(_scrape())
+    recorder.record_backfill(_backfill())
+
+    recorder.forget_scrape('AAPL')
+
+    assert recorder.scrape_of('AAPL') is None
+    assert recorder.backfill_of('AAPL', runtime_state.BACKWARD) is not None
+
+
+def test_leaving_the_ledger_drops_both_maps():
+    """What takes a backfill record away is a forgotten import, and only that."""
     recorder = runtime_state.RuntimeRecorder()
     recorder.record_scrape(_scrape())
     recorder.record_backfill(_backfill())
     recorder.record_backfill(_backfill(symbol='MSFT'))
 
-    recorder.forget_symbol('AAPL')
+    recorder.retain({'MSFT'})
 
     assert recorder.scrape_of('AAPL') is None
     assert recorder.backfill_of('AAPL', runtime_state.BACKWARD) is None

@@ -491,6 +491,14 @@ def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
         return False
 
 
+#: What starts a holding window (issue #703). A ``GRANT`` is an acquisition: the
+#: share is held from the day it lands, priced or not (``events.schemas.
+#: declared_value`` decides the second question and not this one). Reading only
+#: ``BUY`` left a portfolio held entirely by grant with no backfill target at
+#: all, which is the state the retired ``no_buy`` terminal was reporting.
+ACQUISITION_EVENT_TYPES = (EventType.BUY, EventType.GRANT)
+
+
 # ``InvalidConfigFile`` and ``load_shares_schema`` left with ``schema.yaml``
 # (issue #696). The schema validated the *aggregated share list*, which since
 # #711 is no longer read from a file at all — it is computed from the event
@@ -527,17 +535,69 @@ class ConfigSnapshot:
     accounts: Optional[Portfolio]
     cache_key: Optional[str]
 
-    def first_buy_date(self, symbol: str) -> Optional[date]:
-        """Date of the earliest BUY event for ``symbol``, or ``None``.
+    def backfill_windows(self) -> Dict[str, Tuple[date, Optional[date]]]:
+        """``{symbol: (first acquisition, last exit or None)}`` — the backfill's pilot.
 
-        The backfill target. A pure read of this snapshot's events, so a
-        concurrent reload can never turn it into ``None`` mid-cycle.
+        **The backfill is driven by the replay, not by what is held today**
+        (issue #703, ADR-0009). The set is the union over the *whole* timeline
+        and each symbol carries its own holding window, which is the first place
+        the scrape and the backfill stop having the same symbols: *what do we
+        poll live* and *whose history do we need* are two different questions the
+        moment a position can close. Iterating current positions leaves a share
+        bought in 2020 and sold in 2022 with no reconstructed price at all — so
+        the account's ``xirr`` and ``twr_index`` are wrong **permanently**, not
+        for the duration of the reconstruction. v4 hid it because the live series
+        accumulated while the share was held; it is fatal the moment history is
+        rebuilt from nothing.
+
+        A ``None`` end means *still held*, and therefore *today* — the caller
+        turns it into an instant, because a snapshot reads no clock.
+
+        The start is the first **acquisition**, ``BUY`` *and* ``GRANT``: a granted
+        share is held from the day it was granted, and a portfolio held entirely
+        by grant used to reach the backfill with no target at all.
+
+        A symbol the ledger names without ever acquiring it (a stray
+        ``DIVIDEND``) is simply **not in the set**: it has no holding window, so
+        there is nothing to reconstruct and no state to report about it. That is
+        what retires the old ``no_buy`` terminal rather than renaming it.
+
+        A pure read of this snapshot, so a concurrent reload can never empty it
+        mid-cycle.
         """
-        buy_dates = [
-            e.date for e in self.events
-            if e.symbol == symbol and e.event_type == EventType.BUY
-        ]
-        return min(buy_dates) if buy_dates else None
+        first: Dict[str, date] = {}
+        exits: Dict[str, date] = {}
+        for event in self.events:
+            if not event.symbol:
+                continue
+            if event.event_type in ACQUISITION_EVENT_TYPES:
+                known = first.get(event.symbol)
+                if known is None or event.date < known:
+                    first[event.symbol] = event.date
+            elif event.event_type == EventType.SELL:
+                known = exits.get(event.symbol)
+                if known is None or event.date > known:
+                    exits[event.symbol] = event.date
+
+        # Held **anywhere**: one account selling out does not end the window of a
+        # share another account still holds, and the series they share is one.
+        held = {share['symbol'] for share in self.shares
+                if share.get('symbol') and share.get('quantity')}
+        return {
+            symbol: (acquired, None if symbol in held else exits.get(symbol))
+            for symbol, acquired in first.items()
+        }
+
+    def first_acquisition_date(self, symbol: str) -> Optional[date]:
+        """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``.
+
+        The backward pass's target, read off :meth:`backfill_windows` rather than
+        recomputed beside it: two spellings of *"when did this position start"*
+        would eventually disagree by a day, and the symptom is a reconstruction
+        that stops one chunk short and reads as a stall.
+        """
+        window = self.backfill_windows().get(symbol)
+        return window[0] if window is not None else None
 
 
 class ConfigurationManager:
@@ -968,13 +1028,13 @@ class ConfigurationManager:
         """
         return self.reload(force=force).shares
 
-    def get_first_buy_date(self, symbol: str) -> Optional[date]:
-        """Date of the first BUY event for a symbol, from the published snapshot.
+    def get_first_acquisition_date(self, symbol: str) -> Optional[date]:
+        """Date of the first ``BUY`` **or ``GRANT``** for a symbol (issue #703).
 
-        ``None`` before anything is published.
+        From the published snapshot; ``None`` before anything is published.
         """
         snap = self._config
-        return snap.first_buy_date(symbol) if snap is not None else None
+        return snap.first_acquisition_date(symbol) if snap is not None else None
 
     def get_events(self) -> Optional[List]:
         """The published snapshot's events.
@@ -1124,10 +1184,11 @@ class SuiviBourseMetrics:
         # Cache for share info (to avoid repeated API calls during backfill)
         self._share_info_cache: Dict[str, Dict] = {}
 
-        # Track (symbol, account) pairs whose backfill has reached the first BUY
-        # date, mapped to that date so an earlier newly-added event re-triggers
-        # backfill for that account.
-        self._backfill_complete: Dict[Tuple[str, str], datetime] = {}
+        # Symbols whose backward pass has reached their first acquisition, mapped
+        # to that date so an earlier newly-added event re-opens the pass. A
+        # process-lifetime shortcut, not the watermark: what survives a restart is
+        # ``symbol_quote.oldest_window_tried`` (issue #703).
+        self._backfill_complete: Dict[str, datetime] = {}
 
         # There is **no perf state here**, and its absence is the ticket (issue
         # #707, ADR-0011). Four attributes stood at this line — a mutex, a
@@ -1805,13 +1866,14 @@ class SuiviBourseMetrics:
                 # membership under the same lock) can't write the entry back.
                 with self._failure_counts_lock:
                     self._failure_counts.pop(symbol, None)
-                # Same cleanup, one storey up (issue #668): the last-pass
-                # records of a departed symbol are invisible to a reader — the
-                # row set comes from the configuration snapshot — but a process
-                # running for months through many portfolio edits would keep
-                # them all, and #597 is this app's story of a structure that
-                # grew without bound.
-                self.recorder.forget_symbol(symbol)
+                # Same cleanup, one storey up (issue #668) — but the **scrape**
+                # record only since #703. Leaving this job is no longer leaving
+                # the ledger: the backward pass goes on reconstructing the
+                # history of a line the owner has sold, and taking its records
+                # away here would blank the progress of a pass still running,
+                # permanently. What drops a backfill record is the symbol
+                # leaving the ledger, and that is `recorder.retain` in `ingest`.
+                self.recorder.forget_scrape(symbol)
                 # And the market gauges (issue #699, #672 D6). Nothing will
                 # ever fetch this symbol again, so ``sb_share_price`` would sit
                 # at its last observed value for the life of the process,
@@ -2118,6 +2180,13 @@ class SuiviBourseMetrics:
                 shares=len(after),
                 events=len(snapshot.events) if snapshot.events is not None else None,
             ))
+            # The last-pass records of a symbol the ledger no longer names at
+            # all — a forgotten import (issue #703). The parallel of
+            # ``retain_positions`` just above, and the *only* thing that drops a
+            # backfill record: leaving the held set is not leaving the ledger,
+            # and a sold position's backward pass is still running.
+            self.recorder.retain({share['symbol'] for share in after
+                                  if share.get('symbol')})
         except Exception as e:
             app_logger.error(f"Error during ingestion (keeping previous config): {e}")
             # The record #656 called out as the one gap worth closing on its
@@ -2141,7 +2210,7 @@ class SuiviBourseMetrics:
 
         For each symbol, delegates to ``_backfill_symbol`` which runs two
         independent passes (issue #626):
-          * Backward: extend the series toward the first BUY date, one
+          * Backward: extend the series toward the first **acquisition**, one
             ``backfill_chunk_days`` chunk per cycle, until ``_backfill_complete``
             is set.
           * Forward: recover a session missed while the app was down by fetching
@@ -2156,6 +2225,19 @@ class SuiviBourseMetrics:
         accounts fetch the same window from Yahoo three times a cycle — three
         times the rate-limit exposure, on the job that already emits more
         requests than anything else in the app.
+
+        **Driven by the replay and not by current holdings** (issue #703,
+        ADR-0009). The symbol set is the union over the whole timeline and each
+        symbol carries its own holding window — see
+        :meth:`ConfigSnapshot.backfill_windows`. This is where the backfill and
+        the scrape stop having the same symbols: the scrape keeps its own set,
+        filtered on ``quantity``.
+
+        **The rhythm does not change and there is no accelerated mode.**
+        ``backfill_delay`` is a courtesy to Yahoo at the exact moment the app
+        emits more requests than at any other time of its life, and a code path
+        that runs once per installation is a code path nobody ever tests. One
+        chunk per symbol per cycle: ~25 minutes for 30 symbols over 5 years.
         """
         # One snapshot for the whole cycle (issue #658). Shares, events and
         # accounts have to come from the same generation: reading them one call
@@ -2163,46 +2245,49 @@ class SuiviBourseMetrics:
         # next cycle's events, and — through the old invalidate-then-load pair —
         # with no events at all, which quietly neutralised the backward pass.
         snapshot = self.config_manager.current()
-        if not snapshot.shares:
-            app_logger.debug("No shares configured, skipping backfill")
+        windows = snapshot.backfill_windows()
+        if not windows:
+            app_logger.debug("Nothing was ever held, skipping backfill")
             return
 
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
-        # The symbols the ledger names, sold ones included: the backward pass
-        # keeps running on a position the owner has closed, because the chart
-        # wants the history of a line they held. What is scoped to the *held*
-        # ones is the forward pass alone (see :meth:`_backfill_symbol`).
-        # #703 widens the set again, to the union over the whole timeline.
-        symbols = sorted({share['symbol'] for share in snapshot.shares
-                          if share.get('symbol')})
-        # Read off **this cycle's snapshot** and not through ``_held_symbols``,
+        # Held **off this cycle's snapshot** and not through ``_held_symbols``,
         # which would take a second one: shares, events and accounts have to
         # come from the same generation (issue #658), and a reload landing
         # between the two reads would pair one cycle's symbol set with another
-        # cycle's holdings.
+        # cycle's holdings. It is the forward pass's gate alone — the backward
+        # one runs on a closed position too, because the chart wants the history
+        # of a line the owner held.
         held = {share['symbol'] for share in snapshot.shares
                 if share.get('symbol') and share.get('quantity')}
 
-        for symbol in symbols:
+        for symbol in sorted(windows):
             backfilled_count += self._backfill_symbol(
-                symbol, snapshot, symbol in held)
+                symbol, windows[symbol], symbol in held)
 
         if backfilled_count > 0:
             app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-    def _backfill_symbol(self, symbol: str, snapshot: ConfigSnapshot,
+    def _backfill_symbol(self, symbol: str,
+                         window: Tuple[date, Optional[date]],
                          held: bool) -> int:
-        """Backfill one symbol in both directions (issue #626).
+        """Backfill one symbol over its own holding window (issue #626, #703).
 
-        The **backward** pass extends the series toward the first BUY date and
+        The **backward** pass extends the series toward the first acquisition and
         stops once ``_backfill_complete`` is set; the **forward** pass recovers a
         recent session missed while the app was down. The two directions are
         **independent** — a completed backward watermark never suppresses the
         forward pass (issue #627). Returns points written this cycle.
+
+        ``window`` is ``(first acquisition, last exit or None)``. A ``None`` end
+        means *still held*, so the ceiling is **now**; a closed position's
+        ceiling is the day after its last sale, since yfinance reads the end of a
+        range as exclusive and the price of the day one sells is part of the
+        history one held.
 
         **The two directions part company on a sold position** (issue #699,
         #672 D5). The backward pass keeps running: the chart wants the history
@@ -2215,37 +2300,22 @@ class SuiviBourseMetrics:
         the pass fetches ``[newest → now]`` from Yahoo **every day, forever**,
         for every symbol the user has ever sold out of.
         """
-        # Get the target date (first BUY), from this cycle's snapshot.
-        first_buy_date = snapshot.first_buy_date(symbol)
-        if not first_buy_date:
-            app_logger.debug(f"No BUY events found for {symbol}, skipping backfill")
-            # The second terminal (#656 trap 6). A GRANT-only position is the
-            # ordinary case, and it has no history to reach back to — distinct
-            # from "complete", which it never started.
-            self.recorder.record_backfill(runtime_state.BackfillRecord(
-                symbol=symbol,
-                direction=runtime_state.BACKWARD,
-                at=datetime.now(timezone.utc),
-                terminal=runtime_state.TERMINAL_NO_BUY))
-            return 0
-
-        # Convert date to datetime if needed and make timezone-aware
-        if isinstance(first_buy_date, datetime):
-            if first_buy_date.tzinfo is None:
-                first_buy_date = first_buy_date.replace(tzinfo=timezone.utc)
-        else:
-            # It's a date object, convert to datetime
-            first_buy_date = datetime.combine(
-                first_buy_date, datetime.min.time(), tzinfo=timezone.utc)
+        acquired, exited = window
+        target = datetime.combine(
+            acquired, datetime.min.time(), tzinfo=timezone.utc)
+        ceiling = (
+            datetime.now(timezone.utc) if exited is None
+            else datetime.combine(exited + timedelta(days=1),
+                                  datetime.min.time(), tzinfo=timezone.utc))
 
         written = 0
         # Backward pass — skip once complete to avoid refetching the same window
-        # every cycle (e.g. a first BUY on a non-trading day never lets oldest
-        # reach it exactly). This skip must NOT gate the forward pass below.
-        if self._backfill_complete.get(symbol) == first_buy_date:
+        # every cycle (e.g. a first acquisition on a non-trading day never lets
+        # the anchor reach it exactly). This skip must NOT gate the forward pass.
+        if self._backfill_complete.get(symbol) == target:
             app_logger.debug(f"Backfill already complete for {symbol}")
         else:
-            written += self._backfill_backward(symbol, first_buy_date)
+            written += self._backfill_backward(symbol, target, ceiling)
 
         # Forward pass — independent of the backward-completion watermark, but
         # not of the holding: there is no live writer to catch up with once the
@@ -2306,6 +2376,45 @@ class SuiviBourseMetrics:
         time.sleep(self.backfill_delay)
         return prices, written
 
+    def _backward_anchor(self, symbol: str, ceiling: datetime) -> datetime:
+        """Where the backward pass resumes from — **the oldest window tried**.
+
+        The anchor used to be the oldest *stored* point, and that is a silent
+        infinite loop (issue #703, ADR-0009): a delisted symbol stores nothing,
+        so the anchor never moves, the stop condition is never reached, and the
+        same window is asked of Yahoo every 60 seconds for the life of the
+        process. Neither guard that could have caught it does: an empty return is
+        classified as a **gap** and not a failure (#606), deliberately, so the
+        consecutive-failure counter stays at zero too.
+
+        So the anchor is the oldest window this pass has **attempted**, persisted
+        on ``symbol_quote`` (spec #695 § 4's one named exception to *watermarks
+        stay derived* — the argument for deriving is "it recomputes itself from
+        the rows", which is exactly what a symbol with no rows cannot do).
+
+        The **minimum** of three, so it can only ever move backwards:
+
+        * the holding window's ``ceiling`` — where a symbol with nothing stored
+          and nothing tried starts, which for a closed position is its last exit
+          and not today;
+        * the oldest stored point, which keeps the pass working **strictly
+          before** the series it already has. That is half of the geometry
+          ``price_point`` has instead of a uniqueness constraint (ADR-0007), and
+          it is also what makes an install that predates this anchor resume
+          where its data ends rather than re-fetching from the ceiling;
+        * the oldest window tried, which is the only one that moves on a symbol
+          Yahoo answers nothing about.
+        """
+        candidates = [ceiling]
+        oldest_stored = quotes.oldest_ts(self.config_manager.store, symbol)
+        if oldest_stored is not None:
+            candidates.append(oldest_stored)
+        tried = quotes.oldest_window_tried(self.config_manager.store, symbol)
+        if tried is not None:
+            candidates.append(datetime.combine(
+                tried, datetime.min.time(), tzinfo=timezone.utc))
+        return min(candidates)
+
     def _convert_history(self, symbol: str, prices: List[Dict]) -> None:
         """Stamp a fetched chunk with its converted price and rate, in place.
 
@@ -2344,56 +2453,56 @@ class SuiviBourseMetrics:
             point['converted'] = converted
             point['rate'] = rate
 
-    def _backfill_backward(self, symbol: str, first_buy_date) -> int:
-        """Backward pass: extend the series toward the first BUY date, one chunk
+    def _backfill_backward(self, symbol: str, target: datetime,
+                           ceiling: datetime) -> int:
+        """Backward pass: extend the series toward the first acquisition, one chunk
         (``backfill_chunk_days``) per cycle. Returns points written this cycle.
+
+        ``target`` is the first acquisition — ``BUY`` **or ``GRANT``**, since a
+        granted share is held from the day it lands — and ``ceiling`` the top of
+        the holding window. Between them the pass walks backwards one chunk at a
+        time from :meth:`_backward_anchor`.
 
         Every exit publishes a last-pass record (issue #668). That is the whole
         answer to #656's driving question: this method used to log a warning and
         return ``0`` on failure, which is indistinguishable from the ``0`` a
         healthy weekend returns — so nothing anywhere told "pacing normally"
         apart from "wedged on yfinance". The record carries the window it
-        attempted, the two dates the progress bar is drawn from, and — through
-        the recorder's fold — how many consecutive cycles have now failed.
+        attempted, the **three** dates the progress bar is drawn from — target,
+        ceiling and oldest — and, through the recorder's fold, how many
+        consecutive cycles have now failed. The ceiling is on the record for the
+        same reason the target is: the bar measures ``[target, ceiling]``, and a
+        reader given only two of the three would divide by the wrong span on
+        every sold line.
         """
         def publish(**fields) -> None:
             self.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol,
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
-                target=first_buy_date, **fields))
+                target=target, ceiling=ceiling, **fields))
 
-        # The oldest stored point of this symbol's series.
+        # The oldest stored point — reported, not decided upon: it is what the
+        # progress bar is drawn from, while the resume point is the anchor below.
         oldest_timestamp = quotes.oldest_ts(self.config_manager.store, symbol)
+        end_date = self._backward_anchor(symbol, ceiling)
 
-        # Determine if we need to backfill (compare at day granularity)
-        if oldest_timestamp is not None:
-            # Already have some data, check if we need to go further back
-            # Compare dates only to avoid tiny time windows
-            if oldest_timestamp.date() <= first_buy_date.date():
-                app_logger.debug(
-                    f"Backfill complete for {symbol}: "
-                    f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
-                self._backfill_complete[symbol] = first_buy_date
-                publish(oldest=oldest_timestamp,
-                        terminal=runtime_state.TERMINAL_COMPLETE)
-                return 0
-
-            # Need to fetch data before oldest_timestamp
-            # Use the actual timestamp to minimize gaps with hourly data
-            end_date = oldest_timestamp
-            if end_date.tzinfo is None:
-                end_date = end_date.replace(tzinfo=timezone.utc)
-        else:
-            # No data at all, start from now
-            end_date = datetime.now(timezone.utc)
+        # Compare at day granularity to avoid chasing tiny windows.
+        if end_date.date() <= target.date():
+            app_logger.debug(
+                f"Backfill complete for {symbol}: "
+                f"anchor={end_date.date()}, target={target.date()}")
+            self._backfill_complete[symbol] = target
+            publish(oldest=oldest_timestamp,
+                    terminal=runtime_state.TERMINAL_COMPLETE)
+            return 0
 
         # Calculate the chunk to fetch (going backwards in time)
         start_date = end_date - timedelta(days=self.backfill_chunk_days)
 
-        # Don't go before the first BUY date
-        if start_date < first_buy_date:
-            start_date = first_buy_date
+        # Don't go before the first acquisition
+        if start_date < target:
+            start_date = target
 
         # Skip if window is less than 1 day (avoids useless requests outside market hours)
         if (end_date - start_date).days < 1:
@@ -2416,16 +2525,22 @@ class SuiviBourseMetrics:
                           f"{start_date.date()} → {end_date.date()}")
             return 0
 
+        # The fetch completed — empty or not — so this window has been tried and
+        # the anchor moves. Only here: a *failed* fetch has attempted nothing the
+        # app is entitled to skip, and persisting it would let one Yahoo hiccup
+        # erase a year of history the pass will never come back to.
+        self._record_window_tried(symbol, start_date.date())
+
         if not prices:
             # Empty window: the fetch succeeded but returned no rows. If we
-            # have already reached the first BUY date there is no earlier
-            # trading data (e.g. the first BUY fell on a weekend/holiday), so
-            # mark the symbol complete to avoid refetching this window forever.
-            if start_date <= first_buy_date:
+            # have already reached the first acquisition there is no earlier
+            # trading data (e.g. it fell on a weekend/holiday), so mark the
+            # symbol complete to avoid refetching this window forever.
+            if start_date <= target:
                 app_logger.debug(
-                    f"Backfill complete for {symbol}: reached the first BUY "
-                    f"date with no earlier trading data")
-                self._backfill_complete[symbol] = first_buy_date
+                    f"Backfill complete for {symbol}: reached the first "
+                    f"acquisition with no earlier trading data")
+                self._backfill_complete[symbol] = target
                 publish(oldest=oldest_timestamp, window=(start_date, end_date),
                         terminal=runtime_state.TERMINAL_COMPLETE)
                 return written
@@ -2433,12 +2548,28 @@ class SuiviBourseMetrics:
             # classifying itself (#606) — a weekend, a holiday. Emphatically not
             # a failure: counting it would make every Monday morning read as
             # wedged, which is the exact misreading the counter exists to prevent.
+            # A mute symbol lands here every cycle, and what stops it is the
+            # anchor just persisted, never the counter.
             publish(oldest=oldest_timestamp, window=(start_date, end_date))
             return written
 
         publish(oldest=oldest_timestamp, window=(start_date, end_date),
                 written=written)
         return written
+
+    def _record_window_tried(self, symbol: str, oldest: date) -> None:
+        """Persist the backward pass's anchor, guarded like every other write.
+
+        A store that refuses this must not abort the cycle: the points of the
+        chunk are already in, and the only cost of losing the anchor is one
+        re-fetched window next cycle.
+        """
+        try:
+            with self.config_manager.writing() as opened:
+                quotes.record_window_tried(opened, symbol, oldest)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to persist the backfill anchor for {symbol}: {e}")
 
     def _backfill_forward(self, symbol: str) -> int:
         """Forward pass: recover a session missed while the app was down by

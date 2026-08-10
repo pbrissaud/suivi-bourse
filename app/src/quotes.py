@@ -33,6 +33,16 @@ it. The invariant is **"the most recent point, whatever its completeness"** and
 not "the most recent complete point" — the second spelling reintroduces the
 per-field last-non-null pass the store exists to avoid.
 
+**One watermark is stored, and only one** (issue #703). Backfill progress is
+derived state and stays in process memory (spec #695 § 4) — with the single named
+exception of ``oldest_window_tried``, the backward pass's anchor. The argument for
+deriving a watermark is *it recomputes itself from the rows*, and that argument
+falls exactly where a delisted symbol stands: it stores no row, so the anchor
+computed from the series never moves and the same window is re-fetched every 60
+seconds, for ever, in silence. The anchor is therefore the oldest window
+**attempted**, and it is written here because ``symbol_quote`` is this module's
+row and a second writer on it is the one thing the schema rule forbids.
+
 The **fundamentals live here in current value only** (``dividend_yield`` /
 ``pe_ratio`` / ``market_cap``): yfinance supplies them on the live quote alone,
 so their v4 "history" was a comb of ``NULL`` down the price series and nothing
@@ -277,6 +287,46 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# The backward pass's persisted anchor (issue #703)
+# --------------------------------------------------------------------------- #
+
+def record_window_tried(store, symbol: str, oldest: date) -> None:
+    """Remember that the backward pass has attempted a window starting at ``oldest``.
+
+    Written **only when a fetch completed** — empty or not. A fetch that failed
+    has attempted nothing the app is entitled to skip: persisting it would let a
+    Yahoo hiccup erase a year of a symbol's history for good, on a pass that has
+    no second chance to notice.
+
+    Moves the anchor **backwards only**, the same shape as
+    :func:`_advance_latest` and for a symmetrical reason. The predicate is in the
+    ``WHERE`` rather than in a read-then-write, so a ledger that grows a *later*
+    first acquisition — an import forgotten, a file corrected — cannot walk the
+    anchor forward and set the pass fetching ground it has already covered.
+    """
+    with store.transaction():
+        _ensure_row(store, symbol)
+        store.execute(
+            'UPDATE symbol_quote '
+            '   SET oldest_window_tried = ? '
+            ' WHERE symbol = ? '
+            '   AND (oldest_window_tried IS NULL OR ? < oldest_window_tried)',
+            [oldest, symbol, oldest])
+
+
+def oldest_window_tried(store, symbol: str) -> Optional[date]:
+    """The oldest window the backward pass has attempted, or ``None``.
+
+    A ``DATE``: a window boundary is a calendar day, not an observed instant
+    (spec #695 § 3), and the two kinds of time are never mixed.
+    """
+    rows = store.query(
+        'SELECT oldest_window_tried FROM symbol_quote WHERE symbol = ?',
+        [symbol])
+    return rows[0][0] if rows and rows[0][0] is not None else None
+
+
+# --------------------------------------------------------------------------- #
 # The reads the scheduler needs — anchors, and the sonde's one value
 # --------------------------------------------------------------------------- #
 
@@ -388,5 +438,6 @@ def _utc(value):
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_history',
+    'record_window_tried', 'oldest_window_tried',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
 ]
