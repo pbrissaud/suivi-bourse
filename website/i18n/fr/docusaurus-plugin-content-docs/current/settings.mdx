@@ -136,7 +136,7 @@ of date the way a hard-coded list of names would.
 | `SB_STALENESS_HORIZON`     | the `staleness_horizon` dial                                                                                                        |
 | `SB_INGESTION_INTERVAL`    | nowhere — there is no polling left: a replay follows the write that changed the ledger, and the drop folder is watched with no dial |
 | `SB_SCRAPING_INTERVAL`     | nowhere — already deprecated in version 4, and its heir is a dial                                                                   |
-| `SB_PERF_INTERVAL`         | nowhere — the performance series is recomputed when something changed, not on a clock                                               |
+| `SB_PERF_INTERVAL`         | nowhere — the performance series is a cache, rebuilt in full every two minutes; there is nothing left to trade off                  |
 | `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic                                                                                                |
 | `SB_EXECUTOR_POOL`         | nowhere — same reason; it was the one dial that needed a restart, so it was deleted rather than moved                               |
 | `SB_CONFIG_MODE`           | nowhere — there is one mode, and files are no longer the truth                                                                      |
