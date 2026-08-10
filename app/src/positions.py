@@ -55,13 +55,13 @@ def write_state(store, positions: Sequence[Mapping],
     zero"* are two states, and the perf job's per-field rule reads them
     differently.
 
-    Both tables are emptied and rewritten inside a single transaction, so a
-    reader never sees half a replay and a failure leaves the previous state
-    whole — the same contract :class:`main.ConfigurationManager` gives the
-    snapshot one storey up.
+    Both tables are emptied and rewritten inside a single transaction, and the
+    store holds the connection for its length — so a reader never sees half a
+    replay (which here would be *no positions at all*) and a failure leaves the
+    previous state whole, the same contract
+    :class:`main.ConfigurationManager` gives the snapshot one storey up.
     """
-    store.execute('BEGIN TRANSACTION')
-    try:
+    with store.transaction():
         store.execute('DELETE FROM position')
         store.execute('DELETE FROM account_state')
         for row in positions:
@@ -77,10 +77,6 @@ def write_state(store, positions: Sequence[Mapping],
                 'INSERT INTO account_state (account, cash_balance, '
                 '                           net_contributed) VALUES (?, ?, ?)',
                 [account, state.cash_balance, state.net_contributed])
-        store.execute('COMMIT')
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
 
     logger.debug(
         f"Replay wrote {len(positions)} position(s) and "

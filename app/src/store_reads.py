@@ -37,6 +37,8 @@ than moving it:
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+import store
+
 #: What P1 hands back per ``(account, symbol)``. The position's own columns, the
 #: instrument's attributes, and the newest observation — named as the store
 #: names them, since there is no longer a second vocabulary to translate into.
@@ -250,7 +252,7 @@ class PortfolioReader:
         rows = self._store.query(
             f'SELECT {", ".join(PERF_COLUMNS)} FROM portfolio_totals '
             ' ORDER BY day DESC LIMIT 1')
-        return dict(zip(PERF_COLUMNS, rows[0])) if rows else None
+        return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
 
     def total_value_at(self, moment: datetime) -> Optional[float]:
         """The global total value on the last day at or **before** ``moment``.
@@ -278,7 +280,7 @@ class PortfolioReader:
         five years is ~1 800 rows and there is nothing to downsample. The same
         fact is why a one-day preset is degenerate on this chart.
         """
-        clauses, parameters = _window('day', start, stop)
+        clauses, parameters = _window('day', start, stop, as_date=True)
         return self._series(
             f'SELECT {", ".join(PERF_COLUMNS)} FROM portfolio_totals '
             f' WHERE TRUE{clauses} ORDER BY day', parameters, PERF_COLUMNS)
@@ -300,7 +302,7 @@ class PortfolioReader:
             '             PARTITION BY account ORDER BY day DESC) AS rn'
             '    FROM account_metrics'
             ') WHERE rn = 1 ORDER BY account')
-        return [dict(zip(columns, row)) for row in rows]
+        return [_stamp(dict(zip(columns, row))) for row in rows]
 
     def account_series(self, account: str,
                        start: Optional[datetime] = None,
@@ -311,7 +313,7 @@ class PortfolioReader:
         ``twr_index`` from N of these in parallel, and an account's detail sheet
         reads cash / holdings / contributed from the one it opened.
         """
-        clauses, parameters = _window('day', start, stop)
+        clauses, parameters = _window('day', start, stop, as_date=True)
         return self._series(
             f'SELECT {", ".join(PERF_COLUMNS)} FROM account_metrics '
             f' WHERE account = ?{clauses} ORDER BY day',
@@ -329,12 +331,17 @@ class PortfolioReader:
         single vectorised call and the rows are zipped afterwards, which is what
         makes an instant cost nothing to materialise: the 8× penalty
         ``TIMESTAMPTZ`` carries is paid per *object*, and Arrow builds none.
+
+        The UTC guard is applied **per column and not per cell**, which is the
+        other half of that: walking every value through a Python function is the
+        very cost the frontier was moved to avoid. The store's session is pinned
+        to UTC (:func:`store.prepare`), so a naive instant is a fault rather than
+        a shape — one sample answers for the column, and the slow path only runs
+        where there is something to repair.
         """
         table = self._store.arrow(sql, parameters)
-        columns = [
-            [_stamp_value(value) for value in table.column(index).to_pylist()]
-            for index in range(table.num_columns)
-        ]
+        columns = [_stamped(table.column(index).to_pylist())
+                   for index in range(table.num_columns)]
         return [dict(zip(names, values)) for values in zip(*columns)]
 
 
@@ -363,28 +370,66 @@ def bucket_for_window(span_days: float) -> Optional[str]:
 
 
 def _window(column: str, start: Optional[datetime],
-            stop: Optional[datetime]) -> tuple:
+            stop: Optional[datetime], as_date: bool = False) -> tuple:
     """Render the optional ``[start, stop]`` bounds as predicates + parameters.
 
     Bound values are **parameters**, never literals. v4 formatted them into the
     SQL because InfluxDB 3's client took a string; DuckDB binds, so the whole
     ``utc_z`` / ``escape_literal`` apparatus of ``influx_sql.py`` — and the
     bare-UTC-Z literal trap it existed for — goes with it.
+
+    ``as_date`` is the store's two kinds of time meeting the API's one. A window
+    always arrives as an **instant** — the route parses ISO-8601 and defaults
+    ``from`` to ``now − 365 days``, which is never midnight — while the perf
+    series is keyed by **day**. Compared raw, DuckDB widens the ``DATE`` to
+    midnight and ``day >= 2025-08-10T14:23Z`` drops 2025-08-10 entirely: the
+    curve silently starts one day after the window it prints in its own
+    ``from``. The cast is where the two are reconciled, once, rather than at
+    each call site.
     """
+    bound = 'CAST(? AS DATE)' if as_date else '?'
     clauses = ''
     parameters: List[Any] = []
     if start is not None:
-        clauses += f' AND {column} >= ?'
+        clauses += f' AND {column} >= {bound}'
         parameters.append(start)
     if stop is not None:
-        clauses += f' AND {column} <= ?'
+        clauses += f' AND {column} <= {bound}'
         parameters.append(stop)
     return clauses, parameters
 
 
 def _stamp(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Stamp every instant in a row as UTC-aware."""
-    return {key: _stamp_value(value) for key, value in row.items()}
+    """Make one row safe to hand out. For a handful of rows.
+
+    Two guards, and the second is not about time: **JSON has no NaN**, so a
+    fundamental yfinance never had reaches ``jsonify`` as a bare ``NaN`` token —
+    which Python's own parser accepts and a browser's ``JSON.parse`` refuses, so
+    the page gets a ``200`` whose body it cannot read. :func:`store.finite` is
+    the one rule, applied here as the last line of defence over rows that were
+    stored before the writers had it.
+    """
+    return {key: store.finite(_stamp_value(value))
+            for key, value in row.items()}
+
+
+def _stamped(values: List[Any]) -> List[Any]:
+    """One Arrow column, with the guards decided **once** for the column.
+
+    A column is one type, so *which* guard it needs is a property of the column
+    and not of each of its cells. Deciding per cell would put a Python call on
+    every value of a series read — the cost :meth:`Store.arrow` exists to
+    remove — so a sample answers for the column and the slow path runs only
+    where there is something to repair.
+    """
+    sample = next((value for value in values if value is not None), None)
+    if isinstance(sample, datetime):
+        if sample.tzinfo is not None:
+            return values
+        return [_stamp_value(value) for value in values]
+    if isinstance(sample, float):
+        return [store.finite(value) for value in values]
+    return values
 
 
 def _stamp_value(value: Any) -> Any:

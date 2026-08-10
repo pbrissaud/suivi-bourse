@@ -29,6 +29,7 @@ because that is not survivable.
 """
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
@@ -262,35 +263,68 @@ class Store:
     def __init__(self, path: Path, connection: 'duckdb.DuckDBPyConnection'):
         self.path = path
         self._connection = connection
-        # One statement at a time on this connection (issue #700). A DuckDB
-        # connection carries **one** pending result: ``execute`` stores it on the
-        # connection and ``fetchall`` collects it, so two threads calling the
-        # pair concurrently can have the second's ``execute`` replace the first's
-        # result before it is fetched — silently handing thread A thread B's
-        # rows. That was survivable while the store held only the ledger, read
-        # from request threads and written by the ingestion; it stops being so
-        # here, where the scrape threads write prices every cycle and the read
-        # layer serves the pages off the same connection.
+        # **One thread inside this connection at a time** (issue #700), for two
+        # reasons that arrive together and that a single reentrant lock answers.
         #
-        # This lock is **not** the writers' mutex and does not replace it: it is
-        # held for the duration of one call, so it makes a statement atomic and
-        # says nothing about a transaction. What keeps a ``BEGIN``/``COMMIT``
-        # whole against another thread is still
-        # :meth:`main.ConfigurationManager.writing`.
-        self._statement_lock = threading.Lock()
+        # A DuckDB connection carries **one** pending result: ``execute`` stores
+        # it on the connection and ``fetchall`` collects it, so two threads
+        # calling the pair concurrently can have the second's ``execute`` replace
+        # the first's result before it is fetched — silently handing thread A
+        # thread B's rows.
+        #
+        # And a transaction on one connection is **visible to every thread using
+        # it**. A reader landing between another thread's ``DELETE`` and its
+        # ``INSERT`` reads the hole: a backward chunk rewriting a year of
+        # ``price_point`` would make a chart lose that year for the length of the
+        # write, and the perf job would compute ``holdings_value`` from a
+        # half-deleted series and *persist* the wrong daily total. In v4 the
+        # readers were a second process against another database, so the problem
+        # had no expression; it appears the moment one embedded store holds both
+        # halves.
+        #
+        # Hence: every statement takes this lock, and :meth:`transaction` holds
+        # it from ``BEGIN`` to ``COMMIT``. **Reentrant**, so a writer's own
+        # statements pass straight through the transaction it is inside. It is
+        # not the writers' mutex — :meth:`main.ConfigurationManager.writing`
+        # groups gestures that span several statements *without* a transaction —
+        # and the two are always taken in that order, so they cannot cycle.
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------ #
     # Execution
     # ------------------------------------------------------------------ #
 
-    @property
-    def connection(self) -> 'duckdb.DuckDBPyConnection':
-        """The raw connection, for the modules that own a write path."""
-        return self._connection
+    # There is deliberately no accessor for the raw connection. It existed for
+    # "the modules that own a write path", and :meth:`transaction` is what they
+    # own now — a handle that bypassed the lock would be a way to reintroduce
+    # exactly the two defects the lock exists against, on the one object where
+    # they are invisible until production.
+
+    @contextmanager
+    def transaction(self):
+        """``BEGIN`` … ``COMMIT``, with every other thread kept outside it.
+
+        The one way to open a transaction on this store, and the reason it is a
+        context manager rather than three ``execute`` calls: the lock has to be
+        held across the whole of it. A reader that slipped in between a
+        ``DELETE`` and its ``INSERT`` would read the hole — and, in the perf
+        job's case, write a daily total computed from it.
+
+        Rolls back and re-raises on any exception, so a failed write leaves the
+        previous state whole.
+        """
+        with self._lock:
+            self._connection.execute('BEGIN TRANSACTION')
+            try:
+                yield self
+            except Exception:
+                self._connection.execute('ROLLBACK')
+                raise
+            self._connection.execute('COMMIT')
 
     def execute(self, sql: str, parameters: Optional[Sequence[Any]] = None):
         """Run one statement. Errors propagate — this is not a read layer."""
-        with self._statement_lock:
+        with self._lock:
             if parameters is None:
                 return self._connection.execute(sql)
             return self._connection.execute(sql, list(parameters))
@@ -304,7 +338,7 @@ class Store:
         """
         if not rows:
             return
-        with self._statement_lock:
+        with self._lock:
             self._connection.executemany(sql, [list(row) for row in rows])
 
     def query(self, sql: str,
@@ -314,7 +348,7 @@ class Store:
         For a handful of rows. A **wide** read goes through :meth:`arrow`
         instead — see the note there.
         """
-        with self._statement_lock:
+        with self._lock:
             if parameters is None:
                 return self._connection.execute(sql).fetchall()
             return self._connection.execute(sql, list(parameters)).fetchall()
@@ -332,7 +366,7 @@ class Store:
         It is a constraint on the read primitives, not a revision of the column
         type: ``TIMESTAMPTZ`` is still what an observed instant is stored as.
         """
-        with self._statement_lock:
+        with self._lock:
             if parameters is None:
                 return self._connection.execute(sql).fetch_arrow_table()
             return self._connection.execute(
@@ -376,10 +410,46 @@ class Store:
     # ------------------------------------------------------------------ #
 
     def close(self) -> None:
-        """Close the connection. Safe to call twice."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        """Close the connection. Safe to call twice.
+
+        **Under the lock**, like every other touch of the connection (issue
+        #700). ``shutdown_runtime`` stops the scheduler with ``wait=False`` — a
+        scrape in flight must not hold the shutdown open for a whole yfinance
+        timeout — so a job can still be inside a write when the worker starts
+        tearing down. Before this ticket that was harmless, the scheduled jobs
+        writing to another database entirely; they write *here* now, and freeing
+        the connection under them is a segfault-shaped way to end a process.
+        """
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
+
+
+def finite(value):
+    """A number on its way into — or out of — a ``DOUBLE`` column, or ``None``.
+
+    The one place that says **a NaN is not a number**, and it is a boundary rule
+    rather than arithmetic. v4 carried it on both sides of the InfluxDB path
+    (``influx_sql.is_valid_number``) and both sides need it for the same two
+    reasons, which is why it is one function and not two:
+
+    * on the way **in**, yfinance hands back a NaN for a fundamental it does not
+      have — a ``trailingPE`` on a fund, a yield on a share that pays none —
+      and a NaN stored in a column is a value that compares false against
+      itself, so ``WHERE x IS NOT NULL`` says it is there and every arithmetic
+      it touches becomes NaN;
+    * on the way **out**, **JSON has no NaN**. ``jsonify`` emits a bare ``NaN``
+      token, which Python's own parser accepts and a browser's ``JSON.parse``
+      refuses outright — so the response is a ``200`` whose body the page cannot
+      read, with nothing in the log to say why.
+
+    ``None`` is the honest answer in both directions: the field was not
+    observed, which is what an absent value means everywhere else in the store.
+    """
+    if isinstance(value, float) and value != value:
+        return None
+    return value
 
 
 def store_path() -> Path:
@@ -483,7 +553,7 @@ def open_store(path: Optional[Path] = None) -> Store:
 
 
 __all__ = [
-    'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
+    'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path', 'finite',
     'DDL', 'TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
     'DEFAULT_ACCOUNT_ROW',
 ]

@@ -418,8 +418,7 @@ def import_accounts_file(store, path: Path, *, fingerprint: Optional[str] = None
     digest = fingerprint or fingerprint_of(path)
     rows = accounts_module.load_account_rows(path)
 
-    store.execute('BEGIN TRANSACTION')
-    try:
+    with store.transaction():
         source_id = _upsert_source(store, path.name, KIND_ACCOUNTS, stamped,
                                    digest)
         # The mirror of what :func:`import_file` does with accounts: a source
@@ -438,10 +437,6 @@ def import_accounts_file(store, path: Path, *, fingerprint: Optional[str] = None
         # reload. That raise is fatal at boot (``build_runtime`` exits), so the
         # API that could forget this import would never come up to be asked.
         EventAggregator().aggregate(read_events(store))
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
-    store.execute('COMMIT')
     return written
 
 
@@ -485,8 +480,7 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
     digest = fingerprint or fingerprint_of(path)
     parsed = EventLoader(str(path)).load()
 
-    store.execute('BEGIN TRANSACTION')
-    try:
+    with store.transaction():
         source_id = _upsert_source(store, path.name, KIND_EVENTS, stamped, digest)
         store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
         accounts_module.forget_source(store, source_id)
@@ -513,10 +507,6 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
         whole = read_events(store)
         validator.validate_or_raise(whole)
         EventAggregator().aggregate(whole)
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
-    store.execute('COMMIT')
     return written
 
 

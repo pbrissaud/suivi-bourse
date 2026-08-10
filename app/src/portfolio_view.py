@@ -192,7 +192,7 @@ def _build_share(symbol: str, group: List[Dict[str, Any]]) -> SharePosition:
     plus_value = _latent(market_value, cost_basis)
     return SharePosition(
         symbol=symbol,
-        name=_newest_value(group, 'name'),
+        name=_first_value(group, 'name'),
         currency=quote.get('currency'),
         exchange=quote.get('exchange'),
         quote_type=quote.get('quote_type'),
@@ -455,6 +455,7 @@ def build_accounts(
 def valuation_series(
     closes: Sequence[Dict[str, Any]],
     positions_at: Callable[[date], Sequence[Dict[str, Any]]],
+    carried_in: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
     """The daily valuation curve, from the day's closes and the day's holdings.
 
@@ -473,13 +474,23 @@ def valuation_series(
     known close forward is the fix, and it is pure logic, so it is tested with
     literal lists.
 
-    A symbol held on a day for which **no close has ever been seen** contributes
-    nothing to ``value`` while still contributing its cost to ``invested``. That
-    is the crater #706 is about, and it is deliberately left standing here: the
-    carrying convention has two terms — no price *and* a terminal backfill — and
-    the second one does not exist yet. Inventing it now would make the curve
-    flat-at-cost through a reconstruction and correct itself later, which is the
-    exact misreading that ticket exists to prevent.
+``carried_in`` is each symbol's last close **before** the window, and it is
+    not an optimisation. The holdings come from the replay, which knows nothing
+    of the window, while the prices come from a bounded read — so without it a
+    symbol whose last close predates ``from`` counts its whole cost in
+    ``invested`` and nothing at all in ``value``, and the curve reports a loss
+    of that position's entire worth for as long as the window's left edge sits
+    after its last quote. The two terms have to be bounded the same way, and the
+    price is the one that can be carried.
+
+    A symbol held on a day for which **no close has ever been seen** — carried
+    in or not — still contributes nothing to ``value`` while contributing its
+    cost to ``invested``. That is the crater #706 is about, and it is
+    deliberately left standing here: the carrying convention has two terms — no
+    price *and* a terminal backfill — and the second does not exist yet.
+    Inventing it now would make the curve flat-at-cost through a reconstruction
+    and correct itself later, which is the misreading that ticket exists to
+    prevent.
     """
     days = sorted({row['day'] for row in closes if row.get('day') is not None})
     by_day: Dict[Any, Dict[str, float]] = {}
@@ -489,7 +500,7 @@ def valuation_series(
             continue
         by_day.setdefault(day, {})[symbol] = row['price']
 
-    price: Dict[str, float] = {}
+    price: Dict[str, float] = dict(carried_in or {})
     series: List[Dict[str, Any]] = []
     for day in days:
         price.update(by_day.get(day, {}))
@@ -732,13 +743,15 @@ def _ratio(numerator: Optional[float],
     return numerator / denominator
 
 
-def _newest_value(rows: Sequence[Dict[str, Any]], field: str) -> Optional[float]:
+def _first_value(rows: Sequence[Dict[str, Any]], field: str) -> Any:
     """First non-``None`` value of ``field`` across a symbol's rows.
 
     Used for the name, which lives on the position and may therefore differ
     between two accounts that legitimately call the same line differently. The
     table shows one of them; the sheet shows the breakdown, where each account
-    keeps its own.
+    keeps its own. Deliberately *first* and not *newest*: the rows are ordered
+    by account and carry no instant of their own — a position is a current
+    state, not an observation — so there is no "newest" among them to pick.
     """
     for row in rows:
         value = row.get(field)

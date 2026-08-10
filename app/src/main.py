@@ -1401,10 +1401,13 @@ class SuiviBourseMetrics:
         this driver would otherwise be the one place a sold line still reached
         Yahoo.
         """
-        now = datetime.now(timezone.utc)
         # One snapshot for the whole pass, like every other job (issue #658):
         # the symbol set and the holdings it publishes gauges for have to come
-        # from the same generation.
+        # from the same generation. The *instant*, on the other hand, is taken
+        # per symbol: a pass over forty tickers takes minutes, and one ``now``
+        # for all of them would stamp the last ones at a moment they were not
+        # observed at — on the table whose whole subject is when a price was
+        # seen.
         shares = self.shares
         held = sorted({share['symbol'] for share in shares
                        if share.get('symbol') and share.get('quantity')})
@@ -1422,7 +1425,8 @@ class SuiviBourseMetrics:
                 app_logger.warning(
                     f"No data fetched for {symbol}, skipping the quote write")
             else:
-                self._write_quote(symbol, last_quote, info, now)
+                self._write_quote(symbol, last_quote, info,
+                                  datetime.now(timezone.utc))
 
     # ------------------------------------------------------------------ #
     # Market-aware per-symbol scheduling (issue #616)
@@ -2469,10 +2473,10 @@ class SuiviBourseMetrics:
 
         # Injected price source: per-symbol daily closes, forward-filled. The
         # performance module never touches the store — it only calls price_at.
-        opened = self.config_manager.store
+        store_handle = self.config_manager.store
         symbols = {s['symbol'] for s in snapshot.shares if s.get('symbol')}
         price_pairs = {
-            sym: sorted(quotes.price_series(opened, sym).items())
+            sym: sorted(quotes.price_series(store_handle, sym).items())
             for sym in symbols
         }
 
@@ -2546,8 +2550,14 @@ class SuiviBourseMetrics:
         # rewritten every cycle anyway, so only a sub-today tail needs re-arming.
         try:
             with self.config_manager.writing() as opened:
-                perf_series.write_account_metrics(opened, acc_points)
-                perf_series.write_portfolio_totals(opened, total_points)
+                # **One** transaction for both tables: they describe the same
+                # cycle, and a failure between them would leave the per-account
+                # series ahead of the global one — with the watermark re-armed
+                # for a sub-today tail only, so the disagreement would outlive
+                # the cycle that caused it.
+                with opened.transaction():
+                    perf_series.write_account_metrics(opened, acc_points)
+                    perf_series.write_portfolio_totals(opened, total_points)
         except Exception:
             if write_from < today:
                 self._mark_perf_dirty(write_from)

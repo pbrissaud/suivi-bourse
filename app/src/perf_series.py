@@ -30,6 +30,8 @@ from typing import Any, Sequence
 
 from logfmt_logger import getLogger
 
+from store import finite
+
 logger = getLogger("perf_series")
 
 #: The seven value columns both tables carry, in DDL order. One list, so the two
@@ -62,7 +64,8 @@ def write_account_metrics(store, points: Sequence[Any]) -> int:
     """Upsert the daily per-account series. Returns how many points were written.
 
     ``points`` are :class:`events.schemas.AccountMetricPoint`. A field left
-    ``None`` is written as ``NULL`` and **not skipped**: in the store a declared
+    ``None`` — or a NaN, which :func:`store.finite` turns into one — is written
+    as ``NULL`` and **not skipped**: in the store a declared
     column that was never written reads as ``NULL`` rather than not existing
     (ADR-0001), so absence is a shape of the data and naming a field in a
     ``SELECT`` is safe again. That is the whole of what ``_ABSENT_SCHEMA`` used
@@ -70,7 +73,7 @@ def write_account_metrics(store, points: Sequence[Any]) -> int:
     """
     written = _upsert(
         store, 'account_metrics', ACCOUNT_COLUMNS, ('account', 'day'),
-        [[point.account, point.day, *(getattr(point, name)
+        [[point.account, point.day, *(finite(getattr(point, name))
                                       for name in VALUE_COLUMNS)]
          for point in points])
     if written:
@@ -88,14 +91,41 @@ def write_portfolio_totals(store, points: Sequence[Any]) -> int:
     """
     written = _upsert(
         store, 'portfolio_totals', TOTALS_COLUMNS, ('day',),
-        [[point.day, *(getattr(point, name) for name in VALUE_COLUMNS)]
+        [[point.day, *(finite(getattr(point, name)) for name in VALUE_COLUMNS)]
          for point in points])
     if written:
         logger.info(f"Wrote {written} portfolio_totals point(s)")
     return written
 
 
-# Nothing reads these two tables from here, and that is the schema rule seen
+def forget_account(store, account_id: str) -> int:
+    """Drop an account's cached figures. Returns how many days went.
+
+    Called by the **declaration's** writer when an account leaves, and it lives
+    here rather than there because this module owns the table (one writer per
+    row). What it settles is a question the foreign key asks and ADR-0013 already
+    answered: ``account_metrics.account`` references ``account(id)``, so once the
+    perf job has run, deleting an account trips a constraint — and the API's
+    designed answer (``200``, or ``409`` naming an event) becomes a ``503``.
+
+    Deleting is right rather than refusing, and the reason is what the series
+    *is*: a **cache** (ADR-0011), a pure function of the events, the prices and
+    the declaration. Refusing on it would make a figure the next cycle could
+    rebuild as binding as a fact the owner recorded — while ADR-0013's refusal is
+    about the one thing that cannot be rebuilt, an event naming the account, and
+    that refusal is checked first and still stands.
+    """
+    (removed,) = store.query(
+        'SELECT count(*) FROM account_metrics WHERE account = ?',
+        [account_id])[0]
+    store.execute('DELETE FROM account_metrics WHERE account = ?', [account_id])
+    if removed:
+        logger.info(
+            f"Dropped {removed} cached account_metrics day(s) of {account_id}")
+    return removed
+
+
+# Nothing *reads* these two tables from here, and that is the schema rule seen
 # from the writer's side: the perf job recomputes from the events, the prices
 # and the declaration — never from its own output, which is a cache. What the
 # pages read goes through :mod:`store_reads`, with the error contract a UI needs.
@@ -103,5 +133,5 @@ def write_portfolio_totals(store, points: Sequence[Any]) -> int:
 
 __all__ = [
     'VALUE_COLUMNS', 'ACCOUNT_COLUMNS', 'TOTALS_COLUMNS',
-    'write_account_metrics', 'write_portfolio_totals',
+    'write_account_metrics', 'write_portfolio_totals', 'forget_account',
 ]

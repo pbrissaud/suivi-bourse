@@ -269,8 +269,14 @@ def get_portfolio_history():
         # rows, and it is what gives the curve a holding on days no market
         # opened.
         timeline = EventAggregator().replay(_snapshot().events)
+        # The prices are bounded by the window and the holdings are not, so the
+        # curve is handed each symbol's last close *before* it: otherwise a
+        # position whose last quote predates ``from`` counts its cost and none
+        # of its value, and the chart reports a loss of everything it is worth.
         return jsonify({**payload, 'points': portfolio_view.valuation_series(
-            reader.daily_closes(start, stop), timeline.at)})
+            reader.daily_closes(start, stop), timeline.at,
+            carried_in={row['symbol']: row['price']
+                        for row in reader.prices_at(start)})})
 
     return jsonify({**payload, 'points': [
         {

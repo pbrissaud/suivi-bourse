@@ -6,6 +6,8 @@ over the same window leaves behind, and which of two writers moved the ``latest`
 line. A mock reports that a call happened; only a database reports that the
 result is right.
 """
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -125,6 +127,42 @@ def test_the_market_writer_never_invents_a_declaration(store):
     """
     with pytest.raises(Exception):
         quotes.record_quote(store, 'NOPE', NOW, 1.0, ATTRIBUTES)
+
+
+def test_a_nan_never_enters_the_store_and_never_leaves_it(declared):
+    """**JSON has no NaN**, and a column has no use for one either.
+
+    yfinance hands back a NaN for a fundamental it does not have — a
+    ``trailingPE`` on a fund, a yield on a share that pays none. Stored, it is a
+    value that compares false against itself, so ``IS NOT NULL`` says it is
+    there and every arithmetic it touches becomes NaN; served, ``jsonify``
+    emits a bare ``NaN`` token, which Python's own parser accepts and a
+    browser's ``JSON.parse`` refuses outright — a ``200`` whose body the page
+    cannot read, with nothing in the log to say why.
+
+    v4 carried the guard on both sides of the InfluxDB path; both sides need it
+    for the same two reasons, so it is one function.
+    """
+    quotes.record_quote(declared, 'AAPL', NOW, 185.0, dict(
+        ATTRIBUTES, pe_ratio=float('nan'), dividend_yield=float('nan')))
+
+    row = quotes.read_quote(declared, 'AAPL')
+    assert row['pe_ratio'] is None
+    assert row['dividend_yield'] is None
+    assert row['market_cap'] == 3.0e12
+
+    (served,) = store_reads.PortfolioReader(declared).positions()
+    assert served['pe_ratio'] is None
+
+
+def test_a_nan_close_is_not_a_price(declared):
+    written = quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW, 'price': float('nan')},
+        {'timestamp': NOW - timedelta(days=1), 'price': 100.0},
+    ])
+
+    assert written == 1
+    assert [price for _, price in _points(declared)] == [100.0]
 
 
 # --------------------------------------------------------------------------- #
@@ -396,6 +434,115 @@ def test_a_bucket_width_is_whitelisted_never_interpolated(declared):
 
     with pytest.raises(ValueError):
         reader.bucketed_series('AAPL', "1 day'); DROP TABLE price_point; --")
+
+
+def test_a_window_on_a_daily_series_keeps_the_day_it_starts_on(store):
+    """The store's two kinds of time meeting the API's one.
+
+    A window always arrives as an **instant** — the route parses ISO-8601 and
+    defaults ``from`` to ``now − 365 days``, which is never midnight — while the
+    perf series is keyed by **day**. Compared raw, DuckDB widens the ``DATE`` to
+    midnight and drops the first day outright: the curve starts a day after the
+    window it prints in its own ``from`` field, every single request.
+    """
+    for day in (date(2025, 8, 10), date(2025, 8, 11)):
+        perf_series.write_portfolio_totals(store, [PortfolioTotalPoint(
+            day=day, cash_balance=1.0, holdings_value=1.0, total_value=1.0,
+            net_contributed=1.0)])
+    reader = store_reads.PortfolioReader(store)
+    afternoon = datetime(2025, 8, 10, 14, 23, tzinfo=UTC)
+
+    days = [row['day'] for row in reader.totals_series(start=afternoon)]
+
+    assert days == [date(2025, 8, 10), date(2025, 8, 11)]
+
+
+def test_a_window_on_an_account_series_keeps_it_too(store):
+    store.execute("INSERT INTO account (id, type, label) "
+                  "VALUES ('pea', 'PEA', 'PEA')")
+    for day in (date(2025, 8, 10), date(2025, 8, 11)):
+        perf_series.write_account_metrics(store, [AccountMetricPoint(
+            account='pea', account_type='PEA', account_currency='EUR',
+            day=day, cash_balance=1.0, holdings_value=1.0, total_value=1.0,
+            net_contributed=1.0)])
+    reader = store_reads.PortfolioReader(store)
+
+    days = [row['day'] for row in reader.account_series(
+        'pea', start=datetime(2025, 8, 10, 14, 23, tzinfo=UTC))]
+
+    assert days == [date(2025, 8, 10), date(2025, 8, 11)]
+
+
+# --------------------------------------------------------------------------- #
+# One thread inside the connection at a time
+# --------------------------------------------------------------------------- #
+
+def test_a_reader_never_sees_the_middle_of_a_range_rewrite(declared):
+    """One embedded store means the readers share the writer's connection, and
+    a transaction on it is **visible to every thread using it**.
+
+    Left unguarded, a reader landing between ``record_history``'s ``DELETE`` and
+    its ``INSERT`` reads the hole: a backward chunk rewriting a year of prices
+    makes a chart lose that year for the length of the write, and the perf job
+    computes ``holdings_value`` from a half-deleted series and *persists* the
+    wrong daily total. In v4 the readers were a second process against another
+    database, so the defect had no expression at all — it appears the moment one
+    store holds both halves.
+    """
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW - timedelta(days=n), 'price': 100.0 + n}
+        for n in range(5)])
+    before = len(_points(declared))
+
+    seen = []
+    slow = declared.executemany
+
+    def crawl(*args, **kwargs):
+        time.sleep(0.3)
+        return slow(*args, **kwargs)
+
+    declared.executemany = crawl
+    writer = threading.Thread(target=quotes.record_history, args=(declared, 'AAPL', [
+        {'timestamp': NOW - timedelta(days=n), 'price': 200.0 + n}
+        for n in range(5)]))
+    writer.start()
+    try:
+        time.sleep(0.1)
+        seen.append(len(_points(declared)))
+    finally:
+        writer.join()
+        declared.executemany = slow
+
+    # The read waited for the commit rather than reading the hole: never 0, and
+    # never a count between the two.
+    assert seen == [before]
+    assert len(_points(declared)) == before
+
+
+def test_deleting_an_account_takes_its_cached_figures_with_it(store):
+    """The perf series is a **cache**, so it never refuses a gesture.
+
+    ``account_metrics.account`` references ``account(id)``, and #700 gave that
+    key its first writer: without dropping the rows, the perf job's very first
+    cycle would make every declared account undeletable — a constraint error the
+    API renders as a ``503`` where the gesture is designed to answer ``200``.
+    The refusal that stands is ADR-0013's, on an **event**, which is the thing
+    that cannot be rebuilt; a daily figure the next cycle recomputes is not.
+    """
+    import accounts as accounts_module
+
+    store.execute("INSERT INTO account (id, type, label) "
+                  "VALUES ('pea', 'PEA', 'PEA')")
+    perf_series.write_account_metrics(store, [AccountMetricPoint(
+        account='pea', account_type='PEA', account_currency='EUR',
+        day=date(2024, 1, 1), cash_balance=1.0, holdings_value=1.0,
+        total_value=1.0, net_contributed=1.0)])
+
+    accounts_module.delete_account(store, 'pea')
+
+    assert store.query("SELECT count(*) FROM account WHERE id = 'pea'") == [(0,)]
+    assert store.query(
+        "SELECT count(*) FROM account_metrics WHERE account = 'pea'") == [(0,)]
 
 
 # --------------------------------------------------------------------------- #

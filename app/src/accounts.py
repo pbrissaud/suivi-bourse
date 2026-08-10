@@ -42,6 +42,7 @@ from typing import Iterable, List, Optional, Sequence, Set
 
 from logfmt_logger import getLogger
 
+import perf_series
 import store as store_module
 from events.schemas import (
     ACCOUNT_FILE_COLUMNS, Account, DEFAULT_ACCOUNT, Portfolio)
@@ -520,6 +521,7 @@ def _retire(store, ids: Iterable[str]) -> None:
                 'UPDATE account SET type = ?, label = ?, source_id = NULL '
                 'WHERE id = ?', [seeded_type, seeded_label, DEFAULT_ACCOUNT])
             continue
+        perf_series.forget_account(store, account_id)
         store.execute('DELETE FROM account WHERE id = ?', [account_id])
 
 
@@ -600,6 +602,13 @@ def delete_account(store, account_id: str) -> None:
         raise ReadOnlyAccount(
             f"Account {account_id!r} came from a file; forget that import to "
             f"remove it")
+    # The cached figures go with it (issue #700). ``account_metrics.account``
+    # references this row, so the perf job's first cycle would otherwise make
+    # every declared account undeletable — a constraint error the API renders as
+    # a ``503``, in place of the ``200`` this gesture is designed to answer. The
+    # series is a cache and rebuilds itself; the refusal that matters is the one
+    # above, on an event, which cannot.
+    perf_series.forget_account(store, account_id)
     store.execute('DELETE FROM account WHERE id = ?', [account_id])
     logger.info(f"Removed account {account_id}")
 

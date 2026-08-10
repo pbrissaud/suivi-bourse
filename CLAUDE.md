@@ -304,8 +304,22 @@ follows branches off it: the configuration path fills `import_source`/`account`/
 `symbol`/`event` (#697, #698) and the **replay fills `position`/`account_state`**
 (#699, `positions.py`).
 
-Four things about it are decisions rather than defaults:
+Five things about it are decisions rather than defaults:
 
+- **One thread is inside the connection at a time, and a transaction is the
+  unit** (issue #700). `Store` holds a reentrant lock: every statement takes it,
+  and `Store.transaction()` — the only way to open one — holds it from `BEGIN`
+  to `COMMIT`. Both halves earn it. A DuckDB connection carries **one** pending
+  result, so two threads doing `execute`/`fetchall` can hand each other the
+  wrong rows; and a transaction on one connection is **visible to every thread
+  using it**, so a reader landing between a `DELETE` and its `INSERT` reads the
+  hole — a chart losing a year while a backward chunk is rewritten, and the perf
+  job computing `holdings_value` from a half-deleted series and *persisting* the
+  wrong daily total. In v4 the readers were a second process against another
+  database and the problem had no expression; it appears the moment one store
+  holds both halves. `ConfigurationManager.writing()` is a **different** lock and
+  survives: it groups gestures spanning several statements *without* a
+  transaction, and it is always taken first, so the two cannot cycle.
 - **The DDL is applied with `IF NOT EXISTS` and there is no migration
   machinery.** The rule that generates the schema is *declaration and derived
   state never share a row*, so every row has exactly one writer: the
@@ -329,8 +343,17 @@ Four things about it are decisions rather than defaults:
   row it took over impossible to hand back. Integrity moves to the writer the
   same way: `accounts` is the table's only writer and retires every row of an
   import before `ledger.forget_import` deletes the source it points at.
+- **A NaN is not a number** (`store.finite`), on both boundaries and for two
+  different reasons: stored, it compares false against itself, so
+  `IS NOT NULL` says it is there and every arithmetic it touches becomes NaN;
+  served, **JSON has no NaN** — `jsonify` emits a bare token that Python's own
+  parser accepts and a browser's `JSON.parse` refuses, so the page gets a `200`
+  whose body it cannot read. `None` is the honest answer either way.
 - **Two kinds of time, never mixed**: `TIMESTAMPTZ` in UTC for an observed
-  instant, `DATE` for a calendar day.
+  instant, `DATE` for a calendar day. They meet at the API, where a window
+  always arrives as an instant: a bound on a `DATE` column is **cast**, or
+  DuckDB widens the column to midnight and the first day of every window is
+  silently dropped.
 - **The seed has two halves.** The `default` account row is written **at
   creation only**, and since #698 it is also never removed — a file may take it
   over, and forgetting that file hands the row back **whole**, `type` and `label`
@@ -783,7 +806,12 @@ The rules, each of them keeping a mistake a refusal:
   declared"*: `EventAggregator` keys by `(account, symbol)` unconditionally.
 - **An account is undeletable while an event names it**, and so is the import
   that declared it — the cascade is *refused*, never performed (`409` on the
-  API). Forget the event imports first.
+  API). Forget the event imports first. Its **cached** figures are not in that
+  rule and go with it (`perf_series.forget_account`): `account_metrics`
+  references the account row, so without the drop the perf job's first cycle
+  would make every declared account undeletable — and a refusal on a figure the
+  next cycle rebuilds would put a cache on the same footing as a fact the owner
+  recorded.
 - What came from a file is **read-only** (`source_id` set); what was created in
   the app is editable (`source_id NULL`). `POST`/`PATCH`/`DELETE /api/accounts`
   serve the second and refuse the first.

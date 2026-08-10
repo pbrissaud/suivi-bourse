@@ -107,18 +107,13 @@ def save(store, values: Mapping[str, Any]) -> Tuple[Change, ...]:
     _refuse_a_reinterpretation(store, current, dict(pending))
 
     changes: List[Change] = []
-    store.execute('BEGIN TRANSACTION')
-    try:
+    with store.transaction():
         for key, value in pending:
             store.execute(
                 'INSERT INTO setting (key, value) VALUES (?, ?) '
                 'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
                 [key, settings_registry.stored_form(key, value)])
             changes.append(Change(key, current.get(key), value))
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
-    store.execute('COMMIT')
     return tuple(changes)
 
 

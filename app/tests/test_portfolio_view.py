@@ -470,6 +470,35 @@ def test_a_holding_with_no_close_yet_contributes_nothing_to_the_value():
     assert series[0]['invested'] == 1400.0
 
 
+def test_a_price_from_before_the_window_is_carried_into_it():
+    """The two terms have to be bounded the same way.
+
+    The holdings come from the replay, which knows nothing of the window; the
+    prices come from a read that is bounded by it. Without the carry-in, a
+    symbol whose last close predates ``from`` counts its whole cost in
+    ``invested`` and nothing in ``value`` — the curve reporting a loss of that
+    position's entire worth for as long as the window's left edge sits after
+    its last quote.
+    """
+    series = valuation_series(
+        [close(2, 'AAPL', 110.0)],
+        lambda day: [holding('AAPL', quantity=10.0, cost_basis=900.0),
+                     holding('OLD', quantity=5.0, cost_basis=400.0)],
+        carried_in={'OLD': 80.0})
+
+    assert series[0]['value'] == 10.0 * 110.0 + 5.0 * 80.0
+    assert series[0]['invested'] == 1300.0
+
+
+def test_a_carried_in_price_is_superseded_by_a_close_inside_the_window():
+    series = valuation_series(
+        [close(1, 'AAPL', 100.0), close(2, 'AAPL', 110.0)],
+        lambda day: [holding('AAPL', quantity=10.0)],
+        carried_in={'AAPL': 80.0})
+
+    assert [point['value'] for point in series] == [1000.0, 1100.0]
+
+
 def test_an_empty_window_is_an_empty_series():
     assert valuation_series([], lambda day: []) == []
 

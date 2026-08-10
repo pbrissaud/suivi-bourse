@@ -48,6 +48,8 @@ from typing import Dict, Mapping, Optional, Sequence
 
 from logfmt_logger import getLogger
 
+from store import finite
+
 logger = getLogger("quotes")
 
 #: What ``symbol_quote`` carries about the instrument, as opposed to about the
@@ -145,30 +147,26 @@ def record_quote(store, symbol: str, moment: datetime,
     did not make. Passing nothing therefore blanks them, which is what a caller
     holding only a price wants and never what the scrape does.
 
-    Both statements plus the ``latest`` rule run in one transaction, so a reader
-    never sees a point whose ``latest`` row has not caught up with it.
+    Both statements plus the ``latest`` rule run in one transaction, and
+    :meth:`store.Store.transaction` holds the connection for its duration — so
+    no reader ever sees a point whose ``latest`` row has not caught up with it.
     """
     ts = truncate(moment)
     values = dict(attributes or {})
 
-    store.execute('BEGIN TRANSACTION')
-    try:
-        refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
-        assignments = ', '.join(
-            f'{name} = excluded.{name}' for name in refreshed)
+    refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
+    assignments = ', '.join(f'{name} = excluded.{name}' for name in refreshed)
+    with store.transaction():
         store.execute(
             f'INSERT INTO symbol_quote (symbol, {", ".join(refreshed)}) '
             f'VALUES (?{", ?" * len(refreshed)}) '
             f'ON CONFLICT (symbol) DO UPDATE SET {assignments}',
-            [symbol, ts, *(values.get(name) for name in QUOTE_ATTRIBUTES)])
+            [symbol, ts,
+             *(finite(values.get(name)) for name in QUOTE_ATTRIBUTES)])
         store.execute(
             'INSERT INTO price_point (symbol, ts, price_native) VALUES (?, ?, ?)',
-            [symbol, ts, price_native])
-        _advance_latest(store, symbol, ts, price_native)
-        store.execute('COMMIT')
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
+            [symbol, ts, finite(price_native)])
+        _advance_latest(store, symbol, ts, finite(price_native))
 
 
 # --------------------------------------------------------------------------- #
@@ -200,6 +198,11 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
     stopped live writer allows — and where it does happen the survivor is
     Yahoo's own bar for that hour rather than a point about the same hour.
 
+    The delete and the insert are **one transaction**, and the store holds the
+    connection for its whole length: a reader landing between them would see the
+    span missing — a chart losing a year of history for the length of the write,
+    and the perf job computing a daily total from the hole and persisting it.
+
     The ``latest`` rule is applied once, with the batch's newest instant: a
     backward chunk is entirely older and updates nothing, a forward chunk moves
     the row. And because the deleted span is the batch's own, a ``last_price_ts``
@@ -211,15 +214,17 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
         price = point.get('price')
         if price is None:
             continue
-        rows.append((symbol, truncate(point['timestamp']), float(price)))
+        price = finite(float(price))
+        if price is None:
+            continue
+        rows.append((symbol, truncate(point['timestamp']), price))
     if not rows:
         return 0
 
     oldest = min(row[1] for row in rows)
     newest = max(row[1] for row in rows)
 
-    store.execute('BEGIN TRANSACTION')
-    try:
+    with store.transaction():
         _ensure_row(store, symbol)
         store.execute(
             'DELETE FROM price_point '
@@ -228,13 +233,13 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
         store.executemany(
             'INSERT INTO price_point (symbol, ts, price_native) VALUES (?, ?, ?)',
             rows)
+        # The **last** row landing on the newest second, not the first: two
+        # points can truncate to the same instant, and the survivor rule this
+        # store follows everywhere else — the day's last point — is the one that
+        # keeps the ``latest`` line agreeing with what a read of the series says.
         _advance_latest(
             store, symbol, newest,
-            next(price for _, ts, price in rows if ts == newest))
-        store.execute('COMMIT')
-    except Exception:
-        store.execute('ROLLBACK')
-        raise
+            [price for _, ts, price in rows if ts == newest][-1])
 
     logger.debug(f"Wrote {len(rows)} historical price(s) for {symbol}")
     return len(rows)
