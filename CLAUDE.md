@@ -630,19 +630,36 @@ The application runs independent scheduled jobs on a single APScheduler:
   is precisely what that writer was keeping true, so left running it would
   refetch `[newest → now]` from Yahoo **every day, forever**, for every symbol
   the owner has ever sold out of.
-- **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
-  (opt-in accounts only) as its **own gated interval job** on
-  `scheduling.PERF_TICK` (120s, a constant and not a dial since #701 — the gate
-  is the real cadence, so the number only decides how long a recompute waits
-  after the change that earned it), decoupled from the per-symbol scrape jobs (issue #618). Each
-  run is gated by the pure predicate `scheduling.perf_should_run()` — it runs
-  only when something changed since the last run: the events cache reloaded, a
-  backfill watermark is pending, or a `REGULAR` write occurred. The live-write
-  signal is a single global bool set on the `REGULAR` write path in
-  `_scrape_symbol`, checked-and-cleared up front under `_perf_lock` and seeded
-  `True` at boot (so today's point is fresh after an overnight restart). A
-  fully-closed market wave writes nothing — the non-trading-day gap is by design
-  (#606) and there is no closed-day Parquet drip (#597).
+- **Performance**: Rebuilds the `account_metrics` / `portfolio_totals` series
+  (opt-in accounts only until #708) as its **own interval job** on
+  `scheduling.PERF_TICK` — 120s, a constant and not a dial (#701, #707) —
+  decoupled from the per-symbol scrape jobs (issue #618), and firing at the boot
+  rather than one tick later (`next_run_time = now`). The recompute is
+  **integral and unconditional** (ADR-0011): the two tables are a *cache*, a
+  pure function of the ledger, the price points and the declared accounts, and a
+  full pass costs 0,4 % of the tick at five years. `scheduling.perf_should_run`
+  is deleted **without a replacement**, and so are the four things that fed it —
+  `_perf_lock`, `_perf_dirty_from`, `_perf_dirty_live`, `_perf_last_events` —
+  plus `_mark_perf_dirty` / `_consume_perf_dirty_from`, the raise on the
+  `REGULAR` write path, `decide`'s fourth return value, and the `PERF_SKIPPED`
+  verdict. That was **the last coupling between the backfill and the perf**.
+  Three other shapes were refused and each for its own reason: an end-of-backfill
+  step is right only while the reconstruction runs and false the moment it
+  finishes; an event bus rebuilds the coupling one indirection away; a step of
+  the scrape fires N recomputes per market-open wave. The **only inputs are the
+  store and the clock** — the job replays its own `Timeline`, because `position`
+  and `account_state` are *current* states while performance needs the state of
+  every day. The write is a **block `UPSERT` plus a bounded prune** of what falls
+  outside the spans just written (never a replacement, never row by row), which
+  is what keeps the file from drifting: a `DELETE`+`INSERT` reaches 44,8 MB for
+  a 1,6 MB table over a thousand cycles, the upsert plateaus at 1,1. The series
+  is **dense over calendar days**, weekends and holidays included, prices carried
+  forward — "no point on a non-trading day" is a property of *observed* prices,
+  and TWR chains over consecutive days. Deleting the rows is a complete rebuild:
+  the next cycle rewrites them, which is why the administration page has no
+  rebuild gesture to design. The cost accepted: the two tables stop being a trace
+  of what the app believed at an instant — if a figure shown yesterday changed
+  today, the backfill advanced, and nothing remembers.
 
 **The price and the position stopped sharing a row** (issue #700). `quotes.py`
 is the market's own writer — `symbol_quote` and `price_point`, and nothing else
@@ -740,12 +757,12 @@ currency tick would otherwise pass for a price that is still being refreshed.
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK, gated)│
-│                          │  │                   │  │   interval dial) │  │                    │
-│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • perf_should_run? │
-│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │ • Recompute perf   │
-│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │   series (opt-in   │
-│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │   accounts only)   │
+│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK,       │
+│                          │  │                   │  │   interval dial) │  │   ungated)         │
+│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • Replay the       │
+│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
+│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │ • Full recompute   │
+│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │ • Upsert + prune   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -1057,7 +1074,7 @@ app/src/
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
 ├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
-├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert (#700)
+├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
 ├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
@@ -1195,10 +1212,13 @@ costing +563 MB on a 319 MB base. Uniqueness moves to the writers.
 | `price_converted` / `fx_rate` | the close in the reporting currency and the rate that produced it (#702). `NULL` means *transient* — no currency answered yet, or a pair that did not resolve — repaired by #704's lateral pass. `price_converted == price_native × fx_rate` holds on every row, which is what makes the row a journal |
 
 **`account_metrics`** (opt-in accounts only; one row per calendar **day**, block
-upsert on `(account, day)`). The series is recomputed in full every cycle but
-only the **stale tail** is written today — a window that loses its subject with
-#707, since an upsert on a primary key does not grow the file the way a
-`DELETE`+`INSERT` replacement does (ADR-0011: 44,8 MB against 1,1).
+upsert on `(account, day)`). The series is recomputed **and rewritten in full**
+every cycle since #707: the stale-tail window lost its subject, an upsert on a
+primary key not growing the file the way a `DELETE`+`INSERT` replacement does
+(ADR-0011: 44,8 MB against 1,1). What follows the upsert is a **bounded prune**
+— every day outside the spans the cycle wrote, per account, so an account that
+computes to nothing loses its days along with the orphaned one. The primary key
+is therefore a **write mechanism** and not only a constraint.
 
 | Column | Description |
 |---|---|

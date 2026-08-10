@@ -25,6 +25,7 @@ import runtime_state
 import scheduling
 import settings
 import settings_registry
+from events.schemas import Event, EventType
 from main import (
     SuiviBourseMetrics, _scrape_job_id,
     register_interval_jobs, SCRAPE_JOB_PREFIX)
@@ -67,9 +68,6 @@ class _FakeConfigManager:
     def __init__(self, shares, opened_store=None):
         self._shares = shares
         self._store = opened_store
-        # One list object, reused: `recompute_perf` decides "the events cache
-        # reloaded" by identity, so a fresh `[]` per call would read as a reload
-        # every cycle and defeat the gate under test.
         self._events = []
 
     def current(self):
@@ -317,54 +315,35 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
 
 
 # ---------------------------------------------------------------------------
-# Perf recompute — gated interval job (#618)
+# Perf recompute — its own interval job, ungated (#618, #707)
 # ---------------------------------------------------------------------------
 
-def test_scrape_symbol_regular_write_sets_perf_dirty_live(
+def test_the_scrape_carries_no_perf_state_at_all(
         store, fake_ticker, mocker, monkeypatch):
-    """A REGULAR write raises the global live-write dirty bool (issue #618)."""
+    """A REGULAR write signals nothing to the perf job (issue #707).
+
+    The write path raised a global live-write bool, which was the last thing the
+    scrape and the recompute shared. The recompute is unconditional now, so the
+    price this cycle wrote is simply read by the next one out of the store —
+    and there is no attribute left for a future cycle to consult.
+    """
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False  # start clean to prove the write sets it
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
-    assert m._perf_dirty_live is True
+    assert not [name for name in vars(m) if name.startswith("_perf")]
 
 
-def test_scrape_symbol_closed_does_not_set_perf_dirty_live(
+def test_scrape_symbol_failed_store_write_is_named_as_such(
         store, fake_ticker, mocker, monkeypatch):
-    """A closed-market probe writes nothing and leaves the flag clean, so a
-    fully-closed wave produces no perf point (non-trading-day gap #606)."""
+    """A refused write persists no point, and the verdict is what says so.
+
+    #617's counter cannot see a refused write — ``decide`` fetched a price
+    successfully — so the record is the only thing that can (issue #668).
+    """
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
-
-    m._scrape_symbol("AAPL", now=NOW)
-
-    assert _prices(store) == []
-    assert m._perf_dirty_live is False
-
-
-def test_scrape_symbol_price_failure_does_not_set_perf_dirty_live(
-        store, mocker):
-    """A non-closed cycle with no writable price writes nothing -> flag stays."""
-    m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
-
-    m._scrape_symbol("AAPL", now=NOW)
-
-    assert m._perf_dirty_live is False
-
-
-def test_scrape_symbol_failed_store_write_does_not_set_perf_dirty_live(
-        store, fake_ticker, mocker, monkeypatch):
-    """A refused write must not raise the dirty flag — no point persisted, so
-    there is nothing new for perf to read (#618)."""
-    m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
     mocker.patch.object(main.quotes, "record_quote",
                         side_effect=RuntimeError("the store refused the write"))
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -372,105 +351,62 @@ def test_scrape_symbol_failed_store_write_does_not_set_perf_dirty_live(
     m._scrape_symbol("AAPL", now=NOW)
 
     assert _prices(store) == []
-    assert m._perf_dirty_live is False
-    # And it is named as such: #617's counter cannot see a refused write, so the
-    # verdict is the only thing that can (issue #668).
     record = m.recorder.scrape_of("AAPL")
     assert record.verdict == runtime_state.SCRAPE_WRITE_FAILED
     assert record.wrote is False
 
 
-def test_recompute_perf_skips_when_all_quiet(
-        store, mocker):
-    """No dirty signal -> update_account_metrics is not called (no Parquet drip)."""
+def test_every_perf_cycle_recomputes(store, mocker):
+    """No gate: a quiet cycle recomputes exactly like a busy one.
+
+    Run twice with nothing whatever happening in between — no write, no
+    backfill, no reload. Both cycles rebuild the cache, which is the shape a
+    self-repairing one has: it costs 0,4 % of its own tick and it is never
+    behind by more than one.
+    """
     m = _metrics([_share()], store, mocker)
-    # Clear the boot seed and align _perf_last_events with current events so
-    # events_changed is False (get_events() returns None for the fake manager).
-    m._perf_dirty_live = False
-    m._perf_last_events = m.config_manager.get_events()
     spy = mocker.patch.object(m, "update_account_metrics")
 
     m.recompute_perf()
-
-    spy.assert_not_called()
-
-
-def test_recompute_perf_boot_seed_runs_first_cycle(
-        store, mocker):
-    """Seeded True at boot -> the first cycle always runs (fresh restart point)."""
-    m = _metrics([_share()], store, mocker)
-    assert m._perf_dirty_live is True          # boot seed
-    spy = mocker.patch.object(m, "update_account_metrics")
-
     m.recompute_perf()
 
-    spy.assert_called_once()
+    assert spy.call_count == 2
 
 
-def test_recompute_perf_runs_and_clears_live_flag_under_lock(
-        store, mocker):
-    """A live REGULAR write triggers a run; the flag is checked-and-cleared."""
+def test_the_backfill_signals_nothing_to_the_perf_job(
+        store, fake_ticker, mocker, monkeypatch):
+    """The last coupling between the two jobs is gone (issue #707).
+
+    A chunk landing used to lower a watermark the recompute read, through the
+    two methods asserted absent below. The chunk still lands — the price rows
+    say so — and the perf job learns about it the only way it learns about
+    anything: by reading the store on its next tick.
+    """
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    m._perf_last_events = m.config_manager.get_events()
-    spy = mocker.patch.object(m, "update_account_metrics")
+    m.config_manager._events = [
+        Event(date(2020, 1, 15), EventType.BUY, "AAPL", "Apple",
+              quantity=10, unit_price=150.0)]
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(rows=2))
 
-    # A live write lands (as _scrape_symbol would set it).
-    with m._perf_lock:
-        m._perf_dirty_live = True
+    m.backfill()
 
-    m.recompute_perf()
-    spy.assert_called_once()
-    assert m._perf_dirty_live is False         # cleared
-
-    # Next quiet cycle skips — the flag was consumed, not sticky.
-    spy.reset_mock()
-    m.recompute_perf()
-    spy.assert_not_called()
+    assert _prices(store)
+    assert not hasattr(m, "_mark_perf_dirty")
+    assert not hasattr(m, "_consume_perf_dirty_from")
 
 
-def test_recompute_perf_runs_when_backfill_watermark_pending(
-        store, mocker):
-    """A pending backfill watermark alone triggers a run (checked, not consumed
-    here — update_account_metrics consumes it)."""
+def test_recompute_perf_error_does_not_propagate(store, mocker):
+    """An update_account_metrics failure is logged, never killing the thread.
+
+    Nothing is re-armed afterwards, and nothing needs to be: the next tick
+    recomputes the whole series whatever happened here.
+    """
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    m._perf_last_events = m.config_manager.get_events()
-    m._mark_perf_dirty(date(2024, 1, 2))
-    spy = mocker.patch.object(m, "update_account_metrics")
-
-    m.recompute_perf()
-
-    spy.assert_called_once()
-    # Watermark is only *checked* in the gate; consumption stays downstream.
-    assert m._perf_dirty_from == date(2024, 1, 2)
-
-
-def test_recompute_perf_runs_when_events_changed(
-        store, mocker):
-    """A reloaded events cache (new list object) alone triggers a run."""
-    m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    # _perf_last_events differs from get_events() (None) -> events_changed True.
-    m._perf_last_events = ["stale"]
-    spy = mocker.patch.object(m, "update_account_metrics")
-
-    m.recompute_perf()
-
-    spy.assert_called_once()
-
-
-def test_recompute_perf_error_does_not_propagate_and_rearms_live_flag(
-        store, mocker):
-    """An update_account_metrics failure is logged (never killing the thread) and
-    the consumed live-write signal is re-armed so the next cycle retries."""
-    m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = True  # a live write triggered this cycle
     mocker.patch.object(m, "update_account_metrics", side_effect=RuntimeError("boom"))
 
     m.recompute_perf()  # must not raise
 
-    assert m._perf_dirty_live is True  # re-armed for the next cycle
+    assert m.recorder.perf().verdict == runtime_state.PERF_FAILED
 
 
 # ---------------------------------------------------------------------------
@@ -490,12 +426,17 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     # for it to be registered at.
     assert set(by_id) == {"backfill", "perf"}
     perf = by_id["perf"]
-    # The perf tick is a constant, not a dial (#701): ``perf_should_run`` is the
-    # real gate, so the number only decides how long a recompute waits after the
-    # change that earned it.
+    # The perf tick is a constant, not a dial (#701/#707): the two tables are a
+    # cache and a full recompute costs 0,4 % of the tick, so there is nothing
+    # left for an operator to trade off.
     assert perf.args[0].__func__ is SuiviBourseMetrics.recompute_perf
     assert perf.args[1] == "interval"
     assert perf.kwargs["seconds"] == scheduling.PERF_TICK
+    # And it fires **at the boot**, not one tick later (#707): an interval
+    # trigger schedules at ``start + interval``, which would leave the pages on
+    # the previous process's cache — or on nothing at all — for two minutes.
+    assert perf.kwargs["next_run_time"] <= datetime.now(UTC)
+    assert "next_run_time" not in by_id["backfill"].kwargs
     # The backfill's cadence *is* a dial, and it arrives as an argument.
     assert by_id["backfill"].kwargs["seconds"] == 60
     # Separate from the per-symbol scrape jobs (no scrape: prefixed id here).

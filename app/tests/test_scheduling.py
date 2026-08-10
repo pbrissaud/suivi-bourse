@@ -13,7 +13,7 @@ import pytest
 
 import scheduling
 from scheduling import (
-    decide, extract_market_context, perf_should_run, compute_pool_size,
+    decide, extract_market_context, compute_pool_size,
     forward_backfill_window, price_freshness_step, SondeState,
     SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP, STALENESS_HORIZON)
 
@@ -30,10 +30,9 @@ BASE = 120
 @pytest.mark.parametrize("state", ["REGULAR", None, "", "GARBAGE", "regular", 42])
 def test_decide_non_closed_states_write_when_price_present(state):
     """Anything outside the closed-family is coerced to REGULAR (fail-open)."""
-    should_write, next_delay, _fc, mark_dirty = decide(
+    should_write, next_delay, _fc = decide(
         state, True, None, NOW, 0, BASE)
     assert should_write is True
-    assert mark_dirty is True
     assert next_delay == BASE  # REGULAR-tier cadence
 
 
@@ -41,20 +40,18 @@ def test_decide_non_closed_states_write_when_price_present(state):
 def test_decide_closed_states_never_write(state):
     """Only the five closed-family states quiet a job."""
     next_open = NOW + timedelta(hours=2)
-    should_write, next_delay, _fc, mark_dirty = decide(
+    should_write, next_delay, _fc = decide(
         state, True, next_open, NOW, 0, BASE)
     assert should_write is False
-    assert mark_dirty is False
     assert next_delay == pytest.approx(2 * 3600)  # sleep to next open
 
 
 def test_decide_non_closed_without_price_does_not_write_but_keeps_polling():
     """A transient price failure keeps polling at base_interval (write gate off,
     reschedule gate still REGULAR)."""
-    should_write, next_delay, _fc, mark_dirty = decide(
+    should_write, next_delay, _fc = decide(
         "REGULAR", False, None, NOW, 0, BASE)
     assert should_write is False
-    assert mark_dirty is False
     assert next_delay == BASE
 
 
@@ -64,25 +61,25 @@ def test_decide_non_closed_without_price_does_not_write_but_keeps_polling():
 
 def test_decide_closed_sleeps_to_exact_next_open_no_margin():
     next_open = NOW + timedelta(seconds=3600)
-    _, next_delay, _, _ = decide("CLOSED", False, next_open, NOW, 0, BASE)
+    _, next_delay, _ = decide("CLOSED", False, next_open, NOW, 0, BASE)
     assert next_delay == 3600
 
 
 def test_decide_closed_caps_deep_sleep_at_max_sleep():
     next_open = NOW + timedelta(hours=48)
-    _, next_delay, _, _ = decide("POST", False, next_open, NOW, 0, BASE)
+    _, next_delay, _ = decide("POST", False, next_open, NOW, 0, BASE)
     assert next_delay == MAX_SLEEP
 
 
 def test_decide_closed_with_unknown_next_open_short_retries():
-    _, next_delay, _, _ = decide("CLOSED", False, None, NOW, 0, BASE)
+    _, next_delay, _ = decide("CLOSED", False, None, NOW, 0, BASE)
     assert next_delay == SHORT_RETRY
 
 
 def test_decide_closed_with_past_next_open_short_retries():
     """Woken on/after the expected open but still closed (holiday/half-day)."""
     next_open = NOW - timedelta(seconds=10)
-    _, next_delay, _, _ = decide("PRE", False, next_open, NOW, 0, BASE)
+    _, next_delay, _ = decide("PRE", False, next_open, NOW, 0, BASE)
     assert next_delay == SHORT_RETRY
 
 
@@ -92,14 +89,14 @@ def test_decide_closed_with_past_next_open_short_retries():
 
 def test_decide_write_resets_failure_count():
     """A successful write clears the counter regardless of its prior value."""
-    _, next_delay, new_fc, _ = decide("REGULAR", True, None, NOW, 7, BASE)
+    _, next_delay, new_fc = decide("REGULAR", True, None, NOW, 7, BASE)
     assert new_fc == 0
     assert next_delay == BASE            # reset -> back to base cadence
 
 
 def test_decide_non_closed_no_price_increments_failure_count():
     """A non-closed cycle with no writable price is a failure."""
-    _, _, new_fc, _ = decide("REGULAR", False, None, NOW, 0, BASE)
+    _, _, new_fc = decide("REGULAR", False, None, NOW, 0, BASE)
     assert new_fc == 1
 
 
@@ -107,7 +104,7 @@ def test_decide_non_closed_no_price_increments_failure_count():
 def test_decide_closed_cycle_never_counts_as_failure(state):
     """A closed -> sleep-to-open cycle leaves the counter untouched (passthrough),
     neither incrementing (market shut is not a ticker fault) nor resetting."""
-    _, _, new_fc, _ = decide(state, False, None, NOW, 5, BASE)
+    _, _, new_fc = decide(state, False, None, NOW, 5, BASE)
     assert new_fc == 5
 
 
@@ -122,7 +119,7 @@ def test_decide_grace_then_backoff_progression():
     fc = 0
     delays = []
     for _ in range(15):
-        _, next_delay, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+        _, next_delay, fc = decide("REGULAR", False, None, NOW, fc, BASE)
         delays.append(next_delay)
 
     # Failures 1..K all re-arm at base_interval (grace window).
@@ -140,12 +137,12 @@ def test_decide_success_mid_backoff_resets_to_base():
     """A successful write in the middle of a backoff drops cadence back to base."""
     fc = 0
     for _ in range(6):                                  # build up a deep backoff
-        _, delay, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+        _, delay, fc = decide("REGULAR", False, None, NOW, fc, BASE)
     assert delay > BASE and fc == 6
 
     # The market prints a price -> write, reset.
-    should_write, delay, fc, dirty = decide("REGULAR", True, None, NOW, fc, BASE)
-    assert (should_write, delay, fc, dirty) == (True, BASE, 0, True)
+    should_write, delay, fc = decide("REGULAR", True, None, NOW, fc, BASE)
+    assert (should_write, delay, fc) == (True, BASE, 0)
 
 
 def test_decide_closed_cycles_interleaved_do_not_advance_backoff():
@@ -153,26 +150,26 @@ def test_decide_closed_cycles_interleaved_do_not_advance_backoff():
     backoff resumes exactly where the failures left it."""
     fc = 0
     # Two failures.
-    _, _, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
-    _, _, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    _, _, fc = decide("REGULAR", False, None, NOW, fc, BASE)
+    _, _, fc = decide("REGULAR", False, None, NOW, fc, BASE)
     assert fc == 2
 
     # A closed stretch: counter frozen, sleeps to next open (not backoff).
     next_open = NOW + timedelta(hours=1)
-    _, closed_delay, fc, _ = decide("CLOSED", False, next_open, NOW, fc, BASE)
+    _, closed_delay, fc = decide("CLOSED", False, next_open, NOW, fc, BASE)
     assert (fc, closed_delay) == (2, 3600)
 
     # Failures resume: n=3 still grace, n=4 first backoff step.
-    _, delay3, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    _, delay3, fc = decide("REGULAR", False, None, NOW, fc, BASE)
     assert (fc, delay3) == (3, BASE)
-    _, delay4, fc, _ = decide("REGULAR", False, None, NOW, fc, BASE)
+    _, delay4, fc = decide("REGULAR", False, None, NOW, fc, BASE)
     assert (fc, delay4) == (4, BASE * 2)
 
 
 def test_decide_backoff_never_overflows_for_a_long_dead_ticker():
     """A ticker dead for a very long run stays pinned at MAX_SLEEP without
     building an astronomical delay from 2^n."""
-    _, next_delay, new_fc, _ = decide("REGULAR", False, None, NOW, 100_000, BASE)
+    _, next_delay, new_fc = decide("REGULAR", False, None, NOW, 100_000, BASE)
     assert next_delay == MAX_SLEEP
     assert new_fc == 100_001
 
@@ -184,51 +181,54 @@ def test_decide_backoff_never_overflows_for_a_long_dead_ticker():
 def test_decide_sequence_pre_regular_post():
     """PRE (sleep to open) -> REGULAR (poll+write) -> POST (sleep to next open)."""
     open1 = NOW + timedelta(hours=1)
-    w, d, _, _ = decide("PRE", True, open1, NOW, 0, BASE)
+    w, d, _ = decide("PRE", True, open1, NOW, 0, BASE)
     assert (w, d) == (False, 3600)
 
     # Woken at the open, now REGULAR.
     at_open = open1
-    w, d, _, dirty = decide("REGULAR", True, None, at_open, 0, BASE)
-    assert (w, d, dirty) == (True, BASE, True)
+    w, d, _ = decide("REGULAR", True, None, at_open, 0, BASE)
+    assert (w, d) == (True, BASE)
 
     # Market closes for the day.
     next_open = at_open + timedelta(hours=20)
-    w, d, _, _ = decide("POST", True, next_open, at_open, 0, BASE)
+    w, d, _ = decide("POST", True, next_open, at_open, 0, BASE)
     assert (w, d) == (False, 20 * 3600)
 
 
 def test_decide_sequence_closed_then_short_retry_resolves_forward():
     """A closed wake with a stale (past) next-open short-retries until REGULAR."""
     stale_open = NOW - timedelta(minutes=5)
-    w, d, _, _ = decide("CLOSED", False, stale_open, NOW, 0, BASE)
+    w, d, _ = decide("CLOSED", False, stale_open, NOW, 0, BASE)
     assert (w, d) == (False, SHORT_RETRY)
 
     # 60s later it flips to REGULAR.
     later = NOW + timedelta(seconds=SHORT_RETRY)
-    w, d, _, _ = decide("REGULAR", True, None, later, 0, BASE)
+    w, d, _ = decide("REGULAR", True, None, later, 0, BASE)
     assert (w, d) == (True, BASE)
 
 
 # ---------------------------------------------------------------------------
-# perf_should_run — gate the perf-recompute interval job (#618, design #605)
+# The perf gate is gone (issue #707, ADR-0011)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("events_changed,backfill_pending,live_write,expected", [
-    # All quiet -> skip (a fully-closed market wave, no closed-day Parquet drip).
-    (False, False, False, False),
-    # Any single dirty signal -> run.
-    (True, False, False, True),     # events cache reloaded (full rewrite)
-    (False, True, False, True),     # backfill watermark pending
-    (False, False, True, True),     # live REGULAR write since last run (boot seed)
-    # Combinations still run.
-    (True, True, False, True),
-    (True, False, True, True),
-    (False, True, True, True),
-    (True, True, True, True),
-])
-def test_perf_should_run_truth_table(events_changed, backfill_pending, live_write, expected):
-    assert perf_should_run(events_changed, backfill_pending, live_write) is expected
+def test_scheduling_exposes_no_perf_gate():
+    """``perf_should_run`` is deleted **without a replacement**.
+
+    Asserted on the module rather than left to the absence of a test, because
+    the failure mode the ticket names is a *successor*: the same predicate
+    re-expressed as a query, or reduced to a single signal. The recompute is
+    unconditional, so nothing here has an opinion on whether it should run.
+    """
+    assert not [name for name in dir(scheduling) if 'should_run' in name]
+
+
+def test_decide_returns_three_values_and_no_perf_signal():
+    """``decide``'s fourth element said "this write makes the perf series stale".
+
+    It was ``should_write`` spelt twice and it left with the flag it fed: a
+    scrape has nothing to tell a recompute that reads the store every cycle.
+    """
+    assert len(decide("REGULAR", True, None, NOW, 0, BASE)) == 3
 
 
 # ---------------------------------------------------------------------------
