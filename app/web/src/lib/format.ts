@@ -40,6 +40,24 @@ export function formatCurrency(
   }).format(value)
 }
 
+/**
+ * A **delta** is signed, and a plain amount is not: `+40,69 €` says the gain
+ * moved up, where `40,69 €` says only what it is worth.
+ *
+ * This is not a ninth `Intl` site — it composes the currency one. A second
+ * `NumberFormat` differing from the first by `signDisplay` alone would be two
+ * places to keep a currency's decimals in step, on a page that puts the two
+ * renderings one line apart.
+ */
+export function formatSignedCurrency(
+  locale: string,
+  value: number | null | undefined,
+  currency: string | null | undefined,
+): string {
+  const rendered = formatCurrency(locale, value, currency)
+  return value !== null && value !== undefined && value > 0 ? `+${rendered}` : rendered
+}
+
 export function formatNumber(
   locale: string,
   value: number | null | undefined,
@@ -121,6 +139,8 @@ export function useFormatters() {
       locale,
       currency: (value: number | null | undefined, currency: string | null | undefined, digits?: number) =>
         formatCurrency(locale, value, currency, digits),
+      signedCurrency: (value: number | null | undefined, currency: string | null | undefined) =>
+        formatSignedCurrency(locale, value, currency),
       number: (value: number | null | undefined, digits?: number) =>
         formatNumber(locale, value, digits),
       quantity: (value: number | null | undefined) => formatQuantity(locale, value),

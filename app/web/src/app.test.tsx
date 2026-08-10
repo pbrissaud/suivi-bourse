@@ -18,6 +18,7 @@ import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aPositionsPayload,
+  aTotalsPayload,
   anAccountsPayload,
   defaultAccounts,
 } from '@/test/factories'
@@ -87,8 +88,9 @@ describe('the four routes', () => {
     // No redirect on an empty ledger: it would make `/` the one route whose
     // behaviour depends on the data, and a bookmark valid yesterday lie today.
     server.use(
-      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([]))),
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([], false))),
       http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([], null))),
+      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
     )
     renderApp({ url: '/' })
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()

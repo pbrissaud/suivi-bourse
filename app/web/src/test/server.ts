@@ -16,12 +16,13 @@ import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
 import { ROUTES } from '@/lib/api'
-import { anAccountsPayload, aPositionsPayload, aRuntime } from '@/test/factories'
+import { anAccountsPayload, aPositionsPayload, aRuntime, aTotalsPayload } from '@/test/factories'
 
 export function defaultHandlers() {
   return [
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
+    http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
   ]
 }

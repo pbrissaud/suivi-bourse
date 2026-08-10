@@ -20,7 +20,17 @@
  *
  *   realised    0,00 + 50,00 + 0,00 = 50,00
  *   dividends  25,00 +  0,00 + 0,00 = 25,00
- *   gain       300,00 + 50,00 + 25,00 = 375,00
+ *
+ * Three terms out of four, then, and their sum is 375,00. The **fourth** comes
+ * from the ledger and belongs to no position — the fees a broker takes out of a
+ * transfer — and the totals fixture sets it at −5,00, so:
+ *
+ *   gain total  +300,00 + 50,00 + 25,00 − 5,00 = 370,00
+ *
+ * which is exactly what `total_value 2 800,00 − net_contributed 2 430,00`
+ * comes to. That agreement is the fixture's whole point: `gain_absolu` in the
+ * payload is the same number written down elsewhere, and the head is proved to
+ * ignore it by handing it a different one.
  *
  * Every figure above is computable from its own terms, as `tests/test_e2e.py`
  * writes them: 10 × 130,00 = 1 300,00 and 1 300,00 − 1 000,00 = +300,00, read
@@ -51,6 +61,8 @@
 import type {
   Account,
   AccountsResponse,
+  PortfolioTotals,
+  PortfolioTotalsResponse,
   Position,
   PositionsResponse,
   RuntimeState,
@@ -103,8 +115,11 @@ export function aPosition(options: PositionOptions = {}): Position {
   return { ...base, ...rest }
 }
 
-export function anAccountsPayload(accounts: Account[] = defaultAccounts()): AccountsResponse {
-  return { accounts }
+export function anAccountsPayload(
+  accounts: Account[] = defaultAccounts(),
+  declared = true,
+): AccountsResponse {
+  return { declared, accounts }
 }
 
 export function defaultAccounts(): Account[] {
@@ -149,10 +164,46 @@ export function aPositionsPayload(
   return { base_currency: baseCurrency, positions }
 }
 
+/**
+ * The global perf cache, one day of it — and the two figures the whole head
+ * turns on:
+ *
+ *  - `gain_absolu` agrees with the four terms **here**, so a test that hands it
+ *    a divergent value is testing one thing and not two;
+ *  - the year-to-date pair is the measured one, `+40,69 €` against `−1,25 %`,
+ *    of **opposite signs over the same period** and both correct: the portfolio
+ *    grew by deposits while its holdings lost. That pair is why the euro and
+ *    the percentage are two figures that never share a line.
+ */
+export function aTotals(overrides: Partial<PortfolioTotals> = {}): PortfolioTotals {
+  return {
+    day: '2026-03-02',
+    total_value: 2800,
+    holdings_value: 2300,
+    cash_balance: 500,
+    net_contributed: 2430,
+    xirr: 0.0322,
+    twr_index: 202.89,
+    twr_since: '2019-10-30',
+    transfer_fees: -5,
+    gain_absolu: 370,
+    ytd: { gain: 40.69, twr: -0.0125 },
+    ...overrides,
+  }
+}
+
+export function aTotalsPayload(
+  totals: PortfolioTotals | null = aTotals(),
+  baseCurrency: string | null = BASE_CURRENCY,
+): PortfolioTotalsResponse {
+  return { base_currency: baseCurrency, totals }
+}
+
 export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
   return {
     now: NOW,
     scheduler_running: true,
+    rebuilding: false,
     symbols: defaultPositions().map((position) => ({
       symbol: position.symbol,
       next_run: NOW,

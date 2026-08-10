@@ -29,6 +29,7 @@
 export const ROUTES = {
   accounts: '/api/accounts',
   positions: '/api/positions',
+  portfolioTotals: '/api/portfolio-totals',
   runtime: '/api/runtime',
 } as const
 
@@ -87,6 +88,14 @@ export interface Account {
 }
 
 export interface AccountsResponse {
+  /**
+   * **Mandatory in the client contract** (#745). `false` is a *designed* state
+   * — the install that has declared nothing, which every default produces — and
+   * it is not an empty array: the seeded `default` row is always there. A client
+   * that drops this member cannot tell *you have declared no accounts* from
+   * *your accounts have no figures*.
+   */
+  declared: boolean
   accounts: Account[]
 }
 
@@ -132,6 +141,57 @@ export interface PositionsResponse {
 }
 
 // ------------------------------------------------------------------------- //
+// The perf cache at the global level (#745, announced there before written
+// here). Named after the store's table — `portfolio_totals` — and never after
+// the page, the same rule that makes the hot read `positions` and not `shares`.
+// ------------------------------------------------------------------------- //
+
+/**
+ * One day of the global series. Every money member is nullable **by field**,
+ * which is what lets the head *shrink* instead of filling with dashes: a figure
+ * that does not exist for this installation is not a missing value.
+ */
+export interface PortfolioTotals {
+  /** The calendar day the figures describe — a day, never an instant. */
+  day: string
+  total_value: number | null
+  holdings_value: number | null
+  cash_balance: number | null
+  net_contributed: number | null
+  /** Money-weighted, annualised, since the origin. `null` with no external flow. */
+  xirr: number | null
+  /** Time-weighted, **base 100** since `twr_since`. */
+  twr_index: number | null
+  /** The day the index counts from. It moves while the rebuild runs. */
+  twr_since: string | null
+  /**
+   * ADR-0018's fourth term, **signed as it enters the sum** — negative, the
+   * money having left. It belongs to no position, which is why it is here and
+   * not on `/api/positions`.
+   */
+  transfer_fees: number | null
+  /**
+   * The same number written down elsewhere. **The head never reads it** — it
+   * computes the total from the four terms (ADR-0018), and a divergent value
+   * here changes nothing on screen. Carried so a report can quote both.
+   */
+  gain_absolu: number | null
+  /**
+   * The year-to-date delta, `null` while the series does not reach 1 January.
+   * That is the **one** figure the rebuild degrades: everything above is exact
+   * from the first cycle.
+   */
+  ytd: { gain: number | null; twr: number | null } | null
+}
+
+export interface PortfolioTotalsResponse {
+  /** The single currency everything is reported in (ADR-0002). */
+  base_currency: string | null
+  /** `null` — no figures at all: no ledger, or no answered currency. */
+  totals: PortfolioTotals | null
+}
+
+// ------------------------------------------------------------------------- //
 // The app's own state — process memory, never a data query (#712 §11)
 // ------------------------------------------------------------------------- //
 
@@ -157,6 +217,16 @@ export interface RuntimeAccount {
 export interface RuntimeState {
   now: string
   scheduler_running: boolean
+  /**
+   * The backfill still has windows to cover. It is here rather than beside the
+   * figures because it is a fact about *this process*, and rule four of the map
+   * is that the app's state never travels in a data request.
+   *
+   * What it decides on screen is small and exact: the time-weighted return
+   * carries its base date **only while that date is still moving**. Once the
+   * reconstruction is done the base stops moving and the date stops being news.
+   */
+  rebuilding: boolean
   symbols: RuntimeSymbol[]
   accounts: RuntimeAccount[]
 }
@@ -164,5 +234,6 @@ export interface RuntimeState {
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
   positions: () => get<PositionsResponse>(ROUTES.positions),
+  portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
 }
