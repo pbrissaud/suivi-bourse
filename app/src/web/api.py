@@ -29,6 +29,8 @@ import main
 import portfolio_view
 import runtime_state
 import runtime_view
+import settings as settings_module
+import settings_registry
 from influx_reads import (
     MEASUREMENT,
     TOTALS_MEASUREMENT,
@@ -40,6 +42,7 @@ from web.problem import (
     conflict,
     not_found,
     storage_unavailable,
+    unprocessable,
 )
 
 logger = getLogger("web.api")
@@ -719,7 +722,11 @@ def _next_runs(scheduler) -> dict:
 
     The one pull kept from the scheduler's internals (#656 déc. 4): it is the
     truth of scheduling, the jobstore is natively locked, and a copied
-    ``next_delay`` would be exactly the duplicate decision 2 forbids.
+    ``next_delay`` would be exactly the duplicate decision 2 forbids. It lives
+    in :func:`main.scrape_next_runs` because the settings write path reads the
+    same times to decide which symbols a new cadence reaches (#701) — two loops
+    over the jobstore would eventually classify a symbol two ways in one
+    request.
 
     A symbol **absent** from the result is trap 1 and not an error: a ``date``
     job is removed from the jobstore *while it runs* and re-added at the end of
@@ -728,17 +735,9 @@ def _next_runs(scheduler) -> dict:
     up to 8 s. The pure module renders that as one ambiguous value carrying both
     readings, never as either alone.
     """
-    if scheduler is None:
-        return {}
     import main
 
-    runs = {}
-    for job in (scheduler.get_jobs() or []):
-        job_id = getattr(job, 'id', '') or ''
-        if job_id.startswith(main.SCRAPE_JOB_PREFIX):
-            symbol = job_id[len(main.SCRAPE_JOB_PREFIX):]
-            runs[symbol] = getattr(job, 'next_run_time', None)
-    return runs
+    return main.scrape_next_runs(scheduler)
 
 
 # --------------------------------------------------------------------- #
@@ -758,25 +757,98 @@ def get_config():
     loading path, so there is no mode to report, and the config directory has no
     write path left to be refused by.
 
-    ``settings`` is #654's read-only **effective configuration**, and it lands
-    here rather than on ``/api/runtime`` on #661's argument: one noun, two
-    consumers. "What is this container running?" is a question about the
-    configuration, the data page is already the screen that asks it, and putting
-    it on the runtime resource would start that resource down the road to a junk
-    drawer. The list is the one the *app reads* — see
-    :data:`main.SETTINGS_INVENTORY` for why that has to be said out loud — and
-    ``INFLUXDB_TOKEN`` is redacted by name, since the prototype has no
-    authentication.
-    """
-    from web import current_runtime
-    import main
+    The payload lands here rather than on ``/api/runtime`` on #661's argument:
+    one noun, two consumers. "What is this install running?" is a question about
+    the configuration, and putting it on the runtime resource would start that
+    resource down the road to a junk drawer.
 
-    runtime = current_runtime()
+    Two lists since #701, and the split is ADR-0014's line rather than a
+    grouping of convenience:
+
+    * ``settings`` — the dials, read **through the registry** and therefore not
+      a second enumeration of them. Each carries its bounds and its effect, so
+      the form that renders it validates on the same rule the write path
+      enforces, instead of on a copy of that rule.
+    * ``environment`` — what the process had to know before it could open the
+      store: the store's own location, the sockets, the log level. None of it
+      is writable from in here and none of it pretends to be.
+      ``INFLUXDB_TOKEN`` is redacted by name, since the prototype has no
+      authentication. Alongside it, ``unread_environment`` names what is set in
+      that same environment and no longer obeyed — computed, so it cannot drift.
+
+    Reading the dials makes the whole resource depend on the store, and the
+    ``503`` that follows an unreadable one is deliberate rather than overlooked:
+    since #696 the store is not optional anywhere — the app does not boot
+    without it and ``/health`` fails with it — so a ``/api/config`` that
+    answered ``200`` while the file was gone would be claiming to describe an
+    installation it can no longer read. The resource written to survive a broken
+    app is ``/api/runtime`` (#668), which touches nothing at all; the store's
+    own location is in the boot log either way.
+    """
+    import main
 
     return jsonify({
         'log_level': main.current_log_level(),
-        'settings': main.effective_settings(runtime.metrics),
+        'settings': settings_module.describe(_store()),
+        'environment': main.effective_environment(),
+        'unread_environment': main.unread_environment(),
         'shares': _snapshot().shares,
+    })
+
+
+@api_bp.put('/settings')
+def put_settings():
+    """Change one or more dials. The **only** writer of a setting (issue #701).
+
+    That it is an HTTP route is what keeps a headless install whole: *headless
+    means without an interface, not without HTTP*, so this is reachable with one
+    ``curl`` and the page is only ever one client of it. There is still exactly
+    one writer.
+
+    ``422`` for a value the registry refuses — an unknown key, a wrong type, a
+    number outside the dial's bounds — because the request is well formed and
+    the *content* is what cannot be processed; ``400`` is for a body that is not
+    a JSON object at all. Nothing is written on a refusal, not even the keys of
+    the same body that were valid.
+
+    The answer **quantifies the effect**, and that is a requirement rather than
+    a courtesy. ``regular_interval`` reaches only the symbols whose market is
+    open right now, so a portfolio of eleven can see three re-armed and eight
+    left to read the new value when they wake — and an interface that answered a
+    bare ``200`` would let the reader conclude the other eight are misconfigured.
+
+    What no interface can hide, and what the settings page must therefore say
+    out loud: ``regular_interval`` is **also the base of the dead-ticker
+    back-off** (#617), whose wait is ``regular_interval × 2^(n−3)`` and not an
+    absolute delay stored anywhere. Lowering it shortens, retroactively, the
+    wait of a symbol that has been failing since this morning; raising it
+    lengthens it. The number in the form is the number in the formula.
+    """
+    import main
+
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    runtime = current_runtime()
+    try:
+        # The writers' mutex, like every other write in this blueprint: a Flask
+        # handler and the ingestion share one DuckDB connection, and a row
+        # written between another thread's BEGIN and its ROLLBACK disappears
+        # with that transaction after this handler has answered 200.
+        with runtime.config_manager.writing() as opened:
+            changes = settings_module.save(opened, body)
+    except settings_registry.InvalidSetting as exc:
+        return unprocessable(str(exc), key=exc.key or None)
+
+    # Strictly after the block — the mutex is not reentrant, and re-arming a job
+    # takes no store lock anyway.
+    effect = main.apply_settings(runtime, changes)
+
+    return jsonify({
+        'settings': settings_module.describe(_store()),
+        'changed': [change.key for change in changes],
+        'effect': effect,
     })
 
 

@@ -29,6 +29,8 @@ import performance
 import positions
 import runtime_state
 import scheduling
+import settings as settings_module
+import settings_registry
 import store
 from events import (
     EventValidator, EventAggregator, EventWatcher,
@@ -101,6 +103,32 @@ def _scrape_job_id(symbol: str) -> str:
     return f'{SCRAPE_JOB_PREFIX}{symbol}'
 
 
+def scrape_next_runs(scheduler) -> Dict[str, Optional[datetime]]:
+    """``symbol -> next_run_time`` for the live per-symbol scrape jobs.
+
+    The one pull from the scheduler's internals (#656 déc. 4), and it is one
+    function because it has two callers that must not disagree: ``/api/runtime``
+    renders these times as pills, and :meth:`SuiviBourseMetrics.rearm_regular_scrapes`
+    decides from the same times which symbols a new cadence reaches. Two loops
+    stripping the same prefix would eventually classify a symbol two ways in one
+    request.
+
+    A symbol **absent** from the result is trap 1 and not an error: a ``date``
+    job is removed from the jobstore *while it runs*, so absence means "being
+    scraped right now" **or** "symbol departed". Each caller reads that
+    ambiguity in its own terms.
+    """
+    if scheduler is None:
+        return {}
+    runs = {}
+    for job in (scheduler.get_jobs() or []):
+        job_id = getattr(job, 'id', '') or ''
+        if job_id.startswith(SCRAPE_JOB_PREFIX):
+            runs[job_id[len(SCRAPE_JOB_PREFIX):]] = getattr(
+                job, 'next_run_time', None)
+    return runs
+
+
 # Pre-scheduler exchange capture for auto pool sizing (issue #619). At boot the
 # whole app blocks on this before the scheduler is even built, so the
 # fetch is fanned out over a small bounded pool and hard-capped by an overall
@@ -145,43 +173,20 @@ def env_flag(name: str, default: bool) -> bool:
     return raw.lower() in ('1', 'true', 'yes', 'on')
 
 
-def resolve_executor_pool_size(shares: List[dict], capture_exchange_of) -> int:
-    """Resolve the APScheduler executor-pool size from the two dials (issue #619).
-
-    ``SB_DYNAMIC_EXECUTOR_POOL`` (default ``false``) picks fixed vs auto:
-
-      * ``false`` → a fixed pool of ``SB_EXECUTOR_POOL`` (default ``10``) —
-        identical to today's behaviour on upgrade (APScheduler's default pool is
-        also 10).
-      * ``true``  → ``scheduling.compute_pool_size`` over same-exchange cohorts.
-        ``capture_exchange_of`` (a zero-arg callable → ``{symbol: exchange}``,
-        e.g. the ``SuiviBourseMetrics`` method of the same name) is invoked
-        **only** on this path, so the fixed default never triggers the
-        pre-scheduler exchange fetch. If ``SB_EXECUTOR_POOL`` is also set it is
-        ignored, with a warning (convention of #607).
-
-    Always ``>= 1``. ``POOL_CAP`` bounds only the auto formula, never the fixed
-    dial (operator freedom, design #611).
-    """
-    auto = env_flag('SB_DYNAMIC_EXECUTOR_POOL', False)
-    fixed_raw = env_str('SB_EXECUTOR_POOL')
-    if not auto:
-        return max(1, env_int('SB_EXECUTOR_POOL', 10))
-    if fixed_raw is not None:
-        app_logger.warning(
-            "SB_EXECUTOR_POOL is ignored because SB_DYNAMIC_EXECUTOR_POOL is "
-            "enabled; the executor pool is sized automatically.")
-    return scheduling.compute_pool_size(shares, capture_exchange_of())
-
-
 # --------------------------------------------------------------------- #
-# The read-only effective configuration (issue #668, handed over by #654)
+# The environment: what the process must know before it can open the store
 # --------------------------------------------------------------------- #
 
 #: Every environment variable **this application reads**, with its own default.
 #:
-#: The list has to be chosen and named, because "what the app reads" and "what
-#: compose sends" are *different lists* (#654 trap 11): ``SB_VERSION`` and
+#: The line is drawn by a mechanical test rather than by a judgement about nature
+#: (ADR-0014): *the environment holds what the process must know before it can
+#: open the store*. Everything else is a dial and lives in the store, with no
+#: environment form at all — no precedence rule, no seed-on-first-boot, no
+#: settings file. That is what makes :mod:`settings_registry` the single list.
+#:
+#: The list still has to be chosen and named, because "what the app reads" and
+#: "what compose sends" are *different lists* (#654 trap 11): ``SB_VERSION`` and
 #: ``SB_CONFIG_DIR`` carry the ``SB_`` prefix and are consumed by the docker
 #: daemon, never by Python (trap 13) — a page listing "the SB_* settings" that
 #: showed them would imply they are reachable from in here, and they are not:
@@ -190,76 +195,154 @@ def resolve_executor_pool_size(shares: List[dict], capture_exchange_of) -> int:
 #:
 #: ``default`` is ``None`` for the two that have no scalar fallback: the token is
 #: required, and ``SB_STATIC_DIR`` simply has no value when unset.
-#:
-#: ``scope`` is ``runtime`` for the dials held on a mutable attribute and re-read
-#: every cycle — the effective value can in principle diverge from the
-#: environment, so those are reported from the **attribute**, not from
-#: ``os.environ`` — and ``boot`` for the rest.
-SETTINGS_INVENTORY = (
-    # name, default, scope, secret, deprecated
-    ('LOG_LEVEL', 'INFO', 'runtime', False, False),
+ENVIRONMENT_INVENTORY = (
+    # name, default, secret
+    # Read before the store can report anything, which is exactly why it is
+    # here: the most likely failure of this app is the store failing to open,
+    # and a log level kept inside the store could not report that.
+    ('LOG_LEVEL', 'INFO', False),
     # Where the store is. Boot-scope by nature and not by choice (ADR-0014): it
     # is one of the few things the process must know *before* it can open the
     # store, and therefore before it can ask the store anything.
-    (store.STORE_DIR_VAR, store.DEFAULT_STORE_DIR, 'boot', False, False),
-    ('INFLUXDB_HOST', 'http://influxdb:8181', 'boot', False, False),
-    ('INFLUXDB_TOKEN', None, 'boot', True, False),
-    ('INFLUXDB_DATABASE', 'suivi_bourse', 'boot', False, False),
-    ('SB_REGULAR_INTERVAL', '120', 'runtime', False, False),
-    # ``SB_INGESTION_INTERVAL`` left with #697 and is not listed as deprecated:
-    # its *subject* died, not its name. There is no ingestion cadence to
-    # deprecate a spelling of — the replay follows the write — so reporting it
-    # at all would suggest the app still has one.
-    ('SB_BACKFILL_INTERVAL', '60', 'boot', False, False),
-    ('SB_PERF_INTERVAL', '120', 'boot', False, False),
-    ('SB_BACKFILL_DELAY', '10', 'runtime', False, False),
-    ('SB_BACKFILL_CHUNK_DAYS', '365', 'runtime', False, False),
-    ('SB_STALENESS_HORIZON', str(scheduling.STALENESS_HORIZON), 'runtime',
-     False, False),
-    ('SB_DYNAMIC_EXECUTOR_POOL', 'false', 'boot', False, False),
-    ('SB_EXECUTOR_POOL', '10', 'boot', False, False),
-    ('SB_PROMETHEUS_ENABLED', 'true', 'boot', False, False),
-    ('SB_METRICS_PORT', '8081', 'boot', False, False),
-    ('SB_WEB_PORT', '8080', 'boot', False, False),
-    ('SB_STATIC_DIR', None, 'boot', False, False),
+    (store.STORE_DIR_VAR, store.DEFAULT_STORE_DIR, False),
+    ('INFLUXDB_HOST', 'http://influxdb:8181', False),
+    ('INFLUXDB_TOKEN', None, True),
+    ('INFLUXDB_DATABASE', 'suivi_bourse', False),
+    # The two ports pass the test twice: they are read in the gunicorn master
+    # before the app is imported, and a port changed from the interface would
+    # cut the connection the interface arrived by.
+    ('SB_PROMETHEUS_ENABLED', 'true', False),
+    ('SB_METRICS_PORT', '8081', False),
+    ('SB_WEB_PORT', '8080', False),
+    ('SB_STATIC_DIR', None, False),
 )
 
-#: Where a ``runtime``-scope value is actually read from on a live process. The
-#: attribute is the truth, not the environment (#654 §2.1): each of these is
-#: read from ``os.environ`` once at boot and then held on a plain mutable
-#: attribute that every cycle re-reads.
-_LIVE_ATTRIBUTES = {
+#: The prefixes a v4 ``.env`` used. Anything set under one of them and not read
+#: is named at boot — the gesture ``config.yaml`` and ``settings.yaml`` already
+#: get (ADR-0008, ADR-0014).
+_OWNED_PREFIXES = ('SB_', 'INFLUXDB_')
+
+#: Carried the prefix and were **never read by the app**: they belong to the
+#: compose file and the docker daemon. Naming them in the notice would suggest
+#: the app once obeyed them, which is the opposite of what the notice says.
+_COMPOSE_ONLY = frozenset({'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID'})
+
+#: Where a v4 variable's subject went, for the notice's second sentence. The
+#: *detection* stays computed (see :func:`unread_environment`) — this only
+#: explains what was found, and an explanation of a name that no longer exists
+#: is history, which nothing can derive. Getting it wrong is not cosmetic: a
+#: notice telling an operator that ``SB_EXECUTOR_POOL`` "lives in the app now"
+#: sends them to a settings page that has never had such a field, and to a
+#: ``PUT`` that answers ``422``.
+_RETIRED_VARIABLES = {
     'SB_REGULAR_INTERVAL': 'regular_interval',
+    'SB_BACKFILL_INTERVAL': 'backfill_interval',
     'SB_BACKFILL_DELAY': 'backfill_delay',
     'SB_BACKFILL_CHUNK_DAYS': 'backfill_chunk_days',
     'SB_STALENESS_HORIZON': 'staleness_horizon',
+    # Deleted outright rather than moved — each of them has *no* successor, and
+    # saying so is the whole value of naming them.
+    'SB_EXECUTOR_POOL': None,
+    'SB_DYNAMIC_EXECUTOR_POOL': None,
+    'SB_PERF_INTERVAL': None,
+    'SB_INGESTION_INTERVAL': None,
+    'SB_SCRAPING_INTERVAL': None,
+    'SB_CONFIG_MODE': None,
 }
 
 
-def effective_settings(metrics=None) -> List[Dict]:
-    """What this container is actually running, read-only (#654 §6a → #656).
+def unread_environment() -> List[str]:
+    """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read.
 
-    The one survivor of the settings question, and #654 is unambiguous about why
-    it is only a *view*: **0 of 17 variables can be persisted** from in here,
-    because ``.env`` is a host file the container never sees and compose re-reads
-    it only at ``up``. So this answers "what is this thing running?" and offers
-    no button.
+    **Computed, never hard-coded** — the difference between what is present and
+    what :data:`ENVIRONMENT_INVENTORY` names. A written list of retired names is
+    a third writer of the same inventory and the one nobody re-reads at release
+    time; this one cannot drift, because the day a variable is added to the
+    inventory it leaves this list by construction.
+    """
+    read = {name for name, _, _ in ENVIRONMENT_INVENTORY}
 
-    Two rules come with it, both from #654's traps:
+    def is_unread(name: str) -> bool:
+        if not name.startswith(_OWNED_PREFIXES):
+            return False
+        if name in read or name in _COMPOSE_ONLY:
+            return False
+        # Blank counts as unset here too: compose renders an undefined
+        # substitution as an empty string, so a v4 compose file left in place
+        # would otherwise report every variable it forwards as *set*.
+        return bool((os.environ.get(name) or '').strip())
+
+    return sorted(name for name in os.environ if is_unread(name))
+
+
+def report_unread_environment() -> List[str]:
+    """Name what is set and not obeyed, in **one** grouped notice.
+
+    One line per variable would put five warnings in front of an operator
+    upgrading from v4 and bury the sentence that matters, which is not *which*
+    name was ignored but *where the setting went*.
+
+    And *where it went* has three answers, not one, so the notice has three
+    clauses. A variable that became a dial is worth following up; one that was
+    deleted outright has no successor to look for, and telling its owner to
+    "turn it on the settings page" sends them hunting for a field that has never
+    existed; and a name the app has simply never read (a typo, a leftover from
+    another tool) deserves neither instruction.
+    """
+    found = unread_environment()
+    if not found:
+        return found
+
+    moved = [f"{name} → the {_RETIRED_VARIABLES[name]} dial" for name in found
+             if _RETIRED_VARIABLES.get(name)]
+    deleted = [name for name in found
+               if name in _RETIRED_VARIABLES and not _RETIRED_VARIABLES[name]]
+    unknown = [name for name in found if name not in _RETIRED_VARIABLES]
+
+    # "not read" rather than "no longer read": the header covers all three
+    # groups, and one of them is names this application has never read at all.
+    parts = [f"These environment variables are set and not read: "
+             f"{', '.join(found)}."]
+    if moved:
+        parts.append(
+            f"These settings live in the app since v5 ({', '.join(moved)}) — "
+            f"turn them on the settings page, or with one PUT /api/settings.")
+    if deleted:
+        parts.append(
+            f"These were removed and have no replacement: "
+            f"{', '.join(deleted)}.")
+    if unknown:
+        parts.append(
+            f"These are not settings this application has ever read: "
+            f"{', '.join(unknown)}.")
+    app_logger.warning(' '.join(parts))
+    return found
+
+
+def effective_environment() -> List[Dict]:
+    """What this container was started with, read-only (#654 §6a → #656).
+
+    Not a settings view any more (#701): the dials moved into the store and are
+    served by :func:`settings.describe`, so what is left here is the half that
+    genuinely cannot be answered from the store — the store's own location, the
+    sockets, the log level. None of it is writable from in here and none of it
+    claims to be.
+
+    Two rules survive from #654's traps:
 
     * **Redact by name, never by value** (trap 12). ``INFLUXDB_TOKEN`` sits in
       the same environment and the prototype has no authentication — auth is out
       of the map's scope — so the value never leaves the process. ``set`` says
       whether there is one, which is the only thing worth knowing about it.
     * **``source`` is factual, not helpful** (trap 2). Compose renders
-      ``${SB_REGULAR_INTERVAL:-120}`` as ``120`` even when ``.env`` omits the
-      line, so under compose almost everything reads ``environment`` and the
-      app's own defaults are dead code. Reporting a variable as "unset, using
-      the default" *because it equals the default* would be a guess; this reports
-      what was found.
+      ``${SB_WEB_PORT:-8080}`` as ``8080`` even when ``.env`` omits the line, so
+      under compose almost everything reads ``environment`` and the app's own
+      defaults are dead code. Reporting a variable as "unset, using the default"
+      *because it equals the default* would be a guess; this reports what was
+      found.
     """
-    settings = []
-    for name, default, scope, secret, deprecated in SETTINGS_INVENTORY:
+    reported = []
+    for name, default, secret in ENVIRONMENT_INVENTORY:
         raw = env_str(name)
         if raw is not None:
             source, value = 'environment', raw
@@ -270,44 +353,43 @@ def effective_settings(metrics=None) -> List[Dict]:
             # override simply has no value when unset.
             source, value = 'unset', None
 
-        attribute = _LIVE_ATTRIBUTES.get(name)
-        if metrics is not None and attribute is not None:
-            live = getattr(metrics, attribute, None)
-            if live is not None:
-                value = str(live)
-        elif name == 'LOG_LEVEL':
-            # The only runtime dial the app can actually change (#654 §6b), so
+        if name == 'LOG_LEVEL':
+            # The one of these the app can change while it runs (#654 §6b), so
             # the level `logging` holds now is the effective one — the variable
             # is merely where it started.
             value = current_log_level()
 
-        settings.append({
+        reported.append({
             'name': name,
             'value': None if secret else value,
             'set': raw is not None,
             'source': source,
-            'scope': scope,
             'secret': secret,
-            'deprecated': deprecated,
         })
-    return settings
+    return reported
 
 
 def register_interval_jobs(scheduler, sb_metrics,
-                           backfill_interval: int, perf_interval: int) -> None:
+                           backfill_interval: int) -> None:
     """Register the two fixed-cadence interval jobs on ``scheduler``.
 
     Kept separate from the per-symbol scrape jobs (issue #616), which are ``date``
     triggers armed by ``ingest``/``_reconcile_jobs`` under the ``scrape:`` id
-    prefix. The perf recompute is its own job at ``SB_PERF_INTERVAL`` (issue
-    #618), never piggybacked on the scrape. Extracted from ``__main__`` so the
-    wiring is unit-testable against a spy scheduler.
+    prefix. The perf recompute is its own job (issue #618), never piggybacked on
+    the scrape. Extracted from ``__main__`` so the wiring is unit-testable
+    against a spy scheduler.
 
     **Two, not three** (issue #697). The ``ingest`` job left with
     ``SB_INGESTION_INTERVAL``: it polled the drop folder because the files were
     the truth, and the store is the truth now. The ingestion still happens — it
     is armed by the boot and by the always-on watcher, and it follows a write
     instead of a timer.
+
+    **One interval, not two** (issue #701). The backfill's cadence is a dial in
+    the store and arrives as an argument; the perf job's is
+    ``scheduling.PERF_TICK``, a constant, because ``perf_should_run`` is the real
+    gate and the number only decides how long a recompute waits after the change
+    that earned it.
     """
     scheduler.add_job(
         sb_metrics.backfill, 'interval',
@@ -316,9 +398,77 @@ def register_interval_jobs(scheduler, sb_metrics,
         name='Historical backfill')
     scheduler.add_job(
         sb_metrics.recompute_perf, 'interval',
-        seconds=perf_interval,
+        seconds=scheduling.PERF_TICK,
         id='perf',
         name='Performance recompute')
+
+
+#: The interval job a dial's ``REARM_BACKFILL_JOB`` effect reschedules.
+BACKFILL_JOB_ID = 'backfill'
+
+
+def apply_settings(runtime, changes) -> Dict:
+    """Make a set of saved dials take effect, and say what they reached (#701).
+
+    The other half of "no dial requires a restart", and the half that has to be
+    careful. Three rules, each of them a bug someone would otherwise ship:
+
+    * **only what changed.** ``reschedule_job`` recomputes ``next_run_time``
+      from *now*, so re-arming a job whose dial did not move would reset its
+      timer — and a save button that rewrote every row would reset every timer
+      on every click, in a way that looks like nothing at all from outside.
+    * **only the symbols whose market is open.** :func:`scheduling.rearm_split`
+      owns the decision; a sleeping symbol reads the new cadence when it wakes.
+    * **count what happened.** The caller answers a human, and "3 symbols now,
+      8 more when their market opens" is the only honest way to say that a
+      portfolio-wide dial did not reach the whole portfolio this second.
+
+    Returns the report the route publishes. Tolerant of a runtime with no
+    metrics or no scheduler (before the fork, and in a test) — the dial is
+    already in the store, and the boot reads it from there.
+    """
+    report = {
+        'symbols_rescheduled': 0,
+        'symbols_at_market_open': 0,
+        'jobs_rescheduled': [],
+    }
+    metrics = getattr(runtime, 'metrics', None)
+    if metrics is None:
+        return report
+
+    # The live attributes first, in one loop over the registry — five hand
+    # written assignments here would be the second list ADR-0014 forbids.
+    metrics.apply_dials({change.key: change.after for change in changes})
+
+    for change in changes:
+        effect = settings_registry.spec_for(change.key).effect
+        if effect == settings_registry.REARM_SCRAPE:
+            reached, sleeping = metrics.rearm_regular_scrapes()
+            report['symbols_rescheduled'] += reached
+            report['symbols_at_market_open'] += sleeping
+        elif effect == settings_registry.REARM_BACKFILL_JOB:
+            if _reschedule_interval_job(
+                    runtime.scheduler, BACKFILL_JOB_ID, change.after):
+                report['jobs_rescheduled'].append(BACKFILL_JOB_ID)
+    return report
+
+
+def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
+    """Re-cadence one interval job. ``False`` when there is nothing to re-cadence.
+
+    Guarded like every other scheduler touch in this module: a
+    ``JobLookupError`` on a job that is not registered (a runtime built without
+    a scheduler, a shutdown in flight) must not turn a saved setting into a
+    ``503`` — the value is in the store either way, and the next boot reads it.
+    """
+    if scheduler is None:
+        return False
+    try:
+        scheduler.reschedule_job(job_id, trigger='interval', seconds=seconds)
+        return True
+    except Exception as e:
+        app_logger.error(f"Failed to reschedule the {job_id} job: {e}")
+        return False
 
 
 # ``InvalidConfigFile`` and ``load_shares_schema`` left with ``schema.yaml``
@@ -875,25 +1025,39 @@ class SuiviBourseMetrics:
         if self.prometheus is None and env_flag('SB_PROMETHEUS_ENABLED', True):
             self.prometheus = PrometheusExporter()
 
-        # Backfill configuration
-        self.backfill_delay = env_int('SB_BACKFILL_DELAY', 10)
-        self.backfill_chunk_days = env_int('SB_BACKFILL_CHUNK_DAYS', 365)
-
-        # Price-freshness liveness sonde horizon (issue #628, design #626). The
-        # staleness signal fires only once the newest stored price has gone
-        # unrefreshed for at least this many seconds while the live quote moves;
-        # a few REGULAR cycles wide by default so an ordinary tick never trips it.
-        # ``0`` (or negative) disables the sonde — the pure decision returns
-        # False and the check no-ops.
-        self.staleness_horizon = env_int(
-            'SB_STALENESS_HORIZON', scheduling.STALENESS_HORIZON)
+        # The dials (issue #701, ADR-0014). Constructed at the **code's** values
+        # and overwritten by the store in ``start_runtime``, which is the only
+        # order that keeps the registry the single list: an object that read the
+        # store here would need one, and a test that builds one directly would
+        # need a store to build it. Each is a plain mutable attribute every
+        # cycle re-reads, which is what makes a saved dial take effect with no
+        # restart — the write path assigns it and the next pass reads it.
+        #
+        #   backfill_delay / backfill_chunk_days — the backfill's politeness and
+        #     window.
+        #   staleness_horizon — the price-freshness liveness sonde (issue #628,
+        #     design #626): the signal fires only once the newest stored price
+        #     has gone unrefreshed for this many seconds while the live quote
+        #     moves, a few REGULAR cycles wide so an ordinary tick never trips
+        #     it. ``0`` disables the sonde — the pure decision returns False and
+        #     the check no-ops.
+        #   regular_interval — see below.
+        #
+        # Assigned by one loop and not by four literals, deliberately: a default
+        # spelled here as well as in the registry is the second list ADR-0014
+        # exists to forbid, and it would be the copy nobody updates.
+        self.apply_dials(settings_registry.defaults())
 
         # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
         # as its own self-rescheduling APScheduler job; the scheduler is injected
         # from __main__ (None until then, so unit tests that never wire it skip
         # reconciliation). `regular_interval` is the REGULAR-state poll cadence
-        # (base_interval), overridden from the environment in __main__.
-        # `_failure_counts` holds the per-symbol consecutive-failure count fed to
+        # (base_interval), and it is also the base of the #617 back-off — so
+        # changing it rescales, retroactively, the wait of a symbol that is
+        # already failing. It is set by `apply_dials` above and **not** repeated
+        # here: a literal at this line would win over the registry it just read,
+        # and would go on agreeing with it only until the registry's default
+        # changed. `_failure_counts` holds the per-symbol consecutive-failure count fed to
         # scheduling.decide for the dead-ticker backoff (issue #617); it is
         # dropped in _reconcile_jobs when a symbol departs so state is per-job.
         # Written by the scrape thread and popped by the ingest/reconcile thread
@@ -901,7 +1065,6 @@ class SuiviBourseMetrics:
         # guarded by `_failure_counts_lock`: without it, an in-flight scrape of a
         # just-departed symbol could resurrect its counter after cleanup.
         self.scheduler: Optional[BackgroundScheduler] = None
-        self.regular_interval = 120
         self._failure_counts: Dict[str, int] = {}
         self._failure_counts_lock = threading.Lock()
 
@@ -1262,8 +1425,12 @@ class SuiviBourseMetrics:
         indefinitely. Any symbol that fails or doesn't resolve in time maps to
         ``None`` — a solo market (see ``_exchange_from_info``).
 
-        Only called on the auto path (``SB_DYNAMIC_EXECUTOR_POOL=true``), so the
-        fixed-pool default never pays this fetch cost.
+        **Every boot pays this since #701**, the opt-in flag that used to gate it
+        having been deleted along with the fixed pool it selected. That is what
+        makes the cap above load-bearing rather than defensive, and why
+        ``gunicorn.conf.py`` sets an explicit ``timeout``: this whole call
+        happens in ``post_fork``, before the worker reaches the accept loop that
+        answers the arbiter's heartbeat.
         """
         exchange_of: Dict[str, Optional[str]] = {}
         to_fetch = []
@@ -1343,6 +1510,101 @@ class SuiviBourseMetrics:
             args=[symbol], id=_scrape_job_id(symbol),
             name=f'Scrape {symbol}', replace_existing=True,
             misfire_grace_time=None, max_instances=1)
+
+    def apply_dials(self, values: Dict[str, object]) -> None:
+        """Set the live attributes a mapping of dials names (issue #701).
+
+        One loop over :data:`settings_registry.SETTINGS`, so the attribute a dial
+        feeds is declared once — in the registry, next to its bounds and its
+        effect — instead of in a hand-written assignment here that can silently
+        fall out of step with it.
+
+        Keys the mapping does not carry are left alone (a ``PUT`` naming one
+        dial must not reset the other four), and so is a ``None`` value: the
+        only dial that can be ``None`` is the unanswered currency, and it has no
+        attribute anyway.
+        """
+        for spec in settings_registry.SETTINGS:
+            if spec.attribute is None:
+                continue
+            if values.get(spec.key) is not None:
+                setattr(self, spec.attribute, values[spec.key])
+
+    def rearm_regular_scrapes(self) -> Tuple[int, int]:
+        """Re-arm the symbols a new ``regular_interval`` reaches (issue #701).
+
+        Returns ``(reached, at_market_open)`` — the two figures the API
+        publishes, and they **add up to the held portfolio**, because a
+        portfolio-wide dial that reaches three symbols out of eleven has to say
+        so rather than let the reader assume the other eight are broken.
+
+        The classification is :func:`scheduling.rearm_split`'s, off the
+        scheduler's own last-pass records; the re-arm is the ordinary
+        :meth:`_arm_symbol`, so the anti-herd jitter (#619) applies here as it
+        does everywhere else — saving a cadence must not put a whole cohort back
+        into lockstep.
+
+        **A failing symbol keeps its back-off, rescaled.** The delay is
+        ``scheduling.backoff_delay(new_interval, failures)`` and not the flat
+        cadence, which is the same arithmetic ``decide`` would have applied on
+        the symbol's next pass. Re-arming a dead ticker at the bare interval
+        would silently discard #617's whole guard on every save — and the
+        rescaling *is* the retroactive effect the settings page has to announce:
+        the wait is a multiple of the number in the form, so lowering the form's
+        number shortens the wait of a symbol that has been silent since this
+        morning.
+
+        The new cadence otherwise starts **now**, not from the symbol's last
+        poll: a shortened interval waits one full new interval rather than
+        firing immediately, and a lengthened one does not honour the old short
+        one. One sentence in either direction is worth more than a saved cycle.
+
+        Guarded end to end. A saved setting is in the store whatever the
+        scheduler does with it, so a jobstore hiccup is logged and reported as
+        "reached nothing", never raised into the handler as a ``503`` on a write
+        that in fact succeeded.
+        """
+        if self.scheduler is None:
+            return 0, 0
+        try:
+            now = datetime.now(timezone.utc)
+            held = self._held_symbols()
+            armed = set(scrape_next_runs(self.scheduler))
+            closed = {symbol: self._last_pass_closed(symbol) for symbol in held}
+            split = scheduling.rearm_split(held, closed, armed)
+        except Exception as e:
+            app_logger.error(f"Failed to read the scrape jobs to re-arm: {e}")
+            return 0, 0
+
+        reached = len(split.self_arming)
+        for symbol in split.rearm:
+            try:
+                with self._failure_counts_lock:
+                    failures = self._failure_counts.get(symbol, 0)
+                self._arm_symbol(
+                    symbol,
+                    scheduling.backoff_delay(self.regular_interval, failures),
+                    now)
+                reached += 1
+            except Exception as e:
+                app_logger.error(f"Failed to re-arm scrape job for {symbol}: {e}")
+
+        app_logger.info(
+            f"Poll cadence is now {self.regular_interval}s: {reached} "
+            f"symbol(s) reached, {len(split.asleep)} waiting for their market "
+            f"to open")
+        return reached, len(split.asleep)
+
+    def _last_pass_closed(self, symbol: str) -> Optional[bool]:
+        """Was this symbol's market shut on its last pass? ``None`` if it has none.
+
+        One ``get`` per key, never an iteration: the records are written by the
+        scrape threads, and copying the dict they are writing raises
+        ``RuntimeError: dictionary changed size during iteration`` — with forty
+        symbols, and only in production (#668).
+        """
+        record = self.recorder.scrape_of(symbol)
+        return None if record is None else record.closed
 
     def _reconcile_jobs(self) -> None:
         """Diff the held-symbol set against the scheduled jobs (design #604).
@@ -1745,7 +2007,7 @@ class SuiviBourseMetrics:
         For each share, delegates to ``_backfill_share`` which runs two
         independent passes (issue #626):
           * Backward: extend the series toward the first BUY date, one
-            ``SB_BACKFILL_CHUNK_DAYS`` chunk per cycle, until ``_backfill_complete``
+            ``backfill_chunk_days`` chunk per cycle, until ``_backfill_complete``
             is set.
           * Forward: recover a session missed while the app was down by fetching
             ``[newest, now]`` (issue #627) — independent of the backward
@@ -1926,7 +2188,7 @@ class SuiviBourseMetrics:
           * otherwise ``prices`` is the fetched rows and ``written`` the count
             persisted.
 
-        Rate-limits (``SB_BACKFILL_DELAY``) after any completed fetch — empty or
+        Rate-limits (``backfill_delay``) after any completed fetch — empty or
         written — but not after a fetch failure.
         """
         prices = self._fetch_historical_data(
@@ -1944,7 +2206,7 @@ class SuiviBourseMetrics:
 
     def _backfill_backward(self, share, first_buy_date, timeline) -> int:
         """Backward pass: extend the series toward the first BUY date, one chunk
-        (``SB_BACKFILL_CHUNK_DAYS``) per cycle. Returns points written this cycle.
+        (``backfill_chunk_days``) per cycle. Returns points written this cycle.
 
         Every exit publishes a last-pass record (issue #668). That is the whole
         answer to #656's driving question: this method used to log a warning and
@@ -2426,6 +2688,13 @@ def build_runtime() -> Runtime:
     """
     app_logger.info('SuiviBourse is running !')
 
+    # Name what is set and no longer obeyed, before anything reads anything
+    # (issue #701, ADR-0014). The gesture ``config.yaml`` and ``settings.yaml``
+    # already get: an install upgrading from v4 carries a whole .env of dials,
+    # and a cadence that silently stops being honoured is exactly the kind of
+    # change that reads as a regression six weeks later.
+    report_unread_environment()
+
     # The store, first and before anything else (issue #696). It takes the exact
     # place #658 gave the Cerberus validation — same side of the fork, same
     # "nothing has been spawned yet, so a failure is one clean exit" — for a
@@ -2486,12 +2755,6 @@ def start_runtime(runtime: Runtime) -> Runtime:
     which is also what arms the per-symbol scrape jobs (issue #616), their
     immediate first fire being the bootstrap.
     """
-    # Get intervals from environment. SB_REGULAR_INTERVAL is the REGULAR-state
-    # poll cadence (design #607); its deprecated predecessor is gone with #711.
-    regular_interval = env_int('SB_REGULAR_INTERVAL', 120)
-    backfill_interval = env_int('SB_BACKFILL_INTERVAL', 60)
-    perf_interval = env_int('SB_PERF_INTERVAL', 120)
-
     # The worker's own store connection (issue #696). The master proved the file
     # openable and closed it; this is the connection that lives for the process,
     # and it belongs on this side of the fork for the same reason the InfluxDB
@@ -2503,6 +2766,16 @@ def start_runtime(runtime: Runtime) -> Runtime:
         # through the fork intact and stands until the first replay.
         runtime.config_manager.attach_store(runtime.store)
 
+    # The dials, from the store and from nowhere else (issue #701, ADR-0014).
+    # Read here rather than in the master because the master's connection is
+    # closed by the time this runs — and read *once*, into the attributes every
+    # cycle re-reads, so the scrape path never queries DuckDB from a scrape
+    # thread. The write path assigns the same attributes, which is the whole of
+    # "no dial requires a restart".
+    dials = settings_registry.defaults() if runtime.store is None \
+        else settings_module.read_all(runtime.store)
+    backfill_interval = dials['backfill_interval']
+
     # Init SuiviBourseMetrics (connects to InfluxDB). The exporter comes from the
     # master so the gauges the Flask app already publishes are the ones the
     # scrape path updates; passing None when it is disabled leaves it disabled.
@@ -2510,21 +2783,23 @@ def start_runtime(runtime: Runtime) -> Runtime:
         runtime.config_manager,
         prometheus_exporter=runtime.prometheus,
         recorder=runtime.recorder)
-    sb_metrics.regular_interval = regular_interval
+    sb_metrics.apply_dials(dials)
     runtime.metrics = sb_metrics
 
     # Watch the drop folder. Always, and with no dial (issue #697): dropping a
     # file is how a headless install imports, and there is nobody there to
     # click. The callback is the replay itself.
     runtime.config_manager.start_watcher(sb_metrics.ingest)
-    # Size the executor pool from the two dials (issue #619). Default
-    # (SB_DYNAMIC_EXECUTOR_POOL=false) is a fixed pool of SB_EXECUTOR_POOL
-    # (10) — identical to today. Auto sizing groups the held symbols into
-    # same-exchange cohorts, so capture_exchange_of() is invoked only on that
-    # path (a pre-scheduler fetch; the executor is fixed once at
-    # construction, no hot resize).
-    pool_size = resolve_executor_pool_size(
-        sb_metrics.shares, sb_metrics.capture_exchange_of)
+    # Size the executor pool, always automatically (issue #701, formula #619).
+    # The fixed dial was deleted rather than moved into the store: the executor
+    # is built once here and a ThreadPoolExecutor does not shrink hot, so it was
+    # the one setting that would still have required recreating the container —
+    # and it was a silent trap besides, a cohort of thirty symbols on a pool of
+    # ten serialising its own scrapes with nothing anywhere to say so. Grouping
+    # the held symbols into same-exchange cohorts costs a pre-scheduler exchange
+    # fetch, bounded by its own deadline.
+    pool_size = scheduling.compute_pool_size(
+        sb_metrics.shares, sb_metrics.capture_exchange_of())
     # Wire the scheduler before bootstrapping so ingest() can arm the
     # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
     # bootstrap — no separate initial scrape. Background, not Blocking: the
@@ -2539,14 +2814,13 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # Register the three fixed-cadence interval jobs (ingestion, backfill,
     # perf recompute). Per-symbol scrape jobs are armed by ingest() above and
     # kept separate; the perf recompute is its own gated job (issue #618).
-    register_interval_jobs(
-        scheduler, sb_metrics, backfill_interval, perf_interval)
+    register_interval_jobs(scheduler, sb_metrics, backfill_interval)
     scheduler.start()
     app_logger.info(
         f"Scheduler started: per-symbol scraping (REGULAR every "
-        f"{regular_interval}s), ingestion on write (watched drop folder), "
-        f"backfill every {backfill_interval}s, perf every {perf_interval}s, "
-        f"executor pool: {pool_size} workers")
+        f"{sb_metrics.regular_interval}s), ingestion on write (watched drop "
+        f"folder), backfill every {backfill_interval}s, perf checked every "
+        f"{scheduling.PERF_TICK}s, executor pool: {pool_size} workers")
     return runtime
 
 

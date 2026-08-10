@@ -38,6 +38,7 @@ TYPE_NOT_FOUND = '/problems/not-found'
 TYPE_BAD_REQUEST = '/problems/bad-request'
 TYPE_INTERNAL = '/problems/internal-error'
 TYPE_CONFLICT = '/problems/conflict'
+TYPE_INVALID_SETTING = '/problems/invalid-setting'
 
 # #662's write-path vocabulary — a stale fingerprint, a read-only source, an
 # unwritable directory, a wrong mode — left with the apparatus that raised it
@@ -110,6 +111,24 @@ def conflict(detail: str):
     return problem(409, 'Conflict', detail, TYPE_CONFLICT)
 
 
+def unprocessable(detail: str, key: Optional[str] = None):
+    """422 — the body parsed, and a value in it is not one the registry takes.
+
+    Distinct from ``400`` on the axis RFC 9457 cares about: the request is well
+    formed, the syntax is fine, and it is the *content* that cannot be
+    processed. A cadence of ``0`` is not a typo in the JSON, it is an answer the
+    app refuses — and a client that retried it because it read ``400`` as "fix
+    your encoding" would retry forever.
+
+    ``key`` names the field, so a form can mark the input that was refused
+    rather than show a sentence above the whole page. It is an extension member
+    of the problem object, which RFC 9457 explicitly allows.
+    """
+    extra = {'key': key} if key else {}
+    return problem(
+        422, 'Invalid setting', detail, TYPE_INVALID_SETTING, **extra)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -117,5 +136,5 @@ def internal_error(detail: str):
 
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
-    'internal_error', 'CONTENT_TYPE',
+    'unprocessable', 'internal_error', 'CONTENT_TYPE',
 ]

@@ -464,8 +464,9 @@ of both. A `config.yaml` found in the config directory is **named at startup and
 never read** (`ConfigurationManager.report_unread_files`, ADR-0008): four empty
 pages otherwise read as *"the update erased my portfolio"*. An events source
 that does not exist yet is a fresh install — a warning and an empty portfolio,
-never a boot failure. `SB_SCRAPING_INTERVAL`, the deprecated fallback for
-`SB_REGULAR_INTERVAL`, is removed too (v5 is breaking).
+never a boot failure. `SB_SCRAPING_INTERVAL`, the deprecated fallback for the poll cadence, is
+removed too (v5 is breaking) — and since #701 the cadence itself is a dial in
+the store rather than a variable.
 
 **Configuration is one immutable snapshot** (issue #658, design #653).
 `ConfigurationManager` holds a single `ConfigSnapshot` — `shares`, `events`,
@@ -524,7 +525,7 @@ The application runs independent scheduled jobs on a single APScheduler:
   stops being written, or that account collects a point of zeros every cycle and
   the shares page grows a phantom row. Each job fetches its symbol from Yahoo Finance, writes a point
   per account holding it, then re-arms on its own cadence: `REGULAR` markets
-  re-poll every `SB_REGULAR_INTERVAL` (default 120s); closed markets sleep to
+  re-poll every `regular_interval` (a store dial, default 120s); closed markets sleep to
   the next open (capped 24h). A **dead-ticker guard** (issue #617) backs a
   symbol off when non-closed cycles keep producing no writable price: the first
   3 failures still re-arm at `base_interval`, then the delay grows
@@ -534,7 +535,7 @@ The application runs independent scheduled jobs on a single APScheduler:
   it reads the newest stored price for the (symbol, account) and advances the
   pure `scheduling.price_freshness_step` against per-series memory
   (`_sonde_state`). When the stored value stays frozen across *consecutive*
-  `REGULAR` cycles for at least `SB_STALENESS_HORIZON` (default 900s) while the
+  `REGULAR` cycles for at least `staleness_horizon` (a store dial, default 900s) while the
   live quote moves, it emits a WARNING and raises the `sb_price_staleness` gauge.
   Staleness is measured over consecutive polling, **not** the stored point's
   wall-clock age — the writer advancing the value each cycle re-baselines, and a
@@ -550,13 +551,17 @@ The application runs independent scheduled jobs on a single APScheduler:
   the `REGULAR`-poll lockstep is re-randomized each cycle. Jobs carry
   `misfire_grace_time=None` (run however late — a skipped run would permanently
   kill a self-rescheduling job; the on-wake `marketState` re-read self-corrects)
-  and `max_instances=1`. The APScheduler **executor pool** is sized at boot from
-  two dials: `SB_DYNAMIC_EXECUTOR_POOL` (default `false` → fixed
-  `SB_EXECUTOR_POOL`, default 10) or, when `true`, the pure
+  and `max_instances=1`. The APScheduler **executor pool** is sized at boot,
+  **always automatically** since #701: the pure
   `scheduling.compute_pool_size(shares, exchange_of)` =
   `min(RESERVED + ceil(largest_cohort × 5 / 30), 50)` with `RESERVED` 3 — one
-  figure since #711, there being one job set. `exchange_of` is captured by a pre-scheduler fetch
-  (`capture_exchange_of`) only on the auto path.
+  figure since #711, there being one job set. `exchange_of` is captured by a
+  pre-scheduler fetch (`capture_exchange_of`), which is therefore no longer
+  optional. The fixed dial and its opt-in flag were **deleted rather than moved
+  into the store**: a `ThreadPoolExecutor` does not shrink hot, so they were the
+  one couple that would still have required recreating the container — and a
+  fixed pool is a silent trap besides (a cohort of 30 symbols on a pool of 10
+  serialises its own scrapes with nothing anywhere to say so).
 - **Ingestion**: **not a job** (issue #697). It polled the drop folder every
   300s because the files were the truth; the store is the truth now, so the
   ledger only changes when a write changes it. Ingestion still happens — armed
@@ -567,7 +572,7 @@ The application runs independent scheduled jobs on a single APScheduler:
   re-scanning the folder would import the revoked file straight back.
 - **Backfill**: **bidirectional** (issue #626), every 60s, both passes run per
   share each cycle and are independent. **Backward** (pre-existing): oldest
-  stored point → first `BUY`, one `SB_BACKFILL_CHUNK_DAYS` chunk per cycle,
+  stored point → first `BUY`, one `backfill_chunk_days` chunk per cycle,
   stops once the `_backfill_complete` watermark is set. **Forward gap-fill**
   (issue #627): recovers a trading session missed while the app was down
   (stop/crash/host asleep) by fetching `[newest → now]` — anchor =
@@ -591,8 +596,10 @@ The application runs independent scheduled jobs on a single APScheduler:
   refetch `[newest → now]` from Yahoo **every day, forever**, for every symbol
   the owner has ever sold out of.
 - **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
-  (opt-in accounts only) as its **own gated interval job** at `SB_PERF_INTERVAL`
-  (default 120s), decoupled from the per-symbol scrape jobs (issue #618). Each
+  (opt-in accounts only) as its **own gated interval job** on
+  `scheduling.PERF_TICK` (120s, a constant and not a dial since #701 — the gate
+  is the real cadence, so the number only decides how long a recompute waits
+  after the change that earned it), decoupled from the per-symbol scrape jobs (issue #618). Each
   run is gated by the pure predicate `scheduling.perf_should_run()` — it runs
   only when something changed since the last run: the events cache reloaded, a
   backfill watermark is pending, or a `REGULAR` write occurred. The live-write
@@ -629,8 +636,8 @@ the ticket that deletes the path.
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
-│  self-rescheduling)      │  │  (NOT a job)      │  │   (every 60s)    │  │ (SB_PERF_INTERVAL) │
-│                          │  │                   │  │                  │  │                    │
+│  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK, gated)│
+│                          │  │                   │  │   interval dial) │  │                    │
 │ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • perf_should_run? │
 │ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │ • Recompute perf   │
 │ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │   series (opt-in   │
@@ -859,7 +866,68 @@ If ingestion fails (invalid event, file error, an accounts source that cannot st
 
 ---
 
+### The dials (issue #701, ADR-0014)
+
+**There is one place that says what a setting is worth: the store.** No
+precedence rule, no seed-on-first-boot, no settings file, no environment form —
+and **no dial requires a restart**, which is what leaves the settings page a
+single class of field. `settings_registry.py` is the **single list**: for each
+dial its key, type, default, bounds and *what changing it triggers*. The write
+path validates against it, `/api/config` enumerates it, and the form renders it.
+Four lists would agree on the day they were written and not much longer.
+
+| Dial | Default | Bounds | Effect of a change |
+|---|---|---|---|
+| `regular_interval` | `120` | 10–86400 | re-arms the scrape jobs **whose market is open right now** |
+| `backfill_interval` | `60` | 10–86400 | reschedules the `backfill` interval job |
+| `backfill_delay` | `10` | 0–3600 | read by the next backfill cycle |
+| `backfill_chunk_days` | `365` | 1–3650 | read by the next backfill cycle |
+| `staleness_horizon` | `900` | 0–86400 | read by the next scrape cycle; `0` disables the sonde |
+| `base_currency` | *none* | — | the reporting currency; no default, and its own ticket interprets it |
+
+`PUT /api/settings` is the **only writer**, and it being HTTP is what keeps a
+headless install whole — *headless means without an interface, not without
+HTTP*, so one `curl` suffices and the page is one client among others. It
+answers `422` (`application/problem+json`, with the refused `key`) on an unknown
+dial, a wrong type or a value out of bounds, and **writes nothing at all** when
+it refuses: a half-applied body is a state nobody asked for.
+
+Three properties of the apply path are decisions rather than details:
+
+- **Only what actually changed is re-armed.** `reschedule_job` recomputes
+  `next_run_time` from *now*, so a save button that rewrote every row would put
+  every timer back to zero on every click — invisibly. The comparison is
+  against the store's *effective* value, so re-posting `120` on a dial that
+  already reads `120` reports no change at all.
+- **`regular_interval` reaches only the symbols currently in `REGULAR`.** The
+  question is put to the jobstore rather than to a second copy of `marketState`
+  (`scheduling.rearm_split`, classified against the **outgoing** interval): a
+  polling symbol was armed at most `interval + jitter` ahead, a sleeping one at
+  its next market open. A sleeping symbol is not mis-set — it reads the dial
+  when it wakes. The answer therefore **quantifies the effect**
+  (`symbols_rescheduled` / `symbols_at_market_open`), because a portfolio-wide
+  dial that reaches 3 symbols out of 11 has to say so.
+- **`regular_interval` is also the base of #617's back-off**, whose wait is
+  `regular_interval × 2^(n−3)` and not an absolute delay stored anywhere — so
+  changing it rescales, **retroactively**, the wait of a symbol that has been
+  failing since this morning. No interface can hide it: the number in the form
+  is the number in the formula.
+
+Three of v4's variables were **deleted rather than moved**:
+`SB_DYNAMIC_EXECUTOR_POOL` and `SB_EXECUTOR_POOL` (a `ThreadPoolExecutor` does
+not shrink hot, so they were the one couple that would still have needed a
+restart — sizing is now always automatic), and `SB_PERF_INTERVAL` (the gate is
+the cadence). Every retired `SB_*`/`INFLUXDB_*` variable that is still **set** is
+named at start-up in **one grouped notice** and obeyed by nothing
+(`main.report_unread_environment`) — the gesture `config.yaml` and
+`settings.yaml` already get, and the list is *computed* rather than written down,
+so it cannot drift.
+
 ### Environment Variables
+
+What is left in the environment is exactly what the process must know **before**
+it can open the store (ADR-0014) — a mechanical test, not a judgement about
+nature. `main.ENVIRONMENT_INVENTORY` is the list `/api/config` publishes.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -867,18 +935,11 @@ If ingestion fails (invalid event, file error, an accounts source that cannot st
 | `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
 | `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
 | `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
-| `SB_REGULAR_INTERVAL` | `120` | Poll interval (seconds) for a symbol whose market is in `REGULAR` state (per-symbol scheduling). Closed markets sleep to next open instead. |
-| `SB_PERF_INTERVAL` | `120` | Perf-recompute interval (seconds) for the gated `account_metrics`/`portfolio_totals` job (issue #618) |
-| `SB_DYNAMIC_EXECUTOR_POOL` | `false` | Opt-in: auto-size the APScheduler thread pool from the largest same-exchange cohort (issue #619). Off = fixed pool, zero change from today. |
-| `SB_EXECUTOR_POOL` | `10` | Fixed executor pool size when `SB_DYNAMIC_EXECUTOR_POOL=false`. Enforced `≥1`. Ignored (warns) when auto sizing is on (issue #619). |
 | `SB_WEB_PORT` | `8080` | Port for the Flask web API and its `/health` route — the container healthcheck's only target (issue #651). Since #696 the probe **reaches the store**: "survive a database outage" has no subject once the database is a file this process opens (ADR-0015) |
-| `SB_BACKFILL_INTERVAL` | `60` | Backfill check interval (seconds) |
-| `SB_BACKFILL_DELAY` | `10` | Delay between yfinance requests (seconds) |
-| `SB_BACKFILL_CHUNK_DAYS` | `365` | Days of history per backfill request |
-| `SB_STALENESS_HORIZON` | `900` | Price-freshness liveness sonde horizon (seconds): during `REGULAR`, flag a symbol whose stored price stays frozen this long across consecutive polling cycles while the live quote moves (issue #628). Diagnostic only — never changes cadence/write gating/#617 backoff. `0` disables the sonde. |
 | `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint. Since #651 it unmounts a Flask route rather than skipping an HTTP server, so `false` also leaves `SB_METRICS_PORT` unbound |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint — a second gunicorn socket on the same app, so existing scrapers see no change |
-| `LOG_LEVEL` | `INFO` | Logging level |
+| `SB_STATIC_DIR` | (the image's) | Where the built SPA is served from; unset has no value rather than a default |
+| `LOG_LEVEL` | `INFO` | Logging level. Here rather than in the store because the most likely failure of this app is the store failing to open, and a level kept inside it could not report that |
 
 ---
 
@@ -900,7 +961,8 @@ app/src/
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
 ├── legacy_influx_shape.py  # DISPOSABLE: the v4 field shape out of the v5 position (#699)
-├── settings_registry.py    # Pure: the one list of dials — key, default, parse (#696, ADR-0014)
+├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
+├── settings.py             # The dials' write path: validate the whole body, write what moved (#701)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
@@ -949,7 +1011,7 @@ Gauges (prefix `sb_`, labels `share_name`/`share_symbol`/`account`): `sb_share_p
 `sb_market_cap`, `sb_volume`, plus `sb_share_info` (value `1`, with extra labels
 `share_currency`/`share_exchange`/`quote_type`). `sb_price_staleness` is the
 price-freshness liveness sonde (issue #628): `1` when a symbol's stored price is
-silently stale (frozen past `SB_STALENESS_HORIZON` during `REGULAR` while the
+silently stale (frozen past `staleness_horizon` during `REGULAR` while the
 live quote moves), `0` otherwise — a gauge so it auto-clears when the writer
 recovers.
 

@@ -17,10 +17,13 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
+import runtime_state
 import scheduling
+import settings
+import settings_registry
 from main import (
     SuiviBourseMetrics, _scrape_job_id,
-    resolve_executor_pool_size, register_interval_jobs, SCRAPE_JOB_PREFIX)
+    register_interval_jobs, SCRAPE_JOB_PREFIX)
 
 
 UTC = timezone.utc
@@ -426,16 +429,15 @@ def test_recompute_perf_error_does_not_propagate_and_rearms_live_flag(
 
 
 # ---------------------------------------------------------------------------
-# register_interval_jobs — perf job at SB_PERF_INTERVAL, separate from scrape
+# register_interval_jobs — the perf job is separate from the scrape (#618/#701)
 # ---------------------------------------------------------------------------
 
-def test_register_interval_jobs_registers_perf_at_its_own_interval(
+def test_register_interval_jobs_registers_perf_on_its_own_tick(
         mock_influx, mocker):
     m = _metrics([_share()], mock_influx, mocker)
     scheduler = mocker.MagicMock(spec=BackgroundScheduler)
 
-    register_interval_jobs(
-        scheduler, m, backfill_interval=60, perf_interval=90)
+    register_interval_jobs(scheduler, m, backfill_interval=60)
 
     by_id = {c.kwargs["id"]: c for c in scheduler.add_job.call_args_list}
     # Two, not three: the ``ingest`` job left with SB_INGESTION_INTERVAL
@@ -443,10 +445,14 @@ def test_register_interval_jobs_registers_perf_at_its_own_interval(
     # for it to be registered at.
     assert set(by_id) == {"backfill", "perf"}
     perf = by_id["perf"]
-    # perf is an interval job at SB_PERF_INTERVAL, bound to recompute_perf.
+    # The perf tick is a constant, not a dial (#701): ``perf_should_run`` is the
+    # real gate, so the number only decides how long a recompute waits after the
+    # change that earned it.
     assert perf.args[0].__func__ is SuiviBourseMetrics.recompute_perf
     assert perf.args[1] == "interval"
-    assert perf.kwargs["seconds"] == 90
+    assert perf.kwargs["seconds"] == scheduling.PERF_TICK
+    # The backfill's cadence *is* a dial, and it arrives as an argument.
+    assert by_id["backfill"].kwargs["seconds"] == 60
     # Separate from the per-symbol scrape jobs (no scrape: prefixed id here).
     assert not any(jid.startswith(SCRAPE_JOB_PREFIX) for jid in by_id)
 
@@ -821,29 +827,113 @@ def test_reconcile_noop_without_scheduler(mock_influx, mocker):
 
 
 # ---------------------------------------------------------------------------
-# SB_REGULAR_INTERVAL — the one dial (#607; its deprecated heir left with #711)
+# The dials come from the registry and then from the store (#701, ADR-0014)
 # ---------------------------------------------------------------------------
 
-def test_regular_interval_defaults_to_120(monkeypatch):
-    monkeypatch.delenv("SB_REGULAR_INTERVAL", raising=False)
-    assert main.env_int("SB_REGULAR_INTERVAL", 120) == 120
+def test_a_fresh_metrics_carries_the_registry_s_values(mock_influx, mocker):
+    """No environment read left: the code's values, then the store's.
 
-
-def test_regular_interval_names_the_bad_variable(monkeypatch):
-    """A non-numeric interval raises the same named error as the other dials."""
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "abc")
-    with pytest.raises(ValueError, match="SB_REGULAR_INTERVAL"):
-        main.env_int("SB_REGULAR_INTERVAL", 120)
-
-
-def test_regular_interval_ignores_blank_values(monkeypatch):
-    """A blank var falls through to the default instead of crashing on int('').
-
-    `SB_REGULAR_INTERVAL=${REGULAR_INTERVAL}` with nothing in .env reaches the
-    container as an empty string, which is set-but-meaningless.
+    The environment holds what the process must know before it can open the
+    store, and a poll cadence is not that.
     """
-    monkeypatch.setenv("SB_REGULAR_INTERVAL", "")
-    assert main.env_int("SB_REGULAR_INTERVAL", 120) == 120
+    m = _metrics([_share()], mock_influx, mocker)
+
+    assert m.regular_interval == 120
+    assert m.backfill_delay == 10
+    assert m.backfill_chunk_days == 365
+    assert m.staleness_horizon == 900
+
+
+def test_apply_dials_sets_only_the_keys_it_is_given(mock_influx, mocker):
+    """A PUT naming one dial must not reset the other four."""
+    m = _metrics([_share()], mock_influx, mocker)
+
+    m.apply_dials({"regular_interval": 600})
+
+    assert m.regular_interval == 600
+    assert m.backfill_delay == 10
+
+
+def test_apply_dials_ignores_the_unanswered_currency(mock_influx, mocker):
+    """``base_currency`` is the one dial that can be ``None``, and it has no attribute."""
+    m = _metrics([_share()], mock_influx, mocker)
+
+    m.apply_dials(settings_registry.defaults())  # carries base_currency=None
+
+    assert m.regular_interval == 120
+
+
+def test_a_retired_environment_variable_is_named_and_not_obeyed(monkeypatch):
+    """ADR-0014's gesture, and it is computed rather than written down."""
+    monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
+
+    assert "SB_REGULAR_INTERVAL" in main.unread_environment()
+
+
+def test_a_variable_the_app_still_reads_is_not_in_the_notice(monkeypatch):
+    monkeypatch.setenv("SB_WEB_PORT", "9000")
+
+    assert "SB_WEB_PORT" not in main.unread_environment()
+
+
+def test_a_compose_only_variable_is_not_in_the_notice(monkeypatch):
+    """Naming them would suggest the app once obeyed them. It never did."""
+    monkeypatch.setenv("SB_VERSION", "5")
+    monkeypatch.setenv("SB_UID", "501")
+
+    found = main.unread_environment()
+
+    assert "SB_VERSION" not in found and "SB_UID" not in found
+
+
+def test_a_blank_retired_variable_is_not_reported(monkeypatch):
+    """Compose renders an undefined substitution as an empty string."""
+    monkeypatch.setenv("SB_PERF_INTERVAL", "")
+
+    assert "SB_PERF_INTERVAL" not in main.unread_environment()
+
+
+def test_the_notice_is_one_line_and_not_one_per_variable(monkeypatch, mocker):
+    """Five warnings would bury the sentence that matters: where the dials went."""
+    monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
+    monkeypatch.setenv("SB_PERF_INTERVAL", "120")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    main.report_unread_environment()
+
+    warn.assert_called_once()
+    assert "SB_REGULAR_INTERVAL" in warn.call_args.args[0]
+    assert "SB_PERF_INTERVAL" in warn.call_args.args[0]
+
+
+def test_the_notice_separates_what_moved_from_what_was_deleted(
+        monkeypatch, mocker):
+    """"Turn it on the settings page" is wrong for a dial that no longer exists.
+
+    An operator told that ``SB_EXECUTOR_POOL`` lives in the app now goes looking
+    for a field that has never existed, and a ``PUT`` naming it answers 422.
+    """
+    monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
+    monkeypatch.setenv("SB_EXECUTOR_POOL", "10")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    main.report_unread_environment()
+
+    message = warn.call_args.args[0]
+    assert "SB_REGULAR_INTERVAL → the regular_interval dial" in message
+    assert "removed and have no replacement: SB_EXECUTOR_POOL" in message
+
+
+def test_a_name_the_app_never_read_gets_no_instruction(monkeypatch, mocker):
+    """A typo must not send its author hunting for a dial that never existed."""
+    monkeypatch.setenv("SB_REGULAR_INTERVALL", "600")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    main.report_unread_environment()
+
+    message = warn.call_args.args[0]
+    assert "ever read: SB_REGULAR_INTERVALL" in message
+    assert "settings page" not in message
 
 
 # ---------------------------------------------------------------------------
@@ -885,13 +975,6 @@ def test_env_flag_parses_common_spellings(monkeypatch):
         assert main.env_flag("SB_TEST_FLAG", True) is False
     monkeypatch.setenv("SB_TEST_FLAG", "")
     assert main.env_flag("SB_TEST_FLAG", True) is True
-
-
-def test_executor_pool_ignores_blank_fixed_dial(monkeypatch):
-    """A blank SB_EXECUTOR_POOL falls back to 10 rather than crashing."""
-    monkeypatch.setenv("SB_EXECUTOR_POOL", "")
-    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "")
-    assert resolve_executor_pool_size([], _never_capture) == 10
 
 
 # ---------------------------------------------------------------------------
@@ -953,48 +1036,208 @@ def test_scrape_symbol_rearm_carries_misfire_and_max_instances(
 
 
 # ---------------------------------------------------------------------------
-# resolve_executor_pool_size — the two dials (issue #619)
+# Saving a dial: re-arm only what moved, and only where it applies (#701)
 # ---------------------------------------------------------------------------
 
-def _never_capture():  # a capture callable that must NOT be invoked
-    raise AssertionError("capture_exchanges called on the fixed-pool path")
+def _scrape_job(symbol):
+    return SimpleNamespace(id=_scrape_job_id(symbol), next_run_time=NOW)
 
 
-def test_executor_pool_defaults_to_ten(monkeypatch):
-    monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
-    monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
-    # Fixed path: capture must not run (no pre-scheduler fetch).
-    assert resolve_executor_pool_size([], _never_capture) == 10
+def _with_jobs(m, *symbols):
+    """Point the spy scheduler at a fixed set of idle scrape jobs."""
+    m.scheduler.get_jobs.return_value = [_scrape_job(s) for s in symbols]
+    return m
 
 
-def test_executor_pool_honors_fixed_dial(monkeypatch):
-    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "false")
-    monkeypatch.setenv("SB_EXECUTOR_POOL", "4")
-    assert resolve_executor_pool_size([], _never_capture) == 4
+def _scraped(m, symbol, closed):
+    """Record one completed pass for ``symbol`` — what the split classifies on."""
+    m.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol=symbol, at=NOW, market_state="CLOSED" if closed else "REGULAR",
+        closed=closed, price_present=not closed,
+        verdict=runtime_state.SCRAPE_CLOSED if closed
+        else runtime_state.SCRAPE_WROTE,
+        failure_count=0, next_delay=120.0))
 
 
-def test_executor_pool_fixed_enforces_at_least_one(monkeypatch):
-    monkeypatch.setenv("SB_EXECUTOR_POOL", "0")
-    monkeypatch.delenv("SB_DYNAMIC_EXECUTOR_POOL", raising=False)
-    assert resolve_executor_pool_size([], _never_capture) == 1
+def test_rearm_touches_only_the_symbols_whose_market_is_open(
+        mock_influx, mocker):
+    """A sleeping symbol is off-topic — it reads the dial when it wakes."""
+    m = _metrics([_share(symbol="AAPL"), _share(symbol="MC.PA")],
+                 mock_influx, mocker)
+    _with_jobs(m, "AAPL", "MC.PA")
+    _scraped(m, "AAPL", closed=False)
+    _scraped(m, "MC.PA", closed=True)
+    m.regular_interval = 600
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    reached, sleeping = m.rearm_regular_scrapes()
+
+    assert (reached, sleeping) == (1, 1)
+    armed = [c.kwargs["id"] for c in m.scheduler.add_job.call_args_list]
+    assert armed == [_scrape_job_id("AAPL")]
 
 
-def test_executor_pool_auto_uses_compute_pool_size(monkeypatch):
-    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "true")
-    monkeypatch.delenv("SB_EXECUTOR_POOL", raising=False)
-    shares = [{"symbol": f"S{i}"} for i in range(30)]
-    exchange_of = {s["symbol"]: "NMS" for s in shares}
-    # 30 symbols on one exchange -> 3 + ceil(150/30) = 8 (design #611 example).
-    assert resolve_executor_pool_size(shares, lambda: exchange_of) == 8
+def test_rearm_starts_the_new_cadence_from_now(mock_influx, mocker):
+    m = _metrics([_share()], mock_influx, mocker)
+    _with_jobs(m, "AAPL")
+    _scraped(m, "AAPL", closed=False)
+    m.regular_interval = 600
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    m.rearm_regular_scrapes()
+
+    # Jitter is zeroed by the autouse fixture, so this is the bare cadence.
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+        NOW + timedelta(seconds=600)
 
 
-def test_executor_pool_auto_warns_when_fixed_also_set(monkeypatch, mocker):
-    monkeypatch.setenv("SB_DYNAMIC_EXECUTOR_POOL", "true")
-    monkeypatch.setenv("SB_EXECUTOR_POOL", "10")
-    warn = mocker.patch.object(main.app_logger, "warning")
-    size = resolve_executor_pool_size([], lambda: {})
-    warn.assert_called_once()          # conflicting fixed dial flagged
-    assert size == scheduling.RESERVED  # empty portfolio -> the reserved jobs
+def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
+        mock_influx, mocker):
+    """#617's guard must survive a save, and the rescaling is the announced effect.
+
+    Six consecutive failures put the symbol at ``base × 2^3``. Re-arming it at
+    the bare cadence would discard the whole dead-ticker guard every time
+    somebody touches the settings page; re-arming it at ``600 × 8`` is the same
+    arithmetic ``decide`` would apply on its next pass, and it is exactly the
+    retroactive rescaling the dial's documentation promises.
+    """
+    m = _metrics([_share()], mock_influx, mocker)
+    _with_jobs(m, "AAPL")
+    _scraped(m, "AAPL", closed=False)
+    m._failure_counts["AAPL"] = 6
+    m.regular_interval = 600
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    m.rearm_regular_scrapes()
+
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == \
+        NOW + timedelta(seconds=600 * 8)
+
+
+def test_rearm_leaves_a_symbol_being_scraped_to_re_arm_itself(
+        mock_influx, mocker):
+    """Trap 1: a ``date`` job leaves the jobstore while it runs.
+
+    It is counted as reached — it picks the new value up at the end of its own
+    pass — but arming it here would race that pass. The figures still cover the
+    portfolio, which is the whole reason they are published.
+    """
+    m = _metrics([_share()], mock_influx, mocker)
+    _with_jobs(m)  # the job is gone from the store: it is running
+    _scraped(m, "AAPL", closed=False)
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    reached, sleeping = m.rearm_regular_scrapes()
+
+    assert (reached, sleeping) == (1, 0)
+    m.scheduler.add_job.assert_not_called()
+
+
+def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
+        mock_influx, mocker):
+    """At boot every held symbol is armed to fire immediately — do not delay it."""
+    m = _metrics([_share()], mock_influx, mocker)
+    _with_jobs(m, "AAPL")  # armed, never fired: no last-pass record
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    reached, sleeping = m.rearm_regular_scrapes()
+
+    assert (reached, sleeping) == (1, 0)
+    m.scheduler.add_job.assert_not_called()
+
+
+def test_rearm_without_a_scheduler_is_a_quiet_zero(mock_influx, mocker):
+    m = _metrics([_share()], mock_influx, mocker)
+    m.scheduler = None
+
+    assert m.rearm_regular_scrapes() == (0, 0)
+
+
+def test_a_jobstore_error_never_turns_a_saved_dial_into_a_failure(
+        mock_influx, mocker):
+    """The value is in the store either way; the next boot reads it from there."""
+    m = _metrics([_share()], mock_influx, mocker)
+    m.scheduler.get_jobs.side_effect = RuntimeError("boom")
+
+    assert m.rearm_regular_scrapes() == (0, 0)
+
+
+def _runtime(m, scheduler=None):
+    return SimpleNamespace(metrics=m, scheduler=scheduler or m.scheduler)
+
+
+def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
+        mock_influx, mocker):
+    m = _metrics([_share(symbol="AAPL"), _share(symbol="MC.PA")],
+                 mock_influx, mocker)
+    _with_jobs(m, "AAPL", "MC.PA")
+    _scraped(m, "AAPL", closed=False)
+    _scraped(m, "MC.PA", closed=True)
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    report = main.apply_settings(
+        _runtime(m), (settings.Change("regular_interval", 120, 600),))
+
+    assert m.regular_interval == 600
+    assert report["symbols_rescheduled"] == 1
+    assert report["symbols_at_market_open"] == 1
+
+
+def test_apply_settings_leaves_an_untouched_job_s_timer_alone(
+        mock_influx, mocker):
+    """The criterion of #701: a save button is not a reset button.
+
+    ``reschedule_job`` recomputes ``next_run_time`` from *now*, so re-arming a
+    job whose dial did not move would silently put its timer back to zero on
+    every click.
+    """
+    m = _metrics([_share()], mock_influx, mocker)
+    _with_jobs(m, "AAPL")
+    _scraped(m, "AAPL", closed=False)
+    mocker.patch("main.datetime", **{"now.return_value": NOW})
+
+    report = main.apply_settings(
+        _runtime(m), (settings.Change("backfill_delay", 10, 20),))
+
+    assert m.backfill_delay == 20
+    m.scheduler.add_job.assert_not_called()
+    m.scheduler.reschedule_job.assert_not_called()
+    assert report["symbols_rescheduled"] == 0
+
+
+def test_apply_settings_re_cadences_the_backfill_job(mock_influx, mocker):
+    m = _metrics([_share()], mock_influx, mocker)
+
+    report = main.apply_settings(
+        _runtime(m), (settings.Change("backfill_interval", 60, 300),))
+
+    m.scheduler.reschedule_job.assert_called_once_with(
+        "backfill", trigger="interval", seconds=300)
+    assert report["jobs_rescheduled"] == ["backfill"]
+
+
+def test_apply_settings_survives_a_missing_backfill_job(mock_influx, mocker):
+    """A runtime with no such job answers "reached nothing", never a 503."""
+    m = _metrics([_share()], mock_influx, mocker)
+    m.scheduler.reschedule_job.side_effect = JobLookupError("backfill")
+
+    report = main.apply_settings(
+        _runtime(m), (settings.Change("backfill_interval", 60, 300),))
+
+    assert report["jobs_rescheduled"] == []
+
+
+def test_apply_settings_before_the_fork_changes_nothing_and_says_so(mocker):
+    """The dial is already in the store, and the boot reads it from there."""
+    report = main.apply_settings(
+        SimpleNamespace(metrics=None, scheduler=None),
+        (settings.Change("regular_interval", 120, 600),))
+
+    assert report == {
+        "symbols_rescheduled": 0,
+        "symbols_at_market_open": 0,
+        "jobs_rescheduled": [],
+    }
 
 
 # ---------------------------------------------------------------------------

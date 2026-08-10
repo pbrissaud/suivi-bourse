@@ -437,8 +437,12 @@ def test_a_failed_perf_recompute_records_the_error_it_only_logged(
 
 
 # ===================================================================== #
-# The effective configuration (#654 §6a, handed to #656)
+# The effective environment (#654 §6a → #656, halved by #701)
 # ===================================================================== #
+#
+# What is left here is the half ADR-0014's test keeps in the environment: what
+# the process must know *before* it can open the store. The dials moved into the
+# store and are covered by ``test_settings.py``.
 
 def test_the_token_is_redacted_by_name_never_by_value(monkeypatch):
     """#654 trap 12. The prototype has no authentication — auth is out of the
@@ -446,27 +450,38 @@ def test_the_token_is_redacted_by_name_never_by_value(monkeypatch):
     thing worth saying about it."""
     monkeypatch.setenv("INFLUXDB_TOKEN", "apiv3_supersecret")
 
-    entry = {s["name"]: s for s in main.effective_settings()}["INFLUXDB_TOKEN"]
+    entry = {s["name"]: s for s in main.effective_environment()}["INFLUXDB_TOKEN"]
 
     assert entry["secret"] is True
     assert entry["value"] is None
     assert entry["set"] is True
 
 
-def test_a_runtime_dial_is_reported_from_the_attribute_not_the_environment(
-        mock_influx, mocker, monkeypatch):
-    """#654 §2.1: five dials are held on a mutable attribute re-read every cycle,
-    so the effective value and the environment can diverge. The attribute is the
-    one the app is actually running on."""
-    monkeypatch.setenv("SB_BACKFILL_CHUNK_DAYS", "365")
-    m = _metrics([_share()], mock_influx, mocker)
-    m.backfill_chunk_days = 180
+def test_the_dials_are_not_in_the_environment_list_any_more():
+    """#701: a dial has no environment form at all — not even a reported one.
 
-    entry = {s["name"]: s
-             for s in main.effective_settings(m)}["SB_BACKFILL_CHUNK_DAYS"]
+    Listing it here would be the precedence rule ADR-0014 removes, dressed as a
+    read-only view: a reader seeing ``SB_REGULAR_INTERVAL`` next to the store's
+    own value would reasonably conclude that setting it does something.
+    """
+    names = {s["name"] for s in main.effective_environment()}
 
-    assert entry["value"] == "180"
-    assert entry["scope"] == "runtime"
+    assert names.isdisjoint({
+        "SB_REGULAR_INTERVAL", "SB_BACKFILL_INTERVAL", "SB_BACKFILL_DELAY",
+        "SB_BACKFILL_CHUNK_DAYS", "SB_STALENESS_HORIZON", "SB_PERF_INTERVAL",
+        "SB_EXECUTOR_POOL", "SB_DYNAMIC_EXECUTOR_POOL",
+    })
+
+
+def test_the_log_level_is_reported_from_the_running_logger(monkeypatch):
+    """The one of these the app can change while it runs (#654 §6b)."""
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    main.set_log_level("DEBUG")
+    try:
+        entry = {s["name"]: s for s in main.effective_environment()}["LOG_LEVEL"]
+        assert entry["value"] == "DEBUG"
+    finally:
+        main.set_log_level("INFO")
 
 
 def test_compose_only_variables_are_not_in_the_list(monkeypatch):
@@ -474,7 +489,7 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     are consumed by the docker daemon — from inside the container the config
     directory is *always* ``/home/appuser/.config/SuiviBourse``. Listing them
     would imply they are reachable from in here."""
-    names = {s["name"] for s in main.effective_settings()}
+    names = {s["name"] for s in main.effective_environment()}
 
     assert "SB_VERSION" not in names
     assert "SB_CONFIG_DIR" not in names
@@ -486,7 +501,7 @@ def test_a_variable_with_no_scalar_fallback_reads_unset_not_default(monkeypatch)
     show — and showing one would be a guess about a value the app cannot know."""
     monkeypatch.delenv("INFLUXDB_TOKEN", raising=False)
 
-    entry = {s["name"]: s for s in main.effective_settings()}["INFLUXDB_TOKEN"]
+    entry = {s["name"]: s for s in main.effective_environment()}["INFLUXDB_TOKEN"]
 
     assert entry["source"] == "unset"
     assert entry["value"] is None

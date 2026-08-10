@@ -38,16 +38,10 @@ services:
     # directory through `~`.
     user: "${SB_UID:-1000}:${SB_GID:-1000}"
     environment:
-      # Scheduling
-      SB_REGULAR_INTERVAL: ${SB_REGULAR_INTERVAL:-120}
-      SB_PERF_INTERVAL: ${SB_PERF_INTERVAL:-120}
-      SB_STALENESS_HORIZON: ${SB_STALENESS_HORIZON:-900}
-      SB_DYNAMIC_EXECUTOR_POOL: ${SB_DYNAMIC_EXECUTOR_POOL:-false}
-      SB_EXECUTOR_POOL: ${SB_EXECUTOR_POOL:-10}
-      # Backfill
-      SB_BACKFILL_INTERVAL: ${SB_BACKFILL_INTERVAL:-60}
-      SB_BACKFILL_DELAY: ${SB_BACKFILL_DELAY:-10}
-      SB_BACKFILL_CHUNK_DAYS: ${SB_BACKFILL_CHUNK_DAYS:-365}
+      # The scheduling and backfill dials are **not** here any more (issue
+      # #701, ADR-0014): they live in the store, are turned from the settings
+      # page or with one `PUT /api/settings`, and take effect with no restart.
+      # A line left here would be obeyed by nothing and named at start-up.
       # Web UI / API
       SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       # Legacy Prometheus endpoint

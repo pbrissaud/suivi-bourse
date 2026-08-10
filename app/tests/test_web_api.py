@@ -16,6 +16,7 @@ import pytest
 
 import main
 import runtime_state
+import settings_registry
 import store
 import web as web_module
 from web import create_app
@@ -72,10 +73,26 @@ class FakeMetrics:
     method also does needs a scheduler and is not what these tests are about.
     """
 
+    #: The real one, borrowed rather than re-implemented: it is a loop over the
+    #: registry and a ``setattr``, so a copy here would be the second list
+    #: ADR-0014 forbids — and the one that stops matching first.
+    apply_dials = main.SuiviBourseMetrics.apply_dials
+
     def __init__(self, client, config_manager=None):
         self.influxdb = FakeWriter(client)
         self._config_manager = config_manager
         self.ingest_calls = 0
+        self.apply_dials(settings_registry.defaults())
+        # What ``rearm_regular_scrapes`` answers here. Re-arming needs a live
+        # jobstore, which these tests have no business standing up; the split
+        # itself is pinned in ``test_scheduling.py`` and its wiring in
+        # ``test_scheduling_wiring.py``.
+        self.rearm_result = (3, 8)
+        self.rearm_calls = 0
+
+    def rearm_regular_scrapes(self):
+        self.rearm_calls += 1
+        return self.rearm_result
 
     def ingest(self, import_files=True):
         self.ingest_calls += 1
@@ -984,7 +1001,17 @@ def test_the_shares_payload_no_longer_carries_the_retired_status_slot(tmp_path):
     assert 'status' not in body[0]
 
 
-def test_the_config_route_carries_the_effective_settings_with_the_token_redacted(
+def _dials(client):
+    """The dials `/api/config` publishes, by key.
+
+    By key and never by position: the registry's order is not a contract, and a
+    test that indexes `[0]` starts asserting about a different dial the day one
+    is inserted above it — silently, and still green.
+    """
+    return {row['key']: row for row in client.get('/api/config').get_json()['settings']}
+
+
+def test_the_config_route_carries_the_environment_with_the_token_redacted(
         tmp_path, monkeypatch):
     """#654's one survivor, on `/api/config` rather than `/api/runtime`.
 
@@ -996,13 +1023,143 @@ def test_the_config_route_carries_the_effective_settings_with_the_token_redacted
     monkeypatch.setenv('INFLUXDB_TOKEN', 'apiv3_supersecret')
     client = build_client(tmp_path)
 
-    settings = {s['name']: s for s in client.get('/api/config').get_json()['settings']}
+    env = {s['name']: s
+           for s in client.get('/api/config').get_json()['environment']}
 
-    assert settings['INFLUXDB_TOKEN']['value'] is None
-    assert settings['INFLUXDB_TOKEN']['set'] is True
-    assert settings['SB_REGULAR_INTERVAL']['value'] == '120'
+    assert env['INFLUXDB_TOKEN']['value'] is None
+    assert env['INFLUXDB_TOKEN']['set'] is True
     # Compose-only variables are not app settings (#654 trap 13).
-    assert 'SB_VERSION' not in settings
+    assert 'SB_VERSION' not in env
+
+
+def test_the_config_route_lists_the_dials_through_the_registry(tmp_path):
+    """#701: the content of ``setting``, and not a second enumeration of it.
+
+    The bounds ride along, so the form validates on the rule the write path
+    enforces rather than on a copy of it — and a dial added to the registry
+    appears here with no route to edit.
+    """
+    body = build_client(tmp_path).get('/api/config').get_json()
+
+    dials = {row['key']: row for row in body['settings']}
+
+    assert list(dials) == [spec.key for spec in settings_registry.SETTINGS]
+    assert dials['regular_interval']['value'] == 120
+    assert dials['regular_interval']['minimum'] == 10
+    assert dials['regular_interval']['effect'] == settings_registry.REARM_SCRAPE
+    # A dial has no environment form at all, not even a reported one.
+    assert 'SB_REGULAR_INTERVAL' not in {
+        row['name'] for row in body['environment']}
+
+
+def test_the_config_route_names_what_is_set_and_no_longer_read(
+        tmp_path, monkeypatch):
+    """ADR-0014's gesture, published where the page that explains it can show it."""
+    monkeypatch.setenv('SB_REGULAR_INTERVAL', '600')
+
+    body = build_client(tmp_path).get('/api/config').get_json()
+
+    assert 'SB_REGULAR_INTERVAL' in body['unread_environment']
+
+
+# --------------------------------------------------------------------- #
+# PUT /api/settings — the only writer of a dial (issue #701)
+# --------------------------------------------------------------------- #
+
+def test_a_dial_is_written_and_read_back_in_the_same_request(tmp_path):
+    """Reachable with one ``curl``: headless means without an interface, not
+    without HTTP."""
+    client = build_client(tmp_path)
+
+    response = client.put('/api/settings', json={'regular_interval': 600})
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['changed'] == ['regular_interval']
+    dials = {row['key']: row for row in body['settings']}
+    assert dials['regular_interval']['value'] == 600
+    assert _dials(client)['regular_interval']['value'] == 600
+
+
+def test_saving_a_dial_takes_effect_with_no_restart(tmp_path):
+    """The attribute every cycle re-reads is assigned by the write path itself."""
+    client = build_client(tmp_path)
+
+    client.put('/api/settings', json={'backfill_chunk_days': 90})
+
+    assert web_module.current_runtime().metrics.backfill_chunk_days == 90
+
+
+def test_the_answer_quantifies_what_the_change_reached(tmp_path):
+    """"3 symbols now, 8 more when their market opens" — never a bare 200.
+
+    A portfolio-wide dial that reaches three symbols out of eleven has to say
+    so, or the reader concludes the other eight are misconfigured.
+    """
+    client = build_client(tmp_path)
+
+    body = client.put(
+        '/api/settings', json={'regular_interval': 600}).get_json()
+
+    assert body['effect']['symbols_rescheduled'] == 3
+    assert body['effect']['symbols_at_market_open'] == 8
+    assert web_module.current_runtime().metrics.rearm_calls == 1
+
+
+def test_a_value_out_of_bounds_is_a_422_and_writes_nothing(tmp_path):
+    """Well formed, and the content is what cannot be processed.
+
+    ``400`` would read as "fix your encoding", and a client that retried on that
+    reading would retry forever.
+    """
+    client = build_client(tmp_path)
+
+    response = client.put('/api/settings', json={'regular_interval': 0})
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    # The field is named, so a form marks the input rather than the page.
+    assert response.get_json()['key'] == 'regular_interval'
+    assert _dials(client)['regular_interval']['value'] == 120
+
+
+def test_an_unknown_dial_is_a_422_rather_than_a_new_dial(tmp_path):
+    response = build_client(tmp_path).put('/api/settings', json={'colour': 'blue'})
+
+    assert response.status_code == 422
+
+
+def test_a_rejected_body_writes_none_of_its_valid_keys(tmp_path):
+    """A half-applied ``PUT`` is a state nobody asked for."""
+    client = build_client(tmp_path)
+
+    client.put('/api/settings',
+               json={'regular_interval': 600, 'backfill_delay': -1})
+
+    assert _dials(client)['regular_interval']['value'] == 120
+
+
+def test_a_body_that_is_not_an_object_is_a_400(tmp_path):
+    """Malformed syntax, not a refused value — and never a 503 (#655)."""
+    response = build_client(tmp_path).put('/api/settings', json=[1, 2])
+
+    assert response.status_code == 400
+
+
+def test_reposting_the_same_value_re_arms_nothing(tmp_path):
+    """``reschedule_job`` recomputes ``next_run_time`` from now.
+
+    A save button that rewrote every row would put every timer back to zero on
+    every click — including the timers of the dials nobody touched.
+    """
+    client = build_client(tmp_path)
+
+    body = client.put(
+        '/api/settings', json={'regular_interval': 120}).get_json()
+
+    assert body['changed'] == []
+    assert body['effect']['symbols_rescheduled'] == 0
+    assert web_module.current_runtime().metrics.rearm_calls == 0
 
 
 # --------------------------------------------------------------------- #

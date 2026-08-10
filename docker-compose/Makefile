@@ -27,6 +27,20 @@ init:  ## Create .env (with a unique token) and data/ from the templates
 		printf 'SB_UID=%s\nSB_GID=%s\n' "$$(id -u)" "$$(id -g)" >> .env; \
 		echo "recorded SB_UID=$$(id -u) SB_GID=$$(id -g) so the app writes files you own"; \
 	}
+	@retired=$$(grep -oE '^(SB_REGULAR_INTERVAL|SB_BACKFILL_INTERVAL|SB_BACKFILL_DELAY|SB_BACKFILL_CHUNK_DAYS|SB_STALENESS_HORIZON|SB_PERF_INTERVAL|SB_EXECUTOR_POOL|SB_DYNAMIC_EXECUTOR_POOL|SB_INGESTION_INTERVAL|SB_SCRAPING_INTERVAL|SB_CONFIG_MODE)=' .env | tr -d '=' | tr '\n' ' '); \
+	if [ -n "$$retired" ]; then \
+		echo "note: these lines in your .env are no longer sent to the app:"; \
+		echo "        $$retired"; \
+		echo "      The dials live in the app since v5 and this file cannot set"; \
+		echo "      them. Nothing warns you at run time either — the container"; \
+		echo "      never sees these names — so set them once the stack is up:"; \
+		echo "        curl -X PUT localhost:8080/api/settings \\"; \
+		echo "             -H 'content-type: application/json' \\"; \
+		echo "             -d '{\"regular_interval\": 300}'"; \
+		echo "      (SB_EXECUTOR_POOL, SB_DYNAMIC_EXECUTOR_POOL, SB_PERF_INTERVAL,"; \
+		echo "       SB_INGESTION_INTERVAL, SB_SCRAPING_INTERVAL and SB_CONFIG_MODE"; \
+		echo "       were removed outright and have no replacement.)"; \
+	fi
 	@grep -q '^COMPOSE_FILE=' .env || { \
 		echo "note: your .env predates the port overlay — no port is published."; \
 		echo "      add this line to keep reaching Grafana on the host:"; \

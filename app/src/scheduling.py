@@ -30,6 +30,14 @@ CLOSED_STATES = frozenset({'CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'})
 SHORT_RETRY = 60           # s: re-probe when woken but still not REGULAR
 MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 
+# How often the perf job *asks* whether anything changed (issue #701). Not a
+# cadence and therefore not a dial: ``perf_should_run`` is the gate, so this
+# number decides how long a recompute waits after the change that earned it, and
+# nothing else. ``SB_PERF_INTERVAL`` was deleted rather than moved for that
+# reason — a dial whose only effect is the latency of a gate is a dial with
+# nothing to say.
+PERF_TICK = 120            # s
+
 # Dead-ticker guard (design #608, issue #617) — hardcoded, not operator dials.
 # A symbol whose non-closed fetches keep producing no writable price backs off
 # progressively instead of hammering yfinance every base_interval forever.
@@ -63,7 +71,7 @@ def is_closed(state) -> bool:
     return state in CLOSED_STATES
 
 
-def _backoff_delay(base_interval: int, failure_count: int) -> float:
+def backoff_delay(base_interval: int, failure_count: int) -> float:
     """Re-arm delay for ``failure_count`` consecutive failures (design #608).
 
     ``base_interval`` for the first ``FAILURE_GRACE`` failures, then geometric
@@ -128,7 +136,7 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     else:
         # Non-closed cycle with no writable price: a failure — back off.
         new_failure_count = failure_count + 1
-        next_delay = _backoff_delay(base_interval, new_failure_count)
+        next_delay = backoff_delay(base_interval, new_failure_count)
 
     return should_write, next_delay, new_failure_count, mark_dirty
 
@@ -283,9 +291,78 @@ def price_freshness_step(
     return SondeState(stored_price, frozen_since, now), stale
 
 
+class RearmSplit(NamedTuple):
+    """How a new ``regular_interval`` divides the held symbols (issue #701).
+
+    ``rearm`` and ``self_arming`` together are what the API reports as reached;
+    they are two tuples rather than one because only the first has a job to
+    touch, and touching the second would race the pass that is about to arm it.
+    """
+
+    #: Polling, with an idle job in the store: re-arm these.
+    rearm: Tuple[str, ...]
+    #: Polling, and arming themselves anyway — mid-pass, or armed and not yet
+    #: fired. They read the new value on their own, from the same attribute.
+    self_arming: Tuple[str, ...]
+    #: Asleep until their market opens. Off-topic, and left alone.
+    asleep: Tuple[str, ...]
+
+
+def rearm_split(symbols, closed: Dict[str, Optional[bool]],
+                armed) -> RearmSplit:
+    """Divide the held symbols the way a new cadence actually reaches them.
+
+    The acceptance criterion of #701: saving a cadence re-arms **only the
+    symbols whose market is open right now**. A sleeping symbol is not mis-set,
+    it is off-topic — it re-reads the dial when it wakes, because ``decide`` is
+    handed ``base_interval`` on every pass.
+
+    **The question is put to the last-pass record, not to the clock.** The
+    obvious instrument is the armed ``next_run_time`` — a polling symbol is
+    minutes out, a sleeping one is hours out — and it is the wrong one, three
+    times over: it misreads a symbol asleep until an open that falls *inside* a
+    long outgoing interval, it cannot tell a #617 back-off (armed at
+    ``interval × 2^n``) from a market close, and it inverts the moment the dial
+    it is compared against is itself the thing being changed. ``closed`` is what
+    :func:`decide` *acted on* for that symbol on its last pass — the same field
+    the runtime pills read — so it answers the question that was asked.
+
+    ``closed`` maps a symbol to that flag, and ``None`` (or an absent key) means
+    the symbol has never completed a pass. That is ``self_arming``, not
+    ``rearm``: at boot every held symbol is armed to fire *immediately*, and
+    re-arming one there would push the bootstrap a whole cadence into the
+    future.
+
+    ``armed`` is the set of symbols with an idle job in the store. A symbol
+    **absent** from it is mid-pass: a ``date`` job leaves the jobstore *while it
+    runs* — APScheduler removes it rather than nulling its run time — and
+    re-arms itself at the end of ``_scrape_symbol`` from the same attribute the
+    write path has just assigned. It is reached, and it is not touched.
+
+    The row set is ``symbols`` — the held positions — and not the jobstore, so
+    the two figures the API publishes **add up to the portfolio**. Reading it
+    off the jobstore would silently drop whichever symbol happened to be
+    mid-scrape, and the count exists precisely so a reader can tell that the
+    symbols it does not name are asleep rather than misconfigured.
+
+    Every tuple is sorted, so a count is stable and a log line reads the same
+    twice.
+    """
+    armed = set(armed)
+    rearm, self_arming, asleep = [], [], []
+    for symbol in sorted(symbols):
+        if closed.get(symbol):
+            asleep.append(symbol)
+        elif symbol in armed and closed.get(symbol) is not None:
+            rearm.append(symbol)
+        else:
+            self_arming.append(symbol)
+    return RearmSplit(tuple(rearm), tuple(self_arming), tuple(asleep))
+
+
 def compute_pool_size(shares: List[dict],
                       exchange_of: Dict[str, Optional[str]]) -> int:
-    """Auto executor-pool size for ``SB_DYNAMIC_EXECUTOR_POOL`` (#619, #611).
+    """Auto executor-pool size — **always**, since #701 (#619, design #611).
 
     Under one self-rescheduling job per symbol (#616), every symbol on the same
     exchange gets the same next-open timestamp, so at market open a whole cohort
@@ -301,8 +378,13 @@ def compute_pool_size(shares: List[dict],
     ``exchange_of`` maps each held symbol to its exchange; a symbol with no known
     exchange (``None``/missing/falsy) is its own **solo market** (cohort of 1),
     never grouped — so an all-unknown portfolio never inflates into one giant
-    cohort. The result is clamped to ``[1, POOL_CAP]``: ``POOL_CAP`` bounds only
-    this auto formula, never the fixed ``SB_EXECUTOR_POOL`` dial.
+    cohort. The result is clamped to ``[1, POOL_CAP]``.
+
+    This is no longer one of two paths. The fixed dial it used to compete with
+    was deleted in #701 rather than moved into the store: a ``ThreadPoolExecutor``
+    does not shrink hot, so it was the one setting that would still have demanded
+    a restart — and a fixed pool is a silent trap besides, a cohort of thirty
+    symbols on a pool of ten serialising its own scrapes with nothing to say so.
     """
     symbols = {s['symbol'] for s in shares if s.get('symbol')}
     cohorts: Dict[str, int] = {}

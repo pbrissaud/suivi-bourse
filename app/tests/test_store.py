@@ -83,7 +83,9 @@ def test_a_dial_added_later_is_inserted_without_a_migration(store, tmp_path,
     store.close()
     monkeypatch.setitem(settings_registry.BY_KEY, 'a_later_dial',
                         settings_registry.SettingSpec(
-                            'a_later_dial', '7', int, 'added in a later version'))
+                            'a_later_dial', '7', settings_registry.INTEGER, int,
+                            settings_registry.NEXT_CYCLE,
+                            'added in a later version'))
     monkeypatch.setattr(
         settings_registry, 'SETTINGS',
         settings_registry.SETTINGS + (settings_registry.BY_KEY['a_later_dial'],))

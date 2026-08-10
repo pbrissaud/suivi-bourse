@@ -330,6 +330,86 @@ def test_is_closed_whitelist():
 
 
 # ---------------------------------------------------------------------------
+# rearm_split — which symbols a new regular_interval reaches (#701)
+# ---------------------------------------------------------------------------
+
+def test_rearm_split_reaches_only_the_symbols_whose_market_is_open():
+    """The acceptance criterion: a sleeping symbol is off-topic, not mis-set."""
+    held = {"AAPL", "MSFT", "MC.PA"}
+    closed = {"AAPL": False, "MSFT": False, "MC.PA": True}
+
+    split = scheduling.rearm_split(held, closed, armed=held)
+
+    assert split.rearm == ("AAPL", "MSFT")
+    assert split.asleep == ("MC.PA",)
+
+
+def test_rearm_split_asks_the_last_pass_and_not_the_clock():
+    """The armed time cannot tell a #617 back-off from a market close.
+
+    A symbol failing six cycles is armed at ``120 × 2³`` — sixteen minutes out,
+    further than some market opens — and it is *not* asleep: its market is open
+    and its wait is a multiple of the very dial being changed. Reporting it as
+    "waiting for its market to open" would collapse the two states #668 keeps
+    apart, on the one screen an operator would consult to tell them apart.
+    """
+    split = scheduling.rearm_split(
+        {"DEAD"}, {"DEAD": False}, armed={"DEAD"})
+
+    assert split.rearm == ("DEAD",)
+    assert split.asleep == ()
+
+
+def test_rearm_split_leaves_a_symbol_mid_pass_to_arm_itself():
+    """Trap 1: a ``date`` job leaves the jobstore *while it runs*.
+
+    APScheduler removes it rather than nulling its run time, so the symbol is
+    simply absent from ``armed``. It re-arms itself from the new value at the
+    end of its own pass — reached, and not to be raced.
+    """
+    split = scheduling.rearm_split(
+        {"AAPL"}, {"AAPL": False}, armed=set())
+
+    assert split.rearm == ()
+    assert split.self_arming == ("AAPL",)
+    assert split.asleep == ()
+
+
+def test_rearm_split_leaves_a_symbol_that_has_never_run_alone():
+    """At boot every held symbol is armed to fire *immediately*.
+
+    Re-arming one there would push the bootstrap a whole cadence into the
+    future — a dial saved in the first seconds of a boot would delay the first
+    scrape it was meant to hasten.
+    """
+    split = scheduling.rearm_split(
+        {"AAPL"}, {"AAPL": None}, armed={"AAPL"})
+
+    assert split.rearm == ()
+    assert split.self_arming == ("AAPL",)
+
+
+def test_rearm_split_covers_the_whole_portfolio():
+    """The two published figures must add up, or the reader draws the wrong one.
+
+    The row set is the held positions, never the jobstore: reading it off the
+    jobstore drops whichever symbol is mid-scrape, and a portfolio of four
+    answering "3 reached, 0 asleep" reads as one symbol quietly broken.
+    """
+    held = {"A", "B", "C", "D"}
+    closed = {"A": False, "B": True, "C": False, "D": None}
+
+    split = scheduling.rearm_split(held, closed, armed={"A", "B", "D"})
+
+    assert len(split.rearm) + len(split.self_arming) + len(split.asleep) == 4
+    assert split.self_arming == ("C", "D")
+
+
+def test_rearm_split_of_an_empty_portfolio_is_three_empties():
+    assert scheduling.rearm_split(set(), {}, armed=set()) == ((), (), ())
+
+
+# ---------------------------------------------------------------------------
 # compute_pool_size — auto executor-pool sizing (#619, design #611)
 # ---------------------------------------------------------------------------
 

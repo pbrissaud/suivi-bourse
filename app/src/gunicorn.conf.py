@@ -46,6 +46,18 @@ threads = 4
 worker_class = 'gthread'
 preload_app = True
 
+# Explicit, and it is a **boot** budget rather than a request budget (issue
+# #701). `gthread` answers the arbiter's heartbeat from its accept loop, so a
+# slow request cannot get this worker killed; what the timeout actually governs
+# here is the window between `fork()` and the worker entering that loop — and
+# `post_fork` does the whole of `start_runtime` in it: the store, the InfluxDB
+# client, the first replay, and since #701 the pre-scheduler exchange capture,
+# which is no longer optional and is itself bounded at 30 s. On gunicorn's
+# default of 30 s a portfolio large enough to spend that capture budget is
+# SIGABRTed mid-boot and respawned to fail identically — a container that never
+# becomes reachable, with nothing in the logs naming a timeout.
+timeout = 120
+
 # The `on_starting` guard is not the only door to a second worker: gunicorn's
 # control socket (25.1+) lets `gunicornc -c "worker add 2"` raise `num_workers`
 # on a *running* arbiter, past every check made at boot. Nothing here needs

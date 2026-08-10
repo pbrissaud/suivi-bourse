@@ -21,11 +21,11 @@ services:
       influxdb:
         condition: service_healthy
     environment:
-      SB_REGULAR_INTERVAL: ${SB_REGULAR_INTERVAL:-60}
-      SB_PERF_INTERVAL: ${SB_PERF_INTERVAL:-60}
-      SB_BACKFILL_INTERVAL: ${SB_BACKFILL_INTERVAL:-30}
-      SB_BACKFILL_DELAY: ${SB_BACKFILL_DELAY:-5}
-      SB_BACKFILL_CHUNK_DAYS: ${SB_BACKFILL_CHUNK_DAYS:-365}
+      # No cadence dials here since #701 — they are in the store. A dev stack
+      # that wants a 30-second backfill posts it once:
+      #   curl -X PUT localhost:8080/api/settings \
+      #        -H 'content-type: application/json' \
+      #        -d '{"regular_interval": 60, "backfill_interval": 30}'
       SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       SB_METRICS_PORT: ${SB_METRICS_PORT:-8081}
       SB_PROMETHEUS_ENABLED: ${SB_PROMETHEUS_ENABLED:-true}

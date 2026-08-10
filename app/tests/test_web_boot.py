@@ -240,7 +240,7 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
      "An error occurred while loading events"),
     (store.StoreUnavailable("the file is not a DuckDB database"),
      "The store could not be opened"),
-    (ValueError("Invalid value for SB_PERF_INTERVAL"),
+    (ValueError("Invalid value for SB_WEB_PORT"),
      "Configuration error"),
     (RuntimeError("something else entirely"),
      "An unexpected error occurred"),
@@ -272,7 +272,7 @@ def test_start_background_reraises_rather_than_exiting(monkeypatch, mocker):
     death and be respawned forever, failing identically each time.
     """
     web.create_app(runtime=main.Runtime(_FakeConfigManager(), None))
-    boom = ValueError("Invalid value for SB_BACKFILL_DELAY")
+    boom = ValueError("Invalid value for SB_METRICS_PORT")
     monkeypatch.setattr(main, "start_runtime", mocker.Mock(side_effect=boom))
     fatal = mocker.patch.object(main.app_logger, "fatal")
 
