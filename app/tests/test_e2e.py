@@ -134,6 +134,11 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     assert config_manager.get_events_source().endswith("/events")
 
     sb = SuiviBourseMetrics(config_manager)
+    # The one question the app asks (#702, ADR-0021). The fake quotes in USD and
+    # this install reports in USD, so the conversion is the identity: the chain
+    # is asserted end to end without a second faked fetch, and the point still
+    # carries the three columns rather than two.
+    sb.base_currency = "USD"
 
     # The shares came through the real loader -> validator -> aggregator chain.
     shares_by_symbol = {s["symbol"]: s for s in sb.shares}
@@ -159,6 +164,10 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     assert aapl_quote["quote_type"] == "EQUITY"
     assert aapl_quote["dividend_yield"] == pytest.approx(0.52)  # 0.0052 * 100
     assert aapl_quote["last_price_native"] == pytest.approx(190.0)
+    # The three price columns move together (#702): the `latest` row never
+    # carries a native price beside a converted one from an earlier point.
+    assert aapl_quote["last_price_converted"] == pytest.approx(190.0)
+    assert aapl_quote["last_fx_rate"] == pytest.approx(1.0)
 
     # And the position is what the replay wrote, on its own table. The name is
     # here and not on the quote: it comes from the owner's file, not from Yahoo
