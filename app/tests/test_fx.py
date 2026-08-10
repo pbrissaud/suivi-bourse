@@ -523,6 +523,34 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
         == ['backfill', 'perf']
 
 
+def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
+        store, mocker, monkeypatch, fake_ticker):
+    """The two production fetches, exercised rather than replaced.
+
+    Every test above swaps `metrics.rates` for a fixed table, which is what
+    makes the arithmetic assertable — so the wire between the module and
+    yfinance needs one test of its own, or the whole feature is green against a
+    fetch nobody ever calls.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
+        close=0.92, rows=3, start='2024-06-01'))
+
+    assert metrics._fetch_fx_rate('USDEUR=X') == pytest.approx(0.92)
+    assert metrics._fetch_fx_series(
+        'USDEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {
+            date(2024, 6, 1): pytest.approx(-1.08),
+            date(2024, 6, 2): pytest.approx(-0.08),
+            date(2024, 6, 3): pytest.approx(0.92),
+        }
+    # A pair yfinance cannot answer for is a missing rate, never an exception.
+    monkeypatch.setattr(main.yf, 'Ticker',
+                        lambda s: (_ for _ in ()).throw(RuntimeError('nope')))
+    assert metrics._fetch_fx_rate('XYZEUR=X') is None
+    assert metrics._fetch_fx_series(
+        'XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {}
+
+
 def test_the_freshness_sonde_still_watches_the_native_price(
         store, mocker, monkeypatch, fake_ticker):
     """A converted price moves whenever the rate does, so watching it would let

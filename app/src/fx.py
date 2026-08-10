@@ -118,6 +118,15 @@ class Rates:
     ``clock`` is injected for the same reason it is everywhere else in this
     codebase: a TTL tested against ``time.monotonic`` is a TTL tested with
     ``sleep``.
+
+    **The caches carry no lock, deliberately.** Several scrape threads call
+    :meth:`rate` at once, and the rule this codebase follows is that *a lock
+    never covers a fetch* (issue #668) — one held here would serialise the whole
+    market-open wave behind one yfinance round trip, which is the opposite of
+    what the TTL is for. Dict assignment is atomic under the GIL, so the worst
+    a race produces is two threads fetching the same pair in the same second and
+    the second overwriting the first with an equal value. That is a duplicated
+    request, bounded by the TTL, and never a wrong rate.
     """
 
     def __init__(self,
