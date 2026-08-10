@@ -2,75 +2,41 @@
 
 The routes themselves are thin — five lines each — so what is tested here is the
 **contract**, which is not thin at all: #655 decision 8 split absence into three
-states that ``influxdb_writer`` collapses onto ``None``, and getting them back
+states the scheduler's own reads collapse onto ``None``, and getting them back
 onto one value is exactly how a UI ends up rendering "the database is dead" and
-"you own nothing yet" identically.
+"you own nothing yet" identically. Since #700 the store is **real** here and the
+three states are structural: a declared table nobody wrote answers ``200`` +
+``[]``, an unwritten column reads ``NULL``, and only a fault raises.
 
 Plus the one rule of the SPA catch-all that is load-bearing: it must not swallow
 an ``/api`` 404.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-import pandas as pd
 import pytest
 
 import main
+import perf_series
+import quotes
 import runtime_state
 import settings_registry
 import store
 import web as web_module
+from events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from web import create_app
 
 
-class FakeClient:
-    def __init__(self, frame=None, error=None, frames=None):
-        self._frame = frame if frame is not None else pd.DataFrame()
-        # A route that issues *two* different reads (the movers block: P1, then
-        # the session baseline) needs a different answer per call, which a single
-        # canned frame cannot give. `frames` is consumed in order; anything past
-        # the end comes back empty.
-        self._frames = list(frames) if frames is not None else None
-        self._error = error
-        self.queries = []
-
-    def query(self, query, language=None):
-        self.queries.append(query)
-        if self._error is not None:
-            raise self._error
-
-        frame = self._frame
-        if self._frames is not None:
-            frame = self._frames.pop(0) if self._frames else pd.DataFrame()
-
-        class Table:
-            def __init__(self, frame):
-                self._frame = frame
-
-            def __len__(self):
-                return len(self._frame)
-
-            def to_pandas(self):
-                return self._frame
-
-        return Table(frame)
-
-
-class FakeWriter:
-    def __init__(self, client):
-        self._client = client
-
-    def connect(self):
-        pass
-
-
 class FakeMetrics:
-    """Stands in for SuiviBourseMetrics: the InfluxDB half, and the replay.
+    """Stands in for SuiviBourseMetrics: the replay, and the dials.
 
     ``ingest`` is real rather than a spy (issue #697). It is the seam
     *"the replay follows the write"* lands on, so a route that forgets an
     import has to be observable through the snapshot it republished — which
     only a real reload gives. The scrape-job reconciliation the production
     method also does needs a scheduler and is not what these tests are about.
+
+    The InfluxDB half is gone with #700: a route reads the **store**, which
+    these tests give it for real, so there is nothing left here to stand in for.
     """
 
     #: The real one, borrowed rather than re-implemented: it is a loop over the
@@ -78,8 +44,7 @@ class FakeMetrics:
     #: ADR-0014 forbids — and the one that stops matching first.
     apply_dials = main.SuiviBourseMetrics.apply_dials
 
-    def __init__(self, client, config_manager=None):
-        self.influxdb = FakeWriter(client)
+    def __init__(self, config_manager=None):
         self._config_manager = config_manager
         self.ingest_calls = 0
         self.apply_dials(settings_registry.defaults())
@@ -104,20 +69,29 @@ class FakeMetrics:
             self._config_manager.replay()
 
 
-def build_client(tmp_path, frame=None, error=None, accounts=None, events=None,
-                 frames=None):
-    """A Flask test client over a real ConfigurationManager on ``tmp_path``."""
-    return build_client_and_influx(
-        tmp_path, frame, error, accounts, events, frames)[0]
+def build_client(tmp_path, accounts=None, events=None, seed=None,
+                 break_store=False):
+    """A Flask test client over a real manager **and a real store**."""
+    return build_client_and_store(
+        tmp_path, accounts, events, seed, break_store)[0]
 
 
-def build_client_and_influx(tmp_path, frame=None, error=None, accounts=None,
-                            events=None, frames=None):
-    """As above, plus the fake InfluxDB client so a test can read the SQL back.
+def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
+                           break_store=False):
+    """As above, plus the open store so a test can read the rows back.
 
     ``accounts`` is a **file in the drop folder** since #698, not a
     ``settings.yaml``: the declaration is user data with provenance, so the
     setup a test writes is the setup a user writes.
+
+    ``seed`` runs **after** the first publication, and it has to: the replay
+    rewrites ``position`` wholesale, so a row laid down before it would be
+    swept away by it.
+
+    ``break_store`` drops a table the read layer names. That is a genuine
+    storage fault rather than a simulated one — the query raises, the blueprint
+    answers ``503``, and nothing in between has to recognise an error message
+    (which is exactly what ``_ABSENT_SCHEMA`` used to do, and why it is gone).
     """
     events_dir = tmp_path / 'events'
     events_dir.mkdir(exist_ok=True)
@@ -142,9 +116,75 @@ def build_client_and_influx(tmp_path, frame=None, error=None, accounts=None,
     # store here, so a route that reads the ledger reads the same one the
     # snapshot was published from.
     manager.reload()
-    influx = FakeClient(frame, error, frames)
-    runtime.metrics = FakeMetrics(influx, manager)
-    return create_app(runtime).test_client(), influx
+    if seed is not None:
+        seed(opened)
+    if break_store:
+        opened.execute('DROP TABLE position')
+        opened.execute('DROP TABLE account_metrics')
+        opened.execute('DROP TABLE price_point')
+    runtime.metrics = FakeMetrics(manager)
+    return create_app(runtime).test_client(), opened
+
+
+# --------------------------------------------------------------------- #
+# Seeding — the rows a page reads, written the way the jobs write them
+# --------------------------------------------------------------------- #
+
+def seed_position(opened, symbol='AAPL', name='Apple Inc', account='pea',
+                  quantity=10.0, cost_basis=1500.0, realized_gain=0.0,
+                  received_dividend=0.0):
+    """One row of ``position`` — what the replay lays down."""
+    opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+                   "ON CONFLICT (id) DO NOTHING", [account, account])
+    opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
+                   'ON CONFLICT (symbol) DO NOTHING', [symbol])
+    opened.execute(
+        'INSERT INTO position (account, symbol, name, quantity, cost_basis, '
+        '                      realized_gain, received_dividend) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?) '
+        'ON CONFLICT (account, symbol) DO UPDATE SET '
+        '  name = excluded.name, quantity = excluded.quantity, '
+        '  cost_basis = excluded.cost_basis, '
+        '  realized_gain = excluded.realized_gain, '
+        '  received_dividend = excluded.received_dividend',
+        [account, symbol, name, quantity, cost_basis, realized_gain,
+         received_dividend])
+
+
+def seed_quote(opened, symbol='AAPL', price=200.0,
+               at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
+               currency='USD', **attributes):
+    """One observation — what the scrape writes, through the real writer."""
+    opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
+                   'ON CONFLICT (symbol) DO NOTHING', [symbol])
+    values = {'currency': currency, 'exchange': 'NMS', 'quote_type': 'EQUITY',
+              'dividend_yield': 0.5, 'pe_ratio': 30.0, 'market_cap': 3.0e12}
+    values.update(attributes)
+    quotes.record_quote(opened, symbol, at, price, values)
+
+
+def seed_totals(opened, day=date(2026, 8, 5), **overrides):
+    """One ``portfolio_totals`` row — the dashboard head's whole source."""
+    values = {'cash_balance': 500.0, 'holdings_value': 12000.0,
+              'total_value': 12500.0, 'net_contributed': 10000.0,
+              'xirr': 0.12, 'gain_absolu': 2500.0, 'twr_index': 124.0}
+    values.update(overrides)
+    perf_series.write_portfolio_totals(
+        opened, [PortfolioTotalPoint(day=day, **values)])
+
+
+def seed_account_metrics(opened, account='pea', day=date(2026, 8, 5),
+                         **overrides):
+    """One ``account_metrics`` row, for the accounts comparison table."""
+    values = {'cash_balance': 500.0, 'holdings_value': 12000.0,
+              'total_value': 12500.0, 'net_contributed': 10000.0,
+              'xirr': 0.12, 'gain_absolu': 2500.0, 'twr_index': 118.4}
+    values.update(overrides)
+    opened.execute("INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+                   "ON CONFLICT (id) DO NOTHING", [account, account])
+    perf_series.write_account_metrics(opened, [AccountMetricPoint(
+        account=account, account_type='CTO', account_currency='EUR',
+        day=day, **values)])
 
 
 #: A declared setup — the `accounts` mode's precondition. An accounts **file**
@@ -158,45 +198,6 @@ ACCOUNTS_EVENTS = (
     "date,event_type,symbol,name,quantity,unit_price,account\n"
     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
 )
-
-
-def totals_frame(**overrides):
-    """One ``portfolio_totals`` row — the dashboard head's whole source."""
-    base = {
-        'time': pd.Timestamp('2026-08-05 00:00:00'),
-        'cash_balance': 500.0,
-        'holdings_value': 12000.0,
-        'total_value': 12500.0,
-        'net_contributed': 10000.0,
-        'xirr': 0.12,
-        'gain_absolu': 2500.0,
-        'twr_index': 124.0,
-    }
-    base.update(overrides)
-    return pd.DataFrame([base])
-
-
-def influx_row(**overrides):
-    base = {
-        'share_symbol': 'AAPL',
-        'share_name': 'Apple Inc',
-        'account': 'pea',
-        'share_currency': 'USD',
-        'share_exchange': 'NMS',
-        'quote_type': 'EQUITY',
-        'time': pd.Timestamp('2024-06-01 12:00:00'),
-        'share_price': 200.0,
-        'purchased_quantity': 10.0,
-        'purchased_price': 150.0,
-        'purchased_fee': 2.5,
-        'owned_quantity': 10.0,
-        'received_dividend': 0.0,
-        'dividend_yield': 0.5,
-        'pe_ratio': 30.0,
-        'market_cap': 3.0e12,
-    }
-    base.update(overrides)
-    return base
 
 
 # --------------------------------------------------------------------- #
@@ -213,20 +214,23 @@ def test_empty_portfolio_is_200_and_an_empty_list(tmp_path):
 
 def test_a_storage_failure_is_503_problem_json(tmp_path):
     """The distinctly *non*-empty answer — the whole point of the sibling module."""
-    client = build_client(tmp_path, error=Exception("connection refused"))
+    client = build_client(tmp_path, break_store=True)
     response = client.get('/api/shares')
 
     assert response.status_code == 503
     assert response.mimetype == 'application/problem+json'
     body = response.get_json()
     assert body['type'] == '/problems/storage-unavailable'
-    assert 'connection refused' in body['detail']
+    assert 'position' in body['detail']
 
 
 def test_absent_fields_stay_null_in_the_payload(tmp_path):
     """Trap 3: a missing fundamental is a normal state, never a zero."""
-    frame = pd.DataFrame([influx_row(pe_ratio=float('nan'))])
-    response = build_client(tmp_path, frame=frame).get('/api/shares')
+    def seed(opened):
+        seed_position(opened)
+        seed_quote(opened, pe_ratio=None)
+
+    response = build_client(tmp_path, seed=seed).get('/api/shares')
 
     assert response.get_json()[0]['pe_ratio'] is None
 
@@ -236,18 +240,17 @@ def test_absent_fields_stay_null_in_the_payload(tmp_path):
 # --------------------------------------------------------------------- #
 
 def test_shares_aggregates_across_accounts_and_keeps_the_breakdown(tmp_path):
-    frame = pd.DataFrame([
-        influx_row(account='pea', owned_quantity=10.0, purchased_quantity=10.0,
-                   purchased_price=150.0),
-        influx_row(account='cto', owned_quantity=5.0, purchased_quantity=5.0,
-                   purchased_price=180.0),
-    ])
-    payload = build_client(tmp_path, frame=frame).get('/api/shares').get_json()
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0)
+        seed_position(opened, account='cto', quantity=5.0, cost_basis=900.0)
+        seed_quote(opened)
+
+    payload = build_client(tmp_path, seed=seed).get('/api/shares').get_json()
 
     assert len(payload) == 1
     assert payload[0]['symbol'] == 'AAPL'
-    assert payload[0]['owned_quantity'] == 15.0
-    assert payload[0]['cost_price'] == pytest.approx(160.0)  # (1500+900)/15
+    assert payload[0]['quantity'] == 15.0
+    assert payload[0]['unit_cost'] == pytest.approx(160.0)  # (1500+900)/15
     assert {a['account'] for a in payload[0]['accounts']} == {'pea', 'cto'}
 
 
@@ -276,9 +279,11 @@ def test_prices_rejects_an_unparseable_instant(tmp_path):
 def test_prices_reports_the_bucket_it_used(tmp_path):
     """A chart that silently downsamples is a chart that lies about its
     resolution, so the choice is part of the payload."""
-    frame = pd.DataFrame([{
-        'time': pd.Timestamp('2024-06-01 12:00:00'), 'share_price': 200.0}])
-    client = build_client(tmp_path, frame=frame)
+    client = build_client(
+        tmp_path,
+        seed=lambda opened: seed_quote(
+            opened, price=200.0,
+            at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)))
 
     narrow = client.get(
         '/api/shares/AAPL/prices?from=2024-06-01&to=2024-06-05').get_json()
@@ -298,16 +303,20 @@ def test_the_head_of_a_default_install_speaks_plus_value_latente(tmp_path):
     """No declared accounts is what every default install runs, so this is the
     *designed* mode and not a degraded one. Its head has no `gain_absolu` key at
     all — #652 déc. 6's two terms cannot be conflated if they never coexist."""
-    frame = pd.DataFrame([influx_row(account='default')])
-    payload = build_client(tmp_path, frame=frame).get('/api/portfolio').get_json()
+    def seed(opened):
+        seed_position(opened, account='default', quantity=10.0,
+                      cost_basis=1502.5)
+        seed_quote(opened)
+
+    payload = build_client(tmp_path, seed=seed).get('/api/portfolio').get_json()
 
     assert payload['mode'] == 'titres'
-    assert payload['plus_value_latente'] == pytest.approx(497.5)  # 2000−1500−2.5
+    assert payload['plus_value_latente'] == pytest.approx(497.5)  # 2000−1502,5
     assert 'gain_absolu' not in payload
 
 
 def test_the_head_of_a_declared_install_speaks_gain(tmp_path):
-    client = build_client(tmp_path, frame=totals_frame(),
+    client = build_client(tmp_path, seed=seed_totals,
                           accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio').get_json()
 
@@ -356,7 +365,7 @@ def test_two_declared_accounts_share_one_head_because_a_file_declares_no_currenc
         "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
         "2024-01-16,BUY,MSFT,Microsoft,5,380.00,cto\n"
     )
-    client, _ = build_client_and_influx(
+    client, _ = build_client_and_store(
         tmp_path, accounts=accounts, events=events)
     payload = client.get('/api/portfolio').get_json()
 
@@ -367,16 +376,19 @@ def test_two_declared_accounts_share_one_head_because_a_file_declares_no_currenc
 def test_the_relative_delta_reads_the_last_point_before_the_instant(tmp_path):
     """#652 déc. 2's UI preference, and the reason it is a baseline *instant*
     rather than a window: it is deliberately decoupled from the chart's zoom."""
-    client, influx = build_client_and_influx(
-        tmp_path, frame=totals_frame(), accounts=ACCOUNTS_FILE,
-        events=ACCOUNTS_EVENTS)
+    def seed(opened):
+        seed_totals(opened, day=date(2026, 6, 1), total_value=10000.0)
+        seed_totals(opened, day=date(2026, 8, 5), total_value=12500.0)
+
+    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio?since=2026-07-05T00:00:00Z').get_json()
 
-    # Two reads, and which one runs first is not the contract — that the
-    # baseline is asked for as "the last point ≤ t" is.
-    issued = " ".join(" ".join(q.split()) for q in influx.queries)
-    assert "time <= '2026-07-05T00:00:00Z'" in issued
+    # "The last point at or **before** the instant": the exact day never exists,
+    # the series carrying one point a day.
     assert payload['baseline']['since'] == '2026-07-05T00:00:00+00:00'
+    assert payload['baseline']['total_value'] == 10000.0
+    assert payload['baseline']['change'] == 2500.0
 
 
 def test_the_head_rejects_an_unparseable_baseline_instant(tmp_path):
@@ -404,37 +416,39 @@ def test_a_malformed_instant_is_rejected_in_every_mode(tmp_path):
 def test_the_history_of_a_declared_install_is_value_versus_contributed(tmp_path):
     """#652 déc. 7: the area between the two curves *is* the Gain. The chart has
     no equivalent at global level in the Grafana baseline."""
-    client, influx = build_client_and_influx(
-        tmp_path, frame=totals_frame(), accounts=ACCOUNTS_FILE,
-        events=ACCOUNTS_EVENTS)
+    client = build_client(
+        tmp_path, seed=lambda opened: seed_totals(opened, day=date.today()),
+        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     payload = client.get('/api/portfolio/history').get_json()
 
     assert payload['mode'] == 'accounts'
     assert payload['points'] == [{
-        't': '2026-08-05T00:00:00+00:00', 'value': 12500.0, 'contributed': 10000.0}]
-    assert 'portfolio_totals' in influx.queries[-1]
+        't': date.today().isoformat(), 'value': 12500.0,
+        'contributed': 10000.0}]
 
 
 def test_the_degraded_history_is_valuation_versus_investment(tmp_path):
     """The fallback of déc. 7, and the field names keep the two charts apart:
     `contributed` is money the investor put in, `invested` is what the positions
     cost. One name for both is how they would end up conflated."""
-    frame = pd.DataFrame([{
-        'day': pd.Timestamp('2024-06-01 00:00:00'),
-        'share_symbol': 'AAPL',
-        'account': 'default',
-        'share_price': 200.0,
-        'owned_quantity': 10.0,
-        'purchased_quantity': 10.0,
-        'purchased_price': 150.0,
-    }])
-    client, influx = build_client_and_influx(tmp_path, frame=frame)
-    payload = client.get('/api/portfolio/history').get_json()
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, events=events, seed=seed)
+    payload = client.get(
+        '/api/portfolio/history?from=2024-01-01&to=2024-12-31').get_json()
 
     assert payload['mode'] == 'titres'
+    # The **join** #700 made explicit: the close comes from the price series,
+    # the holding from the replay. They used to be the same row.
     assert payload['points'] == [{
-        't': '2024-06-01T00:00:00+00:00', 'value': 2000.0, 'invested': 1500.0}]
-    assert 'portfolio_metrics' in influx.queries[-1]
+        't': '2024-06-01', 'value': 2000.0, 'invested': 1500.0}]
 
 
 def test_the_history_rejects_an_inverted_window(tmp_path):
@@ -447,13 +461,12 @@ def test_the_history_rejects_an_inverted_window(tmp_path):
 def test_the_history_defaults_to_a_year_because_the_series_is_daily(tmp_path):
     """One point per calendar day: the short presets that are natural on the
     shares page hold a single point here."""
-    client, influx = build_client_and_influx(
-        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
     body = client.get('/api/portfolio/history').get_json()
 
     span = datetime.fromisoformat(body['to']) - datetime.fromisoformat(body['from'])
     assert span.days == 365
-    assert 'DATE_BIN' not in influx.queries[-1]
 
 
 # --------------------------------------------------------------------- #
@@ -464,13 +477,14 @@ def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path)
     """#652 déc. 8's trap. The newest stored point is a Friday close; the
     baseline is midnight of *that* day, so a weekend still shows Friday's
     session instead of a column of zeros."""
-    current = pd.DataFrame([influx_row(
-        share_price=110.0, time=pd.Timestamp('2026-07-31 21:00:00'))])
-    baseline = pd.DataFrame([{
-        'share_symbol': 'AAPL', 'share_price': 100.0,
-        'time': pd.Timestamp('2026-07-30 20:00:00')}])
-    client, influx = build_client_and_influx(
-        tmp_path, frames=[current, baseline])
+    def seed(opened):
+        seed_position(opened, quantity=10.0, cost_basis=1000.0)
+        seed_quote(opened, price=100.0,
+                   at=datetime(2026, 7, 30, 20, 0, tzinfo=timezone.utc))
+        seed_quote(opened, price=110.0,
+                   at=datetime(2026, 7, 31, 21, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, seed=seed)
     payload = client.get('/api/portfolio/movers').get_json()
 
     assert payload['since'] == '2026-07-31T00:00:00+00:00'
@@ -478,18 +492,16 @@ def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path)
     # safe to put in front of a reader: naming the cut announced a close that
     # had not happened yet.
     assert payload['reference'] == '2026-07-30T20:00:00+00:00'
-    assert "time <= '2026-07-31T00:00:00Z'" in " ".join(influx.queries[-1].split())
     assert payload['movers'][0]['change_pct'] == pytest.approx(0.1)
     assert payload['movers'][0]['contribution'] == pytest.approx(100.0)
 
 
 def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
-    """No observation means no session to anchor on — and no second query."""
-    client, influx = build_client_and_influx(tmp_path)
+    """No observation means no session to anchor on, and nothing to compare."""
+    client = build_client(tmp_path)
     payload = client.get('/api/portfolio/movers').get_json()
 
     assert payload == {'since': None, 'reference': None, 'movers': []}
-    assert len(influx.queries) == 1
 
 
 # --------------------------------------------------------------------- #
@@ -538,39 +550,23 @@ def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     assert row['xirr'] is None
 
 
-def account_metrics_frame(**overrides):
-    """One ``account_metrics`` row — the comparison table's whole source."""
-    base = {
-        'account': 'pea',
-        'time': pd.Timestamp('2026-08-05 00:00:00'),
-        'cash_balance': 500.0,
-        'holdings_value': 12000.0,
-        'total_value': 12500.0,
-        'net_contributed': 10000.0,
-        'xirr': 0.12,
-        'gain_absolu': 2500.0,
-        'twr_index': 118.4,
-    }
-    base.update(overrides)
-    return pd.DataFrame([base])
-
-
 def test_accounts_carries_the_newest_figures_of_each_account(tmp_path):
     """The enrichment #661 added: one resource, two consumers.
 
     `total_value` in particular is written since v4.1 and displayed nowhere —
     the ticket's smallest item and the table's first column.
     """
-    client = build_client(tmp_path, frame=account_metrics_frame(),
+    client = build_client(tmp_path, seed=seed_account_metrics,
                           accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     row = client.get('/api/accounts').get_json()['accounts'][0]
 
     assert row['total_value'] == 12500.0
     assert row['gain_absolu'] == 2500.0
     assert row['twr_index'] == 118.4
-    assert row['as_of'].startswith('2026-08-05')
-    # The declaration still drives the identity fields — the series' own
-    # `account_type` tag records what the account *was*, not what it is.
+    assert row['as_of'] == '2026-08-05'
+    # The declaration drives the identity fields, and since #700 it is the only
+    # thing that could: `account_type` and `account_currency` were InfluxDB
+    # tags, and the store has no column for either.
     assert row['type'] == 'PEA'
 
 
@@ -581,7 +577,7 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
     absence of data cannot remove an account the human declared.
     """
     accounts = ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
-    client = build_client(tmp_path, frame=account_metrics_frame(),
+    client = build_client(tmp_path, seed=seed_account_metrics,
                           accounts=accounts, events=ACCOUNTS_EVENTS)
     payload = client.get('/api/accounts').get_json()
 
@@ -594,11 +590,11 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
 
 def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
     """Historical residue is not a row. The declaration is the list."""
-    frame = pd.DataFrame([
-        account_metrics_frame().iloc[0].to_dict(),
-        account_metrics_frame(account='old', total_value=999.0).iloc[0].to_dict(),
-    ])
-    client = build_client(tmp_path, frame=frame, accounts=ACCOUNTS_FILE,
+    def seed(opened):
+        seed_account_metrics(opened, account='pea')
+        seed_account_metrics(opened, account='old', total_value=999.0)
+
+    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     payload = client.get('/api/accounts').get_json()
 
@@ -623,15 +619,13 @@ def test_account_history_is_200_and_empty_before_the_first_point(tmp_path):
 
 def test_account_history_returns_the_series_with_its_nulls_intact(tmp_path):
     """Trap 3 on a series: `xirr`/`twr_index` are absent, never zero."""
-    frame = pd.DataFrame([
-        {'account': 'pea', 'time': pd.Timestamp('2026-08-04 00:00:00'),
-         'cash_balance': 500.0, 'holdings_value': 11000.0, 'total_value': 11500.0,
-         'net_contributed': 10000.0, 'twr_index': float('nan')},
-        {'account': 'pea', 'time': pd.Timestamp('2026-08-05 00:00:00'),
-         'cash_balance': 500.0, 'holdings_value': 12000.0, 'total_value': 12500.0,
-         'net_contributed': 10000.0, 'twr_index': 118.4},
-    ])
-    client = build_client(tmp_path, frame=frame, accounts=ACCOUNTS_FILE,
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2026, 8, 4), total_value=11500.0,
+                             holdings_value=11000.0, twr_index=None, xirr=None,
+                             gain_absolu=None)
+        seed_account_metrics(opened, day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     points = client.get('/api/accounts/pea/history').get_json()['points']
 
@@ -659,13 +653,13 @@ def test_account_history_without_any_declaration_is_404(tmp_path):
 
 
 def test_account_history_storage_failure_is_503_problem_json(tmp_path):
-    client = build_client(tmp_path, error=Exception("connection refused"),
+    client = build_client(tmp_path, break_store=True,
                           accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     response = client.get('/api/accounts/pea/history')
 
     assert response.status_code == 503
     assert response.mimetype == 'application/problem+json'
-    assert 'connection refused' in response.get_json()['detail']
+    assert 'account_metrics' in response.get_json()['detail']
 
 
 def test_account_history_rejects_an_inverted_window(tmp_path):
@@ -811,30 +805,44 @@ def test_the_spa_is_served_for_an_unknown_client_route(tmp_path, monkeypatch):
     assert b'id=root' in response.data
 
 
-def test_the_window_reaches_influxdb_as_bare_utc_z_literals(tmp_path):
-    """`isoformat()` alone yields `+00:00Z` for an aware datetime, which
-    InfluxDB rejects outright — so the route's parsing and the writer's
-    formatter have to agree all the way down to the SQL string."""
-    client, influx = build_client_and_influx(tmp_path)
-    client.get(
-        '/api/shares/AAPL/prices'
-        '?from=2024-01-15T09:30:00Z&to=2024-01-16T17:00:00Z')
+def test_the_window_bounds_the_series_it_says_it_does(tmp_path):
+    """The whole ``utc_z`` / ``escape_literal`` apparatus left with #700.
 
-    sql = " ".join(influx.queries[-1].split())
-    assert "time >= '2024-01-15T09:30:00Z'" in sql
-    assert "time <= '2024-01-16T17:00:00Z'" in sql
-    assert '+00:00' not in sql
+    v4 formatted a bound into the SQL string because InfluxDB 3's client took
+    one, and getting it wrong was a class of defect on its own: ``isoformat()``
+    alone yields ``+00:00Z`` for an aware datetime, which InfluxDB rejected
+    outright. DuckDB **binds**, so the trap has no expression left and what is
+    worth asserting is the only thing a reader cares about — the window keeps
+    what it says and drops the rest.
+    """
+    def seed(opened):
+        for day in (14, 15, 17):
+            seed_quote(opened, price=100.0 + day,
+                       at=datetime(2024, 1, day, 12, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, seed=seed)
+    body = client.get(
+        '/api/shares/AAPL/prices'
+        '?from=2024-01-15T09:30:00Z&to=2024-01-16T17:00:00Z').get_json()
+
+    assert [point['t'] for point in body['points']] == [
+        '2024-01-15T12:00:00+00:00']
 
 
 def test_a_naive_instant_is_read_as_utc_not_local_time(tmp_path):
     """A bare date from the front must not shift by the server's timezone."""
-    client, influx = build_client_and_influx(tmp_path)
-    client.get('/api/shares/AAPL/prices?from=2024-01-15&to=2024-01-16')
+    def seed(opened):
+        seed_quote(opened, price=100.0,
+                   at=datetime(2024, 1, 15, 0, 0, tzinfo=timezone.utc))
 
-    sql = " ".join(influx.queries[-1].split())
-    assert "time >= '2024-01-15T00:00:00Z'" in sql
-    assert datetime(2024, 1, 15, tzinfo=timezone.utc).isoformat() == \
-        '2024-01-15T00:00:00+00:00'
+    client = build_client(tmp_path, seed=seed)
+    body = client.get(
+        '/api/shares/AAPL/prices?from=2024-01-15&to=2024-01-16').get_json()
+
+    # Midnight UTC exactly: an hour either way is a server-local reading, and it
+    # would drop this point on any machine east of Greenwich.
+    assert [point['t'] for point in body['points']] == [
+        '2024-01-15T00:00:00+00:00']
 
 
 # --------------------------------------------------------------------------- #
@@ -914,22 +922,22 @@ def test_the_event_write_routes_are_gone_rather_than_refusing(tmp_path):
 # The app's own runtime state (issue #668, design #656)
 #
 # One case here is specific to this resource and is the reason it exists: it
-# must answer 200 while InfluxDB is unreachable. That is decision 6's whole
+# must answer 200 while the store is unreadable. That is decision 6's whole
 # point, and it is the one thing a test can prove that looking cannot — on a
 # healthy stack the two designs are indistinguishable.
 # --------------------------------------------------------------------------- #
 
-def test_the_runtime_resource_answers_200_with_influxdb_unreachable(tmp_path):
+def test_the_runtime_resource_answers_200_with_the_store_unreadable(tmp_path):
     """#656 decision 6, and the reason #659's `status` slot was retired.
 
-    `/api/shares` is an InfluxDB query and this blueprint answers 503 when one
-    fails, so a pill riding on that payload would **disappear exactly when it is
-    the only thing able to explain the empty table** — #655's error contract
-    turned against itself one storey up, and worse than the original, because
-    the diagnostic dies with what it diagnoses.
+    `/api/shares` is a query and this blueprint answers 503 when one fails, so a
+    pill riding on that payload would **disappear exactly when it is the only
+    thing able to explain the empty table** — #655's error contract turned
+    against itself one storey up, and worse than the original, because the
+    diagnostic dies with what it diagnoses.
     """
     client = build_client(
-        tmp_path, error=Exception("connection refused"),
+        tmp_path, break_store=True,
         accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     # The table is dead...
@@ -941,19 +949,22 @@ def test_the_runtime_resource_answers_200_with_influxdb_unreachable(tmp_path):
     assert response.get_json()['symbols'][0]['symbol'] == 'AAPL'
 
 
-def test_the_runtime_resource_issues_no_query_at_all(tmp_path):
-    """Not merely tolerant of a dead database — it never asks it anything.
+def test_the_runtime_resource_issues_no_query_at_all(tmp_path, mocker):
+    """Not merely tolerant of a dead store — it never asks it anything.
 
     Decision 4 makes that free: the backfill job already *reads* the oldest
     stored point, so it *remembers* it, and the progress bar survives an
-    unreachable InfluxDB rather than merely degrading politely.
+    unreadable store rather than merely degrading politely.
     """
-    client, influx = build_client_and_influx(
+    client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    queried = mocker.spy(opened, 'query')
+    arrow = mocker.spy(opened, 'arrow')
 
-    client.get('/api/runtime')
+    assert client.get('/api/runtime').status_code == 200
 
-    assert influx.queries == []
+    assert queried.call_count == 0
+    assert arrow.call_count == 0
 
 
 def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
@@ -970,11 +981,13 @@ def test_a_never_scraped_symbol_is_a_row_rather_than_a_missing_line(tmp_path):
 
     assert [s['symbol'] for s in body['symbols']] == ['AAPL']
     assert body['symbols'][0]['pill'] == 'unknown'
-    assert body['symbols'][0]['accounts'][0]['account'] == 'pea'
+    # The accounts are a plain list of names since #700: nothing per-account is
+    # measured about a series that has no account dimension.
+    assert body['symbols'][0]['accounts'] == ['pea']
 
 
 def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
-    client, _ = build_client_and_influx(
+    client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     runtime = web_module.current_runtime()
     runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
@@ -994,9 +1007,11 @@ def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
 
 def test_the_shares_payload_no_longer_carries_the_retired_status_slot(tmp_path):
     """#659 reserved it; #656 decision 6 retired it rather than filling it."""
-    frame = pd.DataFrame([influx_row()])
+    def seed(opened):
+        seed_position(opened)
+        seed_quote(opened)
 
-    body = build_client(tmp_path, frame=frame).get('/api/shares').get_json()
+    body = build_client(tmp_path, seed=seed).get('/api/shares').get_json()
 
     assert 'status' not in body[0]
 
@@ -1011,7 +1026,7 @@ def _dials(client):
     return {row['key']: row for row in client.get('/api/config').get_json()['settings']}
 
 
-def test_the_config_route_carries_the_environment_with_the_token_redacted(
+def test_the_config_route_carries_what_the_process_had_to_know_first(
         tmp_path, monkeypatch):
     """#654's one survivor, on `/api/config` rather than `/api/runtime`.
 
@@ -1019,15 +1034,21 @@ def test_the_config_route_carries_the_environment_with_the_token_redacted(
     is a question about the configuration, and the data page is already the
     screen that asks it — while putting it on the runtime resource would start
     that resource down the road to a junk drawer.
+
+    What is left in the list is ADR-0014's line: what the process must know
+    **before** it can open the store. The three ``INFLUXDB_*`` names left with
+    the database (#700) and are reported as set-and-unread instead, which is
+    what stops an operator concluding their token is wrong.
     """
     monkeypatch.setenv('INFLUXDB_TOKEN', 'apiv3_supersecret')
     client = build_client(tmp_path)
 
-    env = {s['name']: s
-           for s in client.get('/api/config').get_json()['environment']}
+    body = client.get('/api/config').get_json()
+    env = {s['name']: s for s in body['environment']}
 
-    assert env['INFLUXDB_TOKEN']['value'] is None
-    assert env['INFLUXDB_TOKEN']['set'] is True
+    assert 'INFLUXDB_TOKEN' not in env
+    assert 'INFLUXDB_TOKEN' in body['unread_environment']
+    assert env['SB_STORE_DIR']['value'] is not None
     # Compose-only variables are not app settings (#654 trap 13).
     assert 'SB_VERSION' not in env
 

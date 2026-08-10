@@ -328,13 +328,22 @@ def test_failed_fetch_sets_no_market_gauge_at_all(exporter):
 # --- wiring through SuiviBourseMetrics ---------------------------------------
 
 def test_scrape_publishes_the_price_and_ingest_the_position(
-        monkeypatch, mock_influx, fake_ticker, store):
+        monkeypatch, fake_ticker, store):
     """The two feeders, each doing its own half (#699)."""
+    from contextlib import contextmanager
+
     import main
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda symbol: fake_ticker(close=150.0))
+    store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
 
     class FakeConfigManager:
+        store = None
+
+        @contextmanager
+        def writing(self):
+            yield self.store
+
         def current(self):
             return main.ConfigSnapshot(shares=[_share()], events=[],
                                        accounts=None, cache_key=None)
@@ -358,9 +367,9 @@ def test_scrape_publishes_the_price_and_ingest_the_position(
             return None
 
     exporter = PrometheusExporter(registry=CollectorRegistry())
-    metrics = main.SuiviBourseMetrics(
-        FakeConfigManager(),
-        influxdb_writer=mock_influx, prometheus_exporter=exporter)
+    manager = FakeConfigManager()
+    manager.store = store
+    metrics = main.SuiviBourseMetrics(manager, prometheus_exporter=exporter)
 
     metrics.scrape()
     assert exporter.registry.get_sample_value('sb_share_price', AAPL) == 150.0
@@ -371,5 +380,6 @@ def test_scrape_publishes_the_price_and_ingest_the_position(
     assert exporter.registry.get_sample_value('sb_owned_quantity', AAPL) == 18.0
     assert exporter.registry.get_sample_value('sb_realized_gain', AAPL) == 0.0
 
-    # The InfluxDB write still happened too (dual export).
-    assert mock_influx.write_metrics.called
+    # And the point landed in the store as well (the gauges are a mirror).
+    assert store.query(
+        "SELECT price_native FROM price_point WHERE symbol = 'AAPL'") == [(150.0,)]

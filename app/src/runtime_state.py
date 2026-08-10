@@ -22,7 +22,11 @@ the whole design:
   travels in the record. **The reader reports observations; it never derives a
   verdict across two items.**
 * **Granularity is the job's, not the screen's** (déc. 5): per symbol for scrape,
-  per ``(symbol, account, direction)`` for backfill, global for ingest and perf.
+  per ``(symbol, direction)`` for backfill, global for ingest and perf. Both were
+  per ``(symbol, account)`` until #700 took the account dimension off the price
+  series — a job that now runs **once per symbol** would have published N
+  identical records, one per account, and a page would have drawn N identical
+  bars for one piece of work.
 
 Two rules for anyone adding a call site:
 
@@ -37,12 +41,12 @@ that only happens in production with forty symbols. So the read path takes the
 row set from the **configuration snapshot** and does one ``get`` per key, which
 is #661's "the declaration drives" and gives the right answer for free: a symbol
 the scheduler has not touched yet is an *unknown* cell, not a missing row. The
-two methods that do iterate (:meth:`forget_symbol`, :meth:`backfill_of_symbol`)
-hold the lock while they do it.
+one method that does iterate (:meth:`forget_symbol`) holds the lock while it
+does.
 """
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 # --------------------------------------------------------------------- #
 # Vocabulary. Every constant below is a value a *job* writes, never one a
@@ -51,9 +55,9 @@ from typing import Dict, List, Optional, Tuple
 
 #: One scrape pass's verdict, as ``scheduling.decide`` and the write path saw it.
 SCRAPE_WROTE = 'wrote'
-#: Fetched fine, InfluxDB refused. Worth its own value because **#617's counter
+#: Fetched fine, the store refused. Worth its own value because **#617's counter
 #: does not see it**: ``decide`` resets the counter whenever a price was present,
-#: so a database outage leaves a symbol polling happily at ``base_interval`` and
+#: so a refused write leaves a symbol polling happily at ``base_interval`` and
 #: persisting nothing. The dead-ticker guard is about yfinance, by design.
 SCRAPE_WRITE_FAILED = 'write_failed'
 #: A recognised closed-family state — slept to the next open. Never a failure.
@@ -78,9 +82,16 @@ TERMINAL_NO_BUY = 'no_buy'
 #: stands aside so the ``REGULAR`` writer stays the sole writer of the present.
 SKIP_NO_SERIES = 'no_series'
 SKIP_TOO_RECENT = 'too_recent'
-#: Shared by both passes: a window under a day, or no share info to tag with.
+#: The backward pass's own: a window under a day, which is what a chunk boundary
+#: landing inside a single trading session leaves.
+#:
+#: ``no_share_info`` left with #700 and is worth a line because its *subject*
+#: left, not its handling: a historical point used to need the symbol's currency
+#: and exchange, since those were InfluxDB **tags** and a point written without
+#: them landed in a different series than its own live points. In the store they
+#: are columns of ``symbol_quote``, written by the scrape and joined at read
+#: time, so a backfill needs nothing from yfinance but the prices.
 SKIP_WINDOW_TOO_SMALL = 'window_too_small'
-SKIP_NO_SHARE_INFO = 'no_share_info'
 
 #: What one ingestion pass did. ``INGEST_FAILED`` is the one that is invisible
 #: today anywhere but the log, and it is the reason this record exists: the app
@@ -128,17 +139,19 @@ class ScrapeRecord:
     #: ``decide`` call that produced ``verdict`` and ``next_delay``.
     failure_count: int
     next_delay: Optional[float]
-    #: The accounts a point was actually persisted for, and the ones #628's
-    #: sonde flagged. Per account because the sonde is, and because a symbol can
-    #: be stale in one account and fresh in another.
-    accounts_written: Tuple[str, ...] = ()
-    stale_accounts: Tuple[str, ...] = ()
+    #: Whether the point landed, and whether #628's sonde flagged the series.
+    #: Both were tuples of account ids until #700: a symbol could be stale in one
+    #: account and fresh in another because the *series* was per account. It is
+    #: not any more — one market observation, one row — so the two questions have
+    #: one answer each.
+    wrote: bool = False
+    stale: bool = False
     error: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class BackfillRecord:
-    """One ``(symbol, account, direction)`` pass of the backfill job.
+    """One ``(symbol, direction)`` pass of the backfill job.
 
     ``failures`` is the piece with **no equivalent anywhere in the app today**:
     ``_backfill_backward`` logs a warning and returns ``0``, so nothing
@@ -146,6 +159,10 @@ class BackfillRecord:
     made #656 grow in the first place. It is a *consecutive* counter, folded by
     :meth:`RuntimeRecorder.record_backfill` under the lock, and it is the
     backfill's equivalent of #617's counter rather than a copy of it.
+
+    The key lost its ``account`` with #700, and so did the pass: a price series
+    is per symbol, so a per-account backfill would have fetched the same window
+    from Yahoo once per account holding the share.
 
     ``oldest`` is the oldest stored point **as observed at the start of this
     pass**, so a bar drawn from it lags the chunk this very pass wrote by one
@@ -155,7 +172,6 @@ class BackfillRecord:
     """
 
     symbol: str
-    account: str
     direction: str
     at: datetime
     window: Optional[Tuple[datetime, datetime]] = None
@@ -232,7 +248,7 @@ class RuntimeRecorder:
 
         self._lock = threading.Lock()
         self._scrape: Dict[str, ScrapeRecord] = {}
-        self._backfill: Dict[Tuple[str, str, str], BackfillRecord] = {}
+        self._backfill: Dict[Tuple[str, str], BackfillRecord] = {}
         self._ingest: Optional[IngestRecord] = None
         self._perf: Optional[PerfRecord] = None
 
@@ -247,14 +263,14 @@ class RuntimeRecorder:
         return record
 
     def record_backfill(self, record: BackfillRecord) -> BackfillRecord:
-        """Publish one ``(symbol, account, direction)`` pass, folding ``failures``.
+        """Publish one ``(symbol, direction)`` pass, folding ``failures``.
 
         The fold is a read-modify-write, which is why it happens here rather than
         at the call site: two backfill passes of the same series never overlap
         today (one job, sequential), but a counter whose increment lives outside
         the lock is a bug waiting for the day that stops being true.
         """
-        key = (record.symbol, record.account, record.direction)
+        key = (record.symbol, record.direction)
         with self._lock:
             previous = self._backfill.get(key)
             carried = previous.failures if previous is not None else 0
@@ -297,21 +313,9 @@ class RuntimeRecorder:
     def scrape_of(self, symbol: str) -> Optional[ScrapeRecord]:
         return self._scrape.get(symbol)
 
-    def backfill_of(self, symbol: str, account: str,
+    def backfill_of(self, symbol: str,
                     direction: str) -> Optional[BackfillRecord]:
-        return self._backfill.get((symbol, account, direction))
-
-    def backfill_of_symbol(self, symbol: str) -> List[BackfillRecord]:
-        """Every stored backfill pass of one symbol, across accounts.
-
-        The one read that cannot be expressed as "one get per key" — the request
-        knows the symbol but not which accounts the *scheduler* has seen, which
-        may lag the snapshot by a cycle after an edit. It takes the lock and
-        materialises a list rather than yielding, so the caller never holds a
-        cursor into a dict the backfill thread is writing.
-        """
-        with self._lock:
-            return [r for k, r in self._backfill.items() if k[0] == symbol]
+        return self._backfill.get((symbol, direction))
 
     def ingest(self) -> Optional[IngestRecord]:
         return self._ingest
@@ -325,7 +329,6 @@ __all__ = [
     'SCRAPE_WROTE', 'SCRAPE_WRITE_FAILED', 'SCRAPE_CLOSED', 'SCRAPE_NO_PRICE',
     'TERMINAL_COMPLETE', 'TERMINAL_NO_BUY',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
-    'SKIP_NO_SHARE_INFO',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
     'PERF_RAN', 'PERF_SKIPPED', 'PERF_FAILED',
     'ScrapeRecord', 'BackfillRecord', 'IngestRecord', 'PerfRecord',

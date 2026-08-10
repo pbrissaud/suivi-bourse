@@ -1,10 +1,11 @@
 """
 Prometheus Exporter Module for SuiviBourse
 
-Holds the legacy ``sb_*`` Prometheus gauges, kept for backward compatibility
-with pre-InfluxDB deployments. They run in parallel with the InfluxDB writer and
-only reflect the current snapshot of each share (no historical backfill —
-Prometheus is a scrape/current-value model).
+Holds the ``sb_*`` Prometheus gauges — **a first-class product** and not a
+legacy half (ADR-0012): they are what makes the app usable headless, for
+whoever wants something very simple. They run beside the store and reflect the
+current snapshot of each share only (no historical backfill — Prometheus is a
+scrape/current-value model).
 
 This module owns the *registry*, not the server: since issue #651 the ``/metrics``
 endpoint is mounted on the Flask app (``web``) and served by gunicorn on its own
@@ -267,7 +268,7 @@ class PrometheusExporter:
             info['currency'], info['exchange'], info['quoteType']).set(1)
 
         if info.get('dividendYield') is not None:
-            # Match the InfluxDB write: yield is stored as a percentage.
+            # Match the stored quote: the yield is a percentage.
             self.dividend_yield.labels(*labels).set(info['dividendYield'] * 100)
         if info.get('peRatio') is not None:
             self.pe_ratio.labels(*labels).set(info['peRatio'])

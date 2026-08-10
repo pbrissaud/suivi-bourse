@@ -152,7 +152,7 @@ def test_build_runtime_validates_the_config_without_starting_anything(
         fake_config, mocker, monkeypatch):
     """The master's whole job: read the config, hold nothing that a fork breaks."""
     monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
-    influx_cls = mocker.patch.object(main, "InfluxDBWriter")
+    metrics_cls = mocker.patch.object(main, "SuiviBourseMetrics")
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
     threads_before = threading.active_count()
 
@@ -165,7 +165,7 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert fake_config.named_unread == 1
     # ... and nothing else is.
     assert fake_config.watcher_started_with is None
-    assert influx_cls.call_count == 0
+    assert metrics_cls.call_count == 0
     assert scheduler_cls.call_count == 0
     assert runtime.metrics is None
     assert runtime.scheduler is None

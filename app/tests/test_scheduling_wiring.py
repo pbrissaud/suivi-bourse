@@ -2,13 +2,16 @@
 Tests for the per-symbol scheduler wiring in ``main`` (issue #616 / #614).
 
 The scheduler is a ``MagicMock(spec=BackgroundScheduler)`` spy — no real
-scheduler runs. yfinance and InfluxDB are mocked. These cover the runtime glue
-that the pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation
-(add / remove / revive / untouched + the race guard), the write-gate vs
-reschedule-gate split, and the Prometheus fetch-success gate (#609).
+scheduler runs, because what is under test is the *wiring* and not APScheduler.
+The store, on the other hand, is real (issue #700): a write is asserted on the
+row it produced, never on a call it made. These cover the runtime glue that the
+pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation (add /
+remove / revive / untouched + the race guard), the write-gate vs reschedule-gate
+split, and the Prometheus fetch-success gate (#609).
 """
 
 import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -17,6 +20,7 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
+import quotes
 import runtime_state
 import scheduling
 import settings
@@ -60,8 +64,9 @@ def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
 
 
 class _FakeConfigManager:
-    def __init__(self, shares):
+    def __init__(self, shares, opened_store=None):
         self._shares = shares
+        self._store = opened_store
         # One list object, reused: `recompute_perf` decides "the events cache
         # reloaded" by identity, so a fresh `[]` per call would read as a reload
         # every cycle and defeat the gate under test.
@@ -83,14 +88,43 @@ class _FakeConfigManager:
     def get_events(self):
         return self._events
 
+    @property
+    def store(self):
+        return self._store
 
-def _metrics(shares, mock_influx, mocker, prometheus=None):
-    cfg = _FakeConfigManager(shares)
-    m = SuiviBourseMetrics(cfg, influxdb_writer=mock_influx,
+    @contextmanager
+    def writing(self):
+        yield self._store
+
+
+def _metrics(shares, store, mocker, prometheus=None):
+    """A metrics object over a real store, with the declaration it references.
+
+    The two ``INSERT``s are the configuration path's rows the foreign keys ask
+    for: the market writer never invents a declaration, which is the schema rule
+    (one writer per row) seen from a test's side.
+    """
+    for share in shares:
+        store.execute(
+            "INSERT INTO account (id, type, label) VALUES (?, 'CTO', ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            [share["account"], share["account"]])
+        store.execute(
+            "INSERT INTO symbol (symbol) VALUES (?) "
+            "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
+    cfg = _FakeConfigManager(shares, opened_store=store)
+    m = SuiviBourseMetrics(cfg,
                            prometheus_exporter=prometheus or mocker.MagicMock())
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m
+
+
+def _prices(store, symbol="AAPL"):
+    """A symbol's stored prices, oldest first — what a write is asserted on."""
+    return [row[0] for row in store.query(
+        "SELECT price_native FROM price_point WHERE symbol = ? ORDER BY ts",
+        [symbol])]
 
 
 def _job(job_id):
@@ -102,13 +136,13 @@ def _job(job_id):
 # ---------------------------------------------------------------------------
 
 def test_scrape_symbol_regular_writes_and_rearms_at_base_interval(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share()], mock_influx, mocker)
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == [185.0]
     # Re-armed as a one-shot 'date' job, base_interval from now.
     call = m.scheduler.add_job.call_args
     assert call.args[1] == "date"            # trigger (positional)
@@ -118,20 +152,20 @@ def test_scrape_symbol_regular_writes_and_rearms_at_base_interval(
 
 
 def test_scrape_symbol_coerces_unknown_state_to_regular_and_writes(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share()], mock_influx, mocker)
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
     # Default fake_ticker has no marketState -> coerced REGULAR (fail-open).
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == [185.0]
     assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
 def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    m = _metrics([_share()], mock_influx, mocker)
+        store, fake_ticker, mocker, monkeypatch):
+    m = _metrics([_share()], store, mocker)
     next_open_ts = (NOW + timedelta(hours=2)).timestamp()
     meta = {"currentTradingPeriod": {"regular": {"start": next_open_ts}}}
     monkeypatch.setattr(
@@ -140,35 +174,40 @@ def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_not_called()
+    assert _prices(store) == []
     # Slept to the exact next open (no lead-in margin).
     assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(hours=2)
 
 
 def test_scrape_symbol_price_failure_keeps_polling_without_writing(
-        mock_influx, mocker):
-    m = _metrics([_share()], mock_influx, mocker)
+        store, mocker):
+    m = _metrics([_share()], store, mocker)
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_not_called()
+    assert _prices(store) == []
     # Reschedule gate still REGULAR (fail-open) -> keeps polling at base_interval.
     assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
-def test_scrape_symbol_writes_one_point_per_account_holding_symbol(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+def test_scrape_symbol_writes_one_point_however_many_accounts_hold_it(
+        store, fake_ticker, mocker, monkeypatch):
+    """#700's structural decision, at the write.
+
+    The loop used to run per holding because the *series* carried the account.
+    It does not: a market observation belongs to no account, so two holdings of
+    one share are one point. Writing it twice would inflate the series by the
+    number of accounts and leave every read of it choosing between duplicates.
+    """
     shares = [_share(account="pea"), _share(account="cto")]
-    m = _metrics(shares, mock_influx, mocker)
+    m = _metrics(shares, store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    assert mock_influx.write_metrics.call_count == 2
-    accounts = {c.kwargs["account"] for c in mock_influx.write_metrics.call_args_list}
-    assert accounts == {"pea", "cto"}
-    # One fetch feeds both account points.
+    assert _prices(store) == [185.0]
+    # One fetch, one point, one re-arm.
     m.scheduler.add_job.assert_called_once()
 
 
@@ -177,9 +216,9 @@ def test_scrape_symbol_writes_one_point_per_account_holding_symbol(
 # ---------------------------------------------------------------------------
 
 def test_scrape_symbol_failure_increments_and_backs_off(
-        mock_influx, mocker):
+        store, mocker):
     """A run of non-closed no-price cycles grows the re-arm delay past base."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     # First three failures stay at base_interval (grace window).
@@ -195,9 +234,9 @@ def test_scrape_symbol_failure_increments_and_backs_off(
 
 
 def test_scrape_symbol_success_resets_failure_count(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A successful write clears an accumulated backoff back to base_interval."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts["AAPL"] = 5
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
@@ -208,9 +247,9 @@ def test_scrape_symbol_success_resets_failure_count(
 
 
 def test_reconcile_removes_departed_symbol_failure_state(
-        mock_influx, mocker):
+        store, mocker):
     """Failure state must not survive symbol removal (per-job lifetime)."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts = {"AAPL": 1, "MSFT": 9}
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
@@ -223,10 +262,10 @@ def test_reconcile_removes_departed_symbol_failure_state(
 
 
 def test_scrape_symbol_departed_does_not_persist_failure_count(
-        mock_influx, mocker):
+        store, mocker):
     """A scrape whose symbol has already departed must not (re)write its
     backoff counter — the held-recheck guards the persist (issue #617)."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts["AAPL"] = 3
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
     m.config_manager._shares = []  # departed between the last reconcile and this cycle
@@ -238,7 +277,7 @@ def test_scrape_symbol_departed_does_not_persist_failure_count(
 
 
 def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
-        mock_influx, mocker):
+        store, mocker):
     """The named race: a scrape in-flight when reconcile removes its symbol
     must not write the failure counter back after cleanup popped it.
 
@@ -246,7 +285,7 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
     reconcile pop is forced to win the shared lock first; when the scrape then
     resumes it sees the symbol no longer held and skips the write. Without the
     lock + held-recheck this would leave a stale 'AAPL' entry (resurrection)."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts["AAPL"] = 2  # a backoff already building
 
     fetch_started = threading.Event()
@@ -282,36 +321,36 @@ def test_inflight_scrape_racing_with_cleanup_does_not_resurrect_counter(
 # ---------------------------------------------------------------------------
 
 def test_scrape_symbol_regular_write_sets_perf_dirty_live(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A REGULAR write raises the global live-write dirty bool (issue #618)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False  # start clean to prove the write sets it
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == [185.0]
     assert m._perf_dirty_live is True
 
 
 def test_scrape_symbol_closed_does_not_set_perf_dirty_live(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A closed-market probe writes nothing and leaves the flag clean, so a
     fully-closed wave produces no perf point (non-trading-day gap #606)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_not_called()
+    assert _prices(store) == []
     assert m._perf_dirty_live is False
 
 
 def test_scrape_symbol_price_failure_does_not_set_perf_dirty_live(
-        mock_influx, mocker):
+        store, mocker):
     """A non-closed cycle with no writable price writes nothing -> flag stays."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
@@ -320,25 +359,31 @@ def test_scrape_symbol_price_failure_does_not_set_perf_dirty_live(
     assert m._perf_dirty_live is False
 
 
-def test_scrape_symbol_failed_influx_write_does_not_set_perf_dirty_live(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    """write_metrics raising (Influx outage) must not raise the dirty flag —
-    no point persisted, so there is nothing new for perf to read (#618)."""
-    m = _metrics([_share()], mock_influx, mocker)
+def test_scrape_symbol_failed_store_write_does_not_set_perf_dirty_live(
+        store, fake_ticker, mocker, monkeypatch):
+    """A refused write must not raise the dirty flag — no point persisted, so
+    there is nothing new for perf to read (#618)."""
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
-    mock_influx.write_metrics.side_effect = Exception("influx unreachable")
+    mocker.patch.object(main.quotes, "record_quote",
+                        side_effect=RuntimeError("the store refused the write"))
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == []
     assert m._perf_dirty_live is False
+    # And it is named as such: #617's counter cannot see a refused write, so the
+    # verdict is the only thing that can (issue #668).
+    record = m.recorder.scrape_of("AAPL")
+    assert record.verdict == runtime_state.SCRAPE_WRITE_FAILED
+    assert record.wrote is False
 
 
 def test_recompute_perf_skips_when_all_quiet(
-        mock_influx, mocker):
+        store, mocker):
     """No dirty signal -> update_account_metrics is not called (no Parquet drip)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     # Clear the boot seed and align _perf_last_events with current events so
     # events_changed is False (get_events() returns None for the fake manager).
     m._perf_dirty_live = False
@@ -351,9 +396,9 @@ def test_recompute_perf_skips_when_all_quiet(
 
 
 def test_recompute_perf_boot_seed_runs_first_cycle(
-        mock_influx, mocker):
+        store, mocker):
     """Seeded True at boot -> the first cycle always runs (fresh restart point)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     assert m._perf_dirty_live is True          # boot seed
     spy = mocker.patch.object(m, "update_account_metrics")
 
@@ -363,9 +408,9 @@ def test_recompute_perf_boot_seed_runs_first_cycle(
 
 
 def test_recompute_perf_runs_and_clears_live_flag_under_lock(
-        mock_influx, mocker):
+        store, mocker):
     """A live REGULAR write triggers a run; the flag is checked-and-cleared."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
     m._perf_last_events = m.config_manager.get_events()
     spy = mocker.patch.object(m, "update_account_metrics")
@@ -385,10 +430,10 @@ def test_recompute_perf_runs_and_clears_live_flag_under_lock(
 
 
 def test_recompute_perf_runs_when_backfill_watermark_pending(
-        mock_influx, mocker):
+        store, mocker):
     """A pending backfill watermark alone triggers a run (checked, not consumed
     here — update_account_metrics consumes it)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
     m._perf_last_events = m.config_manager.get_events()
     m._mark_perf_dirty(date(2024, 1, 2))
@@ -402,9 +447,9 @@ def test_recompute_perf_runs_when_backfill_watermark_pending(
 
 
 def test_recompute_perf_runs_when_events_changed(
-        mock_influx, mocker):
+        store, mocker):
     """A reloaded events cache (new list object) alone triggers a run."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = False
     # _perf_last_events differs from get_events() (None) -> events_changed True.
     m._perf_last_events = ["stale"]
@@ -416,10 +461,10 @@ def test_recompute_perf_runs_when_events_changed(
 
 
 def test_recompute_perf_error_does_not_propagate_and_rearms_live_flag(
-        mock_influx, mocker):
+        store, mocker):
     """An update_account_metrics failure is logged (never killing the thread) and
     the consumed live-write signal is re-armed so the next cycle retries."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m._perf_dirty_live = True  # a live write triggered this cycle
     mocker.patch.object(m, "update_account_metrics", side_effect=RuntimeError("boom"))
 
@@ -433,8 +478,8 @@ def test_recompute_perf_error_does_not_propagate_and_rearms_live_flag(
 # ---------------------------------------------------------------------------
 
 def test_register_interval_jobs_registers_perf_on_its_own_tick(
-        mock_influx, mocker):
-    m = _metrics([_share()], mock_influx, mocker)
+        store, mocker):
+    m = _metrics([_share()], store, mocker)
     scheduler = mocker.MagicMock(spec=BackgroundScheduler)
 
     register_interval_jobs(scheduler, m, backfill_interval=60)
@@ -462,24 +507,24 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
 # ---------------------------------------------------------------------------
 
 def test_prometheus_updates_on_closed_market_probe(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
     # Closed -> no write, but the market gauges still update (fetch success).
-    mock_influx.write_metrics.assert_not_called()
+    assert _prices(store) == []
     prom.update_quote.assert_called_once()
     # And the scrape never touches the position half — the replay owns it (#699).
     prom.update_position.assert_not_called()
 
 
 def test_prometheus_not_updated_when_fetch_fails(
-        mock_influx, mocker):
+        store, mocker):
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -491,16 +536,29 @@ def test_prometheus_not_updated_when_fetch_fails(
 # Price-freshness liveness sonde (#628) — diagnostic only
 # ---------------------------------------------------------------------------
 
+def _freeze_the_writer(store, mocker, stored=180.0):
+    """Seed a stored price and stop the writer from ever advancing it.
+
+    The sonde's exact subject: a symbol whose **fetch works** and whose
+    persistence does not. With a real store there is no other way to produce it —
+    a healthy write refreshes ``symbol_quote.last_price_native`` in the same
+    transaction as the point, which is precisely why the sonde re-baselines on a
+    writer that is doing its job.
+    """
+    quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), stored)
+    mocker.patch.object(main.quotes, "record_quote")
+
+
 def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
-        mock_influx, fake_ticker, mocker, monkeypatch, caplog):
+        store, fake_ticker, mocker, monkeypatch, caplog):
     """A writer whose stored price stays frozen across consecutive REGULAR cycles
     for >= the horizon while the live quote moves → WARNING + gauge 1. The signal
     needs a first cycle to baseline, then a later cycle past the horizon."""
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     m.staleness_horizon = 900
-    # Live close is 185.0 (fake_ticker default); stored value never advances.
-    mock_influx.get_newest_price.return_value = 180.0
+    # Live close is 185.0 (fake_ticker default); the stored value never advances.
+    _freeze_the_writer(store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Cycle 1: baseline — no signal yet.
@@ -515,19 +573,44 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
     assert any("Price-freshness sonde" in r.message and "AAPL" in r.message
                for r in caplog.records)
     assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], True)
-    # Diagnostic only: writes and re-arms happened normally each cycle.
-    assert mock_influx.write_metrics.call_count == 2
+    # Diagnostic only: it never gates the write or the re-arm.
+    assert m.recorder.scrape_of("AAPL").stale is True
+    assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
+
+
+def test_the_sonde_watches_the_native_price_and_never_a_converted_one(
+        store, fake_ticker, mocker, monkeypatch):
+    """Spec #695 § 7, and it is a rule rather than a detail.
+
+    The question is whether the *writer* has gone silently stale. A converted
+    price moves whenever the exchange rate does, so a sonde watching one would
+    read a currency tick as a refreshed price and answer "fresh" about a symbol
+    frozen since Tuesday. The column it reads is named here so #702 cannot point
+    it at the other one by accident.
+    """
+    m = _metrics([_share()], store, mocker)
+    m.staleness_horizon = 900
+    _freeze_the_writer(store, mocker)
+    # A conversion lands on the same row without the native price moving.
+    store.execute("UPDATE symbol_quote SET last_price_converted = 210.0, "
+                  "last_fx_rate = 1.1 WHERE symbol = 'AAPL'")
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+    m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
+
+    assert m.recorder.scrape_of("AAPL").stale is True
 
 
 def test_sonde_no_false_positive_first_tick_after_close(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """The market-open-after-close fix: a polling gap wider than the horizon
     (overnight) re-baselines, so the first morning tick raises no signal even
     though the stored point is legitimately hours old and the quote gapped."""
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     m.staleness_horizon = 900
-    mock_influx.get_newest_price.return_value = 180.0  # frozen value across the gap
+    _freeze_the_writer(store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Yesterday's last REGULAR cycle baselines the series.
@@ -539,85 +622,94 @@ def test_sonde_no_false_positive_first_tick_after_close(
 
 
 def test_sonde_no_false_positive_when_writer_advances_value(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A normally-updating symbol advances the stored value each cycle → the
-    sonde re-baselines and never flags, however long it runs."""
+    sonde re-baselines and never flags, however long it runs.
+
+    Nothing is faked here at all: the real writer refreshes the ``latest`` row
+    in the same transaction as the point, which is what makes the healthy case
+    healthy.
+    """
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     m.staleness_horizon = 900
+    quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), 180.0)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
-    mock_influx.get_newest_price.return_value = 180.0
     m._scrape_symbol("AAPL", now=NOW)
-    # Next cycle the writer has persisted a new value (healthy).
-    mock_influx.get_newest_price.return_value = 184.0
     m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
 
     assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
 
 
 def test_sonde_does_not_run_on_closed_market(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """The sonde is a REGULAR-only check: a closed probe writes nothing and never
     reads the stored price or touches the staleness gauge."""
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     m.staleness_horizon = 900
+    read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.get_newest_price.assert_not_called()
+    read.assert_not_called()
     prom.update_price_staleness.assert_not_called()
 
 
 def test_sonde_disabled_when_horizon_non_positive(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A non-positive horizon turns the sonde off: no read, no gauge, write intact."""
     prom = mocker.MagicMock()
-    m = _metrics([_share()], mock_influx, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker, prometheus=prom)
     m.staleness_horizon = 0
+    read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.get_newest_price.assert_not_called()
+    read.assert_not_called()
     prom.update_price_staleness.assert_not_called()
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == [185.0]
 
 
 def test_sonde_read_error_never_disturbs_scrape(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """A read error in the sonde is swallowed: the write, re-arm, and backoff
     reset all proceed exactly as if the sonde were absent (diagnostic only)."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
-    mock_influx.get_newest_price.side_effect = RuntimeError("db down")
+    mocker.patch.object(main.quotes, "last_price",
+                        side_effect=RuntimeError("db down"))
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    mock_influx.write_metrics.assert_called_once()
+    assert _prices(store) == [185.0]
     assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
-def test_sonde_checks_each_account_holding(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    """One live fetch, but the sonde reads and reports per (symbol, account)."""
+def test_the_sonde_asks_once_per_symbol_and_reports_to_every_holding(
+        store, fake_ticker, mocker, monkeypatch):
+    """It was per ``(symbol, account)`` until #700 and is per symbol now: the
+    series it watches has one row per symbol, so the same value would have been
+    compared against the same memory once per holding.
+
+    The **gauge** keeps its per-account identity, because that is how a headless
+    dashboard joins it to the position gauges beside it.
+    """
     prom = mocker.MagicMock()
     shares = [_share(account="pea"), _share(account="cto")]
-    m = _metrics(shares, mock_influx, mocker, prometheus=prom)
+    m = _metrics(shares, store, mocker, prometheus=prom)
     m.staleness_horizon = 900
-    mock_influx.get_newest_price.return_value = None  # no stored price yet
+    read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    # Scoped per account on the read side...
-    read_accounts = {c.kwargs["account"]
-                     for c in mock_influx.get_newest_price.call_args_list}
-    assert read_accounts == {"pea", "cto"}
-    # ...and both cleared to fresh (None stored price → not stale).
+    assert read.call_count == 1
+    # Nothing stored yet → not stale, and both holdings' gauges are cleared.
     assert prom.update_price_staleness.call_count == 2
 
 
@@ -626,9 +718,9 @@ def test_sonde_checks_each_account_holding(
 # ---------------------------------------------------------------------------
 
 def test_reconcile_adds_new_symbols_firing_immediately(
-        mock_influx, mocker):
+        store, mocker):
     m = _metrics([_share("AAPL"), _share("MSFT", "Microsoft")],
-                 mock_influx, mocker)
+                 store, mocker)
     m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("AAPL"))]
 
     before = datetime.now(UTC)
@@ -643,8 +735,8 @@ def test_reconcile_adds_new_symbols_firing_immediately(
 
 
 def test_reconcile_removes_departed_symbols(
-        mock_influx, mocker):
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+        store, mocker):
+    m = _metrics([_share("AAPL")], store, mocker)
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
@@ -654,9 +746,9 @@ def test_reconcile_removes_departed_symbols(
     m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("MSFT"))
 
 
-def test_a_sold_position_is_not_a_held_symbol(mock_influx, mocker):
+def test_a_sold_position_is_not_a_held_symbol(store, mocker):
     """The filter is on ``quantity``, which is what makes the docstring true (#699)."""
-    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx, mocker)
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], store, mocker)
 
     assert m._held_symbols() == {"AAPL"}
     # And the row itself has not gone anywhere: the replay still writes its
@@ -665,29 +757,30 @@ def test_a_sold_position_is_not_a_held_symbol(mock_influx, mocker):
 
 
 def test_an_account_that_sold_out_stops_being_written(
-        mock_influx, fake_ticker, mocker, monkeypatch):
-    """`_held_symbols` is per symbol; the write loop has to be per holding (#699).
+        store, fake_ticker, mocker, monkeypatch):
+    """The holding still decides **whether** to write, not how many times (#700).
 
-    Held in the PEA, sold out in the CTO: the job stays armed for the symbol,
-    and without the quantity here the CTO would receive a point of zeros every
-    cycle — a phantom row of em dashes under the symbol on the shares page.
+    Held in the PEA, sold out in the CTO: the job stays armed for the symbol and
+    the point lands once. What #699 was guarding against — the CTO collecting a
+    point of zeros every cycle — cannot happen at all now that the observation
+    carries no account; what survives is that a symbol nobody holds any more is
+    not written for.
     """
     m = _metrics([_share("AAPL", account="pea"),
                   _share("AAPL", account="cto", quantity=0)],
-                 mock_influx, mocker)
+                 store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    assert [c.kwargs["account"]
-            for c in mock_influx.write_metrics.call_args_list] == ["pea"]
+    assert _prices(store) == [185.0]
 
 
 def test_the_synchronous_driver_skips_a_sold_position_too(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """The one place a sold line could still have reached Yahoo (#699)."""
     fetched = []
-    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx, mocker)
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], store, mocker)
 
     def ticker(symbol):
         fetched.append(symbol)
@@ -697,14 +790,14 @@ def test_the_synchronous_driver_skips_a_sold_position_too(
     m.expose_metrics()
 
     assert fetched == ["AAPL"]
-    assert [c.kwargs["share_symbol"]
-            for c in mock_influx.write_metrics.call_args_list] == ["AAPL"]
+    assert _prices(store) == [185.0]
+    assert _prices(store, "ALO") == []
 
 
 def test_selling_out_removes_the_scrape_job_and_its_quote_gauges(
-        mock_influx, mocker):
+        store, mocker):
     prom = mocker.MagicMock()
-    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], mock_influx,
+    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], store,
                  mocker, prometheus=prom)
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("ALO"))]
@@ -717,11 +810,11 @@ def test_selling_out_removes_the_scrape_job_and_its_quote_gauges(
 
 
 def test_a_failing_gauge_removal_never_aborts_the_reconcile(
-        mock_influx, mocker):
+        store, mocker):
     prom = mocker.MagicMock()
     prom.forget_quotes.side_effect = RuntimeError("registry is unhappy")
     m = _metrics([_share("AAPL", quantity=0), _share("MSFT", quantity=0)],
-                 mock_influx, mocker, prometheus=prom)
+                 store, mocker, prometheus=prom)
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
@@ -730,9 +823,9 @@ def test_a_failing_gauge_removal_never_aborts_the_reconcile(
     assert m.scheduler.remove_job.call_count == 2
 
 
-def test_buying_back_re_arms_the_job_with_nothing_to_unset(mock_influx, mocker):
+def test_buying_back_re_arms_the_job_with_nothing_to_unset(store, mocker):
     """No flag was written, so the revival is the ordinary revive path (#672 D5)."""
-    m = _metrics([_share("ALO", quantity=0)], mock_influx, mocker)
+    m = _metrics([_share("ALO", quantity=0)], store, mocker)
     m.scheduler.get_jobs.return_value = [_job(_scrape_job_id("ALO"))]
     m._reconcile_jobs()
     m.scheduler.reset_mock()
@@ -745,10 +838,10 @@ def test_buying_back_re_arms_the_job_with_nothing_to_unset(mock_influx, mocker):
     assert m.scheduler.add_job.call_args.kwargs["args"] == ["ALO"]
 
 
-def test_reconcile_revives_missing_job(mock_influx, mocker):
+def test_reconcile_revives_missing_job(store, mocker):
     # Held symbol whose job vanished (e.g. a misfire death) is re-armed. Foreign
     # (non-scrape) jobs in the store are ignored by the prefix filter.
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     m.scheduler.get_jobs.return_value = [_job("ingest"), _job("backfill")]
 
     m._reconcile_jobs()
@@ -759,9 +852,9 @@ def test_reconcile_revives_missing_job(mock_influx, mocker):
 
 
 def test_reconcile_leaves_unchanged_jobs_untouched(
-        mock_influx, mocker):
+        store, mocker):
     m = _metrics([_share("AAPL"), _share("MSFT", "Microsoft")],
-                 mock_influx, mocker)
+                 store, mocker)
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
 
@@ -772,11 +865,11 @@ def test_reconcile_leaves_unchanged_jobs_untouched(
 
 
 def test_reconcile_one_remove_failure_does_not_abort_the_pass(
-        mock_influx, mocker):
+        store, mocker):
     """A JobLookupError from one vanished job (a self-re-armed date job that
     just fired) must not skip the remaining removals or arms."""
     m = _metrics([_share("AAPL"), _share("TSLA", "Tesla")],
-                 mock_influx, mocker)
+                 store, mocker)
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("MSFT")), _job(_scrape_job_id("GOOG"))]
     # First removal raises (job already gone); the second must still run.
@@ -791,10 +884,10 @@ def test_reconcile_one_remove_failure_does_not_abort_the_pass(
 
 
 def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """In-flight half of the race guard: a job removed mid-cycle must not
     re-add itself after reconcile's remove_job."""
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+    m = _metrics([_share("AAPL")], store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
     # Symbol departs between fetch and re-arm.
     m.config_manager._shares = []
@@ -805,8 +898,8 @@ def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
 
 
 def test_ingest_reconciles_against_scheduler(
-        mock_influx, mocker):
-    m = _metrics([_share("AAPL")], mock_influx, mocker)
+        store, mocker):
+    m = _metrics([_share("AAPL")], store, mocker)
     m.scheduler.get_jobs.return_value = []  # nothing scheduled yet
 
     m.ingest()
@@ -816,10 +909,9 @@ def test_ingest_reconciles_against_scheduler(
     assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
 
 
-def test_reconcile_noop_without_scheduler(mock_influx, mocker):
+def test_reconcile_noop_without_scheduler(store, mocker):
     cfg = _FakeConfigManager([_share("AAPL")])
-    m = SuiviBourseMetrics(cfg, influxdb_writer=mock_influx,
-                           prometheus_exporter=mocker.MagicMock())
+    m = SuiviBourseMetrics(cfg, prometheus_exporter=mocker.MagicMock())
     # scheduler is None -> reconcile is a safe no-op (unit tests that never wire
     # a scheduler still exercise ingest()).
     assert m.scheduler is None
@@ -830,13 +922,13 @@ def test_reconcile_noop_without_scheduler(mock_influx, mocker):
 # The dials come from the registry and then from the store (#701, ADR-0014)
 # ---------------------------------------------------------------------------
 
-def test_a_fresh_metrics_carries_the_registry_s_values(mock_influx, mocker):
+def test_a_fresh_metrics_carries_the_registry_s_values(store, mocker):
     """No environment read left: the code's values, then the store's.
 
     The environment holds what the process must know before it can open the
     store, and a poll cadence is not that.
     """
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
 
     assert m.regular_interval == 120
     assert m.backfill_delay == 10
@@ -844,9 +936,9 @@ def test_a_fresh_metrics_carries_the_registry_s_values(mock_influx, mocker):
     assert m.staleness_horizon == 900
 
 
-def test_apply_dials_sets_only_the_keys_it_is_given(mock_influx, mocker):
+def test_apply_dials_sets_only_the_keys_it_is_given(store, mocker):
     """A PUT naming one dial must not reset the other four."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
 
     m.apply_dials({"regular_interval": 600})
 
@@ -854,9 +946,9 @@ def test_apply_dials_sets_only_the_keys_it_is_given(mock_influx, mocker):
     assert m.backfill_delay == 10
 
 
-def test_apply_dials_ignores_the_unanswered_currency(mock_influx, mocker):
+def test_apply_dials_ignores_the_unanswered_currency(store, mocker):
     """``base_currency`` is the one dial that can be ``None``, and it has no attribute."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
 
     m.apply_dials(settings_registry.defaults())  # carries base_currency=None
 
@@ -982,9 +1074,9 @@ def test_env_flag_parses_common_spellings(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_arm_symbol_offsets_run_date_by_jitter(
-        mock_influx, mocker):
+        store, mocker):
     """Jitter is applied as a uniform(0, JITTER_SECONDS) offset on run_date."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     # Re-patch over the autouse zero-jitter with a fixed non-zero offset.
     uniform = mocker.patch("main.random.uniform", return_value=7.5)
 
@@ -996,9 +1088,9 @@ def test_arm_symbol_offsets_run_date_by_jitter(
 
 
 def test_arm_symbol_jitter_stays_within_window(
-        mock_influx, mocker):
+        store, mocker):
     """With real randomness the offset lands in [0, JITTER_SECONDS]."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     mocker.stopall()  # drop the autouse zero-jitter -> real random.uniform
 
     lo = NOW + timedelta(seconds=120)
@@ -1010,9 +1102,9 @@ def test_arm_symbol_jitter_stays_within_window(
 
 
 def test_arm_symbol_registers_misfire_none_and_single_instance(
-        mock_influx, mocker):
+        store, mocker):
     """Per-symbol jobs carry misfire_grace_time=None and max_instances=1."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
 
     m._arm_symbol("AAPL", 120, NOW)
 
@@ -1023,9 +1115,9 @@ def test_arm_symbol_registers_misfire_none_and_single_instance(
 
 
 def test_scrape_symbol_rearm_carries_misfire_and_max_instances(
-        mock_influx, fake_ticker, mocker, monkeypatch):
+        store, fake_ticker, mocker, monkeypatch):
     """The self-reschedule (not just the bootstrap) keeps the misfire policy."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -1060,10 +1152,10 @@ def _scraped(m, symbol, closed):
 
 
 def test_rearm_touches_only_the_symbols_whose_market_is_open(
-        mock_influx, mocker):
+        store, mocker):
     """A sleeping symbol is off-topic — it reads the dial when it wakes."""
     m = _metrics([_share(symbol="AAPL"), _share(symbol="MC.PA")],
-                 mock_influx, mocker)
+                 store, mocker)
     _with_jobs(m, "AAPL", "MC.PA")
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
@@ -1077,8 +1169,8 @@ def test_rearm_touches_only_the_symbols_whose_market_is_open(
     assert armed == [_scrape_job_id("AAPL")]
 
 
-def test_rearm_starts_the_new_cadence_from_now(mock_influx, mocker):
-    m = _metrics([_share()], mock_influx, mocker)
+def test_rearm_starts_the_new_cadence_from_now(store, mocker):
+    m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
     m.regular_interval = 600
@@ -1092,7 +1184,7 @@ def test_rearm_starts_the_new_cadence_from_now(mock_influx, mocker):
 
 
 def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
-        mock_influx, mocker):
+        store, mocker):
     """#617's guard must survive a save, and the rescaling is the announced effect.
 
     Six consecutive failures put the symbol at ``base × 2^3``. Re-arming it at
@@ -1101,7 +1193,7 @@ def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
     arithmetic ``decide`` would apply on its next pass, and it is exactly the
     retroactive rescaling the dial's documentation promises.
     """
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
     m._failure_counts["AAPL"] = 6
@@ -1115,14 +1207,14 @@ def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
 
 
 def test_rearm_leaves_a_symbol_being_scraped_to_re_arm_itself(
-        mock_influx, mocker):
+        store, mocker):
     """Trap 1: a ``date`` job leaves the jobstore while it runs.
 
     It is counted as reached — it picks the new value up at the end of its own
     pass — but arming it here would race that pass. The figures still cover the
     portfolio, which is the whole reason they are published.
     """
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     _with_jobs(m)  # the job is gone from the store: it is running
     _scraped(m, "AAPL", closed=False)
     mocker.patch("main.datetime", **{"now.return_value": NOW})
@@ -1134,9 +1226,9 @@ def test_rearm_leaves_a_symbol_being_scraped_to_re_arm_itself(
 
 
 def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
-        mock_influx, mocker):
+        store, mocker):
     """At boot every held symbol is armed to fire immediately — do not delay it."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")  # armed, never fired: no last-pass record
     mocker.patch("main.datetime", **{"now.return_value": NOW})
 
@@ -1146,17 +1238,17 @@ def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
     m.scheduler.add_job.assert_not_called()
 
 
-def test_rearm_without_a_scheduler_is_a_quiet_zero(mock_influx, mocker):
-    m = _metrics([_share()], mock_influx, mocker)
+def test_rearm_without_a_scheduler_is_a_quiet_zero(store, mocker):
+    m = _metrics([_share()], store, mocker)
     m.scheduler = None
 
     assert m.rearm_regular_scrapes() == (0, 0)
 
 
 def test_a_jobstore_error_never_turns_a_saved_dial_into_a_failure(
-        mock_influx, mocker):
+        store, mocker):
     """The value is in the store either way; the next boot reads it from there."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m.scheduler.get_jobs.side_effect = RuntimeError("boom")
 
     assert m.rearm_regular_scrapes() == (0, 0)
@@ -1167,9 +1259,9 @@ def _runtime(m, scheduler=None):
 
 
 def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
-        mock_influx, mocker):
+        store, mocker):
     m = _metrics([_share(symbol="AAPL"), _share(symbol="MC.PA")],
-                 mock_influx, mocker)
+                 store, mocker)
     _with_jobs(m, "AAPL", "MC.PA")
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
@@ -1184,14 +1276,14 @@ def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
 
 
 def test_apply_settings_leaves_an_untouched_job_s_timer_alone(
-        mock_influx, mocker):
+        store, mocker):
     """The criterion of #701: a save button is not a reset button.
 
     ``reschedule_job`` recomputes ``next_run_time`` from *now*, so re-arming a
     job whose dial did not move would silently put its timer back to zero on
     every click.
     """
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
     mocker.patch("main.datetime", **{"now.return_value": NOW})
@@ -1205,8 +1297,8 @@ def test_apply_settings_leaves_an_untouched_job_s_timer_alone(
     assert report["symbols_rescheduled"] == 0
 
 
-def test_apply_settings_re_cadences_the_backfill_job(mock_influx, mocker):
-    m = _metrics([_share()], mock_influx, mocker)
+def test_apply_settings_re_cadences_the_backfill_job(store, mocker):
+    m = _metrics([_share()], store, mocker)
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("backfill_interval", 60, 300),))
@@ -1216,9 +1308,9 @@ def test_apply_settings_re_cadences_the_backfill_job(mock_influx, mocker):
     assert report["jobs_rescheduled"] == ["backfill"]
 
 
-def test_apply_settings_survives_a_missing_backfill_job(mock_influx, mocker):
+def test_apply_settings_survives_a_missing_backfill_job(store, mocker):
     """A runtime with no such job answers "reached nothing", never a 503."""
-    m = _metrics([_share()], mock_influx, mocker)
+    m = _metrics([_share()], store, mocker)
     m.scheduler.reschedule_job.side_effect = JobLookupError("backfill")
 
     report = main.apply_settings(
@@ -1245,9 +1337,9 @@ def test_apply_settings_before_the_fork_changes_nothing_and_says_so(mocker):
 # ---------------------------------------------------------------------------
 
 def test_capture_exchange_of_reads_info_cache_and_fetches_missing(
-        mock_influx, mocker):
+        store, mocker):
     m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")],
-                 mock_influx, mocker)
+                 store, mocker)
     # AAPL already cached; MSFT must be fetched.
     m._share_info_cache["AAPL"] = {"exchange": "NMS"}
     fetch = mocker.patch.object(
@@ -1260,9 +1352,9 @@ def test_capture_exchange_of_reads_info_cache_and_fetches_missing(
 
 
 def test_capture_exchange_of_maps_failed_and_undefined_to_none(
-        mock_influx, mocker):
+        store, mocker):
     m = _metrics([_share(symbol="AAA"), _share(symbol="BBB")],
-                 mock_influx, mocker)
+                 store, mocker)
 
     def _fetch(symbol):
         return (None, None) if symbol == "AAA" else (1.0, {"exchange": "undefined"})
@@ -1276,9 +1368,9 @@ def test_capture_exchange_of_maps_failed_and_undefined_to_none(
 
 
 def test_capture_exchange_of_times_out_to_solo_market(
-        mock_influx, mocker):
+        store, mocker):
     """A fetch that outlives the deadline maps to a solo market, not a hang."""
-    m = _metrics([_share(symbol="SLOW")], mock_influx, mocker)
+    m = _metrics([_share(symbol="SLOW")], store, mocker)
     mocker.patch("main._EXCHANGE_CAPTURE_TIMEOUT_SECONDS", 0.2)
     release = threading.Event()
 

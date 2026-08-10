@@ -4,14 +4,14 @@ Data schemas for the events module.
 
 import bisect
 from dataclasses import dataclass, field
-from datetime import date, datetime  # noqa: F401 — used in dataclass field annotations (eager-evaluated on Python <3.14)
+from datetime import date  # noqa: F401 — used in dataclass field annotations (eager-evaluated on Python <3.14)
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 # Canonical account bucket used when no accounts are declared (opt-out users) or
 # for points written before the accounts feature existed. Single source of truth:
-# the aggregation layer, main.py, the InfluxDB writer and the Prometheus exporter
+# the aggregation layer, main.py, the store's writers and the Prometheus exporter
 # all reference this constant so the tag, the label and the aggregation agree.
 DEFAULT_ACCOUNT = "default"
 
@@ -221,14 +221,24 @@ class CashState:
 class AccountMetricPoint:
     """One daily point of the ``account_metrics`` series for one account.
 
-    A typed seam shared by the computation (main), the InfluxDB writer and the
+    A typed seam shared by the computation (main), the store's writer and the
     Prometheus exporter, so a mistyped field fails fast instead of silently
     dropping.
+
+    ``day`` is a **calendar day**, not an instant (issue #700). v4 stamped the
+    point at midnight because InfluxDB had one kind of time; the store has two
+    and never mixes them (spec #695 § 3), so the field says what it is and every
+    reader stops having to un-stamp it.
+
+    ``account_type`` and ``account_currency`` have **no column** — they were
+    InfluxDB tags, and the declaration is where a page reads them from
+    (ADR-0013). They survive on the point because the Prometheus exporter
+    publishes them as labels on ``sb_account_info``.
     """
     account: str
     account_type: str
     account_currency: str
-    timestamp: datetime
+    day: date
     cash_balance: float
     holdings_value: float
     total_value: float
@@ -244,11 +254,13 @@ class AccountMetricPoint:
 class PortfolioTotalPoint:
     """One daily point of the global ``portfolio_totals`` series.
 
-    Carries **no tag** (a single global series): tagging it with a synthetic
-    account would double every ``SUM()`` over the per-account series. Written
-    only when all accounts share one currency (pooling currencies needs FX).
+    A table of its own rather than a synthetic ``account`` row: the InfluxDB
+    constraint that made it untagged is gone, but its columns will diverge the
+    day the global level carries something the per-account level does not.
+    Written only when all accounts share one currency (pooling currencies needs
+    FX, which #702 is about).
     """
-    timestamp: datetime
+    day: date
     cash_balance: float
     holdings_value: float
     total_value: float
@@ -266,8 +278,8 @@ class Timeline:
     position's state changed (not one per calendar day). ``at()`` /
     ``position_at()`` forward-fill: they return the latest snapshot at or before
     the requested date, so the timeline is agnostic to the query window (the
-    window is an InfluxDB property that grows with backfill, not a property of
-    the events).
+    window is a property of the stored series, which grows with backfill, not a
+    property of the events).
     """
     # (account, symbol) -> ascending [(change_date, ShareState snapshot)]
     snapshots: Dict[Tuple[str, str], List[Tuple[date, "ShareState"]]] = field(default_factory=dict)

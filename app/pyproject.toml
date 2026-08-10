@@ -1,7 +1,7 @@
 [project]
 name = "suivi-bourse"
 version = "0.0.0"
-description = "Monitors stock shares with yfinance and stores metrics in InfluxDB 3 Core for Grafana, with historical backfill."
+description = "Monitors stock shares with yfinance and stores everything in one embedded DuckDB store, with historical backfill."
 readme = "../README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -10,9 +10,14 @@ dependencies = [
     # went with the manual mode and `settings.yaml` with the accounts block, and
     # both are now named at startup rather than read. v5 parses no YAML at all.
     "duckdb>=1.4.0",       # the one embedded store (ADR-0001); opened before anything else
+    # The frontier a wide read crosses (issue #700, spec #695 § 1): materialising
+    # a TIMESTAMPTZ column costs 8x in rows and nothing in Arrow. It was already
+    # installed as a transitive dependency of influxdb3-python, which leaves with
+    # the database it spoke to — so this line adds no weight to the image, it
+    # only stops a direct dependency from being satisfied by accident.
+    "pyarrow>=17.0.0",
 
     "logfmt-logger==0.1.2",
-    "influxdb3-python>=0.17.0",
     "prometheus-client==0.26.0",  # legacy /metrics endpoint (backward compatibility)
     "urllib3==2.7.0",
     "yfinance==1.5.2",

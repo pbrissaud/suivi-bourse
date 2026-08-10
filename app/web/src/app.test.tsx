@@ -187,7 +187,7 @@ describe('when the app is not answering', () => {
       status: 503,
       type: PROBLEM_TYPES.storageUnavailable,
       title: 'Storage unavailable',
-      detail: 'InfluxDB refused the connection at 10.0.0.4:8181',
+      detail: 'Catalog Error: Table with name position does not exist!',
     })
 
   it('shows one band and never the server’s own sentence', async () => {
@@ -201,7 +201,7 @@ describe('when the app is not answering', () => {
     // `detail` and `title` are English diagnostics. They are carried, and
     // rendered nowhere — which is what put a French title over an English
     // sentence in the prototype's most consequential alert.
-    expect(screen.queryByText(/InfluxDB refused the connection/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Catalog Error/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Storage unavailable/)).not.toBeInTheDocument()
   })
 

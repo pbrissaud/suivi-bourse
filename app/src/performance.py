@@ -2,7 +2,7 @@
 Money-weighted performance: XIRR (annualized) and TWR (time-weighted, base 100).
 
 Pure domain module: ``Timeline`` × an injected price callable → performance
-results. It knows nothing about InfluxDB or yfinance — the only dependency on the
+results. It knows nothing about the store or yfinance — the only dependency on the
 outside world is the ``price_at(symbol, date) -> Optional[float]`` callable.
 
 Definitions (see issue #563):

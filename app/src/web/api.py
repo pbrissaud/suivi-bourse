@@ -1,8 +1,8 @@
 """The ``/api`` blueprint — the disposable half (issue #659, design #655).
 
 #655 decision 1 is what shapes this file: **the for-keeps boundary is Python,
-not HTTP**. What must last is :mod:`influx_reads` and :mod:`portfolio_view` —
-the SQL window, the weighted mean, the three states of absence. A route that
+not HTTP**. What must last is :mod:`store_reads` and :mod:`portfolio_view` —
+the join, the arithmetic, the three states of absence. A route that
 calls a primitive and ``jsonify``s is five lines, and is as throwaway as the
 React on the other side of it.
 
@@ -15,9 +15,11 @@ So the rules here are thin on purpose. What the routes *do* own:
   one client cache is the HTTP expression of it.
 * **Windows on series sub-resources only.** #652 déc. 1 made stats absolute;
   the window drives charts alone, so it appears on ``/prices`` and nowhere else.
-* **Symbols as identity.** Trap 9 / déc. 3 — ``share_name`` is display only.
+* **Symbols as identity.** Trap 9 / déc. 3 — a share's name is display only,
+  and since #700 it lives on the position rather than on the price series, so
+  renaming one cannot cut its history in two.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
 from flask import Blueprint, jsonify, request
@@ -31,12 +33,8 @@ import runtime_state
 import runtime_view
 import settings as settings_module
 import settings_registry
-from influx_reads import (
-    MEASUREMENT,
-    TOTALS_MEASUREMENT,
-    PortfolioReader,
-    bucket_for_window,
-)
+from events import EventAggregator
+from store_reads import PortfolioReader, bucket_for_window
 from web.problem import (
     bad_request,
     conflict,
@@ -55,26 +53,21 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 DEFAULT_WINDOW = timedelta(days=30)
 
 #: The dashboard's default, and it is an order of magnitude wider for a reason
-#: that is not taste: the global series is written **one point per calendar day**
-#: at midnight, so a month of it is thirty points and a day of it is one. #660's
+#: that is not taste: the global series is written **one point per calendar
+#: day**, so a month of it is thirty points and a day of it is one. #660's
 #: trap — the short presets that are natural on the shares page are degenerate
 #: here, and the window this endpoint defaults to has to reflect that.
 DEFAULT_HISTORY_WINDOW = timedelta(days=365)
 
 
 def _reader() -> PortfolioReader:
-    """A reader over the worker's InfluxDB client.
+    """A reader over the worker's open store.
 
-    Built per request, which is free — it holds nothing but the bound ``query``
-    of the pool created in ``post_fork``. Raises when the runtime has not
-    started, which under gunicorn cannot happen (the socket is not served until
-    the worker is up) but does in tests.
+    Built per request, which is free — it holds a reference and no state. It
+    goes through :func:`_store`, so an absent store is a **failed request** and
+    never an empty portfolio.
     """
-    runtime = current_runtime()
-    if runtime.metrics is None:
-        raise RuntimeError(
-            "the scheduler runtime has not started; no InfluxDB client yet")
-    return PortfolioReader.from_writer(runtime.metrics.influxdb)
+    return PortfolioReader(_store())
 
 
 def _snapshot():
@@ -106,10 +99,15 @@ def current_runtime():
 def _on_error(exc: Exception):
     """Turn anything a route raises into problem+json.
 
-    This is the point of the sibling read module: the writer swallows and
-    returns ``None``, this blueprint lets the exception travel and answers
-    ``503``. The two policies coexist in one process because they live in two
-    modules (#655 decision 5).
+    This is the point of the separate read module: the scheduler's own reads
+    swallow and return ``None``, this blueprint lets the exception travel and
+    answers ``503``. The two policies coexist in one process because they live
+    in two modules (#655 decision 5).
+
+    The three states of absence are **structural** here since #700 and no longer
+    rescued by inspecting an exception: a table the store declares but nothing
+    has written answers ``200`` + ``[]``, an unwritten column reads as ``NULL``,
+    and only a genuine fault reaches this handler.
     """
     logger.error(f"API error on {request.path}: {exc}", exc_info=True)
     return storage_unavailable(str(exc))
@@ -126,7 +124,7 @@ def list_shares():
     P1 generalised: **one** query for the whole portfolio (#652 déc. 8), folded
     by the pure module. Empty portfolio is ``200`` + ``[]``, never a 404.
     """
-    rows = _reader().latest_per_account()
+    rows = _reader().positions()
     shares = portfolio_view.build_shares(rows)
     return jsonify([share.to_dict() for share in shares])
 
@@ -134,7 +132,7 @@ def list_shares():
 @api_bp.get('/shares/<symbol>')
 def get_share(symbol: str):
     """One share's detail sheet: the aggregate plus its per-account breakdown."""
-    rows = _reader().latest_per_account(share_symbol=symbol)
+    rows = _reader().positions(symbol)
     share = portfolio_view.build_share(rows, symbol)
     if share is None:
         return not_found(f"No stored data for symbol {symbol!r}")
@@ -146,7 +144,7 @@ def get_share_prices(symbol: str):
     """The price series behind the chart, over ``?from=``/``?to=``.
 
     The one place a window exists. Wide windows are served downsampled — see
-    :func:`influx_reads.bucket_for_window`; the response says which bucket it
+    :func:`store_reads.bucket_for_window`; the response says which bucket it
     used so the chart is never silently lying about its resolution.
 
     Gaps are returned as gaps (#606): a weekend is missing rows, not zeros, and
@@ -172,8 +170,7 @@ def get_share_prices(symbol: str):
         'to': stop.isoformat(),
         'bucket': bucket,
         'points': [
-            {'t': _iso(row.get('time')), 'price': row.get('share_price')}
-            for row in rows
+            {'t': _iso(row.get('t')), 'price': row.get('price')} for row in rows
         ],
     })
 
@@ -214,12 +211,12 @@ def get_portfolio():
 
     reader = _reader()
     if mode == portfolio_view.MODE_TITRES:
-        shares = portfolio_view.build_shares(reader.latest_per_account())
+        shares = portfolio_view.build_shares(reader.positions())
         return jsonify(portfolio_view.build_titres_head(shares))
 
     baseline_value = None
     if since is not None:
-        baseline_value = reader.value_at(TOTALS_MEASUREMENT, 'total_value', since)
+        baseline_value = reader.total_value_at(since)
 
     # In this mode every declared account shares one currency — that is what
     # made it this mode — so the first declaration answers for all of them.
@@ -264,12 +261,20 @@ def get_portfolio_history():
 
     reader = _reader()
     if mode == portfolio_view.MODE_TITRES:
-        rows = reader.daily_position_series(start, stop)
-        return jsonify({**payload, 'points': portfolio_view.valuation_series(rows)})
+        # The curve is a **join** since #700: the day's closes come from the
+        # price series, the day's holdings from the replay. They used to be the
+        # same row — every price point carried the position fields — which is
+        # precisely the sharing this ticket ends. The replay is the same one the
+        # perf job runs each cycle (spec #695 § 11), on a ledger of a few hundred
+        # rows, and it is what gives the curve a holding on days no market
+        # opened.
+        timeline = EventAggregator().replay(_snapshot().events)
+        return jsonify({**payload, 'points': portfolio_view.valuation_series(
+            reader.daily_closes(start, stop), timeline.at)})
 
     return jsonify({**payload, 'points': [
         {
-            't': _iso(row.get('time')),
+            't': _iso(row.get('day')),
             'value': row.get('total_value'),
             'contributed': row.get('net_contributed'),
         }
@@ -294,15 +299,15 @@ def get_portfolio_movers():
     amounts that do.
     """
     reader = _reader()
-    rows = reader.latest_per_account()
+    rows = reader.positions()
 
-    times = [row['time'] for row in rows if isinstance(row.get('time'), datetime)]
+    times = [row['price_time'] for row in rows
+             if isinstance(row.get('price_time'), datetime)]
     if not times:
         return jsonify({'since': None, 'reference': None, 'movers': []})
 
     since = portfolio_view.session_baseline_instant(max(times))
-    baseline = reader.values_at(
-        MEASUREMENT, 'share_price', since, partition_by='share_symbol')
+    baseline = reader.prices_at(since)
     movers = portfolio_view.build_movers(portfolio_view.build_shares(rows), baseline)
 
     # Two instants, and they are not interchangeable. `since` is the **cut** the
@@ -399,7 +404,7 @@ def get_account_history(account_id: str):
         'to': stop.isoformat(),
         'points': [
             {
-                't': _iso(row.get('time')),
+                't': _iso(row.get('day')),
                 'cash_balance': row.get('cash_balance'),
                 'holdings_value': row.get('holdings_value'),
                 'total_value': row.get('total_value'),
@@ -662,11 +667,11 @@ def get_runtime():
     """What the scheduler is doing — the one thing Grafana cannot do at all.
 
     Every other item of #652's "what does first-party buy" list, Grafana does
-    badly; this one it cannot reach at any price, because none of this is in
-    InfluxDB. It is scheduler memory, and the web process living *inside* the
+    badly; this one it cannot reach at any price, because none of this is in a
+    database. It is scheduler memory, and the web process living *inside* the
     scraper process (#651) is what makes it readable.
 
-    **This route touches no InfluxDB**, and that is decision 6 rather than an
+    **This route touches no store**, and that is decision 6 rather than an
     optimisation. #659 reserved a ``status`` slot on ``/api/shares`` for the
     pills; ``/api/shares`` is a query, and this blueprint answers ``503`` when a
     query fails — so a pill riding there would **disappear exactly when it is the
@@ -699,11 +704,10 @@ def get_runtime():
         symbol = share.get('symbol')
         if not symbol:
             continue
-        account = str(share.get('account') or runtime_view.DEFAULT_ACCOUNT)
         scrape.setdefault(symbol, recorder.scrape_of(symbol))
         for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
-            backfill[(symbol, account, direction)] = recorder.backfill_of(
-                symbol, account, direction)
+            backfill[(symbol, direction)] = recorder.backfill_of(
+                symbol, direction)
 
     return jsonify(runtime_view.build_runtime(
         shares=snapshot.shares,
@@ -771,10 +775,11 @@ def get_config():
       enforces, instead of on a copy of that rule.
     * ``environment`` — what the process had to know before it could open the
       store: the store's own location, the sockets, the log level. None of it
-      is writable from in here and none of it pretends to be.
-      ``INFLUXDB_TOKEN`` is redacted by name, since the prototype has no
-      authentication. Alongside it, ``unread_environment`` names what is set in
-      that same environment and no longer obeyed — computed, so it cannot drift.
+      is writable from in here and none of it pretends to be. A secret would be
+      redacted **by name** (#654 trap 12), and since #700 the list holds none —
+      the three ``INFLUXDB_*`` variables left with the database. Alongside it,
+      ``unread_environment`` names what is set in that same environment and no
+      longer obeyed — computed, so it cannot drift.
 
     Reading the dials makes the whole resource depend on the store, and the
     ``503`` that follows an unreadable one is deliberate rather than overlooked:
@@ -892,7 +897,7 @@ def _json_object() -> Optional[dict]:
 def _portfolio_mode() -> Tuple[str, Optional[Any]]:
     """Which dashboard head this install gets, plus the declaration behind it.
 
-    A read of the published snapshot (#658) — no InfluxDB. That is deliberate:
+    A read of the published snapshot (#658) — no store query. That is deliberate:
     deciding the mode from the *data* would make an install whose first perf
     cycle has not run yet indistinguishable from one that never declared
     accounts, which is exactly the collapse #655 déc. 8's discriminator exists
@@ -932,7 +937,14 @@ def _parse_instant(value: Optional[str]) -> Optional[datetime]:
 
 
 def _iso(value) -> Optional[str]:
-    return value.isoformat() if isinstance(value, datetime) else None
+    """ISO-8601 for an instant **or** a calendar day.
+
+    Both shapes reach the wire since #700: an observed price carries a
+    ``TIMESTAMPTZ`` and a perf point carries a ``DATE``, which is the store's
+    two kinds of time arriving unchanged rather than one of them being stamped
+    into the other on the way out.
+    """
+    return value.isoformat() if isinstance(value, (datetime, date)) else None
 
 
 __all__ = ['api_bp']

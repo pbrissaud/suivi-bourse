@@ -13,14 +13,28 @@ Covers:
 No network, no real InfluxDB.
 """
 
-from datetime import date, datetime, timezone
+from contextlib import contextmanager
+from dataclasses import replace
+from datetime import date, datetime, time, timezone
 
 import pytest
 
+import main
+import perf_series
+import quotes
 from events import (
     EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
     AccountMetricPoint, PortfolioTotalPoint,
 )
+
+
+def _seed_price(store, symbol, day, price):
+    """One closing price on a calendar day, through the real writer."""
+    store.execute("INSERT INTO symbol (symbol) VALUES (?) "
+                  "ON CONFLICT (symbol) DO NOTHING", [symbol])
+    quotes.record_history(store, symbol, [{
+        "timestamp": datetime.combine(day, time(16, 0), tzinfo=timezone.utc),
+        "price": price}])
 
 
 # --------------------------------------------------------------------------- #
@@ -172,65 +186,93 @@ def test_replay_emits_signed_cashflows():
 
 
 # --------------------------------------------------------------------------- #
-# InfluxDBWriter: get_price_series + write_account_metrics
+# The store's own two halves: the price series the perf job reads, and the
+# series it writes. Both were InfluxDB client assertions until #700; both are
+# asserted on the rows now.
 # --------------------------------------------------------------------------- #
-def test_get_price_series_queries_symbol_only_never_account(mocker):
-    from influxdb_writer import InfluxDBWriter
-    writer = InfluxDBWriter(host="http://x", token="t", database="db")
-    fake_client = mocker.MagicMock()
-    fake_client.query.return_value = None
-    writer._client = fake_client
+def test_the_price_series_is_read_by_symbol_alone(store):
+    """A market price belongs to no account, and since #700 that is not a rule
+    to remember — there is no account column on the series to forget."""
+    store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
+    quotes.record_history(store, "AAPL", [
+        {"timestamp": datetime(2024, 1, 2, 16, 0, tzinfo=timezone.utc),
+         "price": 100.0},
+        {"timestamp": datetime(2024, 1, 3, 16, 0, tzinfo=timezone.utc),
+         "price": 110.0},
+    ])
 
-    writer.get_price_series("AAPL")
-
-    sql = fake_client.query.call_args.kwargs["query"]
-    assert "share_symbol = 'AAPL'" in sql
-    # The 🔒 lock: a market price belongs to no account.
-    assert "account" not in sql
-
-
-def test_get_price_series_returns_full_history(mocker):
-    """No account filter -> pre-tag (account NULL) points come back in full."""
-    import pandas as pd
-    from influxdb_writer import InfluxDBWriter
-    writer = InfluxDBWriter(host="http://x", token="t", database="db")
-    fake_client = mocker.MagicMock()
-    table = mocker.MagicMock()
-    table.__len__.return_value = 2
-    table.to_pandas.return_value = pd.DataFrame({
-        "day": [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")],
-        "price": [100.0, 110.0],
-    })
-    fake_client.query.return_value = table
-    writer._client = fake_client
-
-    series = writer.get_price_series("AAPL")
-    assert series == {date(2024, 1, 2): 100.0, date(2024, 1, 3): 110.0}
+    assert quotes.price_series(store, "AAPL") == {
+        date(2024, 1, 2): 100.0, date(2024, 1, 3): 110.0}
 
 
-def test_write_account_metrics_tags_and_fields(mocker):
-    from influxdb_writer import InfluxDBWriter
-    writer = InfluxDBWriter(host="http://x", token="t", database="db")
-    fake_client = mocker.MagicMock()
-    writer._client = fake_client
+def test_the_price_series_keeps_the_last_point_of_each_day(store):
+    """The survivor rule every daily read in the product follows — and the one
+    #705's ladder will inherit. A survivor chosen otherwise makes the value jump
+    when a day is collapsed."""
+    store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
+    quotes.record_history(store, "AAPL", [
+        {"timestamp": datetime(2024, 1, 2, 9, 0, tzinfo=timezone.utc),
+         "price": 100.0},
+        {"timestamp": datetime(2024, 1, 2, 17, 30, tzinfo=timezone.utc),
+         "price": 104.0},
+    ])
 
-    ts = datetime(2024, 1, 15, tzinfo=timezone.utc)
-    n = writer.write_account_metrics([AccountMetricPoint(
+    assert quotes.price_series(store, "AAPL") == {date(2024, 1, 2): 104.0}
+
+
+def test_account_metrics_are_upserted_on_the_day_they_describe(store):
+    """The write is an ``UPSERT`` on the primary key (ADR-0011): a second cycle
+    rewrites the row rather than appending one. Measured on a thousand cycles, a
+    ``DELETE``+``INSERT`` replacement takes the file to 44,8 MB for a 1,6 MB
+    table."""
+    store.execute("INSERT INTO account (id, type, label) VALUES "
+                  "('PEA', 'PEA', 'Mon PEA')")
+    point = AccountMetricPoint(
         account="PEA", account_type="PEA", account_currency="EUR",
-        timestamp=ts, cash_balance=100.0, holdings_value=900.0,
-        total_value=1000.0, net_contributed=800.0,
-    )])
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0)
 
-    assert n == 1
-    records = fake_client.write.call_args.kwargs["record"]
-    point = records[0]
-    assert point._name == "account_metrics"
-    assert point._tags == {
-        "account": "PEA", "account_type": "PEA", "account_currency": "EUR"}
-    assert point._fields["cash_balance"] == 100.0
-    assert point._fields["holdings_value"] == 900.0
-    assert point._fields["total_value"] == 1000.0
-    assert point._fields["net_contributed"] == 800.0
+    assert perf_series.write_account_metrics(store, [point]) == 1
+    perf_series.write_account_metrics(
+        store, [replace(point, holdings_value=950.0, total_value=1050.0)])
+
+    rows = store.query(
+        "SELECT day, cash_balance, holdings_value, total_value, "
+        "       net_contributed, xirr FROM account_metrics")
+    assert rows == [(date(2024, 1, 15), 100.0, 950.0, 1050.0, 800.0, None)]
+
+
+def test_a_field_that_was_never_computable_is_null_not_missing(store):
+    """ADR-0001, and the death of ``_ABSENT_SCHEMA`` with it.
+
+    In InfluxDB a field never written was a *column that did not exist*, so
+    naming ``xirr`` in a SELECT turned "this account has no deposits" into a
+    query error — and, after #696, into a 503 that took the whole table with it.
+    Here the column is declared at creation and reads ``NULL``.
+    """
+    store.execute("INSERT INTO account (id, type, label) VALUES "
+                  "('PEA', 'PEA', 'Mon PEA')")
+    perf_series.write_account_metrics(store, [AccountMetricPoint(
+        account="PEA", account_type="PEA", account_currency="EUR",
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0)])
+
+    rows = store.query("SELECT xirr, gain_absolu, twr_index FROM account_metrics")
+    assert rows == [(None, None, None)]
+
+
+def test_portfolio_totals_is_keyed_by_the_day_alone(store):
+    """A table of its own rather than a synthetic ``account`` row: the InfluxDB
+    constraint that made it untagged is gone, but its columns will diverge the
+    day the global level carries something the per-account one does not."""
+    assert perf_series.write_portfolio_totals(store, [PortfolioTotalPoint(
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0, xirr=0.12,
+        gain_absolu=200.0, twr_index=120.0)]) == 1
+
+    rows = store.query(
+        "SELECT day, total_value, xirr, twr_index FROM portfolio_totals")
+    assert rows == [(date(2024, 1, 15), 1000.0, 0.12, 120.0)]
 
 
 # --------------------------------------------------------------------------- #
@@ -239,10 +281,19 @@ def test_write_account_metrics_tags_and_fields(mocker):
 class _CashConfigManager:
     """Fake config manager exposing accounts + events for account_metrics."""
 
-    def __init__(self, shares, events, accounts):
+    def __init__(self, shares, events, accounts, opened_store=None):
         self._shares = shares
         self._events = events
         self._accounts = accounts
+        self._store = opened_store
+
+    @property
+    def store(self):
+        return self._store
+
+    @contextmanager
+    def writing(self):
+        yield self._store
 
     def current(self):
         import main
@@ -268,23 +319,32 @@ class _CashConfigManager:
         return self._accounts
 
 
-def _metrics(mock_influx, shares, events, accounts):
+def _metrics(store, shares, events, accounts):
     import main
-    cfg = _CashConfigManager(shares, events, accounts)
-    return main.SuiviBourseMetrics(cfg, influxdb_writer=mock_influx)
+    for account in (accounts.accounts if accounts else []):
+        store.execute(
+            "INSERT INTO account (id, type, label) VALUES (?, ?, ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            [account.id, account.type, account.label])
+    for share in shares:
+        store.execute(
+            "INSERT INTO symbol (symbol) VALUES (?) "
+            "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
+    cfg = _CashConfigManager(shares, events, accounts, opened_store=store)
+    return main.SuiviBourseMetrics(cfg)
 
 
-def test_update_account_metrics_gated_on_declared_accounts(mock_influx):
+def test_update_account_metrics_gated_on_declared_accounts(store):
     # No accounts -> nothing written.
-    m = _metrics(mock_influx, shares=[], events=[
+    m = _metrics(store, shares=[], events=[
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=100.0, account="A")],
         accounts=None)
     m.update_account_metrics()
-    mock_influx.write_account_metrics.assert_not_called()
+    assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
 
 
 def test_update_account_metrics_writes_series_with_midnight_stamp(
-        mock_influx, mocker):
+        store, mocker):
     events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
@@ -295,9 +355,9 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
                "estate": {"quantity": 2, "received_dividend": 0.0}}]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
     # Price series: AAPL at 110 from 2024-01-02.
-    mock_influx.get_price_series.return_value = {date(2024, 1, 2): 110.0}
+    _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
 
-    m = _metrics(mock_influx, shares, events, portfolio)
+    m = _metrics(store, shares, events, portfolio)
 
     # Freeze "today" to 2024-01-02 while keeping real datetime construction.
     class _FixedDatetime(datetime):
@@ -308,31 +368,28 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
 
     m.update_account_metrics()
 
-    points = mock_influx.write_account_metrics.call_args.args[0]
-    # Two calendar days: 01-01 (cash only) and 01-02 (cash + holdings).
-    by_day = {p.timestamp.date(): p for p in points}
-    assert set(by_day) == {date(2024, 1, 1), date(2024, 1, 2)}
-    # Every point is stamped at midnight, never in the future.
-    for p in points:
-        ts = p.timestamp
-        assert (ts.hour, ts.minute, ts.second) == (0, 0, 0)
-    d1 = by_day[date(2024, 1, 1)]
-    assert d1.cash_balance == pytest.approx(1000.0)
-    assert d1.holdings_value == pytest.approx(0.0)
-    d2 = by_day[date(2024, 1, 2)]
-    assert d2.cash_balance == pytest.approx(800.0)   # 1000 - 2*100
-    assert d2.holdings_value == pytest.approx(220.0)  # 2 * 110
-    assert d2.total_value == pytest.approx(1020.0)
-    assert d2.net_contributed == pytest.approx(1000.0)
+    rows = {row[0]: row for row in store.query(
+        "SELECT day, cash_balance, holdings_value, total_value, "
+        "       net_contributed FROM account_metrics")}
+    # Two calendar days: 01-01 (cash only) and 01-02 (cash + holdings). The
+    # column is a DATE and not a midnight instant: the store has two kinds of
+    # time and never mixes them (#700).
+    assert set(rows) == {date(2024, 1, 1), date(2024, 1, 2)}
+    assert rows[date(2024, 1, 1)][1] == pytest.approx(1000.0)
+    assert rows[date(2024, 1, 1)][2] == pytest.approx(0.0)
+    d2 = rows[date(2024, 1, 2)]
+    assert d2[1] == pytest.approx(800.0)    # 1000 - 2*100
+    assert d2[2] == pytest.approx(220.0)    # 2 * 110
+    assert d2[3] == pytest.approx(1020.0)
+    assert d2[4] == pytest.approx(1000.0)
 
 
-def test_update_account_metrics_is_idempotent(mock_influx, mocker):
+def test_update_account_metrics_is_idempotent(store, mocker):
     """Two cycles with no new event produce the identical (tags, time) point set."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
 
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
 
     class _FixedDatetime(datetime):
         @classmethod
@@ -341,42 +398,20 @@ def test_update_account_metrics_is_idempotent(mock_influx, mocker):
     mocker.patch("main.datetime", _FixedDatetime)
 
     m.update_account_metrics()
-    first = mock_influx.write_account_metrics.call_args.args[0]
+    first = store.query("SELECT * FROM account_metrics ORDER BY day")
     m.update_account_metrics()
-    second = mock_influx.write_account_metrics.call_args.args[0]
+    second = store.query("SELECT * FROM account_metrics ORDER BY day")
 
-    # Same timestamps, tags and values -> InfluxDB overwrites rather than dupes.
+    # The upsert overwrites its own key rather than appending a second row.
     assert first == second
 
 
-def test_write_portfolio_totals_is_untagged(mocker):
-    from influxdb_writer import InfluxDBWriter
-    writer = InfluxDBWriter(host="http://x", token="t", database="db")
-    fake_client = mocker.MagicMock()
-    writer._client = fake_client
-
-    ts = datetime(2024, 1, 15, tzinfo=timezone.utc)
-    n = writer.write_portfolio_totals([PortfolioTotalPoint(
-        timestamp=ts, cash_balance=100.0, holdings_value=900.0, total_value=1000.0,
-        net_contributed=800.0, xirr=0.12, gain_absolu=200.0, twr_index=120.0,
-    )])
-
-    assert n == 1
-    point = fake_client.write.call_args.kwargs["record"][0]
-    assert point._name == "portfolio_totals"
-    assert point._tags == {}  # no tag: a single global series
-    assert point._fields["total_value"] == 1000.0
-    assert point._fields["xirr"] == 0.12
-    assert point._fields["twr_index"] == 120.0
-
-
 def test_update_account_metrics_writes_portfolio_totals_single_currency(
-        mock_influx, mocker):
+        store, mocker):
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
 
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
 
     class _FixedDatetime(datetime):
         @classmethod
@@ -386,13 +421,11 @@ def test_update_account_metrics_writes_portfolio_totals_single_currency(
 
     m.update_account_metrics()
 
-    mock_influx.write_portfolio_totals.assert_called_once()
-    pts = mock_influx.write_portfolio_totals.call_args.args[0]
-    assert all(isinstance(p, PortfolioTotalPoint) for p in pts)
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(2,)]
 
 
 def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
-        mock_influx, mocker):
+        store, mocker):
     events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
@@ -401,9 +434,8 @@ def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
         Account("PEA", "PEA", "Mon PEA", "EUR"),
         Account("CTO", "CTO", "My CTO", "USD"),
     ])
-    mock_influx.get_price_series.return_value = {}
 
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
 
     class _FixedDatetime(datetime):
         @classmethod
@@ -414,13 +446,13 @@ def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
     m.update_account_metrics()
 
     # EUR + USD -> no global series.
-    mock_influx.write_portfolio_totals.assert_not_called()
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
     # ...but per-account metrics are still written.
-    mock_influx.write_account_metrics.assert_called_once()
+    assert store.query("SELECT count(*) FROM account_metrics")[0][0] > 0
 
 
 def test_account_metrics_perf_fields_only_on_latest_point(
-        mock_influx, mocker):
+        store, mocker):
     events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
@@ -430,10 +462,10 @@ def test_account_metrics_perf_fields_only_on_latest_point(
                "purchase": {"quantity": 10, "cost_price": 100.0, "fee": 0.0},
                "estate": {"quantity": 10, "received_dividend": 0.0}}]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {
-        date(2024, 1, 1): 100.0, date(2024, 1, 2): 110.0}
+    _seed_price(store, "AAPL", date(2024, 1, 1), 100.0)
+    _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
 
-    m = _metrics(mock_influx, shares, events, portfolio)
+    m = _metrics(store, shares, events, portfolio)
 
     class _FixedDatetime(datetime):
         @classmethod
@@ -443,18 +475,21 @@ def test_account_metrics_perf_fields_only_on_latest_point(
 
     m.update_account_metrics()
 
-    pts = sorted(mock_influx.write_account_metrics.call_args.args[0],
-                 key=lambda p: p.timestamp)
+    rows = store.query(
+        "SELECT day, twr_index, gain_absolu FROM account_metrics ORDER BY day")
     # twr_index present on every point; gain_absolu only on the latest.
-    assert all(p.twr_index is not None for p in pts)
-    assert pts[0].gain_absolu is None
-    assert pts[-1].gain_absolu == pytest.approx(100.0)   # 10*110 - 1000
-    assert pts[-1].twr_index == pytest.approx(110.0)
+    assert all(row[1] is not None for row in rows)
+    assert rows[0][2] is None
+    assert rows[-1][2] == pytest.approx(100.0)   # 10*110 - 1000
+    assert rows[-1][1] == pytest.approx(110.0)
 
 
 # --------------------------------------------------------------------------- #
-# Incremental perf-series write (issue #597): steady cycles must not rewrite
-# the whole daily series (unbounded Parquet fragmentation on InfluxDB 3 Core).
+# Incremental perf-series write (issue #597): a steady cycle rewrites only the
+# stale tail. The reason it existed — a full rewrite landing never-compacted
+# Parquet files on InfluxDB 3 Core — leaves with the database, and the window
+# itself leaves with #707, where an upsert on a primary key makes it pointless.
+# What it must not do meanwhile is change meaning.
 # --------------------------------------------------------------------------- #
 def _fixed_today(mocker, y, mo, d):
     class _FixedDatetime(datetime):
@@ -464,83 +499,104 @@ def _fixed_today(mocker, y, mo, d):
     mocker.patch("main.datetime", _FixedDatetime)
 
 
-def _acc_days(mock_influx):
-    return {p.timestamp.date()
-            for p in mock_influx.write_account_metrics.call_args.args[0]}
+#: A value no computation produces, used to mark the rows a cycle leaves alone.
+_MARKER = -12345.0
+
+
+def _mark_all(store):
+    store.execute("UPDATE account_metrics SET cash_balance = ?", [_MARKER])
+    store.execute("UPDATE portfolio_totals SET cash_balance = ?", [_MARKER])
+
+
+def _acc_days(store):
+    """The days the last cycle actually wrote.
+
+    Asserted on the store rather than on a call, which means asserting on what a
+    cycle *changed*: :func:`_mark_all` stamps every row with a value no
+    computation produces, and the days that no longer carry it are the ones the
+    cycle rewrote.
+    """
+    return {row[0] for row in store.query(
+        "SELECT day FROM account_metrics WHERE cash_balance IS DISTINCT FROM ?",
+        [_MARKER])}
+
+
+def _totals_days(store):
+    return {row[0] for row in store.query(
+        "SELECT day FROM portfolio_totals WHERE cash_balance IS DISTINCT FROM ?",
+        [_MARKER])}
 
 
 def test_update_account_metrics_second_cycle_writes_only_today(
-        mock_influx, mocker):
+        store, mocker):
     """First cycle writes the full series; a steady second cycle (no backfill,
     no event change) rewrites ONLY today's point — the fix for #597."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
     m.update_account_metrics()
-    assert _acc_days(mock_influx) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
+    assert _acc_days(store) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
 
+    _mark_all(store)
     m.update_account_metrics()
-    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
+    assert _acc_days(store) == {date(2024, 1, 3)}
 
 
 def test_backfill_dirty_mark_widens_the_incremental_window(
-        mock_influx, mocker):
+        store, mocker):
     """A backfill that fills an earlier day re-arms the watermark so the next
     cycle rewrites the whole tail from that day through today (TWR compounds
     forward, so the tail must be recomputed)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
     m.update_account_metrics()                 # full
     m.update_account_metrics()                 # today only
-    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
 
     m._mark_perf_dirty(date(2024, 1, 2))       # backfill filled 01-02
+    _mark_all(store)
     m.update_account_metrics()
-    assert _acc_days(mock_influx) == {date(2024, 1, 2), date(2024, 1, 3)}
+    assert _acc_days(store) == {date(2024, 1, 2), date(2024, 1, 3)}
 
 
 def test_update_account_metrics_full_rewrite_on_event_reload(
-        mock_influx, mocker):
+        store, mocker):
     """When the events cache is reloaded (files changed), the next cycle rewrites
     the full series — a new/edited event can shift any past day (cash, holdings,
     contributions), not just today."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
     m.update_account_metrics()                 # full
     m.update_account_metrics()                 # today only
-    assert _acc_days(mock_influx) == {date(2024, 1, 3)}
 
     # Simulate an event-file reload: get_events() now returns a NEW list object.
     m.config_manager._events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    _mark_all(store)
     m.update_account_metrics()
-    assert _acc_days(mock_influx) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
+    assert _acc_days(store) == {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
 
 
 def test_write_failure_re_arms_the_dirty_watermark(
-        mock_influx, mocker):
+        store, mocker):
     """If the account_metrics write raises, the stale tail must not be lost: the
     watermark is re-armed so the next cycle retries the same slice (#597)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
     m.update_account_metrics()                 # first full write succeeds
     m._mark_perf_dirty(date(2024, 1, 2))       # backfill filled 01-02
-    mock_influx.write_account_metrics.side_effect = RuntimeError("influx down")
+    mocker.patch.object(main.perf_series, "write_account_metrics",
+                        side_effect=RuntimeError("the store is unwritable"))
 
     with pytest.raises(RuntimeError):
         m.update_account_metrics()
@@ -550,18 +606,17 @@ def test_write_failure_re_arms_the_dirty_watermark(
 
 
 def test_portfolio_totals_second_cycle_writes_only_today(
-        mock_influx, mocker):
+        store, mocker):
     """The global portfolio_totals series is incremental too (same #597 fix)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
-    mock_influx.get_price_series.return_value = {}
-    m = _metrics(mock_influx, shares=[], events=events, accounts=portfolio)
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
     m.update_account_metrics()
+    _mark_all(store)
     m.update_account_metrics()
-    totals = mock_influx.write_portfolio_totals.call_args.args[0]
-    assert {p.timestamp.date() for p in totals} == {date(2024, 1, 3)}
+    assert _totals_days(store) == {date(2024, 1, 3)}
 
 
 def test_prometheus_update_portfolio_sets_unlabeled_gauges():
@@ -570,7 +625,7 @@ def test_prometheus_update_portfolio_sets_unlabeled_gauges():
 
     exp = PrometheusExporter(registry=CollectorRegistry())
     exp.update_portfolio(PortfolioTotalPoint(
-        timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+        day=date(2024, 1, 2),
         cash_balance=100.0, holdings_value=900.0, total_value=1000.0,
         net_contributed=800.0, xirr=0.12, gain_absolu=200.0, twr_index=120.0,
     ))
@@ -587,7 +642,7 @@ def test_prometheus_update_account_sets_gauges():
     exp = PrometheusExporter(registry=CollectorRegistry())
     exp.update_account(AccountMetricPoint(
         account="PEA", account_type="PEA", account_currency="EUR",
-        timestamp=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        day=date(2024, 1, 15),
         cash_balance=100.0, holdings_value=900.0,
         total_value=1000.0, net_contributed=800.0,
     ))

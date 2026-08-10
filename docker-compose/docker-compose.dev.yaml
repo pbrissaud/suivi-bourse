@@ -17,9 +17,7 @@ services:
     # in CoreFoundation — and a Mac uid (501) has no /etc/passwd entry, which is
     # precisely the case the image's ENV HOME covers.
     user: "${SB_UID:-1000}:${SB_GID:-1000}"
-    depends_on:
-      influxdb:
-        condition: service_healthy
+    # No `depends_on: influxdb` since #700 — see the production file.
     environment:
       # No cadence dials here since #701 — they are in the store. A dev stack
       # that wants a 30-second backfill posts it once:

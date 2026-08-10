@@ -9,7 +9,7 @@ respawn loop; ``post_fork`` then starts everything a fork would have broken, and
 
 Local run, from ``app/``::
 
-    INFLUXDB_TOKEN=... uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+    uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
 """
 import os
 import sys
@@ -50,8 +50,8 @@ preload_app = True
 # #701). `gthread` answers the arbiter's heartbeat from its accept loop, so a
 # slow request cannot get this worker killed; what the timeout actually governs
 # here is the window between `fork()` and the worker entering that loop — and
-# `post_fork` does the whole of `start_runtime` in it: the store, the InfluxDB
-# client, the first replay, and since #701 the pre-scheduler exchange capture,
+# `post_fork` does the whole of `start_runtime` in it: the store connection,
+# the first replay, and since #701 the pre-scheduler exchange capture,
 # which is no longer optional and is itself bounded at 30 s. On gunicorn's
 # default of 30 s a portfolio large enough to spend that capture budget is
 # SIGABRTed mid-boot and respawned to fail identically — a container that never
@@ -96,17 +96,17 @@ def on_starting(server):
             f"SuiviBourse must run with exactly one worker (configured: "
             f"{server.cfg.workers}). The scheduler lives in the worker process "
             f"and all of its state is in memory, so every extra worker is a "
-            f"second scraper: duplicate InfluxDB points and doubled Yahoo "
+            f"second scraper: duplicate price points and doubled Yahoo "
             f"Finance traffic. Raise `threads` instead of `workers`.")
 
 
 def post_fork(server, worker):
-    """Open the store and start the scheduler, the client and the watcher."""
+    """Open the store and start the scheduler and the watcher."""
     from web import start_background
     start_background()
 
 
 def worker_exit(server, worker):
-    """Stop the scheduler and close the InfluxDB and store connections."""
+    """Stop the scheduler, the watcher, and close the store."""
     from web import stop_background
     stop_background()

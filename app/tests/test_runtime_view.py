@@ -32,8 +32,7 @@ def _scrape(**overrides):
     base = dict(
         symbol='AAPL', at=NOW, market_state='REGULAR', closed=False,
         price_present=True, verdict=runtime_state.SCRAPE_WROTE,
-        failure_count=0, next_delay=120.0, accounts_written=('pea',),
-        stale_accounts=(),
+        failure_count=0, next_delay=120.0, wrote=True, stale=False,
     )
     base.update(overrides)
     return runtime_state.ScrapeRecord(**base)
@@ -41,7 +40,7 @@ def _scrape(**overrides):
 
 def _backfill(**overrides):
     base = dict(
-        symbol='AAPL', account='pea', direction=runtime_state.BACKWARD, at=NOW)
+        symbol='AAPL', direction=runtime_state.BACKWARD, at=NOW)
     base.update(overrides)
     return runtime_state.BackfillRecord(**base)
 
@@ -71,7 +70,7 @@ def test_a_refused_write_outranks_everything_because_the_backoff_cannot_see_it()
     persisting nothing at all. Without this value the row would read ``open``.
     """
     record = _scrape(verdict=runtime_state.SCRAPE_WRITE_FAILED,
-                     accounts_written=(), failure_count=0)
+                     wrote=False, failure_count=0)
 
     assert runtime_view.symbol_pill(record) == runtime_view.PILL_WRITE_FAILED
 
@@ -104,7 +103,7 @@ def test_a_frozen_price_outranks_a_failing_fetch():
     that fetches fine and persists a frozen value looks healthy from every other
     angle, which is why the sonde exists at all.
     """
-    record = _scrape(failure_count=1, stale_accounts=('pea',))
+    record = _scrape(failure_count=1, stale=True)
 
     assert runtime_view.symbol_pill(record) == runtime_view.PILL_FROZEN
 
@@ -202,7 +201,7 @@ def test_complete_and_no_buy_stay_two_different_answers():
 
     for expected, record in states.items():
         progress = runtime_view.backfill_progress(
-            record, 'pea', runtime_state.BACKWARD, now)
+            record, runtime_state.BACKWARD, now)
         assert progress.state == expected
 
 
@@ -218,9 +217,9 @@ def test_a_portfolio_with_nothing_to_fetch_never_leaves_the_banner_short():
         [_share('AAPL'), _share('MSFT')],
         {},
         {
-            ('AAPL', 'pea', runtime_state.BACKWARD): _backfill(
+            ('AAPL', runtime_state.BACKWARD): _backfill(
                 terminal=runtime_state.TERMINAL_NO_BUY),
-            ('MSFT', 'pea', runtime_state.BACKWARD): _backfill(
+            ('MSFT', runtime_state.BACKWARD): _backfill(
                 symbol='MSFT', terminal=runtime_state.TERMINAL_NO_BUY),
         },
         {}, NOW)
@@ -257,9 +256,9 @@ def test_a_no_buy_series_is_out_of_the_bar_but_still_counted():
         [_share('AAPL'), _share('MSFT')],
         {},
         {
-            ('AAPL', 'pea', runtime_state.BACKWARD): _backfill(
+            ('AAPL', runtime_state.BACKWARD): _backfill(
                 terminal=runtime_state.TERMINAL_COMPLETE),
-            ('MSFT', 'pea', runtime_state.BACKWARD): _backfill(
+            ('MSFT', runtime_state.BACKWARD): _backfill(
                 symbol='MSFT', terminal=runtime_state.TERMINAL_NO_BUY),
         },
         {}, NOW)
@@ -281,7 +280,7 @@ def test_a_terminal_outranks_a_stale_failure_count():
     """
     record = _backfill(terminal=runtime_state.TERMINAL_COMPLETE, failures=4)
     progress = runtime_view.backfill_progress(
-        record, 'pea', runtime_state.BACKWARD, NOW)
+        record, runtime_state.BACKWARD, NOW)
 
     assert progress.state == runtime_state.TERMINAL_COMPLETE
     assert progress.failures == 4
@@ -296,10 +295,10 @@ def test_a_failing_pass_is_told_apart_from_an_empty_window():
     """
     wedged = runtime_view.backfill_progress(
         _backfill(failures=5, failed=True, error='rate limited'),
-        'pea', runtime_state.BACKWARD, NOW)
+        runtime_state.BACKWARD, NOW)
     weekend = runtime_view.backfill_progress(
         _backfill(window=(NOW - timedelta(days=2), NOW), written=0),
-        'pea', runtime_state.BACKWARD, NOW)
+        runtime_state.BACKWARD, NOW)
 
     assert wedged.state == runtime_view.BACKFILL_FAILING
     assert weekend.state == runtime_view.BACKFILL_RUNNING
@@ -315,7 +314,7 @@ def test_the_bar_is_two_dates_from_one_record():
     oldest = NOW - timedelta(days=200)
     progress = runtime_view.backfill_progress(
         _backfill(target=target, oldest=oldest),
-        'pea', runtime_state.BACKWARD, NOW)
+        runtime_state.BACKWARD, NOW)
 
     assert progress.ratio == 0.5
 
@@ -339,7 +338,7 @@ def test_a_naive_influxdb_timestamp_neither_crashes_nor_shifts_the_page():
     naive_oldest = (NOW - timedelta(days=200)).replace(tzinfo=None)
     progress = runtime_view.backfill_progress(
         _backfill(target=NOW - timedelta(days=400), oldest=naive_oldest),
-        'pea', runtime_state.BACKWARD, NOW)
+        runtime_state.BACKWARD, NOW)
 
     assert progress.ratio == 0.5
     assert progress.to_dict()['oldest'] == (NOW - timedelta(days=200)).isoformat()
@@ -358,7 +357,7 @@ def test_complete_is_one_by_definition_not_by_arithmetic():
         _backfill(terminal=runtime_state.TERMINAL_COMPLETE,
                   target=NOW - timedelta(days=400),
                   oldest=NOW - timedelta(days=398)),
-        'pea', runtime_state.BACKWARD, NOW)
+        runtime_state.BACKWARD, NOW)
 
     assert progress.ratio == 1.0
 
@@ -367,7 +366,7 @@ def test_no_target_means_no_bar_rather_than_an_invented_denominator():
     progress = runtime_view.backfill_progress(
         _backfill(direction=runtime_state.FORWARD,
                   skipped=runtime_state.SKIP_TOO_RECENT),
-        'pea', runtime_state.FORWARD, NOW)
+        runtime_state.FORWARD, NOW)
 
     assert progress.ratio is None
     assert progress.state == runtime_state.SKIP_TOO_RECENT
@@ -383,9 +382,9 @@ def test_the_forward_pass_healthy_no_op_is_not_folded_into_the_bar():
     symbols = runtime_view.build_symbols(
         [_share()], {},
         {
-            ('AAPL', 'pea', runtime_state.BACKWARD): _backfill(
+            ('AAPL', runtime_state.BACKWARD): _backfill(
                 terminal=runtime_state.TERMINAL_COMPLETE),
-            ('AAPL', 'pea', runtime_state.FORWARD): _backfill(
+            ('AAPL', runtime_state.FORWARD): _backfill(
                 direction=runtime_state.FORWARD,
                 skipped=runtime_state.SKIP_TOO_RECENT),
         },
@@ -416,17 +415,23 @@ def test_a_symbol_the_scheduler_has_not_reached_is_a_row_with_an_unknown_pill():
     assert rows[1].last_pass is None
 
 
-def test_a_symbol_held_in_two_accounts_is_one_row_with_two_details():
-    """The fold #659's ``build_shares`` already does for positions."""
+def test_a_symbol_held_in_two_accounts_is_one_row_naming_both():
+    """One row, and no per-account measurement under it (issue #700).
+
+    The sub-rows left with the dimension they described: the scrape writes one
+    point per symbol and the backfill fetches one window per symbol, so a
+    payload that kept them would have shown two identical bars for one piece of
+    work. What the page still needs is *who holds it*, which is a list of names.
+    """
     rows = runtime_view.build_symbols(
         [_share(account='pea'), _share(account='cto')],
-        {'AAPL': _scrape(accounts_written=('pea',), stale_accounts=('cto',))},
+        {'AAPL': _scrape(wrote=True, stale=True)},
         {}, {}, NOW)
 
     assert len(rows) == 1
-    assert [a.account for a in rows[0].accounts] == ['cto', 'pea']
-    assert [a.frozen for a in rows[0].accounts] == [True, False]
-    assert [a.written for a in rows[0].accounts] == [False, True]
+    assert rows[0].accounts == ['cto', 'pea']
+    assert rows[0].frozen is True
+    assert rows[0].written is True
 
 
 # ===================================================================== #
@@ -479,8 +484,8 @@ def test_errors_are_folded_newest_first_across_every_job():
     symbols = runtime_view.build_symbols(
         [_share()],
         {'AAPL': _scrape(at=older, verdict=runtime_state.SCRAPE_WRITE_FAILED,
-                         accounts_written=(), error='InfluxDB refused')},
-        {('AAPL', 'pea', runtime_state.BACKWARD): _backfill(
+                         wrote=False, error='the store refused the write')},
+        {('AAPL', runtime_state.BACKWARD): _backfill(
             failed=True, failures=2, error='rate limited')},
         {}, NOW)
 
@@ -493,7 +498,7 @@ def test_errors_are_folded_newest_first_across_every_job():
 
     assert [e['source'] for e in errors] == [
         'backfill:backward', 'scrape', 'ingest']
-    assert errors[0]['key'] == 'AAPL / pea'
+    assert errors[0]['key'] == 'AAPL'
 
 
 def test_a_healthy_process_reports_no_errors():
@@ -525,7 +530,7 @@ def test_the_backfill_failure_counter_accumulates_and_resets():
 
     assert recovered.failures == 0
     assert recorder.backfill_of(
-        'AAPL', 'pea', runtime_state.BACKWARD).failures == 0
+        'AAPL', runtime_state.BACKWARD).failures == 0
 
 
 def test_an_empty_window_never_counts_as_a_failure():
@@ -554,7 +559,7 @@ def test_the_two_backfill_directions_keep_separate_counters():
 
     assert forward.failures == 1
     assert recorder.backfill_of(
-        'AAPL', 'pea', runtime_state.BACKWARD).failures == 2
+        'AAPL', runtime_state.BACKWARD).failures == 2
 
 
 def test_forgetting_a_departed_symbol_drops_both_of_its_maps():
@@ -566,8 +571,8 @@ def test_forgetting_a_departed_symbol_drops_both_of_its_maps():
     recorder.forget_symbol('AAPL')
 
     assert recorder.scrape_of('AAPL') is None
-    assert recorder.backfill_of('AAPL', 'pea', runtime_state.BACKWARD) is None
-    assert recorder.backfill_of('MSFT', 'pea', runtime_state.BACKWARD) is not None
+    assert recorder.backfill_of('AAPL', runtime_state.BACKWARD) is None
+    assert recorder.backfill_of('MSFT', runtime_state.BACKWARD) is not None
 
 
 def test_records_are_frozen_so_a_published_one_cannot_be_edited_in_place():

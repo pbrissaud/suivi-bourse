@@ -25,9 +25,10 @@ services:
     image: ghcr.io/pbrissaud/suivi-bourse-app:${SB_VERSION:-4}
     pull_policy: always
     restart: unless-stopped
-    depends_on:
-      influxdb:
-        condition: service_healthy
+    # No `depends_on: influxdb` since #700: the app speaks to no database but
+    # its own embedded store, so waiting on that one's healthcheck would delay
+    # — and, on a broken volume, block — a boot that has nothing to do with it.
+    # The two containers are still in the stack; retiring them is #679/#680.
     # The config mount is writable (see below), so the container has to run as
     # whoever owns those files on the host — otherwise anything created under
     # the mount comes back owned by uid 1000 and the user can no longer edit

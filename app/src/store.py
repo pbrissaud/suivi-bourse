@@ -28,6 +28,7 @@ use buffers it no longer owns — and DuckDB refuses a second process precisely
 because that is not survivable.
 """
 import os
+import threading
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
@@ -261,6 +262,22 @@ class Store:
     def __init__(self, path: Path, connection: 'duckdb.DuckDBPyConnection'):
         self.path = path
         self._connection = connection
+        # One statement at a time on this connection (issue #700). A DuckDB
+        # connection carries **one** pending result: ``execute`` stores it on the
+        # connection and ``fetchall`` collects it, so two threads calling the
+        # pair concurrently can have the second's ``execute`` replace the first's
+        # result before it is fetched — silently handing thread A thread B's
+        # rows. That was survivable while the store held only the ledger, read
+        # from request threads and written by the ingestion; it stops being so
+        # here, where the scrape threads write prices every cycle and the read
+        # layer serves the pages off the same connection.
+        #
+        # This lock is **not** the writers' mutex and does not replace it: it is
+        # held for the duration of one call, so it makes a statement atomic and
+        # says nothing about a transaction. What keeps a ``BEGIN``/``COMMIT``
+        # whole against another thread is still
+        # :meth:`main.ConfigurationManager.writing`.
+        self._statement_lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
     # Execution
@@ -273,14 +290,53 @@ class Store:
 
     def execute(self, sql: str, parameters: Optional[Sequence[Any]] = None):
         """Run one statement. Errors propagate — this is not a read layer."""
-        if parameters is None:
-            return self._connection.execute(sql)
-        return self._connection.execute(sql, list(parameters))
+        with self._statement_lock:
+            if parameters is None:
+                return self._connection.execute(sql)
+            return self._connection.execute(sql, list(parameters))
+
+    def executemany(self, sql: str, rows: Sequence[Sequence[Any]]) -> None:
+        """Run one statement over many parameter sets, in one round trip.
+
+        The block form matters where it is used (issue #700, ADR-0011): the same
+        insert of a few thousand rows is milliseconds in one call and does not
+        finish in two minutes row by row.
+        """
+        if not rows:
+            return
+        with self._statement_lock:
+            self._connection.executemany(sql, [list(row) for row in rows])
 
     def query(self, sql: str,
               parameters: Optional[Sequence[Any]] = None) -> List[tuple]:
-        """Run one statement and materialise its rows as tuples."""
-        return self.execute(sql, parameters).fetchall()
+        """Run one statement and materialise its rows as tuples.
+
+        For a handful of rows. A **wide** read goes through :meth:`arrow`
+        instead — see the note there.
+        """
+        with self._statement_lock:
+            if parameters is None:
+                return self._connection.execute(sql).fetchall()
+            return self._connection.execute(sql, list(parameters)).fetchall()
+
+    def arrow(self, sql: str, parameters: Optional[Sequence[Any]] = None):
+        """Run one statement and materialise its rows as an Arrow table.
+
+        The frontier a wide read crosses (issue #700, spec #695 § 1). Building
+        Python tuples out of a ``TIMESTAMPTZ`` column costs **8×** what Arrow
+        costs — 382 ms against 47 for 254 280 points in rows, 2,4 against 2,9 ms
+        in Arrow — because every instant becomes an individual ``datetime``
+        object on the way out. Arrow hands back columns; the caller turns the
+        ones it needs into lists in one vectorised call.
+
+        It is a constraint on the read primitives, not a revision of the column
+        type: ``TIMESTAMPTZ`` is still what an observed instant is stored as.
+        """
+        with self._statement_lock:
+            if parameters is None:
+                return self._connection.execute(sql).fetch_arrow_table()
+            return self._connection.execute(
+                sql, list(parameters)).fetch_arrow_table()
 
     def ping(self) -> None:
         """Touch the store, and raise if it cannot be touched.
@@ -290,7 +346,7 @@ class Store:
         after the file behind it has become unreadable, and a healthcheck that
         stays green through that is the blind spot the probe exists to close.
         """
-        self._connection.execute('SELECT count(*) FROM setting').fetchone()
+        self.query('SELECT count(*) FROM setting')
 
     # ------------------------------------------------------------------ #
     # Shape and content
@@ -298,9 +354,9 @@ class Store:
 
     def table_names(self) -> List[str]:
         """The tables this file actually carries, sorted."""
-        rows = self._connection.execute(
+        rows = self.query(
             "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'main' ORDER BY table_name").fetchall()
+            "WHERE table_schema = 'main' ORDER BY table_name")
         return [row[0] for row in rows]
 
     def setting(self, key: str):
@@ -311,8 +367,7 @@ class Store:
         a hole to report, it is the registry's value. There is exactly one place
         that says what a setting is worth, and the table is its mirror.
         """
-        rows = self._connection.execute(
-            'SELECT value FROM setting WHERE key = ?', [key]).fetchall()
+        rows = self.query('SELECT value FROM setting WHERE key = ?', [key])
         stored = rows[0][0] if rows else None
         return settings_registry.resolve(key, stored)
 

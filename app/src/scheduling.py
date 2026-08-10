@@ -1,7 +1,7 @@
 """
 Market-aware per-symbol scheduling — pure cadence & context decisions.
 
-Mirror of ``performance.py``: no InfluxDB, no yfinance, ``now`` injected. The
+Mirror of ``performance.py``: no store, no yfinance, ``now`` injected. The
 two functions here drive the self-rescheduling per-symbol scrape jobs in
 ``main.py`` without touching the outside world, so they are exhaustively
 testable against dicts and an injected clock (issue #616, design #602-#609).
@@ -171,7 +171,7 @@ def forward_backfill_window(
     """Size one forward gap-fill window ``[newest, end]``, or ``None`` (#627/#626).
 
     Pure mirror of the backward pass's window sizing, injected ``now``, no
-    InfluxDB/yfinance — so the "should we fetch, and how wide" decision is unit
+    the store/yfinance — so the "should we fetch, and how wide" decision is unit
     testable in isolation. The forward pass recovers a trading session the app
     missed while down by asking ``history(newest → now)``; classifying the window
     (real session vs weekend/holiday) is delegated to yfinance, never decided
@@ -236,7 +236,7 @@ def price_freshness_step(
 ) -> Tuple[Optional[SondeState], bool]:
     """Advance the price-freshness liveness sonde one ``REGULAR`` cycle (#628/#626).
 
-    Pure and stateful-by-value — no InfluxDB / yfinance, ``now`` injected,
+    Pure and stateful-by-value — no store / yfinance, ``now`` injected,
     ``prev`` fed back in from last cycle — so the "is the writer silently stale"
     call is unit-testable in isolation. This is the repurposed price-diff,
     shipped as **observability**, not as a backfill trigger: the time-window

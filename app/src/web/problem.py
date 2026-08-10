@@ -1,10 +1,10 @@
 """RFC 9457 ``application/problem+json`` responses (issue #659, design #655).
 
-The read layer's error contract is the inverse of the writer's, and this module
-is where that inversion becomes visible to a client. ``influxdb_writer.py`` ends
-every read with ``except Exception: logger.error(...); return None`` — correct
-for a scheduler that must survive a flaky query, and wrong for a UI, because it
-makes *the database is unreachable* and *you own nothing yet* the same value.
+The read layer's error contract is the inverse of the scheduler's, and this
+module is where that inversion becomes visible to a client. A scheduled job
+ends its reads with ``except Exception: logger.error(...); return None`` —
+correct for a job that must survive a flaky query, and wrong for a UI, because
+it makes *the database is unreadable* and *you own nothing yet* the same value.
 
 #655 split them into three states, and only the third is an error:
 
@@ -13,7 +13,7 @@ State                Example                                     Response
 ===================  ==========================================  ==============
 Absent by design     ``xirr`` with no external flow; a weekend    ``200`` + ``null``
 Empty collection     a fresh install with no shares              ``200`` + ``[]``
-Failure              InfluxDB unreachable, malformed query        ``503``/``500`` + problem+json
+Failure              the store is unreadable, a malformed query  ``503``/``500`` + problem+json
 ===================  ==========================================  ==============
 
 Rendering the first two as errors is what a generic dashboard does, and #652
@@ -74,8 +74,8 @@ def storage_unavailable(detail: str):
     """503 — the query could not be answered. The distinctly *non*-empty answer.
 
     Deliberately ``503`` and not ``500``: the condition is transient by nature
-    (InfluxDB restarting, a network blip) and the front's retry policy should
-    treat it as such, where a ``500`` invites a bug report.
+    (a file being checkpointed, a mount coming back) and the front's retry
+    policy should treat it as such, where a ``500`` invites a bug report.
     """
     return problem(
         503,

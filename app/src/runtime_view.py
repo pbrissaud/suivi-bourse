@@ -82,7 +82,7 @@ BACKFILL_FAILING = 'failing'
 
 @dataclass(frozen=True)
 class BackfillProgress:
-    """One ``(symbol, account, direction)`` pass, made into a bar.
+    """One ``(symbol, direction)`` pass, made into a bar.
 
     ``state`` is either a terminal from the record (``complete`` / ``no_buy``),
     a skip reason, or one of the three above. The terminals are carried through
@@ -90,7 +90,6 @@ class BackfillProgress:
     and "this symbol was never bought", and only the first is progress.
     """
 
-    account: str
     direction: str
     state: str
     at: Optional[datetime]
@@ -107,7 +106,6 @@ class BackfillProgress:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'account': self.account,
             'direction': self.direction,
             'state': self.state,
             'at': _iso(self.at),
@@ -126,30 +124,15 @@ class BackfillProgress:
 
 
 @dataclass(frozen=True)
-class AccountRuntime:
-    """One ``(symbol, account)`` pair — the detail the sheet shows."""
-
-    account: str
-    #: #628's sonde fired for this pair on the last ``REGULAR`` pass.
-    frozen: bool
-    #: A point was persisted for this pair on the last pass.
-    written: bool
-    backward: Optional[BackfillProgress]
-    forward: Optional[BackfillProgress]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'account': self.account,
-            'frozen': self.frozen,
-            'written': self.written,
-            'backward': self.backward.to_dict() if self.backward else None,
-            'forward': self.forward.to_dict() if self.forward else None,
-        }
-
-
-@dataclass(frozen=True)
 class SymbolRuntime:
-    """One row of the shares table's status column, plus the sheet's detail."""
+    """One row of the shares table's status column, plus the sheet's detail.
+
+    The per-account sub-rows left with #700, together with the dimension they
+    described: the price series has no account, so the scrape writes one point
+    per symbol and the backfill fetches one window per symbol. A payload that
+    kept the shape would have shown a reader N identical bars for one piece of
+    work and invited them to conclude the accounts were being tracked apart.
+    """
 
     symbol: str
     name: Optional[str]
@@ -164,7 +147,15 @@ class SymbolRuntime:
     next_delay: Optional[float]
     next_run: Optional[datetime]
     next_run_state: str
-    accounts: Sequence[AccountRuntime]
+    #: #628's sonde fired for this symbol on the last ``REGULAR`` pass.
+    frozen: bool
+    #: A point was persisted on the last pass.
+    written: bool
+    backward: Optional[BackfillProgress]
+    forward: Optional[BackfillProgress]
+    #: The accounts holding this symbol. Kept as a plain list because the page
+    #: shows *who holds it*; nothing per-account is measured about the series.
+    accounts: Sequence[str]
     error: Optional[str]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -180,7 +171,11 @@ class SymbolRuntime:
             'next_delay': self.next_delay,
             'next_run': _iso(self.next_run),
             'next_run_state': self.next_run_state,
-            'accounts': [a.to_dict() for a in self.accounts],
+            'frozen': self.frozen,
+            'written': self.written,
+            'backward': self.backward.to_dict() if self.backward else None,
+            'forward': self.forward.to_dict() if self.forward else None,
+            'accounts': list(self.accounts),
             'error': self.error,
         }
 
@@ -213,7 +208,7 @@ def symbol_pill(record: Optional[runtime_state.ScrapeRecord]) -> str:
         return PILL_WRITE_FAILED
     if record.failure_count > scheduling.FAILURE_GRACE:
         return PILL_BACKOFF
-    if record.stale_accounts:
+    if record.stale:
         return PILL_FROZEN
     if record.failure_count > 0:
         return PILL_FAILING
@@ -224,7 +219,6 @@ def symbol_pill(record: Optional[runtime_state.ScrapeRecord]) -> str:
 
 def backfill_progress(
     record: Optional[runtime_state.BackfillRecord],
-    account: str,
     direction: str,
     now: datetime,
 ) -> BackfillProgress:
@@ -238,12 +232,11 @@ def backfill_progress(
     """
     if record is None:
         return BackfillProgress(
-            account=account, direction=direction, state=BACKFILL_UNKNOWN,
+            direction=direction, state=BACKFILL_UNKNOWN,
             at=None, target=None, oldest=None, newest=None, window=None,
             written=0, failures=0, ratio=None, error=None)
 
     return BackfillProgress(
-        account=account,
         direction=direction,
         state=_backfill_state(record),
         at=record.at,
@@ -291,9 +284,9 @@ def _ratio(record: runtime_state.BackfillRecord,
     """
     if record.terminal == runtime_state.TERMINAL_COMPLETE:
         return 1.0
-    # Both sides through `_utc`: `target` comes from an event date and is aware,
-    # `oldest` comes from InfluxDB through pandas and is naive, and subtracting
-    # one from the other raises. See :func:`_utc`.
+    # Both sides through `_utc`: `target` comes from an event date and `oldest`
+    # from the store, and subtracting a naive instant from an aware one raises.
+    # See :func:`_utc`.
     target = _utc(record.target)
     oldest = _utc(record.oldest)
     if target is None or oldest is None:
@@ -308,7 +301,7 @@ def _ratio(record: runtime_state.BackfillRecord,
 def build_symbols(
     shares: Sequence[Dict[str, Any]],
     scrape: Mapping[str, Optional[runtime_state.ScrapeRecord]],
-    backfill: Mapping[Tuple[str, str, str], Optional[runtime_state.BackfillRecord]],
+    backfill: Mapping[Tuple[str, str], Optional[runtime_state.BackfillRecord]],
     next_runs: Mapping[str, Optional[datetime]],
     now: datetime,
     scheduler_running: bool = True,
@@ -350,23 +343,6 @@ def build_symbols(
     rows = []
     for symbol in sorted(by_symbol):
         record = scrape.get(symbol)
-        stale = set(record.stale_accounts) if record else set()
-        written = set(record.accounts_written) if record else set()
-
-        accounts = [
-            AccountRuntime(
-                account=account,
-                frozen=account in stale,
-                written=account in written,
-                backward=backfill_progress(
-                    backfill.get((symbol, account, runtime_state.BACKWARD)),
-                    account, runtime_state.BACKWARD, now),
-                forward=backfill_progress(
-                    backfill.get((symbol, account, runtime_state.FORWARD)),
-                    account, runtime_state.FORWARD, now),
-            )
-            for account in sorted(by_symbol[symbol])
-        ]
 
         next_run = next_runs.get(symbol)
         if not scheduler_running:
@@ -388,7 +364,15 @@ def build_symbols(
             next_delay=record.next_delay if record else None,
             next_run=next_run,
             next_run_state=next_run_state,
-            accounts=accounts,
+            frozen=bool(record.stale) if record else False,
+            written=bool(record.wrote) if record else False,
+            backward=backfill_progress(
+                backfill.get((symbol, runtime_state.BACKWARD)),
+                runtime_state.BACKWARD, now),
+            forward=backfill_progress(
+                backfill.get((symbol, runtime_state.FORWARD)),
+                runtime_state.FORWARD, now),
+            accounts=sorted(by_symbol[symbol]),
             error=record.error if record else None,
         ))
     return rows
@@ -409,10 +393,8 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
     """
     states: Dict[str, int] = {}
     for symbol in symbols:
-        for account in symbol.accounts:
-            backward = account.backward
-            state = backward.state if backward else BACKFILL_UNKNOWN
-            states[state] = states.get(state, 0) + 1
+        state = symbol.backward.state if symbol.backward else BACKFILL_UNKNOWN
+        states[state] = states.get(state, 0) + 1
 
     total = sum(states.values())
     complete = states.get(runtime_state.TERMINAL_COMPLETE, 0)
@@ -510,14 +492,13 @@ def build_errors(
             errors.append({
                 'source': 'scrape', 'key': symbol.symbol,
                 'at': _iso(symbol.last_pass), 'message': symbol.error})
-        for account in symbol.accounts:
-            for progress in (account.backward, account.forward):
-                if progress is not None and progress.error:
-                    errors.append({
-                        'source': f'backfill:{progress.direction}',
-                        'key': f'{symbol.symbol} / {progress.account}',
-                        'at': _iso(progress.at),
-                        'message': progress.error})
+        for progress in (symbol.backward, symbol.forward):
+            if progress is not None and progress.error:
+                errors.append({
+                    'source': f'backfill:{progress.direction}',
+                    'key': symbol.symbol,
+                    'at': _iso(progress.at),
+                    'message': progress.error})
 
     if ingest is not None and ingest.error:
         errors.append({
@@ -539,7 +520,7 @@ def build_errors(
 def build_runtime(
     shares: Sequence[Dict[str, Any]],
     scrape: Mapping[str, Optional[runtime_state.ScrapeRecord]],
-    backfill: Mapping[Tuple[str, str, str], Optional[runtime_state.BackfillRecord]],
+    backfill: Mapping[Tuple[str, str], Optional[runtime_state.BackfillRecord]],
     next_runs: Mapping[str, Optional[datetime]],
     ingest: Optional[runtime_state.IngestRecord],
     perf: Optional[runtime_state.PerfRecord],
@@ -568,11 +549,12 @@ def _utc(value: Optional[datetime]) -> Optional[datetime]:
     """Stamp a naive datetime as UTC. One rule, applied at every exit.
 
     Found by looking, and it is the sharper half of a defect the terminal states
-    were hiding. ``InfluxDBWriter.get_oldest_timestamp`` returns whatever pandas
-    hands back from the Arrow ``time`` column, which is **tz-naive** — so a
-    record whose ``oldest`` came from InfluxDB carries a naive datetime beside a
-    ``target`` built from an event date, which is aware. Two consequences, and
-    the first is not cosmetic:
+    were hiding. The backfill's anchor used to come back through pandas as a
+    **tz-naive** instant, so a record whose ``oldest`` came from storage carried
+    a naive datetime beside a ``target`` built from an event date, which is
+    aware. The store stamps both sides now (:func:`quotes._utc`), and the guard
+    stays because the two consequences are what a regression here looks like,
+    and the first is not cosmetic:
 
     * ``(now - oldest)`` raises ``TypeError: can't subtract offset-naive and
       offset-aware datetimes``, and this blueprint's catch-all renders any
@@ -584,9 +566,9 @@ def _utc(value: Optional[datetime]) -> Optional[datetime]:
     * a naive ISO string is read by ``new Date()`` as **local** time, quietly
       shifting every instant on the page by the browser's offset.
 
-    Naive means UTC here: the app writes UTC everywhere, and ``influx_sql``
-    carries the same rule for the other direction. Saying so explicitly is not a
-    claim about the observation, it is the observation written down completely.
+    Naive means UTC here: the app writes UTC everywhere, and the store's session
+    is pinned to it. Saying so explicitly is not a claim about the observation,
+    it is the observation written down completely.
     """
     if not isinstance(value, datetime):
         return None
@@ -604,7 +586,7 @@ __all__ = [
     'PILL_BACKOFF', 'PILL_WRITE_FAILED',
     'NEXT_RUN_SCHEDULED', 'NEXT_RUN_AMBIGUOUS', 'NEXT_RUN_UNAVAILABLE',
     'BACKFILL_UNKNOWN', 'BACKFILL_RUNNING', 'BACKFILL_FAILING',
-    'AccountRuntime', 'BackfillProgress', 'SymbolRuntime',
+    'BackfillProgress', 'SymbolRuntime',
     'symbol_pill', 'backfill_progress', 'build_symbols',
     'build_backfill_summary', 'build_ingestion', 'build_perf', 'build_errors',
     'build_runtime',

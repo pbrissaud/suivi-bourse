@@ -122,7 +122,7 @@ def current_runtime() -> main.Runtime:
     """The Runtime this process booted with, for request handlers.
 
     The routes cannot capture it at import: ``create_app`` runs in the master
-    and the InfluxDB client is only created in ``post_fork``, so a handler must
+    and the store connection is only opened in ``post_fork``, so a handler must
     reach the *same* object after the fork rather than a copy taken before it.
     The module global is that channel — the fork hands the worker the identical
     object for free.

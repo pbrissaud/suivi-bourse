@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuiviBourse is a Python application that monitors stock shares using yfinance for real-time pricing and stores metrics in InfluxDB 3 Core for visualization in Grafana. It supports historical data backfill for viewing past price evolution.
+SuiviBourse is a Python application that monitors stock shares using yfinance for real-time pricing and stores everything — the ledger, the positions, the prices and the performance series — in **one embedded DuckDB store** (ADR-0001). It supports historical data backfill for viewing past price evolution.
 
 ## Commands
 
@@ -16,10 +16,10 @@ SuiviBourse is a Python application that monitors stock shares using yfinance fo
 cd app && uv sync
 
 # Run the app locally (requires an events folder at ~/.config/SuiviBourse/events/)
-# Also requires INFLUXDB_TOKEN environment variable. gunicorn is the only boot
-# path: the web API and the scheduler share one process (issue #651), and
-# src/gunicorn.conf.py holds the boot sequence. `main.py` has no __main__ block.
-cd app && INFLUXDB_TOKEN=your-token uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+# gunicorn is the only boot path: the web API and the scheduler share one
+# process (issue #651), and src/gunicorn.conf.py holds the boot sequence.
+# `main.py` has no __main__ block.
+cd app && uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
 # On macOS this crashes as soon as a symbol is scraped — gunicorn forks its
 # worker and libcurl's macOS-only Curl_macos_init (reached from curl_easy_init
 # in yfinance's HTTP backend) reads the system proxy config through
@@ -38,8 +38,9 @@ the `store` fixture opens a genuine DuckDB *file* — never `:memory:`, since
 DuckDB refuses a second process and persistence is part of what is asserted —
 with the DDL applied and the seed in place. Assertions go on the store's
 contents or on the API's JSON, never on the fact that a method was called; the
-`mock_influx` fixture is the counter-example and leaves with
-`influxdb_writer.py`. `shares_validator` is already gone with `schema.yaml`.
+`mock_influx` fixture was the counter-example and left with `influxdb_writer.py`
+at #700; `shares_validator` went with `schema.yaml`. **There is one faked edge
+left in the whole suite, and it is yfinance.**
 
 ### Web UI (in `app/web/` directory)
 
@@ -204,6 +205,14 @@ docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.e
 # folder and it is loaded. There is no mode to choose (issue #711).
 ```
 
+**The stack still starts InfluxDB and Grafana, and the app no longer speaks to
+either** (issue #700). That is a deliberate seam, not an oversight: the price
+path moved into the store here, while retiring the two containers is #679/#680's
+packaging work. Until then a `docker compose up` runs two services that receive
+nothing, and the boot names the three `INFLUXDB_*` variables it found and does
+not read — which is what stops *"my token must be wrong"* being the conclusion.
+Grafana's dashboards stop advancing at the upgrade instant for the same reason.
+
 The stack owns exactly two user-writable things, both git-ignored: `.env` (every
 setting, names identical to the app's own env vars) and the **config directory**
 (`SB_CONFIG_DIR`, default `./data`) mounted as a single volume at
@@ -255,8 +264,7 @@ it is the boot sequence, split either side of its `fork()`:
   a broken ledger; the arbiter has not forked yet, so there is nothing to
   respawn, and the worker inherits the published snapshot through the fork, so
   `post_fork`'s `ingest()` is a cache hit that only arms the jobs.
-- **`post_fork`** — `main.start_runtime()`: the **store connection**, the
-  InfluxDB client (a connection pool the master must not share),
+- **`post_fork`** — `main.start_runtime()`: the **store connection**,
   `BackgroundScheduler` (not Blocking — the worker owns the foreground),
   `start_watcher()`, and the first `ingest()` that arms the per-symbol scrape
   jobs.
@@ -341,63 +349,66 @@ Four things about it are decisions rather than defaults:
 ticket; what validates is `events/validator.py` and the DDL, and since #698 the
 accounts are a table rather than a block to check.
 
-**The web UI reads through a sibling of the writer** (issue #659, design #655).
-The layer between the UI and InfluxDB is the *for-keeps* half of the prototype;
-the React on top of it is admitted throwaway. Three modules, and the split is by
-**error contract**, not by subject matter:
+**The web UI reads through its own module, with its own error contract** (issue
+#659, moved onto the store by #700). The layer between the UI and the store is
+the *for-keeps* half of the prototype; the React on top of it is admitted
+throwaway. Two modules, and the split is by **error contract**, not by subject
+matter:
 
-- **`influx_reads.py`** — `PortfolioReader`, taking a `query(sql) -> table`
-  executor as its single injection point (the pooled client is created in
-  `post_fork`). Its workhorse is **P1 generalised**: one window function,
-  `ROW_NUMBER() … PARTITION BY share_symbol, COALESCE(account,'default')`,
-  returning the newest observation per pair for the *whole* portfolio in one
-  query — the shares table and (later) the dashboard's allocation + movers share
-  it. It is a single query because every live point carries the price, the
-  position fields **and** the fundamentals together (`write_metrics` is only
-  called once the quote fetch succeeded), so there is no per-field last-non-null
-  pass to do. Deliberately **no time window**: "current" is absolute (#652
-  déc. 1), so a long market closure no longer blanks the page. Also
-  `raw_series` and `bucketed_series` — the latter is not in the design and the
-  arithmetic forced it: 120 s over a 6.5-hour session is ~200 points a day, so a
-  five-year raw window is a quarter of a million points on the wire. The perf
-  series get the same treatment: `latest_totals` / `totals_series` for the
-  global one, and (issue #661) `latest_account_metrics` — P1's window applied to
-  `account_metrics`, one query for the whole comparison table — plus
-  `account_series` for one account's history. All of them are `SELECT *` rather
-  than a field list, because `xirr` / `gain_absolu` / `twr_index` are written
-  only when computable and a field never written is a **column that does not
-  exist**: naming it turns "this account has no deposits" into a query error.
+- **`store_reads.py`** — `PortfolioReader`, taking the open store. Its workhorse
+  is **P1, and since #700 it is a join rather than a window**:
+  `position ⋈ symbol_quote`, one row per `(account, symbol)` beside the newest
+  observation of that symbol — 0,43 ms measured against 25,4 ms for the
+  `ROW_NUMBER()` scan of the price series it replaces. A **LEFT** join, which is
+  the interesting half: a position whose symbol has never been fetched is a row
+  with every market column `NULL`, and an inner join would answer *"you own
+  nothing"* to someone who has just declared everything they own. Deliberately
+  **no time window**: "current" is absolute (#652 déc. 1), so a long market
+  closure no longer blanks the page. Also `raw_series` and `bucketed_series` —
+  the second survives for one new reason, the browser: five years of a symbol is
+  tens of thousands of points after #705's ladder, fifty times what a chart
+  carries. The perf series get `latest_totals` / `totals_series`,
+  `latest_account_metrics` (one query for the whole comparison table) and
+  `account_series`. All of them **name their fields**, which is what ADR-0001
+  buys: a declared column that was never written reads as `NULL` rather than not
+  existing, so naming `xirr` no longer turns "this account has no deposits" into
+  a query error. And every **wide** read crosses **Arrow** (`Store.arrow`):
+  materialising a `TIMESTAMPTZ` column costs 8× in rows and nothing in Arrow.
 - **`portfolio_view.py`** — pure, in the taste of `scheduling.py` /
-  `performance.py`. Rows in, page objects out: the weighted mean
-  `Σ(pp×pq)/Σpq` (a plain sum *and* a plain mean both produce plausible-looking
-  wrong prices), the per-account rollup Grafana sums away in SQL, and
-  **plus-value latente** — which requires the holdings term and defaults the
-  other three to zero, because composing it out of null-tolerant helpers made a
-  share whose price was never observed report a total loss. `build_accounts`
+  `performance.py`. Rows in, page objects out: the derived unit cost
+  `Σ cost_basis / Σ quantity` — which *is* the weighted mean, and falls out of one
+  division because the basis is stored as an amount (a plain sum *and* a plain
+  mean both produce plausible-looking wrong prices) — the per-account rollup
+  Grafana sums away in SQL, and **plus-value latente**, which since #700 is
+  `market_value − cost_basis` and carries **neither dividends nor fees**: they
+  are the other two named figures, and adding either here counts it twice. The
+  holdings term is required and the basis defaults to zero, because composing it
+  out of null-tolerant helpers made a share whose price was never observed report
+  a total loss. `build_accounts`
   (#661) joins the **declaration** to the newest metrics row and lets the
   declaration drive: an account with no series yet is a row of em dashes, a
   series with no declaration is not a row, and nothing is summed across accounts
   — the consolidated figures have one source, `portfolio_totals`.
-- **`influx_sql.py`** — the one rule both halves share: trap 1's
-  `COALESCE(account,'default')` + quote escaping, the NaN guard, the bare-UTC-Z
-  literal. A second implementation would decay, and its symptom — history that
-  stops at a version boundary — reads as missing data, not as a bug.
 
-The reason this is a **sibling** of `influxdb_writer.py` rather than a growth of
-it: the writer ends every read with `except Exception: … return None`, which is
-right for a scheduler surviving a flaky query and wrong for a UI, where it makes
-"the database is unreachable" and "you own nothing yet" the same screen. Here
-query errors **propagate** and `web/problem.py` turns them into `503` +
-`application/problem+json`; absence stays three distinct states (`200`+`null` /
-`200`+`[]` / `503`). It has **no exception** since #696: `_ABSENT_SCHEMA` — the
+`influx_sql.py` — the `COALESCE(account,'default')` shim, the quote escaping,
+the NaN guard and the bare-UTC-Z literal — is **gone** with #700. Every one of
+its four rules lost its subject at once: a price has no account, DuckDB binds
+parameters instead of taking a formatted string, and a NaN never reaches the
+store because the fetch drops it.
+
+The reason this is a **separate module** from the scheduler's own reads: those
+end with `except Exception: … return None`, which is right for a job surviving a
+flaky query and wrong for a UI, where it makes "the database is unreadable" and
+"you own nothing yet" the same screen. Here query errors **propagate** and
+`web/problem.py` turns them into `503` + `application/problem+json`; absence
+stays three distinct states (`200`+`null` / `200`+`[]` / `503`), and they are
+**structural** rather than rescued from an exception. `_ABSENT_SCHEMA` — the
 regex that read "this measurement was never written to" out of an error message
-and answered `[]` — is gone. It existed because in InfluxDB 3 a measurement (and
-a column) comes into being on its first write, so absence and failure arrived
-down the same channel; the store declares its tables at creation and an unwritten
-column reads as `NULL` (ADR-0001), so absence is a shape of the data and an
-exception means a fault.
+and answered `[]` — went with #696, and the window it left open closed with
+#700: an install whose measurement did not exist yet answered `503` where it owed
+`200` + `[]`.
 
-**The app's own runtime state is a fourth pair, and it reads no InfluxDB at all**
+**The app's own runtime state is a fourth pair, and it reads no store at all**
 (issue #668, design #656). `GET /api/runtime` answers from process memory, the
 config snapshot and the APScheduler jobstore — nothing else. That is a decision,
 not an optimisation: `/api/shares` is a query and the blueprint answers `503`
@@ -432,8 +443,9 @@ when it is the only thing able to explain the empty table**. #659's reserved
 
 `/api/config` carries #654's read-only **effective configuration** — there
 rather than on `/api/runtime`, one noun two consumers — listing the variables
-*the app reads* (not the ones compose sends) with `INFLUXDB_TOKEN` redacted by
-name, plus the published snapshot's declared `shares`.
+*the app reads* (not the ones compose sends) — a secret would be redacted **by
+name**, and since #700 the list holds none — plus the published snapshot's
+declared `shares`.
 
 **The config directory has no write path** (issue #711). `config_writer.py` and
 `events/editor.py` are deleted, together with the routes they served: the row
@@ -609,28 +621,41 @@ The application runs independent scheduled jobs on a single APScheduler:
   fully-closed market wave writes nothing — the non-trading-day gap is by design
   (#606) and there is no closed-day Parquet drip (#597).
 
-Writes to InfluxDB measurement `portfolio_metrics` with fields: `share_price`, `purchased_quantity`, `purchased_price`, `purchased_fee`, `owned_quantity`, `received_dividend`, `dividend_yield`, `pe_ratio`, `market_cap`
+**The price and the position stopped sharing a row** (issue #700). `quotes.py`
+is the market's own writer — `symbol_quote` and `price_point`, and nothing else
+writes them — and three things about it are decisions:
 
-**The InfluxDB path stays intact through one disposable adapter** (issue #699 is
-an *expand* step). `legacy_influx_shape.legacy_position_fields` renders the five
-v4 portfolio fields out of the v5 position state, and it is written to be
-deleted by the ticket that moves the price path off `influxdb_writer.py` —
-without it, changing the position's shape while P1 still reads InfluxDB would
-mean joining two stores to render one table. The mapping is arithmetic rather
-than a rename: `purchased_quantity` and `owned_quantity` **collapse onto the
-held quantity**, `purchased_price` is the derived unit cost — so
-`purchased_quantity × purchased_price` comes out to `cost_basis` exactly, and to
-zero on a sold position — and `purchased_fee` is **`None`, i.e. not written at
-all**. Not `0.0`: the provisioned Grafana dashboard reads that field with
-`lastNotNull` in a *Fees* panel, so a zero would tell a user who pays fees on
-every trade that they pay none, while an absent field keeps the last true value
-showing. `realized_gain` has no legacy field and is not smuggled into one.
+- **The series has no account dimension.** A market price belongs to no account,
+  so a query joining prices *per account* was a bug; the code already said so
+  without being listened to (`get_price_series` and `raw_series` queried by
+  symbol alone while the writer wrote one point per holding). The
+  `COALESCE(account, 'default')` shim dies with the column it rescued, and the
+  row count falls by **25 %** before any retention decision. The scrape therefore
+  writes **once per symbol**, and so does the backfill — where the old shape
+  would have fetched the same window from Yahoo once per account.
+- **Close only: no OHLC, no volume.** `price_open`/`high`/`low` were not dead
+  columns, they were columns that **lied**: the live writer set all three to the
+  close on every point it wrote.
+- **One maintenance rule, written once, covering three cases**: *any writer
+  inserting a `price_point` whose `ts >= last_price_ts` updates the `last_*`
+  columns in the same transaction*. The invariant is "the most recent point,
+  whatever its completeness" — the other spelling reintroduces the per-field
+  last-non-null pass the store exists to avoid. `symbol_quote` carries the
+  `last_*` columns rather than a second `latest` table because it is already one
+  row per symbol, written by the same module, refreshed at the same instant.
 
-**What no adapter can hide**, and it is worth naming rather than discovering:
-`purchased_quantity` changes meaning on a field the *historical* series also
-reads, so the "Investissement" curve steps once at the upgrade instant and the
-old points are never rewritten. It is the price of the expand step, bounded by
-the ticket that deletes the path.
+The **name of a share is not there**: it lives on `position`, written by the
+replay, because it comes from the owner's file and not from Yahoo — so renaming
+a share can no longer cut its history in two.
+
+The live writer **appends** and never rewrites its own timestamp; the range
+writer **deletes its own span then inserts**, which is where `price_point`'s
+uniqueness lives now that the table carries no key (ADR-0007). The span is the
+**batch's**, not the window that was asked for: a `DELETE` bounded by the request
+can erase a point the fetch did not bring back, so a chunk that comes back short
+after a Yahoo hiccup would silently lose the history it failed to re-supply.
+Timestamps stay truncated to the second, which is what makes re-running one
+cycle idempotent.
 
 ### Scheduled Jobs
 ```text
@@ -647,14 +672,14 @@ the ticket that deletes the path.
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
                                                    ▼
                                             ┌─────────────┐
-                                            │  InfluxDB 3 │
-                                            │  (database) │
+                                            │  the store  │
+                                            │  (DuckDB)   │
                                             └─────────────┘
 ```
 
 The two pure modules `scheduling.py` (cadence/market-context decisions) and
-`performance.py` (money-weighted returns) hold the testable logic — no InfluxDB
-or yfinance, `now` injected.
+`performance.py` (money-weighted returns) hold the testable logic — no store or
+yfinance, `now` injected.
 
 ## Configuration
 
@@ -932,9 +957,6 @@ nature. `main.ENVIRONMENT_INVENTORY` is the list `/api/config` publishes.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SB_STORE_DIR` | `~/.config/SuiviBourse` | Directory holding the DuckDB store `suivi-bourse.duckdb` (issue #696). Boot-scope by nature: the process must know it before it can open the store, and therefore before it can ask the store anything (ADR-0014). The default is today's mounted config directory; #679 moves it to a volume of its own. |
-| `INFLUXDB_HOST` | `http://influxdb:8181` | InfluxDB 3 host URL |
-| `INFLUXDB_TOKEN` | (required) | InfluxDB API token |
-| `INFLUXDB_DATABASE` | `suivi_bourse` | InfluxDB database name |
 | `SB_WEB_PORT` | `8080` | Port for the Flask web API and its `/health` route — the container healthcheck's only target (issue #651). Since #696 the probe **reaches the store**: "survive a database outage" has no subject once the database is a file this process opens (ADR-0015) |
 | `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint. Since #651 it unmounts a Flask route rather than skipping an HTTP server, so `false` also leaves `SB_METRICS_PORT` unbound |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint — a second gunicorn socket on the same app, so existing scrapers see no change |
@@ -949,9 +971,9 @@ nature. `main.ENVIRONMENT_INVENTORY` is the list `/api/config` publishes.
 app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
-├── influxdb_writer.py      # InfluxDB 3 client wrapper — the scheduler's writes + its 5 anchor reads
-├── influx_sql.py           # Shared SQL rule: COALESCE(account,'default') + escaping, NaN guard, UTC-Z (#659)
-├── influx_reads.py         # PortfolioReader — the UI read primitives; errors propagate (#659)
+├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
+├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert (#700)
+├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
 ├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
 ├── runtime_view.py         # Pure: records + snapshot + jobstore → pills and the banner (#668)
@@ -960,7 +982,6 @@ app/src/
 ├── ledger.py               # The import: import_source/symbol/event, provenance, revocation (#697)
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
-├── legacy_influx_shape.py  # DISPOSABLE: the v4 field shape out of the v5 position (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
 ├── settings.py             # The dials' write path: validate the whole body, write what moved (#701)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
@@ -995,10 +1016,11 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 
 ## Prometheus Metrics (legacy)
 
-For backward compatibility with pre-InfluxDB deployments, the app also exposes a
-Prometheus `/metrics` endpoint (enabled by default, `SB_METRICS_PORT`=8081). It
-runs in parallel with the InfluxDB writer and reflects only the current snapshot
-per share (no historical backfill). Disable it with `SB_PROMETHEUS_ENABLED=false`.
+`/metrics` is a **first-class product** and not a legacy half (ADR-0012): it is
+what makes the app usable headless, for whoever wants something very simple.
+Enabled by default on `SB_METRICS_PORT`=8081, it runs beside the store and
+reflects only the current snapshot per share (no historical backfill). Disable it
+with `SB_PROMETHEUS_ENABLED=false`.
 
 Since #651 it is a route on the Flask app, mounted with `DispatcherMiddleware`
 and served on its own gunicorn socket — same port, same path, no change for a
@@ -1046,56 +1068,65 @@ division PromQL does perfectly well and which stays honestly undefined on a
 position nobody holds. A sold position publishes `0` for both: a zero is a
 figure, and absence is kept for what could not be computed at all.
 
-## InfluxDB Data Model
+## The market and performance tables
 
-**Measurement**: `portfolio_metrics`
+**`symbol_quote`** — one row per symbol, written by the scrape (and, for the
+`last_*` columns, by the backfill's forward pass). It is the `latest` row *and*
+the instrument's attributes, which is why there is no second table.
 
-| Type | Name | Description |
-|------|------|-------------|
-| Tag | `share_name` | Display name |
-| Tag | `share_symbol` | Yahoo Finance ticker |
-| Tag | `account` | Account bucket (`default` unless accounts are declared); on v4.1+ writes only — pre-v4.1 points have no tag (`NULL`), read with `COALESCE(account, 'default')` |
-| Tag | `share_currency` | Currency (USD, EUR, etc.) |
-| Tag | `share_exchange` | Exchange (NMS, PAR, etc.) |
-| Tag | `quote_type` | Type (EQUITY, ETF, etc.) |
-| Field | `share_price` | Current/historical price |
-| Field | `purchased_quantity` | Quantity bought |
-| Field | `purchased_price` | Weighted average cost |
-| Field | `purchased_fee` | Total fees |
-| Field | `owned_quantity` | Currently owned |
-| Field | `received_dividend` | Total dividends |
-| Field | `dividend_yield` | Yield percentage |
-| Field | `pe_ratio` | P/E ratio |
-| Field | `market_cap` | Market capitalization |
-| Field | `volume` | Trading volume |
+| Column | Description |
+|---|---|
+| `symbol` | Yahoo Finance ticker; the primary key, referencing `symbol(symbol)` |
+| `currency` / `exchange` / `quote_type` | the instrument's attributes, refreshed on every successful fetch |
+| `dividend_yield` / `pe_ratio` / `market_cap` | the fundamentals, in **current value only** — yfinance supplies them on the live quote alone, so their v4 "history" was a comb of `NULL` |
+| `fetched_at` | when the attributes above were last refreshed |
+| `last_price_native` / `last_price_ts` | the `latest` row, maintained by the one rule above |
+| `last_price_converted` / `last_fx_rate` | #702's, and `NULL` until it lands |
+| `oldest_window_tried` | #703's persisted backward-pass anchor |
 
-**Measurement**: `account_metrics` (opt-in accounts only; daily series, points
-stamped at midnight of the day, idempotent upsert). The series is recomputed in
-full every cycle but only the **stale tail** is written — a steady cycle rewrites
-just today's point; the window widens back when backfill fills earlier prices or
-the events cache reloads. This keeps InfluxDB 3 Core from accumulating unbounded
-Parquet files (issue #597).
+**`price_point`** — the series, and the one table with **no key of any kind**
+(ADR-0007): a DuckDB ART index is a second copy of the data in resident memory,
+costing +563 MB on a 319 MB base. Uniqueness moves to the writers.
 
-| Type | Name | Description |
-|------|------|-------------|
-| Tag | `account` | Account id |
-| Tag | `account_type` | Account type (PEA, CTO, …) |
-| Tag | `account_currency` | Account currency |
-| Field | `cash_balance` | Per-account cash ledger balance |
-| Field | `holdings_value` | Σ(owned_quantity × price) over the account's symbols |
-| Field | `total_value` | `cash_balance + holdings_value` |
-| Field | `net_contributed` | Σ deposits − Σ withdrawals (fees excluded) |
-| Field | `xirr` | Money-weighted return (annualized); latest point only, absent without an external flow |
-| Field | `twr_index` | Time-weighted return, base 100 (per day) |
-| Field | `gain_absolu` | Absolute gain (`value − contributions`); latest point only |
+| Column | Description |
+|---|---|
+| `symbol` | the ticker. **No account**: a market price belongs to none (#700) |
+| `ts` | `TIMESTAMPTZ` in UTC, truncated to the second |
+| `price_native` | the close, in the security's own currency |
+| `price_converted` / `fx_rate` | #702's; `NULL` means *transient*, repaired by #704's lateral pass |
 
-**Measurement**: `portfolio_totals` — the same 7 perf fields at the **global**
-level, written with **no tag** (a synthetic account tag would double every
-`SUM()`). Written only when all accounts share one currency (FX is out of scope).
+**`account_metrics`** (opt-in accounts only; one row per calendar **day**, block
+upsert on `(account, day)`). The series is recomputed in full every cycle but
+only the **stale tail** is written today — a window that loses its subject with
+#707, since an upsert on a primary key does not grow the file the way a
+`DELETE`+`INSERT` replacement does (ADR-0011: 44,8 MB against 1,1).
+
+| Column | Description |
+|---|---|
+| `account` | account id, referencing `account(id)` |
+| `day` | the calendar day the figures describe — a `DATE`, never a midnight instant (#700) |
+| `cash_balance` | per-account cash ledger balance |
+| `holdings_value` | Σ(quantity × price) over the account's symbols |
+| `total_value` | `cash_balance + holdings_value` |
+| `net_contributed` | Σ deposits − Σ withdrawals (fees excluded) |
+| `xirr` | money-weighted return (annualized); latest point only, `NULL` without an external flow |
+| `twr_index` | time-weighted return, base 100 (per day) |
+| `gain_absolu` | absolute gain (`value − contributions`); latest point only |
+
+`account_type` and `account_currency` have **no column**: they were InfluxDB
+tags, and a page reads them from the declaration (ADR-0013), which is what the
+account *is* rather than what it was when a point was written.
+
+**`portfolio_totals`** — the same seven figures at the **global** level, keyed by
+`day` alone. A table of its own rather than a synthetic `account` row, and it
+stays one for a forward-looking reason rather than an inherited one: the
+constraint that made it untagged is gone, but its columns will diverge the day
+the global level carries something the per-account level does not. Written only
+when all accounts share one currency (FX is out of scope until #702).
 
 Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
 computed in `app/src/performance.py` — a pure module taking a `Timeline` and an
-injected `price_at` callable (no InfluxDB/yfinance). External flows
+injected `price_at` callable (no store, no yfinance). External flows
 (DEPOSIT/WITHDRAWAL/GRANT) are the contribution; internal flows (BUY/SELL/
 DIVIDEND/fees) are the performance — which is why a sale needs nothing here: the
 proceeds land in cash and `total_value` is continuous across it. A **GRANT is
@@ -1107,8 +1138,9 @@ price at its date at all.
 Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
 (labels `account_type`/`account_currency`) and global `sb_portfolio_*` gauges
 (no `account` label). Price history for `holdings_value` is read via
-`InfluxDBWriter.get_price_series(symbol)` — queried by `share_symbol` only, never
-by `account` (a market price belongs to no account).
+`quotes.price_series(store, symbol)` — the day's **last** point, queried by
+symbol, which is no longer a rule to remember: there is no account column to
+forget.
 
 ## Contributing
 

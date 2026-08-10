@@ -24,9 +24,10 @@ from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
 import ledger
-import legacy_influx_shape
+import perf_series
 import performance
 import positions
+import quotes
 import runtime_state
 import scheduling
 import settings as settings_module
@@ -39,8 +40,7 @@ from events import (
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
-from events.schemas import EventType, Portfolio, DEFAULT_ACCOUNT
-from influxdb_writer import InfluxDBWriter
+from events.schemas import EventType, Portfolio
 from prometheus_exporter import PrometheusExporter
 
 # Blank counts as unset throughout (see ``env_str``): compose renders an
@@ -54,8 +54,9 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 #: rather than a walk of ``logging.root.manager``, so turning the app to DEBUG
 #: cannot accidentally turn a dependency's own logger up with it.
 MANAGED_LOGGERS = (
-    'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'influxdb_writer',
-    'influx_reads', 'ledger', 'positions', 'prometheus_exporter', 'web.api',
+    'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
+    'quotes', 'perf_series', 'ledger', 'positions', 'prometheus_exporter',
+    'web.api',
 )
 
 
@@ -193,8 +194,14 @@ def env_flag(name: str, default: bool) -> bool:
 #: from inside the container the config directory is *always*
 #: ``/home/appuser/.config/SuiviBourse``.
 #:
-#: ``default`` is ``None`` for the two that have no scalar fallback: the token is
-#: required, and ``SB_STATIC_DIR`` simply has no value when unset.
+#: ``default`` is ``None`` for the one that has no scalar fallback:
+#: ``SB_STATIC_DIR`` simply has no value when unset.
+#:
+#: The ``secret`` flag has **no user since #700**, the three ``INFLUXDB_*``
+#: variables having left with the database they configured. It is kept because
+#: it is the redaction rule itself (redact **by name, never by value** — #654
+#: trap 12) and the rule is one line; deleting it would mean rediscovering it
+#: the first time this list carries a credential again.
 ENVIRONMENT_INVENTORY = (
     # name, default, secret
     # Read before the store can report anything, which is exactly why it is
@@ -205,9 +212,6 @@ ENVIRONMENT_INVENTORY = (
     # is one of the few things the process must know *before* it can open the
     # store, and therefore before it can ask the store anything.
     (store.STORE_DIR_VAR, store.DEFAULT_STORE_DIR, False),
-    ('INFLUXDB_HOST', 'http://influxdb:8181', False),
-    ('INFLUXDB_TOKEN', None, True),
-    ('INFLUXDB_DATABASE', 'suivi_bourse', False),
     # The two ports pass the test twice: they are read in the gunicorn master
     # before the app is imported, and a port changed from the interface would
     # cut the connection the interface arrived by.
@@ -248,6 +252,14 @@ _RETIRED_VARIABLES = {
     'SB_INGESTION_INTERVAL': None,
     'SB_SCRAPING_INTERVAL': None,
     'SB_CONFIG_MODE': None,
+    # The database itself left with #700, so these three name a server this
+    # version never contacts. Naming them is the whole point: an install
+    # upgrading from v4 keeps an InfluxDB container running beside the app,
+    # answering healthchecks, receiving nothing — and *"the token must be
+    # wrong"* is the conclusion a silent removal earns.
+    'INFLUXDB_HOST': None,
+    'INFLUXDB_TOKEN': None,
+    'INFLUXDB_DATABASE': None,
 }
 
 
@@ -613,6 +625,21 @@ class ConfigurationManager:
         """
         with self._write_lock:
             yield self._require_store()
+
+    @property
+    def store(self):
+        """The store this process reads through — the lock-free accessor.
+
+        A **read** path. Its writer sibling is :meth:`writing`, which is the
+        mutex, and the two are named apart on purpose: the scheduled jobs read
+        the price series far more often than they write it, and taking the
+        writers' mutex to answer *"what is the oldest stored point"* would
+        serialise a backfill's arithmetic against an ingestion for no reason.
+        What makes an individual statement safe under threads is the store's own
+        per-statement lock (:class:`store.Store`); what makes a *transaction*
+        safe is :meth:`writing`.
+        """
+        return self._require_store()
 
     def attach_store(self, opened_store) -> None:
         """Hand the manager the connection it should read the ledger through.
@@ -1010,14 +1037,16 @@ class SuiviBourseMetrics:
     """
 
     def __init__(self, config_manager: ConfigurationManager,
-                 influxdb_writer: Optional[InfluxDBWriter] = None,
                  prometheus_exporter: Optional[PrometheusExporter] = None,
                  recorder: Optional[runtime_state.RuntimeRecorder] = None):
         self.config_manager = config_manager
 
-        # InfluxDB writer
-        self.influxdb = influxdb_writer or InfluxDBWriter()
-        self.influxdb.connect()
+        # The store, reached through the manager and never held as a second
+        # reference (issue #700). It is what the ``InfluxDBWriter`` argument used
+        # to be, minus the injection point: there is one store per process, the
+        # manager already owns the connection *and* the mutex that keeps a
+        # transaction whole, and a second handle here would be a second answer to
+        # "which generation of the ledger is this job looking at".
 
         # Prometheus exporter (legacy /metrics endpoint, on by default for
         # backward compatibility). The HTTP server is started separately.
@@ -1076,10 +1105,11 @@ class SuiviBourseMetrics:
         # backfill for that account.
         self._backfill_complete: Dict[Tuple[str, str], datetime] = {}
 
-        # Incremental perf-series write watermark (issue #597). Rewriting the
-        # whole daily account_metrics/portfolio_totals series every scrape cycle
-        # lands new, never-compacted Parquet files on InfluxDB 3 Core, so file
-        # count grows without bound. Instead we rewrite only the stale tail:
+        # Incremental perf-series write watermark (issue #597). It exists
+        # because rewriting the whole daily series every cycle landed new,
+        # never-compacted Parquet files on InfluxDB 3 Core; the store upserts on
+        # a primary key instead, so the whole apparatus loses its subject and
+        # leaves with #707. Until then it rewrites only the stale tail:
         #   _perf_dirty_from — earliest day backfill has newly filled since the
         #     last write (None = nothing earlier than today is stale). Written by
         #     the backfill thread, read/reset by the scrape thread, so guarded by
@@ -1155,10 +1185,8 @@ class SuiviBourseMetrics:
                 # most recent daily bar with a NaN close for a while after a
                 # session ends (the daily aggregate lags the intraday data), so a
                 # blind tail(1) would reject a perfectly good series outside
-                # market hours — and, via _ensure_share_info, defer ALL backfill
-                # (both passes) whenever the market is closed, defeating the
-                # missed-session gap-fill (#627). Mirror the per-row NaN skip that
-                # _fetch_historical_data already does.
+                # market hours, defeating the missed-session gap-fill (#627).
+                # Mirror the per-row NaN skip _fetch_historical_data does.
                 valid_close = ticker_history['Close'].dropna()
                 if valid_close.empty:
                     app_logger.warning(f"No non-NaN close price for {symbol}, skipping")
@@ -1238,7 +1266,7 @@ class SuiviBourseMetrics:
                 prices = []
                 for idx, row in history.iterrows():
                     # Skip rows without a valid close price (holidays / partial
-                    # bars come back as NaN) so no NaN point reaches InfluxDB.
+                    # bars come back as NaN) so no NaN price reaches the store.
                     close = row['Close']
                     if pd.isna(close):
                         continue
@@ -1246,14 +1274,15 @@ class SuiviBourseMetrics:
                     ts = idx.to_pydatetime()
                     if ts.tzinfo is None:
                         ts = ts.replace(tzinfo=timezone.utc)
-                    prices.append({
-                        'timestamp': ts,
-                        'price': float(close),
-                        'price_open': float(row['Open']) if pd.notna(row['Open']) else None,
-                        'price_high': float(row['High']) if pd.notna(row['High']) else None,
-                        'price_low': float(row['Low']) if pd.notna(row['Low']) else None,
-                        'volume': int(row['Volume']) if 'Volume' in row and pd.notna(row['Volume']) else None
-                    })
+                    # The close, and only the close (issue #700). OHLC and
+                    # volume are not dropped for economy: the *live* writer set
+                    # open = high = low = close on every point it ever wrote, so
+                    # the four columns disagreed about what they meant depending
+                    # on which pass had filled them, and a candlestick drawn from
+                    # them showed a flat doji through every session the app was
+                    # up for. A column that lies is worse than one that is
+                    # missing.
+                    prices.append({'timestamp': ts, 'price': float(close)})
 
                 return prices
 
@@ -1277,8 +1306,8 @@ class SuiviBourseMetrics:
     def _update_share_prometheus(self, share, last_quote, info) -> None:
         """Update one share's **market** gauges from a fetched quote.
 
-        Kept independent of the InfluxDB write so ``/metrics`` stays populated
-        even if InfluxDB errors, and gated by the caller on **fetch success**
+        Kept independent of the store write so ``/metrics`` stays populated
+        even if the store errors, and gated by the caller on **fetch success**
         (price present) rather than the write/REGULAR gate — a closed-market
         restart must still leave the share gauges populated (design #609).
 
@@ -1313,41 +1342,55 @@ class SuiviBourseMetrics:
         except Exception as e:
             app_logger.error(f"Failed to publish the position gauges: {e}")
 
-    def _write_share_metrics(self, share, last_quote, info) -> bool:
-        """Write one share's live metrics point to InfluxDB.
+    @staticmethod
+    def _quote_attributes(info: Dict) -> Dict:
+        """The ``symbol_quote`` columns a fetched ``info`` supplies.
 
-        Guarded so a transient InfluxDB error on one share does not abort the
-        surrounding cycle. Callers only invoke this once the fetch succeeded, so
-        currency/exchange/quote_type tags are always present and the point lands
-        in the same enriched series as its history. Returns whether the point
-        was actually persisted, so callers can tell a real write from a
-        swallowed failure (issue #618 — an all-failed wave must not raise the
-        perf dirty flag).
+        The fundamentals are stored in **current value only** (spec #695 § 3):
+        yfinance gives them on the live quote alone, so v4's attempt at a history
+        of them was a comb of ``NULL`` down the price series that nothing ever
+        read as one.
+        """
+        yield_pct = info.get('dividendYield')
+        return {
+            'currency': info.get('currency'),
+            'exchange': info.get('exchange'),
+            'quote_type': info.get('quoteType'),
+            'dividend_yield': yield_pct * 100 if yield_pct is not None else None,
+            'pe_ratio': info.get('peRatio'),
+            'market_cap': info.get('marketCap'),
+        }
+
+    def _write_quote(self, symbol: str, last_quote, info, now: datetime) -> bool:
+        """Persist one live observation: ``symbol_quote`` + one ``price_point``.
+
+        **One call per symbol**, not one per holding (issue #700). The account
+        dimension left the price series with this ticket — a market price
+        belongs to no account — so a symbol held in three accounts is one row,
+        not three identical ones.
+
+        Guarded so a transient store error on one symbol does not abort the
+        surrounding cycle, and returns whether the point actually landed, so a
+        caller can tell a real write from a swallowed failure (issue #618 — an
+        all-failed wave must not raise the perf dirty flag).
+
+        Takes the writers' mutex: the write is a transaction on the one DuckDB
+        connection this process owns, and an ingestion running between its
+        ``BEGIN`` and its ``ROLLBACK`` in another thread would take this point
+        into its own rollback.
         """
         try:
-            self.influxdb.write_metrics(
-                share_name=share['name'],
-                share_symbol=share['symbol'],
-                account=share.get('account', DEFAULT_ACCOUNT),
-                share_price=last_quote,
-                **legacy_influx_shape.legacy_position_fields(share),
-                share_currency=info['currency'],
-                share_exchange=info['exchange'],
-                quote_type=info['quoteType'],
-                dividend_yield=info['dividendYield'] * 100 if info['dividendYield'] is not None else None,
-                pe_ratio=info['peRatio'],
-                market_cap=info['marketCap'],
-                volume=info['volume']
-            )
+            with self.config_manager.writing() as opened:
+                quotes.record_quote(opened, symbol, now, last_quote,
+                                    self._quote_attributes(info))
             return True
         except Exception as e:
-            app_logger.error(
-                f"Failed to write metrics for {share['symbol']}: {e}")
+            app_logger.error(f"Failed to write the quote for {symbol}: {e}")
             return False
 
     def expose_metrics(self):
         """
-        Expose the metrics for each stock share to InfluxDB.
+        Fetch and store every held symbol's quote, once.
 
         Synchronous whole-portfolio scrape, kept as a driver for the end-to-end
         harness; the scheduled runtime drives per-symbol jobs via
@@ -1356,25 +1399,30 @@ class SuiviBourseMetrics:
         Scoped to the **held** positions, like the scheduled path (issue #699):
         a position at zero quantity is one the app has stopped following, and
         this driver would otherwise be the one place a sold line still reached
-        Yahoo — and the one place an account that sold out still received a
-        point of zeros.
+        Yahoo.
         """
-        for share in self.shares:
-            share_symbol = share['symbol']
-            if not share.get('quantity'):
-                continue
+        now = datetime.now(timezone.utc)
+        # One snapshot for the whole pass, like every other job (issue #658):
+        # the symbol set and the holdings it publishes gauges for have to come
+        # from the same generation.
+        shares = self.shares
+        held = sorted({share['symbol'] for share in shares
+                       if share.get('symbol') and share.get('quantity')})
+        for symbol in held:
+            last_quote, info = self._fetch_ticker_data(symbol)
 
-            last_quote, info = self._fetch_ticker_data(share_symbol)
-            self._update_share_prometheus(share, last_quote, info)
+            # The Prometheus quote gauges stay per holding: a series identity
+            # there carries the account, and it is what tells two positions in
+            # the same share apart on a headless dashboard.
+            for share in shares:
+                if share.get('symbol') == symbol and share.get('quantity'):
+                    self._update_share_prometheus(share, last_quote, info)
 
-            # Skip writing when the fetch failed: writing portfolio fields with
-            # missing currency/exchange/quote_type tags would land them in a
-            # different InfluxDB series than the enriched (tagged) points.
             if last_quote is None or info is None:
                 app_logger.warning(
-                    f"No data fetched for {share_symbol}, skipping metrics write")
+                    f"No data fetched for {symbol}, skipping the quote write")
             else:
-                self._write_share_metrics(share, last_quote, info)
+                self._write_quote(symbol, last_quote, info, now)
 
     # ------------------------------------------------------------------ #
     # Market-aware per-symbol scheduling (issue #616)
@@ -1665,65 +1713,73 @@ class SuiviBourseMetrics:
                         app_logger.error(
                             f"Failed to remove quote gauges for {symbol}: {e}")
 
-    def _check_price_freshness(self, holdings: List[dict], live_price,
-                               now: datetime) -> Tuple[str, ...]:
+    def _check_price_freshness(self, symbol: str, holdings: List[dict],
+                               live_price, now: datetime) -> bool:
         """Price-freshness liveness sonde (issue #628, design #626).
 
         Runs only on the ``REGULAR`` write path (the caller's ``should_write``
-        gate): for each (symbol, account) holding, read the newest stored price
-        and advance the pure ``scheduling.price_freshness_step`` against this
-        series' remembered state. When the stored price has stayed frozen across
-        consecutive ``REGULAR`` cycles for at least ``staleness_horizon`` while
-        the live quote has moved, the writer is silently stale — emit a WARNING
-        and raise the ``sb_price_staleness`` gauge (cleared to 0 otherwise so it
+        gate): read the newest stored price and advance the pure
+        ``scheduling.price_freshness_step`` against this symbol's remembered
+        state. When the stored price has stayed frozen across consecutive
+        ``REGULAR`` cycles for at least ``staleness_horizon`` while the live
+        quote has moved, the writer is silently stale — emit a WARNING and raise
+        the ``sb_price_staleness`` gauge (cleared to 0 otherwise so it
         auto-recovers). Measuring over consecutive polling (not the stored
         point's raw age) is what keeps the first tick after an overnight/weekend
         close — legitimately hours old — from firing a false positive.
 
+        **Per symbol since #700**, where it was per ``(symbol, account)``: the
+        series it watches has no account dimension left, so the same value would
+        have been compared against the same memory once per holding.
+
+        **It reads ``price_native``**, and that is a rule rather than an
+        implementation detail (spec #695 § 7). The question is whether the
+        *writer* has gone silently stale; a converted price moves whenever the
+        exchange rate does, so watching one would let a currency tick pass for a
+        price that is still being refreshed — the sonde would answer "fresh"
+        about a symbol frozen since Tuesday.
+
         **Diagnostic only** — never changes scrape cadence, write gating, or the
         #617 dead-ticker backoff. Fully guarded: a read or metric error here must
-        never disturb the surrounding scrape cycle (the sonde complements #617
-        from the monitoring side, it is not part of the writer's control flow).
-        Called *before* this cycle's write so it reads the coverage as it stood,
-        not the point the write is about to refresh.
+        never disturb the surrounding scrape cycle. Called *before* this cycle's
+        write so it reads the coverage as it stood, not the point the write is
+        about to refresh.
 
-        Returns the accounts it flagged, so the caller can carry them into the
-        scrape record (issue #668). The signal was already computed here, by the
-        one thread that holds this series' sonde memory — a reader recomputing it
-        would need that memory *and* a fresh price, at a second instant, which is
-        the composed read #656 déc. 4 exists to forbid.
+        Returns whether it flagged the symbol, so the caller can carry it into
+        the scrape record (issue #668). The signal was already computed here, by
+        the one thread that holds this series' sonde memory — a reader
+        recomputing it would need that memory *and* a fresh price, at a second
+        instant, which is the composed read #656 déc. 4 exists to forbid.
         """
-        stale_accounts: List[str] = []
         if self.staleness_horizon <= 0:
-            return ()
-        for share in holdings:
-            symbol = share['symbol']
-            account = share.get('account', DEFAULT_ACCOUNT)
-            key = (symbol, account)
-            try:
-                stored_price = self.influxdb.get_newest_price(symbol, account=account)
-                with self._sonde_lock:
-                    new_state, stale = scheduling.price_freshness_step(
-                        self._sonde_state.get(key), live_price, stored_price,
-                        now, self.staleness_horizon)
-                    if new_state is None:
-                        self._sonde_state.pop(key, None)
-                    else:
-                        self._sonde_state[key] = new_state
+            return False
+        stale = False
+        try:
+            stored_price = quotes.last_price(self.config_manager.store, symbol)
+            with self._sonde_lock:
+                new_state, stale = scheduling.price_freshness_step(
+                    self._sonde_state.get(symbol), live_price, stored_price,
+                    now, self.staleness_horizon)
+                if new_state is None:
+                    self._sonde_state.pop(symbol, None)
+                else:
+                    self._sonde_state[symbol] = new_state
 
-                if stale:
-                    stale_accounts.append(account)
-                    app_logger.warning(
-                        f"Price-freshness sonde: stored price for {share['name']} "
-                        f"({symbol}, account={account}) frozen at {stored_price} "
-                        f"across REGULAR polling while the live quote is "
-                        f"{live_price} — the writer may be silently stale")
-                if self.prometheus is not None:
+            if stale:
+                app_logger.warning(
+                    f"Price-freshness sonde: the stored price for {symbol} is "
+                    f"frozen at {stored_price} across REGULAR polling while the "
+                    f"live quote is {live_price} — the writer may be silently "
+                    f"stale")
+            if self.prometheus is not None:
+                # The gauge keeps its per-holding identity: it is labelled by
+                # account like every other share gauge, so a headless dashboard
+                # can join it to the position gauges beside it.
+                for share in holdings:
                     self.prometheus.update_price_staleness(share, stale)
-            except Exception as e:
-                app_logger.debug(
-                    f"Price-freshness sonde failed for {symbol}: {e}")
-        return tuple(stale_accounts)
+        except Exception as e:
+            app_logger.debug(f"Price-freshness sonde failed for {symbol}: {e}")
+        return stale
 
     @staticmethod
     def _scrape_verdict(should_write: bool, state, wrote: bool,
@@ -1732,10 +1788,10 @@ class SuiviBourseMetrics:
 
         Four values, and the fourth is the one worth having.
         ``scheduling.decide`` resets the #617 counter whenever a price was
-        present, so an InfluxDB outage leaves a symbol polling happily at
-        ``base_interval`` with its counter at zero and **nothing persisted** —
-        the dead-ticker guard watches yfinance, by design, and cannot see this.
-        ``SCRAPE_WRITE_FAILED`` is where that shows up.
+        present, so a store that refuses the write leaves a symbol polling
+        happily at ``base_interval`` with its counter at zero and **nothing
+        persisted** — the dead-ticker guard watches yfinance, by design, and
+        cannot see this. ``SCRAPE_WRITE_FAILED`` is where that shows up.
 
         ``has_holdings`` guards the one race that would otherwise read as that
         failure: a symbol removed from the portfolio between this cycle's fetch
@@ -1754,20 +1810,22 @@ class SuiviBourseMetrics:
 
         Fetch once, then apply ``scheduling.decide`` to split the two gates:
         the write gate (not-closed AND price present) and the reschedule gate
-        (closed → sleep to next open, else ``base_interval``). Writes one point
-        per account holding this symbol. Re-arms only while the symbol is still
-        held (the in-flight half of the self-reschedule↔removal race guard).
+        (closed → sleep to next open, else ``base_interval``). Writes **one**
+        point — a market observation belongs to no account (issue #700) — and
+        re-arms only while the symbol is still held (the in-flight half of the
+        self-reschedule↔removal race guard).
         """
         injected_now = now is not None
         now = now or datetime.now(timezone.utc)
         last_quote, info = self._fetch_ticker_data(symbol)
         price_present = last_quote is not None and info is not None
 
-        # Held, per **(symbol, account)** — `_held_symbols` is per symbol, so a
-        # share still held in one account keeps its job while the account that
-        # sold out must stop being written (issue #699). Without the quantity
-        # here, that account goes on receiving a point of zeros every cycle and
-        # the shares page grows a phantom row under the symbol.
+        # The holdings this symbol has, which since #700 decide **whether** to
+        # write and no longer **how many times**: the price series carries no
+        # account, so a symbol held in three accounts is one point. What the
+        # list is still needed for is the Prometheus gauges, whose series
+        # identity does carry the account, and the "is anyone still holding
+        # this" question the write gate asks (issue #699).
         holdings = [s for s in self.shares
                     if s.get('symbol') == symbol and s.get('quantity')]
 
@@ -1800,27 +1858,24 @@ class SuiviBourseMetrics:
             else:
                 self._failure_counts.pop(symbol, None)
 
-        stale_accounts: Tuple[str, ...] = ()
-        accounts_written: List[str] = []
+        stale = False
         if should_write:
             # Price-freshness liveness sonde (issue #628): read the stored price
             # *before* this cycle's write refreshes it, so a silently stale writer
             # is caught. Purely diagnostic — never gates the write below.
-            stale_accounts = self._check_price_freshness(holdings, last_quote, now)
+            stale = self._check_price_freshness(symbol, holdings, last_quote, now)
 
-            wrote_live_data = False
-            for share in holdings:
-                wrote = self._write_share_metrics(share, last_quote, info)
-                if wrote:
-                    accounts_written.append(
-                        share.get('account', DEFAULT_ACCOUNT))
-                wrote_live_data = wrote_live_data or wrote
+            # One write, and only while something is held: a symbol whose last
+            # holding was sold between this cycle's fetch and here has nothing
+            # to record, and nothing wrong with it either.
+            wrote_live_data = bool(holdings) and self._write_quote(
+                symbol, last_quote, info, now)
             # A REGULAR write makes today's perf series stale: raise the global
             # live-write dirty bool so the gated perf job (issue #618) runs its
             # next cycle. One flag for the whole market-open wave — it coalesces
             # N symbols' writes into a single recompute by construction. Only
-            # when a point actually persisted — an all-failed Influx outage
-            # must not trigger a perf recompute with nothing new to read.
+            # when a point actually persisted — a wave that wrote nothing must
+            # not trigger a perf recompute with nothing new to read.
             if mark_dirty and wrote_live_data:
                 with self._perf_lock:
                     self._perf_dirty_live = True
@@ -1852,10 +1907,10 @@ class SuiviBourseMetrics:
                 should_write, state, wrote_live_data, bool(holdings)),
             failure_count=new_failure_count,
             next_delay=next_delay,
-            accounts_written=tuple(accounts_written),
-            stale_accounts=stale_accounts,
+            wrote=wrote_live_data,
+            stale=stale,
             error=(
-                f"No point persisted for {symbol}: InfluxDB refused the write"
+                f"No point persisted for {symbol}: the store refused the write"
                 if should_write and not wrote_live_data and holdings else None),
         ))
 
@@ -2001,10 +2056,11 @@ class SuiviBourseMetrics:
 
     def backfill(self):
         """
-        Backfill historical price data for all shares, in both directions.
-        This runs as a third scheduled job, progressively filling gaps.
+        Backfill historical price data, one series per **symbol**, in both
+        directions. This runs as its own scheduled job, progressively filling
+        gaps.
 
-        For each share, delegates to ``_backfill_share`` which runs two
+        For each symbol, delegates to ``_backfill_symbol`` which runs two
         independent passes (issue #626):
           * Backward: extend the series toward the first BUY date, one
             ``backfill_chunk_days`` chunk per cycle, until ``_backfill_complete``
@@ -2014,6 +2070,13 @@ class SuiviBourseMetrics:
             watermark.
         Fetches one chunk (default: 1 year) of history per direction and rate
         limits between requests.
+
+        **Per symbol and no longer per position** (issue #700). The unit was the
+        ``(account, symbol)`` pair because the *series* was, and a price series
+        with no account dimension left would have made a share held in three
+        accounts fetch the same window from Yahoo three times a cycle — three
+        times the rate-limit exposure, on the job that already emits more
+        requests than anything else in the app.
         """
         # One snapshot for the whole cycle (issue #658). Shares, events and
         # accounts have to come from the same generation: reading them one call
@@ -2028,25 +2091,33 @@ class SuiviBourseMetrics:
         app_logger.info("Starting backfill cycle")
         backfilled_count = 0
 
-        # A single replay per cycle serves every symbol and every date; each
-        # per-date lookup below is a forward-fill on this timeline, never a
-        # re-replay (backfill drops from O(days × events) to O(events + days)).
-        # Positions are keyed per (account, symbol) unconditionally since #698,
-        # so a symbol held in two accounts backfills each series independently
-        # without anyone having to ask whether accounts were declared.
-        events = snapshot.events
-        timeline = EventAggregator().replay(events) if events else None
+        # The symbols the ledger names, sold ones included: the backward pass
+        # keeps running on a position the owner has closed, because the chart
+        # wants the history of a line they held. What is scoped to the *held*
+        # ones is the forward pass alone (see :meth:`_backfill_symbol`).
+        # #703 widens the set again, to the union over the whole timeline.
+        symbols = sorted({share['symbol'] for share in snapshot.shares
+                          if share.get('symbol')})
+        # Read off **this cycle's snapshot** and not through ``_held_symbols``,
+        # which would take a second one: shares, events and accounts have to
+        # come from the same generation (issue #658), and a reload landing
+        # between the two reads would pair one cycle's symbol set with another
+        # cycle's holdings.
+        held = {share['symbol'] for share in snapshot.shares
+                if share.get('symbol') and share.get('quantity')}
 
-        for share in snapshot.shares:
-            backfilled_count += self._backfill_share(share, snapshot, timeline)
+        for symbol in symbols:
+            backfilled_count += self._backfill_symbol(
+                symbol, snapshot, symbol in held)
 
         if backfilled_count > 0:
             app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-    def _backfill_share(self, share, snapshot: ConfigSnapshot, timeline) -> int:
-        """Backfill one share in both directions (issue #626).
+    def _backfill_symbol(self, symbol: str, snapshot: ConfigSnapshot,
+                         held: bool) -> int:
+        """Backfill one symbol in both directions (issue #626).
 
         The **backward** pass extends the series toward the first BUY date and
         stops once ``_backfill_complete`` is set; the **forward** pass recovers a
@@ -2065,9 +2136,6 @@ class SuiviBourseMetrics:
         the pass fetches ``[newest → now]`` from Yahoo **every day, forever**,
         for every symbol the user has ever sold out of.
         """
-        symbol = share['symbol']
-        account = share.get('account', DEFAULT_ACCOUNT)
-
         # Get the target date (first BUY), from this cycle's snapshot.
         first_buy_date = snapshot.first_buy_date(symbol)
         if not first_buy_date:
@@ -2076,7 +2144,7 @@ class SuiviBourseMetrics:
             # ordinary case, and it has no history to reach back to — distinct
             # from "complete", which it never started.
             self.recorder.record_backfill(runtime_state.BackfillRecord(
-                symbol=symbol, account=account,
+                symbol=symbol,
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
                 terminal=runtime_state.TERMINAL_NO_BUY))
@@ -2095,89 +2163,20 @@ class SuiviBourseMetrics:
         # Backward pass — skip once complete to avoid refetching the same window
         # every cycle (e.g. a first BUY on a non-trading day never lets oldest
         # reach it exactly). This skip must NOT gate the forward pass below.
-        if self._backfill_complete.get((symbol, account)) == first_buy_date:
-            app_logger.debug(f"Backfill already complete for {symbol} ({account})")
+        if self._backfill_complete.get(symbol) == first_buy_date:
+            app_logger.debug(f"Backfill already complete for {symbol}")
         else:
-            written += self._backfill_backward(share, first_buy_date, timeline)
+            written += self._backfill_backward(symbol, first_buy_date)
 
         # Forward pass — independent of the backward-completion watermark, but
         # not of the holding: there is no live writer to catch up with once the
         # position is sold out.
-        if share.get('quantity'):
-            written += self._backfill_forward(share, timeline)
+        if held:
+            written += self._backfill_forward(symbol)
         return written
 
-    def _ensure_share_info(self, symbol: str) -> Optional[Dict]:
-        """Resolve the share info (tags) so historical points share the same
-        series identity as live scrape points.
-
-        Fetches it if the scrape job has not populated the cache yet; returns
-        ``None`` (the caller defers this cycle) if still unavailable.
-        """
-        info = self._share_info_cache.get(symbol)
-        if not info:
-            self._fetch_ticker_data(symbol)
-            info = self._share_info_cache.get(symbol)
-        if not info:
-            app_logger.warning(
-                f"No share info available for {symbol}, deferring backfill")
-        return info
-
-    def _enrich_and_write(self, share, info, prices, perf_from_date,
-                          timeline) -> int:
-        """Enrich a fetched price chunk with portfolio state and write it.
-
-        Shared by the backward and forward passes so recovered points carry the
-        **same** enriched series identity/tags as live and backward-filled ones,
-        letting the perf ``holdings_value`` pick them up on the next recompute.
-        Guarded like ``expose_metrics`` so a transient InfluxDB error on one
-        share does not abort backfilling the remaining shares. Returns the number
-        of points written.
-        """
-        symbol = share['symbol']
-        name = share['name']
-        account = share.get('account', DEFAULT_ACCOUNT)
-
-        # Enrich price data with portfolio state at each date, read from the
-        # single per-cycle timeline. Many price points (esp. hourly) share the
-        # same calendar day and thus the same state; look up once per date.
-        if timeline is not None:
-            state_by_date: Dict = {}
-            for price_point in prices:
-                ts = price_point['timestamp']
-                # Convert datetime to date for the timeline lookup
-                point_date = ts.date() if isinstance(ts, datetime) else ts
-                if point_date not in state_by_date:
-                    state_by_date[point_date] = timeline.position_at(
-                        account, symbol, point_date)
-                state = state_by_date[point_date]
-                if state:
-                    price_point.update(
-                        legacy_influx_shape.legacy_position_fields(state))
-
-        try:
-            written = self.influxdb.write_historical_prices(
-                share_name=name,
-                share_symbol=symbol,
-                prices=prices,
-                share_currency=info.get('currency'),
-                share_exchange=info.get('exchange'),
-                quote_type=info.get('quoteType'),
-                account=account
-            )
-            # Newly filled prices change holdings_value for that window; re-arm
-            # the perf series so the next recompute rewrites the tail from here
-            # (issue #597).
-            if written > 0:
-                self._mark_perf_dirty(perf_from_date)
-            return written
-        except Exception as e:
-            app_logger.error(
-                f"Failed to write historical prices for {symbol}: {e}")
-            return 0
-
-    def _fetch_and_store(self, share, info, start_date, end_date, timeline):
-        """Fetch one ``[start, end]`` chunk and, if non-empty, enrich + write it.
+    def _fetch_and_store(self, symbol, start_date, end_date):
+        """Fetch one ``[start, end]`` chunk and, if non-empty, write it.
 
         The shared tail of both backfill passes (they differ only in window
         sizing and how they treat an empty window). Returns ``(prices, written)``:
@@ -2188,23 +2187,38 @@ class SuiviBourseMetrics:
           * otherwise ``prices`` is the fetched rows and ``written`` the count
             persisted.
 
+        The **enrichment is gone with the shape it fed** (issue #700). Every
+        chunk used to be walked date by date so each point could be stamped with
+        the position held that day, because a price point carried position
+        fields; a market observation says nothing about who held what, so the
+        write is now the prices and only the prices.
+
         Rate-limits (``backfill_delay``) after any completed fetch — empty or
         written — but not after a fetch failure.
         """
-        prices = self._fetch_historical_data(
-            share['symbol'], start_date, end_date)
+        prices = self._fetch_historical_data(symbol, start_date, end_date)
         if prices is None:
             return None, 0
         if not prices:
             time.sleep(self.backfill_delay)
             return prices, 0
-        written = self._enrich_and_write(
-            share, info, prices, start_date.date(), timeline)
+
+        written = 0
+        try:
+            with self.config_manager.writing() as opened:
+                written = quotes.record_history(opened, symbol, prices)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to write historical prices for {symbol}: {e}")
+        # Newly filled prices change holdings_value for that window; re-arm the
+        # perf series so the next recompute rewrites the tail from here (#597).
+        if written > 0:
+            self._mark_perf_dirty(start_date.date())
         # Rate limit between symbols
         time.sleep(self.backfill_delay)
         return prices, written
 
-    def _backfill_backward(self, share, first_buy_date, timeline) -> int:
+    def _backfill_backward(self, symbol: str, first_buy_date) -> int:
         """Backward pass: extend the series toward the first BUY date, one chunk
         (``backfill_chunk_days``) per cycle. Returns points written this cycle.
 
@@ -2216,26 +2230,15 @@ class SuiviBourseMetrics:
         attempted, the two dates the progress bar is drawn from, and — through
         the recorder's fold — how many consecutive cycles have now failed.
         """
-        symbol = share['symbol']
-        name = share['name']
-        account = share.get('account', DEFAULT_ACCOUNT)
-
         def publish(**fields) -> None:
             self.recorder.record_backfill(runtime_state.BackfillRecord(
-                symbol=symbol, account=account,
+                symbol=symbol,
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
                 target=first_buy_date, **fields))
 
-        info = self._ensure_share_info(symbol)
-        if info is None:
-            # Not counted as a failure: the tags are missing, not the history,
-            # and the next scrape of this symbol supplies them.
-            publish(skipped=runtime_state.SKIP_NO_SHARE_INFO)
-            return 0
-
-        # Get the oldest data point in InfluxDB for this (symbol, account)
-        oldest_timestamp = self.influxdb.get_oldest_timestamp(symbol, account=account)
+        # The oldest stored point of this symbol's series.
+        oldest_timestamp = quotes.oldest_ts(self.config_manager.store, symbol)
 
         # Determine if we need to backfill (compare at day granularity)
         if oldest_timestamp is not None:
@@ -2243,9 +2246,9 @@ class SuiviBourseMetrics:
             # Compare dates only to avoid tiny time windows
             if oldest_timestamp.date() <= first_buy_date.date():
                 app_logger.debug(
-                    f"Backfill complete for {symbol} ({account}): "
+                    f"Backfill complete for {symbol}: "
                     f"oldest={oldest_timestamp.date()}, target={first_buy_date.date()}")
-                self._backfill_complete[(symbol, account)] = first_buy_date
+                self._backfill_complete[symbol] = first_buy_date
                 publish(oldest=oldest_timestamp,
                         terminal=runtime_state.TERMINAL_COMPLETE)
                 return 0
@@ -2275,10 +2278,9 @@ class SuiviBourseMetrics:
             return 0
 
         app_logger.info(
-            f"Backfilling {name} ({symbol}): {start_date.date()} to {end_date.date()}")
+            f"Backfilling {symbol}: {start_date.date()} to {end_date.date()}")
 
-        prices, written = self._fetch_and_store(
-            share, info, start_date, end_date, timeline)
+        prices, written = self._fetch_and_store(symbol, start_date, end_date)
 
         if prices is None:
             app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
@@ -2295,9 +2297,9 @@ class SuiviBourseMetrics:
             # mark the symbol complete to avoid refetching this window forever.
             if start_date <= first_buy_date:
                 app_logger.debug(
-                    f"Backfill complete for {symbol} ({account}): reached first BUY "
+                    f"Backfill complete for {symbol}: reached the first BUY "
                     f"date with no earlier trading data")
-                self._backfill_complete[(symbol, account)] = first_buy_date
+                self._backfill_complete[symbol] = first_buy_date
                 publish(oldest=oldest_timestamp, window=(start_date, end_date),
                         terminal=runtime_state.TERMINAL_COMPLETE)
                 return written
@@ -2312,7 +2314,7 @@ class SuiviBourseMetrics:
                 written=written)
         return written
 
-    def _backfill_forward(self, share, timeline) -> int:
+    def _backfill_forward(self, symbol: str) -> int:
         """Forward pass: recover a session missed while the app was down by
         fetching ``[newest, now]`` (issue #627).
 
@@ -2324,15 +2326,11 @@ class SuiviBourseMetrics:
         stays the sole writer of the present with no duplicate at the seam.
         Returns points written this cycle.
         """
-        symbol = share['symbol']
-        name = share['name']
-        account = share.get('account', DEFAULT_ACCOUNT)
-
-        newest = self.influxdb.get_newest_timestamp(symbol, account=account)
+        newest = quotes.newest_ts(self.config_manager.store, symbol)
 
         def publish(**fields) -> None:
             self.recorder.record_backfill(runtime_state.BackfillRecord(
-                symbol=symbol, account=account,
+                symbol=symbol,
                 direction=runtime_state.FORWARD,
                 at=datetime.now(timezone.utc),
                 newest=newest, **fields))
@@ -2352,17 +2350,11 @@ class SuiviBourseMetrics:
             return 0
         start_date, end_date = window
 
-        info = self._ensure_share_info(symbol)
-        if info is None:
-            publish(skipped=runtime_state.SKIP_NO_SHARE_INFO)
-            return 0
-
         app_logger.info(
-            f"Forward-filling {name} ({symbol}): {start_date.date()} to {end_date.date()}")
+            f"Forward-filling {symbol}: {start_date.date()} to {end_date.date()}")
 
         # Same granularity/chunking as the backward pass: 1h within 730d, 1d beyond.
-        prices, written = self._fetch_and_store(
-            share, info, start_date, end_date, timeline)
+        prices, written = self._fetch_and_store(symbol, start_date, end_date)
 
         if prices is None:
             app_logger.warning(
@@ -2396,10 +2388,10 @@ class SuiviBourseMetrics:
 
         self.expose_metrics()
 
-    @staticmethod
-    def _midnight(day) -> datetime:
-        """Midnight UTC of ``day`` — never stamped in the future."""
-        return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    # ``_midnight`` left with the type it worked around (issue #700). A perf
+    # point was stamped at midnight UTC because InfluxDB had one kind of time
+    # and every reader then had to un-stamp it; the store has two and never
+    # mixes them, so the day is a ``DATE`` and there is nothing to convert.
 
     @staticmethod
     def _value_kwargs(dp, last: bool, perf) -> dict:
@@ -2445,16 +2437,20 @@ class SuiviBourseMetrics:
         series via the performance module.
 
         Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The full
-        series (earliest event date → today, one point per calendar day at
-        midnight) is recomputed every cycle, but only the **stale tail** is
-        written — a steady cycle rewrites just today's point. This is the fix for
-        issue #597: on InfluxDB 3 Core a full-series rewrite every scrape lands
-        new, never-compacted Parquet files, so file count grew without bound. The
-        write window widens back to an earlier day when backfill fills earlier
-        prices (``_mark_perf_dirty``) or when the events cache is reloaded (a new
-        events list object => full rewrite). Money-weighted performance (xirr /
-        gain_absolu / twr_index) comes from
-        ``performance.py``; xirr / gain_absolu land only on the latest point.
+        series (earliest event date → today, one point per calendar day) is
+        recomputed every cycle, but only the **stale tail** is written — a steady
+        cycle rewrites just today's point. The write window widens back to an
+        earlier day when backfill fills earlier prices (``_mark_perf_dirty``) or
+        when the events cache is reloaded (a new events list object => full
+        rewrite). Money-weighted performance (xirr / gain_absolu / twr_index)
+        comes from ``performance.py``; xirr / gain_absolu land only on the
+        latest point.
+
+        The **incremental window survives this ticket and dies in #707**, where
+        it loses its subject: it exists because a full rewrite on InfluxDB 3 Core
+        landed never-compacted Parquet files and grew the file without bound,
+        and an upsert on a primary key does not (ADR-0011). What changed here is
+        only where the rows land.
 
         ``snapshot`` is this cycle's configuration, passed down by
         ``recompute_perf`` so the gate and the recompute cannot straddle a
@@ -2472,10 +2468,11 @@ class SuiviBourseMetrics:
         timeline = EventAggregator().replay(events)
 
         # Injected price source: per-symbol daily closes, forward-filled. The
-        # performance module never touches InfluxDB — it only calls price_at.
+        # performance module never touches the store — it only calls price_at.
+        opened = self.config_manager.store
         symbols = {s['symbol'] for s in snapshot.shares if s.get('symbol')}
         price_pairs = {
-            sym: sorted(self.influxdb.get_price_series(sym).items())
+            sym: sorted(quotes.price_series(opened, sym).items())
             for sym in symbols
         }
 
@@ -2525,18 +2522,18 @@ class SuiviBourseMetrics:
                     account=account.id,
                     account_type=account.type,
                     account_currency=account.currency,
-                    timestamp=self._midnight(dp.date),
+                    day=dp.date,
                     **self._value_kwargs(dp, last, perf),
                 )
                 acc_points.append(pt)
                 if last:
                     latest_by_account[account.id] = pt
-        # --- portfolio_totals (global, untagged; only if single currency) ---
+        # --- portfolio_totals (global; only if single currency) -------------
         total_points = []
         if total is not None:
             total_points = [
                 PortfolioTotalPoint(
-                    timestamp=self._midnight(dp.date),
+                    day=dp.date,
                     **self._value_kwargs(dp, i == len(total.daily) - 1, total),
                 )
                 for i, dp in enumerate(total.daily)
@@ -2548,10 +2545,9 @@ class SuiviBourseMetrics:
         # write error so the next cycle retries the same slice; today's point is
         # rewritten every cycle anyway, so only a sub-today tail needs re-arming.
         try:
-            if acc_points:
-                self.influxdb.write_account_metrics(acc_points)
-            if total_points:
-                self.influxdb.write_portfolio_totals(total_points)
+            with self.config_manager.writing() as opened:
+                perf_series.write_account_metrics(opened, acc_points)
+                perf_series.write_portfolio_totals(opened, total_points)
         except Exception:
             if write_from < today:
                 self._mark_perf_dirty(write_from)
@@ -2595,9 +2591,15 @@ class SuiviBourseMetrics:
         self.scrape()
 
     def close(self):
-        """Close connections."""
-        if self.influxdb:
-            self.influxdb.close()
+        """Release what this object owns — which since #700 is nothing.
+
+        The InfluxDB client left with the database, and the store's connection
+        was never this object's to close: it belongs to the ``Runtime`` and is
+        closed **last** by :func:`shutdown_runtime`, once nothing is left running
+        that could still write into it. The method survives because
+        ``worker_exit`` calls it and a shutdown hook that has to know which
+        objects have a teardown is a hook that will one day forget one.
+        """
 
 
 # ---------------------------------------------------------------------------
@@ -2625,8 +2627,7 @@ class Runtime:
     :func:`build_runtime` supplies the pure half — configuration manager,
     Prometheus registry, and the *path* the store was proved openable at — and
     :func:`start_runtime` then attaches the half that could not have survived a
-    fork: the store connection, the InfluxDB client (inside
-    ``SuiviBourseMetrics``), the scheduler and its threads, the watchdog
+    fork: the store connection, the scheduler and its threads, the watchdog
     observer.
     """
 
@@ -2750,15 +2751,14 @@ def build_runtime() -> Runtime:
 def start_runtime(runtime: Runtime) -> Runtime:
     """Worker-side boot (``post_fork``): everything a fork would have broken.
 
-    The InfluxDB client (a connection pool the master must not share), the
-    scheduler's threads, the watchdog observer, and the first ``ingest()`` —
-    which is also what arms the per-symbol scrape jobs (issue #616), their
-    immediate first fire being the bootstrap.
+    The store connection, the scheduler's threads, the watchdog observer, and
+    the first ``ingest()`` — which is also what arms the per-symbol scrape jobs
+    (issue #616), their immediate first fire being the bootstrap.
     """
     # The worker's own store connection (issue #696). The master proved the file
     # openable and closed it; this is the connection that lives for the process,
-    # and it belongs on this side of the fork for the same reason the InfluxDB
-    # pool does.
+    # and it is the one thing here a ``fork()`` could not have carried: DuckDB's
+    # buffers are not something two processes may inherit from one another.
     if runtime.store_path is not None:
         runtime.store = store.open_store(runtime.store_path)
         # The ledger reads through this one from here on (issue #697). The
@@ -2776,9 +2776,11 @@ def start_runtime(runtime: Runtime) -> Runtime:
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']
 
-    # Init SuiviBourseMetrics (connects to InfluxDB). The exporter comes from the
-    # master so the gauges the Flask app already publishes are the ones the
-    # scrape path updates; passing None when it is disabled leaves it disabled.
+    # Init SuiviBourseMetrics. The exporter comes from the master so the gauges
+    # the Flask app already publishes are the ones the scrape path updates;
+    # passing None when it is disabled leaves it disabled. The store is not
+    # passed at all — the manager owns it, and with it the mutex that keeps a
+    # write whole against a concurrent ingestion.
     sb_metrics = SuiviBourseMetrics(
         runtime.config_manager,
         prometheus_exporter=runtime.prometheus,

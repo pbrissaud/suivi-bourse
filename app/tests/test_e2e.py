@@ -1,20 +1,21 @@
 """
 True end-to-end wiring tests for SuiviBourse.
 
-These exercise the *whole* application with every external boundary mocked:
+These exercise the *whole* application with **one** external boundary faked:
+
   * yfinance  -> monkeypatched ``main.yf.Ticker`` returning canned frames/info
-  * InfluxDB  -> ``MagicMock(spec=InfluxDBWriter)`` (the ``mock_influx`` fixture)
   * time.sleep-> no-op (so rate-limit pauses never actually sleep)
 
-A real ``ConfigurationManager`` reads a real CSV written into ``tmp_path`` and a
-real ``SuiviBourseMetrics`` drives the full pipeline
-loader -> validator -> aggregator -> scrape / backfill. Assertions compare the
-values the writer receives against portfolio state hand-computed from the CSV.
+A real ``ConfigurationManager`` reads a real CSV written into ``tmp_path``, a
+real store holds what comes of it, and a real ``SuiviBourseMetrics`` drives the
+full pipeline loader -> validator -> aggregator -> scrape / backfill.
 
-This is the seam v5 descends from (spec #695) and the one thing it changes is
-the second line above: the store replaces the mock, and the assertions move
-from *what the job meant to write* to *what the store contains*. Until the store
-gains a writer, the mock stays.
+This is the seam v5 descends from (spec #695), and #700 completes it: the mock
+of the writer is gone with the writer, so the assertions moved from *what the
+job meant to write* to *what the store contains*. That is the whole difference
+between the two, and it is not a matter of taste — a transaction and an upsert
+are exactly the kind of thing a mock reports as having happened and only a
+database reports as correct.
 
 No network is ever touched.
 """
@@ -25,6 +26,9 @@ import pytest
 
 import ledger
 import main
+import portfolio_view
+import quotes
+import store_reads
 from main import ConfigurationManager, SuiviBourseMetrics
 
 from datetime import datetime, timezone
@@ -117,26 +121,21 @@ def _config_with_default_source(tmp_path, csv_text=EVENTS_CSV):
 # --------------------------------------------------------------------------- #
 # 1. The full chain: loader -> validator -> aggregator -> scrape
 # --------------------------------------------------------------------------- #
-def test_the_full_chain_drives_write_metrics(
-    tmp_path, monkeypatch, fake_ticker, mock_influx
+def test_the_full_chain_writes_the_position_and_the_quote(
+    tmp_path, monkeypatch, fake_ticker
 ):
-    """The whole pipeline feeds correct portfolio state into write_metrics."""
+    """The whole pipeline: the ledger replays into ``position``, the scrape into
+    ``symbol_quote`` and ``price_point``, and the two only meet at read time."""
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
     config_manager = _config_with_declared_source(tmp_path)
 
-    # Sanity: the source really came from settings.yaml.
     assert config_manager.get_events_source().endswith("/events")
 
-    sb = SuiviBourseMetrics(
-        config_manager, influxdb_writer=mock_influx
-    )
+    sb = SuiviBourseMetrics(config_manager)
 
-    # __init__ connected to (mocked) InfluxDB and loaded shares through the
-    # real loader -> validator -> aggregator chain.
-    mock_influx.connect.assert_called_once()
-
+    # The shares came through the real loader -> validator -> aggregator chain.
     shares_by_symbol = {s["symbol"]: s for s in sb.shares}
     assert set(shares_by_symbol) == {"AAPL", "MSFT"}
 
@@ -146,61 +145,66 @@ def test_the_full_chain_drives_write_metrics(
     assert aapl["realized_gain"] == pytest.approx(3 * 190.0 - 2.0 - 3 * AAPL_UNIT_COST)
     assert aapl["received_dividend"] == pytest.approx(2.4)
 
-    # Drive the real scrape (fetch prices -> write metrics).
+    # Drive the real scrape (fetch prices -> write the quote and the point).
     sb.scrape()
 
-    calls = {
-        c.kwargs["share_symbol"]: c.kwargs
-        for c in mock_influx.write_metrics.call_args_list
-    }
-    assert set(calls) == {"AAPL", "MSFT"}
+    opened = config_manager._require_store()
+    prices = dict(opened.query(
+        "SELECT symbol, price_native FROM price_point ORDER BY symbol"))
+    assert prices == {"AAPL": pytest.approx(190.0), "MSFT": pytest.approx(400.0)}
 
-    aapl_call = calls["AAPL"]
-    assert aapl_call["share_name"] == "Apple Inc"
-    assert aapl_call["share_price"] == pytest.approx(190.0)  # fake ticker close
-    # The InfluxDB path is intact, fed through the disposable adapter (#699):
-    # the two quantities collapse onto the held one and the fees have moved
-    # into the basis, so `quantity × price` is the cost basis exactly.
-    assert aapl_call["purchased_quantity"] == pytest.approx(18.0)
-    assert aapl_call["purchased_price"] == pytest.approx(AAPL_BASIS / 18.0)
-    assert aapl_call["purchased_fee"] is None       # absent, never a false zero
-    assert aapl_call["owned_quantity"] == pytest.approx(18.0)
-    assert (aapl_call["purchased_quantity"] *
-            aapl_call["purchased_price"]) == pytest.approx(AAPL_BASIS)
-    assert aapl_call["received_dividend"] == pytest.approx(2.4)
-    # Enrichment tags/fields sourced from ticker.info (fake_ticker defaults).
-    assert aapl_call["share_currency"] == "USD"
-    assert aapl_call["share_exchange"] == "NMS"
-    assert aapl_call["quote_type"] == "EQUITY"
-    assert aapl_call["dividend_yield"] == pytest.approx(0.52)  # 0.0052 * 100
+    aapl_quote = quotes.read_quote(opened, "AAPL")
+    assert aapl_quote["currency"] == "USD"
+    assert aapl_quote["exchange"] == "NMS"
+    assert aapl_quote["quote_type"] == "EQUITY"
+    assert aapl_quote["dividend_yield"] == pytest.approx(0.52)  # 0.0052 * 100
+    assert aapl_quote["last_price_native"] == pytest.approx(190.0)
 
-    msft_call = calls["MSFT"]
-    assert msft_call["share_name"] == "Microsoft"
-    assert msft_call["share_price"] == pytest.approx(400.0)
-    assert msft_call["purchased_quantity"] == pytest.approx(5.0)
-    assert msft_call["purchased_price"] == pytest.approx(MSFT_BASIS / 5.0)
-    assert msft_call["purchased_fee"] is None
-    assert msft_call["owned_quantity"] == pytest.approx(5.0)
-    assert msft_call["received_dividend"] == pytest.approx(5.0)
+    # And the position is what the replay wrote, on its own table. The name is
+    # here and not on the quote: it comes from the owner's file, not from Yahoo
+    # (#700), which is why renaming a share cannot cut its history in two.
+    rows = {row[0]: row for row in opened.query(
+        "SELECT symbol, name, quantity, cost_basis, realized_gain, "
+        "       received_dividend FROM position ORDER BY symbol")}
+    assert rows["AAPL"][1] == "Apple Inc"
+    assert rows["AAPL"][2] == pytest.approx(18.0)
+    assert rows["AAPL"][3] == pytest.approx(AAPL_BASIS)
+    assert rows["AAPL"][5] == pytest.approx(2.4)
+    assert rows["MSFT"][1] == "Microsoft"
+    assert rows["MSFT"][3] == pytest.approx(MSFT_BASIS)
+    assert rows["MSFT"][5] == pytest.approx(5.0)
+
+    # The two halves meet only here, and the join is the shares page (#700).
+    shares = portfolio_view.build_shares(
+        store_reads.PortfolioReader(opened).positions())
+    aapl_row = {s.symbol: s for s in shares}["AAPL"]
+    assert aapl_row.price == pytest.approx(190.0)
+    assert aapl_row.market_value == pytest.approx(18.0 * 190.0)
+    assert aapl_row.plus_value_latente == pytest.approx(18.0 * 190.0 - AAPL_BASIS)
 
 
 # --------------------------------------------------------------------------- #
 # 2. Backfill writes historically-correct portfolio state for an intermediate date
 # --------------------------------------------------------------------------- #
-def test_backfill_writes_historical_state_for_intermediate_date(
-    tmp_path, monkeypatch, fake_ticker, mock_influx
+def test_backfill_writes_the_price_and_only_the_price(
+    tmp_path, monkeypatch, fake_ticker
 ):
-    """backfill() enriches each price point with the replay timeline state."""
+    """A recovered point carries a symbol, an instant and a close — nothing else.
+
+    This test is the shape of #700 stated on the row it changed. It used to
+    assert that each historical point had been *enriched* with the position held
+    that day, because every price point carried position fields; a market
+    observation says nothing about who held what, so the enrichment has no
+    subject left and the point is three columns.
+
+    What the position was on that day is still knowable — it is a replay of the
+    ledger, asserted below — it simply is not written next to the price.
+    """
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
     config_manager = _config_with_default_source(tmp_path)
-    sb = SuiviBourseMetrics(
-        config_manager, influxdb_writer=mock_influx
-    )
-
-    # No existing data in InfluxDB -> backfill fetches a fresh chunk.
-    mock_influx.get_oldest_timestamp.return_value = None
+    sb = SuiviBourseMetrics(config_manager)
 
     intermediate = datetime(2024, 6, 20, 15, 0, tzinfo=timezone.utc)
 
@@ -209,57 +213,31 @@ def test_backfill_writes_historical_state_for_intermediate_date(
     # the bound method and is called as (symbol, start, end) with no self.
     def canned_fetch(symbol, start, end):
         if symbol == "AAPL":
-            return [{
-                "timestamp": intermediate,
-                "price": 180.0,
-                "price_open": 179.0,
-                "price_high": 181.0,
-                "price_low": 178.0,
-                "volume": 900_000,
-            }]
+            return [{"timestamp": intermediate, "price": 180.0}]
         return []
 
     sb._fetch_historical_data = canned_fetch
 
     sb.backfill()
 
-    # Only AAPL produced rows, so exactly one historical write.
-    mock_influx.write_historical_prices.assert_called_once()
-    call = mock_influx.write_historical_prices.call_args
-    assert call.kwargs["share_symbol"] == "AAPL"
-    assert call.kwargs["share_name"] == "Apple Inc"
-    # Tags come from the info the (fake) scrape cache resolved.
-    assert call.kwargs["share_currency"] == "USD"
-    assert call.kwargs["share_exchange"] == "NMS"
-    assert call.kwargs["quote_type"] == "EQUITY"
+    opened = config_manager._require_store()
+    assert opened.query(
+        "SELECT symbol, ts, price_native FROM price_point ORDER BY symbol") == [
+        ("AAPL", intermediate, pytest.approx(180.0))]
+    # No account column to carry, and no position fields either: the table has
+    # five columns and two of them are #702's business.
+    assert opened.query(
+        "SELECT price_converted, fx_rate FROM price_point") == [(None, None)]
 
-    prices = call.kwargs["prices"]
-    assert len(prices) == 1
-    point = prices[0]
-
-    # Raw price data preserved.
-    assert point["timestamp"] == intermediate
-    assert point["price"] == pytest.approx(180.0)
-
-    # Portfolio state enriched from the events, as of 2024-06-20: the SELL has
-    # not happened yet, so the position still holds its 21 shares.
-    assert point["purchased_quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
-    assert point["purchased_price"] == pytest.approx(AAPL_UNIT_COST)
-    assert point["purchased_fee"] is None
-    assert point["owned_quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
-    assert point["received_dividend"] == pytest.approx(2.4)
-
-    # Cross-check against the real replay timeline to prove the state is not
-    # hardcoded.
+    # The state on that day comes from the replay, and it is the SELL of
+    # 2024-09-15 not having happened yet: 21 shares, not 18.
     from events.aggregator import EventAggregator
     from datetime import date as _date
-    expected = EventAggregator().replay(
+    held = EventAggregator().replay(
         config_manager.get_events()
     ).position_at("default", "AAPL", _date(2024, 6, 20))
-    assert point["owned_quantity"] == expected["quantity"]
-    assert point["received_dividend"] == expected["received_dividend"]
-    assert (point["purchased_quantity"] * point["purchased_price"]
-            ) == pytest.approx(expected["cost_basis"])
+    assert held["quantity"] == pytest.approx(AAPL_QUANTITY_BEFORE_SALE)
+    assert held["cost_basis"] == pytest.approx(AAPL_BASIS_BEFORE_SALE)
 
 
 # --------------------------------------------------------------------------- #

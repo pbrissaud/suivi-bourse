@@ -5,7 +5,7 @@ Shared pytest fixtures for the SuiviBourse test suite.
 application modules exactly like ``app/src/main.py`` does::
 
     import main
-    import influxdb_writer
+    import quotes
     from events import EventLoader, EventValidator, EventAggregator
     from events.schemas import Event, EventType, ShareState
 
@@ -18,9 +18,9 @@ from datetime import date, timezone
 import pandas as pd
 import pytest
 
+import positions
 import store as store_module
 from events.schemas import Event, EventType
-from influxdb_writer import InfluxDBWriter
 
 
 # Canonical valid events CSV. Same columns as docker-compose/events/example.csv:
@@ -93,42 +93,6 @@ def events_dir(tmp_path):
 
 
 @pytest.fixture
-def mock_influx(mocker):
-    """A MagicMock standing in for InfluxDBWriter (spec-checked).
-
-    **On its way out** (#695 Testing Decisions): it asserts *what the job meant
-    to write*, which is not connected to *what the store contains*, and the
-    ``store`` fixture above is what replaces it. It survives this ticket only
-    because its subject does — ``influxdb_writer.py`` is still the writer until
-    the store gains one — and it goes with that module, not before it.
-
-    Wired with sensible return values so it can be passed as
-    ``SuiviBourseMetrics(config_manager, influxdb_writer=mock_influx)``
-    without real I/O:
-      - connect() / close() / write_metrics(): no-op (return None)
-      - get_oldest_timestamp(): None (no existing data)
-      - get_newest_timestamp(): None (no existing data → forward pass no-ops)
-      - has_data_for_date(): False
-      - write_historical_prices(): 0 (points written; keeps ``+=`` arithmetic sane)
-
-    Override any return_value in the test, e.g.
-    ``mock_influx.get_oldest_timestamp.return_value = some_datetime``.
-    """
-    m = mocker.MagicMock(spec=InfluxDBWriter)
-    m.connect.return_value = None
-    m.close.return_value = None
-    m.write_metrics.return_value = None
-    m.get_oldest_timestamp.return_value = None
-    m.get_newest_timestamp.return_value = None
-    # None → the price-freshness sonde (#628) has no stored price to anchor on,
-    # so it forgets state and never flags.
-    m.get_newest_price.return_value = None
-    m.has_data_for_date.return_value = False
-    m.write_historical_prices.return_value = 0
-    return m
-
-
-@pytest.fixture
 def store(tmp_path):
     """A **real** DuckDB store in ``tmp_path``, DDL applied and seeded (#696).
 
@@ -151,6 +115,33 @@ def store(tmp_path):
         yield opened
     finally:
         opened.close()
+
+
+@pytest.fixture
+def declare_positions():
+    """Lay a share list into the store the way the replay would (issue #700).
+
+    The gesture every test that used to hand ``SuiviBourseMetrics`` a
+    ``MagicMock`` now performs on a real store instead: the accounts and symbols
+    the positions reference, then :func:`positions.write_state`, which is the
+    production writer and not a copy of it.
+
+    The two ``INSERT``s before it are what the foreign keys ask for, and they
+    belong to the **configuration** path — the market and replay writers never
+    create a declaration (that is the schema rule: one writer per row). A test
+    that skips them gets the constraint violation a real ledger cannot produce.
+    """
+    def _declare(opened, shares, cash=None):
+        for share in shares:
+            account = share.get('account') or 'default'
+            opened.execute(
+                'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+                'ON CONFLICT (id) DO NOTHING', [account, 'CTO', account])
+            opened.execute(
+                'INSERT INTO symbol (symbol) VALUES (?) '
+                'ON CONFLICT (symbol) DO NOTHING', [share['symbol']])
+        positions.write_state(opened, shares, cash or {})
+    return _declare
 
 
 @pytest.fixture
