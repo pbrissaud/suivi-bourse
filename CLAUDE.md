@@ -1097,6 +1097,62 @@ named at start-up in **one grouped notice** and obeyed by nothing
 `settings.yaml` already get, and the list is *computed* rather than written down,
 so it cannot drift.
 
+### The advisories (issue #709, ADR-0021)
+
+**`advisory(key, first_seen_at, acknowledged_at)` is a tiny table carrying an
+acknowledgement, and nothing else** — not a journal: no history, no row per
+occurrence, a closed list of keys. `advisories.py` holds **the text and the
+predicate**, the way `settings_registry.py` holds the dials, and the table stores
+only what the code cannot work out again. The sort was made on one question —
+*can the app recompute this later?* — and four of the five survive it as
+**derivable states**: a `stat` for a v4's `config.yaml` and its `settings.yaml`,
+`main.unread_environment()` for the variables nothing obeys, and
+`SuiviBourseMetrics.reconstruction_state()` — process memory — for how far the
+reconstruction has got. **One is a real event**: *"v5 asserted your v4 amounts
+were already in your reporting currency"*, produced **once** at the end of the
+first reconstruction by comparing `symbol_quote.currency` to `base_currency`,
+deferred because at import time no symbol has been fetched, and lost if it is not
+written since the reconstruction never happens twice. Its sentence is actionable
+rather than accusatory and it **names the events concerned** — recomputed by a
+join, never stored, which is the whole trick: *that the assertion was made* is
+the row, *what it was made about* is a query.
+
+**Five keys and not six.** ADR-0021 amends spec #695 § 14 on exactly this point:
+a missing base currency is a **live condition**, not an advisory — *the banner
+shows conditions the owner can end; the badge counts facts they can only
+acknowledge* — and counting it here produced a permanent badge on an install that
+had simply not answered yet.
+
+Logs would be cheaper, and the one thing they cannot do is the reason the table
+exists: **a log cannot be acknowledged**. Every advisory *is* also logged, once,
+in logfmt (`extra['context']`, so the headless channel is parseable), at the
+instant the row is created — which is what makes "logged once" a property of the
+mechanism rather than a discipline. Four properties follow:
+
+- **The row exists exactly while the advisory stands.** `advisories.refresh` arms
+  what stands and has no row, and **drops** the row of what no longer does — so
+  an acknowledged advisory disappears, and re-arms with a fresh date and a fresh
+  log line if its predicate comes back. The acknowledgement of a fact that has
+  stopped being true would make the next occurrence invisible.
+- **An observation has three answers.** `None` is *does not stand*, a mapping is
+  *stands, and here is what it names*, `UNOBSERVED` is *not from here*. Arming
+  needs a positive observation and **so does disarming**: the reconstruction's
+  progress is process memory, so without the third answer a request served by a
+  runtime with no scheduler would drop the row that scheduler armed a minute
+  earlier and re-date it on the next cycle.
+- **The observation belongs to the jobs, never to a `GET`.** `review_advisories`
+  runs at each `ingest()` (boot, a file landing, a write) and at the end of each
+  backfill cycle — both read all four sources through the one builder,
+  `main.advisory_context`, so neither can drop what the other armed, and the
+  concluded reconstruction is where the recorded advisory is born.
+  `GET /api/advisories` re-derives each standing row's detail and writes nothing;
+  `POST /api/advisories/<key>/acknowledgement` is the only gesture, and the
+  acknowledgement **persists** — which a *toast* does not, and which the
+  assumed-currency advisory needs, arriving half an hour after the boot.
+- **Never confused with the audit.** `import_source` is the provenance trail.
+  Merging them would give an advisory box that grows by a row per import and that
+  one stops reading — both failures at once.
+
 ### Environment Variables
 
 What is left in the environment is exactly what the process must know **before**
@@ -1133,11 +1189,12 @@ app/src/
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
+├── advisories.py           # The five advisories: text and predicate in code, the table holds the ack (#709)
 ├── settings.py             # The dials' write path: validate the whole body, write what moved (#701)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, imports, config, runtime
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, imports, advisories (#709), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
