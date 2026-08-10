@@ -219,9 +219,12 @@ setting, names identical to the app's own env vars) and the **config directory**
 `/home/appuser/.config/SuiviBourse`. That mount is **writable**, for two
 independent reasons since #696: the app no longer writes the *event files*
 (#711 removed `config_writer.py`), but it does write **in** that directory —
-`SB_STORE_DIR` defaults to it, and `suivi-bourse.duckdb` is created and written
-there from the first boot on (#679 is what moves the store to a volume of its
-own). The human who edits the event files by hand must own them all the same —
+`suivi-bourse.duckdb` is created and written there from the first boot on (#679
+is what moves the store to a volume of its own). Since #740 the two compose
+files **name `SB_STORE_DIR` and `SB_IMPORT_DIR` explicitly** rather than
+inheriting them: the app's defaults are the image's (`/data`, `/import`), so a
+stack that said nothing would put the store in the container's writable layer
+and lose it on the next `up`. The human who edits the event files by hand must own them all the same —
 so the service runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
 invoking `id -u`/`id -g` in `.env`. The image sets `ENV HOME=/home/appuser` for the same
@@ -838,13 +841,16 @@ file the app parsed, and it mixed a deployment setting (`events.source`,
 `events.watch`) with user data (the `accounts:` block) in one document — the
 seam ADR-0006 exists to separate. Its two halves leave in different directions:
 the accounts become a file in the events' own format (below), and the drop
-folder is `<config dir>/events` here and a mount in the container (ADR-0015,
-`SB_IMPORT_DIR` in #740). Nothing is migrated and nothing is deleted: the file
-stays where its owner put it, and startup names it once.
+folder is **`SB_IMPORT_DIR`** since #740 — a directory, `/import` in the
+container, read once at boot and handed to `ConfigurationManager` rather than
+fetched from the environment down there (ADR-0015). Nothing is migrated and
+nothing is deleted: the file stays where its owner put it, and startup names it
+once.
 
-Every `SB_*` variable treats a blank value as unset
-(`env_str`/`env_int`/`env_flag`), because compose renders an undefined
-substitution as an empty string.
+Every `SB_*` variable treats a blank value as unset (`boot_env.text` /
+`integer` / `flag`, still spelled `env_str`/`env_int`/`env_flag` for the
+process-wide callers), because compose renders an undefined substitution as an
+empty string.
 
 > **Coming from a manual v4**: nothing is migrated. Typing a position means
 > creating dated events — an aggregated position carries no dates, so it can
@@ -1101,16 +1107,58 @@ so it cannot drift.
 
 What is left in the environment is exactly what the process must know **before**
 it can open the store (ADR-0014) — a mechanical test, not a judgement about
-nature. `main.ENVIRONMENT_INVENTORY` is the list `/api/config` publishes.
+nature. **Six names and no seventh** (issue #740): `boot_env.py` is the pure
+module that says them once, `main.ENVIRONMENT_INVENTORY` is its alias, and it is
+the list `/api/config` publishes.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SB_STORE_DIR` | `~/.config/SuiviBourse` | Directory holding the DuckDB store `suivi-bourse.duckdb` (issue #696). Boot-scope by nature: the process must know it before it can open the store, and therefore before it can ask the store anything (ADR-0014). The default is today's mounted config directory; #679 moves it to a volume of its own. |
+| `SB_STORE_DIR` | `/data` | Directory holding the DuckDB store `suivi-bourse.duckdb` (issue #696). Boot-scope by nature: the process must know it before it can open the store, and therefore before it can ask the store anything (ADR-0014) |
+| `SB_IMPORT_DIR` | `/import` | Directory the drop folder is read from (issue #740, ADR-0015). Optional: an install with no file to import is a complete install |
 | `SB_WEB_PORT` | `8080` | Port for the Flask web API and its `/health` route — the container healthcheck's only target (issue #651). Since #696 the probe **reaches the store**: "survive a database outage" has no subject once the database is a file this process opens (ADR-0015) |
 | `SB_PROMETHEUS_ENABLED` | `true` | Mount the legacy Prometheus `/metrics` endpoint. Since #651 it unmounts a Flask route rather than skipping an HTTP server, so `false` also leaves `SB_METRICS_PORT` unbound |
 | `SB_METRICS_PORT` | `8081` | Port for the Prometheus `/metrics` endpoint — a second gunicorn socket on the same app, so existing scrapers see no change |
-| `SB_STATIC_DIR` | (the image's) | Where the built SPA is served from; unset has no value rather than a default |
 | `LOG_LEVEL` | `INFO` | Logging level. Here rather than in the store because the most likely failure of this app is the store failing to open, and a level kept inside it could not report that |
+
+Three rules ride with the two directories, and each removes a class of mistake
+rather than adding a convenience:
+
+- **They are directories, never files.** The app names its own store file and
+  its write-ahead log, so pointing at a path whose parent is not mounted stops
+  being expressible — and the mount observation that follows interrogates a
+  *directory* rather than a file that does not exist yet.
+- **The defaults describe the container**, and it is the deployment *without*
+  Docker that overrides them. That is the reverse of v4, where compose always
+  rendered every variable and made the app's own defaults dead code.
+- **Blank counts as unset** for all six (`boot_env.text`/`integer`/`flag`),
+  because compose renders an undefined substitution as the empty string.
+
+**There is no `SB_WEB_ENABLED`** and there will not be one (ADR-0015): headless
+is a *usage*, not a setting. The page has no port of its own — it is served on
+the API's socket — so a switch for it would be a dial **of the store**, in a
+product that has just deleted its only restart-scoped dial. What an operator
+stops serving is the page; **never the API**, the only non-interactive path to
+answering the reporting currency. `SB_PROMETHEUS_ENABLED` is not the
+counter-example it looks like: it decides a **socket to bind**, and the list of
+binds is fixed when the gunicorn master starts.
+
+**`SB_STATIC_DIR` left with #740** rather than becoming a seventh name: it
+existed for "anyone serving the bundle from elsewhere", and there is one image
+carrying the bundle at one path. It is named in the boot notice like any other
+variable that stopped being read. **And no variable carries a secret any more** —
+`INFLUXDB_TOKEN` was the only one, so the effective-configuration view's
+redact-by-name rule died with its subject and the `secret` field is gone from the
+payload.
+
+**The fourteen that went quiet are a computed complement**, never a literal:
+present `SB_*`/`INFLUXDB_*`, minus the six, minus the four the app has *never*
+read (`SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID`, `SB_GID` — naming those would
+introduce names the app never obeyed into a sentence about names it stopped
+obeying). Which of the three clauses a name lands in — *moved to a dial*,
+*removed with no successor*, *never read at all* — is read off
+`settings_registry`, so adding a dial takes `SB_<KEY>` out of the last clause
+with nothing in `boot_env.py` edited. One grouped logfmt line at start-up, and
+only when there is something to say.
 
 ---
 
@@ -1120,6 +1168,7 @@ nature. `main.ENVIRONMENT_INVENTORY` is the list `/api/config` publishes.
 app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
+├── boot_env.py             # Pure: the six boot variables and the computed list of names gone quiet (#740)
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
 ├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
 ├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
