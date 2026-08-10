@@ -26,6 +26,7 @@ from flask import Blueprint, jsonify, request
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
+import advisories
 import ledger
 import main
 import portfolio_view
@@ -750,6 +751,71 @@ def _next_runs(scheduler) -> dict:
     import main
 
     return main.scrape_next_runs(scheduler)
+
+
+# --------------------------------------------------------------------- #
+# The advisories (issue #709, spec #695 § 14)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/advisories')
+def list_advisories():
+    """What this installation has been told, and has not yet acknowledged.
+
+    A **read**, and only a read: the advisories are armed by the jobs that
+    observe their sources (``ingest`` for the installation's, the backfill cycle
+    for the reconstruction's and the one it produces), never by somebody opening
+    a page. A ``GET`` that armed them would date every advisory with the moment a
+    browser arrived and log it there too, which is neither where nor when it
+    happened.
+
+    Each row's **detail is re-derived here** — the path, the variables, the
+    events — because the table has three columns and stores nothing else. An
+    advisory whose source this process cannot see keeps its row and reports
+    ``detail: null``, which is the honest answer and not an error.
+
+    ``200`` + ``[]`` on an install with nothing to say, which is the ordinary
+    case and emphatically not a ``404``.
+    """
+    runtime = current_runtime()
+    return jsonify([
+        advisory.to_dict() for advisory in advisories.listing(
+            _store(),
+            main.advisory_context(runtime.config_manager, runtime.metrics))
+    ])
+
+
+@api_bp.post('/advisories/<key>/acknowledgement')
+def acknowledge_advisory(key: str):
+    """Acknowledge one advisory. The table's only gesture, and the reason it exists.
+
+    A log cannot be acknowledged, which is the whole argument for a table
+    (spec #695 § 14): someone may want to keep their v4 ``config.yaml`` beside
+    their events for ever, and an app that reproaches them at every boot becomes
+    noise one learns to ignore — taking the advisory that matters down with it.
+
+    The acknowledgement **persists**, which a *toast* does not, and that is not a
+    refinement either: the assumed-currency advisory arrives at the end of the
+    first reconstruction, half an hour after the boot, and an acknowledgement
+    living in a browser tab would be gone by the next restart.
+
+    ``404`` covers both refusals — an unknown key, and a key of the five that
+    nothing stands under — because they are the same answer to the client:
+    *there is nothing here to acknowledge*. Acknowledging twice is not an error
+    and does not move the date.
+    """
+    runtime = current_runtime()
+    context = main.advisory_context(runtime.config_manager, runtime.metrics)
+    try:
+        # The writers' mutex, like every other write in this blueprint: a Flask
+        # handler and the scheduled jobs share one DuckDB connection.
+        with runtime.config_manager.writing() as opened:
+            advisory = advisories.acknowledge(opened, key, context)
+    except advisories.UnknownAdvisory:
+        return not_found(f"No advisory is named {key!r}")
+    except advisories.AdvisoryNotStanding:
+        return not_found(f"Nothing is standing under the advisory {key!r}")
+
+    return jsonify(advisory.to_dict())
 
 
 # --------------------------------------------------------------------- #
