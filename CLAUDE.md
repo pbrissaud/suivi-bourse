@@ -1238,7 +1238,8 @@ backfill advanced with no event having moved, and a grant-only position had no
 price at its date at all.
 
 Prometheus mirrors these as `sb_account_*{account}` gauges plus `sb_account_info`
-(labels `account_type`/`account_currency`) and global `sb_portfolio_*` gauges
+(label `account_type`; `account_currency` left with `Account.currency`, #702)
+and global `sb_portfolio_*` gauges
 (no `account` label). Price history for `holdings_value` is read via
 `quotes.price_series(store, symbol)` — the day's **last** point, queried by
 symbol, which is no longer a rule to remember: there is no account column to

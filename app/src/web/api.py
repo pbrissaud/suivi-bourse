@@ -391,8 +391,10 @@ def get_account_history(account_id: str):
     declared and empty (``200`` + ``[]``), while an id nobody declared does not
     exist. Collapsing the two would answer a typo with an empty chart.
 
-    No ``currency`` in the payload — the collection owns it, per the same rule
-    ``/api/portfolio/history`` follows.
+    No ``currency`` in the payload — the head owns it, per the same rule
+    ``/api/portfolio/history`` follows. Since #702 the collection owns none
+    either: an account has no currency, there is one reporting currency for the
+    whole install, and ``/api/portfolio`` is where it is said.
     """
     accounts = _snapshot().accounts
     declared = accounts.get(account_id) if accounts is not None else None
