@@ -1,11 +1,29 @@
 ---
 title: Coming from v4
-description: Everything is redone, accounts are redeclared, and which figures are meant to differ
+description: Everything is redone, accounts are redeclared, which figures are meant to differ — and how to go back
 ---
 
 This page will carry what a version 4 owner has to do — which is a re-import
 and a rebuild, never an upgrade — and which figures are meant to differ
 afterwards.
+
+## Going back
+
+**[Export your events](./import-your-events.mdx#export-it-all-back-out), then
+point a version 4 install at the folder you exported them into.**
+
+That sentence is the whole procedure, and the export is what makes it true: your
+original files are never touched, so going back at the moment you switch costs
+nothing — but everything you record in version 5 afterwards lives only in its
+store, and the export is how it leaves. The exported file is an ordinary event
+file; version 4 reads it and ignores the one column it does not know, the
+`base_currency` version 5 writes on every row.
+
+One thing does not travel in that file: version 4 has no accounts file, so if
+you use several accounts you redeclare them in its `settings.yaml`, with the
+same ids the `account` column names. And the figures you land back on are
+version 4's, computed by version 4's conventions: only quantity, cash balance
+and net contribution are expected to coincide with what you were reading.
 
 :::info Not written yet
 It is the subject of its own ticket. What it will hold:

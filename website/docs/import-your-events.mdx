@@ -1,6 +1,6 @@
 ---
 title: Import your events
-description: The file format, the six kinds of event, declaring accounts, and the drop folder
+description: The file format, the six kinds of event, declaring accounts, the drop folder, and exporting it all back out
 ---
 
 This page is for people who already have files — a broker export, the event
@@ -179,4 +179,63 @@ Your event files import **without a single edit**. That is the one continuity
 that survives between the two versions, and it survives because "an empty
 account column means `default`" is version 4's rule minus its opt-in.
 [Coming from v4](./coming-from-v4.mdx) has the rest.
+:::
+
+## Export it all back out
+
+Your portfolio can leave the way it came in. **The export format is the import
+format**, so the round trip is round by construction: what comes out is a file
+this same app reads, with no conversion and no special path.
+
+```bash
+curl -O http://localhost:8080/api/export/events.csv
+curl -O http://localhost:8080/api/export/accounts.csv
+```
+
+Two files, because that is the format — a file is an accounts source or an
+event source according to its header, never both. Drop them into the drop folder
+of another install and it rebuilds the same ledger: the same positions, the same
+cash, the same realized gains.
+
+It is an HTTP route rather than a button only, for the reason every write path
+in this app is: *headless means without an interface, not without HTTP*. One
+`curl` is a complete backup, and the page is one client of it.
+
+**The exported file states its reporting currency**, in a `base_currency` column
+repeated on every row. It has to: event amounts are the debit *in your base
+currency* and nothing else in the file says which one, so a round trip through
+an install that answered differently would silently re-read every amount as
+another unit. The column is named `base_currency` and not `currency` because a
+broker export routinely carries a `currency` column meaning the *security's*
+quote currency, and there are exactly two currency levels here — reading one for
+the other is precisely the mistake the name prevents.
+
+What that column does on the way back in, and the rule is the base currency's
+own:
+
+- an install that has **never answered** the question takes the file's answer —
+  it *reads* a declaration rather than asserting one, which is what makes a
+  restore work with no settings call at all;
+- an install that answered **the same thing** does nothing;
+- an install that answered **something else** refuses the file whole, and says
+  so — unless its ledger is still empty, in which case nothing has been
+  interpreted yet and the file's answer is taken. That is the same rule the
+  [settings page](./settings.mdx#the-base-currency) applies to the field.
+
+An install that never answered exports a **blank** column, which is the honest
+answer: it has interpreted nothing, so its file states nothing — and a file that
+states nothing imports everywhere.
+
+Two things the export deliberately does not carry. **Provenance** — *line 14 of
+`2024.csv`* — because the export *replaces* those imports and would otherwise
+describe files that are not the exported one; an account you created in the
+interface therefore comes back as a **file-declared**, read-only account, its
+provenance being the file you just restored from. And **prices**: they are
+re-fetched and rebuilt, never part of your ledger. Only what you recorded
+leaves.
+
+:::tip Your backup does not have to be a binary
+The store is one DuckDB file, so copying it is a complete backup — but it is a
+binary you cannot read, diff or repair. The export is the other form: text,
+version-controllable, and it re-imports cleanly.
 :::
