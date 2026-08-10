@@ -24,6 +24,11 @@ services:
       #   curl -X PUT localhost:8080/api/settings \
       #        -H 'content-type: application/json' \
       #        -d '{"regular_interval": 60, "backfill_interval": 30}'
+      # The two directories (issue #740), named rather than defaulted: the
+      # image's defaults are `/data` and `/import`, and this stack still keeps
+      # both halves in the single config mount below.
+      SB_STORE_DIR: /home/appuser/.config/SuiviBourse
+      SB_IMPORT_DIR: /home/appuser/.config/SuiviBourse/events
       SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       SB_METRICS_PORT: ${SB_METRICS_PORT:-8081}
       SB_PROMETHEUS_ENABLED: ${SB_PROMETHEUS_ENABLED:-true}
