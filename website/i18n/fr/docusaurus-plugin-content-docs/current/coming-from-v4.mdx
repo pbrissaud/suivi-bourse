@@ -1,0 +1,20 @@
+---
+title: Coming from v4
+description: Everything is redone, accounts are redeclared, and which figures are meant to differ
+---
+
+This page will carry what a version 4 owner has to do — which is a re-import
+and a rebuild, never an upgrade — and which figures are meant to differ
+afterwards.
+
+:::info Not written yet
+
+* everything is redone: re-import, then rebuild — about 25 minutes for 30 symbols over five years;
+* a single-account v4's event files import without one edit; accounts are redeclared in a file of the event format, and `settings.yaml` is named but never read;
+* copy your old configuration directory, never share it between the two versions;
+* a reconciliation table: quantity, cash balance and net contribution must coincide, the rest is deliberately corrected;
+* what to do with the InfluxDB and Grafana volumes — a documented gesture, never an action of the app.
+
+This is the only page whose expiry does not follow the release cycle: it is
+frozen at 5.0 while [release notes](./release-notes.mdx) accrue above it.
+:::

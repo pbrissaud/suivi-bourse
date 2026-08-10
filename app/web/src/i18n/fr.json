@@ -1,42 +1,33 @@
 {
   "app.name": "SuiviBourse",
-
   "nav.label": "Sections",
   "nav.dashboard": "Tableau de bord",
   "nav.shares": "Titres",
   "nav.accounts": "Comptes",
   "nav.data": "Données",
-
   "header.toggleSidebar": "Afficher ou masquer la navigation",
   "header.language": "Langue",
   "header.theme": "Thème",
-
   "sidebar.rail": "Replier ou déplier la navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
   "sheet.close": "Fermer",
-
   "lang.auto": "Automatique",
   "lang.fr": "Français",
   "lang.en": "English",
-
   "theme.auto": "Automatique",
   "theme.light": "Clair",
   "theme.dark": "Sombre",
-
   "status.link": "État de l’installation",
   "status.dot": "{state, select, ok {L’installation va bien} attention {L’installation demande un regard} unreachable {L’application ne répond pas} other {L’état de l’installation est inconnu}}",
-
   "page.dashboard": "Tableau de bord",
   "page.shares": "Titres",
   "page.accounts": "Comptes",
   "page.data": "Données",
   "page.pending": "Cette page n’est pas encore construite.",
-
   "notFound.title": "Page introuvable",
   "notFound.body": "Cette adresse ne correspond à aucune page.",
   "notFound.link": "Revenir au tableau de bord",
-
   "problem.storageUnavailable": "Les données ne sont pas lisibles pour l’instant. L’application tourne, son magasin ne répond pas.",
   "problem.notFound": "L’application répond que cela n’existe pas.",
   "problem.badRequest": "L’application a refusé la requête faite par cette page.",
