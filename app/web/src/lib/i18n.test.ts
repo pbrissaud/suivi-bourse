@@ -43,6 +43,65 @@ describe('ICU is the format, and it is needed', () => {
     expect(formatMessage('fr', 'status.dot', { state: 'martian' })).toContain('inconnu')
   })
 
+  it('pluralises **from the catalogue**, on the values that turn the form', () => {
+    // #713 shipped the mechanism and no coverage: neither catalogue held a
+    // single `plural`, and the only one exercised was a literal written inside
+    // this file. That was unavoidable there — the four pages were placeholders,
+    // so nothing on screen counted anything and a key with no consumer is dead
+    // weight. This ticket is the first to put two counted nouns on a screen.
+    //
+    // Zero is the value that separates the two languages: French counts it as
+    // `one`, English does not.
+    expect(formatMessage('fr', 'dashboard.scope', { count: 0 })).toBe('0 compte')
+    expect(formatMessage('en', 'dashboard.scope', { count: 0 })).toBe('0 accounts')
+    expect(formatMessage('fr', 'dashboard.scope', { count: 1 })).toBe('1 compte')
+    expect(formatMessage('en', 'dashboard.scope', { count: 1 })).toBe('1 account')
+    expect(formatMessage('fr', 'dashboard.scope', { count: 2 })).toBe('2 comptes')
+    expect(formatMessage('en', 'dashboard.scope', { count: 2 })).toBe('2 accounts')
+
+    // The second counted noun: the absence rendering that reports its count
+    // rather than a verdict.
+    expect(formatMessage('fr', 'absence.noQuote', { count: 1 })).toBe(
+      '1 relevé consécutif, aucun cours',
+    )
+    expect(formatMessage('fr', 'absence.noQuote', { count: 3 })).toBe(
+      '3 relevés consécutifs, aucun cours',
+    )
+    expect(formatMessage('en', 'absence.noQuote', { count: 1 })).toBe(
+      '1 consecutive reading, no price',
+    )
+    expect(formatMessage('en', 'absence.noQuote', { count: 3 })).toBe(
+      '3 consecutive readings, no price',
+    )
+  })
+
+  it('carries French gender agreement, which forbids one shared string', () => {
+    // `plus-value` is feminine, so the adjective agrees — `latente`,
+    // `réalisée` — and it would be `latent` / `réalisé` beside a masculine
+    // subject such as `gain`. English needs no agreement and could have shared
+    // one adjective between the two contexts; French cannot, which is why the
+    // key is **semantic** and never the rendered word.
+    expect(formatMessage('fr', 'gain.term.unrealised')).toBe('Plus-value latente')
+    expect(formatMessage('fr', 'gain.term.realised')).toBe('Plus-value réalisée')
+    expect(formatMessage('en', 'gain.term.unrealised')).toBe('Unrealised P&L')
+    expect(formatMessage('en', 'gain.term.realised')).toBe('Realised P&L')
+
+    // And no key serves both: a string shared between two genders is exactly
+    // what is *not available* here.
+    for (const language of ['fr', 'en'] as const) {
+      expect(formatMessage(language, 'gain.term.unrealised')).not.toBe(
+        formatMessage(language, 'gain.term.realised'),
+      )
+    }
+  })
+
+  it('says `Total P&L` in English, never `Total gain`', () => {
+    // `Total gain` and `Total return` start with the same word and cohabit on
+    // the dashboard head; the French pair has no such collision (ADR-0024).
+    expect(formatMessage('en', 'dashboard.gainTotal')).toBe('Total P&L')
+    expect(formatMessage('fr', 'dashboard.gainTotal')).toBe('Gain total')
+  })
+
   it('pluralises per language rather than per string', () => {
     // French puts 0 in `one` and English does not — which is why a shared
     // string between two contexts is not available, and why the catalogue
