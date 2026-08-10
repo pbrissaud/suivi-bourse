@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -399,9 +399,15 @@ def register_interval_jobs(scheduler, sb_metrics,
 
     **One interval, not two** (issue #701). The backfill's cadence is a dial in
     the store and arrives as an argument; the perf job's is
-    ``scheduling.PERF_TICK``, a constant, because ``perf_should_run`` is the real
-    gate and the number only decides how long a recompute waits after the change
-    that earned it.
+    ``scheduling.PERF_TICK``, a constant, because the two tables it writes are a
+    cache and a full recompute costs 0,4 % of the tick (ADR-0011).
+
+    The perf job carries ``next_run_time=now`` (issue #707), which is the
+    interval trigger's *only* way to fire at boot rather than one tick later:
+    APScheduler schedules an interval job at ``start + interval``, so without it
+    a restart would leave the pages showing the previous process's cache — or
+    nothing at all on a first boot — for two minutes. A self-repairing cache has
+    nothing to know about the past, so there is nothing to wait for.
     """
     scheduler.add_job(
         sb_metrics.backfill, 'interval',
@@ -411,6 +417,7 @@ def register_interval_jobs(scheduler, sb_metrics,
     scheduler.add_job(
         sb_metrics.recompute_perf, 'interval',
         seconds=scheduling.PERF_TICK,
+        next_run_time=datetime.now(timezone.utc),
         id='perf',
         name='Performance recompute')
 
@@ -1105,29 +1112,14 @@ class SuiviBourseMetrics:
         # backfill for that account.
         self._backfill_complete: Dict[Tuple[str, str], datetime] = {}
 
-        # Incremental perf-series write watermark (issue #597). It exists
-        # because rewriting the whole daily series every cycle landed new,
-        # never-compacted Parquet files on InfluxDB 3 Core; the store upserts on
-        # a primary key instead, so the whole apparatus loses its subject and
-        # leaves with #707. Until then it rewrites only the stale tail:
-        #   _perf_dirty_from — earliest day backfill has newly filled since the
-        #     last write (None = nothing earlier than today is stale). Written by
-        #     the backfill thread, read/reset by the scrape thread, so guarded by
-        #     _perf_lock.
-        #   _perf_last_events — the events list object fed to the last write; a
-        #     new object means the events cache was reloaded (files changed) and
-        #     the whole series must be rewritten. Touched only on the perf-job
-        #     thread (recompute_perf/update_account_metrics), so it needs no lock.
-        #   _perf_dirty_live — a single global bool set on the REGULAR write path
-        #     in _scrape_symbol (issue #618): the live-write trigger for the
-        #     gated perf job, alongside the two above. Written by the scrape
-        #     threads and checked-and-cleared by the perf-job thread, so guarded
-        #     by _perf_lock. Seeded True at boot so today's point is always fresh
-        #     after a weekend/overnight restart.
-        self._perf_lock = threading.Lock()
-        self._perf_dirty_from: Optional[date] = None
-        self._perf_last_events: Optional[List] = None
-        self._perf_dirty_live: bool = True
+        # There is **no perf state here**, and its absence is the ticket (issue
+        # #707, ADR-0011). Four attributes stood at this line — a mutex, a
+        # backfill watermark, the identity of the last events list, and a
+        # live-write bool the scrape raised — and all four served one gate that
+        # decided whether recomputing was worth it. The two tables are a cache;
+        # the recompute is integral and unconditional every cycle, so nothing
+        # about the *past* is worth remembering, and the last coupling between
+        # the backfill and the perf goes with the memory of it.
 
         # Price-freshness liveness sonde state (issue #628). Per-(symbol, account)
         # memory so staleness is measured over *consecutive* REGULAR polling, not
@@ -1848,7 +1840,7 @@ class SuiviBourseMetrics:
             state, next_open = None, None
 
         with self._failure_counts_lock:
-            should_write, next_delay, new_failure_count, mark_dirty = scheduling.decide(
+            should_write, next_delay, new_failure_count = scheduling.decide(
                 state, price_present, next_open, now,
                 self._failure_counts.get(symbol, 0), self.regular_interval)
             # Persist the backoff counter only while the symbol is still held. A
@@ -1874,15 +1866,10 @@ class SuiviBourseMetrics:
             # to record, and nothing wrong with it either.
             wrote_live_data = bool(holdings) and self._write_quote(
                 symbol, last_quote, info, now)
-            # A REGULAR write makes today's perf series stale: raise the global
-            # live-write dirty bool so the gated perf job (issue #618) runs its
-            # next cycle. One flag for the whole market-open wave — it coalesces
-            # N symbols' writes into a single recompute by construction. Only
-            # when a point actually persisted — a wave that wrote nothing must
-            # not trigger a perf recompute with nothing new to read.
-            if mark_dirty and wrote_live_data:
-                with self._perf_lock:
-                    self._perf_dirty_live = True
+            # Nothing is signalled to the perf job from here any more (issue
+            # #707). A REGULAR write used to raise a global live-write bool the
+            # gate read; the recompute is unconditional now, so the price this
+            # cycle wrote is simply read by the next one out of the store.
         else:
             wrote_live_data = False
             app_logger.debug(
@@ -1931,68 +1918,35 @@ class SuiviBourseMetrics:
             self._arm_symbol(symbol, next_delay, arm_now)
 
     def recompute_perf(self) -> None:
-        """Recompute the perf series as its own gated interval job (#605, #618).
+        """Rebuild the perf cache, in full, every cycle (issue #707, ADR-0011).
 
-        Now that per-symbol jobs replaced the global scrape loop, the
-        account_metrics/portfolio_totals recompute runs as its own scheduled
-        job at ``SB_PERF_INTERVAL`` — never inside the scrape, which would fire N
-        recomputes per market-open wave.
+        Its **own** interval job, and it stays one. Three other shapes were
+        available and each is wrong for a reason worth keeping written down: an
+        end-of-backfill step is right only while the reconstruction runs and
+        false the moment it finishes, since the live scrape goes on moving
+        today's value with the backfill triggering nothing; a subscription to an
+        event bus rebuilds the coupling this ticket removes, one indirection
+        further away; and a step of the scrape fires N recomputes per
+        market-open wave.
 
-        Read the three dirty signals up front and gate on
-        ``scheduling.perf_should_run`` so a fully-closed market wave writes
-        nothing (no closed-day Parquet drip, #597/#606):
-          * the live-write bool ``_perf_dirty_live`` — set on the REGULAR write
-            path in ``_scrape_symbol``; **checked-and-cleared here** under
-            ``_perf_lock`` (seeded True at boot so today's point is fresh after
-            an overnight restart).
-          * the backfill watermark ``_perf_dirty_from`` — merely *checked* here;
-            its consume/clear stays in ``update_account_metrics``.
-          * ``events_changed`` — a reloaded events cache (a new list object).
+        There is **no gate**. The recompute reads the store and the clock, and
+        that is all it reads — no watermark, no flag, no snapshot identity. A
+        cycle either lays the cache down or raises; there is no third outcome,
+        which is why ``PERF_SKIPPED`` left with the predicate.
 
         Guarded so an error never kills the scheduler thread.
         """
-        with self._perf_lock:
-            live_write = self._perf_dirty_live
-            self._perf_dirty_live = False
-            backfill_pending = self._perf_dirty_from is not None
-        # One snapshot for the whole cycle: the gate and the recompute must
-        # agree on which configuration they are talking about, and a reload can
-        # land between them.
-        snapshot = self.config_manager.current()
-        events_changed = snapshot.events is not self._perf_last_events
-
-        def publish(verdict: str, error: Optional[str] = None) -> None:
-            # #656 trap 4: `_perf_dirty_live` is *consumed* by this method — read
-            # and cleared under `_perf_lock` above — so a request thread reading
-            # it learns about a run that is pending, never about the one that
-            # just happened. The verdict has to be recorded; it cannot be
-            # inferred. The three inputs ride along rather than a single
-            # "reason", because a skip *is* the three of them being quiet.
-            self.recorder.record_perf(runtime_state.PerfRecord(
-                at=datetime.now(timezone.utc), verdict=verdict,
-                events_changed=events_changed,
-                backfill_pending=backfill_pending, live_write=live_write,
-                error=error))
-
-        if not scheduling.perf_should_run(events_changed, backfill_pending, live_write):
-            app_logger.debug(
-                "Perf recompute skipped: nothing changed since last run")
-            publish(runtime_state.PERF_SKIPPED)
-            return
         try:
-            self.update_account_metrics(snapshot)
-            publish(runtime_state.PERF_RAN)
+            self.update_account_metrics()
+            verdict, error = runtime_state.PERF_RAN, None
         except Exception as e:
-            # The live-write signal was consumed up front (for concurrency), so a
-            # failed write would otherwise drop today's fresh point until the next
-            # REGULAR scrape re-sets the flag. Re-arm it on error so the next
-            # cycle retries, mirroring the _perf_dirty_from re-arm inside
-            # update_account_metrics.
-            if live_write:
-                with self._perf_lock:
-                    self._perf_dirty_live = True
             app_logger.error(f"Failed to update account metrics: {e}")
-            publish(runtime_state.PERF_FAILED, str(e))
+            verdict, error = runtime_state.PERF_FAILED, str(e)
+        # Recorded rather than inferred, same as every other job's last pass —
+        # but with nothing beside it any more: a run that is unconditional has
+        # no decision to explain.
+        self.recorder.record_perf(runtime_state.PerfRecord(
+            at=datetime.now(timezone.utc), verdict=verdict, error=error))
 
     def ingest(self, import_files: bool = True):
         """Import the drop folder, replay the ledger, reconcile the scrape jobs.
@@ -2214,10 +2168,11 @@ class SuiviBourseMetrics:
         except Exception as e:
             app_logger.error(
                 f"Failed to write historical prices for {symbol}: {e}")
-        # Newly filled prices change holdings_value for that window; re-arm the
-        # perf series so the next recompute rewrites the tail from here (#597).
-        if written > 0:
-            self._mark_perf_dirty(start_date.date())
+        # Newly filled prices change ``holdings_value`` over that window, and
+        # this is where the backfill used to lower a perf watermark so the next
+        # recompute would rewrite the tail. It tells the perf job nothing now
+        # (issue #707): the next cycle recomputes the whole series from the
+        # prices the store holds, this chunk included.
         # Rate limit between symbols
         time.sleep(self.backfill_delay)
         return prices, written
@@ -2384,7 +2339,8 @@ class SuiviBourseMetrics:
         Synchronous whole-portfolio path kept for the e2e harness; the scheduled
         runtime drives per-symbol jobs + the perf job.
         The perf recompute is **detached** from scrape (issue #618): it is its
-        own gated interval job, never piggybacked here.
+        own interval job, never piggybacked here — a step of the scrape would
+        fire N recomputes per market-open wave.
         """
         if not self.shares:
             app_logger.warning("No shares configured, skipping scrape")
@@ -2413,155 +2369,155 @@ class SuiviBourseMetrics:
             gain_absolu=perf.gain_absolu if last else None,
         )
 
-    def _mark_perf_dirty(self, from_date: date) -> None:
-        """Lower the perf-series write watermark to ``from_date`` (thread-safe).
+    # ``_mark_perf_dirty`` and ``_consume_perf_dirty_from`` stood here (issue
+    # #707). They were the backfill's and the perf job's two ends of one
+    # watermark, and they leave together with the incremental window they
+    # bounded: the whole series is recomputed and upserted every cycle, so there
+    # is no tail to remember and nothing to re-arm when a write fails.
 
-        Called by the backfill thread once it has written prices for an earlier
-        day: that day's ``holdings_value`` changed and TWR compounds forward, so
-        the whole tail from ``from_date`` to today must be rewritten next cycle.
-        ``min`` keeps the earliest pending bound across several backfills.
+    @staticmethod
+    def _spans(points, key) -> Dict[Any, Tuple[date, date]]:
+        """``{key: (first_day, last_day)}`` over the points a cycle produced.
+
+        What the prune is bounded by (issue #707). Taken from the points and not
+        from the window they were computed over, so an entity that produced
+        nothing has **no** span and loses every cached day it had — which is how
+        a forgotten import takes its days with it.
         """
-        with self._perf_lock:
-            cur = self._perf_dirty_from
-            self._perf_dirty_from = from_date if cur is None else min(cur, from_date)
+        spans: Dict[Any, Tuple[date, date]] = {}
+        for point in points:
+            identity = key(point)
+            first, last = spans.get(identity, (point.day, point.day))
+            spans[identity] = (min(first, point.day), max(last, point.day))
+        return spans
 
-    def _consume_perf_dirty_from(self) -> Optional[date]:
-        """Atomically read and clear the backfill watermark (thread-safe).
+    def update_account_metrics(self):
+        """Rebuild the daily ``account_metrics`` + ``portfolio_totals`` cache.
 
-        Reset happens up-front so a backfill landing mid-cycle re-arms the
-        watermark for the *next* cycle instead of being swallowed by this one.
-        """
-        with self._perf_lock:
-            pending = self._perf_dirty_from
-            self._perf_dirty_from = None
-            return pending
-
-    def update_account_metrics(self, snapshot: Optional[ConfigSnapshot] = None):
-        """Recompute and write the daily ``account_metrics`` + ``portfolio_totals``
-        series via the performance module.
-
-        Opt-in only: gated on ``load_accounts()`` returning a Portfolio. The full
-        series (earliest event date → today, one point per calendar day) is
-        recomputed every cycle, but only the **stale tail** is written — a steady
-        cycle rewrites just today's point. The write window widens back to an
-        earlier day when backfill fills earlier prices (``_mark_perf_dirty``) or
-        when the events cache is reloaded (a new events list object => full
-        rewrite). Money-weighted performance (xirr / gain_absolu / twr_index)
-        comes from ``performance.py``; xirr / gain_absolu land only on the
-        latest point.
-
-        The **incremental window survives this ticket and dies in #707**, where
-        it loses its subject: it exists because a full rewrite on InfluxDB 3 Core
+        **Integral and unconditional** (issue #707, ADR-0011): every cycle
+        recomputes the whole series — earliest event date → today, one point per
+        calendar day — and hands it to a block upsert followed by a bounded
+        prune. The incremental window this method carried since #597 is gone
+        with its subject: it existed because a full rewrite on InfluxDB 3 Core
         landed never-compacted Parquet files and grew the file without bound,
-        and an upsert on a primary key does not (ADR-0011). What changed here is
-        only where the rows land.
+        and an upsert on a primary key does not (44,8 MB against 1,1 over a
+        thousand cycles).
 
-        ``snapshot`` is this cycle's configuration, passed down by
-        ``recompute_perf`` so the gate and the recompute cannot straddle a
-        reload; it defaults to the currently published one for direct callers.
+        **Its only inputs are the store and the clock.** The events come from
+        ``ledger.read_events`` and the declaration from
+        ``accounts.declared_portfolio``, not from the published snapshot — the
+        snapshot's *identity* was the third gate signal, and reading it here
+        would leave the cache's freshness tied to the configuration's
+        publication rhythm rather than to what the store holds. What it costs is
+        worth naming: a ledger the whole-ledger validation would refuse is
+        replayed here anyway. It cannot be one an import made — an import
+        validates the ledger it *would* make before committing (#697) — so the
+        case is a hand-edited store, and it ends as a ``PERF_FAILED`` record
+        rather than as a wrong figure: the replay raises on what the validator
+        refuses, and nothing is written.
+
+        **The job replays its own ``Timeline``**, and that is not a duplication
+        of the ingestion's replay: ``position`` and ``account_state`` are
+        **current** states, while performance needs the state of *every day* —
+        the cash balance on the day of a deposit, the quantity held on the day a
+        price moved. There is no daily state in the store to read instead.
+
+        The series is **dense over calendar days** — weekends and holidays
+        included, prices forward-filled by ``price_at``. "No point on a
+        non-trading day" is a property of *observed* prices, never of a derived
+        daily series: TWR chains over consecutive days, and a weekend deposit
+        needs somewhere to land.
+
+        Money-weighted performance (xirr / gain_absolu / twr_index) comes from
+        ``performance.py``; xirr / gain_absolu land only on the latest point.
         """
-        snapshot = snapshot or self.config_manager.current()
-        portfolio = snapshot.accounts
-        if portfolio is None:
-            return  # single gate: no declared accounts -> no account series
-
-        events = snapshot.events
-        if not events:
-            return
-
-        timeline = EventAggregator().replay(events)
-
-        # Injected price source: per-symbol daily closes, forward-filled. The
-        # performance module never touches the store — it only calls price_at.
         store_handle = self.config_manager.store
-        symbols = {s['symbol'] for s in snapshot.shares if s.get('symbol')}
-        price_pairs = {
-            sym: sorted(quotes.price_series(store_handle, sym).items())
-            for sym in symbols
-        }
+        events = ledger.read_events(store_handle)
+        # The opt-in guard #708 replaces with a per-field rule. Left standing
+        # here on purpose: it is a *domain* gate — is there a declaration to
+        # report on — and not a change-detection one, so it is not what this
+        # ticket removes.
+        portfolio = accounts_module.declared_portfolio(store_handle)
 
-        def price_at(symbol, day):
-            pairs = price_pairs.get(symbol)
-            return timeline.state_at(pairs, day) if pairs else None
-
-        start = min(e.date for e in events)
         today = datetime.now(timezone.utc).date()
-
-        # Incremental write window (issue #597). Consume the backfill watermark
-        # first so a backfill landing mid-cycle re-arms it for the next cycle. A
-        # reloaded events cache (new list object) forces a full rewrite; else we
-        # write from the earliest day backfill touched, defaulting to today only.
-        pending = self._consume_perf_dirty_from()
-        events_changed = events is not self._perf_last_events
-        self._perf_last_events = events
-        if events_changed:
-            write_from = start
-        elif pending is not None:
-            write_from = max(start, min(pending, today))
-        else:
-            write_from = today
-
-        per_account = {
-            account.id: performance.compute_account(
-                timeline, account, symbols, price_at, start, today)
-            for account in portfolio.accounts
-        }
-        total = performance.compute_portfolio_total(
-            timeline, portfolio.accounts, symbols, price_at, start, today, per_account)
-
-        # --- account_metrics ------------------------------------------------
-        # ``last`` (and thus xirr / gain_absolu) is decided over the FULL series
-        # so it always lands on today's point; only points on/after write_from
-        # are actually written. today >= write_from always, so the latest point
-        # (Prometheus + negative-cash warning) is present every cycle.
-        acc_points = []
+        acc_points: List[AccountMetricPoint] = []
+        total_points: List[PortfolioTotalPoint] = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
-        for account in portfolio.accounts:
-            perf = per_account[account.id]
-            for i, dp in enumerate(perf.daily):
-                last = i == len(perf.daily) - 1
-                if dp.date < write_from:
-                    continue
-                pt = AccountMetricPoint(
-                    account=account.id,
-                    account_type=account.type,
-                    account_currency=account.currency,
-                    day=dp.date,
-                    **self._value_kwargs(dp, last, perf),
-                )
-                acc_points.append(pt)
-                if last:
-                    latest_by_account[account.id] = pt
-        # --- portfolio_totals (global; only if single currency) -------------
-        total_points = []
-        if total is not None:
-            total_points = [
-                PortfolioTotalPoint(
-                    day=dp.date,
-                    **self._value_kwargs(dp, i == len(total.daily) - 1, total),
-                )
-                for i, dp in enumerate(total.daily)
-                if dp.date >= write_from
-            ]
+        total = None
 
-        # The watermark was consumed up front (for concurrency), so a failed
-        # write would otherwise drop the stale tail silently. Re-arm it on any
-        # write error so the next cycle retries the same slice; today's point is
-        # rewritten every cycle anyway, so only a sub-today tail needs re-arming.
-        try:
-            with self.config_manager.writing() as opened:
-                # **One** transaction for both tables: they describe the same
-                # cycle, and a failure between them would leave the per-account
-                # series ahead of the global one — with the watermark re-armed
-                # for a sub-today tail only, so the disagreement would outlive
-                # the cycle that caused it.
-                with opened.transaction():
-                    perf_series.write_account_metrics(opened, acc_points)
-                    perf_series.write_portfolio_totals(opened, total_points)
-        except Exception:
-            if write_from < today:
-                self._mark_perf_dirty(write_from)
-            raise
+        if portfolio is not None and events:
+            timeline = EventAggregator().replay(events)
+
+            # Injected price source: per-symbol daily closes, forward-filled. The
+            # performance module never touches the store — it only calls price_at.
+            # The symbol set comes from the events rather than from the current
+            # positions: a line sold in 2022 has no position left and every day
+            # it was held still needs its price.
+            symbols = {e.symbol for e in events if e.symbol}
+            price_pairs = {
+                sym: sorted(quotes.price_series(store_handle, sym).items())
+                for sym in symbols
+            }
+
+            def price_at(symbol, day):
+                pairs = price_pairs.get(symbol)
+                return timeline.state_at(pairs, day) if pairs else None
+
+            start = min(e.date for e in events)
+
+            per_account = {
+                account.id: performance.compute_account(
+                    timeline, account, symbols, price_at, start, today)
+                for account in portfolio.accounts
+            }
+            total = performance.compute_portfolio_total(
+                timeline, portfolio.accounts, symbols, price_at, start, today,
+                per_account)
+
+            # --- account_metrics --------------------------------------------
+            for account in portfolio.accounts:
+                perf = per_account[account.id]
+                for i, dp in enumerate(perf.daily):
+                    last = i == len(perf.daily) - 1
+                    pt = AccountMetricPoint(
+                        account=account.id,
+                        account_type=account.type,
+                        account_currency=account.currency,
+                        day=dp.date,
+                        **self._value_kwargs(dp, last, perf),
+                    )
+                    acc_points.append(pt)
+                    if last:
+                        latest_by_account[account.id] = pt
+            # --- portfolio_totals (global; only if single currency) ----------
+            if total is not None:
+                total_points = [
+                    PortfolioTotalPoint(
+                        day=dp.date,
+                        **self._value_kwargs(dp, i == len(total.daily) - 1, total),
+                    )
+                    for i, dp in enumerate(total.daily)
+                ]
+
+        # What this cycle produced, per entity, is what the prune keeps. Read off
+        # the points themselves rather than off ``[start, today]``: accounts
+        # begin on different days, and a global window would leave one account's
+        # orphaned early days standing inside another's span.
+        acc_spans = self._spans(acc_points, lambda pt: pt.account)
+        total_span = self._spans(total_points, lambda _: None).get(None)
+
+        with self.config_manager.writing() as opened:
+            # **One** transaction for the four statements: they describe the
+            # same cycle, and a reader landing between the upsert and the prune
+            # would see days no computation produced beside days it just did.
+            # A failure rolls the lot back, and the previous cache — a complete
+            # one, from the previous cycle — stands until the next tick rebuilds
+            # it. There is nothing to re-arm: that is what a cache buys.
+            with opened.transaction():
+                perf_series.write_account_metrics(opened, acc_points)
+                perf_series.write_portfolio_totals(opened, total_points)
+                perf_series.prune_account_metrics(opened, acc_spans)
+                perf_series.prune_portfolio_totals(opened, total_span)
 
         # Permissive cash policy: a negative balance is allowed (it keeps a user
         # who adds accounts without rewriting their DEPOSIT history running), but
@@ -2823,15 +2779,16 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # Bootstrap: load shares + arm one self-rescheduling scrape job per
     # symbol (each fires immediately, then re-arms on its market cadence).
     sb_metrics.ingest()
-    # Register the three fixed-cadence interval jobs (ingestion, backfill,
-    # perf recompute). Per-symbol scrape jobs are armed by ingest() above and
-    # kept separate; the perf recompute is its own gated job (issue #618).
+    # Register the two fixed-cadence interval jobs (backfill, perf recompute).
+    # Per-symbol scrape jobs are armed by ingest() above and kept separate; the
+    # perf recompute is its own job (issue #618) and rebuilds its cache in full
+    # on every tick, starting with this boot's (issue #707).
     register_interval_jobs(scheduler, sb_metrics, backfill_interval)
     scheduler.start()
     app_logger.info(
         f"Scheduler started: per-symbol scraping (REGULAR every "
         f"{sb_metrics.regular_interval}s), ingestion on write (watched drop "
-        f"folder), backfill every {backfill_interval}s, perf checked every "
+        f"folder), backfill every {backfill_interval}s, perf recomputed every "
         f"{scheduling.PERF_TICK}s, executor pool: {pool_size} workers")
     return runtime
 

@@ -145,6 +145,46 @@ def declare_positions():
 
 
 @pytest.fixture
+def declare_ledger():
+    """Lay a declaration and a list of events into the store (issue #707).
+
+    The gesture every perf test now performs, and it exists because the perf job
+    reads the **store** — the ledger and the declaration, not a published
+    snapshot. Handing it a fake configuration would fake the one edge the job has
+    left, which is the seam the v5 suite refuses to mock.
+
+    ``accounts`` are ``events.schemas.Account`` (or ``None`` for the seeded
+    ``default`` alone); the ``symbol`` rows the events reference are created
+    here for the same reason :func:`declare_positions` creates them — a foreign
+    key a real ledger satisfies through the import path.
+    """
+    def _declare(opened, events, accounts=None):
+        for account in (accounts or []):
+            opened.execute(
+                'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+                'ON CONFLICT (id) DO UPDATE SET type = excluded.type, '
+                '                               label = excluded.label',
+                [account.id, account.type, account.label])
+        for symbol in sorted({e.symbol for e in events if e.symbol}):
+            opened.execute(
+                'INSERT INTO symbol (symbol) VALUES (?) '
+                'ON CONFLICT (symbol) DO NOTHING', [symbol])
+        (next_id,) = opened.query(
+            'SELECT coalesce(max(id), 0) + 1 FROM event')[0]
+        for offset, event in enumerate(events):
+            opened.execute(
+                'INSERT INTO event (id, date, event_type, account, symbol, '
+                '                   name, quantity, unit_price, fee, amount, '
+                '                   notes) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [next_id + offset, event.date, event.event_type.value,
+                 event.account or 'default', event.symbol, event.name,
+                 event.quantity, event.unit_price, event.fee, event.amount,
+                 event.notes])
+    return _declare
+
+
+@pytest.fixture
 def fake_ticker():
     """Factory returning a stand-in for ``yfinance.Ticker``.
 

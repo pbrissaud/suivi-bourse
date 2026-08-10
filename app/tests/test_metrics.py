@@ -522,18 +522,25 @@ def test_backfill_takes_exactly_one_snapshot_for_the_whole_cycle(
     assert spy.call_count == 1
 
 
-def test_recompute_perf_hands_its_snapshot_to_the_recompute(
+def test_recompute_perf_reads_no_snapshot_at_all(
         store, mocker, sample_events):
-    """The gate and the recompute must judge the same configuration."""
+    """The job takes no configuration argument any more (issue #707).
+
+    Its inputs are the store and the clock: the snapshot it used to be handed
+    existed so the *gate* and the recompute could not straddle a reload, and the
+    gate is gone. Passing one now would tie the cache's freshness to the
+    configuration's publication rhythm rather than to what the store holds.
+    """
     metrics, cfg = _build_metrics([_valid_shares("AAPL")], store,
                                   mode="events",
                                   events=sample_events)
     recompute = mocker.patch.object(metrics, "update_account_metrics")
+    published = mocker.spy(cfg, "current")
 
     metrics.recompute_perf()
 
-    recompute.assert_called_once()
-    assert recompute.call_args.args[0].events is sample_events
+    recompute.assert_called_once_with()
+    assert published.call_count == 0
 
 
 # ---------------------------------------------------------------------------

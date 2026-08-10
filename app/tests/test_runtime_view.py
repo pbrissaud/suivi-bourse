@@ -462,21 +462,23 @@ def test_a_successful_ingestion_does_not_claim_to_have_kept_anything():
     assert payload['shares'] == 3
 
 
-def test_the_perf_verdict_carries_all_three_of_618s_reasons():
-    """A skip *is* the three of them being quiet, so all three are shown.
+def test_the_perf_verdict_publishes_no_reasons():
+    """``reasons`` went with the gate that produced them (issue #707).
 
-    Reducing them to one "reason" string would be the view inventing a verdict —
-    and it could not even be done honestly, since on a skip there is no single
-    condition to name.
+    The three booleans were #618's inputs and existed because a skip *was* the
+    three of them being quiet. A recompute that runs every cycle, in full, has
+    no decision to publish — and three booleans nothing reads would be a page
+    explaining a choice nobody makes.
     """
-    skipped = runtime_view.build_perf(runtime_state.PerfRecord(
-        at=NOW, verdict=runtime_state.PERF_SKIPPED))
     ran = runtime_view.build_perf(runtime_state.PerfRecord(
-        at=NOW, verdict=runtime_state.PERF_RAN, live_write=True))
+        at=NOW, verdict=runtime_state.PERF_RAN))
+    failed = runtime_view.build_perf(runtime_state.PerfRecord(
+        at=NOW, verdict=runtime_state.PERF_FAILED, error='the store is unwritable'))
 
-    assert skipped['reasons'] == {
-        'events_changed': False, 'backfill_pending': False, 'live_write': False}
-    assert ran['reasons']['live_write'] is True
+    assert set(ran) == {'at', 'verdict', 'error'}
+    assert ran['verdict'] == 'ran' and ran['error'] is None
+    assert failed['error'] == 'the store is unwritable'
+    assert not hasattr(runtime_state, 'PERF_SKIPPED')
 
 
 def test_errors_are_folded_newest_first_across_every_job():

@@ -400,47 +400,27 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
 # The perf record
 # ===================================================================== #
 
-def test_a_skipped_perf_run_is_recorded_because_its_signal_is_consumed(
-        store, mocker):
-    """#656 trap 4, and the reason this record cannot be replaced by a pull.
+def test_every_perf_cycle_records_that_it_ran(store, mocker):
+    """Two verdicts, not three (issue #707): a cycle ran, or it failed.
 
-    ``recompute_perf`` reads **and clears** ``_perf_dirty_live`` under
-    ``_perf_lock``, so a request thread reading that flag learns about a run that
-    is pending and nothing at all about the one that just happened. The verdict
-    has to be recorded.
+    The record survives the gate's removal for the reason #656 gave it — a
+    verdict is *recorded*, never inferred by a reader — but it has nothing
+    beside it any more: an unconditional recompute has no decision to explain,
+    and ``PERF_SKIPPED`` names a state nothing can reach.
     """
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = False
-    # Align with the published events so `events_changed` is False: the gate is
-    # an identity check, so a different (even equal) list reads as a reload.
-    m._perf_last_events = m.config_manager.get_events()
-
-    m.recompute_perf()
-    record = m.recorder.perf()
-
-    assert record.verdict == runtime_state.PERF_SKIPPED
-    assert (record.events_changed, record.backfill_pending, record.live_write) \
-        == (False, False, False)
-
-
-def test_a_perf_run_records_which_of_618s_three_signals_fired(
-        store, mocker):
-    m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = True
-    m._perf_last_events = m.config_manager.get_events()
 
     m.recompute_perf()
     record = m.recorder.perf()
 
     assert record.verdict == runtime_state.PERF_RAN
-    assert record.live_write is True
-    assert record.events_changed is False
+    assert record.error is None
+    assert not hasattr(runtime_state, 'PERF_SKIPPED')
 
 
 def test_a_failed_perf_recompute_records_the_error_it_only_logged(
         store, mocker):
     m = _metrics([_share()], store, mocker)
-    m._perf_dirty_live = True
     mocker.patch.object(m, "update_account_metrics",
                         side_effect=Exception("the store is unreadable"))
 
