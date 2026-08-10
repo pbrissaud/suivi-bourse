@@ -182,15 +182,33 @@ def test_retaining_nothing_clears_every_position_series(exporter):
 # --- update_quote on a successful fetch -------------------------------------
 
 def test_update_quote_sets_the_market_gauges(exporter):
-    exporter.update_quote(_share(), 150.0, _info())
+    exporter.update_quote(_share(), 150.0, _info(), 138.0, 0.92)
 
-    assert _val(exporter, 'sb_share_price') == 150.0
+    assert _val(exporter, 'sb_share_price') == 138.0
+    assert _val(exporter, 'sb_share_price_native') == 150.0
+    assert _val(exporter, 'sb_fx_rate') == 0.92
     assert _val(exporter, 'sb_pe_ratio') == 30.0
     assert _val(exporter, 'sb_market_cap') == 3_000_000_000.0
     assert _val(exporter, 'sb_volume') == 123456
     # And touches nothing the replay owns.
     assert _val(exporter, 'sb_owned_quantity') is None
     assert _val(exporter, 'sb_realized_gain') is None
+
+
+def test_the_converted_price_is_absent_while_the_currency_is_unanswered(exporter):
+    """*Never a gauge whose unit depends on a setting* (#702, spec #695 § 12).
+
+    One `sb_share_price` would mean dollars on one install, euros on another and
+    euros *from Tuesday* on a third — not a metric, a trap with a
+    plausible-looking value in it. So the native price is always published and
+    the converted one only when there is a rate. Absent, never zero: a zero is a
+    figure and every `sum()` would count it.
+    """
+    exporter.update_quote(_share(), 150.0, _info())
+
+    assert _val(exporter, 'sb_share_price_native') == 150.0
+    assert _val(exporter, 'sb_share_price') is None
+    assert _val(exporter, 'sb_fx_rate') is None
 
 
 def test_dividend_yield_is_scaled_to_percentage(exporter):
@@ -269,13 +287,15 @@ def test_forget_quotes_keeps_what_the_replay_feeds(exporter):
 
 
 def test_forget_quotes_leaves_another_symbol_alone(exporter):
-    exporter.update_quote(_share(), 150.0, _info())
+    exporter.update_quote(_share(), 150.0, _info(), 150.0, 1.0)
     exporter.update_quote(dict(_share(), symbol='MSFT', name='Microsoft'),
-                          380.0, _info())
+                          380.0, _info(), 380.0, 1.0)
 
     exporter.forget_quotes('AAPL')
 
     assert _val(exporter, 'sb_share_price') is None
+    assert _val(exporter, 'sb_share_price_native') is None
+    assert _val(exporter, 'sb_fx_rate') is None
     assert exporter.registry.get_sample_value('sb_share_price', {
         'share_name': 'Microsoft', 'share_symbol': 'MSFT',
         'account': 'default'}) == 380.0
@@ -309,7 +329,7 @@ def test_none_optional_fields_are_not_set(exporter):
     assert _val(exporter, 'sb_market_cap') is None
     assert _val(exporter, 'sb_volume') is None
     # The price is still present.
-    assert _val(exporter, 'sb_share_price') == 150.0
+    assert _val(exporter, 'sb_share_price_native') == 150.0
 
 
 def test_failed_fetch_sets_no_market_gauge_at_all(exporter):
@@ -370,9 +390,15 @@ def test_scrape_publishes_the_price_and_ingest_the_position(
     manager = FakeConfigManager()
     manager.store = store
     metrics = main.SuiviBourseMetrics(manager, prometheus_exporter=exporter)
+    # The fake quotes in USD and the install reports in USD, so the conversion
+    # is the identity and needs no pair — which is what makes the whole chain
+    # assertable without a second faked fetch (#702).
+    metrics.base_currency = 'USD'
 
     metrics.scrape()
     assert exporter.registry.get_sample_value('sb_share_price', AAPL) == 150.0
+    assert exporter.registry.get_sample_value(
+        'sb_share_price_native', AAPL) == 150.0
     # The scrape knows nothing of the position any more.
     assert exporter.registry.get_sample_value('sb_owned_quantity', AAPL) is None
 
@@ -380,6 +406,8 @@ def test_scrape_publishes_the_price_and_ingest_the_position(
     assert exporter.registry.get_sample_value('sb_owned_quantity', AAPL) == 18.0
     assert exporter.registry.get_sample_value('sb_realized_gain', AAPL) == 0.0
 
-    # And the point landed in the store as well (the gauges are a mirror).
+    # And the point landed in the store as well (the gauges are a mirror),
+    # carrying the three columns #702 gives it.
     assert store.query(
-        "SELECT price_native FROM price_point WHERE symbol = 'AAPL'") == [(150.0,)]
+        "SELECT price_native, price_converted, fx_rate FROM price_point "
+        "WHERE symbol = 'AAPL'") == [(150.0, 150.0, 1.0)]

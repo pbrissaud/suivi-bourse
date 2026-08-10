@@ -23,6 +23,7 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
+import fx
 import ledger
 import perf_series
 import performance
@@ -1071,11 +1072,27 @@ class SuiviBourseMetrics:
         #     it. ``0`` disables the sonde — the pure decision returns False and
         #     the check no-ops.
         #   regular_interval — see below.
+        #   base_currency — the reporting currency (issue #702, ADR-0002). The
+        #     one dial with **no default**, so this attribute is legitimately
+        #     ``None`` and every write path reads it as *"nothing has a unit
+        #     yet"*: prices are still fetched and stored natively, nothing is
+        #     converted, and no performance figure is written at all.
         #
-        # Assigned by one loop and not by four literals, deliberately: a default
+        # Assigned by one loop and not by five literals, deliberately: a default
         # spelled here as well as in the registry is the second list ADR-0014
         # exists to forbid, and it would be the copy nobody updates.
+        self.base_currency: Optional[str] = None
         self.apply_dials(settings_registry.defaults())
+
+        # The exchange rate (issue #702, ADR-0002). A TTL cache in front of two
+        # yfinance fetches, and the TTL is what makes a market-open wave share
+        # **one** rate per pair: converted at N slightly different rates, the
+        # positions of one wave would not add up to their own total. It is
+        # deliberately not a job and not a pseudo-symbol in the scheduler — a
+        # currency pair has no ``marketState`` that projects onto the equity
+        # cadence model — and there is no ``fx_rates`` table: the rate that was
+        # used is stored on the point it produced.
+        self.rates = fx.Rates(self._fetch_fx_rate, self._fetch_fx_series)
 
         # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
         # as its own self-rescheduling APScheduler job; the scheduler is injected
@@ -1303,7 +1320,82 @@ class SuiviBourseMetrics:
 
         return None
 
-    def _update_share_prometheus(self, share, last_quote, info) -> None:
+    # ------------------------------------------------------------------ #
+    # The exchange rate (issue #702, ADR-0002)
+    # ------------------------------------------------------------------ #
+
+    def _fetch_fx_rate(self, pair: str) -> Optional[float]:
+        """The newest close of one currency pair, or ``None``.
+
+        The live half of what :attr:`rates` caches. Deliberately **not**
+        ``_fetch_ticker_data``: that one fills ``_share_info_cache``, which the
+        backfill reads to learn a *symbol's* exchange, and a currency pair
+        landing in it would put an instrument that is not a holding into the
+        portfolio's own memory. What is wanted here is one number.
+
+        Errors are swallowed into ``None`` on purpose — an unresolvable pair is
+        an ordinary state (spec #695 § 7), it writes a ``NULL`` converted price
+        and never a lost quote.
+        """
+        try:
+            history = yf.Ticker(pair).history()
+        except Exception as e:
+            app_logger.warning(f"Could not fetch the {pair} rate: {e}")
+            return None
+        if history is None or history.empty or 'Close' not in history.columns:
+            return None
+        closes = history['Close'].dropna()
+        return float(closes.iloc[-1]) if not closes.empty else None
+
+    def _fetch_fx_series(self, pair: str, start: date,
+                         end: date) -> Dict[date, float]:
+        """The pair's **daily** closes over ``[start, end]``.
+
+        The rebuild's half: the pair's history is fetched beside the price
+        history it is converting, so a point placed five years ago is converted
+        at the rate of *its own day* rather than at today's — which is what makes
+        the stored rate a journal one can read back.
+
+        Daily whatever the window's age, unlike the price fetch: an hourly rate
+        would be a hundredfold more rows for a series whose consumer is a
+        calendar day, and Yahoo caps hourly at 730 days anyway.
+        """
+        try:
+            history = yf.Ticker(pair).history(
+                start=start, end=end, interval='1d')
+        except Exception as e:
+            app_logger.warning(
+                f"Could not fetch the {pair} history over [{start}, {end}]: {e}")
+            return {}
+        if history is None or history.empty:
+            return {}
+
+        series: Dict[date, float] = {}
+        for index, row in history.iterrows():
+            close = row['Close']
+            if pd.isna(close):
+                continue
+            moment = index.to_pydatetime()
+            day = moment.date() if moment.tzinfo is None else moment.astimezone(
+                timezone.utc).date()
+            # The **last** close of a day wins, the survivor rule the rest of
+            # the store follows.
+            series[day] = float(close)
+        return series
+
+    def _convert(self, price, currency: Optional[str],
+                 at: Optional[date] = None) -> Tuple[Optional[float], Optional[float]]:
+        """``(converted, rate)`` for one observed price, in one call.
+
+        The single place a write path asks the currency question, so that no
+        writer has to remember the order of *"is there a reporting currency"*
+        and *"is there a rate"*. Both answers are ``None`` together, and the
+        caller writes the point anyway.
+        """
+        return fx.convert(price, currency, self.base_currency, self.rates, at)
+
+    def _update_share_prometheus(self, share, last_quote, info,
+                                 converted=None, fx_rate=None) -> None:
         """Update one share's **market** gauges from a fetched quote.
 
         Kept independent of the store write so ``/metrics`` stays populated
@@ -1314,11 +1406,17 @@ class SuiviBourseMetrics:
         The position half left with #699: it is fed by the replay
         (:meth:`_publish_position_gauges`), because a sold position's figures
         change at the very instant its scrape stops.
+
+        ``converted`` / ``fx_rate`` ride through untouched (issue #702): the
+        exporter publishes the native price always and the converted one only
+        when there is one, because *never a gauge whose unit depends on a
+        setting*.
         """
         if self.prometheus is None:
             return
         try:
-            self.prometheus.update_quote(share, last_quote, info)
+            self.prometheus.update_quote(share, last_quote, info,
+                                         converted, fx_rate)
         except Exception as e:
             app_logger.error(
                 f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
@@ -1361,7 +1459,8 @@ class SuiviBourseMetrics:
             'market_cap': info.get('marketCap'),
         }
 
-    def _write_quote(self, symbol: str, last_quote, info, now: datetime) -> bool:
+    def _write_quote(self, symbol: str, last_quote, info, now: datetime,
+                     converted=None, fx_rate=None) -> bool:
         """Persist one live observation: ``symbol_quote`` + one ``price_point``.
 
         **One call per symbol**, not one per holding (issue #700). The account
@@ -1374,6 +1473,13 @@ class SuiviBourseMetrics:
         caller can tell a real write from a swallowed failure (issue #618 — an
         all-failed wave must not raise the perf dirty flag).
 
+        The conversion arrives from the caller rather than being worked out here
+        (issue #702), so the rate stored beside the price is provably the one
+        the price was multiplied by — and so the same pair of numbers reaches
+        ``/metrics`` and the store without being computed twice at two instants.
+        Both ``None`` writes the point with a ``NULL`` converted price, which is
+        the ordinary state while the reporting currency is unanswered.
+
         Takes the writers' mutex: the write is a transaction on the one DuckDB
         connection this process owns, and an ingestion running between its
         ``BEGIN`` and its ``ROLLBACK`` in another thread would take this point
@@ -1382,7 +1488,8 @@ class SuiviBourseMetrics:
         try:
             with self.config_manager.writing() as opened:
                 quotes.record_quote(opened, symbol, now, last_quote,
-                                    self._quote_attributes(info))
+                                    self._quote_attributes(info),
+                                    converted, fx_rate)
             return True
         except Exception as e:
             app_logger.error(f"Failed to write the quote for {symbol}: {e}")
@@ -1413,20 +1520,23 @@ class SuiviBourseMetrics:
                        if share.get('symbol') and share.get('quantity')})
         for symbol in held:
             last_quote, info = self._fetch_ticker_data(symbol)
+            converted, rate = self._convert(
+                last_quote, (info or {}).get('currency'))
 
             # The Prometheus quote gauges stay per holding: a series identity
             # there carries the account, and it is what tells two positions in
             # the same share apart on a headless dashboard.
             for share in shares:
                 if share.get('symbol') == symbol and share.get('quantity'):
-                    self._update_share_prometheus(share, last_quote, info)
+                    self._update_share_prometheus(
+                        share, last_quote, info, converted, rate)
 
             if last_quote is None or info is None:
                 app_logger.warning(
                     f"No data fetched for {symbol}, skipping the quote write")
             else:
                 self._write_quote(symbol, last_quote, info,
-                                  datetime.now(timezone.utc))
+                                  datetime.now(timezone.utc), converted, rate)
 
     # ------------------------------------------------------------------ #
     # Market-aware per-symbol scheduling (issue #616)
@@ -1572,9 +1682,12 @@ class SuiviBourseMetrics:
         fall out of step with it.
 
         Keys the mapping does not carry are left alone (a ``PUT`` naming one
-        dial must not reset the other four), and so is a ``None`` value: the
-        only dial that can be ``None`` is the unanswered currency, and it has no
-        attribute anyway.
+        dial must not reset the other four), and so is a ``None`` value. The
+        only dial that can be ``None`` is the unanswered reporting currency, and
+        skipping it is what it needs rather than a gap: the attribute starts at
+        ``None``, the boot's read of an unanswered store hands back ``None``, and
+        the first ``PUT`` that answers hands back a code — so the write path
+        moves it exactly once, in the one direction it can move.
         """
         for spec in settings_registry.SETTINGS:
             if spec.attribute is None:
@@ -1824,6 +1937,12 @@ class SuiviBourseMetrics:
         last_quote, info = self._fetch_ticker_data(symbol)
         price_present = last_quote is not None and info is not None
 
+        # The conversion, computed **once** for this pass (issue #702) and used
+        # by both the gauges and the write: two calls would be two rates for one
+        # observation the moment a TTL expired between them, and the row would
+        # then say a price was produced by a rate it was not.
+        converted, rate = self._convert(last_quote, (info or {}).get('currency'))
+
         # The holdings this symbol has, which since #700 decide **whether** to
         # write and no longer **how many times**: the price series carries no
         # account, so a symbol held in three accounts is one point. What the
@@ -1837,7 +1956,8 @@ class SuiviBourseMetrics:
         # never the write/REGULAR gate.
         if price_present:
             for share in holdings:
-                self._update_share_prometheus(share, last_quote, info)
+                self._update_share_prometheus(
+                    share, last_quote, info, converted, rate)
 
         if info is not None:
             state, next_open = scheduling.extract_market_context(
@@ -1873,7 +1993,7 @@ class SuiviBourseMetrics:
             # holding was sold between this cycle's fetch and here has nothing
             # to record, and nothing wrong with it either.
             wrote_live_data = bool(holdings) and self._write_quote(
-                symbol, last_quote, info, now)
+                symbol, last_quote, info, now, converted, rate)
             # A REGULAR write makes today's perf series stale: raise the global
             # live-write dirty bool so the gated perf job (issue #618) runs its
             # next cycle. One flag for the whole market-open wave — it coalesces
@@ -2197,6 +2317,12 @@ class SuiviBourseMetrics:
         fields; a market observation says nothing about who held what, so the
         write is now the prices and only the prices.
 
+        The **conversion rides along** (issue #702): the pair's daily history is
+        fetched beside the price history — one request for the whole chunk,
+        because the rates are cached — so every point is converted at the rate of
+        its own day. Converting a five-year-old close at today's rate would put a
+        currency move into a chart of a share price.
+
         Rate-limits (``backfill_delay``) after any completed fetch — empty or
         written — but not after a fetch failure.
         """
@@ -2206,6 +2332,8 @@ class SuiviBourseMetrics:
         if not prices:
             time.sleep(self.backfill_delay)
             return prices, 0
+
+        self._convert_history(symbol, prices)
 
         written = 0
         try:
@@ -2221,6 +2349,44 @@ class SuiviBourseMetrics:
         # Rate limit between symbols
         time.sleep(self.backfill_delay)
         return prices, written
+
+    def _convert_history(self, symbol: str, prices: List[Dict]) -> None:
+        """Stamp a fetched chunk with its converted price and rate, in place.
+
+        One prefetch of the pair over the chunk's own span — :meth:`fx.Rates.series`
+        caches it, so the per-point :meth:`fx.Rates.rate` calls that follow are
+        dictionary lookups — then one conversion per point at the rate of **its**
+        day.
+
+        The symbol's currency is read from ``_share_info_cache`` rather than
+        fetched: the backfill runs on symbols the scrape has already met, and a
+        second ``.info`` call per chunk would double the rate-limit exposure of
+        the job that already emits the most requests in the app. A symbol not in
+        the cache yet — a position sold before this install existed, which the
+        live scrape never polls — simply leaves the conversion ``NULL`` until
+        #704's lateral pass, which is exactly what that pass is for.
+
+        Nothing is raised: a chunk that cannot be converted is still a chunk of
+        prices, and losing it over a currency is the one outcome ADR-0002 rules
+        out.
+        """
+        if not prices or not self.base_currency:
+            return
+        currency = (self._share_info_cache.get(symbol) or {}).get('currency')
+        if not currency:
+            return
+
+        days = [point['timestamp'].date() for point in prices]
+        try:
+            self.rates.series(currency, self.base_currency, min(days), max(days))
+        except Exception as e:
+            app_logger.warning(
+                f"Could not prefetch the rates for {symbol}: {e}")
+
+        for point, day in zip(prices, days):
+            converted, rate = self._convert(point.get('price'), currency, day)
+            point['converted'] = converted
+            point['rate'] = rate
 
     def _backfill_backward(self, symbol: str, first_buy_date) -> int:
         """Backward pass: extend the series toward the first BUY date, one chunk
@@ -2461,6 +2627,24 @@ class SuiviBourseMetrics:
         reload; it defaults to the currently published one for direct callers.
         """
         snapshot = snapshot or self.config_manager.current()
+
+        # **Nothing at all until the reporting currency is answered** (issue
+        # #702, ADR-0002). Not zeros, not ``NULL``s, not a partial series: every
+        # figure this method writes is money, and an amount whose unit is not
+        # settled is not a figure. Writing them "for later" would also be
+        # unrecoverable in the ordinary sense — the rows would be indexed by day
+        # and the next cycle would upsert over them, but a chart drawn in the
+        # meantime would have shown a total that means nothing.
+        #
+        # The gate is here rather than inside ``performance`` because it is true
+        # of every figure at once rather than of any one computation, and because
+        # what it protects is the *write*: prices go on being collected the whole
+        # time, natively, so answering late costs nothing.
+        if not self.base_currency:
+            app_logger.debug(
+                "No base currency answered yet: no performance series is written")
+            return
+
         portfolio = snapshot.accounts
         if portfolio is None:
             return  # single gate: no declared accounts -> no account series
@@ -2525,14 +2709,16 @@ class SuiviBourseMetrics:
                 pt = AccountMetricPoint(
                     account=account.id,
                     account_type=account.type,
-                    account_currency=account.currency,
                     day=dp.date,
                     **self._value_kwargs(dp, last, perf),
                 )
                 acc_points.append(pt)
                 if last:
                     latest_by_account[account.id] = pt
-        # --- portfolio_totals (global; only if single currency) -------------
+        # --- portfolio_totals (global) --------------------------------------
+        # The "only if single currency" condition left with ``Account.currency``
+        # (issue #702): accounts cannot disagree about a currency they do not
+        # have. ``total`` is ``None`` only when nothing is declared.
         total_points = []
         if total is not None:
             total_points = [

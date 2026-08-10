@@ -29,12 +29,19 @@ from events import (
 
 
 def _seed_price(store, symbol, day, price):
-    """One closing price on a calendar day, through the real writer."""
+    """One closing price on a calendar day, through the real writer.
+
+    Written **converted as well as native** (#702). The perf job reads the
+    converted column, because every figure it computes is money in the reporting
+    currency; a point carrying only a native price is one whose conversion has
+    not landed yet, and it is deliberately invisible to that read. Here the
+    security is quoted in the reporting currency, so the rate is 1.
+    """
     store.execute("INSERT INTO symbol (symbol) VALUES (?) "
                   "ON CONFLICT (symbol) DO NOTHING", [symbol])
     quotes.record_history(store, symbol, [{
         "timestamp": datetime.combine(day, time(16, 0), tzinfo=timezone.utc),
-        "price": price}])
+        "price": price, "converted": price, "rate": 1.0}])
 
 
 # --------------------------------------------------------------------------- #
@@ -196,9 +203,9 @@ def test_the_price_series_is_read_by_symbol_alone(store):
     store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 2, 16, 0, tzinfo=timezone.utc),
-         "price": 100.0},
+         "price": 100.0, "converted": 100.0, "rate": 1.0},
         {"timestamp": datetime(2024, 1, 3, 16, 0, tzinfo=timezone.utc),
-         "price": 110.0},
+         "price": 110.0, "converted": 110.0, "rate": 1.0},
     ])
 
     assert quotes.price_series(store, "AAPL") == {
@@ -212,9 +219,9 @@ def test_the_price_series_keeps_the_last_point_of_each_day(store):
     store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 2, 9, 0, tzinfo=timezone.utc),
-         "price": 100.0},
+         "price": 100.0, "converted": 100.0, "rate": 1.0},
         {"timestamp": datetime(2024, 1, 2, 17, 30, tzinfo=timezone.utc),
-         "price": 104.0},
+         "price": 104.0, "converted": 104.0, "rate": 1.0},
     ])
 
     assert quotes.price_series(store, "AAPL") == {date(2024, 1, 2): 104.0}
@@ -228,7 +235,7 @@ def test_account_metrics_are_upserted_on_the_day_they_describe(store):
     store.execute("INSERT INTO account (id, type, label) VALUES "
                   "('PEA', 'PEA', 'Mon PEA')")
     point = AccountMetricPoint(
-        account="PEA", account_type="PEA", account_currency="EUR",
+        account="PEA", account_type="PEA",
         day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
         total_value=1000.0, net_contributed=800.0)
 
@@ -253,7 +260,7 @@ def test_a_field_that_was_never_computable_is_null_not_missing(store):
     store.execute("INSERT INTO account (id, type, label) VALUES "
                   "('PEA', 'PEA', 'Mon PEA')")
     perf_series.write_account_metrics(store, [AccountMetricPoint(
-        account="PEA", account_type="PEA", account_currency="EUR",
+        account="PEA", account_type="PEA",
         day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
         total_value=1000.0, net_contributed=800.0)])
 
@@ -331,7 +338,14 @@ def _metrics(store, shares, events, accounts):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _CashConfigManager(shares, events, accounts, opened_store=store)
-    return main.SuiviBourseMetrics(cfg)
+    metrics = main.SuiviBourseMetrics(cfg)
+    # The one question the app asks (#702, ADR-0021). Without an answer the perf
+    # job writes **nothing at all** — not zeros, not NULLs — because every figure
+    # it computes is money and an amount with no settled unit is not a figure.
+    # ``test_no_base_currency_writes_no_performance_at_all`` is where that is
+    # asserted; everything else here is about the arithmetic behind it.
+    metrics.base_currency = 'EUR'
+    return metrics
 
 
 def test_update_account_metrics_gated_on_declared_accounts(store):
@@ -353,7 +367,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
     shares = [{"name": "Apple", "symbol": "AAPL", "account": "PEA",
                "purchase": {"quantity": 2, "cost_price": 100.0, "fee": 0.0},
                "estate": {"quantity": 2, "received_dividend": 0.0}}]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     # Price series: AAPL at 110 from 2024-01-02.
     _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
 
@@ -387,7 +401,7 @@ def test_update_account_metrics_writes_series_with_midnight_stamp(
 def test_update_account_metrics_is_idempotent(store, mocker):
     """Two cycles with no new event produce the identical (tags, time) point set."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
 
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
 
@@ -409,7 +423,7 @@ def test_update_account_metrics_is_idempotent(store, mocker):
 def test_update_account_metrics_writes_portfolio_totals_single_currency(
         store, mocker):
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
 
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
 
@@ -424,15 +438,24 @@ def test_update_account_metrics_writes_portfolio_totals_single_currency(
     assert store.query("SELECT count(*) FROM portfolio_totals") == [(2,)]
 
 
-def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
+def test_two_accounts_are_pooled_because_they_cannot_disagree_on_a_currency(
         store, mocker):
+    """The mixed-currency refusal is **gone** with `Account.currency` (#702).
+
+    It used to withhold `portfolio_totals` whenever two declared accounts named
+    different currencies. An account names none: there is one reporting currency
+    for the install, every stored figure is already in it, and the pooling has
+    nothing left to refuse. What can still make the global series unwritable is
+    that currency being unanswered — and that gate is above, on the whole
+    recompute, because it is true of every figure at once.
+    """
     events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
     ]
     portfolio = Portfolio([
-        Account("PEA", "PEA", "Mon PEA", "EUR"),
-        Account("CTO", "CTO", "My CTO", "USD"),
+        Account("PEA", "PEA", "Mon PEA"),
+        Account("CTO", "CTO", "My CTO"),
     ])
 
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
@@ -445,10 +468,39 @@ def test_update_account_metrics_skips_portfolio_totals_mixed_currency(
 
     m.update_account_metrics()
 
-    # EUR + USD -> no global series.
-    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
-    # ...but per-account metrics are still written.
+    assert store.query(
+        "SELECT total_value FROM portfolio_totals ORDER BY day DESC LIMIT 1") \
+        == [(1500.0,)]
     assert store.query("SELECT count(*) FROM account_metrics")[0][0] > 0
+
+
+def test_no_base_currency_writes_no_performance_at_all(store, mocker):
+    """Not zeros, not `NULL`s, not a partial series — **nothing** (#702, ADR-0002).
+
+    Prices go on being collected natively the whole time, so answering late
+    costs nothing; writing a total with no unit would cost a chart that means
+    nothing, drawn before anyone could say so.
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0,
+                    account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+
+    m = _metrics(store, shares=[], events=events, accounts=portfolio)
+    m.base_currency = None
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+
+    assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
+
+    # ...and answering it is all it takes: the next cycle writes the series it
+    # was withholding, with nothing to replay and nothing to repair.
+    m.base_currency = 'EUR'
+    m.update_account_metrics()
+
+    assert store.query("SELECT count(*) FROM account_metrics")[0][0] > 0
+    assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] > 0
 
 
 def test_account_metrics_perf_fields_only_on_latest_point(
@@ -461,7 +513,7 @@ def test_account_metrics_perf_fields_only_on_latest_point(
     shares = [{"name": "Apple", "symbol": "AAPL", "account": "PEA",
                "purchase": {"quantity": 10, "cost_price": 100.0, "fee": 0.0},
                "estate": {"quantity": 10, "received_dividend": 0.0}}]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 1), 100.0)
     _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
 
@@ -532,7 +584,7 @@ def test_update_account_metrics_second_cycle_writes_only_today(
     """First cycle writes the full series; a steady second cycle (no backfill,
     no event change) rewrites ONLY today's point — the fix for #597."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -550,7 +602,7 @@ def test_backfill_dirty_mark_widens_the_incremental_window(
     cycle rewrites the whole tail from that day through today (TWR compounds
     forward, so the tail must be recomputed)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -569,7 +621,7 @@ def test_update_account_metrics_full_rewrite_on_event_reload(
     the full series — a new/edited event can shift any past day (cash, holdings,
     contributions), not just today."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -589,7 +641,7 @@ def test_write_failure_re_arms_the_dirty_watermark(
     """If the account_metrics write raises, the stale tail must not be lost: the
     watermark is re-armed so the next cycle retries the same slice (#597)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -609,7 +661,7 @@ def test_portfolio_totals_second_cycle_writes_only_today(
         store, mocker):
     """The global portfolio_totals series is incremental too (same #597 fix)."""
     events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA", "EUR")])
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     m = _metrics(store, shares=[], events=events, accounts=portfolio)
     _fixed_today(mocker, 2024, 1, 3)
 
@@ -641,7 +693,7 @@ def test_prometheus_update_account_sets_gauges():
 
     exp = PrometheusExporter(registry=CollectorRegistry())
     exp.update_account(AccountMetricPoint(
-        account="PEA", account_type="PEA", account_currency="EUR",
+        account="PEA", account_type="PEA",
         day=date(2024, 1, 15),
         cash_balance=100.0, holdings_value=900.0,
         total_value=1000.0, net_contributed=800.0,
@@ -652,5 +704,7 @@ def test_prometheus_update_account_sets_gauges():
     assert reg.get_sample_value("sb_account_holdings_value", {"account": "PEA"}) == 900.0
     assert reg.get_sample_value("sb_account_total_value", {"account": "PEA"}) == 1000.0
     assert reg.get_sample_value("sb_account_net_contributed", {"account": "PEA"}) == 800.0
+    # No `account_currency` label since #702: an account has no currency of its
+    # own, and the one it used to carry was an always-empty third level.
     assert reg.get_sample_value("sb_account_info", {
-        "account": "PEA", "account_type": "PEA", "account_currency": "EUR"}) == 1.0
+        "account": "PEA", "account_type": "PEA"}) == 1.0

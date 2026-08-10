@@ -10,6 +10,21 @@ scrape/current-value model).
 This module owns the *registry*, not the server: since issue #651 the ``/metrics``
 endpoint is mounted on the Flask app (``web``) and served by gunicorn on its own
 socket, so the exporter no longer runs a ``ThreadingHTTPServer`` of its own.
+
+Two rules the inventory obeys, and both are about what a scraper can trust:
+
+* **Never a gauge whose unit depends on a setting** (issue #702). A single
+  ``sb_share_price`` would mean dollars on one install, euros on another and
+  euros *from Tuesday onwards* on a third — not a metric, a trap with a
+  plausible-looking value in it. So the native price and the converted price are
+  two gauges with fixed meanings, and while the reporting currency is unanswered
+  the converted one is **absent**. The position and account gauges are not under
+  the rule: their amounts come from events *recorded* in the reporting currency,
+  so answering the dial names a unit they always had rather than changing one.
+* **A gauge whose field is absent is not published.** A zero makes "no ledger"
+  and "a ledger at zero" the same series; a ``NaN`` propagates through every
+  aggregation that touches it. An absent series is how Prometheus itself says
+  *no value*, and the asymmetry is the message.
 """
 import os
 
@@ -42,9 +57,32 @@ class PrometheusExporter:
     def __init__(self, registry: CollectorRegistry = None):
         self.registry = registry or CollectorRegistry()
 
+        # **Two price gauges, never one** (issue #702, spec #695 § 12). The rule
+        # is general and is the reason both exist: *never a gauge whose unit
+        # depends on a setting*. A single ``sb_share_price`` would mean dollars
+        # on one install, euros on another, and euros *from Tuesday* on a third
+        # — not a metric, a trap with a plausible-looking value in it. So the
+        # converted price and the native price are two series with fixed
+        # meanings, and while the reporting currency is unanswered the converted
+        # one is **absent** rather than zero (see :meth:`update_quote`).
+        #
+        # The position gauges below are not under that rule and stay one gauge
+        # each: a cost basis comes from events that were *recorded* in the
+        # reporting currency, so its unit does not change when the dial is
+        # answered — the dial only names a unit those amounts always had.
         self.share_price = Gauge(
-            "sb_share_price", "Price of the share", COMMON_LABELS,
-            registry=self.registry)
+            "sb_share_price",
+            "Price of the share, in the reporting currency. Absent until the "
+            "base currency is answered",
+            COMMON_LABELS, registry=self.registry)
+        self.share_price_native = Gauge(
+            "sb_share_price_native",
+            "Price of the share as quoted, in the security's own currency",
+            COMMON_LABELS, registry=self.registry)
+        self.fx_rate = Gauge(
+            "sb_fx_rate",
+            "The rate that turned sb_share_price_native into sb_share_price",
+            COMMON_LABELS, registry=self.registry)
         # The three ``sb_purchased_*`` gauges are **gone** (issue #699, spec
         # #695 § 12, `website/docs/headless-gauges.mdx`), and none of them was
         # renamed into a survivor: every one would have changed *meaning* under
@@ -115,6 +153,8 @@ class PrometheusExporter:
         # them, and it goes on doing so for a position at zero.
         self._quote_gauges = (
             (self.share_price, COMMON_LABELS),
+            (self.share_price_native, COMMON_LABELS),
+            (self.fx_rate, COMMON_LABELS),
             (self.share_info, SHARE_INFO_LABELS),
             (self.dividend_yield, COMMON_LABELS),
             (self.pe_ratio, COMMON_LABELS),
@@ -150,9 +190,13 @@ class PrometheusExporter:
         self.account_net_contributed = Gauge(
             "sb_account_net_contributed", "Net external cash contributed to the account",
             ['account'], registry=self.registry)
+        # ``account_currency`` left this label set with ``Account.currency``
+        # (issue #702, ADR-0002): an account has no currency of its own, and a
+        # label that was always the same empty string across every account was
+        # a third currency level publishing itself as a fact.
         self.account_info = Gauge(
             "sb_account_info", "Account informations as label",
-            ['account', 'account_type', 'account_currency'],
+            ['account', 'account_type'],
             registry=self.registry)
         # Money-weighted performance per account.
         self.account_xirr = Gauge(
@@ -242,7 +286,8 @@ class PrometheusExporter:
                 self._remove(gauge, labels)
             self._published_positions.discard(labels)
 
-    def update_quote(self, share: dict, last_quote, info) -> None:
+    def update_quote(self, share: dict, last_quote, info,
+                     converted=None, fx_rate=None) -> None:
         """Publish one position's market gauges, from a successful fetch.
 
         Gated by the caller on **fetch success** rather than on the write gate,
@@ -251,10 +296,21 @@ class PrometheusExporter:
         :meth:`update_position`'s, and it does not depend on the market being
         reachable.
 
+        ``last_quote`` is the price **as quoted** and goes to
+        ``sb_share_price_native``; ``converted`` and ``fx_rate`` are the caller's
+        conversion into the reporting currency and go to ``sb_share_price`` and
+        ``sb_fx_rate`` (issue #702). Passing neither — which is what a scrape
+        does while the reporting currency is unanswered, or when the pair could
+        not be resolved — leaves those two series **absent**, which is the only
+        honest thing a Prometheus exporter can say about a value it has no unit
+        for. A zero would be a figure and would be counted by every ``sum()``.
+
         Args:
             share: one position dict (name, symbol, account).
-            last_quote: Latest price, or None if the fetch failed.
+            last_quote: Latest native price, or None if the fetch failed.
             info: Enriched ticker info dict, or None if the fetch failed.
+            converted: the same price in the reporting currency, or None.
+            fx_rate: the rate that produced it, or None.
         """
         if last_quote is None or info is None:
             return
@@ -262,7 +318,11 @@ class PrometheusExporter:
         account = share.get('account', DEFAULT_ACCOUNT)
         labels = self._share_labels(share)
 
-        self.share_price.labels(*labels).set(last_quote)
+        self.share_price_native.labels(*labels).set(last_quote)
+        if converted is not None:
+            self.share_price.labels(*labels).set(converted)
+        if fx_rate is not None:
+            self.fx_rate.labels(*labels).set(fx_rate)
         self.share_info.labels(
             share['name'], share['symbol'], account,
             info['currency'], info['exchange'], info['quoteType']).set(1)
@@ -327,8 +387,7 @@ class PrometheusExporter:
         self.account_holdings_value.labels(account).set(point.holdings_value)
         self.account_total_value.labels(account).set(point.total_value)
         self.account_net_contributed.labels(account).set(point.net_contributed)
-        self.account_info.labels(
-            account, point.account_type or '', point.account_currency or '').set(1)
+        self.account_info.labels(account, point.account_type or '').set(1)
         # Performance fields: only when computable (absent otherwise).
         if point.xirr is not None:
             self.account_xirr.labels(account).set(point.xirr)
