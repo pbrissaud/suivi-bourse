@@ -57,6 +57,25 @@ def test_no_record_is_unknown_not_a_fault():
     assert runtime_view.symbol_pill(None) == runtime_view.PILL_UNKNOWN
 
 
+def test_a_line_nobody_holds_says_so_rather_than_unknown():
+    """``unknown`` is a statement about *this process*, and it would never clear.
+
+    A sold line keeps no scrape job and no record, so the ranking would call it
+    "the scheduler has never reached this symbol" for the life of the container,
+    with no future event able to erase it — and it is on the page precisely
+    because its history is still being rebuilt (#703). ``held`` therefore
+    outranks everything, exactly as it does for ``next_run_state``.
+    """
+    assert runtime_view.symbol_pill(None, held=False) == \
+        runtime_view.PILL_NOT_HELD
+    # And it stays the headline even while a record from before the sale
+    # survives: what the pill answers is a property of the symbol, not of the
+    # last pass over it.
+    assert runtime_view.symbol_pill(_scrape(), held=False) == \
+        runtime_view.PILL_NOT_HELD
+    assert runtime_view.symbol_pill(None) == runtime_view.PILL_UNKNOWN
+
+
 def test_a_written_pass_is_open_and_a_closed_one_is_closed():
     assert runtime_view.symbol_pill(_scrape()) == runtime_view.PILL_OPEN
     assert runtime_view.symbol_pill(_scrape(
@@ -366,6 +385,41 @@ def test_a_still_held_line_keeps_reading_against_today():
     assert held.ratio == 0.5
 
 
+def test_the_bar_follows_the_anchor_and_not_what_is_stored():
+    """#703 parted the two, and only one of them moves.
+
+    A symbol Yahoo answers nothing about for its early windows — a partial
+    delisting, a history that simply starts later — stores no new point while
+    its anchor descends a chunk a cycle. A bar drawn from the stored point
+    freezes for the whole of the work and then jumps to 1,0 at the terminal:
+    it reports a stall through exactly the period it exists to describe.
+    """
+    now = datetime(2026, 8, 10, tzinfo=UTC)
+    target = datetime(2020, 1, 1, tzinfo=UTC)
+    ceiling = datetime(2024, 1, 1, tzinfo=UTC)
+    stored = datetime(2023, 12, 1, tzinfo=UTC)   # never moves: nothing to fetch
+    anchor = datetime(2022, 1, 1, tzinfo=UTC)    # two chunks down
+
+    progress = runtime_view.backfill_progress(
+        _backfill(target=target, ceiling=ceiling, anchor=anchor, oldest=stored),
+        runtime_state.BACKWARD, now)
+
+    # Half the window walked, not the one month the series happens to hold.
+    assert progress.ratio == pytest.approx(0.5, abs=0.001)
+    assert progress.to_dict()['anchor'] == anchor.isoformat()
+    assert progress.to_dict()['oldest'] == stored.isoformat()
+
+
+def test_a_record_without_an_anchor_falls_back_to_what_is_stored():
+    """A record published before the field existed still draws its bar."""
+    progress = runtime_view.backfill_progress(
+        _backfill(target=NOW - timedelta(days=400), ceiling=NOW,
+                  oldest=NOW - timedelta(days=200)),
+        runtime_state.BACKWARD, NOW)
+
+    assert progress.ratio == 0.5
+
+
 def test_a_point_stored_after_the_last_exit_floors_the_bar_at_zero():
     """A pre-#703 install can hold points a scrape wrote after the sale.
 
@@ -495,6 +549,35 @@ def test_a_symbol_held_in_two_accounts_is_one_row_naming_both():
     assert rows[0].accounts == ['cto', 'pea']
     assert rows[0].frozen is True
     assert rows[0].written is True
+
+
+def test_the_accounts_are_the_ones_that_hold_it_not_the_ones_that_did():
+    """The field says *holding*, and #703 must not change that in silence.
+
+    Widening the row set to every symbol the ledger names (a sold line has a
+    reconstruction of its own) also widened this list, which was already
+    published: a share held in a PEA and sold out of a CTO listed both, so a
+    reader summing per account counted a holding nobody has.
+    """
+    rows = runtime_view.build_symbols(
+        [_share(account='pea', quantity=10), _share(account='cto', quantity=0)],
+        {'AAPL': _scrape()}, {}, {}, NOW)
+
+    assert rows[0].accounts == ['pea']
+    assert rows[0].held is True
+
+
+def test_a_symbol_nobody_holds_lists_no_account_and_says_why():
+    """Empty, and ``held`` is the field that carries the meaning. *Which
+    accounts once held it* is a different question, and the ledger answers it —
+    inventing an answer here would be the same silent widening."""
+    rows = runtime_view.build_symbols(
+        [_share(account='pea', quantity=0), _share(account='cto', quantity=0)],
+        {}, {}, {}, NOW)
+
+    assert rows[0].accounts == []
+    assert rows[0].held is False
+    assert rows[0].pill == runtime_view.PILL_NOT_HELD
 
 
 # ===================================================================== #

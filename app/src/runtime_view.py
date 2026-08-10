@@ -40,6 +40,13 @@ DEFAULT_ACCOUNT = 'default'
 #: symbol. A *designed* state on a freshly booted container, not a fault, and
 #: deliberately distinct from every other value here.
 PILL_UNKNOWN = 'unknown'
+#: Nobody holds this symbol, so nothing polls it — **by design**, not by
+#: failure. Its own value because ``unknown`` is a statement about *this
+#: process* ("it has not got there yet"), which a closed position would wear
+#: for ever: the scrape job departs at the sale and its record leaves with it,
+#: so no future event could ever clear it. The line is on the page because its
+#: history is still being rebuilt (#703), and this says why it is not polled.
+PILL_NOT_HELD = 'not_held'
 #: The market was shut on the last pass, so the job slept to the next open.
 PILL_CLOSED = 'closed'
 #: The last pass wrote a point. The only entirely reassuring value.
@@ -105,6 +112,10 @@ class BackfillProgress:
     #: assuming *now* would inflate the bar of every sold line, and would have
     #: no way of telling.
     ceiling: Optional[datetime]
+    #: Where the pass resumes from — the bar's **numerator**. Distinct from
+    #: ``oldest`` since #703 parted them; see
+    #: :class:`runtime_state.BackfillRecord`.
+    anchor: Optional[datetime]
     oldest: Optional[datetime]
     newest: Optional[datetime]
     window: Optional[Tuple[datetime, datetime]]
@@ -122,6 +133,7 @@ class BackfillProgress:
             'at': _iso(self.at),
             'target': _iso(self.target),
             'ceiling': _iso(self.ceiling),
+            'anchor': _iso(self.anchor),
             'oldest': _iso(self.oldest),
             'newest': _iso(self.newest),
             'window': (
@@ -170,8 +182,9 @@ class SymbolRuntime:
     written: bool
     backward: Optional[BackfillProgress]
     forward: Optional[BackfillProgress]
-    #: The accounts holding this symbol. Kept as a plain list because the page
-    #: shows *who holds it*; nothing per-account is measured about the series.
+    #: The accounts **holding** this symbol, and empty when nobody does. Kept as
+    #: a plain list because the page shows *who holds it*; nothing per-account
+    #: is measured about the series.
     accounts: Sequence[str]
     error: Optional[str]
 
@@ -198,7 +211,8 @@ class SymbolRuntime:
         }
 
 
-def symbol_pill(record: Optional[runtime_state.ScrapeRecord]) -> str:
+def symbol_pill(record: Optional[runtime_state.ScrapeRecord],
+                held: bool = True) -> str:
     """Which single pill one symbol gets. The module's only opinion.
 
     A symbol can be several things at once — backing off *and* shut, frozen
@@ -216,10 +230,22 @@ def symbol_pill(record: Optional[runtime_state.ScrapeRecord]) -> str:
        price stopping, while this one looks healthy from every other angle.
     4. ``failing``, then the two ordinary states.
 
+    ``held`` comes **first**, above all of it, and for the reason
+    ``next_run_state`` gives ``not_held`` the same precedence a few lines down:
+    it is a property of the *symbol* rather than of anything a pass observed. A
+    sold line has no scrape job and no record, so the ranking below would call
+    it ``unknown`` — *"the scheduler has never reached this symbol"* — for the
+    life of the process, with no future event able to clear it. That is the risk
+    :func:`build_symbols` names when it stops filtering on ``quantity``, and
+    answering it in the two other fields while leaving the **headline** wrong
+    would be answering it by half.
+
     Every field behind the pill rides in the payload, so the front can show the
     rest of the truth in the sheet — the pill picks a headline, it does not hide
     anything.
     """
+    if not held:
+        return PILL_NOT_HELD
     if record is None:
         return PILL_UNKNOWN
     if record.verdict == runtime_state.SCRAPE_WRITE_FAILED:
@@ -251,8 +277,9 @@ def backfill_progress(
     if record is None:
         return BackfillProgress(
             direction=direction, state=BACKFILL_UNKNOWN,
-            at=None, target=None, ceiling=None, oldest=None, newest=None,
-            window=None, written=0, failures=0, ratio=None, error=None)
+            at=None, target=None, ceiling=None, anchor=None, oldest=None,
+            newest=None, window=None, written=0, failures=0, ratio=None,
+            error=None)
 
     return BackfillProgress(
         direction=direction,
@@ -260,6 +287,7 @@ def backfill_progress(
         at=record.at,
         target=record.target,
         ceiling=record.ceiling,
+        anchor=record.anchor,
         oldest=record.oldest,
         newest=record.newest,
         window=record.window,
@@ -323,14 +351,21 @@ def _ratio(record: runtime_state.BackfillRecord,
     # from the store, and subtracting a naive instant from an aware one raises.
     # See :func:`_utc`.
     target = _utc(record.target)
-    oldest = _utc(record.oldest)
-    if target is None or oldest is None:
+    # The **anchor**, not the oldest stored point: #703 parted the two, and the
+    # anchor is the one that moves. On a symbol Yahoo answers nothing about for
+    # its early windows — a partial delisting, a history that simply starts
+    # later — the stored point stays where it is while the anchor descends a
+    # chunk a cycle, so a bar drawn from ``oldest`` freezes and then jumps to
+    # 1,0 at the terminal: it reports a stall through the whole of the work.
+    # ``oldest`` is the fallback for a record written before the field existed.
+    reached = _utc(record.anchor) or _utc(record.oldest)
+    if target is None or reached is None:
         return None
     ceiling = _utc(record.ceiling) if record.ceiling is not None else _utc(now)
     total = (ceiling - target).total_seconds()
     if total <= 0:
         return 1.0
-    covered = (ceiling - oldest).total_seconds()
+    covered = (ceiling - reached).total_seconds()
     return max(0.0, min(1.0, covered / total))
 
 
@@ -376,7 +411,16 @@ def build_symbols(
             continue
         account = str(share.get('account') or DEFAULT_ACCOUNT)
         accounts = by_symbol.setdefault(symbol, [])
-        if account not in accounts:
+        # **Who holds it**, which is what the field says and what the page
+        # shows. The filter on ``quantity`` is here and not on the row above:
+        # dropping it when the row set widened to every symbol the ledger names
+        # (#703) would have changed the meaning of a field already published,
+        # silently — a symbol held in a PEA and sold out of a CTO would list
+        # both, and a reader summing per account would count a holding nobody
+        # has. A symbol nobody holds lists nothing, and ``held`` is the field
+        # that says so; *which accounts once held it* is a different question,
+        # and the ledger answers it.
+        if account not in accounts and share.get('quantity'):
             accounts.append(account)
         names.setdefault(symbol, share.get('name'))
         # Held **anywhere**: one account selling out does not stop the scrape of
@@ -404,7 +448,7 @@ def build_symbols(
         rows.append(SymbolRuntime(
             symbol=symbol,
             name=names.get(symbol),
-            pill=symbol_pill(record),
+            pill=symbol_pill(record, held[symbol]),
             market_state=record.market_state if record else None,
             closed=record.closed if record else None,
             last_pass=record.at if record else None,
@@ -623,7 +667,8 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 
 
 __all__ = [
-    'PILL_UNKNOWN', 'PILL_CLOSED', 'PILL_OPEN', 'PILL_FROZEN', 'PILL_FAILING',
+    'PILL_UNKNOWN', 'PILL_NOT_HELD', 'PILL_CLOSED', 'PILL_OPEN', 'PILL_FROZEN',
+    'PILL_FAILING',
     'PILL_BACKOFF', 'PILL_WRITE_FAILED',
     'NEXT_RUN_SCHEDULED', 'NEXT_RUN_AMBIGUOUS', 'NEXT_RUN_UNAVAILABLE',
     'NEXT_RUN_NOT_HELD',

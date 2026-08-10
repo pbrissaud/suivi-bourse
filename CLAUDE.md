@@ -467,10 +467,18 @@ when it is the only thing able to explain the empty table**. #659's reserved
   **acquisition** and a position carrying neither a `BUY` nor a `GRANT` stopped
   being reachable at all. Its row set is **every symbol the ledger names**, not
   the held ones, because the backfill's set is no longer the scrape's: a sold
-  line is reconstructed and not polled, so the row carries `held: false` and
-  `next_run_state: not_held` instead of reading as a scheduler that is stuck.
+  line is reconstructed and not polled, so the row carries `held: false`, the
+  pill `not_held` and `next_run_state: not_held` instead of reading as a
+  scheduler that is stuck — all three, because `unknown` is a statement about
+  *this process* and a closed position would wear it for ever, no future event
+  being able to clear it. Its `accounts` list stays **who holds it** and is
+  empty when nobody does: a field already published must not change meaning
+  because the row set widened.
   Its **progress bar divides by the holding window**, `[target, ceiling]`, and
-  the ceiling is a field of the record rather than a reader's assumption: with
+  counts from the **anchor** rather than from the oldest stored point — #703
+  parted the two, and only the anchor moves on a symbol Yahoo answers nothing
+  about, where a bar drawn from the series freezes and then jumps to 1,0. The
+  ceiling is a field of the record rather than a reader's assumption: with
   *now* as the denominator a line bought 2020-03-02 and sold 2022-05-04 reads
   0,82 one chunk in where it has covered 0,46 — inflated for exactly the rows
   #703 adds to the payload, at exactly the moment the bar has a use, and with

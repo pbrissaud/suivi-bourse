@@ -190,6 +190,18 @@ class BackfillRecord:
     #: the pass has covered 0,46. A reader cannot correct that from the outside,
     #: which is why it is published rather than recomputed.
     ceiling: Optional[datetime] = None
+    #: Where the pass **resumes from** — ``_backward_anchor``'s answer, the
+    #: minimum of the ceiling, the oldest stored point and the oldest window
+    #: tried. It is the bar's numerator, and it is not ``oldest`` since #703
+    #: parted the two: on a symbol Yahoo answers nothing about for its early
+    #: windows, the stored point never moves while the anchor descends a chunk
+    #: a cycle, so a bar drawn from ``oldest`` freezes and then jumps to 1,0 at
+    #: the terminal. ``None`` on a record from before this field existed, where
+    #: ``oldest`` is the honest fallback.
+    anchor: Optional[datetime] = None
+    #: The oldest **stored** point, reported rather than decided upon: it is
+    #: what the series actually holds, which is a different question from where
+    #: the pass has got to, and the sheet shows both.
     oldest: Optional[datetime] = None
     #: The forward pass's anchor: the newest stored point it measured from.
     newest: Optional[datetime] = None

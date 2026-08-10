@@ -2493,7 +2493,7 @@ class SuiviBourseMetrics:
                 f"Backfill complete for {symbol}: "
                 f"anchor={end_date.date()}, target={target.date()}")
             self._backfill_complete[symbol] = target
-            publish(oldest=oldest_timestamp,
+            publish(anchor=end_date, oldest=oldest_timestamp,
                     terminal=runtime_state.TERMINAL_COMPLETE)
             return 0
 
@@ -2508,7 +2508,7 @@ class SuiviBourseMetrics:
         if (end_date - start_date).days < 1:
             app_logger.debug(
                 f"Backfill window too small for {symbol}, skipping until next cycle")
-            publish(oldest=oldest_timestamp,
+            publish(anchor=end_date, oldest=oldest_timestamp,
                     skipped=runtime_state.SKIP_WINDOW_TOO_SMALL)
             return 0
 
@@ -2519,7 +2519,7 @@ class SuiviBourseMetrics:
 
         if prices is None:
             app_logger.warning(f"Failed to fetch history for {symbol}, will retry next cycle")
-            publish(oldest=oldest_timestamp, window=(start_date, end_date),
+            publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date),
                     failed=True,
                     error=f"yfinance returned no history for {symbol} over "
                           f"{start_date.date()} → {end_date.date()}")
@@ -2541,7 +2541,7 @@ class SuiviBourseMetrics:
                     f"Backfill complete for {symbol}: reached the first "
                     f"acquisition with no earlier trading data")
                 self._backfill_complete[symbol] = target
-                publish(oldest=oldest_timestamp, window=(start_date, end_date),
+                publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date),
                         terminal=runtime_state.TERMINAL_COMPLETE)
                 return written
             # An empty window that has *not* reached the target is a gap
@@ -2550,10 +2550,10 @@ class SuiviBourseMetrics:
             # wedged, which is the exact misreading the counter exists to prevent.
             # A mute symbol lands here every cycle, and what stops it is the
             # anchor just persisted, never the counter.
-            publish(oldest=oldest_timestamp, window=(start_date, end_date))
+            publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date))
             return written
 
-        publish(oldest=oldest_timestamp, window=(start_date, end_date),
+        publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date),
                 written=written)
         return written
 
