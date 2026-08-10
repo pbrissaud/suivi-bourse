@@ -572,11 +572,14 @@ class ConfigurationManager:
     def _require_store(self):
         """The attached store, opening one under ``config_dir`` if there is none.
 
-        The fallback is not a second configuration path: ``SB_STORE_DIR``
-        defaults to the configuration directory, so "the store next to the
-        settings" is the same file the boot would have opened. It exists so that
-        a caller holding only a directory — a test, a one-shot script — reads
-        the same ledger the app does instead of a different one.
+        It is **not** the file the boot opens, and since #740 it cannot be: the
+        store's directory is ``SB_IMPORT_DIR``'s sibling ``SB_STORE_DIR``,
+        defaulting to ``/data``, while ``config_dir`` stays
+        ``~/.config/SuiviBourse``. No production path reaches this fallback —
+        ``build_runtime`` and ``start_runtime`` both hand over an already-open
+        store — so it exists for the caller that has only a directory: a test,
+        a one-shot script. Anything that must read *the app's* ledger passes
+        the store in.
         """
         if self._store is None:
             self._store = store.open_store(
