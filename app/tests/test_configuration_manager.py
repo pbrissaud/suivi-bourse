@@ -8,7 +8,7 @@ These tests exercise ConfigurationManager in isolation:
   * _compute_cache_key behaviour (the store's stamp, and no file at all)
   * the caching contract of the snapshot build (identity reuse, force reload,
     invalidation on file change)
-  * get_first_buy_date / get_events
+  * get_first_acquisition_date / get_events
   * publication (issue #658): one immutable snapshot, validated before it is
     published, swapped by a single rebind — the null window and the split-brain
 
@@ -210,29 +210,49 @@ def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
 
 
 # --------------------------------------------------------------------------- #
-# get_first_buy_date
+# get_first_acquisition_date
 # --------------------------------------------------------------------------- #
-def test_get_first_buy_date_earliest_buy(tmp_path, events_dir):
-    """Returns the earliest BUY date for a symbol (ignores later BUYs)."""
+def test_get_first_acquisition_date_earliest_acquisition(tmp_path, events_dir):
+    """Returns the earliest acquisition date for a symbol (ignores later ones)."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
 
     # AAPL has BUYs on 2024-01-15 and 2024-06-15 -> earliest is 2024-01-15.
-    assert cm.get_first_buy_date("AAPL") == date(2024, 1, 15)
-    assert cm.get_first_buy_date("MSFT") == date(2024, 2, 1)
+    assert cm.get_first_acquisition_date("AAPL") == date(2024, 1, 15)
+    assert cm.get_first_acquisition_date("MSFT") == date(2024, 2, 1)
 
 
-def test_get_first_buy_date_none_when_no_events_loaded(tmp_path):
-    """With nothing loaded (cached_events is None), returns None."""
+def test_get_first_acquisition_date_none_when_no_events_loaded(tmp_path):
+    """With nothing published yet, returns None."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_first_buy_date("AAPL") is None
+    assert cm.get_first_acquisition_date("AAPL") is None
 
 
-def test_get_first_buy_date_none_for_absent_symbol(tmp_path, events_dir):
-    """A symbol with no BUY events returns None."""
+def test_get_first_acquisition_date_none_for_absent_symbol(tmp_path, events_dir):
+    """A symbol the ledger never acquired returns None."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
     cm.load_shares()
-    assert cm.get_first_buy_date("GOOG") is None
+    assert cm.get_first_acquisition_date("GOOG") is None
+
+
+def test_a_grant_is_an_acquisition_and_opens_the_window(tmp_path):
+    """``BUY`` **and** ``GRANT`` (issue #703).
+
+    A granted share is held from the day it lands, so it has a history to
+    reconstruct. Reading only ``BUY`` left a portfolio held entirely by grant
+    with no backfill target at all — which is the state the retired ``no_buy``
+    terminal was reporting rather than fixing.
+    """
+    events = tmp_path / "events"
+    events.mkdir()
+    (events / "grants.csv").write_text(
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        "2021-03-04,GRANT,GRT,Granted Co,10,,,,\n",
+        encoding="utf-8")
+    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm.load_shares()
+
+    assert cm.get_first_acquisition_date("GRT") == date(2021, 3, 4)
 
 
 # --------------------------------------------------------------------------- #
@@ -288,7 +308,7 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
 
     ``invalidate_cache()`` used to null the three cache fields *before*
     ``ingest()`` refilled them. A backfill cycle landing in that window read
-    ``events = None``, so ``get_first_buy_date`` returned ``None`` and the whole
+    ``events = None``, so ``first_acquisition_date`` returned ``None`` and the whole
     backward pass was silently skipped for that cycle — no crash, no log. Here a
     reader hammers the read path while a writer rebuilds; every observation must
     be a complete configuration.
@@ -313,7 +333,8 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
         while not stop.is_set():
             snap = cm.current()
             observations.append(
-                (len(snap.shares), snap.events, snap.first_buy_date("AAPL")))
+                (len(snap.shares), snap.events,
+                 snap.first_acquisition_date("AAPL")))
 
     thread = threading.Thread(target=reader)
     thread.start()
@@ -325,10 +346,10 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
         thread.join(timeout=5)
 
     assert observations
-    for share_count, events, first_buy in observations:
+    for share_count, events, first_acquisition in observations:
         assert share_count == 2
         assert events is not None and len(events) == 7
-        assert first_buy == date(2024, 1, 15)
+        assert first_acquisition == date(2024, 1, 15)
 
 
 # --------------------------------------------------------------------------- #
@@ -365,7 +386,7 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     # previous generation, and sees the *same* object.
     assert cm.current() is published
     assert cm.get_events() is published.events
-    assert cm.get_first_buy_date("AAPL") == date(2024, 1, 15)
+    assert cm.get_first_acquisition_date("AAPL") == date(2024, 1, 15)
     assert cm.load_accounts() is published.accounts
 
 

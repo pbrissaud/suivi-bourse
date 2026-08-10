@@ -35,6 +35,12 @@ def _no_jitter(mocker):
     mocker.patch("main.random.uniform", return_value=0.0)
 
 
+@pytest.fixture(autouse=True)
+def _no_sleep(mocker):
+    """The backfill's rate limit is a courtesy to Yahoo, not a unit under test."""
+    mocker.patch.object(main.time, "sleep", lambda *a, **k: None)
+
+
 def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
     return {
         "name": name,
@@ -288,24 +294,30 @@ def test_an_unchanged_ingestion_is_told_apart_from_an_updated_one(
 
 
 # ===================================================================== #
-# The backfill records — the three terminals at their call sites
+# The backfill records — the terminal and the counter at their call sites
 # ===================================================================== #
 
-def test_a_symbol_with_no_buy_records_its_own_terminal(
+def test_a_grant_only_position_is_reconstructed_like_any_other(
         store, mocker):
-    """A GRANT-only position: nothing to reach back to, and never was.
+    """``no_buy`` is gone, and the position it named is backfilled (issue #703).
 
-    Distinct from ``complete`` (which means the reaching finished) and from
-    manual mode (where the pass itself does not run).
+    A granted share is held from the day it lands, so it has a history to
+    reconstruct. Reading only ``BUY`` left a portfolio held entirely by grant
+    publishing a terminal that meant *there was never anything to fetch*, while
+    its chart stayed empty for ever. The target is the first **acquisition**.
     """
     events = [Event(datetime(2024, 6, 1).date(), EventType.GRANT, "AAPL",
                     "Apple", quantity=1)]
     m = _metrics([_share()], store, mocker, events=events)
+    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+        {"timestamp": datetime(2024, 7, 1, tzinfo=UTC), "price": 170.0}])
 
     m.backfill()
     record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
 
-    assert record.terminal == runtime_state.TERMINAL_NO_BUY
+    assert record.target == datetime(2024, 6, 1, tzinfo=UTC)
+    assert record.terminal is None
+    assert record.written == 1
 
 
 def test_a_completed_backward_pass_records_both_dates_of_the_bar(

@@ -3,8 +3,8 @@
 Records + snapshot + job list in, page objects out, ``now`` injected — the taste
 of :mod:`scheduling` and :mod:`portfolio_view`, and here it buys something
 specific: the three cases that are hardest to get right are all unit-testable
-without a scheduler. An ambiguous ``next_run_time``, the two terminal backfill
-states and the boot window in which no series has been observed yet are decided
+without a scheduler. An ambiguous ``next_run_time``, the backfill's terminal
+state and the boot window in which no series has been observed yet are decided
 by functions that take dataclasses and a clock.
 
 The contract this module is built to honour (#656 déc. 4): **it reports
@@ -70,6 +70,11 @@ NEXT_RUN_AMBIGUOUS = 'ambiguous'
 #: There is no scheduler in this process yet (the master, or a test). Not the
 #: same as absence *from* a running jobstore, which is why it is not folded in.
 NEXT_RUN_UNAVAILABLE = 'unavailable'
+#: The symbol is **not scraped by design**: nothing is held, so no job was ever
+#: armed for it. Distinct from trap 1's ambiguity, which is about a job the
+#: jobstore cannot account for — here there is nothing to account for, and the
+#: row exists because the symbol's *history* is still being reconstructed (#703).
+NEXT_RUN_NOT_HELD = 'not_held'
 
 # --------------------------------------------------------------------- #
 # Backfill display states
@@ -84,10 +89,11 @@ BACKFILL_FAILING = 'failing'
 class BackfillProgress:
     """One ``(symbol, direction)`` pass, made into a bar.
 
-    ``state`` is either a terminal from the record (``complete`` / ``no_buy``),
-    a skip reason, or one of the three above. The terminals are carried through
-    **verbatim and never collapsed**: they mean "there is nothing left to fetch"
-    and "this symbol was never bought", and only the first is progress.
+    ``state`` is either the record's terminal (``complete``), a skip reason, or
+    one of the three above, carried through **verbatim**. ``no_buy`` was the
+    second terminal and is gone with #703: the target is the first *acquisition*
+    now, ``GRANT`` included, so a symbol that would have carried it has no
+    holding window and never reaches the backfill at all.
     """
 
     direction: str
@@ -147,6 +153,11 @@ class SymbolRuntime:
     next_delay: Optional[float]
     next_run: Optional[datetime]
     next_run_state: str
+    #: Whether the portfolio still holds this symbol anywhere (issue #703). The
+    #: scrape's set and the backfill's stopped being the same one, so a row has
+    #: to say which of the two it belongs to: a sold line is *reconstructed* and
+    #: not polled, and without this field it reads as a scheduler that is stuck.
+    held: bool
     #: #628's sonde fired for this symbol on the last ``REGULAR`` pass.
     frozen: bool
     #: A point was persisted on the last pass.
@@ -171,6 +182,7 @@ class SymbolRuntime:
             'next_delay': self.next_delay,
             'next_run': _iso(self.next_run),
             'next_run_state': self.next_run_state,
+            'held': self.held,
             'frozen': self.frozen,
             'written': self.written,
             'backward': self.backward.to_dict() if self.backward else None,
@@ -226,7 +238,7 @@ def backfill_progress(
 
     The bar answers #656's driving question — *is the backfill advancing, or is
     it stuck?* — from two dates in **one** record: the oldest stored point and
-    the first BUY. Both were read by the same pass, so they are coherent with
+    the first acquisition. Both were read by the same pass, so they are coherent with
     each other, which a reader composing them from the watermark and a fresh
     query would not be.
     """
@@ -254,11 +266,10 @@ def backfill_progress(
 def _backfill_state(record: runtime_state.BackfillRecord) -> str:
     """The record's own verdict, in the order it was decided.
 
-    A terminal wins over a failure count, and that is not a preference: the three
-    terminals are *conclusions* the pass reached (nothing earlier exists, nothing
-    was ever bought, this mode has no backward pass), while a failure count
-    describes an attempt. A series marked ``complete`` is not failing at
-    anything, whatever a stale counter says.
+    A terminal wins over a failure count, and that is not a preference: a
+    terminal is a *conclusion* the pass reached — nothing earlier exists — while
+    a failure count describes an attempt. A series marked ``complete`` is not
+    failing at anything, whatever a stale counter says.
     """
     if record.terminal is not None:
         return record.terminal
@@ -271,16 +282,17 @@ def _backfill_state(record: runtime_state.BackfillRecord) -> str:
 
 def _ratio(record: runtime_state.BackfillRecord,
            now: datetime) -> Optional[float]:
-    """How much of the history since the first BUY is stored, in ``[0, 1]``.
+    """How much of the history since the first acquisition is stored, in ``[0, 1]``.
 
     ``complete`` is ``1.0`` by definition rather than by arithmetic — the
-    watermark is set exactly when the oldest point reaches the target, and also
-    when the target falls on a day the market never traded, where the arithmetic
+    watermark is set exactly when the anchor reaches the target, and also when
+    the target falls on a day the market never traded, where the arithmetic
     would stop just short of 1 forever and read as a stall.
 
-    ``None`` for the forward pass and for a symbol with no BUY: there is no span
-    to measure against, and a bar with an invented denominator is worse than no
-    bar.
+    ``None`` for the forward pass, and for a series with nothing stored yet:
+    there is no span to measure against, and a bar with an invented denominator
+    is worse than no bar. A mute symbol therefore draws no bar at all until it
+    reaches its terminal, which is the honest rendering of *zero point fetched*.
     """
     if record.terminal == runtime_state.TERMINAL_COMPLETE:
         return 1.0
@@ -306,7 +318,7 @@ def build_symbols(
     now: datetime,
     scheduler_running: bool = True,
 ) -> List[SymbolRuntime]:
-    """One entry per **held** symbol, folded from the configuration snapshot.
+    """One entry per symbol the ledger names, folded from the configuration snapshot.
 
     The row set is the snapshot's, never the recorder's key set, and that is
     #656 déc. 3's rule doing two jobs at once: it keeps the reader from
@@ -315,13 +327,16 @@ def build_symbols(
     an *unknown* pill rather than a missing line. #661's "the declaration
     drives", one map over.
 
-    *Held* is the filter on ``quantity``, the same one ``_held_symbols`` applies
-    (issue #699), and it has to be applied here too or the rule above turns
-    against itself. A sold position stays in the snapshot on purpose, but its
-    scrape job is removed and its last-pass record forgotten with it — so it
-    would render as a symbol the scheduler has *never reached*, permanently, and
-    no future event could clear it. Reading that page, every line the user ever
-    sold would look like a scheduler that is stuck.
+    **It was the held set until #703**, filtered on ``quantity`` like
+    ``_held_symbols``, because a sold position keeps no scrape job and no record
+    and would have rendered as a scheduler that is permanently stuck. What
+    changed is not the risk but the subject: the backfill now runs on everything
+    the portfolio has *ever* held, so a sold line has a pass of its own in
+    progress and hiding it would hide the reconstruction the owner is waiting
+    for — the bar would read « 2 séries sur 2 » with three histories still being
+    rebuilt. The row therefore carries ``held`` and, when it is false,
+    :data:`NEXT_RUN_NOT_HELD`: it says *not polled, by design* instead of
+    saying nothing at all.
 
     ``next_runs`` maps a symbol to the jobstore's ``next_run_time``. A **missing
     key** is not the same as a ``None`` value here only in intent; both render
@@ -330,22 +345,32 @@ def build_symbols(
     """
     by_symbol: Dict[str, List[str]] = {}
     names: Dict[str, Optional[str]] = {}
+    held: Dict[str, bool] = {}
     for share in shares:
         symbol = share.get('symbol')
-        if not symbol or not share.get('quantity'):
+        if not symbol:
             continue
         account = str(share.get('account') or DEFAULT_ACCOUNT)
         accounts = by_symbol.setdefault(symbol, [])
         if account not in accounts:
             accounts.append(account)
         names.setdefault(symbol, share.get('name'))
+        # Held **anywhere**: one account selling out does not stop the scrape of
+        # a symbol another account still holds — there is one job for the symbol.
+        held[symbol] = held.get(symbol, False) or bool(share.get('quantity'))
 
     rows = []
     for symbol in sorted(by_symbol):
         record = scrape.get(symbol)
 
         next_run = next_runs.get(symbol)
-        if not scheduler_running:
+        # ``not_held`` first: it is a property of the *symbol* and true whether
+        # or not this process has a scheduler, while the two values below both
+        # describe what a jobstore can be asked. A symbol nothing holds has no
+        # job by design, and that is the whole answer.
+        if not held[symbol]:
+            next_run_state = NEXT_RUN_NOT_HELD
+        elif not scheduler_running:
             next_run_state = NEXT_RUN_UNAVAILABLE
         elif next_run is None:
             next_run_state = NEXT_RUN_AMBIGUOUS
@@ -364,6 +389,7 @@ def build_symbols(
             next_delay=record.next_delay if record else None,
             next_run=next_run,
             next_run_state=next_run_state,
+            held=held[symbol],
             frozen=bool(record.stale) if record else False,
             written=bool(record.wrote) if record else False,
             backward=backfill_progress(
@@ -379,7 +405,7 @@ def build_symbols(
 
 
 def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
-    """The banner's bar: how many series have finished reaching their first BUY.
+    """The banner's bar: how many series have reached their first acquisition.
 
     Counted over the **backward** pass only. The forward pass has no target — it
     recovers a session missed while the app was down and its healthy steady state
@@ -398,22 +424,18 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
 
     total = sum(states.values())
     complete = states.get(runtime_state.TERMINAL_COMPLETE, 0)
-    # Two kinds of series are outside the bar's denominator, for two reasons.
+    # One kind of series is outside the bar's denominator, and it is the one
+    # found by looking: `unknown` is a **boot window**. The backfill job runs
+    # every 60 s, so for the first cycle after a restart no series has a record
+    # at all — and counting them as pending made an install announce
+    # « 0 séries sur 2 » for a reprise d'historique that had not started. An
+    # unobserved series is not known to be pending; it is not known to be
+    # anything, which is what the word says.
     #
-    # `no_buy` is not progress and not a stall — it is a series with nothing to
-    # fetch. Counting it as pending would leave the bar permanently short on a
-    # portfolio held entirely by grant, which is trap 6 rendered wrong.
-    #
-    # `unknown` is the one found by looking, and it is a **boot window**: the
-    # backfill job runs every 60 s, so for the first cycle after a restart no
-    # series has a record at all — and counting them as pending made an install
-    # announce « 0 séries sur 2 » for a reprise d'historique that had not
-    # started. An unobserved series is not known to be pending; it is not known
-    # to be anything, which is what the word says.
-    nothing_to_do = sum(
-        states.get(state, 0)
-        for state in (runtime_state.TERMINAL_NO_BUY, BACKFILL_UNKNOWN))
-    in_scope = total - nothing_to_do
+    # `no_buy` was the second exclusion and left with the state (#703). The
+    # denominator therefore counts sold positions too, which is the point: their
+    # history is exactly what the reconstruction is for.
+    in_scope = total - states.get(BACKFILL_UNKNOWN, 0)
 
     return {
         'total': total,
@@ -422,7 +444,6 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
         'failing': states.get(BACKFILL_FAILING, 0),
         'running': states.get(BACKFILL_RUNNING, 0),
         'unknown': states.get(BACKFILL_UNKNOWN, 0),
-        'no_buy': states.get(runtime_state.TERMINAL_NO_BUY, 0),
         'ratio': complete / in_scope if in_scope > 0 else None,
     }
 
@@ -585,6 +606,7 @@ __all__ = [
     'PILL_UNKNOWN', 'PILL_CLOSED', 'PILL_OPEN', 'PILL_FROZEN', 'PILL_FAILING',
     'PILL_BACKOFF', 'PILL_WRITE_FAILED',
     'NEXT_RUN_SCHEDULED', 'NEXT_RUN_AMBIGUOUS', 'NEXT_RUN_UNAVAILABLE',
+    'NEXT_RUN_NOT_HELD',
     'BACKFILL_UNKNOWN', 'BACKFILL_RUNNING', 'BACKFILL_FAILING',
     'BackfillProgress', 'SymbolRuntime',
     'symbol_pill', 'backfill_progress', 'build_symbols',
