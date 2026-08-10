@@ -225,6 +225,51 @@ def test_a_backfill_reaches_a_symbol_the_scrape_never_fetched(declared):
 
 
 # --------------------------------------------------------------------------- #
+# The backward pass's persisted anchor (issue #703)
+# --------------------------------------------------------------------------- #
+
+def test_the_anchor_is_written_on_the_row_by_the_module_that_owns_it(declared):
+    """Backfill progress stays in memory, with **one** named exception.
+
+    The argument for deriving a watermark is that it recomputes itself from the
+    rows, and it fails exactly where a delisted symbol stands: no row is ever
+    written, so an anchor read off the series never moves. This one is stored —
+    on ``symbol_quote``, by the module that owns that row, since a second writer
+    on it is the one thing the schema rule forbids.
+    """
+    quotes.record_window_tried(declared, 'AAPL', date(2021, 5, 4))
+
+    assert quotes.oldest_window_tried(declared, 'AAPL') == date(2021, 5, 4)
+
+
+def test_the_anchor_only_ever_moves_backwards(declared):
+    """A ledger that grows a *later* first acquisition — an import forgotten, a
+    file corrected — must not walk the anchor forward and set the pass fetching
+    ground it has already covered."""
+    quotes.record_window_tried(declared, 'AAPL', date(2021, 5, 4))
+    quotes.record_window_tried(declared, 'AAPL', date(2022, 9, 1))
+
+    assert quotes.oldest_window_tried(declared, 'AAPL') == date(2021, 5, 4)
+
+    quotes.record_window_tried(declared, 'AAPL', date(2020, 1, 2))
+    assert quotes.oldest_window_tried(declared, 'AAPL') == date(2020, 1, 2)
+
+
+def test_an_anchor_can_be_written_for_a_symbol_the_scrape_never_fetched(
+        declared):
+    """A position sold before this install existed has no quote row yet, and the
+    mute symbol the anchor exists for is precisely one that never will."""
+    quotes.record_window_tried(declared, 'MSFT', date(2019, 3, 1))
+
+    assert quotes.oldest_window_tried(declared, 'MSFT') == date(2019, 3, 1)
+    assert quotes.read_quote(declared, 'MSFT')['last_price_native'] is None
+
+
+def test_a_symbol_with_no_anchor_says_so(declared):
+    assert quotes.oldest_window_tried(declared, 'AAPL') is None
+
+
+# --------------------------------------------------------------------------- #
 # The range writer — deleting its own span, and only its own
 # --------------------------------------------------------------------------- #
 
