@@ -460,9 +460,15 @@ when it is the only thing able to explain the empty table**. #659's reserved
   the jobstore *while it runs*, so absence is "being scraped now" *or*
   "departed"); the cached `marketState` is **never** the pill (`decide`
   fail-opens it, and the cache is written only on a successful fetch, so a
-  failing symbol reports the state from before its failure); and the three
-  terminal backfill states — `complete` / `no_buy` — are never collapsed, and
-  the third (`manual_mode`) left with the mode it named (#711).
+  failing symbol reports the state from before its failure); and the backfill's
+  terminal state is never collapsed with a stall — `complete` is a conclusion,
+  not an attempt. It is the last of three: `manual_mode` left with the mode it
+  named (#711) and `no_buy` with #703, where the target became the first
+  **acquisition** and a position carrying neither a `BUY` nor a `GRANT` stopped
+  being reachable at all. Its row set is **every symbol the ledger names**, not
+  the held ones, because the backfill's set is no longer the scrape's: a sold
+  line is reconstructed and not polled, so the row carries `held: false` and
+  `next_run_state: not_held` instead of reading as a scheduler that is stuck.
 
 `/api/config` carries #654's read-only **effective configuration** — there
 rather than on `/api/runtime`, one noun two consumers — listing the variables
@@ -606,13 +612,34 @@ The application runs independent scheduled jobs on a single APScheduler:
   `import_files=False`: the ledger has just been changed by hand, and
   re-scanning the folder would import the revoked file straight back.
 - **Backfill**: **bidirectional** (issue #626), every 60s, both passes run per
-  share each cycle and are independent. **Backward** (pre-existing): oldest
-  stored point → first `BUY`, one `backfill_chunk_days` chunk per cycle,
-  stops once the `_backfill_complete` watermark is set. **Forward gap-fill**
+  symbol each cycle and are independent — and since #703 the job is **driven by
+  the replay, not by current holdings** (ADR-0009). The symbol set is the union
+  over the *whole* timeline and each symbol carries its own window,
+  `[first acquisition, last exit or today]` — `ConfigSnapshot.backfill_windows()`.
+  This is where the backfill and the scrape stop having the same symbols, and it
+  is not a refinement: iterating current positions left a share bought in 2020
+  and sold in 2022 with **no reconstructed price at all**, so the account's
+  `xirr` and `twr_index` were wrong *permanently*. v4 hid it because the live
+  series accumulated while the share was held.
+  **Backward**: anchor → first acquisition, one `backfill_chunk_days` chunk per
+  cycle, stopping once the `_backfill_complete` watermark is set. The anchor is
+  the **oldest window tried**, `min(ceiling, oldest stored point,
+  symbol_quote.oldest_window_tried)` — the last of the three being spec #695
+  § 4's one named exception to *watermarks stay derived*, since the argument for
+  deriving ("it recomputes itself from the rows") fails exactly where a delisted
+  symbol stands. With the oldest *stored* point as the anchor, a mute symbol
+  refetched the same window every 60 s **for ever**, in silence: the stop
+  condition never moved and an empty return is classified as a gap rather than a
+  failure (#606), so no counter rose either. It is persisted only when the fetch
+  **completed** — a failure has attempted nothing the app may skip. The target
+  is the first **acquisition**, `BUY` *and* `GRANT`, and the `no_buy` terminal is
+  deleted rather than renamed: a position with neither cannot carry a positive
+  quantity, so it has no holding window and never enters the set.
+  **Forward gap-fill**
   (issue #627): recovers a trading session missed while the app was down
   (stop/crash/host asleep) by fetching `[newest → now]` — anchor =
-  `get_newest_timestamp` (newest point with `share_price IS NOT NULL`, scoped by
-  symbol+account), window sized by the pure
+  `quotes.newest_ts` (newest point with `price_native IS NOT NULL`), window
+  sized by the pure
   `scheduling.forward_backfill_window(newest, now, chunk_days)`. Returns `None`
   (no fetch) when the series is empty (backward owns seeding) or the anchor is
   `< 1 day` old — that guard is what makes the forward pass a **no-op during
@@ -620,8 +647,11 @@ The application runs independent scheduled jobs on a single APScheduler:
   of the present with no duplicate at the seam. Gap classification is delegated
   to yfinance: a weekend/holiday window comes back empty and stays a gap (#606),
   a missed open session comes back with rows. `_backfill_complete` gates **only**
-  the backward pass. Recovered points carry the same tags/series identity as live
-  points, so perf `holdings_value` picks them up.
+  the backward pass. Recovered points join the same series as live ones, so perf
+  `holdings_value` picks them up — and the forward pass fills the gap of a
+  position sold then bought back for free, its anchor being months old the day
+  the line comes back; it only ever needed the symbol to be in the backfill's
+  set, which the replay now supplies.
   **The two passes part company on a sold position** (issue #699, #672 D5): the
   backward one keeps running (the chart wants the history of a line the user
   held, and the watermark bounds it, so it finishes and stops), the forward one
@@ -630,6 +660,10 @@ The application runs independent scheduled jobs on a single APScheduler:
   is precisely what that writer was keeping true, so left running it would
   refetch `[newest → now]` from Yahoo **every day, forever**, for every symbol
   the owner has ever sold out of.
+  **The rhythm does not change and there is no accelerated mode**: `backfill_delay`
+  is a courtesy to Yahoo at the exact moment the app emits more requests than at
+  any other time of its life, and a code path that runs once per installation is
+  a code path nobody ever tests. ~25 minutes for 30 symbols over 5 years.
 - **Performance**: Recomputes the `account_metrics` / `portfolio_totals` series
   (opt-in accounts only) as its **own gated interval job** on
   `scheduling.PERF_TICK` (120s, a constant and not a dial since #701 — the gate
@@ -1110,7 +1144,7 @@ the instrument's attributes, which is why there is no second table.
 | `fetched_at` | when the attributes above were last refreshed |
 | `last_price_native` / `last_price_ts` | the `latest` row, maintained by the one rule above |
 | `last_price_converted` / `last_fx_rate` | #702's, and `NULL` until it lands |
-| `oldest_window_tried` | #703's persisted backward-pass anchor |
+| `oldest_window_tried` | the backward pass's anchor — the oldest window **tried**, persisted (#703). A `DATE`: a window boundary is a calendar day. Written only when a fetch completed, and only ever backwards |
 
 **`price_point`** — the series, and the one table with **no key of any kind**
 (ADR-0007): a DuckDB ART index is a second copy of the data in resident memory,
