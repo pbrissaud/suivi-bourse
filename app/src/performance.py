@@ -52,11 +52,17 @@ class DailyPerf:
 
 @dataclass
 class Performance:
-    """Performance of one entity (an account, or the global portfolio)."""
+    """Performance of one entity (an account, or the global portfolio).
+
+    No ``currency`` field since #702. It carried ``Account.currency``, which is
+    deleted: there is one reporting currency for the whole install, every figure
+    in here is already in it, and a copy on each entity was only ever read to ask
+    whether two of them disagreed — a question ADR-0002 removes rather than
+    answers.
+    """
     daily: List[DailyPerf] = field(default_factory=list)
     xirr: Optional[float] = None
     gain_absolu: Optional[float] = None
-    currency: Optional[str] = None
 
 
 def xirr(cashflows: List[Tuple[date, float]],
@@ -236,7 +242,7 @@ def compute_account(timeline: Timeline, account: Account, symbols,
 
     _fill_twr(daily)
 
-    perf = Performance(daily=daily, currency=account.currency)
+    perf = Performance(daily=daily)
     has_external = bool(cash_flows or grant_flows)
     if has_external and daily:
         terminal = daily[-1].total_value
@@ -250,13 +256,15 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
                             per_account: Dict[str, Performance]) -> Optional[Performance]:
     """Aggregate all accounts into a global performance (no tag).
 
-    Returns None when there are no accounts or they don't all share the same
-    currency — pooling different currencies would need FX (out of scope).
+    Returns None when there are no accounts. The **single-currency condition is
+    gone** (issue #702, ADR-0002): it refused to pool accounts whose currencies
+    disagreed, and an account has no currency any more — everything here is in
+    the one reporting currency, already converted at the point it was written.
+    What can still make this unwritable is that currency being unanswered, and
+    that is decided one storey up, on the whole recompute, because it is true of
+    every figure at once rather than of the pooling.
     """
     if not accounts:
-        return None
-    currencies = {a.currency for a in accounts}
-    if len(currencies) > 1:
         return None
 
     # Sum the per-account daily series by date (accounts start on different days).
@@ -283,7 +291,7 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
         all_cash.extend(cf)
         all_grant.extend(gf)
 
-    total = Performance(daily=daily, currency=currencies.pop())
+    total = Performance(daily=daily)
     has_external = bool(all_cash or all_grant)
     if has_external and daily:
         terminal = daily[-1].total_value

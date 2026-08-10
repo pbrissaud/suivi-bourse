@@ -102,7 +102,15 @@ class SharePosition:
     currency: Optional[str]
     exchange: Optional[str]
     quote_type: Optional[str]
+    #: The **converted** price — every money figure below is in the reporting
+    #: currency (issue #702), and ``None`` while that currency is unanswered.
     price: Optional[float]
+    #: The quote as the exchange gives it, and the rate that turned it into the
+    #: figure above. They ride here so a reader can recognise what their broker
+    #: shows them, and so the conversion can be read back rather than believed
+    #: (*"2 345 € — 10 × 234,50 $ at 1,0844"*). Neither is ever summed.
+    price_native: Optional[float]
+    fx_rate: Optional[float]
     price_time: Optional[datetime]
     quantity: Optional[float]
     cost_basis: Optional[float]
@@ -132,6 +140,8 @@ class SharePosition:
             'exchange': self.exchange,
             'quote_type': self.quote_type,
             'price': self.price,
+            'price_native': self.price_native,
+            'fx_rate': self.fx_rate,
             'price_time': _iso(self.price_time),
             'quantity': self.quantity,
             'cost_basis': self.cost_basis,
@@ -197,6 +207,8 @@ def _build_share(symbol: str, group: List[Dict[str, Any]]) -> SharePosition:
         exchange=quote.get('exchange'),
         quote_type=quote.get('quote_type'),
         price=price,
+        price_native=quote.get('price_native'),
+        fx_rate=quote.get('fx_rate'),
         price_time=quote.get('price_time'),
         quantity=quantity,
         cost_basis=cost_basis,
@@ -226,8 +238,8 @@ def _build_share(symbol: str, group: List[Dict[str, Any]]) -> SharePosition:
 # which must never be conflated, in one namespace.
 # --------------------------------------------------------------------- #
 
-#: Declared accounts, one currency: the global perf series exists and the head
-#: is **Gain** — total value − net contributed.
+#: Declared accounts: the global perf series exists and the head is **Gain** —
+#: total value − net contributed.
 MODE_ACCOUNTS = 'accounts'
 
 #: No declared accounts: the head falls back to **plus-value latente**,
@@ -235,25 +247,29 @@ MODE_ACCOUNTS = 'accounts'
 #: install runs, so it is a designed mode, not a failure.
 MODE_TITRES = 'titres'
 
-#: Declared accounts in more than one currency. ``portfolio_totals`` is not
-#: written at all in that case (pooling currencies needs FX), so there is no
-#: global head to render: the API **states** the condition instead of answering
-#: with an empty head. The whole branch leaves with #702, which deletes
-#: ``Account.currency`` rather than converting it.
-MODE_MULTI_CURRENCY = 'multi_currency'
+# ``MODE_MULTI_CURRENCY`` and ``build_multi_currency_head`` are **gone** (issue
+# #702, ADR-0002), and deleted rather than left unreachable. There are two levels
+# of currency and not three — the reporting currency and the security's quote
+# currency — so "declared accounts that do not share a currency" is a sentence
+# with no referent: an account has no currency to disagree about. The third mode
+# was a whole branch of the API, of the page and of the tests defending a state
+# the model can no longer be in, and a mode that is published but cannot occur is
+# something a front will eventually handle for nothing.
 
 
-def portfolio_mode(account_currencies: Optional[Sequence[str]]) -> str:
+def portfolio_mode(declared: bool) -> str:
     """Which head this portfolio gets. Pure — the page's first decision.
 
     Decided from the **configuration**, never from whether the series happens to
     have rows: that is what keeps "no declared accounts" and "the perf job has
     not run yet" from rendering the same screen.
+
+    One question since #702, where it used to be two. It took a list of account
+    currencies because a third mode turned on their disagreeing; with the
+    per-account currency deleted, what is left is the only thing the decision
+    ever really rested on — is there a declaration.
     """
-    if not account_currencies:
-        return MODE_TITRES
-    return MODE_ACCOUNTS if len(set(account_currencies)) == 1 \
-        else MODE_MULTI_CURRENCY
+    return MODE_ACCOUNTS if declared else MODE_TITRES
 
 
 def build_totals_head(
@@ -290,7 +306,8 @@ def build_totals_head(
     }
 
 
-def build_titres_head(shares: Sequence[SharePosition]) -> Dict[str, Any]:
+def build_titres_head(shares: Sequence[SharePosition],
+                      currency: Optional[str] = None) -> Dict[str, Any]:
     """The degraded head: the three named figures, from the positions alone.
 
     Not an error state — it is what every install without a declared account
@@ -308,6 +325,13 @@ def build_titres_head(shares: Sequence[SharePosition]) -> Dict[str, Any]:
     position's *quantity* at the baseline instant as well as its price, and
     valuing today's holdings at an old price would announce a move that is
     partly a purchase.
+
+    ``currency`` is the **reporting** currency and arrives as an argument (issue
+    #702). It used to be derived from the shares' own quote currencies, which was
+    the three-level model showing through: two accounts in EUR holding only
+    USD-quoted securities produced a head labelled ``USD`` over figures whose
+    cost basis was in euros. It is ``None`` while the question is unanswered, and
+    that ``None`` is what the page says the condition with.
     """
     holdings = _sum_values(share.market_value for share in shares)
     cost_basis = _sum_values(share.cost_basis for share in shares)
@@ -319,7 +343,7 @@ def build_titres_head(shares: Sequence[SharePosition]) -> Dict[str, Any]:
              if isinstance(share.price_time, datetime)]
     return {
         'mode': MODE_TITRES,
-        'currency': _single_currency(share.currency for share in shares),
+        'currency': currency,
         'as_of': _iso(max(times)) if times else None,
         'holdings_value': holdings,
         'cost_basis': cost_basis,
@@ -328,23 +352,6 @@ def build_titres_head(shares: Sequence[SharePosition]) -> Dict[str, Any]:
         'plus_value_latente': plus_value,
         'plus_value_pct': _ratio(plus_value, cost_basis),
         'baseline': None,
-    }
-
-
-def build_multi_currency_head(accounts: Sequence[Any]) -> Dict[str, Any]:
-    """The third case: declared accounts that do not share a currency.
-
-    States the condition and names the accounts, and stops there. Inventing a
-    global figure by summing the per-account ones would be adding euros to
-    dollars, which is exactly what ``compute_portfolio_total`` refuses to do.
-    """
-    return {
-        'mode': MODE_MULTI_CURRENCY,
-        'currencies': sorted({a.currency for a in accounts if a.currency}),
-        'accounts': [
-            {'id': a.id, 'label': a.label, 'currency': a.currency}
-            for a in accounts
-        ],
     }
 
 
@@ -362,17 +369,22 @@ class AccountSummary:
     missing line, and a series left behind by an account since removed from the
     declaration is not a row at all.
 
-    ``label``, ``type`` and ``currency`` come from the declaration, never from
-    the series: the series records what the account *was* when the point was
-    written, the declaration is what it is. Since #700 the series does not even
-    carry them — ``account_type`` and ``account_currency`` were InfluxDB tags,
-    and the store has no column for either.
+    ``label`` and ``type`` come from the declaration, never from the series: the
+    series records what the account *was* when the point was written, the
+    declaration is what it is. Since #700 the series does not even carry them —
+    ``account_type`` and ``account_currency`` were InfluxDB tags, and the store
+    has no column for either.
+
+    There is no ``currency`` on the row at all since #702. An account has none:
+    there is one reporting currency for the whole install, and it is the
+    collection's business rather than each row's — a per-row currency here is
+    precisely the third level ADR-0002 deletes, and it would let a comparison
+    table put two units in one column.
     """
 
     id: str
     label: Optional[str]
     type: Optional[str]
-    currency: Optional[str]
     #: The day the figures below describe — ``None`` when nothing was written
     #: yet. A **day**, not an instant: today's point is rewritten in place
     #: through the day as prices move.
@@ -398,7 +410,6 @@ class AccountSummary:
             'id': self.id,
             'label': self.label,
             'type': self.type,
-            'currency': self.currency,
             'source_id': self.source_id,
             'editable': self.editable,
             'as_of': _iso(self.as_of),
@@ -434,7 +445,6 @@ def build_accounts(
             id=account.id,
             label=getattr(account, 'label', None),
             type=getattr(account, 'type', None),
-            currency=getattr(account, 'currency', None),
             as_of=row.get('day'),
             cash_balance=row.get('cash_balance'),
             holdings_value=row.get('holdings_value'),
@@ -522,11 +532,17 @@ def valuation_series(
 
 @dataclass(frozen=True)
 class Mover:
-    """One share's move since the previous session close."""
+    """One share's move since the previous session close.
+
+    No ``currency`` on the row since #702. Every amount here — the price, the
+    change, the contribution — is in the **reporting** currency, so it is one
+    fact about the whole block rather than a column repeated identically down it.
+    The share's own quote currency is on ``/api/shares``, beside the native price
+    it labels.
+    """
 
     symbol: str
     name: Optional[str]
-    currency: Optional[str]
     price: Optional[float]
     previous_price: Optional[float]
     change: Optional[float]
@@ -541,7 +557,6 @@ class Mover:
         return {
             'symbol': self.symbol,
             'name': self.name,
-            'currency': self.currency,
             'price': self.price,
             'previous_price': self.previous_price,
             'change': self.change,
@@ -619,7 +634,6 @@ def build_movers(
         movers.append(Mover(
             symbol=share.symbol,
             name=share.name,
-            currency=share.currency,
             price=share.price,
             previous_price=previous,
             change=change,
@@ -655,17 +669,6 @@ def _baseline(
         'change': change,
         'change_pct': _ratio(change, previous),
     }
-
-
-def _single_currency(values: Iterable[Optional[str]]) -> Optional[str]:
-    """The one currency in play, or ``None`` when they disagree.
-
-    ``None`` makes the front render a bare number instead of guessing EUR, which
-    is what the Grafana baseline does by hardcoding ``currencyEUR`` in every
-    panel unit.
-    """
-    found = {value for value in values if value}
-    return found.pop() if len(found) == 1 else None
 
 
 def _build_account(row: Dict[str, Any]) -> AccountPosition:
@@ -770,8 +773,8 @@ def _iso(value) -> Optional[str]:
 __all__ = [
     'AccountPosition', 'AccountSummary', 'SharePosition', 'Mover',
     'build_shares', 'build_share', 'build_accounts', 'unit_cost',
-    'MODE_ACCOUNTS', 'MODE_TITRES', 'MODE_MULTI_CURRENCY', 'portfolio_mode',
-    'build_totals_head', 'build_titres_head', 'build_multi_currency_head',
+    'MODE_ACCOUNTS', 'MODE_TITRES', 'portfolio_mode',
+    'build_totals_head', 'build_titres_head',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',
     'build_movers',
 ]
