@@ -1,0 +1,150 @@
+"""The carrying price: what a position is worth on a day nothing priced it.
+
+Issue #706, ADR-0004, spec #695 § 9. Pure, in the exact taste of
+:mod:`scheduling` / :mod:`performance` / :mod:`portfolio_view`: no store, no
+yfinance, no clock — ``now`` arrives as an argument.
+
+A position held on a day where no price was ever observed — **and never will
+be** — is valued at its own unit cost. Not at the last execution price, and not
+at zero. Zero is what the app used to do, and it is what dug a crater in the
+consolidated curve on the day of a purchase: the cash ledger had already paid
+for the shares while the holding was worth nothing, so the total dropped by the
+purchase and climbed back the next morning. Without the cash ledger the two
+curves ignored the position together and simply stepped up a day late — which is
+why no version before the consolidated dashboard ever drew the hole.
+
+Three things about it are decisions rather than details:
+
+* **The rule is keyed on the absence of a price, never on a calendar.** A market
+  calendar would explain the hole without filling it, and the app polls listings
+  whose exchange it does not always know — the surviving occurrence is an
+  Amsterdam execution mis-valued because the app asks Yahoo for the *NASDAQ*
+  quote of the same company.
+
+* **The price carried is the weighted average cost — the PMP — and not the
+  execution price.** That is what makes the purchase day exactly cash-neutral
+  and the latent gain identically zero for as long as the fallback holds, which
+  in turn is what makes the convention statable on screen in one sentence. The
+  division is the same rule as :func:`events.schemas.unit_cost` (ADR-0003, CGI
+  art. 150-0 D); it is spelled again here rather than imported because this
+  module is read by :mod:`portfolio_view`, which stays free of the ``events``
+  package — importing it pulls pandas and openpyxl into a pure view module.
+
+* **The predicate has two terms, not one.** *The price is absent* **and** *the
+  symbol's backfill is terminal*. The first term lives in :func:`carrying_price`;
+  the second is the caller's, and it is the caller's because only the caller
+  knows which symbol a figure belongs to. Without it the reconstruction replays a
+  portfolio flat-at-cost for four years that takes off abruptly and then corrects
+  itself, with the owner having done nothing — *"not yet"* rendered as *"never"*,
+  for as long as the rebuild lasts. :func:`is_terminal` is the second term's one
+  spelling, and :func:`quotes.terminal_symbols` is what puts the store's answer
+  to it.
+
+The case where carrying **diverges** from a valuation, stated once so nobody has
+to rediscover it: a position mixing a purchase and a zero-cost grant *inside* the
+window with no price is carried at its cost, therefore at half of what its shares
+are worth. Ten bought at 100 and ten granted by dilution is a quantity of 20 for
+a basis of 1 000, so a PMP of 50 against a market that would say 100. It takes
+both events within the few days before the symbol's first quote, and the answer
+is still the honest one: the app knows what the position cost and does not know
+what it is worth.
+"""
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional, Tuple
+
+
+def carrying_price(observed: Optional[float],
+                   quantity: Optional[float],
+                   cost_basis: Optional[float]) -> Optional[float]:
+    """The price the position is carried at: the market's, failing that its own.
+
+    **One implementation, and that is the acceptance criterion.** The valuation
+    (:func:`performance._holdings_value`, the daily curve) and the shares page
+    read the same function, because two of them would make two users of the same
+    software see two curves for the same portfolio with nothing on screen able to
+    say so.
+
+    ``None`` when there is neither a price nor a quantity: a position nobody
+    holds has no carrying price — it has a realized gain, exactly as it has no
+    unit cost. A quantity with no basis (a dilution grant) is carried at ``0.0``,
+    which is a **figure** and not an absence: it cost nothing, so it is worth
+    nothing until the market says otherwise.
+
+    The second term of the predicate — *and the symbol's backfill is terminal* —
+    is **not** here. Callers apply it, and they apply it by not calling this
+    function at all while history is still being fetched; see :func:`is_terminal`
+    and the module docstring.
+    """
+    if observed is not None:
+        return observed
+    if not quantity:
+        return None
+    return (cost_basis or 0.0) / quantity
+
+
+def holding_bounds(acquired: date, exited: Optional[date],
+                   now: datetime) -> Tuple[datetime, datetime]:
+    """A holding window as the two instants the backward pass works between.
+
+    ``(target, ceiling)`` out of :meth:`main.ConfigSnapshot.backfill_windows`'
+    ``(first acquisition, last exit or None)``. A ``None`` end means *still
+    held*, so the ceiling is ``now``; a closed position's ceiling is the day
+    **after** its last sale, since yfinance reads the end of a range as exclusive
+    and the price of the day one sells is part of the history one held.
+
+    One definition, read by the backfill and by the terminality question alike
+    (issue #706): the two ask about the same window, and a second spelling of it
+    would eventually put them a day apart — which is exactly one chunk of
+    disagreement about whether a symbol is finished.
+    """
+    target = datetime.combine(acquired, datetime.min.time(), tzinfo=timezone.utc)
+    ceiling = (
+        now if exited is None
+        else datetime.combine(exited + timedelta(days=1),
+                              datetime.min.time(), tzinfo=timezone.utc))
+    return target, ceiling
+
+
+def backward_anchor(ceiling: datetime, oldest_stored: Optional[datetime],
+                    oldest_tried: Optional[date]) -> datetime:
+    """Where the backward pass resumes from — the **minimum** of the three.
+
+    The pure half of :meth:`main.SuiviBourseMetrics._backward_anchor`, extracted
+    by #706 so the anchor has one definition and the terminality read below can
+    ask the same question in one batched query instead of re-deriving it.
+
+    A minimum, so the anchor can only ever move backwards: the holding window's
+    ``ceiling`` (where a symbol with nothing stored and nothing tried starts),
+    the oldest stored point, and the oldest window **tried** — the last being the
+    only one that moves on a symbol Yahoo answers nothing about (ADR-0009).
+
+    ``oldest_tried`` is a ``DATE`` because a window boundary is a calendar day;
+    it becomes midnight UTC here, which is the one place the two kinds of time
+    meet on this path.
+    """
+    candidates = [ceiling]
+    if oldest_stored is not None:
+        candidates.append(oldest_stored)
+    if oldest_tried is not None:
+        candidates.append(datetime.combine(
+            oldest_tried, datetime.min.time(), tzinfo=timezone.utc))
+    return min(candidates)
+
+
+def is_terminal(anchor: datetime, target: datetime) -> bool:
+    """Has the backward pass nothing left to fetch for this symbol?
+
+    The second term of the carrying predicate, and the **same comparison**
+    :meth:`main.SuiviBourseMetrics._backfill_backward` makes to set its
+    completion watermark — at day granularity, so tiny windows are not chased.
+
+    Derived from the store rather than read off the scheduler's in-memory
+    ``_backfill_complete``, and that is what makes it usable at all: the dict is
+    empty for the first cycle after every restart, so a convention hanging off it
+    would switch itself off on each boot and back on a minute later, with the
+    figures moving underneath a reader who did nothing.
+    """
+    return anchor.date() <= target.date()
+
+
+__all__ = ['carrying_price', 'holding_bounds', 'backward_anchor', 'is_terminal']
