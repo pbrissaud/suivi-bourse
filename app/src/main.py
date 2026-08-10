@@ -2164,6 +2164,8 @@ class SuiviBourseMetrics:
             before = self.config_manager.current().shares
             snapshot = (self.config_manager.reload() if import_files
                         else self.config_manager.replay())
+            if import_files:
+                self._adopt_declared_currency()
             after = snapshot.shares
             # The gauges the replay owns (issue #699). Published on every
             # ingest, not only on a change: a restart replays an unchanged
@@ -2201,6 +2203,31 @@ class SuiviBourseMetrics:
         # arms every symbol, later it only touches the diff. No-op until the
         # scheduler is wired in __main__.
         self._reconcile_jobs()
+
+    def _adopt_declared_currency(self) -> None:
+        """Take up a reporting currency an import has just declared (issue #710).
+
+        A dial reaches this process from exactly two places: the boot reads them
+        all once into the attributes every cycle re-reads (``start_runtime``),
+        and ``PUT /api/settings`` assigns the same attributes after writing the
+        row. That pair is the whole of *"no dial requires a restart"*.
+
+        An **import** is the third writer of one of them, and of one only: an
+        exported file states its reporting currency, and a store that has none
+        takes it (``ledger._currency_to_adopt``, ADR-0021). Without this line the
+        row would be in the store and the running process would go on converting
+        nothing until the next restart — and that is the one dial where the
+        symptom is invisible, since a missing currency writes ``NULL``
+        conversions rather than failing anything.
+
+        Read after the reload and not before it: the value this looks for is
+        written *by* the import the reload performs.
+        """
+        stored = self.config_manager.store.setting('base_currency')
+        if stored and stored != self.base_currency:
+            app_logger.info(
+                f"Reporting currency taken from an imported file: {stored}")
+            self.base_currency = stored
 
     def backfill(self):
         """
