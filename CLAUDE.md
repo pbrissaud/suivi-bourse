@@ -112,6 +112,63 @@ each. Four things about it are decisions, not defaults:
   and shows **one band or none**. `lib/api.ts` is the only module that knows a
   URL, and the paths it exports are what the test handlers fake.
 
+**The three shared primitives, and the dashboard head that consumes them first**
+(issue #718, ADR-0016, ADR-0018). They arrive together because each of the three
+repairs a *measured* defect rather than anticipating one:
+
+- **`Explain`** — the convention bubble, which did not exist at all: the whole
+  product explained itself through two `title=` attributes, one second of delay,
+  unstyled, and **absent on touch**. One bubble, **one text** (what the figure
+  means, the rule it rests on, the link), opening **on click and never on
+  hover** — hover does not exist on a finger, and click is also what lets the
+  reader walk to the link inside. It **closes on scroll** and opens **beside**
+  its figure: a bubble must not outlive its subject, and both boards mounted it
+  over the very numbers it explained. The link is the front's **first `href` to
+  the outside** and carries version *and* locale (`lib/docs.ts`,
+  `/{fr/}docs/v5/read-your-figures#<anchor>`); the ten anchors are a contract
+  with `website/docs/read-your-figures.mdx`, hand-written on every heading there
+  because a *derived* anchor moves with a reworded title, the front sees
+  nothing, the site still builds, and every bubble lands at the top of the page.
+- **`Stat`** — the *figure + label* pair, **one** where the prototype had four:
+  `Stat` copied three times plus a fourth component, `Summary`, **with no slot
+  for a hint** — and it was `Summary` that carried `Plus-value latente
+  335,22 €`. The most wrong figure in the product sat on the only component
+  incapable of explaining itself, so the slot is the reason the primitive
+  exists. Three weights (`head` / `term` / `stat`) because subordination is
+  vertical and a total never shares a line with its terms.
+- **`EmptyState`** — one, where eight were written by hand `<Alert>` by
+  `<Alert>`. It replaces them **as the pages land**, never in a sweep across
+  pages being rewritten anyway.
+
+Three pure modules go with them and hold what a component must not decide:
+`lib/absence.ts` (the **four** renderings under *the em dash means there is
+nothing to compute; anything merely missing is named* — and the fourth case
+reports **its count**, never *« jamais »*, which is not computable),
+`lib/sign.ts` (where **zero stops rendering as absence**: neutral in colour but
+in the *colour of text*, since a sold row carries `0,00 €` and `—` side by
+side), and `lib/gain.ts` (ADR-0018's identity). **No row-marker component is
+created** — *a per-row marker that does not discriminate is noise however
+correct it is*, and two independent tickets produced that defect under two names.
+
+The head itself **computes `Gain total` from its four terms and never reads
+`portfolio_totals.gain_absolu`**, which is the same number written down
+elsewhere; three of the four terms come off `/api/positions`, so a global row
+that cannot be written no longer blanks the headline. The fourth term — the fees
+a broker takes out of a transfer — **renders only when it is not zero**, colour
+goes only to the two terms that can change sign, the statistics **shrink**
+instead of filling with dashes, and there are **four icons in the block, not
+nine**. The year-to-date is **two figures that never share a line**: the euro
+under the head, the percentage inside the TWR statistic (measured `+40,69 €`
+against `−1,25 %`, opposite signs over the same period and both correct). The
+`1S / 1M / 1A / —` selector does not exist.
+
+Two members joined the HTTP contract for it, announced on #745 before being
+written into `lib/api.ts`: **`GET /api/portfolio-totals`** (named after the
+store's table, never after the page) and **`runtime.rebuilding`** — the latter
+on the app-state resource rather than beside the figures, because the fact it
+decides is *is the TWR's base date still moving*, which is a property of this
+process.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -1161,6 +1218,14 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/format.ts       # The eight Intl sites, locale as an argument
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
 ├── src/lib/status.ts       # The dot's state and the banner's one band, pure
+├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
+├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
+├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
+├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
+├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
+├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
+├── src/components/EmptyState.tsx  # The one empty state
+├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 
