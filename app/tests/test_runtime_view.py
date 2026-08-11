@@ -771,3 +771,26 @@ def test_the_payload_no_longer_states_a_mode_there_being_only_one():
     assert payload['symbols'][0]['pill'] == runtime_view.PILL_UNKNOWN
     assert payload['ingestion'] is None
     assert payload['perf'] is None
+
+
+def test_the_payload_says_whether_the_reconstruction_still_has_windows():
+    """``rebuilding`` (contract #745, issue #763) — the pure half of it.
+
+    ``total > 0 and complete < total``, and the two degenerate readings are the
+    point: an install with nothing to reconstruct is ``(0, 0)`` and is **not**
+    rebuilding, while a process that cannot see the scheduler passes ``None`` and
+    asserts nothing. A boolean has no room for #709's third answer, and what this
+    one enables is the *claim* that the TWR's base date is still moving — which
+    an observer who cannot see the reconstruction has no ground to make.
+    """
+    assert runtime_view.is_rebuilding((0, 2)) is True
+    assert runtime_view.is_rebuilding((1, 2)) is True
+    assert runtime_view.is_rebuilding((2, 2)) is False
+    assert runtime_view.is_rebuilding((0, 0)) is False
+    assert runtime_view.is_rebuilding(None) is False
+
+    payload = runtime_view.build_runtime(
+        shares=[_share()], scrape={}, backfill={}, next_runs={},
+        ingest=None, perf=None, now=NOW, reconstruction=(1, 3))
+
+    assert payload['rebuilding'] is True

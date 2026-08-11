@@ -602,6 +602,35 @@ def build_errors(
     return dated + undated
 
 
+def is_rebuilding(reconstruction: Optional[Tuple[int, int]]) -> bool:
+    """*The reconstruction still has windows to cover* (contract #745, #763).
+
+    Reads :meth:`main.SuiviBourseMetrics.reconstruction_state` — process memory
+    — and **no query at all**, which is why the member is on the app-state
+    resource and not beside the figures: it is a fact about *this process*.
+
+    What it decides on screen is small and exact: the time-weighted return
+    carries its base date **only while that date is still moving**. #707
+    recomputes the whole series every cycle and the backfill keeps handing it
+    earlier prices, so ``twr_since`` walks backwards until the reconstruction
+    concludes; once it does, the date stops changing and stops being news. It
+    serves nothing else — and **not** the year-to-date, which has its own carrier
+    (``totals.ytd``): the two moments do not coincide, the year-to-date becoming
+    computable long before the reconstruction finishes.
+
+    ``None`` is the reading a process with no scheduler makes — the gunicorn
+    master, a test runtime — and it answers ``False``. That is not the third
+    state :data:`advisories.UNOBSERVED` keeps: a boolean has no room for one, and
+    ``False`` is the safe reading, since what it enables is the *assertion* that
+    a date is still moving, which an observer that cannot see the scheduler has
+    no ground to make.
+    """
+    if reconstruction is None:
+        return False
+    complete, total = reconstruction
+    return total > 0 and complete < total
+
+
 def build_runtime(
     shares: Sequence[Dict[str, Any]],
     scrape: Mapping[str, Optional[runtime_state.ScrapeRecord]],
@@ -611,17 +640,23 @@ def build_runtime(
     perf: Optional[runtime_state.PerfRecord],
     now: datetime,
     scheduler_running: bool = True,
+    reconstruction: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload.
 
     No ``mode`` since #711: there is one loading path, so an absent backward
     pass has exactly one reading and the front has nothing left to branch on.
+
+    ``reconstruction`` is the scheduler's ``(complete, total)`` pair and defaults
+    to ``None`` — *not observable from here* — which is the honest state of a
+    runtime whose scheduler has never started. See :func:`is_rebuilding`.
     """
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
     return {
         'now': _iso(now),
         'scheduler_running': scheduler_running,
+        'rebuilding': is_rebuilding(reconstruction),
         'symbols': [symbol.to_dict() for symbol in symbols],
         'backfill': build_backfill_summary(symbols),
         'ingestion': build_ingestion(ingest),
@@ -676,5 +711,5 @@ __all__ = [
     'BackfillProgress', 'SymbolRuntime',
     'symbol_pill', 'backfill_progress', 'build_symbols',
     'build_backfill_summary', 'build_ingestion', 'build_perf', 'build_errors',
-    'build_runtime',
+    'is_rebuilding', 'build_runtime',
 ]
