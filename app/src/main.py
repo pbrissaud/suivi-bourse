@@ -24,6 +24,7 @@ from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
 import boot_env
+import carrying
 import fx
 import ledger
 import perf_series
@@ -342,6 +343,39 @@ def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
 ACQUISITION_EVENT_TYPES = (EventType.BUY, EventType.GRANT)
 
 
+def holding_windows(events, held) -> Dict[str, Tuple[date, Optional[date]]]:
+    """``{symbol: (first acquisition, last exit or None)}`` out of a raw ledger.
+
+    Pure, and module-level rather than a method, because it has **two** callers
+    since #706 and they hold two different things.
+    :meth:`ConfigSnapshot.backfill_windows` reads the published snapshot; the
+    perf recompute reads the store directly (its only inputs are the store and
+    the clock, #707) and derives ``held`` from its own replay. Both have to reach
+    the same window, since one drives the backfill and the other asks whether
+    that backfill is finished — and a second spelling of *"when did this position
+    start"* would put them a day apart, which is one chunk of disagreement about
+    whether a symbol is terminal.
+    """
+    first: Dict[str, date] = {}
+    exits: Dict[str, date] = {}
+    for event in events:
+        if not event.symbol:
+            continue
+        if event.event_type in ACQUISITION_EVENT_TYPES:
+            known = first.get(event.symbol)
+            if known is None or event.date < known:
+                first[event.symbol] = event.date
+        elif event.event_type == EventType.SELL:
+            known = exits.get(event.symbol)
+            if known is None or event.date > known:
+                exits[event.symbol] = event.date
+
+    return {
+        symbol: (acquired, None if symbol in held else exits.get(symbol))
+        for symbol, acquired in first.items()
+    }
+
+
 # ``InvalidConfigFile`` and ``load_shares_schema`` left with ``schema.yaml``
 # (issue #696). The schema validated the *aggregated share list*, which since
 # #711 is no longer read from a file at all — it is computed from the event
@@ -408,28 +442,11 @@ class ConfigSnapshot:
         A pure read of this snapshot, so a concurrent reload can never empty it
         mid-cycle.
         """
-        first: Dict[str, date] = {}
-        exits: Dict[str, date] = {}
-        for event in self.events:
-            if not event.symbol:
-                continue
-            if event.event_type in ACQUISITION_EVENT_TYPES:
-                known = first.get(event.symbol)
-                if known is None or event.date < known:
-                    first[event.symbol] = event.date
-            elif event.event_type == EventType.SELL:
-                known = exits.get(event.symbol)
-                if known is None or event.date > known:
-                    exits[event.symbol] = event.date
-
         # Held **anywhere**: one account selling out does not end the window of a
         # share another account still holds, and the series they share is one.
         held = {share['symbol'] for share in self.shares
                 if share.get('symbol') and share.get('quantity')}
-        return {
-            symbol: (acquired, None if symbol in held else exits.get(symbol))
-            for symbol, acquired in first.items()
-        }
+        return holding_windows(self.events, held)
 
     def first_acquisition_date(self, symbol: str) -> Optional[date]:
         """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``.
@@ -2156,12 +2173,11 @@ class SuiviBourseMetrics:
         for every symbol the user has ever sold out of.
         """
         acquired, exited = window
-        target = datetime.combine(
-            acquired, datetime.min.time(), tzinfo=timezone.utc)
-        ceiling = (
-            datetime.now(timezone.utc) if exited is None
-            else datetime.combine(exited + timedelta(days=1),
-                                  datetime.min.time(), tzinfo=timezone.utc))
+        # One definition of the window's two instants, shared with the
+        # terminality read (issue #706): the pass that fills the history and the
+        # question "is this history finished" must not measure two windows.
+        target, ceiling = carrying.holding_bounds(
+            acquired, exited, datetime.now(timezone.utc))
 
         written = 0
         # Backward pass — skip once complete to avoid refetching the same window
@@ -2259,16 +2275,19 @@ class SuiviBourseMetrics:
           where its data ends rather than re-fetching from the ceiling;
         * the oldest window tried, which is the only one that moves on a symbol
           Yahoo answers nothing about.
+
+        The minimum itself is :func:`carrying.backward_anchor` since #706, so
+        this pass and the terminality question :func:`quotes.terminal_symbols`
+        puts to the whole portfolio compute one anchor and not two. What stays
+        here is the *reading* of the three inputs, one symbol at a time — which
+        is affordable on a job that visits one symbol per cycle with a rate-limit
+        sleep between them, and is exactly what that batched read exists to avoid
+        doing per request.
         """
-        candidates = [ceiling]
-        oldest_stored = quotes.oldest_ts(self.config_manager.store, symbol)
-        if oldest_stored is not None:
-            candidates.append(oldest_stored)
-        tried = quotes.oldest_window_tried(self.config_manager.store, symbol)
-        if tried is not None:
-            candidates.append(datetime.combine(
-                tried, datetime.min.time(), tzinfo=timezone.utc))
-        return min(candidates)
+        return carrying.backward_anchor(
+            ceiling,
+            quotes.oldest_ts(self.config_manager.store, symbol),
+            quotes.oldest_window_tried(self.config_manager.store, symbol))
 
     def _convert_history(self, symbol: str, prices: List[Dict]) -> None:
         """Stamp a fetched chunk with its converted price and rate, in place.
@@ -2342,8 +2361,12 @@ class SuiviBourseMetrics:
         oldest_timestamp = quotes.oldest_ts(self.config_manager.store, symbol)
         end_date = self._backward_anchor(symbol, ceiling)
 
-        # Compare at day granularity to avoid chasing tiny windows.
-        if end_date.date() <= target.date():
+        # Compare at day granularity to avoid chasing tiny windows — and through
+        # :func:`carrying.is_terminal`, which is the same predicate the carrying
+        # convention's second term reads (issue #706). The watermark this branch
+        # sets and the store-derived answer that convention takes must not be two
+        # different notions of "finished".
+        if carrying.is_terminal(end_date, target):
             app_logger.debug(
                 f"Backfill complete for {symbol}: "
                 f"anchor={end_date.date()}, target={target.date()}")
@@ -2639,11 +2662,33 @@ class SuiviBourseMetrics:
                 pairs = price_pairs.get(symbol)
                 return timeline.state_at(pairs, day) if pairs else None
 
+            # The carrying convention's **second** term (issue #706, ADR-0004):
+            # which symbols the backward pass has finished with. Derived from
+            # this replay rather than from the published snapshot, for the same
+            # reason the events above are — the job's only inputs are the store
+            # and the clock (#707), so a snapshot read here would tie the cache's
+            # freshness back to the configuration's publication rhythm. ``held``
+            # comes from the replay's own current state, which is what
+            # ``ConfigSnapshot.shares`` is a projection of.
+            held = {position['symbol']
+                    for position in timeline.current()
+                    if position.get('symbol') and position.get('quantity')}
+            carried = quotes.terminal_symbols(
+                store_handle, holding_windows(events, held),
+                datetime.now(timezone.utc))
+            # And its **first** term, which ``price_at`` cannot supply: that
+            # callable reads ``price_converted``, so a symbol whose pair does not
+            # resolve is priceless to it while its quote is known. Carrying those
+            # would answer a valuation where the app owes *waiting for a rate*
+            # (#706, repaired in the store by #704).
+            first_quoted = quotes.first_quoted_days(store_handle)
+
             start = min(e.date for e in events)
 
             per_account = {
                 account.id: performance.compute_account(
-                    timeline, account, symbols, price_at, start, today)
+                    timeline, account, symbols, price_at, start, today, carried,
+                    first_quoted)
                 for account in portfolio.accounts
             }
             total = performance.compute_portfolio_total(

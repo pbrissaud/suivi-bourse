@@ -263,6 +263,73 @@ def test_shares_aggregates_across_accounts_and_keeps_the_breakdown(tmp_path):
     assert {a['account'] for a in payload[0]['accounts']} == {'pea', 'cto'}
 
 
+def test_a_share_with_no_quote_and_a_finished_rebuild_is_carried_at_its_cost(
+        tmp_path):
+    """Issue #706 through the wire, both terms of it.
+
+    The ledger names one purchase and the backward pass has reached it, so the
+    convention applies: the price column stays ``null`` — the app does not
+    invent a quote — while the value and the latent gain are computed from what
+    the position cost. Nothing else on the payload says so; the em dash is the
+    signal (ADR-0004).
+    """
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
+        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 15))
+
+    payload = build_client(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
+        seed=seed).get('/api/shares').get_json()
+
+    assert payload[0]['price'] is None
+    assert payload[0]['market_value'] == pytest.approx(1502.5)
+    assert payload[0]['plus_value_latente'] == pytest.approx(0.0)
+
+
+def test_a_share_whose_rebuild_is_still_running_keeps_its_em_dash(tmp_path):
+    """The predicate's second term, on the same route.
+
+    Nothing is tried yet, so the history may still be coming: value and latent
+    stay absent rather than flat-at-cost, which is the four-year-long
+    misreading ADR-0004 exists to prevent.
+    """
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
+
+    payload = build_client(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
+        seed=seed).get('/api/shares').get_json()
+
+    assert payload[0]['price'] is None
+    assert payload[0]['market_value'] is None
+    assert payload[0]['plus_value_latente'] is None
+
+
+def test_a_share_waiting_for_a_rate_is_not_carried_at_its_cost(tmp_path):
+    """The predicate's **first** term, on the wire (issue #706).
+
+    The quote is known and its conversion is not — a base currency not answered
+    yet, or a pair that does not resolve — and the backward pass has finished. A
+    first term reading *the converted price is absent* would carry this row at
+    its cost, answering a valuation where the app owes *waiting for a rate*
+    (``CONTEXT.md`` § Absence; ``read-your-figures.mdx``'s absence table). The
+    native price rides the payload so the page can say which of the two it is.
+    """
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
+        seed_quote(opened, price=187.5, converted=None, rate=None)
+        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 15))
+
+    payload = build_client(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
+        seed=seed).get('/api/shares').get_json()
+
+    assert payload[0]['price'] is None
+    assert payload[0]['price_native'] == pytest.approx(187.5)
+    assert payload[0]['market_value'] is None
+    assert payload[0]['plus_value_latente'] is None
+
+
 def test_an_unknown_symbol_is_404_problem_json(tmp_path):
     client = build_client(tmp_path)
     response = client.get('/api/shares/NOPE')

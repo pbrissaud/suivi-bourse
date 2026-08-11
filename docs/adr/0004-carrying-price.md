@@ -18,6 +18,14 @@ sentence.
 - It is **never invoked while history is still being fetched** — see ADR-0009. Its
   domain is exactly "the symbol's backfill is terminal", so the predicate is *no
   price* **and** *no price is coming*, never *no price* alone.
+- *No price* means **no quote**, not *no converted price*. Every figure the app draws
+  is in the reporting currency, so the money columns read `price_converted`; a
+  security whose quote is known and whose rate is not (ADR-0002's dial unanswered, or
+  a pair that does not resolve) is therefore priceless to those reads while being
+  perfectly well quoted. That state is *waiting*, a distinct kind of absence, and
+  carrying it would publish a valuation the app does not have — durably, since the
+  point keeps `price_converted NULL` until the lateral repair pass. The helper takes
+  the quote's presence as its own argument for that reason.
 - The first-purchase anchor that bounds backfill widens to include grants; anchoring
   on purchases alone silently carried a dilution grant at zero for years.
 

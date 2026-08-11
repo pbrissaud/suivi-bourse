@@ -28,8 +28,11 @@ of three figures that nearly add up.
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import (
+    Callable, Collection, Dict, List, Mapping, Optional, Tuple,
+)
 
+from carrying import carrying_price, was_quoted
 from events.schemas import (
     CashFlow, InKindFlow, Timeline, Account, declared_value,
 )
@@ -123,12 +126,37 @@ def _fill_twr(daily: List[DailyPerf]) -> None:
 
 
 def _holdings_value(timeline: Timeline, account: str, symbols,
-                    price_at: PriceAt, day: date) -> Tuple[float, bool]:
+                    price_at: PriceAt, day: date,
+                    carried: Collection[str] = (),
+                    first_quoted: Optional[Mapping[str, date]] = None
+                    ) -> Tuple[float, bool]:
     """Σ(quantity × forward-filled price) for the account on ``day``.
 
     Returns (value, has_position) — has_position is True as soon as the account
     holds anything (even a symbol without a price yet).
+
+    ``carried`` is the set of symbols whose backfill is **terminal** (issue #706,
+    ADR-0004), and the lines below are the carrying predicate's two terms,
+    written where they can be read together: membership of that set, and
+    :func:`carrying.carrying_price` returning the position's own unit cost when
+    the day has no observed price. A symbol still being reconstructed is not in
+    the set, so its priceless days go on contributing nothing — which is the
+    whole point: a portfolio flat-at-cost for four years that then takes off and
+    corrects itself is *"not yet"* rendered as *"never"*.
+
+    ``first_quoted`` is what keeps the first term about the **quote** rather than
+    about its conversion. ``price_at`` reads ``price_converted`` — every figure
+    here is money in the reporting currency — so a symbol whose pair does not
+    resolve looks priceless to it while its quote is perfectly well known. That is
+    *waiting for a rate*, and carrying it at cost would publish a valuation the
+    app does not have. ``{symbol: first day quoted at all}`` separates the two,
+    and :func:`carrying.was_quoted` forward-fills it exactly as ``price_at``
+    forward-fills the close beside it.
+
+    Below the perf horizon nothing is written at all, so this is never reached
+    with a day the recompute would refuse to publish (spec #695 § 9).
     """
+    quoted_from = first_quoted or {}
     total = 0.0
     has_position = False
     for sym in symbols:
@@ -140,6 +168,9 @@ def _holdings_value(timeline: Timeline, account: str, symbols,
         if not qty:
             continue
         price = price_at(sym, day)
+        if sym in carried:
+            price = carrying_price(price, was_quoted(quoted_from.get(sym), day),
+                                   qty, pos.get('cost_basis'))
         if price is not None:
             total += qty * price
     return total, has_position
@@ -213,8 +244,21 @@ def _daily_range(start: date, today: date):
 
 
 def compute_account(timeline: Timeline, account: Account, symbols,
-                    price_at: PriceAt, start: date, today: date) -> Performance:
-    """Compute one account's daily valuation series, TWR, XIRR and absolute gain."""
+                    price_at: PriceAt, start: date, today: date,
+                    carried: Collection[str] = (),
+                    first_quoted: Optional[Mapping[str, date]] = None
+                    ) -> Performance:
+    """Compute one account's daily valuation series, TWR, XIRR and absolute gain.
+
+    ``carried`` is the terminal-backfill set (issue #706) and it defaults to
+    empty, which is the pre-#706 behaviour: no symbol is carried unless the
+    caller has established that its history has stopped coming. ``first_quoted``
+    is the day each symbol was **first quoted at all** and it defaults to empty
+    for the opposite reason: with nothing known about the quotes, no day is
+    treated as observed, so the fallback stays available to a caller that has
+    only established terminality. It is :func:`_holdings_value` that explains why
+    the two are separate questions.
+    """
     acc = account.id
     cash_flows, grant_flows = _account_flows(timeline, acc)
     flow_by_date = _external_flow_by_date(cash_flows, grant_flows)
@@ -223,7 +267,8 @@ def compute_account(timeline: Timeline, account: Account, symbols,
     started = False
     for day in _daily_range(start, today):
         cash = timeline.cash_at(acc, day)
-        holdings, has_position = _holdings_value(timeline, acc, symbols, price_at, day)
+        holdings, has_position = _holdings_value(
+            timeline, acc, symbols, price_at, day, carried, first_quoted)
 
         if not started and cash is None and not has_position:
             continue  # skip days before the account has any activity

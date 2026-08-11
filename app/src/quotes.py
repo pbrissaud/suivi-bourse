@@ -54,10 +54,11 @@ may legitimately call the same line differently, and renaming a share no longer
 cuts its history in two (spec #695 § 3).
 """
 from datetime import date, datetime, timezone
-from typing import Dict, Mapping, Optional, Sequence
+from typing import Dict, Mapping, Optional, Sequence, Set, Tuple
 
 from logfmt_logger import getLogger
 
+import carrying
 from store import finite
 
 logger = getLogger("quotes")
@@ -330,6 +331,85 @@ def oldest_window_tried(store, symbol: str) -> Optional[date]:
 # The reads the scheduler needs — anchors, and the sonde's one value
 # --------------------------------------------------------------------------- #
 
+def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
+                     now: datetime) -> Set[str]:
+    """Which symbols the backward pass has **finished** with — issue #706.
+
+    The second term of the carrying predicate (ADR-0004), and it is read from the
+    store rather than from the scheduler's ``_backfill_complete`` for the reason
+    :func:`carrying.is_terminal` states: that dict is empty for the first cycle
+    after every restart, so a convention hanging off it would flicker off and on
+    at each boot with the figures moving under a reader who did nothing. The
+    three inputs it is derived from — the ceiling, the oldest stored point and
+    the oldest window tried — are all persisted, so the answer survives the
+    process that produced it.
+
+    ``windows`` is :meth:`main.ConfigSnapshot.backfill_windows`' output, and a
+    symbol absent from it is absent from the answer: nothing was ever acquired,
+    so there is no history to be finished with.
+
+    **Two queries for the whole portfolio**, never two per symbol. Both consumers
+    ask this about every symbol at once — the perf recompute over its whole
+    replay, the shares page over its whole table — and the per-symbol reads
+    :meth:`main.SuiviBourseMetrics._backward_anchor` makes are affordable only
+    because the backfill visits one symbol at a time with a rate-limit sleep
+    between them. The anchor itself is not re-derived here: it comes from
+    :func:`carrying.backward_anchor`, the same function that per-symbol path
+    calls.
+    """
+    if not windows:
+        return set()
+
+    oldest_stored = {
+        symbol: _utc(value)
+        for symbol, value in store.query(
+            'SELECT symbol, min(ts) FROM price_point GROUP BY symbol')
+        if value is not None
+    }
+    oldest_tried = {
+        symbol: value
+        for symbol, value in store.query(
+            'SELECT symbol, oldest_window_tried FROM symbol_quote '
+            ' WHERE oldest_window_tried IS NOT NULL')
+    }
+
+    finished = set()
+    for symbol, (acquired, exited) in windows.items():
+        target, ceiling = carrying.holding_bounds(acquired, exited, now)
+        anchor = carrying.backward_anchor(
+            ceiling, oldest_stored.get(symbol), oldest_tried.get(symbol))
+        if carrying.is_terminal(anchor, target):
+            finished.add(symbol)
+    return finished
+
+
+def first_quoted_days(store) -> Dict[str, date]:
+    """``{symbol: first calendar day carrying a quote}`` — one query, whole store.
+
+    The **first** term of the carrying predicate for every read that works off the
+    price *series* rather than off a P1 row (issue #706). ``price_native``, never
+    ``price_converted``: the question is whether a quote was ever observed, and a
+    quote whose conversion has not landed is still a quote — a base currency not
+    answered yet, or a pair that does not resolve, is *waiting for a rate* and not
+    a security nobody prices. Reading the converted column here would carry those
+    positions at cost, which is the one thing ``CONTEXT.md`` § Absence says the
+    two states must never do: be rendered alike.
+
+    One scalar per symbol is enough because the consumers forward-fill: a day is
+    *quoted* from the first observation on, exactly as ``price_at`` carries the
+    last close forward (:func:`carrying.was_quoted`). One ``GROUP BY`` for the
+    whole portfolio, so the perf recompute and the history route each pay one
+    read rather than one per symbol.
+    """
+    return {
+        symbol: value
+        for symbol, value in store.query(
+            'SELECT symbol, min(CAST(ts AS DATE)) FROM price_point '
+            ' WHERE price_native IS NOT NULL GROUP BY symbol')
+        if value is not None
+    }
+
+
 def oldest_ts(store, symbol: str) -> Optional[datetime]:
     """The oldest stored instant of a symbol's series, or ``None``.
 
@@ -438,6 +518,7 @@ def _utc(value):
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_history',
-    'record_window_tried', 'oldest_window_tried',
+    'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
+    'first_quoted_days',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
 ]

@@ -29,6 +29,7 @@ import accounts as accounts_module
 import ledger
 import main
 import portfolio_view
+import quotes
 import runtime_state
 import runtime_view
 import settings as settings_module
@@ -73,6 +74,23 @@ def _reader() -> PortfolioReader:
 def _snapshot():
     """The published configuration snapshot — the lock-free read (issue #658)."""
     return current_runtime().config_manager.current()
+
+
+def _carried():
+    """The symbols a position may be carried at cost on (issue #706, ADR-0004).
+
+    The convention's **second** term, and it is asked here rather than inside
+    :mod:`portfolio_view` because that module is pure and this is the one place
+    that has both halves: the store, which knows how far the reconstruction has
+    got, and the published snapshot, which knows each symbol's holding window.
+
+    Two queries for the whole portfolio — see :func:`quotes.terminal_symbols` —
+    so the shares page pays one batched read and not one per row. An empty set is
+    the honest answer on an install whose backfill is still running, and it is
+    what leaves the priceless rows at an em dash until the rebuild concludes.
+    """
+    return quotes.terminal_symbols(
+        _store(), _snapshot().backfill_windows(), datetime.now(timezone.utc))
 
 
 def _store():
@@ -123,9 +141,18 @@ def list_shares():
 
     P1 generalised: **one** query for the whole portfolio (#652 déc. 8), folded
     by the pure module. Empty portfolio is ``200`` + ``[]``, never a 404.
+
+    A position whose symbol has no observed price and no more coming keeps its
+    ``price`` at ``null`` — the app does not invent a quote — while its
+    ``market_value`` and ``plus_value_latente`` are computed from its own cost
+    (issue #706). That is what makes the rows of this table add up to the head
+    the dashboard publishes, which reads the same rule through the perf series.
+    *No observed price* is ``price_native`` being absent: a row carrying a native
+    quote and no converted one is **waiting for a rate**, and it keeps its
+    ``market_value`` at ``null`` — a different absence, never rendered alike.
     """
     rows = _reader().positions()
-    shares = portfolio_view.build_shares(rows)
+    shares = portfolio_view.build_shares(rows, _carried())
     return jsonify([share.to_dict() for share in shares])
 
 
@@ -133,7 +160,7 @@ def list_shares():
 def get_share(symbol: str):
     """One share's detail sheet: the aggregate plus its per-account breakdown."""
     rows = _reader().positions(symbol)
-    share = portfolio_view.build_share(rows, symbol)
+    share = portfolio_view.build_share(rows, symbol, _carried())
     if share is None:
         return not_found(f"No stored data for symbol {symbol!r}")
     return jsonify(share.to_dict())
@@ -222,7 +249,7 @@ def get_portfolio():
 
     reader = _reader()
     if mode == portfolio_view.MODE_TITRES:
-        shares = portfolio_view.build_shares(reader.positions())
+        shares = portfolio_view.build_shares(reader.positions(), _carried())
         return jsonify(portfolio_view.build_titres_head(shares, currency))
 
     baseline_value = None
@@ -276,7 +303,13 @@ def get_portfolio_history():
         return jsonify({**payload, 'points': portfolio_view.valuation_series(
             reader.daily_closes(start, stop), timeline.at,
             carried_in={row['symbol']: row['price']
-                        for row in reader.prices_at(start)})})
+                        for row in reader.prices_at(start)},
+            carried=_carried(),
+            # The carrying predicate's first term, and it needs its own read
+            # here: ``daily_closes`` is the **converted** series, so a day
+            # missing from it is either a day nobody quoted or a day whose rate
+            # never landed — and only the first is carried (#706).
+            first_quoted=quotes.first_quoted_days(_store()))})
 
     return jsonify({**payload, 'points': [
         {
@@ -314,7 +347,12 @@ def get_portfolio_movers():
 
     since = portfolio_view.session_baseline_instant(max(times))
     baseline = reader.prices_at(since)
-    movers = portfolio_view.build_movers(portfolio_view.build_shares(rows), baseline)
+    # The carrying set rides along for the ``market_value`` on the row; it
+    # cannot put a *mover* on the block, because a carried position's ``price``
+    # is still ``None`` and :func:`portfolio_view.build_movers` drops a share it
+    # cannot compare. That is right — a position nothing priced has not moved.
+    movers = portfolio_view.build_movers(
+        portfolio_view.build_shares(rows, _carried()), baseline)
 
     # Two instants, and they are not interchangeable. `since` is the **cut** the
     # rule defines; `reference` is the newest price actually found at or before

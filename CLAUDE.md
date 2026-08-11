@@ -988,9 +988,65 @@ Three named figures replace one composite, each with its own domain:
 
 | Figure | Formula | Defined when |
 |---|---|---|
-| Latent gain | `holdings_value − cost_basis` | position open (`None` with no observed quote) |
+| Latent gain | `holdings_value − cost_basis` | position open (`None` with no observed quote **whose backfill is still running**, and `None` while a known quote waits for its rate) |
 | Realized gain | Σ sales `(net proceeds − basis removed)` | from the first sale, **permanently** |
 | Dividends received | `position.received_dividend` | always |
+
+**A position with no price is carried at its cost** (issue #706, ADR-0004,
+`carrying.py`). On a day where a held position has no observed price — *and
+never will* — it is valued at its own PMP, never at the last execution price and
+never at zero. Zero is what dug a crater in the consolidated curve on the day of
+a purchase: the cash ledger had already paid while the holding was worth
+nothing, so the total dropped by the purchase and climbed back the next morning.
+Without the cash ledger the two curves ignored the position together and simply
+stepped up a day late, which is why no version before the consolidated dashboard
+ever drew the hole. Five things about it are decisions:
+
+- **The rule is keyed on the absence of a price, never on a calendar.** A market
+  calendar would explain the hole without filling it — the surviving occurrence
+  is an Amsterdam execution mis-valued because the app asks Yahoo for the
+  *NASDAQ* quote of the same company.
+- **The predicate has two terms, not one**: no cours was observed **and** the
+  symbol's backfill is terminal. `carrying_price(observed, quoted, quantity,
+  cost_basis)` owns the first, the caller owns the second — a set from
+  `quotes.terminal_symbols`, derived from the **store** (the ceiling, the oldest
+  stored point, `oldest_window_tried`) rather than from the scheduler's
+  in-memory `_backfill_complete`, which is empty for one cycle after every boot.
+  Without the second term a reconstruction replays a portfolio flat-at-cost for
+  four years that takes off and then corrects itself, with the owner having done
+  nothing.
+- **The first term is about the quote, not about its conversion.** Every money
+  figure the app draws reads `price_converted`, so the naive spelling — *the
+  price is absent* — also catches the position whose **quote is known and whose
+  rate is not**: `base_currency` unanswered, or a pair that does not resolve.
+  That state is *waiting*, one of `CONTEXT.md` § Absence's four kinds and never
+  rendered like *carried at cost*, and it is durable — the point is written with
+  `price_converted NULL` until #704's lateral pass repairs it. So `quoted` is a
+  required argument, and each caller supplies it from what it has: `price_native`
+  on a P1 row, and `carrying.was_quoted` against `quotes.first_quoted_days` —
+  `{symbol: first day quoted at all}`, one `GROUP BY` — on the two series paths,
+  forward-filled exactly as the close beside it is.
+- **One implementation, called by the valuation and by the shares page.** Two
+  would make two users of the same software see two curves for the same
+  portfolio with nothing on screen able to say so — so `performance.
+  _holdings_value`, `portfolio_view.build_shares` / `valuation_series` and the
+  `titres` head all hold the same function object, and a test asserts that on
+  the source.
+- **The price column stays the em dash** — the app does not invent a quote —
+  while value and latent gain use the carried price, which is what makes the sum
+  of the rows equal the total. **A carried value is not marked at the point**
+  either: it is *right*, not approximate, and annotating it would amount to
+  annotating "the app did what it says it does".
+- **The backfill anchor does not overshoot.** Fetching even a week before the
+  first acquisition would give the forward-fill a close to carry onto the
+  purchase day, and the fallback would never fire there — the two exclude each
+  other, and a convention that only triggers in rare cases is one that rots with
+  no test noticing.
+
+The one case where carrying visibly parts company with a valuation is stated in
+`website/docs/read-your-figures.mdx`: a position mixing a purchase and a
+zero-cost grant *inside* the window with no price is carried at its cost,
+therefore at half of what its shares are worth.
 
 > **The rule a contributor will break:** the realized gain is a **decomposition**
 > of the absolute gain, never a term added to it. The sale's proceeds are already
@@ -1171,6 +1227,7 @@ app/src/
 ├── boot_env.py             # Pure: the six boot variables and the computed list of names gone quiet (#740)
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
 ├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
+├── carrying.py             # Pure: the carrying price, the holding window, the backward anchor (#706)
 ├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
