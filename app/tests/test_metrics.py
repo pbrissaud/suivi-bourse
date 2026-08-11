@@ -1180,11 +1180,52 @@ def test_the_reconstruction_state_is_process_memory(store):
     assert metrics.reconstruction_state() == (1, 2)
 
 
-def test_nothing_ever_held_has_no_reconstruction_to_report(store):
-    """``None``, not ``(0, 0)``: a fresh install announces no reprise d'historique."""
+def test_nothing_ever_held_is_an_observation_and_not_an_absence(store):
+    """``(0, 0)``, never ``None``: *nothing to reconstruct* is an answer.
+
+    ``None`` across this seam means ``UNOBSERVED`` — *this process cannot see the
+    scheduler* — and a runtime that holds one always can. Answering it here made
+    the two indistinguishable, and the advisory read it as "do not touch": see
+    the regression below.
+    """
     metrics, _ = _build_metrics([], store, mode="events", events=[])
 
-    assert metrics.reconstruction_state() is None
+    assert metrics.reconstruction_state() == (0, 0)
+
+
+def test_forgetting_every_import_takes_the_reconstruction_advisory_with_it(
+        store, mocker):
+    """The notice cannot outlive the portfolio it describes.
+
+    The composition the two halves used to make: a reconstruction is armed, the
+    owner forgets every import, ``backfill_windows()`` empties — and because
+    "nothing was ever held" was spelt ``None``, the advisory read it as
+    *unobservable* and left the row standing for ever, on an install that names
+    no symbol at all. That is exactly the permanent noise #709 exists against.
+    """
+    acquired = (datetime.now(timezone.utc) - timedelta(days=800)).date()
+    events = [Event(acquired, EventType.BUY, "DEAD", "Delisted Co",
+                    quantity=5, unit_price=10.0)]
+    metrics, config_manager = _build_metrics(
+        [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
+        mode="events", events=events)
+    metrics.backfill_chunk_days = 365
+    mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
+
+    metrics.backfill()
+    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
+        [main.advisories.RECONSTRUCTION_RUNNING]
+
+    # Every import forgotten: the ledger names nothing, so no symbol has a
+    # holding window any more.
+    config_manager._events = []
+    config_manager._shares = []
+    assert metrics.config_manager.current().backfill_windows() == {}
+    assert metrics.reconstruction_state() == (0, 0)
+
+    metrics.review_advisories()
+
+    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
 
 
 def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(

@@ -2263,7 +2263,7 @@ class SuiviBourseMetrics:
     # The advisories (issue #709)
     # ------------------------------------------------------------------ #
 
-    def reconstruction_state(self) -> Optional[Tuple[int, int]]:
+    def reconstruction_state(self) -> Tuple[int, int]:
         """``(series complete, series in the reconstruction)`` — process memory.
 
         The source of the one advisory that is neither a file nor an environment
@@ -2273,13 +2273,20 @@ class SuiviBourseMetrics:
         a symbol Yahoo answers nothing about has a completed pass and an empty
         series.
 
-        ``None`` when nothing was ever held: there is no reconstruction to run,
-        which the advisory has to tell apart from one that has not started, or a
-        fresh install would announce a reprise d'historique of nothing.
+        **This method never answers ``None``**, and that is the whole of it:
+        across the seam ``None`` means :data:`advisories.UNOBSERVED` — *this
+        process cannot see the scheduler* — and it is :func:`advisory_context`
+        alone that says it, for a caller holding no ``metrics`` at all. Nothing
+        ever held is ``(0, 0)``: an observation, made from here, saying there is
+        no reconstruction to run. A fresh install still announces no reprise
+        d'historique — ``_observe_reconstruction`` stands the advisory down on
+        ``total <= 0`` exactly as it does on a finished one — but it *stands it
+        down* instead of leaving it untouched, which is what the criterion
+        demands: forgetting every import while the reconstruction was armed used
+        to leave its row standing for ever, on a portfolio that no longer names
+        a single symbol.
         """
         windows = self.config_manager.current().backfill_windows()
-        if not windows:
-            return None
         complete = sum(
             1 for symbol, window in windows.items()
             if self._backfill_complete.get(symbol) == holding_bounds(window)[0])

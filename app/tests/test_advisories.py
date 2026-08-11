@@ -120,6 +120,36 @@ def test_a_running_reconstruction_arms_and_its_conclusion_disarms(store):
     assert _row_count(store) == 0
 
 
+def test_a_reconstruction_with_nothing_left_to_do_disarms_as_well(store):
+    """``(0, 0)`` is an observation — *nothing to reconstruct* — not an absence.
+
+    The other way an armed reconstruction ends: not by finishing, but by losing
+    its subject, when the owner forgets every import. Spelt ``None`` it read as
+    ``UNOBSERVED`` and the row stood for ever on an empty portfolio, which is
+    the permanent noise this table exists against.
+    """
+    advisories.refresh(store, advisories.Context(reconstruction=(1, 3)))
+    assert _row_count(store) == 1
+
+    advisories.refresh(store, advisories.Context(reconstruction=(0, 0)))
+    assert _row_count(store) == 0
+
+
+def test_nothing_to_reconstruct_never_concludes_anything(store):
+    """``(0, 0)`` disarms the sibling and **produces** nothing.
+
+    ``reconstruction_concluded`` demands ``total > 0``: an empty portfolio has
+    concluded no reconstruction, so it cannot be the moment the recorded
+    advisory is born — which would otherwise assert something about amounts on
+    an install carrying none.
+    """
+    assert advisories.Context(reconstruction=(0, 0)).reconstruction_concluded \
+        is False
+    assert advisories.Context(reconstruction=(3, 3)).reconstruction_concluded \
+        is True
+    assert advisories.Context().reconstruction_concluded is False
+
+
 def test_a_source_this_process_cannot_see_neither_arms_nor_disarms(store):
     """``UNOBSERVED`` is the third answer, and it is what survives a restart.
 

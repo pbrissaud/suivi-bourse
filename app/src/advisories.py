@@ -133,9 +133,12 @@ class Context:
     unread_variables: Optional[Tuple[str, ...]] = None
 
     #: ``(series complete, series in the reconstruction)``, from the scheduler's
-    #: process memory. ``None`` when this process cannot see it — which is not
-    #: the same as ``(0, 0)``, and the difference is a row that survives a
-    #: restart instead of being dropped and re-armed by it.
+    #: process memory. ``None`` when this process cannot see it, and **only**
+    #: that: ``(0, 0)`` is *nothing to reconstruct*, an answer, and it stands
+    #: the advisory down. The two are opposite gestures on the same row —
+    #: ``None`` leaves it exactly as it is, so a restart does not re-date and
+    #: re-log what a running scheduler armed a minute earlier; ``(0, 0)`` takes
+    #: it away, so a notice cannot outlive the portfolio it describes.
     reconstruction: Optional[Tuple[int, int]] = None
 
     @property
@@ -252,9 +255,17 @@ def _observe_reconstruction(opened, context: Context):
 
     ``None`` for the reconstruction means this process cannot see it (the
     gunicorn master, a test holding a store alone), never that it has finished:
-    see :data:`UNOBSERVED`. ``(n, n)`` is finished and the advisory stands down;
-    ``(0, 0)`` cannot occur, a portfolio that was never held having no
-    reconstruction to run at all.
+    see :data:`UNOBSERVED`. It is the **only** thing ``None`` says here, and
+    :meth:`main.SuiviBourseMetrics.reconstruction_state` never produces it — a
+    process that *can* see the scheduler always answers a pair.
+
+    Two pairs stand the advisory down, and they are two situations rather than
+    one spelling: ``(n, n)`` is finished, and ``(0, 0)`` is *nothing to
+    reconstruct* — a fresh install, or an owner who has just forgotten every
+    import. Both are observations, so both **drop the row**. Reading the second
+    as *unobservable* is what let the notice outlive its own subject: the
+    advisory stayed armed, with no detail and no way back, on an installation
+    whose portfolio was empty.
     """
     if context.reconstruction is None:
         return UNOBSERVED

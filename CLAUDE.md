@@ -1139,7 +1139,15 @@ mechanism rather than a discipline. Four properties follow:
   needs a positive observation and **so does disarming**: the reconstruction's
   progress is process memory, so without the third answer a request served by a
   runtime with no scheduler would drop the row that scheduler armed a minute
-  earlier and re-date it on the next cycle.
+  earlier and re-date it on the next cycle. **Which is why
+  `SuiviBourseMetrics.reconstruction_state()` is total** and never answers
+  `None`: *nothing to reconstruct* is `(0, 0)`, an observation that disarms, and
+  *unobservable* is `runtime.metrics` being absent altogether — the one shape a
+  process with no scheduler has. Spelling both `None` made the notice outlive
+  its own subject: forgetting every import while the reconstruction was armed
+  emptied `backfill_windows()`, the advisory read the silence as "not from here",
+  and *"the historical reconstruction has not reached every first acquisition"*
+  stood for ever on a portfolio naming no symbol at all.
 - **The observation belongs to the jobs, never to a `GET`.** `review_advisories`
   runs at each `ingest()` (boot, a file landing, a write) and at the end of each
   backfill cycle — both read all four sources through the one builder,
