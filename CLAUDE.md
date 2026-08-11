@@ -222,6 +222,41 @@ on the app-state resource rather than beside the figures, because the fact it
 decides is *is the TWR's base date still moving*, which is a property of this
 process.
 
+**And the server half of that head is #763.** #718 merged without it — its
+acceptance criteria did not name a route, so the adversarial reading counted 23
+of 23 in good faith — leaving `DashboardHead` mounted over two `404`s, i.e. a
+page that had gone from *not built yet* to *the app is not answering*. Three
+things about the pair that now serves it are decisions:
+
+- **`GET /api/positions` is shaping**, `store_reads.positions()` being P1
+  already: one row per `(account, symbol)`, folded nowhere, a **sold** line among
+  them (ADR-0017) and a never-fetched symbol as a row whose two market objects
+  are `null` rather than as a missing line. `price` is the quote in **its own**
+  currency and `converted` the same observation in the reporting one with the
+  rate that got it there — two objects, because *quoted with no rate* and *no
+  quote at all* are two absences and a single nullable number cannot carry both.
+- **`GET /api/portfolio-totals` is not.** The DDL carries eight columns and the
+  contract asks for eleven, so `twr_since`, `transfer_fees` and `ytd` are
+  **derived at read time**. What settles it against a ninth column is the store's
+  own rule: the DDL is applied with `IF NOT EXISTS` and there is **no migration
+  machinery**, so a new column would simply not exist on any store created
+  before it — and every install of that vintage would answer a binder error to
+  the named `SELECT` ADR-0001 exists to make safe. The cost accepted is that a
+  resource named after `portfolio_totals` reads the `event` table, once, for the
+  fourth term. `transfer_fees` is **negative** where it is produced, never
+  subtracted by its caller — the whole interest of the figure is that the four
+  terms add up — and it is bounded by the row's own day, which is what keeps
+  ADR-0018's identity between figures measured at the same instant.
+- **The year-to-date counts from the last day at or before 31 December of the
+  previous year**, never from the first day on or after 1 January. Both rows
+  exist whenever the series reaches the previous year (it is dense over calendar
+  days), so the choice is not settled by availability: the base has to be a state
+  the measured year has **not touched**, or 1 January's own move is silently
+  outside the figure. `ytd: null` therefore means *the series does not reach the
+  base* — the one state the reconstruction degrades — and never *a sum failed*;
+  `test_web_api.py` pins `+40,69 €` against `−1,25 %` to the cent, opposite signs
+  over one period and both correct.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -1474,7 +1509,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
