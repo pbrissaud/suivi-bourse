@@ -59,8 +59,11 @@ describe('the walking skeleton', () => {
     for (const entry of ['Shares', 'Accounts', 'Data']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
-      // The page is not built yet, and says so — in the reader's language.
-      expect(screen.getByText('This page is not built yet.')).toBeInTheDocument()
+      // The pages that are not built yet say so — in the reader's language.
+      // `Shares` landed with #719 and has left that set.
+      if (entry !== 'Shares') {
+        expect(screen.getByText('This page is not built yet.')).toBeInTheDocument()
+      }
     }
 
     // Back to French, on the page we happen to be standing on.

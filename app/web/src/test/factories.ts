@@ -61,10 +61,13 @@
 import type {
   Account,
   AccountsResponse,
+  ChartWindow,
   PortfolioTotals,
   PortfolioTotalsResponse,
   Position,
   PositionsResponse,
+  PriceSeriesResponse,
+  Resolution,
   RuntimeState,
 } from '@/lib/api'
 
@@ -110,9 +113,20 @@ export function aPosition(options: PositionOptions = {}): Position {
       price === null || rate === null
         ? null
         : { value: price * rate, currency: BASE_CURRENCY, rate, rate_at: NOW },
+    closed_at: null,
   }
 
   return { ...base, ...rest }
+}
+
+/**
+ * A position the owner has sold out of — `quantity` and `cost_basis` at exactly
+ * zero (the dust clamp of ADR-0017 is the store's job), the realised gain and
+ * the dividends surviving it, and a **closing date**, which is the one column
+ * the folded section can sort on.
+ */
+export function aClosedPosition(options: PositionOptions & { closed_at: string }): Position {
+  return aPosition({ quantity: 0, cost_basis: 0, price: null, ...options })
 }
 
 export function anAccountsPayload(
@@ -197,6 +211,78 @@ export function aTotalsPayload(
   baseCurrency: string | null = BASE_CURRENCY,
 ): PortfolioTotalsResponse {
   return { base_currency: baseCurrency, totals }
+}
+
+/**
+ * THE SHARES PAGE'S PORTFOLIO — the three held lines above plus two closed ones,
+ * and its arithmetic by hand:
+ *
+ *   line   qty  basis    price                value    latent  realised  divid.
+ *   ----   ---  -------  -------------------  -------  ------  --------  ------
+ *   ZZA     10  1 000,00 130,00 EUR           1 300,00 +300,00      0,00   25,00
+ *   ZZB      4    400,00 125,00 USD × 0,80      400,00    0,00     50,00    0,00
+ *   ZZC      6    600,00 none → at cost         600,00    0,00      0,00    0,00
+ *   ZZD      0      0,00 closed 2025-11-04        0,00       —    120,00   10,00
+ *   ZZE      0      0,00 closed 2026-01-15        0,00       —    −45,00    0,00
+ *   -------------------------------------------------------------------------
+ *   totals                                    2 300,00 +300,00   +125,00   35,00
+ *
+ *   Gain total  +300,00 + 125,00 + 35,00 = 460,00
+ *
+ * and **the figure the fold exists to prevent**: over the held lines alone the
+ * three terms come to `+300,00 + 50,00 + 25,00 = 375,00`, which is not false —
+ * it is the other correct figure, the one that is not the owner's gain. The gap
+ * is 85,00 here and was 708,92 € (73 % of what was shown, over seven lines out
+ * of nineteen) on the portfolio that decided it.
+ */
+export function sharesPortfolio(): Position[] {
+  return [
+    ...defaultPositions(),
+    aClosedPosition({
+      account: 'alpha',
+      symbol: 'ZZD',
+      name: 'Zeta Delta',
+      realised: 120,
+      dividends: 10,
+      closed_at: '2025-11-04',
+    }),
+    aClosedPosition({
+      account: 'beta',
+      symbol: 'ZZE',
+      name: 'Zeta Epsilon',
+      realised: -45,
+      closed_at: '2026-01-15',
+    }),
+  ]
+}
+
+/**
+ * The rung the ladder serves for a window (ADR-0010) — as written under a year,
+ * hourly from one to two, daily beyond. The handler answers this so a test can
+ * see the resolution **change** with the range, which is the whole reason the
+ * presets are `1M / 1A / 2A / MAX` and not four round numbers.
+ */
+export function resolutionFor(window: ChartWindow): Resolution {
+  if (window === 'MAX') return 'day'
+  if (window === '2Y') return 'hour'
+  return 'raw'
+}
+
+export function aPriceSeries(
+  overrides: Partial<PriceSeriesResponse> & { symbol?: string; window?: ChartWindow } = {},
+): PriceSeriesResponse {
+  const { window = '1Y', ...rest } = overrides
+  return {
+    symbol: 'ZZA',
+    base_currency: BASE_CURRENCY,
+    resolution: resolutionFor(window),
+    points: [
+      { ts: '2026-02-28T17:30:00.000Z', price: 126 },
+      { ts: '2026-03-01T17:30:00.000Z', price: 128 },
+      { ts: NOW, price: 130 },
+    ],
+    ...rest,
+  }
 }
 
 export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
