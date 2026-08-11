@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ApiProblem } from '@/lib/api'
 import { PROBLEM_TYPES, problemMessageKey } from '@/lib/problem'
-import { installationState, oneBand, shellConditions } from '@/lib/status'
+import { installationState, oneBand, readConditions, shellConditions } from '@/lib/status'
 import { aRuntime } from '@/test/factories'
 
 describe('the status dot is a state, never a count', () => {
@@ -36,6 +36,33 @@ describe('the banner shows one band or none', () => {
   it('keeps the first condition of the causal order, never two', () => {
     const band = oneBand([{ message: 'problem.unreachable' }, { message: 'problem.internal' }])
     expect(band).toEqual({ message: 'problem.unreachable' })
+  })
+})
+
+describe('a page names its own failed read, and the shell cannot do it for it', () => {
+  const unreadable = new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })
+
+  it('names a read the shell is structurally blind to', () => {
+    // `/api/runtime` answers from process memory and never opens the store, so
+    // `shellConditions` is empty on precisely the failure that empties a page.
+    // Without this the page renders nothing at all, and *"the store is
+    // unreadable"* and *"you own nothing yet"* become the same blank screen.
+    expect(shellConditions({})).toEqual([])
+    expect(oneBand(readConditions({ errors: [unreadable] }))).toEqual({
+      message: 'problem.storageUnavailable',
+    })
+  })
+
+  it('says nothing while the shell is already saying the app does not answer', () => {
+    // The order is causal: while nothing answers, that is the cause of every
+    // failed read under it, and two announcers for one fact is the defect.
+    expect(
+      readConditions({ shellError: new TypeError('Failed to fetch'), errors: [unreadable] }),
+    ).toEqual([])
+  })
+
+  it('says nothing when the reads are fine', () => {
+    expect(readConditions({ errors: [undefined, null] })).toEqual([])
   })
 })
 
