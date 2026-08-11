@@ -41,6 +41,11 @@ export function PriceChart({ symbol, window, onWindowChange }: PriceChartProps) 
     queryKey: ['prices', symbol, window],
     queryFn: () => api.prices(symbol, window),
   })
+  // The axis is money, so it says so — the payload names the reporting currency
+  // (ADR-0002) and a bare ladder of numbers leaves the reader to supply the
+  // unit. `null` while the dial is unanswered, which `formatCurrency` renders as
+  // the plain number rather than guessing.
+  const currency = series.data?.base_currency ?? null
 
   return (
     <section className="space-y-3">
@@ -86,8 +91,8 @@ export function PriceChart({ symbol, window, onWindowChange }: PriceChartProps) 
                   // domain to the request repeats on one axis the mistake the
                   // dashboard corrected on the other.
                   domain={['dataMin', 'dataMax']}
-                  tickFormatter={(value: number) => f.number(value, 0)}
-                  width={64}
+                  tickFormatter={(value: number) => f.currency(value, currency, 0)}
+                  width={72}
                 />
                 <Line
                   type="monotone"

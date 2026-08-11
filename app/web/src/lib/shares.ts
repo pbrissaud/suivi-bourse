@@ -30,7 +30,7 @@
  *    never show them — which is the one line ADR-0017's identity had to be
  *    corrected on (ADR-0018) and the one thing this page's bubble has to say.
  */
-import { absenceCase, type PositionAbsenceInput } from '@/lib/absence'
+import { absenceCase, type AbsenceCase, type PositionAbsenceInput } from '@/lib/absence'
 import type { Converted, Position, Quote } from '@/lib/api'
 import { type Unrealised } from '@/lib/gain'
 
@@ -65,10 +65,14 @@ export function isClosed(row: ShareRow): boolean {
 /**
  * The **arithmetic** classification: the same one every cell reads, with the
  * failure counter deliberately dropped. See the header comment — *asked and got
- * nothing* and *not asked yet* are two renderings and one sum.
+ * nothing* and *not asked yet* are two renderings and one sum, and the sum is
+ * the cost. Folding `noQuote` here rather than leaving it in every switch
+ * downstream is what keeps the counter out of the arithmetic in **one** place,
+ * and out of the return type: a caller cannot branch on a case it cannot get.
  */
-function arithmeticCase(row: ShareRow) {
-  return absenceCase({ ...row, consecutiveFailures: 0 })
+function arithmeticCase(row: ShareRow): Exclude<AbsenceCase, 'noQuote'> {
+  const decided = absenceCase(row)
+  return decided === 'noQuote' ? 'carriedAtCost' : decided
 }
 
 /**
@@ -83,7 +87,6 @@ export function marketValue(row: ShareRow): number | null {
     case 'nothingToCompute':
       return 0
     case 'carriedAtCost':
-    case 'noQuote':
       return row.cost_basis
     case 'awaitingRate':
       return null

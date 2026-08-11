@@ -25,7 +25,7 @@
  * folded section is not a surface but a part of the page (#684 D7) — which is
  * what takes the page's eleven candidate icons down to nine.
  */
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
 import { renderAccounts } from '@/components/shares/SharesTable'
@@ -54,8 +54,11 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
   // Closed at the first load, deliberately. It is a state of the page and not a
   // preference: nothing remembers it, so opening it never becomes the default
   // for a reader who opened it once.
+  // No `aria-controls`: the section is closed at the first load, so the panel it
+  // would name is not in the document at the very moment the page renders — a
+  // reference that resolves to nothing is worse than none. `aria-expanded`
+  // already carries what a reader needs, and the panel follows the button.
   const [open, setOpen] = useState(false)
-  const panelId = useId()
 
   if (rows.length === 0) return null
 
@@ -69,7 +72,6 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={panelId}
           onClick={() => setOpen((previous) => !previous)}
           className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
         >
@@ -92,7 +94,7 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
       </div>
 
       {open ? (
-        <div id={panelId} className="border-t">
+        <div className="border-t">
           <Table>
             <caption className="sr-only">{t('shares.closed.label')}</caption>
             <TableHeader>
