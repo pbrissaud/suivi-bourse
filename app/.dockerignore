@@ -1,7 +1,7 @@
 # The build context is ./app (.github/workflows/releasing.yml, and a plain
 # `docker build ./app`), and since #659 that directory holds a front-end
-# workspace. Without this file
-# the daemon uploads ~230 MB of node_modules — and, worse, `COPY web ./web` in
+# workspace. Without this file the daemon uploads ~230 MB of node_modules —
+# and, worse, `COPY web ./web` in
 # the node stage would overwrite the image's freshly installed dependencies with
 # the host's, which are built for the host's platform.
 web/node_modules/
