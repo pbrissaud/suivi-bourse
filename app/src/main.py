@@ -23,6 +23,7 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
+import advisories
 import boot_env
 import carrying
 import fx
@@ -60,7 +61,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
     'quotes', 'perf_series', 'ledger', 'positions', 'prometheus_exporter',
-    'web.api',
+    'advisories', 'web.api',
 )
 
 
@@ -224,6 +225,30 @@ def effective_environment() -> List[Dict]:
     using the default" *because it equals the default* would be a guess.
     """
     return boot_env.effective(os.environ, log_level=current_log_level())
+
+
+def advisory_context(config_manager, metrics=None) -> advisories.Context:
+    """Gather what the advisories' predicates read (issue #709).
+
+    The seam between :mod:`advisories`, which holds the text and the predicates,
+    and the three places their sources actually live: the configuration directory
+    on the manager, the environment inventory here, and the reconstruction's
+    progress in the scheduler's own memory. **One builder**, so the observation a
+    job makes and the one a request renders cannot come from two different
+    readings of the same three sources.
+
+    A caller with no ``metrics`` — the gunicorn master, a web request on a
+    runtime that has not started its scheduler — reports the reconstruction as
+    **unobservable** rather than as finished. That distinction is the whole of
+    :data:`advisories.UNOBSERVED`: without it, a page being opened would drop the
+    row a running scheduler armed.
+    """
+    return advisories.Context(
+        config_dir=config_manager.config_dir,
+        unread_variables=tuple(unread_environment()),
+        reconstruction=(None if metrics is None
+                        else metrics.reconstruction_state()),
+    )
 
 
 def register_interval_jobs(scheduler, sb_metrics,
@@ -2074,6 +2099,80 @@ class SuiviBourseMetrics:
         # scheduler is wired in __main__.
         self._reconcile_jobs()
 
+        # Re-observe the advisories (issue #709). Here because this is the
+        # gesture that runs at the boot, on a file landing and after a write —
+        # the three moments the *installation's* advisories can change — and
+        # because it is the only one that runs on an install holding nothing at
+        # all, where the backfill returns before doing anything.
+        self.review_advisories()
+
+    # ------------------------------------------------------------------ #
+    # The advisories (issue #709)
+    # ------------------------------------------------------------------ #
+
+    def reconstruction_state(self) -> Tuple[int, int]:
+        """``(series complete, series in the reconstruction)`` — process memory.
+
+        The source of the one advisory that is neither a file nor an environment
+        variable, and it is memory rather than a query for the same reason
+        ``/api/runtime`` reads none: ``_backfill_complete`` is where "this pass
+        has reached its first acquisition" lives, and no row anywhere says it —
+        a symbol Yahoo answers nothing about has a completed pass and an empty
+        series.
+
+        **This method never answers ``None``**, and that is the whole of it:
+        across the seam ``None`` means :data:`advisories.UNOBSERVED` — *this
+        process cannot see the scheduler* — and it is :func:`advisory_context`
+        alone that says it, for a caller holding no ``metrics`` at all. Nothing
+        ever held is ``(0, 0)``: an observation, made from here, saying there is
+        no reconstruction to run. A fresh install still announces no reprise
+        d'historique — ``_observe_reconstruction`` stands the advisory down on
+        ``total <= 0`` exactly as it does on a finished one — but it *stands it
+        down* instead of leaving it untouched, which is what the criterion
+        demands: forgetting every import while the reconstruction was armed used
+        to leave its row standing for ever, on a portfolio that no longer names
+        a single symbol.
+        """
+        windows = self.config_manager.current().backfill_windows()
+        now = datetime.now(timezone.utc)
+        targets = {
+            symbol: carrying.holding_bounds(window[0], window[1], now)[0]
+            for symbol, window in windows.items()}
+        complete = sum(1 for symbol, target in targets.items()
+                       if self._backfill_complete.get(symbol) == target)
+        return complete, len(windows)
+
+    def review_advisories(self) -> None:
+        """Re-observe every advisory, and record the one that is an event.
+
+        The whole call-site pattern of the feature: the observation is made where
+        the sources are — the ingest and the backfill cycle — and **never on a
+        ``GET``**, an advisory dated by the moment somebody happened to open a
+        page saying nothing about when the thing it names started.
+
+        Both callers see all four sources, this object being where the
+        reconstruction's memory lives, so neither of them can drop a row the
+        other armed. What cannot see it is a runtime with no scheduler — the
+        gunicorn master, a web request — and :func:`advisory_context` answers
+        *unobservable* for those rather than *finished*.
+
+        Guarded: a store that refuses this must not take a scheduled job with it.
+        A missed review costs one cycle, and the next one re-observes everything
+        from scratch, there being no state to catch up on.
+        """
+        try:
+            context = advisory_context(self.config_manager, self)
+            with self.config_manager.writing() as opened:
+                # Order matters, and only in one direction: the reconstruction
+                # concluding is what *produces* the assumed-currency advisory, so
+                # it is recorded before the refresh that stands its sibling down.
+                if context.reconstruction_concluded:
+                    advisories.record(
+                        opened, advisories.ASSUMED_BASE_CURRENCY, context)
+                advisories.refresh(opened, context)
+        except Exception as e:
+            app_logger.error(f"Failed to review the advisories: {e}")
+
     def backfill(self):
         """
         Backfill historical price data, one series per **symbol**, in both
@@ -2143,6 +2242,16 @@ class SuiviBourseMetrics:
             app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
+
+        # The cycle that just moved the reconstruction is the one that re-observes
+        # it (issue #709), and it is also where the *event* advisory is born: the
+        # last backward pass reaching its first acquisition is the earliest
+        # instant at which every symbol's quote currency has been observed, and
+        # therefore the earliest at which the app can say what it assumed of the
+        # amounts it imported. The condition is re-tested every cycle rather than
+        # latched — the currency may be answered long after the reconstruction
+        # ended — and the write is idempotent, so it is produced exactly once.
+        self.review_advisories()
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],

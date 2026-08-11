@@ -143,6 +143,13 @@ def holding_bounds(acquired: date, exited: Optional[date],
     (issue #706): the two ask about the same window, and a second spelling of it
     would eventually put them a day apart — which is exactly one chunk of
     disagreement about whether a symbol is finished.
+
+    The advisory reads it too (issue #709), and there the stake is the
+    ``_backfill_complete`` watermark: it is keyed by the **target**, so a second
+    spelling of "the first acquisition as an instant" would make
+    :meth:`main.SuiviBourseMetrics.reconstruction_state` compare against a target
+    the backward pass never stored, and announce a reconstruction that never
+    finishes on a portfolio that finished it minutes ago.
     """
     target = datetime.combine(acquired, datetime.min.time(), tzinfo=timezone.utc)
     ceiling = (

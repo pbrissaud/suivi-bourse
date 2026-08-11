@@ -15,6 +15,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+import advisories
 import main
 import perf_series
 import quotes
@@ -54,6 +55,17 @@ class FakeMetrics:
         # ``test_scheduling_wiring.py``.
         self.rearm_result = (3, 8)
         self.rearm_calls = 0
+        # The reconstruction's progress, from the scheduler's own memory
+        # (issue #709). A **pair**, always: the real method has no ``None`` to
+        # answer, since a process holding a metrics object is a process that can
+        # see the memory. ``(0, 0)`` is what these tests' empty ledgers hold —
+        # nothing to reconstruct. *Unobservable* is a runtime with no metrics at
+        # all (``runtime.metrics is None``), which is what ``with_scheduler``
+        # below builds.
+        self.reconstruction = (0, 0)
+
+    def reconstruction_state(self):
+        return self.reconstruction
 
     def rearm_regular_scrapes(self):
         self.rearm_calls += 1
@@ -70,15 +82,20 @@ class FakeMetrics:
 
 
 def build_client(tmp_path, accounts=None, events=None, seed=None,
-                 break_store=False):
+                 break_store=False, with_scheduler=True):
     """A Flask test client over a real manager **and a real store**."""
     return build_client_and_store(
-        tmp_path, accounts, events, seed, break_store)[0]
+        tmp_path, accounts, events, seed, break_store, with_scheduler)[0]
 
 
 def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
-                           break_store=False):
+                           break_store=False, with_scheduler=True):
     """As above, plus the open store so a test can read the rows back.
+
+    ``with_scheduler=False`` leaves ``runtime.metrics`` **unset**, which is the
+    shape of a worker whose ``start_runtime`` has not run: it is the one state in
+    which the reconstruction is genuinely *unobservable* (issue #709), and it is
+    a missing object rather than a metrics object answering ``None``.
 
     ``accounts`` is a **file in the drop folder** since #698, not a
     ``settings.yaml``: the declaration is user data with provenance, so the
@@ -122,7 +139,8 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
         opened.execute('DROP TABLE position')
         opened.execute('DROP TABLE account_metrics')
         opened.execute('DROP TABLE price_point')
-    runtime.metrics = FakeMetrics(manager)
+    if with_scheduler:
+        runtime.metrics = FakeMetrics(manager)
     return create_app(runtime).test_client(), opened
 
 
@@ -1405,6 +1423,100 @@ def test_forgetting_an_accounts_import_an_event_rests_on_is_a_409(tmp_path):
     # Nothing was half-forgotten on the way to the refusal.
     assert len(client.get('/api/imports').get_json()) == 2
     assert len(client.get('/api/events').get_json()) == 1
+
+
+# --------------------------------------------------------------------- #
+# The advisories (issue #709)
+# --------------------------------------------------------------------- #
+
+def test_an_install_with_nothing_to_say_answers_an_empty_collection(tmp_path):
+    """``200`` + ``[]``. Silence is the ordinary state, not a missing resource."""
+    response = build_client(tmp_path).get('/api/advisories')
+
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_an_advisory_is_listed_with_what_it_names(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
+    advisories.refresh(opened, advisories.Context(config_dir=tmp_path))
+
+    (advisory,) = client.get('/api/advisories').get_json()
+
+    assert advisory['key'] == advisories.LEGACY_CONFIG_FILE
+    assert advisory['acknowledged'] is False
+    assert advisory['acknowledged_at'] is None
+    assert advisory['first_seen_at'] is not None
+    # The detail is **re-derived** by the read: the table has three columns.
+    assert advisory['detail']['path'] == str(tmp_path / 'config.yaml')
+    assert 'config.yaml' in advisory['message']
+
+
+def test_a_get_never_arms_an_advisory(tmp_path):
+    """The observation belongs to the jobs, never to somebody opening a page.
+
+    A ``GET`` that armed them would date every advisory with the moment a
+    browser arrived — and log it there too.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
+
+    assert client.get('/api/advisories').get_json() == []
+    assert opened.query('SELECT count(*) FROM advisory')[0][0] == 0
+
+
+def test_a_request_never_drops_what_a_running_scheduler_armed(tmp_path):
+    """A runtime with no scheduler cannot see the reconstruction, and says so.
+
+    ``UNOBSERVED`` rather than *finished*: the row stands, its detail is ``null``,
+    and nothing is written — otherwise opening a page would take away the notice
+    the backfill armed a minute earlier.
+
+    *No scheduler* is a runtime with **no metrics object**, and that is the only
+    shape it has: a metrics object always answers a pair, ``(0, 0)`` included,
+    and ``(0, 0)`` is an observation that disarms rather than a silence.
+    """
+    client, opened = build_client_and_store(tmp_path, with_scheduler=False)
+    advisories.refresh(opened, advisories.Context(reconstruction=(1, 3)))
+
+    (advisory,) = client.get('/api/advisories').get_json()
+
+    assert advisory['key'] == advisories.RECONSTRUCTION_RUNNING
+    assert advisory['detail'] is None
+    assert opened.query('SELECT count(*) FROM advisory')[0][0] == 1
+
+
+def test_acknowledging_hides_it_and_the_acknowledgement_persists(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
+    advisories.refresh(opened, advisories.Context(config_dir=tmp_path))
+
+    response = client.post(
+        f'/api/advisories/{advisories.LEGACY_CONFIG_FILE}/acknowledgement')
+
+    assert response.status_code == 200
+    assert response.get_json()['acknowledged'] is True
+    assert client.get('/api/advisories').get_json() == []
+    # The row stays — that is what survives a restart, and what a toast cannot.
+    assert opened.query(
+        'SELECT acknowledged_at FROM advisory')[0][0] is not None
+
+
+def test_acknowledging_an_unknown_advisory_is_a_404_not_a_503(tmp_path):
+    response = build_client(tmp_path).post(
+        '/api/advisories/no_such_notice/acknowledgement')
+
+    assert response.status_code == 404
+    assert response.mimetype == 'application/problem+json'
+
+
+def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
+    """The key is real and nothing stands under it: same answer to the client."""
+    response = build_client(tmp_path).post(
+        f'/api/advisories/{advisories.LEGACY_CONFIG_FILE}/acknowledgement')
+
+    assert response.status_code == 404
 
 
 # --------------------------------------------------------------------- #
