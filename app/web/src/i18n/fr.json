@@ -63,6 +63,7 @@
   "dashboard.twr.since": "depuis le {date}",
   "dashboard.twr.ytd": "{percent} depuis le 1ᵉʳ janvier",
   "dashboard.scope": "{count, plural, one {# compte} other {# comptes}}",
+  "dashboard.awaitingCurrency": "Votre valeur totale, votre versé net et vos deux rendements attendent une devise de report — personne n’a encore répondu à cette question.",
   "dashboard.withoutLedger": "Un grand livre d’événements datés ajouterait votre valeur totale, votre versé net et vos deux rendements.",
   "dashboard.empty.title": "Aucun événement",
   "dashboard.empty.body": "Tout ce qui est affiché ici est calculé depuis un grand livre d’événements datés. Rien n’a encore été importé ni saisi.",

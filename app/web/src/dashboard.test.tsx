@@ -252,6 +252,30 @@ describe('the statistics shrink instead of filling with dashes', () => {
     ).toBeInTheDocument()
   })
 
+  it('says the currency is unanswered rather than denying the ledger', async () => {
+    // `totals: null` has two causes (#745) and they were one sentence. The
+    // second is the ordinary one: the perf job writes nothing at all until the
+    // base currency is answered (#702), every figure it computes being money.
+    // So the app told a reader holding a full portfolio that they had no
+    // ledger — and said nothing about the one question they can answer.
+    // The condition is *the install has no answered currency*, so both payloads
+    // carry it: ADR-0021 adds no route and no field for the state, it is read
+    // off `base_currency` being null wherever it already travels.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(aPositionsPayload(defaultPositions(), null)),
+      ),
+      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
+    )
+    renderApp()
+
+    await screen.findByRole('group', { name: 'Gain total' })
+    expect(screen.getByText(/attendent une devise de report/)).toBeInTheDocument()
+    expect(
+      screen.queryByText(/Un grand livre d’événements datés ajouterait/),
+    ).not.toBeInTheDocument()
+  })
+
   it('says nothing at all when there is no ledger and nothing held', async () => {
     server.use(
       http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([], null))),

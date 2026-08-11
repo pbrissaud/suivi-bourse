@@ -311,8 +311,19 @@ export function DashboardHead() {
         </p>
       )}
 
+      {/* `totals: null` has **two** causes and they are not the same sentence
+          (#745): no ledger at all, or a reporting currency nobody has answered.
+          The second is the ordinary one here — reaching this line at all means
+          positions exist, so a ledger exists — and it is the actionable one:
+          the perf job writes nothing until the dial is answered (#702), every
+          figure it computes being money. Written as one sentence, the app told
+          a reader with a full portfolio that they had no ledger. The condition
+          is read where ADR-0021 says it is stated, the head's `currency` being
+          `null`, and no fourth kind of absence is invented for it. */}
       {totalsRow === null ? (
-        <p className="max-w-prose text-sm text-muted-foreground">{t('dashboard.withoutLedger')}</p>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
+        </p>
       ) : null}
     </div>
   )

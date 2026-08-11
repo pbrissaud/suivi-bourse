@@ -63,6 +63,7 @@
   "dashboard.twr.since": "since {date}",
   "dashboard.twr.ytd": "{percent} since 1 January",
   "dashboard.scope": "{count, plural, one {# account} other {# accounts}}",
+  "dashboard.awaitingCurrency": "Your total value, your net contributions and both returns are waiting for a reporting currency — nobody has answered that question yet.",
   "dashboard.withoutLedger": "A ledger of dated events would add your total value, your net contributions and both returns.",
   "dashboard.empty.title": "No events yet",
   "dashboard.empty.body": "Everything here is computed from a ledger of dated events. Nothing has been imported or entered yet.",
