@@ -13,7 +13,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Band } from '@/components/Band'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 import { oneBand, shellConditions } from '@/lib/status'
@@ -25,12 +25,5 @@ export function Banner() {
 
   if (!band) return null
 
-  // `status` rather than the component's default `alert`: a band describes a
-  // condition that *lasts*, and an assertive live region would interrupt a
-  // screen reader on every navigation for as long as it holds.
-  return (
-    <Alert role="status" variant="destructive" className="rounded-none border-x-0 border-t-0">
-      <AlertDescription>{t(band.message)}</AlertDescription>
-    </Alert>
-  )
+  return <Band className="rounded-none border-x-0 border-t-0">{t(band.message)}</Band>
 }

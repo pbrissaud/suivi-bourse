@@ -112,6 +112,110 @@ each. Four things about it are decisions, not defaults:
   and shows **one band or none**. `lib/api.ts` is the only module that knows a
   URL, and the paths it exports are what the test handlers fake.
 
+**The three shared primitives, and the dashboard head that consumes them first**
+(issue #718, ADR-0016, ADR-0018). They arrive together because each of the three
+repairs a *measured* defect rather than anticipating one:
+
+- **`Explain`** — the convention bubble, which did not exist at all: the whole
+  product explained itself through two `title=` attributes, one second of delay,
+  unstyled, and **absent on touch**. One bubble, **one text** (what the figure
+  means, the rule it rests on, the link), opening **on click and never on
+  hover** — hover does not exist on a finger, and click is also what lets the
+  reader walk to the link inside. It **closes on scroll** and opens **beside**
+  its figure: a bubble must not outlive its subject, and both boards mounted it
+  over the very numbers it explained. The link is the front's **first `href` to
+  the outside** and carries version *and* locale (`lib/docs.ts`,
+  `/{fr/}docs/v5/read-your-figures#<anchor>`); the ten anchors are a contract
+  with `website/docs/read-your-figures.mdx`, hand-written on every heading there
+  because a *derived* anchor moves with a reworded title, the front sees
+  nothing, the site still builds, and every bubble lands at the top of the page.
+- **`Stat`** — the *figure + label* pair, **one** where the prototype had four:
+  `Stat` copied three times plus a fourth component, `Summary`, **with no slot
+  for a hint** — and it was `Summary` that carried `Plus-value latente
+  335,22 €`. The most wrong figure in the product sat on the only component
+  incapable of explaining itself, so the slot is the reason the primitive
+  exists. Three weights (`head` / `term` / `stat`) because subordination is
+  vertical and a total never shares a line with its terms.
+- **`EmptyState`** — one, where eight were written by hand `<Alert>` by
+  `<Alert>`. It replaces them **as the pages land**, never in a sweep across
+  pages being rewritten anyway. It says a thing is **empty** and never that
+  something failed: a failure is a **band**, and the two must not look alike.
+- **`Band`** — the band in one spelling, mounted twice. The shell's `Banner`
+  puts the full-bleed one at the top of the content column for what is true of
+  the installation; a **page mounts its own, in place, for a read of its own
+  that failed**. That second mount is not symmetry: `/api/runtime` answers from
+  process memory and never opens the store (#668) — the very property that keeps
+  the status dot alive through a database outage — so the shell is **silent** on
+  the one failure that empties a page's figures. The head rendering `null` there
+  made *"the store is unreadable"* and *"you own nothing yet"* one screen, in the
+  worst form: a blank one. `lib/status.ts`'s `readConditions` holds the causal
+  order across the two — a page says nothing while the shell's band is up — so
+  **one band on screen or none** stays true by construction.
+
+Three pure modules go with them and hold what a component must not decide:
+`lib/absence.ts` (the **four** renderings under *the em dash means there is
+nothing to compute; anything merely missing is named* — and the fourth case
+reports **its count**, never *« jamais »*, which is not computable),
+`lib/sign.ts` (where **zero stops rendering as absence**: neutral in colour but
+in the *colour of text*, since a sold row carries `0,00 €` and `—` side by
+side), and `lib/gain.ts` (ADR-0018's identity). **No row-marker component is
+created** — *a per-row marker that does not discriminate is noise however
+correct it is*, and two independent tickets produced that defect under two names.
+
+**`absence.ts` is the classification, and `gain.ts` calls it rather than holding
+a second one.** That is the whole of what makes the rule a rule: written twice,
+the copy loses a branch. `positionTerms` held *quoted with no rate* and *no
+quote at all* inline — `absenceCase`'s second and third cases, **minus its
+first**, `quantity === 0`, which that module tests first and unconditionally
+because ordering it last is how *sold* and *broken ticker* collapse. One line the
+owner closed years ago, still carrying a `symbol_quote` price with no resolved
+rate, therefore turned the gain of the **entire portfolio** into an absence —
+the exact failure the four-term computation exists to prevent. And a sum carries
+its **reason** rather than a bare `null` (`Unrealised`), because a caller holding
+only the nullity can write nothing but an em dash — which by ADR-0016 says
+*there is nothing to compute* about a rate the app fetches by itself. The three
+`Rendering` constants are exported for that: a total wears the same one as a
+cell, and `absence.awaitingRate` stays in one file.
+
+The head itself **computes `Gain total` from its four terms and never reads
+`portfolio_totals.gain_absolu`**, which is the same number written down
+elsewhere; three of the four terms come off `/api/positions`, so a global row
+that cannot be written no longer blanks the headline. The fourth term — the fees
+a broker takes out of a transfer — **renders only when it is not zero**, colour
+goes only to the two terms that can change sign, the statistics **shrink**
+instead of filling with dashes, and there are **four icons in the block, not
+nine**. The year-to-date is **two figures that never share a line**: the euro
+under the head, the percentage inside the TWR statistic (measured `+40,69 €`
+against `−1,25 %`, opposite signs over the same period and both correct). The
+`1S / 1M / 1A / —` selector does not exist.
+
+Being two figures is also why **both** of them carry the rebuild's sentence.
+They are kept apart on purpose, so a reader looking at one never sees the
+other's caption, and a bare `—` on the percentage says — by this ticket's own
+rule — *there is nothing to compute*, when what is going on is a history not
+rebuilt that far back yet. **A read that has not landed is not a fact**, and the
+rule splits the block's four reads in two. `positions` and `portfolio-totals`
+are *needed*, so the head waits for **both** before rendering anything: the
+sentences it writes are about the totals as much as about the positions, so
+letting one land first turned *not arrived yet* into a statement — *« un grand
+livre d'événements datés ajouterait… »* printed under a portfolio that has one,
+for as long as the second request took, then a headline swapped for another
+number under the reader's eyes. `accounts` and `runtime` are *optional*: their
+absence removes a line instead of falsifying one, which is why they keep a
+`?? null` and the required pair does not. The perimeter line under the
+consolidated
+figures is **not written at all** while the accounts read has not landed:
+ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a state
+the product declares impossible, and it was being printed as the statement of
+the gain's own scope.
+
+Two members joined the HTTP contract for it, announced on #745 before being
+written into `lib/api.ts`: **`GET /api/portfolio-totals`** (named after the
+store's table, never after the page) and **`runtime.rebuilding`** — the latter
+on the app-state resource rather than beside the figures, because the fact it
+decides is *is the TWR's base date still moving*, which is a property of this
+process.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -1331,7 +1435,16 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/alloc.ts        # The twelve allocation stops, generated per ground
 ├── src/lib/format.ts       # The eight Intl sites, locale as an argument
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
-├── src/lib/status.ts       # The dot's state and the banner's one band, pure
+├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
+├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
+├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
+├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
+├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
+├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
+├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
+├── src/components/EmptyState.tsx  # The one empty state
+├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
+├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 
