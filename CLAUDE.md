@@ -138,7 +138,19 @@ repairs a *measured* defect rather than anticipating one:
   vertical and a total never shares a line with its terms.
 - **`EmptyState`** — one, where eight were written by hand `<Alert>` by
   `<Alert>`. It replaces them **as the pages land**, never in a sweep across
-  pages being rewritten anyway.
+  pages being rewritten anyway. It says a thing is **empty** and never that
+  something failed: a failure is a **band**, and the two must not look alike.
+- **`Band`** — the band in one spelling, mounted twice. The shell's `Banner`
+  puts the full-bleed one at the top of the content column for what is true of
+  the installation; a **page mounts its own, in place, for a read of its own
+  that failed**. That second mount is not symmetry: `/api/runtime` answers from
+  process memory and never opens the store (#668) — the very property that keeps
+  the status dot alive through a database outage — so the shell is **silent** on
+  the one failure that empties a page's figures. The head rendering `null` there
+  made *"the store is unreadable"* and *"you own nothing yet"* one screen, in the
+  worst form: a blank one. `lib/status.ts`'s `readConditions` holds the causal
+  order across the two — a page says nothing while the shell's band is up — so
+  **one band on screen or none** stays true by construction.
 
 Three pure modules go with them and hold what a component must not decide:
 `lib/absence.ts` (the **four** renderings under *the em dash means there is
@@ -161,6 +173,16 @@ nine**. The year-to-date is **two figures that never share a line**: the euro
 under the head, the percentage inside the TWR statistic (measured `+40,69 €`
 against `−1,25 %`, opposite signs over the same period and both correct). The
 `1S / 1M / 1A / —` selector does not exist.
+
+Being two figures is also why **both** of them carry the rebuild's sentence.
+They are kept apart on purpose, so a reader looking at one never sees the
+other's caption, and a bare `—` on the percentage says — by this ticket's own
+rule — *there is nothing to compute*, when what is going on is a history not
+rebuilt that far back yet. And the perimeter line under the consolidated
+figures is **not written at all** while the accounts read has not landed:
+ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a state
+the product declares impossible, and it was being printed as the statement of
+the gain's own scope.
 
 Two members joined the HTTP contract for it, announced on #745 before being
 written into `lib/api.ts`: **`GET /api/portfolio-totals`** (named after the
@@ -1217,7 +1239,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/alloc.ts        # The twelve allocation stops, generated per ground
 ├── src/lib/format.ts       # The eight Intl sites, locale as an argument
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
-├── src/lib/status.ts       # The dot's state and the banner's one band, pure
+├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
 ├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
@@ -1225,6 +1247,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
+├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```

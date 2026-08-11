@@ -17,6 +17,7 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
+import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccountsPayload,
   aPositionsPayload,
@@ -26,7 +27,7 @@ import {
   defaultAccounts,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
-import { server } from '@/test/server'
+import { problemHandler, server } from '@/test/server'
 
 /** One figure and everything subordinate to it, by the name it wears. */
 function figure(name: string) {
@@ -148,11 +149,87 @@ describe('during the reconstruction', () => {
     expect(figure('TRI')).toHaveTextContent(/\+3,22/)
     expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
 
-    // And the one figure that is degraded says which and why — once, under the
-    // head, rather than twice on the same page.
+    // Everything else is untouched — the degradation is the year-to-date and
+    // nothing but it.
+    expect(figure('Valeur totale')).toHaveTextContent(/2\D?800,00/)
+    expect(figure('TWR')).toHaveTextContent(/\+102,89/)
+  })
+
+  it('degrades **both** halves of the year-to-date, each with the sentence', async () => {
+    // The year-to-date is two figures, and the two are deliberately kept apart
+    // — the euro under the head, the percentage inside the TWR statistic —
+    // because side by side they read as a contradiction. A reader looking at
+    // one therefore never sees the other's caption, so a sentence written once
+    // covers one figure and leaves the other wearing a bare `—`. And by the
+    // rule this ticket installs (`lib/absence.ts`, ADR-0016) a bare dash means
+    // *there is nothing to compute*, which is the opposite of the truth here:
+    // the history simply is not rebuilt that far back yet, and it will be.
+    server.use(totalsOf({ ytd: null }))
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent(/—/)
     expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
-    expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(1)
+
+    const twr = figure('TWR')
+    expect(twr).toHaveTextContent(/—/)
+    expect(twr).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
+
+    // Twice, once per figure — never a third time somewhere neither of them is.
+    expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(2)
+  })
+})
+
+describe('a read that fails is named, and named once', () => {
+  it('says why the block is empty when the store will not answer', async () => {
+    // The exact case, and the reason it had no announcer at all: `/api/runtime`
+    // answers from the scheduler's process memory and never opens the store
+    // (#668), so the shell's band is perfectly quiet while the figures are
+    // unreadable. The block rendered `null`, and *"the store is unreadable"*
+    // and *"you own nothing yet"* became one screen — a blank one.
+    server.use(
+      problemHandler(ROUTES.positions, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+  })
+
+  it('says it for the consolidated read too, rather than blaming an absent ledger', async () => {
+    // `portfolio_totals` coming back `503` is not "you have no ledger", and the
+    // sentence naming what a ledger would add would be a plain untruth here.
+    server.use(
+      problemHandler(ROUTES.portfolioTotals, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+  })
+
+  it('stays silent while the shell already says the app is not answering', async () => {
+    // One band on screen or none. While the app answers nothing, it is the
+    // cause of every failed read below it, and the band at the top of the
+    // column has already said so — two announcers for one fact is the defect
+    // the head's own comment was written against.
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.error()),
+      http.get(ROUTES.positions, () => HttpResponse.error()),
+      http.get(ROUTES.portfolioTotals, () => HttpResponse.error()),
+    )
+    renderApp()
+
+    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(1))
+    expect(screen.getByRole('status')).toHaveTextContent(/L’application ne répond pas/)
   })
 })
 
@@ -203,6 +280,27 @@ describe('the consolidated figures name their perimeter', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     await waitFor(() => expect(screen.getByText('1 compte')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: /compte/ })).not.toBeInTheDocument()
+  })
+
+  it('never claims a perimeter of zero accounts, which cannot exist', async () => {
+    // ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a
+    // state the product declares impossible — and it was printed, under the
+    // consolidated figures, as the statement of their perimeter, whenever the
+    // accounts read failed or had simply not landed yet. An unknown perimeter
+    // is not written down; the figures above it are exact either way.
+    server.use(
+      problemHandler(ROUTES.accounts, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/370,00/)
+    await waitFor(() => expect(screen.queryByText(/0 compte/)).not.toBeInTheDocument())
     expect(screen.queryByRole('link', { name: /compte/ })).not.toBeInTheDocument()
   })
 })

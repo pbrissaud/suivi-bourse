@@ -9,6 +9,13 @@
  * exist for this installation is not a missing value. A sentence under the head
  * names what a ledger would add.
  *
+ * **And a read that fails is named here, in a band.** It is the one absence the
+ * shell cannot cover: `/api/runtime` answers from process memory and never
+ * opens the store, so an unreadable store leaves the banner silent while these
+ * two reads return `503`. `lib/status.ts` keeps the causal order — this block
+ * says nothing while the shell's band is up — so there is still one band on
+ * screen or none.
+ *
  * **The gain is computed, never read.** `portfolio_totals.gain_absolu` rides in
  * the payload and is ignored: it is the same number written down elsewhere, and
  * two producers for one figure is what the shares page spent a session
@@ -40,6 +47,7 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
+import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
@@ -56,6 +64,7 @@ import {
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
+import { oneBand, readConditions } from '@/lib/status'
 
 const TERM_LABELS: Record<GainTermName, MessageKey> = {
   unrealised: 'gain.term.unrealised',
@@ -72,9 +81,20 @@ export function DashboardHead() {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
 
-  // A failed read is the banner's sentence, not a second one here. Two
-  // announcers for one fact is the defect that appeared separately on four
-  // pages of the board.
+  // A failed read is **named here**, and it has to be: `/api/runtime` answers
+  // from process memory and never opens the store, so the shell's band stays
+  // silent on the one failure that empties this block — an unreadable store.
+  // `readConditions` keeps the causal order, so while the app itself is not
+  // answering this says nothing and the band at the top of the column owns the
+  // sentence. Rendering `null` here was *"the database is unreadable"* and
+  // *"you own nothing yet"* on one screen, in its worst form: a blank one.
+  const failure = oneBand(
+    readConditions({ shellError: runtime.error, errors: [positions.error, totals.error] }),
+  )
+  if (failure) return <Band>{t(failure.message)}</Band>
+
+  // Absence of data with no error is the first load, and it is not a state to
+  // write a sentence about.
   if (!positions.data) return null
 
   const rows = positions.data.positions
@@ -110,7 +130,13 @@ export function DashboardHead() {
     ? null
     : (totalsRow.twr_index - 100) / 100
 
-  const accountCount = accounts.data?.accounts.length ?? 0
+  // **Not `?? 0`.** ADR-0013 seeds a `default` row that is never removed, so
+  // there is always at least one account and `0 compte` is a state the product
+  // declares impossible — printed, as it was, under the consolidated figures as
+  // the statement of their perimeter. A read that has not landed, or one that
+  // failed, means the perimeter is *unknown*, and an unknown perimeter is not
+  // written down at all: the figures above it are exact either way.
+  const accountCount = accounts.data?.accounts.length ?? null
 
   return (
     <div className="space-y-6">
@@ -212,10 +238,17 @@ export function DashboardHead() {
                 {t('dashboard.twr.since', { date: f.date(totalsRow.twr_since) })}
               </p>
             ) : null}
-            {/* The other half of the year-to-date pair. The sentence that
-                explains its absence is written once, under the head. */}
+            {/* The other half of the year-to-date pair — and it degrades the
+                same way, sentence included. The two are **deliberately** far
+                apart (they read as a contradiction side by side), so a reader
+                looking at this one never sees the caption written under the
+                other: a bare dash here says, by the product's own rule, *there
+                is nothing to compute*, when what is going on is a history not
+                yet rebuilt that far — nameable and repairable. */}
             <p className="text-sm text-muted-foreground">
-              {ytdTwr === null ? ABSENT : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
+              {ytdTwr === null
+                ? `${ABSENT} — ${t('dashboard.ytd.pending')}`
+                : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
             </p>
           </Stat>
         )}
@@ -223,15 +256,17 @@ export function DashboardHead() {
 
       {/* The consolidated figures name their perimeter — and at N = 1 the link
           disappears of itself, the accounts page having left the navigation. */}
-      <p className="text-sm text-muted-foreground">
-        {accountCount > 1 ? (
-          <Link to="/comptes" className="underline underline-offset-4">
-            {t('dashboard.scope', { count: accountCount })}
-          </Link>
-        ) : (
-          t('dashboard.scope', { count: accountCount })
-        )}
-      </p>
+      {accountCount === null ? null : (
+        <p className="text-sm text-muted-foreground">
+          {accountCount > 1 ? (
+            <Link to="/comptes" className="underline underline-offset-4">
+              {t('dashboard.scope', { count: accountCount })}
+            </Link>
+          ) : (
+            t('dashboard.scope', { count: accountCount })
+          )}
+        </p>
+      )}
 
       {totalsRow === null ? (
         <p className="max-w-prose text-sm text-muted-foreground">{t('dashboard.withoutLedger')}</p>
