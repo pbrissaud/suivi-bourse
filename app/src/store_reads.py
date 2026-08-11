@@ -65,7 +65,15 @@ QUOTE_COLUMNS = (
 #: with it — an unset unit is not a reason to show a number under the wrong one.
 PRICE_COLUMNS = ('price', 'price_native', 'fx_rate', 'price_time')
 
-P1_COLUMNS = POSITION_COLUMNS + QUOTE_COLUMNS + PRICE_COLUMNS
+#: The day the position reached zero, ``NULL`` while it is held (issue #763, for
+#: the folded section of #719). **Derived in the same query**, never a column:
+#: the ledger already holds the answer, and the store applies its DDL with
+#: ``IF NOT EXISTS`` and has no migration machinery (ADR-0001), so a thirteenth
+#: column on ``position`` would simply not exist on a store created before it —
+#: the same argument that keeps ``transfer_fees`` a derivation.
+CLOSING_COLUMNS = ('closed_at',)
+
+P1_COLUMNS = POSITION_COLUMNS + QUOTE_COLUMNS + PRICE_COLUMNS + CLOSING_COLUMNS
 
 #: The seven value columns of the two perf series, plus the day they describe.
 PERF_COLUMNS = (
@@ -110,6 +118,15 @@ class PortfolioReader:
         per-account rows away inside the query, which is exactly why no panel of
         the baseline can show the breakdown; returning the rows is what lets
         :mod:`portfolio_view` compute the totals *and* keep the detail.
+
+        ``closed_at`` joins the row here rather than in a second request, which
+        is what keeps *one query for the whole portfolio* true. It is the day of
+        the **last sale**, and the ``CASE`` is the whole of the rule: the field
+        describes the position's *current* state, so it is ``NULL`` the moment a
+        quantity stands — a line bought back after being sold reads ``null``
+        again, and nothing on the wire remembers it was once flat. The predicate
+        is ``quantity = 0`` exactly, ADR-0017's own, which the dust clamp
+        (ADR-0003) is what makes safe on a float.
         """
         where = 'WHERE p.symbol = ?' if symbol is not None else ''
         parameters = [symbol] if symbol is not None else None
@@ -117,10 +134,15 @@ class PortfolioReader:
         selected += [f'q.{name}' for name in QUOTE_COLUMNS]
         selected += ['q.last_price_converted', 'q.last_price_native',
                      'q.last_fx_rate', 'q.last_price_ts']
+        selected += ['CASE WHEN p.quantity = 0 THEN s.closed_at END']
         rows = self._store.query(
             f'SELECT {", ".join(selected)} '
             '  FROM position p '
             '  LEFT JOIN symbol_quote q ON q.symbol = p.symbol '
+            '  LEFT JOIN (SELECT account, symbol, max(date) AS closed_at '
+            "              FROM event WHERE event_type = 'SELL' "
+            '             GROUP BY account, symbol) s '
+            '    ON s.account = p.account AND s.symbol = p.symbol '
             f' {where} '
             ' ORDER BY p.symbol, p.account', parameters)
         return [_stamp(dict(zip(P1_COLUMNS, row))) for row in rows]
@@ -184,6 +206,52 @@ class PortfolioReader:
             f"   WHERE symbol = ? AND price_converted IS NOT NULL{clauses}"
             ") WHERE rn = 1 ORDER BY bucket",
             [symbol] + parameters, ('t', 'price'))
+
+    def chart_series(self, symbol: str, interval: Optional[str] = None,
+                     start: Optional[datetime] = None,
+                     stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """One symbol's series for ``GET /api/prices/<symbol>`` (issue #763).
+
+        It is a **third** reader beside :meth:`raw_series` and
+        :meth:`bucketed_series` rather than an argument on either, for one
+        difference that is the whole contract of the new resource: a point whose
+        conversion never resolved is served as ``price: null`` and **never as a
+        missing point**. The two older readers drop it — right for a chart that
+        treats it like a weekend, wrong here, where *the app has not been able to
+        convert this quote* and *no session that day* are two different things
+        and only one of them is repaired by #704's lateral pass.
+
+        ``interval`` is ``None`` for *as written* and otherwise one of
+        :data:`ALLOWED_INTERVALS`, whitelisted for the same reason as above: it
+        reaches SQL as a literal, so it must never come from a request.
+        :func:`chart_window` is its only caller and picks from a closed set.
+
+        The bucket's survivor is its **last point by instant**, whatever that
+        point's conversion — not its last *converted* point. Taking the latter
+        would let one resolved rate hide a whole hour of unresolved ones, which
+        is exactly the silence the ``null`` above exists to break.
+        """
+        clauses, parameters = _window('ts', start, stop)
+        if interval is None:
+            return self._series(
+                'SELECT ts, price_converted FROM price_point '
+                f' WHERE symbol = ?{clauses}'
+                ' ORDER BY ts',
+                [symbol] + parameters, ('ts', 'price'))
+
+        if interval not in ALLOWED_INTERVALS:
+            raise ValueError(f"Unsupported bucket interval: {interval!r}")
+        return self._series(
+            "SELECT bucket, price_converted FROM ("
+            f"  SELECT time_bucket(INTERVAL '{interval}', ts) AS bucket,"
+            "         price_converted,"
+            "         ROW_NUMBER() OVER ("
+            f"             PARTITION BY time_bucket(INTERVAL '{interval}', ts)"
+            "             ORDER BY ts DESC) AS rn"
+            "    FROM price_point"
+            f"   WHERE symbol = ?{clauses}"
+            ") WHERE rn = 1 ORDER BY bucket",
+            [symbol] + parameters, ('ts', 'price'))
 
     def prices_at(self, moment: datetime) -> List[Dict[str, Any]]:
         """Each symbol's last price at or **before** ``moment``, with its instant.
@@ -475,6 +543,56 @@ def bucket_for_window(span_days: float) -> Optional[str]:
     return '1 day'
 
 
+#: The four windows ``GET /api/prices/<symbol>`` takes, and they are the **rungs
+#: of the retention ladder** (ADR-0010, #684 D10) rather than four round
+#: numbers: as written under a year, hourly from one to two, daily beyond. `3M`
+#: left because it changed the range without changing anything a reader could
+#: see, which is the property that makes a range control worth having.
+CHART_WINDOWS = ('1M', '1Y', '2Y', 'MAX')
+
+#: What each window is served as: ``(span in days, bucket, resolution)``, with a
+#: ``None`` span meaning *the whole series* and a ``None`` bucket meaning *as
+#: written*.
+#:
+#: **The resolution is the coarsest of the bucket applied and the rung
+#: traversed** (#705's own rule), which is what lets it be announced once and
+#: never recomputed by the reader: the chart's *aggregated by X* caption reads
+#: this field instead of stating a second bucketing of its own.
+#:
+#: Two of the four are worth the ink. ``1M`` is served **as written**, and it is
+#: the only window where the finest rung is reachable at all — a month of
+#: ``REGULAR`` polling is a few thousand points, the order the older
+#: :func:`bucket_for_window` aimed at, so paying for it here buys the one thing
+#: the shortest window exists to show. ``MAX`` announces ``day`` on an install
+#: three months old too, and that is honest rather than approximate: it says
+#: what was **served**, and daily is what was served. Sizing it from the oldest
+#: stored point would put a second query behind a field whose whole job is to
+#: describe the answer that came back.
+_CHART_LADDER = {
+    '1M': (31, None, 'raw'),
+    '1Y': (365, '1 hour', 'hour'),
+    '2Y': (730, '1 hour', 'hour'),
+    'MAX': (None, '1 day', 'day'),
+}
+
+
+def chart_window(window: Optional[str]) -> tuple:
+    """Resolve a window name into ``(span_days, bucket, resolution)``.
+
+    Pure, so the ladder is testable without a database, and **total on a closed
+    set**: an unknown name — or none at all — raises, and the route turns that
+    into a ``422``. Falling back on a default is what the criterion refuses, and
+    for a reason that is not purism: the resolution served would then describe a
+    window the caller did not ask for, and the caption under the chart would be
+    right about a curve nobody requested.
+    """
+    if window not in _CHART_LADDER:
+        raise ValueError(
+            f"Unknown window {window!r}: expected one of "
+            f"{', '.join(CHART_WINDOWS)}")
+    return _CHART_LADDER[window]
+
+
 def _window(column: str, start: Optional[datetime],
             stop: Optional[datetime], as_date: bool = False) -> tuple:
     """Render the optional ``[start, stop]`` bounds as predicates + parameters.
@@ -553,5 +671,6 @@ def _stamp_value(value: Any) -> Any:
 
 __all__ = [
     'PortfolioReader', 'bucket_for_window', 'ALLOWED_INTERVALS',
+    'chart_window', 'CHART_WINDOWS',
     'P1_COLUMNS', 'PERF_COLUMNS',
 ]

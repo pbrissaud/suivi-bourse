@@ -454,6 +454,14 @@ def _build_position(row: Dict[str, Any],
     whole price for want of its label would be the worse answer: it turns
     *quoted* into *never quoted*, which is the one distinction the pair of
     objects exists to carry.
+
+    ``closed_at`` is the day the position reached zero and ``null`` while it is
+    held — the shares page's folded section **sorts on it** (#719), and it is the
+    only column that discriminates those rows, market value being zero across the
+    whole section and a column of zeros ordering nothing. No derivation is
+    available on the client either: a position carries a quantity, never the
+    event that emptied it. The predicate lives in the SQL beside the sale it
+    reads (:meth:`store_reads.PortfolioReader.positions`).
     """
     price_native = row.get('price_native')
     converted = row.get('price')
@@ -480,6 +488,37 @@ def _build_position(row: Dict[str, Any],
             'rate': row.get('fx_rate'),
             'rate_at': at,
         },
+        'closed_at': _iso(row.get('closed_at')),
+    }
+
+
+def build_price_series(symbol: str, rows: Sequence[Dict[str, Any]],
+                       resolution: str,
+                       base_currency: Optional[str]) -> Dict[str, Any]:
+    """One symbol's series as ``GET /api/prices/<symbol>`` publishes it (#719).
+
+    ``resolution`` is **announced and never guessed**, and it is passed in rather
+    than worked out here: what was served is a fact about the query that ran, so
+    the one place that can state it is the one that chose it
+    (:func:`store_reads.chart_window`). A reader deducing it from the spacing of
+    the points would be reading an outage into an archive whose fineness is a
+    function of age (ADR-0010) — and it is announced **once**, the chart's
+    *aggregated by X* caption reading this field instead of stating a second
+    bucketing of its own.
+
+    ``price`` is in the **reporting currency** and ``null`` means *quoted, and
+    the rate never resolved* — never a missing point. That is the difference
+    between this resource and ``/api/shares/<symbol>/prices``, which drops the
+    point: here the gap of a weekend (no row at all) and the gap of a conversion
+    (a row with no price) are two different pieces of news, and only the second
+    one repairs itself.
+    """
+    return {
+        'symbol': symbol,
+        'base_currency': base_currency,
+        'resolution': resolution,
+        'points': [{'ts': _iso(row.get('ts')), 'price': row.get('price')}
+                   for row in rows],
     }
 
 
@@ -1050,6 +1089,7 @@ __all__ = [
     'MODE_ACCOUNTS', 'MODE_TITRES', 'portfolio_mode',
     'build_totals_head', 'build_titres_head',
     'build_positions', 'build_portfolio_totals', 'ytd_base_day',
+    'build_price_series',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',
     'build_movers',
 ]

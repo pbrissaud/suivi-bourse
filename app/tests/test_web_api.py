@@ -11,7 +11,7 @@ three states are structural: a declared table nobody wrote answers ``200`` +
 Plus the one rule of the SPA catch-all that is load-bearing: it must not swallow
 an ``/api`` 404.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -670,7 +670,8 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     assert len(payload['positions']) == 1
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
-                        'realised', 'dividends', 'price', 'converted'}
+                        'realised', 'dividends', 'price', 'converted',
+                        'closed_at'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')
     assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
@@ -724,6 +725,45 @@ def test_a_quote_with_no_rate_keeps_its_price_and_loses_its_conversion(tmp_path)
     assert row['price']['value'] == 200.0
     assert row['price']['currency'] == 'USD'
     assert row['converted'] is None
+
+
+#: A ledger where the three shapes `closed_at` has to tell apart coexist: a
+#: line emptied in two sales, a line still held, and a line sold and bought
+#: back. Written as **events**, because the day the field reports is a fact of
+#: the ledger and a seeded `position` row could not carry it.
+CLOSING_EVENTS = (
+    "date,event_type,symbol,name,quantity,unit_price,account\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
+    "2024-02-05,SELL,AAPL,Apple Inc,4,160.00,pea\n"
+    "2024-03-10,SELL,AAPL,Apple Inc,6,170.00,pea\n"
+    "2024-01-20,BUY,MSFT,Microsoft,5,300.00,pea\n"
+    "2024-02-01,BUY,SAN,Sanofi,4,80.00,pea\n"
+    "2024-04-01,SELL,SAN,Sanofi,4,90.00,pea\n"
+    "2024-05-02,BUY,SAN,Sanofi,2,85.00,pea\n"
+)
+
+
+def test_closed_at_is_the_sale_that_emptied_the_line_and_nothing_else(tmp_path):
+    """The member #719's folded section sorts on (issue #763).
+
+    Three rows and three answers in one payload: the **last** sale of a line
+    emptied in two goes — not its first — a held line, and a line sold then
+    bought back, which is `null` again. The field describes the position's
+    *current* state and not its history: a client cannot derive any of it, a
+    position carrying a quantity and never the event that emptied it.
+    """
+    payload = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                           events=CLOSING_EVENTS).get('/api/positions').get_json()
+    rows = {row['symbol']: row for row in payload['positions']}
+
+    assert set(rows) == {'AAPL', 'MSFT', 'SAN'}
+    assert rows['AAPL']['quantity'] == 0.0
+    assert rows['AAPL']['closed_at'] == '2024-03-10'
+    assert rows['MSFT']['closed_at'] is None
+    # Sold on 2024-04-01 and held again since 2024-05-02: the field says what is
+    # true now, and nothing on the wire remembers the line was once flat.
+    assert rows['SAN']['quantity'] == 2.0
+    assert rows['SAN']['closed_at'] is None
 
 
 def test_positions_on_a_fresh_install_is_200_and_an_empty_list(tmp_path):
@@ -900,6 +940,209 @@ def test_portfolio_totals_storage_failure_is_503_problem_json(tmp_path):
     assert response.status_code == 503
     assert response.mimetype == 'application/problem+json'
     assert 'portfolio_totals' in response.get_json()['detail']
+
+
+def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
+        tmp_path):
+    """ADR-0018's identity, **through the API**, on a ledger with a fee (#763).
+
+    The residual risk of deriving `transfer_fees` from `event` while
+    `net_contributed` is computed in `performance.py` from the `Timeline`: two
+    modules state what a cash movement is, and two statements eventually
+    disagree — the symptom being an identity that quietly stops holding, on the
+    page that exists to show that it holds. The sign alone is pinned above; this
+    is the sum, and it is what would catch the drift.
+
+    Nothing here is seeded: the ledger is a file, the perf cache is written by
+    the **real** job, and the four terms are read off the two resources exactly
+    as `lib/gain.ts` reads them. On this ledger — deposit 1 000,00 (fee 1,50),
+    buy 10 × 80,00 (fee 3,00), dividend 12,00, sale of 4 at 90,00 (fee 2,00),
+    withdrawal 200,00 (fee 0,75), quote at 100,00:
+
+        latente +118,20 · réalisée +36,80 · dividendes +12,00 · frais −2,25
+                                                          = gain_absolu 164,75
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2024-01-10,DEPOSIT,,,,,1.50,1000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,80.00,3.00,,pea\n"
+        "2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,12.00,pea\n"
+        "2024-04-01,SELL,AAPL,Apple Inc,4,90.00,2.00,,pea\n"
+        "2024-06-01,WITHDRAWAL,,,,,0.75,200.00,pea\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, price=100.0, currency='EUR', converted=100.0,
+                   rate=1.0, at=datetime(2024, 6, 5, 17, 0, tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=events, seed=seed)
+
+    # The perf cache written by the production path, not by `seed_totals`: what
+    # is being checked is that the two *modules* agree, so a hand-written
+    # `gain_absolu` would check nothing at all.
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+    assert opened.query('SELECT count(*) FROM portfolio_totals')[0][0] > 0
+
+    positions = client.get('/api/positions').get_json()['positions']
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+
+    # The three position terms, computed as `lib/gain.ts` computes them.
+    latent = sum(row['quantity'] * row['converted']['value'] - row['cost_basis']
+                 for row in positions)
+    realised = sum(row['realised'] for row in positions)
+    dividends = sum(row['dividends'] for row in positions)
+
+    assert latent == pytest.approx(118.20, abs=5e-3)
+    assert realised == pytest.approx(36.80, abs=5e-3)
+    assert dividends == pytest.approx(12.00, abs=5e-3)
+    assert totals['transfer_fees'] == pytest.approx(-2.25, abs=5e-3)
+    assert totals['gain_absolu'] == pytest.approx(164.75, abs=5e-3)
+
+    # And the identity itself, to the cent — the assertion the two spellings of
+    # *a cash movement* have to keep true between them.
+    assert (latent + realised + dividends + totals['transfer_fees']
+            == pytest.approx(totals['gain_absolu'], abs=5e-3))
+
+
+# --------------------------------------------------------------------- #
+# The chart's own resource — a rung, and the resolution it served (#719, #763)
+#
+# New, and not a rename of `/api/shares/<symbol>/prices`: that one takes
+# `?from=`/`?to=` and announces a `bucket`, this one takes a rung of the
+# retention ladder and announces a `resolution`. Both are tested, because both
+# have to go on serving.
+# --------------------------------------------------------------------- #
+
+def _hour_anchor() -> datetime:
+    """The top of the current hour, so a bucket boundary is not a coin toss."""
+    return datetime.now(timezone.utc).replace(
+        minute=0, second=0, microsecond=0)
+
+
+def test_the_price_series_announces_the_resolution_it_actually_served(tmp_path):
+    """`resolution` is a statement about the answer, never a guess (#719).
+
+    Two windows over the same three points: `1M` is the one rung where *as
+    written* is reachable, and `1Y` comes back bucketed by the hour — two
+    points, since two of the three share an hour. A reader deducing the
+    fineness from the spacing of what came back would read the second as an
+    outage; announced once, it is the caption under the chart.
+    """
+    anchor = _hour_anchor()
+
+    def seed(opened):
+        for minutes, price in ((90, 100.0), (70, 101.0), (30, 102.0)):
+            seed_quote(opened, price=price, currency='EUR', converted=price,
+                       rate=1.0, at=anchor - timedelta(minutes=minutes))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client = build_client(tmp_path, seed=seed)
+
+    written = client.get('/api/prices/AAPL?window=1M').get_json()
+    assert written['symbol'] == 'AAPL'
+    assert written['base_currency'] == 'EUR'
+    assert written['resolution'] == 'raw'
+    assert [point['price'] for point in written['points']] == [100.0, 101.0,
+                                                               102.0]
+
+    hourly = client.get('/api/prices/AAPL?window=1Y').get_json()
+    assert hourly['resolution'] == 'hour'
+    # The bucket's survivor is its **last** point, so the 101 wins its hour.
+    assert [point['price'] for point in hourly['points']] == [101.0, 102.0]
+
+
+def test_the_widest_window_is_daily_and_reaches_the_whole_series(tmp_path):
+    """`MAX` has no lower bound, and it says `day` because that is what it served.
+
+    A bound computed from a guessed depth would cut an install older than the
+    guess; there is none, and the coarsest rung is what a window that may hold
+    twenty years of one line can carry.
+    """
+    def seed(opened):
+        seed_quote(opened, price=50.0, currency='EUR', converted=50.0, rate=1.0,
+                   at=datetime(2019, 3, 4, 17, 0, tzinfo=timezone.utc))
+        seed_quote(opened, price=90.0, currency='EUR', converted=90.0, rate=1.0,
+                   at=_hour_anchor() - timedelta(minutes=30))
+
+    client = build_client(tmp_path, seed=seed)
+
+    widest = client.get('/api/prices/AAPL?window=MAX').get_json()
+    assert widest['resolution'] == 'day'
+    assert [point['price'] for point in widest['points']] == [50.0, 90.0]
+
+    # And the two-year rung stops short of it, which is what makes changing the
+    # range change something a reader can see.
+    two_years = client.get('/api/prices/AAPL?window=2Y').get_json()
+    assert two_years['resolution'] == 'hour'
+    assert [point['price'] for point in two_years['points']] == [90.0]
+
+
+def test_a_point_whose_conversion_never_landed_is_null_and_never_absent(tmp_path):
+    """The difference between this resource and the one it stands beside.
+
+    A weekend is a **missing point** (#606); a quote whose rate never resolved
+    is a point with **no price**, and it repairs itself when #704's lateral pass
+    runs. Collapsing the two would make the chart say the market was closed.
+    """
+    anchor = _hour_anchor()
+
+    def seed(opened):
+        seed_quote(opened, price=100.0, currency='USD', converted=None,
+                   rate=None, at=anchor - timedelta(minutes=90))
+        seed_quote(opened, price=101.0, currency='USD', converted=95.0,
+                   rate=0.94, at=anchor - timedelta(minutes=30))
+
+    payload = build_client(
+        tmp_path, seed=seed).get('/api/prices/AAPL?window=1M').get_json()
+
+    assert [point['price'] for point in payload['points']] == [None, 95.0]
+    # The older route drops it, and stays as it is: the page reading it has not
+    # been rewritten, and changing what it serves is not this ticket's business.
+    old = build_client(tmp_path, seed=seed).get(
+        '/api/shares/AAPL/prices').get_json()
+    assert [point['price'] for point in old['points']] == [95.0]
+
+
+def test_an_unknown_window_is_refused_rather_than_defaulted(tmp_path):
+    """`422`, and it names the parameter it refused.
+
+    Falling back on a default would serve a curve nobody asked for under a
+    caption that describes it correctly — the one failure an announced
+    resolution cannot protect anybody from.
+    """
+    client = build_client(tmp_path)
+
+    for query in ('?window=3M', '?window=', ''):
+        response = client.get(f'/api/prices/AAPL{query}')
+        assert response.status_code == 422, query
+        assert response.mimetype == 'application/problem+json'
+        body = response.get_json()
+        assert body['key'] == 'window'
+        assert '1M' in body['detail']
+
+
+def test_a_symbol_with_no_stored_price_is_200_and_an_empty_series(tmp_path):
+    """An empty series is a state of a fresh install, never a `404`."""
+    response = build_client(tmp_path).get('/api/prices/AAPL?window=1Y')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'symbol': 'AAPL', 'base_currency': None,
+                                   'resolution': 'hour', 'points': []}
+
+
+def test_the_price_series_propagates_a_storage_failure(tmp_path):
+    """A query error is a `503`, never an empty chart."""
+    response = build_client(
+        tmp_path, break_store=True).get('/api/prices/AAPL?window=1Y')
+
+    assert response.status_code == 503
+    assert response.get_json()['type'] == '/problems/storage-unavailable'
 
 
 # --------------------------------------------------------------------- #

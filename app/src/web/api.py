@@ -38,13 +38,14 @@ import settings_registry
 import store as store_module
 from events import EventAggregator
 from events import export as events_export
-from store_reads import PortfolioReader, bucket_for_window
+from store_reads import PortfolioReader, bucket_for_window, chart_window
 from web.problem import (
     bad_request,
     conflict,
     not_found,
     storage_unavailable,
     unprocessable,
+    unprocessable_parameter,
 )
 
 logger = getLogger("web.api")
@@ -452,6 +453,54 @@ def get_portfolio_totals():
             reader.transfer_fees(day))
 
     return jsonify({'base_currency': _base_currency(), 'totals': totals})
+
+
+@api_bp.get('/prices/<symbol>')
+def get_prices(symbol: str):
+    """One symbol's series over a **rung of the retention ladder** (#719, #763).
+
+    A **new** resource and not a rename of ``/api/shares/<symbol>/prices``: that
+    one takes ``?from=``/``?to=`` and announces a ``bucket``, this one takes a
+    window from a closed set and announces a ``resolution``. The two cohabit
+    until the page that consumes the older one is rewritten — removing it here
+    would cut what works.
+
+    Three properties, and each is a criterion rather than a convenience:
+
+    * **The window is a rung, never a round number** (ADR-0010): ``1M`` / ``1Y``
+      / ``2Y`` / ``MAX``, so changing the range changes the resolution
+      *visibly*. An unknown one — or none at all — is a ``422`` and never a
+      fallback: a default would serve a curve nobody asked for under a caption
+      that describes it correctly.
+    * **The resolution is what was actually served**, decided by
+      :func:`store_reads.chart_window` and stated once, so the chart's
+      *aggregated by X* caption reads a field instead of computing a second
+      bucketing of its own.
+    * **A point whose conversion is missing is ``price: null``**, never a point
+      that is absent — that is what
+      :meth:`store_reads.PortfolioReader.chart_series` exists for.
+
+    A symbol nobody has ever stored a price for is ``200`` + ``[]``, not a
+    ``404``: the resource is the *series* of a symbol, and an empty series is a
+    legitimate state of a fresh install (#655 decision 8). A query that fails
+    propagates into ``503`` like every other read here.
+    """
+    try:
+        span_days, bucket, resolution = chart_window(request.args.get('window'))
+    except ValueError as exc:
+        return unprocessable_parameter(str(exc), key='window')
+
+    # ``MAX`` has no lower bound — the whole series — which is a ``None`` start
+    # rather than a very old instant: a bound computed from a guessed depth
+    # would silently cut an install older than the guess.
+    start = (None if span_days is None
+             else datetime.now(timezone.utc) - timedelta(days=span_days))
+
+    return jsonify(portfolio_view.build_price_series(
+        symbol,
+        _reader().chart_series(symbol, bucket, start),
+        resolution,
+        _base_currency()))
 
 
 # --------------------------------------------------------------------- #
