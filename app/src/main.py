@@ -23,6 +23,7 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
+import boot_env
 import fx
 import ledger
 import perf_series
@@ -44,9 +45,10 @@ from events.aggregator import AggregationError
 from events.schemas import EventType, Portfolio
 from prometheus_exporter import PrometheusExporter
 
-# Blank counts as unset throughout (see ``env_str``): compose renders an
+# Blank counts as unset throughout (``boot_env.text``): compose renders an
 # undefined substitution as an empty string rather than omitting the variable.
-LOG_LEVEL = (os.getenv('LOG_LEVEL') or '').strip() or 'INFO'
+LOG_LEVEL = boot_env.text(os.environ, boot_env.LOG_LEVEL,
+                          boot_env.DEFAULT_LOG_LEVEL)
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
 scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
 yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
@@ -141,194 +143,65 @@ _EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 
 
 def env_str(name: str) -> Optional[str]:
-    """Read an env var, treating blank/whitespace-only as unset.
+    """Read an env var from the process, treating blank as unset.
 
-    Compose substitutes an undefined variable as the *empty string* rather than
-    omitting it, so ``SB_FOO=${FOO}`` with no ``FOO`` in ``.env`` hands the
-    container ``SB_FOO=""``. A bare ``os.getenv`` sees a set-but-empty value and
-    every ``int()`` downstream blows up at boot; blank means "not configured".
+    The rule lives in :func:`boot_env.text`, which takes the mapping; these
+    three are the process-wide spellings of it, for the handful of callers that
+    have no mapping to hand (``gunicorn.conf.py``, chiefly, which runs before
+    the application is imported).
     """
-    raw = os.getenv(name)
-    if raw is None:
-        return None
-    raw = raw.strip()
-    return raw or None
+    return boot_env.text(os.environ, name)
 
 
 def env_int(name: str, default: int) -> int:
     """Read an int env var, tolerating blanks and failing with a clear message."""
-    raw = env_str(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        raise ValueError(
-            f"Invalid value for {name}: {raw!r} is not an integer") from None
+    return boot_env.integer(os.environ, name, default)
 
 
 def env_flag(name: str, default: bool) -> bool:
     """Read a boolean env var, tolerating blanks."""
-    raw = env_str(name)
-    if raw is None:
-        return default
-    return raw.lower() in ('1', 'true', 'yes', 'on')
+    return boot_env.flag(os.environ, name, default)
 
 
 # --------------------------------------------------------------------- #
 # The environment: what the process must know before it can open the store
 # --------------------------------------------------------------------- #
 
-#: Every environment variable **this application reads**, with its own default.
-#:
-#: The line is drawn by a mechanical test rather than by a judgement about nature
-#: (ADR-0014): *the environment holds what the process must know before it can
-#: open the store*. Everything else is a dial and lives in the store, with no
-#: environment form at all — no precedence rule, no seed-on-first-boot, no
-#: settings file. That is what makes :mod:`settings_registry` the single list.
-#:
-#: The list still has to be chosen and named, because "what the app reads" and
-#: "what compose sends" are *different lists* (#654 trap 11): ``SB_VERSION`` and
-#: ``SB_CONFIG_DIR`` carry the ``SB_`` prefix and are consumed by the docker
-#: daemon, never by Python (trap 13) — a page listing "the SB_* settings" that
-#: showed them would imply they are reachable from in here, and they are not:
-#: from inside the container the config directory is *always*
-#: ``/home/appuser/.config/SuiviBourse``.
-#:
-#: ``default`` is ``None`` for the one that has no scalar fallback:
-#: ``SB_STATIC_DIR`` simply has no value when unset.
-#:
-#: The ``secret`` flag has **no user since #700**, the three ``INFLUXDB_*``
-#: variables having left with the database they configured. It is kept because
-#: it is the redaction rule itself (redact **by name, never by value** — #654
-#: trap 12) and the rule is one line; deleting it would mean rediscovering it
-#: the first time this list carries a credential again.
-ENVIRONMENT_INVENTORY = (
-    # name, default, secret
-    # Read before the store can report anything, which is exactly why it is
-    # here: the most likely failure of this app is the store failing to open,
-    # and a log level kept inside the store could not report that.
-    ('LOG_LEVEL', 'INFO', False),
-    # Where the store is. Boot-scope by nature and not by choice (ADR-0014): it
-    # is one of the few things the process must know *before* it can open the
-    # store, and therefore before it can ask the store anything.
-    (store.STORE_DIR_VAR, store.DEFAULT_STORE_DIR, False),
-    # The two ports pass the test twice: they are read in the gunicorn master
-    # before the app is imported, and a port changed from the interface would
-    # cut the connection the interface arrived by.
-    ('SB_PROMETHEUS_ENABLED', 'true', False),
-    ('SB_METRICS_PORT', '8081', False),
-    ('SB_WEB_PORT', '8080', False),
-    ('SB_STATIC_DIR', None, False),
-)
-
-#: The prefixes a v4 ``.env`` used. Anything set under one of them and not read
-#: is named at boot — the gesture ``config.yaml`` and ``settings.yaml`` already
-#: get (ADR-0008, ADR-0014).
-_OWNED_PREFIXES = ('SB_', 'INFLUXDB_')
-
-#: Carried the prefix and were **never read by the app**: they belong to the
-#: compose file and the docker daemon. Naming them in the notice would suggest
-#: the app once obeyed them, which is the opposite of what the notice says.
-_COMPOSE_ONLY = frozenset({'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID'})
-
-#: Where a v4 variable's subject went, for the notice's second sentence. The
-#: *detection* stays computed (see :func:`unread_environment`) — this only
-#: explains what was found, and an explanation of a name that no longer exists
-#: is history, which nothing can derive. Getting it wrong is not cosmetic: a
-#: notice telling an operator that ``SB_EXECUTOR_POOL`` "lives in the app now"
-#: sends them to a settings page that has never had such a field, and to a
-#: ``PUT`` that answers ``422``.
-_RETIRED_VARIABLES = {
-    'SB_REGULAR_INTERVAL': 'regular_interval',
-    'SB_BACKFILL_INTERVAL': 'backfill_interval',
-    'SB_BACKFILL_DELAY': 'backfill_delay',
-    'SB_BACKFILL_CHUNK_DAYS': 'backfill_chunk_days',
-    'SB_STALENESS_HORIZON': 'staleness_horizon',
-    # Deleted outright rather than moved — each of them has *no* successor, and
-    # saying so is the whole value of naming them.
-    'SB_EXECUTOR_POOL': None,
-    'SB_DYNAMIC_EXECUTOR_POOL': None,
-    'SB_PERF_INTERVAL': None,
-    'SB_INGESTION_INTERVAL': None,
-    'SB_SCRAPING_INTERVAL': None,
-    'SB_CONFIG_MODE': None,
-    # The database itself left with #700, so these three name a server this
-    # version never contacts. Naming them is the whole point: an install
-    # upgrading from v4 keeps an InfluxDB container running beside the app,
-    # answering healthchecks, receiving nothing — and *"the token must be
-    # wrong"* is the conclusion a silent removal earns.
-    'INFLUXDB_HOST': None,
-    'INFLUXDB_TOKEN': None,
-    'INFLUXDB_DATABASE': None,
-}
+#: Every environment variable **this application reads**, with its own default —
+#: the list ``/api/config`` publishes. Six names, and there is no seventh: the
+#: whole of the reasoning is in :mod:`boot_env`, which is also where the pure
+#: reading of them lives (#740). The alias survives because the inventory is
+#: what the API resource is written against.
+ENVIRONMENT_INVENTORY = boot_env.INVENTORY
 
 
 def unread_environment() -> List[str]:
     """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read.
 
     **Computed, never hard-coded** — the difference between what is present and
-    what :data:`ENVIRONMENT_INVENTORY` names. A written list of retired names is
-    a third writer of the same inventory and the one nobody re-reads at release
-    time; this one cannot drift, because the day a variable is added to the
-    inventory it leaves this list by construction.
+    what :data:`ENVIRONMENT_INVENTORY` names, minus the four the app has never
+    read. A written list of retired names is a third writer of the same
+    inventory and the one nobody re-reads at release time; this one cannot
+    drift, because the day a variable is added to the inventory it leaves this
+    list by construction, and the day a dial is added to the registry it changes
+    clause by construction.
     """
-    read = {name for name, _, _ in ENVIRONMENT_INVENTORY}
-
-    def is_unread(name: str) -> bool:
-        if not name.startswith(_OWNED_PREFIXES):
-            return False
-        if name in read or name in _COMPOSE_ONLY:
-            return False
-        # Blank counts as unset here too: compose renders an undefined
-        # substitution as an empty string, so a v4 compose file left in place
-        # would otherwise report every variable it forwards as *set*.
-        return bool((os.environ.get(name) or '').strip())
-
-    return sorted(name for name in os.environ if is_unread(name))
+    return list(boot_env.unread(os.environ))
 
 
 def report_unread_environment() -> List[str]:
     """Name what is set and not obeyed, in **one** grouped notice.
 
-    One line per variable would put five warnings in front of an operator
+    One line per variable would put fourteen warnings in front of an operator
     upgrading from v4 and bury the sentence that matters, which is not *which*
-    name was ignored but *where the setting went*.
-
-    And *where it went* has three answers, not one, so the notice has three
-    clauses. A variable that became a dial is worth following up; one that was
-    deleted outright has no successor to look for, and telling its owner to
-    "turn it on the settings page" sends them hunting for a field that has never
-    existed; and a name the app has simply never read (a typo, a leftover from
-    another tool) deserves neither instruction.
+    name was ignored but *where the setting went*. The sentence itself is
+    :func:`boot_env.notice`, which is pure; what belongs here is the one thing
+    that is not — emitting it, once, at start-up.
     """
     found = unread_environment()
-    if not found:
-        return found
-
-    moved = [f"{name} → the {_RETIRED_VARIABLES[name]} dial" for name in found
-             if _RETIRED_VARIABLES.get(name)]
-    deleted = [name for name in found
-               if name in _RETIRED_VARIABLES and not _RETIRED_VARIABLES[name]]
-    unknown = [name for name in found if name not in _RETIRED_VARIABLES]
-
-    # "not read" rather than "no longer read": the header covers all three
-    # groups, and one of them is names this application has never read at all.
-    parts = [f"These environment variables are set and not read: "
-             f"{', '.join(found)}."]
-    if moved:
-        parts.append(
-            f"These settings live in the app since v5 ({', '.join(moved)}) — "
-            f"turn them on the settings page, or with one PUT /api/settings.")
-    if deleted:
-        parts.append(
-            f"These were removed and have no replacement: "
-            f"{', '.join(deleted)}.")
-    if unknown:
-        parts.append(
-            f"These are not settings this application has ever read: "
-            f"{', '.join(unknown)}.")
-    app_logger.warning(' '.join(parts))
+    message = boot_env.notice(tuple(found))
+    if message is not None:
+        app_logger.warning(message)
     return found
 
 
@@ -337,49 +210,19 @@ def effective_environment() -> List[Dict]:
 
     Not a settings view any more (#701): the dials moved into the store and are
     served by :func:`settings.describe`, so what is left here is the half that
-    genuinely cannot be answered from the store — the store's own location, the
+    genuinely cannot be answered from the store — the two directories, the
     sockets, the log level. None of it is writable from in here and none of it
     claims to be.
 
-    Two rules survive from #654's traps:
-
-    * **Redact by name, never by value** (trap 12). ``INFLUXDB_TOKEN`` sits in
-      the same environment and the prototype has no authentication — auth is out
-      of the map's scope — so the value never leaves the process. ``set`` says
-      whether there is one, which is the only thing worth knowing about it.
-    * **``source`` is factual, not helpful** (trap 2). Compose renders
-      ``${SB_WEB_PORT:-8080}`` as ``8080`` even when ``.env`` omits the line, so
-      under compose almost everything reads ``environment`` and the app's own
-      defaults are dead code. Reporting a variable as "unset, using the default"
-      *because it equals the default* would be a guess; this reports what was
-      found.
+    **No entry is redacted, and there is no flag saying one could be** (#740).
+    ``INFLUXDB_TOKEN`` was the environment's only secret and it left with the
+    database (#700); "redact by name, never by value" (#654 trap 12) has had no
+    subject since, and a rule kept warm for a credential that may never come
+    back is a rule nobody exercises. What survives untouched is trap 2:
+    ``source`` is **factual, not helpful** — reporting a variable as "unset,
+    using the default" *because it equals the default* would be a guess.
     """
-    reported = []
-    for name, default, secret in ENVIRONMENT_INVENTORY:
-        raw = env_str(name)
-        if raw is not None:
-            source, value = 'environment', raw
-        elif default is not None:
-            source, value = 'default', default
-        else:
-            # No scalar fallback: the token is required, the static dir
-            # override simply has no value when unset.
-            source, value = 'unset', None
-
-        if name == 'LOG_LEVEL':
-            # The one of these the app can change while it runs (#654 §6b), so
-            # the level `logging` holds now is the effective one — the variable
-            # is merely where it started.
-            value = current_log_level()
-
-        reported.append({
-            'name': name,
-            'value': None if secret else value,
-            'set': raw is not None,
-            'source': source,
-            'secret': secret,
-        })
-    return reported
+    return boot_env.effective(os.environ, log_level=current_log_level())
 
 
 def register_interval_jobs(scheduler, sb_metrics,
@@ -637,7 +480,8 @@ class ConfigurationManager:
     LEGACY_MANUAL_FILE = 'config.yaml'
     LEGACY_SETTINGS_FILE = 'settings.yaml'
 
-    def __init__(self, config_dir: Optional[str] = None, opened_store=None):
+    def __init__(self, config_dir: Optional[str] = None, opened_store=None,
+                 import_dir: Optional[str] = None):
         """
         Initialize the configuration manager.
 
@@ -647,8 +491,12 @@ class ConfigurationManager:
                 (issue #697). Production always passes one — ``build_runtime``
                 on the master's side of the fork, ``start_runtime`` on the
                 worker's, via :meth:`attach_store`. When it is omitted, one is
-                opened lazily under ``config_dir``, which is where
-                ``SB_STORE_DIR`` points by default anyway.
+                opened lazily under ``config_dir``.
+            import_dir: The drop folder. Production passes what
+                ``SB_IMPORT_DIR`` resolved to (issue #740); this manager reads
+                no environment of its own, which is what keeps *one* place in
+                the process reading ``os.environ``. Omitted, it falls back to
+                ``config_dir/events`` — v4's shape, and what every test uses.
         """
         if config_dir:
             self.config_dir = Path(config_dir).expanduser()
@@ -658,7 +506,8 @@ class ConfigurationManager:
         # Named, never read (issue #698). The attribute survives so the startup
         # observation has a path to name and the tests have one to write to.
         self.settings_path = self.config_dir / self.LEGACY_SETTINGS_FILE
-        self._events_source: Optional[str] = str(self.config_dir / 'events')
+        self._events_source: Optional[str] = str(
+            import_dir if import_dir else self.config_dir / 'events')
         self._watcher: Optional[EventWatcher] = None
         self._reload_callback: Optional[callable] = None
         self._store = opened_store
@@ -723,11 +572,14 @@ class ConfigurationManager:
     def _require_store(self):
         """The attached store, opening one under ``config_dir`` if there is none.
 
-        The fallback is not a second configuration path: ``SB_STORE_DIR``
-        defaults to the configuration directory, so "the store next to the
-        settings" is the same file the boot would have opened. It exists so that
-        a caller holding only a directory — a test, a one-shot script — reads
-        the same ledger the app does instead of a different one.
+        It is **not** the file the boot opens, and since #740 it cannot be: the
+        store's directory is ``SB_IMPORT_DIR``'s sibling ``SB_STORE_DIR``,
+        defaulting to ``/data``, while ``config_dir`` stays
+        ``~/.config/SuiviBourse``. No production path reaches this fallback —
+        ``build_runtime`` and ``start_runtime`` both hand over an already-open
+        store — so it exists for the caller that has only a directory: a test,
+        a one-shot script. Anything that must read *the app's* ledger passes
+        the store in.
         """
         if self._store is None:
             self._store = store.open_store(
@@ -792,11 +644,12 @@ class ConfigurationManager:
     def get_events_source(self) -> str:
         """Where files are dropped to be imported.
 
-        The configuration directory's ``events/`` folder, and nothing overrides
-        it any more: ``events.source`` was the last thing ``settings.yaml`` was
-        read for, and a v5 that read it would let a v4 file decide where the
-        product looks (issue #698). The container names the mount instead
-        (ADR-0015), which is #740's business.
+        ``SB_IMPORT_DIR``, resolved once at boot and handed in (issue #740), or
+        the configuration directory's ``events/`` folder when nothing named one.
+        No file decides it: ``events.source`` was the last thing
+        ``settings.yaml`` was read for, and a v5 that read it would let a v4
+        file decide where the product looks (issue #698). The container names
+        the mount instead (ADR-0015).
         """
         return self._events_source
 
@@ -1119,7 +972,9 @@ class SuiviBourseMetrics:
         # Prometheus exporter (legacy /metrics endpoint, on by default for
         # backward compatibility). The HTTP server is started separately.
         self.prometheus = prometheus_exporter
-        if self.prometheus is None and env_flag('SB_PROMETHEUS_ENABLED', True):
+        if self.prometheus is None and env_flag(
+                boot_env.PROMETHEUS_ENABLED,
+                boot_env.DEFAULT_PROMETHEUS_ENABLED):
             self.prometheus = PrometheusExporter()
 
         # The dials (issue #701, ADR-0014). Constructed at the **code's** values
@@ -2979,11 +2834,18 @@ def build_runtime() -> Runtime:
     """
     app_logger.info('SuiviBourse is running !')
 
+    # The environment, read **once** and as a whole (issue #740). Six values and
+    # the list of names that are set and no longer obeyed come out of the same
+    # call, which is what keeps the two from being computed against different
+    # readings of the same mapping.
+    boot = boot_env.read(os.environ)
+
     # Name what is set and no longer obeyed, before anything reads anything
     # (issue #701, ADR-0014). The gesture ``config.yaml`` and ``settings.yaml``
     # already get: an install upgrading from v4 carries a whole .env of dials,
     # and a cadence that silently stops being honoured is exactly the kind of
-    # change that reads as a regression six weeks later.
+    # change that reads as a regression six weeks later. One grouped line, and
+    # only when there is something to say.
     report_unread_environment()
 
     # The store, first and before anything else (issue #696). It takes the exact
@@ -2996,10 +2858,11 @@ def build_runtime() -> Runtime:
     # the worker uses is opened in ``start_runtime``; leaving this one open
     # would hand the child a buffer manager its parent still holds, which is the
     # exact arrangement DuckDB refuses.
-    store_path = store.store_path()
+    store_path = boot.store_dir / store.STORE_FILENAME
     opened = store.open_store(store_path)
 
-    config_manager = ConfigurationManager(opened_store=opened)
+    config_manager = ConfigurationManager(opened_store=opened,
+                                          import_dir=str(boot.import_dir))
 
     # Before anything is loaded, name what is *not* going to be (issue #711).
     # An install coming from a manual v4 has a config.yaml and no events, so
@@ -3032,8 +2895,7 @@ def build_runtime() -> Runtime:
     # ThreadingHTTPServer is gone, replaced by a /metrics mount on the Flask app,
     # so SB_PROMETHEUS_ENABLED now means "do not mount /metrics" rather than
     # "run no HTTP server".
-    prometheus = PrometheusExporter() \
-        if env_flag('SB_PROMETHEUS_ENABLED', True) else None
+    prometheus = PrometheusExporter() if boot.prometheus_enabled else None
 
     return Runtime(config_manager, prometheus, store_path=store_path)
 

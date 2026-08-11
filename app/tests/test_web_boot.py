@@ -193,6 +193,42 @@ def test_build_runtime_opens_the_store_and_hands_on_its_path_not_its_connection(
     reopened.close()
 
 
+def test_build_runtime_reads_the_environment_once_and_wires_both_paths(
+        monkeypatch, tmp_path):
+    """#740. The store directory and the drop folder are read **together**.
+
+    Two reads of ``os.environ`` at two moments would be two readings of one
+    mapping, and the manager reading its own would put a second place in the
+    process reaching for the environment — the thing this ticket exists to make
+    exactly one.
+    """
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+    monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
+    monkeypatch.setenv("SB_IMPORT_DIR", str(tmp_path / "drop"))
+    seen = {}
+
+    def _capture(**kwargs):
+        seen.update(kwargs)
+        return _FakeConfigManager()
+
+    monkeypatch.setattr(main, "ConfigurationManager", _capture)
+
+    runtime = main.build_runtime()
+
+    assert runtime.store_path == tmp_path / "vol" / store.STORE_FILENAME
+    assert seen["import_dir"] == str(tmp_path / "drop")
+
+
+def test_the_drop_folder_is_the_import_directory_it_was_handed(tmp_path):
+    """``events.source`` was the last thing ``settings.yaml`` was read for; the
+    container names the mount instead (ADR-0015), and it arrives as an argument
+    rather than being fetched from the environment down here."""
+    manager = main.ConfigurationManager(config_dir=str(tmp_path),
+                                        import_dir=str(tmp_path / "drop"))
+
+    assert manager.get_events_source() == str(tmp_path / "drop")
+
+
 def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
     """Nothing is loaded past a store that will not open."""
     mocker.patch.object(
@@ -498,13 +534,19 @@ def test_every_gunicorn_setting_we_declare_is_one_gunicorn_knows(monkeypatch):
     disable the guard it was written for without a word in the logs. Check the
     names against gunicorn's own registry rather than trusting them.
     """
+    import types
     from gunicorn.config import Config
 
     conf = _load_gunicorn_conf(monkeypatch)
     known = set(Config().settings)
     # Everything the file declares at module level, minus its private helpers
-    # (leading underscore), its imports and its hook functions.
-    names = {n for n in vars(conf) if not n.startswith('_')} - {'main', 'os', 'sys'}
+    # (leading underscore), its imports and its hook functions. Modules are
+    # excluded **by type** rather than by name: a list of import names is a
+    # second inventory that goes stale the day one of them is renamed, which is
+    # exactly what #740 did to ``main``.
+    names = {n for n in vars(conf)
+             if not n.startswith('_')
+             and not isinstance(getattr(conf, n), types.ModuleType)}
     declared = {n for n in names if not callable(getattr(conf, n))}
 
     assert declared <= known, f"gunicorn ignores: {sorted(declared - known)}"

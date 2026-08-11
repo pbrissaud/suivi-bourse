@@ -939,6 +939,16 @@ def test_the_notice_is_one_line_and_not_one_per_variable(monkeypatch, mocker):
     assert "SB_PERF_INTERVAL" in warn.call_args.args[0]
 
 
+def test_nothing_is_logged_when_there_is_nothing_to_say(mocker):
+    """A clean environment gets no line at all — an install that set nothing
+    must not read a warning about it (#740)."""
+    mocker.patch.object(main, "unread_environment", return_value=[])
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    assert main.report_unread_environment() == []
+    warn.assert_not_called()
+
+
 def test_the_notice_separates_what_moved_from_what_was_deleted(
         monkeypatch, mocker):
     """"Turn it on the settings page" is wrong for a dial that no longer exists.

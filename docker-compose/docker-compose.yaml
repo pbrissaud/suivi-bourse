@@ -43,6 +43,13 @@ services:
       # #701, ADR-0014): they live in the store, are turned from the settings
       # page or with one `PUT /api/settings`, and take effect with no restart.
       # A line left here would be obeyed by nothing and named at start-up.
+      # The two directories (issue #740). Their defaults describe the image
+      # (`/data`, `/import`), which is the packaging #679/#743 land on; this
+      # stack still keeps both halves in the one config mount below, so it says
+      # so explicitly rather than inheriting a default that would put the store
+      # in the container's writable layer and lose it on the next `up`.
+      SB_STORE_DIR: /home/appuser/.config/SuiviBourse
+      SB_IMPORT_DIR: /home/appuser/.config/SuiviBourse/events
       # Web UI / API
       SB_WEB_PORT: ${SB_WEB_PORT:-8080}
       # Legacy Prometheus endpoint

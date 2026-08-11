@@ -63,7 +63,18 @@ RUN useradd --create-home appuser \
     # dummy — an extra network round-trip per ticker, forever. Sticky-writable,
     # like /tmp, so any uid gets its own.
     && mkdir -p /home/appuser/.cache \
-    && chmod 1777 /home/appuser/.cache
+    && chmod 1777 /home/appuser/.cache \
+    # The two directories the environment names by default (issue #740,
+    # ADR-0015): `/data` is where the store is written, `/import` is the drop
+    # folder and is read-only in use. They exist in the image because a bare
+    # `docker run` must **start** — `appuser` cannot create a directory at the
+    # filesystem root, and a store that cannot be created is a named exit, not
+    # a degraded mode. Sticky-writable on the store for the same foreign-uid
+    # reason as the cache above. The named volume, the mounts and the
+    # observation that says which of the two you are running are #743's.
+    && mkdir -p /data /import \
+    && chmod 1777 /data \
+    && chmod 0755 /import
 WORKDIR /home/appuser
 COPY ./src /home/appuser
 
