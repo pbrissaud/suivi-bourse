@@ -90,8 +90,10 @@ function figure(rendering: Rendering, format: () => string, t: Translate) {
 
 export interface SharesHeadProps {
   /**
-   * **Every** position, closed ones included — the argument is the decision.
-   * Handed the held ones alone this block would print the other correct figure.
+   * The positions of **the rows the page is showing**, closed ones included —
+   * the argument is the decision. Handed the held ones alone this block prints
+   * the other correct figure, and handed the whole portfolio while the page
+   * shows a subset it stops being the summary of what is under it.
    */
   positions: readonly Position[]
   rows: readonly ShareRow[]

@@ -300,6 +300,16 @@ describe('the exception marker and the date', () => {
     )
     expect(screen.getByRole('button', { name: 'Zeta Gamma' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Zeta Alpha' })).not.toBeInTheDocument()
+
+    // And the header keeps stating the sum of the rows it sits above rather
+    // than the portfolio's: a figure held over a table showing one line is read
+    // as that line's summary, which is exactly the reading the *hide the closed
+    // ones* switch was deleted for. Zeta Gamma is carried at its cost, so its
+    // latent gain is nil; the closed lines stay under the fold and stay counted
+    // — 0,00 + 75,00 realised + 10,00 dividends.
+    expect(head()).toHaveTextContent(/85,00/)
+    await user.click(screen.getByRole('button', { name: '1 titre en anomalie' }))
+    expect(head()).toHaveTextContent(/460,00/)
   })
 
   it('reads the absence of an anomaly as information', async () => {

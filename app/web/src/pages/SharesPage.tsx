@@ -79,6 +79,20 @@ export default function SharesPage() {
   const shown = onlyAnomalies ? anomalies : held
   const currency = positions.data?.base_currency ?? null
 
+  // **What the header sums**, and it is the literal sentence of ADR-0017: the
+  // rows it sits above. The folded ones are in that set — a fold is not a
+  // filter, so opening the section moves nothing — and the anomaly lens is,
+  // which is the other half of the same rule: a header that went on stating the
+  // portfolio's gain over a table showing one line would be read as that line's
+  // summary, which is the very reading the *hide the closed ones* switch was
+  // deleted for. The lens is a diagnostic and it names itself, pressed, on
+  // screen; the switch was a setting whose effect was invisible.
+  const onScreen = [...shown, ...closed]
+  const onScreenSymbols = new Set(onScreen.map((row) => row.symbol))
+  const summed = (positions.data?.positions ?? []).filter((position) =>
+    onScreenSymbols.has(position.symbol),
+  )
+
   // The freshest quote the page holds — one instant for the whole table. There
   // is nothing to date when nothing has ever been quoted, and an invented
   // *now* would be the very reading the mention exists to prevent.
@@ -131,8 +145,10 @@ export default function SharesPage() {
         />
       ) : (
         <>
-          {/* Every position, closed ones included — the argument is the rule. */}
-          <SharesHead positions={positions.data.positions} rows={rows} currency={currency} />
+          {/* The rows it sits above, closed ones included — the argument is the
+              rule, and handing it the held lines alone is what printed the
+              other correct figure. */}
+          <SharesHead positions={summed} rows={onScreen} currency={currency} />
           <SharesTable rows={shown} currency={currency} onSelect={setSelected} />
           <ClosedShares rows={closed} currency={currency} onSelect={setSelected} />
         </>
