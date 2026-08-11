@@ -34,7 +34,7 @@ than moving it:
   :meth:`Store.arrow`. The narrow reads (one row, a handful of accounts) stay
   tuples, where the frontier is not the cost.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 import store
@@ -268,6 +268,97 @@ class PortfolioReader:
             f'SELECT {", ".join(PERF_COLUMNS)} FROM portfolio_totals '
             ' ORDER BY day DESC LIMIT 1')
         return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
+
+    def totals_on_or_before(self, day: date) -> Optional[Dict[str, Any]]:
+        """The newest ``portfolio_totals`` point at or **before** ``day``.
+
+        The year-to-date's **base row** (issue #763), and the "≤" is the whole
+        of it — the same rule :meth:`prices_at` and :meth:`total_value_at`
+        follow, applied to a bound that is a *calendar* one.
+
+        The bound its one caller passes is **31 December of the previous year**,
+        and that choice is the ticket's: *year to date* measures the move since
+        the **close of the previous exercise**, so the base has to be a state the
+        measured year has not touched. The other spelling — *the first day on or
+        after 1 January* — puts the base **inside** the year being measured, so
+        1 January's own move (and, on an install whose series starts later, that
+        of every day up to the first one stored) is silently left out of both
+        figures. The series being dense over calendar days (#707, weekends and
+        holidays included), the two rows almost always both exist, so the choice
+        is not settled by *"which one is there"* and has to be settled by what
+        the figure means.
+
+        ``None`` is the one state the reconstruction degrades: the series does
+        not reach the base yet. It is absence of a *row*, never a failed
+        computation — a query error propagates, like everywhere else here.
+        """
+        rows = self._store.query(
+            f'SELECT {", ".join(PERF_COLUMNS)} FROM portfolio_totals '
+            ' WHERE day <= CAST(? AS DATE) ORDER BY day DESC LIMIT 1', [day])
+        return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
+
+    def twr_origin(self) -> Optional[date]:
+        """The day the time-weighted index counts from — ``MIN(day)``.
+
+        The index is base 100 on the first day of the series it is chained over
+        (`performance.py`), so *"since when"* is a property of the series and not
+        a column of a row: asking the table is asking the index's own definition.
+
+        It **moves while the reconstruction runs**, since #707 recomputes the
+        whole series every cycle and the backfill keeps handing it earlier
+        prices. That is exactly what ``runtime.rebuilding`` exists to say, and
+        why the page shows this date only for as long as it is still moving.
+
+        ``None`` on a series with no index at all, which is a table nobody has
+        written yet — ``200`` + ``null`` on the field, never an error.
+        """
+        rows = self._store.query(
+            'SELECT min(day) FROM portfolio_totals WHERE twr_index IS NOT NULL')
+        return rows[0][0] if rows else None
+
+    def transfer_fees(self, through: date) -> float:
+        """ADR-0018's fourth term, **signed as it enters the sum**.
+
+        The fees a broker takes out of a *transfer*: ``−Σ fee`` over the
+        ``DEPOSIT`` / ``WITHDRAWAL`` rows. Negative, the money having left — and
+        the sign is applied **here** rather than at the point of use, because the
+        whole interest of the figure is that the four terms add up, and a term
+        named as a cost and subtracted by its caller is one inversion too many.
+
+        **Derived at read time, and not a column of ``portfolio_totals``.** The
+        two were weighed and the store's own rule decides it: the DDL is applied
+        with ``IF NOT EXISTS`` and **there is no migration machinery**
+        (:mod:`store`, ADR-0001), so a ninth column would simply not appear on
+        any store created before the change — and every install of that vintage
+        would answer a binder error to a named ``SELECT``, which is precisely the
+        safety ADR-0001 buys. Behind that, two smaller reasons pointing the same
+        way: the figure is a function of the **event ledger alone**, so having
+        the perf job carry it would rewrite a running total across ~1 800 days
+        every 120 s to produce a copy of one number; and a column would have to
+        travel through ``PortfolioTotalPoint``, :mod:`performance` and
+        :mod:`perf_series` to say something none of the three computes.
+
+        The cost accepted, and it is real: a resource named after
+        ``portfolio_totals`` reads the ``event`` table. It is one row's worth of
+        aggregate, on the table the ledger is stored in, and it is written down
+        here so the next reader knows it was a choice.
+
+        Bounded by ``through`` — the day the figures beside it describe — so the
+        row stays one coherent statement about one calendar day: ``total_value``
+        and ``net_contributed`` are that day's, and ADR-0018's identity only
+        holds between terms measured at the same instant.
+
+        Zero rather than ``None`` when nothing was ever transferred: an install
+        whose broker moves money for free has a fourth term worth exactly
+        nothing, which is a figure, and the page drops it for being zero rather
+        than for being absent.
+        """
+        rows = self._store.query(
+            'SELECT sum(fee) FROM event '
+            " WHERE event_type IN ('DEPOSIT', 'WITHDRAWAL') "
+            '   AND date <= CAST(? AS DATE)', [through])
+        total = store.finite(rows[0][0]) if rows else None
+        return -total if total else 0.0
 
     def total_value_at(self, moment: datetime) -> Optional[float]:
         """The global total value on the last day at or **before** ``moment``.

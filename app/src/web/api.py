@@ -370,6 +370,91 @@ def get_portfolio_movers():
 
 
 # --------------------------------------------------------------------- #
+# The v5 pair the front reads: the positions and the global perf cache
+# (contract #745, issue #763)
+#
+# **A resource carries the name of the store's table, never the page's.**
+# ``positions`` and not ``shares`` — *Titres* is the page, ``position`` is the
+# table (#699) — and ``portfolio-totals`` after ``portfolio_totals`` (#700,
+# #707). Reusing a v4 name for a different payload would make a new resource
+# pass for the old one, which is what ADR-0008 avoids everywhere else: renaming
+# costs nothing when nothing migrates.
+#
+# The v4 routes above stay until the pages that consume them are rewritten;
+# removing them here would cut what works.
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/positions')
+def list_positions():
+    """The hot read of the portfolio — one query for the whole of it.
+
+    P1, unfolded: one row per ``(account, symbol)``, a **sold** position among
+    them (``quantity`` 0, which stays in the table — ADR-0017), and a position
+    whose symbol has never been fetched as a row whose market objects are
+    ``null`` rather than as a missing line. That last one is the LEFT join's
+    doing (:meth:`store_reads.PortfolioReader.positions`): an inner one would
+    answer *"you own nothing"* to somebody who has just declared everything they
+    own.
+
+    ``base_currency`` is the head of the payload rather than a field of each row
+    (ADR-0002): there is **one** reporting currency, and ``null`` is how the API
+    states that nobody has answered the question yet — no route and no fourth
+    kind of absence is added for it (ADR-0021).
+
+    Empty portfolio is ``200`` + ``[]`` inside a payload that still names the
+    currency; a query that fails **propagates** and this blueprint answers
+    ``503`` + ``application/problem+json``. The two must stay two screens.
+    """
+    # Read before the rows, and through the store like every other dial: an
+    # unreadable store owes a 503 rather than a payload whose figures have no
+    # unit and whose envelope says everything is fine.
+    currency = _base_currency()
+    return jsonify({
+        'base_currency': currency,
+        'positions': portfolio_view.build_positions(
+            _reader().positions(), currency),
+    })
+
+
+@api_bp.get('/portfolio-totals')
+def get_portfolio_totals():
+    """The newest day of the global perf series, plus three derived members.
+
+    Eight of the eleven members are columns (`store.py`); the other three are
+    **derivations**, and each is derived here rather than written by the perf job
+    for a reason recorded where it is taken:
+    :meth:`store_reads.PortfolioReader.twr_origin` for ``twr_since``,
+    :meth:`store_reads.PortfolioReader.transfer_fees` for the fourth term of
+    ADR-0018, and :func:`portfolio_view.ytd_base_day` for the bound the
+    year-to-date rests on.
+
+    ``totals: null`` is the resource's own absence and has **two** causes with
+    one shape — no ledger, or no reporting currency answered, the perf job
+    writing nothing at all until it is. ``200`` + ``null``, never a ``404`` and
+    never ``[]``: the head keeps its subject either way, since three of the four
+    terms of the gain are read off ``/api/positions``, which is under no such
+    constraint (ADR-0018).
+    """
+    reader = _reader()
+    latest = reader.latest_totals()
+
+    totals = None
+    if latest is not None:
+        # The three reads are asked only once there is a row to hang them on:
+        # on an install whose perf cache is empty they would each answer
+        # nothing, and asking is how a resource acquires queries it does not
+        # need. ``day`` is the table's primary key, so it is always there.
+        day = latest['day']
+        totals = portfolio_view.build_portfolio_totals(
+            latest,
+            reader.totals_on_or_before(portfolio_view.ytd_base_day(day)),
+            reader.twr_origin(),
+            reader.transfer_fees(day))
+
+    return jsonify({'base_currency': _base_currency(), 'totals': totals})
+
+
+# --------------------------------------------------------------------- #
 # Accounts — declared by a file or here (issue #698)
 # --------------------------------------------------------------------- #
 
@@ -846,6 +931,13 @@ def get_runtime():
         perf=recorder.perf(),
         now=datetime.now(timezone.utc),
         scheduler_running=runtime.scheduler is not None,
+        # ``rebuilding`` (#745, #763), and it keeps this route's one rule: it
+        # comes from :meth:`SuiviBourseMetrics.reconstruction_state`, which is
+        # the scheduler's own memory — the published windows and
+        # ``_backfill_complete`` — and issues no query. A runtime with no metrics
+        # cannot see the scheduler at all, and ``None`` is what says so.
+        reconstruction=(runtime.metrics.reconstruction_state()
+                        if runtime.metrics is not None else None),
     ))
 
 

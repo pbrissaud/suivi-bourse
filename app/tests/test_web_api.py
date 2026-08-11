@@ -139,6 +139,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     if break_store:
         opened.execute('DROP TABLE position')
         opened.execute('DROP TABLE account_metrics')
+        opened.execute('DROP TABLE portfolio_totals')
         opened.execute('DROP TABLE price_point')
     if with_scheduler:
         runtime.metrics = FakeMetrics(manager)
@@ -625,6 +626,280 @@ def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
     payload = client.get('/api/portfolio/movers').get_json()
 
     assert payload == {'since': None, 'reference': None, 'movers': []}
+
+
+# --------------------------------------------------------------------- #
+# The v5 pair the front reads (contract #745, issue #763)
+#
+# `/api/positions` and `/api/portfolio-totals` were declared in `lib/api.ts`
+# before the server served either, so what is pinned here is the **shape** as
+# much as the arithmetic: a field the client reads and the server spells
+# otherwise is a `404`'s worth of difference to a page that mounts both.
+# --------------------------------------------------------------------- #
+
+#: A ledger carrying a transfer fee, which no other fixture here has. The `BUY`
+#: fee is the discriminating half: it is absorbed into the cost basis (ADR-0003)
+#: and must **not** appear in ADR-0018's fourth term.
+FEE_EVENTS = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+    "2024-01-10,DEPOSIT,,,,,1.50,1000.00,pea\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,3.00,,pea\n"
+    "2024-06-01,WITHDRAWAL,,,,,0.75,200.00,pea\n"
+)
+
+
+def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
+    """The whole portfolio in one query, spelled as `lib/api.ts` reads it.
+
+    The two market objects are the shape that carries a distinction a single
+    nullable number cannot: `price` is the quote **in its own currency**, and
+    `converted` is the same observation in the reporting one, with the rate that
+    got it there — so the row can be read back as a journal rather than believed.
+    """
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0,
+                      realized_gain=25.0, received_dividend=12.5)
+        seed_quote(opened, price=200.0, currency='USD', converted=180.0,
+                   rate=0.9)
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    payload = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+
+    assert payload['base_currency'] == 'EUR'
+    assert len(payload['positions']) == 1
+    row = payload['positions'][0]
+    assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
+                        'realised', 'dividends', 'price', 'converted'}
+    assert (row['account'], row['symbol'], row['name']) == (
+        'pea', 'AAPL', 'Apple Inc')
+    assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
+    assert row['realised'] == 25.0 and row['dividends'] == 12.5
+    assert row['price'] == {'value': 200.0, 'currency': 'USD',
+                            'at': '2024-06-01T12:00:00+00:00'}
+    assert row['converted'] == {'value': 180.0, 'currency': 'EUR', 'rate': 0.9,
+                                'rate_at': '2024-06-01T12:00:00+00:00'}
+
+
+def test_a_sold_line_and_a_never_quoted_one_are_rows_and_never_absences(tmp_path):
+    """Both halves of the second criterion, on the same payload.
+
+    A sold position stays in the table (ADR-0017) — its realized gain is the
+    figure it has left to say — and a position whose symbol was never fetched is
+    a row with `null` market objects, which is P1's LEFT join: an inner one
+    answers *"you own nothing"* to somebody who has just declared everything they
+    own.
+    """
+    def seed(opened):
+        seed_position(opened, symbol='AAPL', account='pea', quantity=0.0,
+                      cost_basis=0.0, realized_gain=180.0)
+        seed_position(opened, symbol='MSFT', name='Microsoft', account='pea',
+                      quantity=4.0, cost_basis=800.0)
+        seed_quote(opened, symbol='AAPL', price=200.0)
+
+    payload = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+    rows = {row['symbol']: row for row in payload['positions']}
+
+    assert set(rows) == {'AAPL', 'MSFT'}
+    assert rows['AAPL']['quantity'] == 0.0
+    assert rows['AAPL']['realised'] == 180.0
+    assert rows['MSFT']['price'] is None
+    assert rows['MSFT']['converted'] is None
+
+
+def test_a_quote_with_no_rate_keeps_its_price_and_loses_its_conversion(tmp_path):
+    """*Waiting for a rate* and *no price at all* are two rows, not one.
+
+    The first keeps the quote the reader's broker shows them and has no figure
+    in the reporting currency; the second is carried at its cost (ADR-0004).
+    """
+    def seed(opened):
+        seed_position(opened, account='pea')
+        seed_quote(opened, price=200.0, currency='USD', converted=None,
+                   rate=None)
+
+    payload = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+    row = payload['positions'][0]
+
+    assert row['price']['value'] == 200.0
+    assert row['price']['currency'] == 'USD'
+    assert row['converted'] is None
+
+
+def test_positions_on_a_fresh_install_is_200_and_an_empty_list(tmp_path):
+    """The first of the three absences, envelope included."""
+    response = build_client(tmp_path).get('/api/positions')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'base_currency': None, 'positions': []}
+
+
+def test_positions_storage_failure_is_503_and_never_an_empty_list(tmp_path):
+    """The third absence, and the one that must not look like the first."""
+    response = build_client(tmp_path, break_store=True).get('/api/positions')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/storage-unavailable'
+
+
+def test_portfolio_totals_serves_the_eleven_members(tmp_path):
+    """Eight columns and three derivations, under the names #745 froze."""
+    payload = build_client(
+        tmp_path, seed=seed_totals).get('/api/portfolio-totals').get_json()
+
+    assert set(payload) == {'base_currency', 'totals'}
+    assert set(payload['totals']) == {
+        'day', 'total_value', 'holdings_value', 'cash_balance',
+        'net_contributed', 'xirr', 'twr_index', 'twr_since', 'transfer_fees',
+        'gain_absolu', 'ytd'}
+    assert payload['totals']['day'] == '2026-08-05'
+    assert payload['totals']['total_value'] == 12500.0
+    # The index counts from the first day of the series, and there is one here.
+    assert payload['totals']['twr_since'] == '2026-08-05'
+    # An install whose broker moves money for free: a figure worth nothing, not
+    # an absence — the page drops it for being zero.
+    assert payload['totals']['transfer_fees'] == 0.0
+
+
+def test_portfolio_totals_with_no_figures_at_all_is_200_and_null(tmp_path):
+    """`totals: null`, never a `404` and never `[]`.
+
+    Two causes and one shape: no ledger, or no reporting currency answered.
+    """
+    response = build_client(tmp_path).get('/api/portfolio-totals')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'base_currency': None, 'totals': None}
+
+
+def test_the_head_keeps_its_positions_while_the_currency_is_unanswered(tmp_path):
+    """The direct benefit of ADR-0018, proved across the two resources.
+
+    The perf job writes nothing at all until the reporting currency is answered,
+    so `portfolio_totals` is empty — and three of the four terms of the gain are
+    read off `/api/positions`, which is under no such constraint. A field absent
+    for the global row can no longer blank the headline.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+
+    positions = client.get('/api/positions').get_json()
+    totals = client.get('/api/portfolio-totals').get_json()
+
+    assert positions['base_currency'] is None
+    assert [row['symbol'] for row in positions['positions']] == ['AAPL']
+    assert totals['totals'] is None
+
+
+def test_transfer_fees_are_negative_as_they_enter_the_sum(tmp_path):
+    """ADR-0018's fourth term, signed where it is produced (issue #763).
+
+    Naming it as a cost and subtracting it at the point of use is one inversion
+    too many for a figure whose entire interest is that the four terms add up.
+    And a `BUY`'s fee is **not** in it: that one is absorbed into the cost basis
+    (ADR-0003) and would otherwise be counted twice.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=FEE_EVENTS,
+                          seed=seed_totals)
+
+    payload = client.get('/api/portfolio-totals').get_json()
+
+    assert payload['totals']['transfer_fees'] == pytest.approx(-2.25)
+
+
+def test_the_year_to_date_pins_a_positive_gain_against_a_negative_twr(tmp_path):
+    """The configuration the pair exists to make readable, to the cent.
+
+    `+40,69 €` of gain against `−1,25 %` of time-weighted return over the same
+    period: opposite signs, both correct, because the portfolio grew by 6 673 €
+    of deposits while its holdings lost 1,25 %. Subtracting the movement of
+    contributions is what makes the first figure a performance rather than a
+    receipt for a deposit — without that second term the gain would read
+    `+6 713,69 €`, which is the misreading the couple exists to prevent.
+    """
+    def seed(opened):
+        # The close of the previous exercise — the base the delta counts from.
+        seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
+                    net_contributed=5000.00, twr_index=160.00)
+        seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
+                    net_contributed=11673.00, twr_index=158.00)
+
+    payload = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals').get_json()
+
+    assert payload['totals']['day'] == '2026-03-02'
+    assert payload['totals']['twr_since'] == '2025-12-31'
+    assert payload['totals']['ytd']['gain'] == pytest.approx(40.69, abs=1e-9)
+    assert payload['totals']['ytd']['twr'] == pytest.approx(-0.0125, abs=1e-9)
+
+
+def test_the_year_to_date_base_is_the_close_of_the_previous_year(tmp_path):
+    """The bound this ticket had to choose, and the day of market it turns on.
+
+    *The first day on or after 1 January* would take 2026-01-02 as the base and
+    leave that day's own move out of both figures; *the last day at or before
+    31 December* is a state the measured year has not touched. The series being
+    dense over calendar days (#707), both rows exist — so the choice cannot be
+    settled by which one is there.
+    """
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
+                    net_contributed=5000.00, twr_index=160.00)
+        seed_totals(opened, day=date(2026, 1, 2), total_value=12000.00,
+                    net_contributed=5000.00, twr_index=176.00)
+        seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
+                    net_contributed=11673.00, twr_index=158.00)
+
+    ytd = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
+            'totals']['ytd']
+
+    assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+    assert ytd['twr'] == pytest.approx(-0.0125, abs=1e-9)
+
+
+def test_the_year_to_date_is_null_only_while_the_series_misses_its_base(tmp_path):
+    """The **one** state the reconstruction degrades — never a failed sum."""
+    payload = build_client(
+        tmp_path,
+        seed=lambda opened: seed_totals(opened, day=date(2026, 3, 2)),
+    ).get('/api/portfolio-totals').get_json()
+
+    assert payload['totals']['ytd'] is None
+    # And everything above it is exact from the first cycle, which is what makes
+    # the head *normal* during the twenty-five minutes of a reconstruction.
+    assert payload['totals']['total_value'] == 12500.0
+
+
+def test_a_base_before_the_thirty_first_still_counts(tmp_path):
+    """*At or before* 31 December, not *on* it.
+
+    An install whose series stops on the 29th has closed its year there. Asking
+    for the 31st exactly would report *the series does not reach the base* about
+    a series that plainly does.
+    """
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 12, 29), total_value=10000.00,
+                    net_contributed=5000.00, twr_index=160.00)
+        seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
+                    net_contributed=11673.00, twr_index=158.00)
+
+    ytd = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
+            'totals']['ytd']
+
+    assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+
+
+def test_portfolio_totals_storage_failure_is_503_problem_json(tmp_path):
+    """A query error **propagates**; it is never rescued into an empty answer."""
+    response = build_client(
+        tmp_path, break_store=True).get('/api/portfolio-totals')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+    assert 'portfolio_totals' in response.get_json()['detail']
 
 
 # --------------------------------------------------------------------- #
@@ -1164,6 +1439,42 @@ def test_the_runtime_resource_answers_200_with_the_store_unreadable(tmp_path):
 
     assert response.status_code == 200
     assert response.get_json()['symbols'][0]['symbol'] == 'AAPL'
+
+
+def test_the_runtime_says_whether_the_reconstruction_still_has_windows(tmp_path):
+    """`rebuilding` (contract #745, issue #763), read from process memory.
+
+    It is on the app-state resource and not beside the figures because it is a
+    fact about *this process*, and what it decides on screen is one thing: the
+    time-weighted return carries its base date **only while that date is still
+    moving**. It says nothing about the year-to-date, which becomes computable
+    long before the reconstruction concludes and has its own carrier.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+
+    # Nothing to reconstruct is an observation, and it is not a rebuild.
+    runtime.metrics.reconstruction = (0, 0)
+    assert client.get('/api/runtime').get_json()['rebuilding'] is False
+
+    runtime.metrics.reconstruction = (1, 2)
+    assert client.get('/api/runtime').get_json()['rebuilding'] is True
+
+    runtime.metrics.reconstruction = (2, 2)
+    assert client.get('/api/runtime').get_json()['rebuilding'] is False
+
+
+def test_a_runtime_with_no_scheduler_does_not_claim_a_rebuild(tmp_path):
+    """A process that cannot see the scheduler asserts nothing about it.
+
+    A boolean has no room for #709's third answer, and `false` is the safe
+    reading: what the member enables is the *claim* that a date is still moving.
+    """
+    client = build_client(tmp_path, with_scheduler=False,
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
 def test_the_runtime_resource_issues_no_query_at_all(tmp_path, mocker):

@@ -397,6 +397,191 @@ def build_titres_head(shares: Sequence[SharePosition],
 
 
 # --------------------------------------------------------------------- #
+# The v5 contract: the hot read, and the global perf cache (#745, issue #763)
+#
+# Two builders, and neither aggregates anything. That is the difference with
+# everything above: the v4 pages asked the server for a *page* — a head, a
+# folded shares table, a movers block — while the v5 front asks for the
+# **store's own nouns** and does the folding itself (`lib/gain.ts` computes the
+# four terms, `lib/absence.ts` classifies the three absences). So what is left
+# for a pure module here is naming and shape, plus the one arithmetic no client
+# can do without a second request: the year-to-date, which needs a row of the
+# series the payload does not otherwise carry.
+# --------------------------------------------------------------------- #
+
+def build_positions(rows: Sequence[Dict[str, Any]],
+                    base_currency: Optional[str]) -> List[Dict[str, Any]]:
+    """P1's rows as ``GET /api/positions`` publishes them (#745).
+
+    **One row per ``(account, symbol)``, folded nowhere.** ``/api/shares``
+    aggregates because a *table of shares* is what it serves; this resource is
+    named after the ``position`` table and hands back what that table holds, the
+    per-account detail included — the head sums it, the shares page will fold it,
+    and both read one query and one client cache.
+
+    A **sold** position (``quantity`` 0) travels like any other: it stays in the
+    table (ADR-0017) and its realized gain is the figure it has left to say. So
+    does a position whose symbol has never been fetched — P1's join is a LEFT
+    one, so every market column is ``NULL`` and the row is *a line with no
+    price*, never a line that is missing.
+
+    The **price and its conversion are two objects**, and that is the shape
+    carrying the distinction (#712 §11): ``price`` non-null with ``converted``
+    null is *quoted, and the rate has not landed*, while ``price`` null is *never
+    observed* — a position carried at its cost (ADR-0004). A single nullable
+    number cannot tell the two apart, and they are not rendered alike.
+    """
+    return [_build_position(row, base_currency) for row in rows]
+
+
+def _build_position(row: Dict[str, Any],
+                    base_currency: Optional[str]) -> Dict[str, Any]:
+    """One P1 row on the wire.
+
+    ``realised`` / ``dividends`` are the client's names for the store's
+    ``realized_gain`` / ``received_dividend``: the translation is here, once,
+    rather than in a component.
+
+    ``at`` is the same instant on both objects, and deliberately: the rate stored
+    beside a price is the rate that price was multiplied by (#702), observed in
+    the same pass, so there is no second timestamp to report and inventing one
+    would suggest a conversion done later than the quote it converts.
+
+    ``price.currency`` is the instrument's own, as ``symbol_quote`` observed it,
+    and it can be absent on a symbol only the **backfill** has ever written — the
+    range writer moves the ``last_*`` columns and refreshes no attribute, and
+    since #699 a sold line is reconstructed and never polled. Suppressing the
+    whole price for want of its label would be the worse answer: it turns
+    *quoted* into *never quoted*, which is the one distinction the pair of
+    objects exists to carry.
+    """
+    price_native = row.get('price_native')
+    converted = row.get('price')
+    at = _iso(row.get('price_time'))
+    return {
+        'account': row.get('account'),
+        'symbol': row.get('symbol'),
+        'name': row.get('name'),
+        'quantity': row.get('quantity'),
+        'cost_basis': row.get('cost_basis'),
+        'realised': row.get('realized_gain'),
+        'dividends': row.get('received_dividend'),
+        'price': None if price_native is None else {
+            'value': price_native,
+            'currency': row.get('currency'),
+            'at': at,
+        },
+        # The **reporting** currency, read once for the payload rather than per
+        # row: there is one, and a row claiming another would be the third
+        # currency level #702 deleted.
+        'converted': None if converted is None else {
+            'value': converted,
+            'currency': base_currency,
+            'rate': row.get('fx_rate'),
+            'rate_at': at,
+        },
+    }
+
+
+def ytd_base_day(day: date) -> date:
+    """The day the year-to-date counts from: 31 December of the previous year.
+
+    Pure and named, because it *is* the decision (issue #763) rather than an
+    index into a list: the base has to be a state the measured year has not
+    touched, and the argument against the other bound is written on
+    :meth:`store_reads.PortfolioReader.totals_on_or_before`, which consumes it.
+
+    The year is the one of the row the payload describes, never the wall clock's:
+    the resource is a statement about that day, and a clock read here would let a
+    series that stops in December be compared against a base *after* its own
+    latest row.
+    """
+    return date(day.year - 1, 12, 31)
+
+
+def build_portfolio_totals(
+    latest: Optional[Dict[str, Any]],
+    base: Optional[Dict[str, Any]],
+    twr_since: Optional[date],
+    transfer_fees: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """One ``portfolio_totals`` row plus its three derived members (#745).
+
+    ``None`` — the payload's ``totals: null`` — when the series has no point at
+    all, which has **two** causes and one shape: no ledger, or no reporting
+    currency answered (the perf job writes nothing at all until it is, every
+    figure it computes being money). Not ``[]`` and not a ``404``: the resource
+    exists and has nothing to report.
+
+    ``gain_absolu`` rides along and **is not read by the head**, which computes
+    the total from ADR-0018's four terms; it is here so a report can quote both
+    numbers, and a divergent value proves the page ignores it.
+
+    ``ytd`` is ``null`` **if and only if** the series does not reach the base —
+    the one state the reconstruction degrades, and everything above it is exact
+    from the first cycle. That is why an unwritable *member* of the pair stays a
+    ``null`` member inside a present object: a failed division is not the same
+    news as a history that has not been rebuilt that far back.
+    """
+    if latest is None:
+        return None
+
+    payload = {name: latest.get(name) for name in _TOTALS_MEMBERS}
+    payload['day'] = _iso(latest.get('day'))
+    payload['twr_since'] = _iso(twr_since)
+    payload['transfer_fees'] = transfer_fees
+    payload['ytd'] = _ytd(latest, base)
+    return payload
+
+
+#: The members ``portfolio_totals`` carries as columns, in the order #745 writes
+#: them. ``day`` is handled apart, being a date rather than a figure.
+_TOTALS_MEMBERS = (
+    'total_value', 'holdings_value', 'cash_balance', 'net_contributed',
+    'xirr', 'twr_index', 'gain_absolu',
+)
+
+
+def _ytd(latest: Dict[str, Any],
+         base: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The year-to-date pair, or ``None`` when the series does not reach the base.
+
+    ``gain`` subtracts the movement of **contributions** from the movement of
+    **value**, and that second term is the whole figure: without it a deposit
+    made in January reads as performance, which is exactly the misreading the
+    pair exists to prevent. The measured case is ``+40,69 €`` of gain against
+    ``−1,25 %`` of time-weighted return over the same period — opposite signs,
+    both correct, because the portfolio grew by 6 673 € of deposits while its
+    holdings lost 1,25 %. It is pinned to the cent in ``test_web_api.py``.
+
+    ``twr`` is a ratio of two base-100 indices, which is what makes it
+    period-relative without any rebasing: ``index / index_base − 1``.
+    """
+    if base is None:
+        return None
+    return {
+        'gain': _difference(
+            _difference(latest.get('total_value'), base.get('total_value')),
+            _difference(latest.get('net_contributed'),
+                        base.get('net_contributed'))),
+        'twr': _relative(latest.get('twr_index'), base.get('twr_index')),
+    }
+
+
+def _relative(index: Optional[float],
+              base: Optional[float]) -> Optional[float]:
+    """``index / base − 1``, and ``None`` rather than a division by zero.
+
+    A base-100 index cannot legitimately be zero — it is a chained product of
+    ``1 + r`` — so a zero here is a series that has not been computed, and the
+    honest answer is that there is no figure.
+    """
+    if index is None or not base:
+        return None
+    return index / base - 1.0
+
+
+# --------------------------------------------------------------------- #
 # The accounts page (issue #661, content #652 déc. 13)
 # --------------------------------------------------------------------- #
 
@@ -864,6 +1049,7 @@ __all__ = [
     'build_shares', 'build_share', 'build_accounts', 'unit_cost',
     'MODE_ACCOUNTS', 'MODE_TITRES', 'portfolio_mode',
     'build_totals_head', 'build_titres_head',
+    'build_positions', 'build_portfolio_totals', 'ytd_base_day',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',
     'build_movers',
 ]
