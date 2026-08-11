@@ -129,6 +129,27 @@ def unprocessable(detail: str, key: Optional[str] = None):
         422, 'Invalid setting', detail, TYPE_INVALID_SETTING, **extra)
 
 
+def unprocessable_parameter(detail: str, key: Optional[str] = None):
+    """422 — a query parameter parsed, and its value is outside a closed set.
+
+    :func:`unprocessable`'s sibling on the read side, and a separate function
+    for one reason only: its title. *Invalid setting* is the right sentence
+    about a dial and the wrong one about ``?window=``, which is not a setting,
+    is not stored, and is not in the registry.
+
+    The ``type`` stays :data:`TYPE_BAD_REQUEST`, the identifier the front
+    already branches on: *the request is not one I can process* is exactly what
+    a reader needs to be told, and inventing a fifth identifier here would
+    require a table this ticket does not touch to learn it — an unknown type
+    falls back to *unexpected error*, which is a worse sentence than the true
+    one. The **status** is what carries the distinction RFC 9457 cares about:
+    the syntax parsed, and it is the value that has no meaning
+    (issue #763).
+    """
+    extra = {'key': key} if key else {}
+    return problem(422, 'Invalid parameter', detail, TYPE_BAD_REQUEST, **extra)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -136,5 +157,6 @@ def internal_error(detail: str):
 
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
-    'unprocessable', 'internal_error', 'CONTENT_TYPE',
+    'unprocessable', 'unprocessable_parameter', 'internal_error',
+    'CONTENT_TYPE',
 ]

@@ -222,6 +222,84 @@ on the app-state resource rather than beside the figures, because the fact it
 decides is *is the TWR's base date still moving*, which is a property of this
 process.
 
+**And the server half of that head is #763.** #718 merged without it — its
+acceptance criteria did not name a route, so the adversarial reading counted 23
+of 23 in good faith — leaving `DashboardHead` mounted over two `404`s, i.e. a
+page that had gone from *not built yet* to *the app is not answering*. Three
+things about the pair that now serves it are decisions:
+
+- **`GET /api/positions` is shaping**, `store_reads.positions()` being P1
+  already: one row per `(account, symbol)`, folded nowhere, a **sold** line among
+  them (ADR-0017) and a never-fetched symbol as a row whose two market objects
+  are `null` rather than as a missing line. `price` is the quote in **its own**
+  currency and `converted` the same observation in the reporting one with the
+  rate that got it there — two objects, because *quoted with no rate* and *no
+  quote at all* are two absences and a single nullable number cannot carry both.
+- **`GET /api/portfolio-totals` is not.** The DDL carries eight columns and the
+  contract asks for eleven, so `twr_since`, `transfer_fees` and `ytd` are
+  **derived at read time**. What settles it against a ninth column is the store's
+  own rule: the DDL is applied with `IF NOT EXISTS` and there is **no migration
+  machinery**, so a new column would simply not exist on any store created
+  before it — and every install of that vintage would answer a binder error to
+  the named `SELECT` ADR-0001 exists to make safe. The cost accepted is that a
+  resource named after `portfolio_totals` reads the `event` table, once, for the
+  fourth term. `transfer_fees` is **negative** where it is produced, never
+  subtracted by its caller — the whole interest of the figure is that the four
+  terms add up — and it is bounded by the row's own day, which is what keeps
+  ADR-0018's identity between figures measured at the same instant.
+- **The year-to-date counts from the last day at or before 31 December of the
+  previous year**, never from the first day on or after 1 January. Both rows
+  exist whenever the series reaches the previous year (it is dense over calendar
+  days), so the choice is not settled by availability: the base has to be a state
+  the measured year has **not touched**, or 1 January's own move is silently
+  outside the figure. `ytd: null` therefore means *the series does not reach the
+  base* — the one state the reconstruction degrades — and never *a sum failed*;
+  `test_web_api.py` pins `+40,69 €` against `−1,25 %` to the cent, opposite signs
+  over one period and both correct. **And the identity of the four terms is
+  pinned end to end**, on a ledger carrying a transfer fee, with the perf cache
+  written by the real job rather than seeded: `transfer_fees` is derived from
+  `event` while `net_contributed` is computed in `performance.py` from the
+  `Timeline`, so two modules state what a cash movement is, and the sum is the
+  assertion that keeps the two statements from drifting apart — the symptom
+  otherwise being an identity that quietly stops holding, on the page that
+  exists to show that it holds.
+
+**#719's three members are served by the same ticket** (#763's enlargement),
+because it is the same work on the same two files and a ticket per page that
+rediscovers it has to write its own route is the pattern the map has now seen
+three times:
+
+- **`position.closed_at`** — the day the line reached zero, `null` while it is
+  held and `null` again after a buy-back. Derived **in P1's own query** (a
+  `LEFT JOIN` on the last `SELL`, under `CASE WHEN quantity = 0`), never a
+  thirteenth column on `position`, for the argument that decided `transfer_fees`:
+  no migration machinery, so a new column simply would not exist on a store
+  created before it. The shares page's folded section **sorts on it** and it is
+  the only column that discriminates those rows — market value is zero across
+  the whole section, and a column of zeros orders nothing.
+- **`GET /api/prices/<symbol>?window=`** — a **new** resource, not a rename of
+  `/api/shares/<symbol>/prices`, which goes on serving until the page reading it
+  is rewritten. The window is a **rung of the retention ladder** (`1M` / `1Y` /
+  `2Y` / `MAX`, ADR-0010), an unknown one is a `422` and never a fallback, and
+  `resolution` states the **coarsest of the bucket applied and the rung
+  traversed** — announced once, so the chart's *aggregated by X* caption reads a
+  field instead of stating a second bucketing of its own. A point whose
+  conversion never resolved is `price: null` and **never a missing point**,
+  which is what makes `chart_series` a third reader beside `raw_series` and
+  `bucketed_series` rather than an argument on either: a weekend and an
+  unresolved rate are two different pieces of news, and only the second repairs
+  itself (#704).
+- **`ytd: null` is rendered by its real cause.** Two of them — the
+  reconstruction has not reached January, **or** the portfolio is younger than
+  the year — and the head wrote one sentence for both, announcing a rebuild to
+  somebody with nothing to rebuild. The discriminant is `runtime.rebuilding`,
+  already on screen four lines above for the TWR's base date; no fourth kind of
+  absence is invented (ADR-0021). The young-portfolio sentence needs a
+  **positive** observation (`rebuilding === false`), #709's third-answer rule
+  applied: a runtime read that has not landed says nothing about this process,
+  and *your ledger does not go back that far* is a claim about the reader's own
+  data.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -1474,7 +1552,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module

@@ -166,7 +166,10 @@ describe('during the reconstruction', () => {
     // rule this ticket installs (`lib/absence.ts`, ADR-0016) a bare dash means
     // *there is nothing to compute*, which is the opposite of the truth here:
     // the history simply is not rebuilt that far back yet, and it will be.
-    server.use(totalsOf({ ytd: null }))
+    server.use(
+      totalsOf({ ytd: null }),
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
+    )
     renderApp()
 
     const head = await screen.findByRole('group', { name: 'Gain total' })
@@ -179,6 +182,48 @@ describe('during the reconstruction', () => {
 
     // Twice, once per figure — never a third time somewhere neither of them is.
     expect(screen.getAllByText(/historique pas encore reconstruit/)).toHaveLength(2)
+  })
+
+  it('does not announce a rebuild to a portfolio younger than the year', async () => {
+    // `ytd: null` has two causes and the head wrote one sentence for both: the
+    // reconstruction has not reached January, **or** the first event is in
+    // March and no day on or before 31 December exists to count from. The
+    // second install is told to wait for something that will never happen, and
+    // waiting is precisely what it must not do. The discriminant is already on
+    // screen — `runtime.rebuilding`, which the TWR statistic reads for its base
+    // date — so nothing is added to any payload (ADR-0021).
+    server.use(
+      totalsOf({ ytd: null }),
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/rien d’enregistré avant le 1ᵉʳ janvier/)
+    expect(figure('TWR')).toHaveTextContent(/rien d’enregistré avant le 1ᵉʳ janvier/)
+    expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing about the ledger while the runtime has not answered', async () => {
+    // The same rule the advisories follow (#709): asserting *your ledger does
+    // not go back that far* takes a **positive** observation of this process,
+    // and a runtime that failed is not one. Absence therefore keeps the
+    // rebuild's sentence — it names something the app is doing, and waiting
+    // repairs it — rather than making a claim about the reader's own data on
+    // the strength of a request that never landed.
+    server.use(
+      totalsOf({ ytd: null }),
+      problemHandler(ROUTES.runtime, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/historique pas encore reconstruit jusque-là/)
+    expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
   })
 })
 

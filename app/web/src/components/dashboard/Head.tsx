@@ -155,6 +155,27 @@ export function DashboardHead() {
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
+  // `ytd: null` has **two** causes and they are not the same sentence (#763):
+  // the reconstruction has not reached January, **or** the portfolio is younger
+  // than the year — a first event in March, and no day on or before
+  // 31 December exists for the delta to count from. Written as one sentence,
+  // the app announced a reconstruction to somebody who has nothing to
+  // reconstruct. It is the exact defect `totals: null` had one resource up, and
+  // the discriminant is already on screen: `runtime.rebuilding`, which the TWR
+  // statistic consumes below for its base date. No fourth kind of absence is
+  // invented for it (ADR-0021) and no field is added to any payload.
+  //
+  // The second sentence needs a **positive** observation, which is #709's rule
+  // about the third answer applied here: a runtime read that has not landed —
+  // or one that failed — says nothing about this process, and *your ledger does
+  // not go back that far* is a claim about the reader's own data, not one to
+  // make on silence. So absence keeps the rebuild's sentence, which names
+  // something the app is doing and is repaired by waiting.
+  const ytdPending = t(
+    runtime.data?.rebuilding === false
+      ? 'dashboard.ytd.noPreviousYear'
+      : 'dashboard.ytd.pending',
+  )
   // Base 100 leaves this page and the mock-up's `TWR 202,89 (+102,9 %)` with it.
   // An index on base 100 is an instrument for putting two series side by side,
   // and this page has one; `+102,89 %` carries the same information in the unit
@@ -202,7 +223,7 @@ export function DashboardHead() {
             {ytdGain === null
               ? // The one figure the rebuild degrades, and it says which figure
                 // and why — the head above it is exact from the first cycle.
-                `${ABSENT} — ${t('dashboard.ytd.pending')}`
+                `${ABSENT} — ${ytdPending}`
               : t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
           </p>
         )}
@@ -290,7 +311,7 @@ export function DashboardHead() {
                 yet rebuilt that far — nameable and repairable. */}
             <p className="text-sm text-muted-foreground">
               {ytdTwr === null
-                ? `${ABSENT} — ${t('dashboard.ytd.pending')}`
+                ? `${ABSENT} — ${ytdPending}`
                 : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
             </p>
           </Stat>

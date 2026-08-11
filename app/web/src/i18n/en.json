@@ -52,6 +52,7 @@
   "dashboard.gainTotal.explain": "Your total gain is the sum of four terms — unrealised gain, realised gain, dividends received, and the fees your broker takes out of your transfers. That sum is its definition: the app adds the four up rather than computing a total separately and trusting that they agree. The fourth term belongs to no security, which is why a table of positions can never show it.",
   "dashboard.ytd.gain": "{amount} since 1 January",
   "dashboard.ytd.pending": "history not rebuilt that far back yet",
+  "dashboard.ytd.noPreviousYear": "nothing recorded before 1 January, so there is no year to count from yet",
   "dashboard.totalValue": "Total value",
   "dashboard.netContributed": "Net contributed",
   "dashboard.netContributed.explain": "Net contributed: your deposits less your withdrawals, fees excluded. It is the silent denominator of both returns, and the reason the total gain has a fourth term — a fee taken from a transfer leaves your cash without lowering what this figure records.",
