@@ -73,6 +73,36 @@ while every gate run *from* `app/web` stays green. A pull request touching
 the Dockerfile, which was otherwise built by the release workflow alone, i.e.
 after the merge.
 
+**The image separates what the app writes from what a human edits** (issue #742,
+ADR-0015), and the whole uid apparatus that existed only because the two shared
+a directory left with the cause: no `chmod 0755` on `/home/appuser`, no
+sticky-writable `.cache`, **no `ENV HOME`** — the container runs as `appuser`,
+who owns their own `$HOME`, so Debian's `HOME_MODE` 0700 is correct again and
+the inherited PaaS hazard (a platform that records no invoking uid landing on
+`1000:1000` by accident) has no subject left. Four things replace it:
+
+- **`/data` and `/import` exist in the image, empty and owned by `appuser`.**
+  That is the mechanism, not a nicety: Docker initialises a fresh named volume
+  with the content **and the permissions** of the image directory it covers, so
+  a non-root container writes into a brand-new volume with no uid gesture
+  anywhere. An unmounted `/import` is an ordinary state.
+- **No `VOLUME` instruction.** It would have Docker create an anonymous volume
+  on every bare `docker run`, making the trial run persist behind the user's
+  back into a volume they cannot name — the opposite of a trial run.
+- **A `HEALTHCHECK`**, in the image rather than in compose, so a plain
+  `docker run` has one: `python -c urlopen(/health)` on `SB_WEB_PORT` (blank
+  counts as unset, like `boot_env.text`; the runtime image ships no curl). It
+  **touches the store**, because `/health` does, and **never the scheduler** — a
+  wedged backfill is something `/api/runtime` displays, not something a probe
+  restarts the container over. The `start-period` covers the store opening and
+  deliberately not the reconstruction, whose ~25 minutes would otherwise read as
+  *starting* on a container whose store never answers.
+- **Two `--mount=type=cache`**, on the pnpm store (`$PNPM_HOME/store`) and on
+  uv's cache (`/root/.cache/uv`). They serve **the contributor who rebuilds**;
+  the cache that serves a PaaS starting from nothing is a registry cache and
+  belongs to the release workflow. The layer order is unchanged, and `docker
+  build ./app` still needs neither buildx nor a custom syntax directive.
+
 **The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
 theme, the two catalogues and the shell, with the four routes reachable and the
 four pages still placeholders — they are **redesigned, not ported**, one ticket
@@ -337,10 +367,16 @@ stack that said nothing would put the store in the container's writable layer
 and lose it on the next `up`. The human who edits the event files by hand must own them all the same —
 so the service runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
-invoking `id -u`/`id -g` in `.env`. The image sets `ENV HOME=/home/appuser` for the same
-reason: a uid absent from `/etc/passwd` (501 on macOS) gets `HOME=/` from
-Docker, which would send `Path('~/.config/SuiviBourse').expanduser()` away from
-the mount. `docker-compose.yaml` is never edited by
+invoking `id -u`/`id -g` in `.env`. The image no longer compensates for that
+foreign uid since #742 — `ENV HOME=/home/appuser` left with the rest of the
+apparatus — so under this stack a uid absent from `/etc/passwd` (501 on macOS)
+gets `HOME=/` from Docker and yfinance's timezone cache degrades to its no-op
+dummy. Nothing else follows from it: the store is at `SB_STORE_DIR`, which the
+stack names explicitly, and `~/.config/SuiviBourse` is only ever *stat*ed to
+name the files v4 left behind. It is a seam of the same kind as the two dead
+containers above — this directory goes entirely with #679/#680, and the named
+volume that makes the image's own arrangement whole arrives with it.
+`docker-compose.yaml` is never edited by
 users: the image tag is `${SB_VERSION:-4}`, ports and container-name prefix are
 variables, and the InfluxDB admin token has one source (`INFLUXDB_TOKEN` in
 `.env`) that `influxdb3-init.sh` materialises into a token file and Grafana's
