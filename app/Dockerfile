@@ -88,16 +88,16 @@ RUN useradd --create-home appuser \
     # kills the macOS development loop `CLAUDE.md` prescribes, on the one
     # platform where the app cannot run natively at all (#657).
     #
-    # The cache goes with it for the same foreign uid: yfinance keeps its
-    # timezone cache under `$HOME/.cache`, silently degrading to a no-op dummy
-    # when it cannot write there — one network round-trip per ticker, forever.
+    # `0755` and not `0700`, and not `0711` either: CPython's import system
+    # caches a **directory listing** per package path, so a traverse-only home
+    # would make `import web` fail on the WORKDIR gunicorn is chdir'd into. It
+    # is also the ordinary mode of a home directory — Debian's `HOME_MODE 0700`
+    # is that distribution's hardening, not a norm — and everything under it is
+    # application source the image already ships world-readable.
     #
-    # Neither line costs anything in the target state (a traverse bit on the
-    # home of a container's only user), and #743 removes their subject when it
-    # removes the stack. It must remove them too.
+    # The cache is **not** here, and that is the point: see `XDG_CACHE_HOME`
+    # below. This image ships no world-writable directory of its own.
     && chmod 0755 /home/appuser \
-    && mkdir -p /home/appuser/.cache \
-    && chmod 1777 /home/appuser/.cache \
     # ---- END TRANSITIONAL ----
     # The two directories the environment names by default (issue #740,
     # ADR-0015): `/data` is where the store is written, `/import` is the drop
@@ -127,21 +127,30 @@ COPY ./src /home/appuser
 # never shadow this one.
 COPY --from=web /build/src/static /home/appuser/static
 
-# ---- TRANSITIONAL, THE THIRD LINE OF THE BLOCK ABOVE — #743 DELETES IT TOO ----
-# Docker gives `HOME=/` to a uid with no `/etc/passwd` entry (501 on macOS), and
-# the compose stack still runs one. Without this the two lines above are
-# **inert**: yfinance writes its timezone cache to `/.cache`, cannot, and falls
-# back to its no-op dummy — measured, `TzCache will not be used` then
-# `dummy: True` — which is the exact degradation their own comment claims to
-# prevent. And a second consequence nobody had looked for:
-# `ConfigurationManager` resolves its config directory through `expanduser`, so
-# `HOME=/` sends it to `/.config/SuiviBourse` instead of the mount, and
-# ADR-0008's *named, never read* observation for a v4 `config.yaml` /
-# `settings.yaml` never fires — for exactly the population the sentence exists
-# for, someone upgrading from v4. Measured: 0 occurrences against 2.
+# yfinance's timezone cache, out of `$HOME` and into the directory the base
+# image already publishes world-writable. Not transitional and not a
+# workaround: it is **strictly better than what this image used to do**, which
+# was to ship a `$HOME/.cache` of its own at `1777` so that a foreign uid could
+# write there. A world-writable directory is exactly what `/tmp` is for, its
+# sticky bit is the mitigation, and reusing it means this image ships none.
 #
-# The three lines are one gesture and they leave together, or the image is
-# coherent for neither uid.
+# It also stops depending on `HOME` being right. Measured: with `HOME=/nowhere`
+# and this variable set, `yfinance.cache.get_tz_cache()` reports `dummy: False`,
+# writes `py-yfinance/tkr-tz.db` and reads the value back — so the cache is
+# whole for **every** uid, including the target state's `appuser`, and it
+# survives #743 rather than leaving with it.
+ENV XDG_CACHE_HOME=/tmp/.cache
+
+# ---- TRANSITIONAL, THE SECOND LINE OF THE BLOCK ABOVE — #743 DELETES IT TOO ----
+# Docker gives `HOME=/` to a uid with no `/etc/passwd` entry (501 on macOS), and
+# the compose stack still runs one. The cache no longer depends on this — see
+# `XDG_CACHE_HOME` above — so what is left is the consequence that has nothing
+# to do with caches: `ConfigurationManager` resolves its config directory
+# through `expanduser`, so `HOME=/` sends it to `/.config/SuiviBourse` instead
+# of the mount, and ADR-0008's *named, never read* observation for a v4
+# `config.yaml` / `settings.yaml` never fires — for exactly the population the
+# sentence exists for, someone upgrading from v4. Measured: 0 occurrences
+# against 2.
 ENV HOME=/home/appuser
 
 USER appuser

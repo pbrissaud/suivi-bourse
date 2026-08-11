@@ -541,21 +541,28 @@ independent kindnesses:
   `Permission denied: '/home/appuser'` **before a line of application code
   runs**, which kills the macOS development loop this file prescribes on the one
   platform where the app cannot run natively at all (#657);
-- **the sticky `$HOME/.cache`** — yfinance's timezone cache, whose absence costs
-  a network round-trip per ticker for ever;
-- **`ENV HOME=/home/appuser`** — and this one is what makes the other two *work
-  at all*. Docker gives `HOME=/` to a uid with no `/etc/passwd` entry, so
-  without it yfinance writes to `/.cache`, cannot, and takes its no-op dummy
-  anyway — the sticky directory above being addressed by nobody. A second
-  consequence has no relation to caches: `ConfigurationManager` resolves its
+- **`ENV HOME=/home/appuser`** — Docker gives `HOME=/` to a uid with no
+  `/etc/passwd` entry. The consequence has nothing to do with caches since the
+  cache left `$HOME` (below): `ConfigurationManager` resolves its
   config directory through `expanduser`, so `HOME=/` sends it to
   `/.config/SuiviBourse` rather than the mount, and ADR-0008's *named, never
   read* observation for a v4 `config.yaml` / `settings.yaml` **never fires** —
   for exactly the population the sentence was written for.
 
-Removing any one of the three is what produces a half-broken image, which is why
+Removing either of the two is what produces a half-broken image, which is why
 **#742's first acceptance criterion is deferred to #743** in writing rather than
-declared met. #743 removes all three together with the stack that is their whole
+declared met — and #743 now carries it as five criteria of its own, since a
+deferral nobody wrote down on the ticket that inherits it is a deferral lost in
+both.
+
+**The third line is gone rather than deferred, and the image is tighter for it.**
+`$HOME/.cache` was shipped at `1777` so a foreign uid could write yfinance's
+timezone cache; `ENV XDG_CACHE_HOME=/tmp/.cache` puts it in the directory the
+base image already publishes world-writable, so **this image ships no
+world-writable directory of its own** — audited, the only two left are
+`/run/lock` and `/var/tmp`, both `python:3.14-slim`'s. It is strictly better
+than what was there and it is not transitional: measured `dummy: False` under
+uid 501 *and* under `appuser`, so it survives #743 instead of leaving with it. #743 removes all three together with the stack that is their whole
 subject. It is a seam of the same kind as the two dead
 containers above — this directory goes entirely with #679/#680, and the named
 volume that makes the image's own arrangement whole arrives with it.
