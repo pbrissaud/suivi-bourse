@@ -30,8 +30,27 @@ export const ROUTES = {
   accounts: '/api/accounts',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
+  /**
+   * One symbol's price series. A **pattern**, `:symbol`, because it is what the
+   * harness's handler registers; {@link pricesPath} is what a caller builds.
+   */
+  prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
 } as const
+
+/**
+ * The window a chart asks for. The four are the **rungs of the retention
+ * ladder** (ADR-0010, #684 D10) and not four round numbers: as written under a
+ * year, hourly from one to two, daily beyond — so changing the range changes
+ * the resolution *visibly*, which is the whole reason `3M` left.
+ */
+export const CHART_WINDOWS = ['1M', '1Y', '2Y', 'MAX'] as const
+
+export type ChartWindow = (typeof CHART_WINDOWS)[number]
+
+export function pricesPath(symbol: string, window: ChartWindow): string {
+  return `/api/prices/${encodeURIComponent(symbol)}?window=${window}`
+}
 
 /**
  * An RFC 9457 problem.
@@ -132,6 +151,17 @@ export interface Position {
   price: Quote | null
   /** `null` with a non-null `price` — quoted, and the rate is missing. */
   converted: Converted | null
+  /**
+   * The day this position reached zero, `null` while it is held.
+   *
+   * It joins the contract with #719 and it is not a convenience: the folded
+   * section of the shares page **sorts on it**, and it is the only column that
+   * discriminates its rows — market value is zero across the whole section, and
+   * a column of zeros orders nothing. There is no derivation available on the
+   * client either: a position carries a quantity, never the event that emptied
+   * it.
+   */
+  closed_at: string | null
 }
 
 export interface PositionsResponse {
@@ -192,6 +222,37 @@ export interface PortfolioTotalsResponse {
 }
 
 // ------------------------------------------------------------------------- //
+// One symbol's price series (#712 §11, ADR-0010)
+// ------------------------------------------------------------------------- //
+
+/**
+ * What the store actually served, **announced rather than guessed**.
+ *
+ * A price point's resolution is a function of its age (ADR-0010) — as written
+ * under a year, hourly to two, daily beyond — so a five-year window comes back
+ * sparse at its far end. Announced, that is a property of the archive; guessed
+ * by the reader, it is an outage. And it is announced **once**: the chart's
+ * *aggregated by X* caption reads this field instead of stating a second
+ * bucketing of its own, two announcers on one graph being the defect the map
+ * found on four pages.
+ */
+export type Resolution = 'raw' | 'hour' | 'day'
+
+export interface SeriesPoint {
+  ts: string
+  /** In the reporting currency. `null` — quoted, and the rate never resolved. */
+  price: number | null
+}
+
+export interface PriceSeriesResponse {
+  symbol: string
+  /** The single currency everything is reported in (ADR-0002). */
+  base_currency: string | null
+  resolution: Resolution
+  points: SeriesPoint[]
+}
+
+// ------------------------------------------------------------------------- //
 // The app's own state — process memory, never a data query (#712 §11)
 // ------------------------------------------------------------------------- //
 
@@ -235,5 +296,7 @@ export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
   positions: () => get<PositionsResponse>(ROUTES.positions),
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
+  prices: (symbol: string, window: ChartWindow) =>
+    get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
 }

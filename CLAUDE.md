@@ -76,7 +76,8 @@ after the merge.
 **The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
 theme, the two catalogues and the shell, with the four routes reachable and the
 four pages still placeholders — they are **redesigned, not ported**, one ticket
-each. Four things about it are decisions, not defaults:
+each, and two have landed since (the dashboard's head, #718, and the shares
+page, #719). Four things about it are decisions, not defaults:
 
 - **One test seam, the outermost.** The real router, the real pages, the real
   catalogues, the real theme and a real `QueryClient` mount in jsdom; **HTTP is
@@ -299,6 +300,79 @@ three times:
   applied: a runtime read that has not landed says nothing about this process,
   and *your ledger does not go back that far* is a claim about the reader's own
   data.
+
+**The shares page: the header sums its lines, so the closed ones fold** (issue
+#719, ADR-0017, ADR-0016). It is the page the dev actually opens, and it carried
+the most wrong figure in the product — `Plus-value latente 335,22 €`, holding
+**−1 288,32 €** of phantom loss from three closed positions valued at `0,00 €`.
+What repairs it is a **coupling**, and that coupling is the ticket:
+
+- **What is written over a table is read as that table's summary**, and no note
+  undoes the reading. Coupled with a *hide the closed ones* switch, that makes a
+  **second correct figure**: hiding the seven closed lines moves the total from
+  `+977,61 €` to `+1 686,53 €` — the sum of the three terms over the live lines
+  alone — with nothing on screen saying which one equals `gain_absolu`. So the
+  closed positions never leave the table: they **fold**, the fold is not a
+  filter, and the header does not move when the section opens. There is no
+  *hide* switch anywhere. The gap was **708,92 €, 73 % of the figure shown**,
+  over seven lines out of nineteen, and it only grows with the age of an install.
+- **The folded section is not the live table with empty cells.** Its columns are
+  its own — `Titre · Soldée le · Réalisée · Dividendes · Compte` — because price,
+  quantity, unit cost and latent gain are an em dash on every one of its rows;
+  it **sorts on the closing date, descending**, market value being zero across
+  the whole section (a column of zeros orders nothing); and it is **closed on
+  load with its two figures already on its summary line**, so opening it is an
+  intention rather than a discovery.
+- **Nine columns live**, `Titre · Cours · Détenu · PRU · Valorisation · Latente ·
+  Réalisée · Dividendes · Compte`, the percentage a **second line** under the
+  latent gain. `Écart unitaire` **dies** — it is `Cours − PRU`, two columns
+  already on the same line, and nil by construction on a position carried at its
+  cost; `Investi` does not come in (`Valorisation − latente`); and there is **no
+  fourth `Gain total` column**, the header being their sum, checkable by eye. The
+  label stays **`PRU`**, the word read at the broker — *PMP* names the rule, and
+  stating the rule is what ADR-0016 gave the icon for a job.
+- **Nine icons, five on the header block and four on the column headers.** The
+  rule is *one per figure and **per surface***, the two being deliberately two
+  surfaces (a table is read scrolled, with the page's header off screen), and the
+  folded section is **not a surface** but a part of the page — which is what
+  takes eleven candidates down to nine (#684 D7). The `Gain total` bubble is the
+  one on the page that must state a **scope**: it counts the closed positions,
+  and it can never carry ADR-0018's fourth term, the fees a broker takes out of a
+  transfer belonging to no security. That is why this figure and the dashboard's
+  can differ, and the reader is told so rather than left to discover it.
+- **The exception marker is not a column** and the market pill is dead: eleven
+  rows rendered ten identical *Marché ouvert*. What is left is an icon on the
+  `Titre` cell of a share **the app** cannot price — the single exception
+  ADR-0016 allows to *icons never go on a cell*, its text being a repair — plus a
+  **counter in the page header that *is* the filter at a click**. It fires zero
+  times on the real portfolio, and the header is the only place where the
+  **absence** of an anomaly reads as information rather than as a void.
+- **One mention of the date, at the level of the page** (*Cours au 7 août 2026,
+  17:42*), never a column: a table of money with no date reads as *now*, and the
+  rows that depart from it already say so by the absence rule.
+- **A row is a symbol, not a holding.** `lib/shares.ts` folds `(account,
+  symbol)` into one line; the model stays multi-account — the same ETF on a PEA
+  and on a CTO is the most ordinary case of the domain, and that none of the
+  nineteen real symbols shows it is **contingent** — so it is the *rendering*
+  that bends: one account is plain text, never a list of one. The same module
+  holds the rule a component would otherwise re-decide per cell: **the failure
+  counter is a rendering concern and never an arithmetic one**, so a ticker the
+  app has asked N times and got nothing from renders *N consecutive readings, no
+  price* in three cells and is still carried at its cost in every sum. Written
+  the other way round it would subtract its whole basis from the portfolio's
+  value the day its quote went missing.
+- **The chart's presets are the rungs of the retention ladder** — `1M / 1A / 2A /
+  MAX` (ADR-0010) — so changing the range changes the resolution *visibly*; `3M`
+  changed nothing. And the *aggregated by X* caption **reads the resolution the
+  API announces** instead of naming a bucketing of its own: two announcers on one
+  graph is the defect the map found independently on four pages. The chart lands
+  in the share's sheet as its **first tenant**; the naked form, the event list
+  and the selection that links it to the markers are #720's.
+
+Three members joined the HTTP contract with it, the front being written **in
+front of** the store: **`position.closed_at`** (the folded section sorts on it,
+and a position carries a quantity, never the event that emptied it),
+**`GET /api/prices/:symbol?window=`** and its announced **`resolution`**.
 
 ### Documentation Website (in `website/` directory)
 
@@ -1581,11 +1655,13 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
+├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
 ├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
+├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 

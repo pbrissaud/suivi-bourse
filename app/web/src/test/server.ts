@@ -15,14 +15,28 @@
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
-import { ROUTES } from '@/lib/api'
-import { anAccountsPayload, aPositionsPayload, aRuntime, aTotalsPayload } from '@/test/factories'
+import { ROUTES, type ChartWindow } from '@/lib/api'
+import {
+  anAccountsPayload,
+  aPositionsPayload,
+  aPriceSeries,
+  aRuntime,
+  aTotalsPayload,
+} from '@/test/factories'
 
 export function defaultHandlers() {
   return [
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
     http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
+    // The series answers for the **window it was asked for**, because the
+    // resolution it announces is a function of that window (ADR-0010): a
+    // handler serving one frozen payload would make the presets look like four
+    // spellings of the same range.
+    http.get(ROUTES.prices, ({ params, request }) => {
+      const window = (new URL(request.url).searchParams.get('window') ?? '1Y') as ChartWindow
+      return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
+    }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
   ]
 }
