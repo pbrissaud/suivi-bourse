@@ -76,6 +76,29 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # an invoking uid landing on `1000:1000` by accident — closes with the cause
 # rather than by being handled.
 RUN useradd --create-home appuser \
+    # ---- TRANSITIONAL, AND #743 DELETES BOTH LINES WITH ITS OWN SUBJECT ----
+    # The paragraph above is true of the target state and premature by exactly
+    # one ticket. `docker-compose/` still points `SB_STORE_DIR` **inside** the
+    # host-mounted config directory, which the human owns, so the stack still
+    # runs `user: "${SB_UID:-1000}:${SB_GID:-1000}"` — 501 on a Mac. And
+    # `/home/appuser` is that uid's `$HOME` *and* gunicorn's `chdir` (the
+    # WORKDIR below): `useradd --create-home` leaves it 0700, so without the
+    # traverse bit the container dies on `Permission denied: '/home/appuser'`
+    # before a line of application code runs. Measured, not feared — and it
+    # kills the macOS development loop `CLAUDE.md` prescribes, on the one
+    # platform where the app cannot run natively at all (#657).
+    #
+    # The cache goes with it for the same foreign uid: yfinance keeps its
+    # timezone cache under `$HOME/.cache`, silently degrading to a no-op dummy
+    # when it cannot write there — one network round-trip per ticker, forever.
+    #
+    # Neither line costs anything in the target state (a traverse bit on the
+    # home of a container's only user), and #743 removes their subject when it
+    # removes the stack. It must remove them too.
+    && chmod 0755 /home/appuser \
+    && mkdir -p /home/appuser/.cache \
+    && chmod 1777 /home/appuser/.cache \
+    # ---- END TRANSITIONAL ----
     # The two directories the environment names by default (issue #740,
     # ADR-0015): `/data` is where the store is written, `/import` is the drop
     # folder and is read-only in use. They exist in the image because a bare

@@ -367,13 +367,20 @@ stack that said nothing would put the store in the container's writable layer
 and lose it on the next `up`. The human who edits the event files by hand must own them all the same —
 so the service runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
-invoking `id -u`/`id -g` in `.env`. The image no longer compensates for that
-foreign uid since #742 — `ENV HOME=/home/appuser` left with the rest of the
-apparatus — so under this stack a uid absent from `/etc/passwd` (501 on macOS)
-gets `HOME=/` from Docker and yfinance's timezone cache degrades to its no-op
-dummy. Nothing else follows from it: the store is at `SB_STORE_DIR`, which the
-stack names explicitly, and `~/.config/SuiviBourse` is only ever *stat*ed to
-name the files v4 left behind. It is a seam of the same kind as the two dead
+invoking `id -u`/`id -g` in `.env`. **That `user:` is what keeps two lines of
+#742's image alive**, and they are marked transitional in the `Dockerfile`: the
+traverse bit on `/home/appuser` and the sticky `$HOME/.cache`. The first is not
+a comfort — `/home/appuser` is gunicorn's `chdir`, `useradd --create-home`
+leaves it `0700`, and a foreign uid dies on
+`Permission denied: '/home/appuser'` **before a line of application code runs**,
+which kills the macOS development loop this file prescribes on the one platform
+where the app cannot run natively at all (#657). The second keeps yfinance's
+timezone cache writable, its absence costing a network round-trip per ticker
+for ever. `ENV HOME=/home/appuser` did leave with the rest of the apparatus, and
+that one is harmless here: the store is at `SB_STORE_DIR`, which the stack names
+explicitly, and `~/.config/SuiviBourse` is only ever *stat*ed to name the files
+v4 left behind. #743 removes the two transitional lines together with the stack
+that is their whole subject. It is a seam of the same kind as the two dead
 containers above — this directory goes entirely with #679/#680, and the named
 volume that makes the image's own arrangement whole arrives with it.
 `docker-compose.yaml` is never edited by
