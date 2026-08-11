@@ -52,6 +52,7 @@
   "dashboard.gainTotal.explain": "Votre gain total est la somme de quatre termes — plus-value latente, plus-value réalisée, dividendes reçus, et les frais que votre courtier prélève sur vos virements. Cette somme est sa définition : l’application additionne les quatre au lieu de calculer un total à part et d’espérer qu’ils s’accordent. Le quatrième terme n’appartient à aucun titre, et c’est pourquoi un tableau de positions ne peut jamais l’afficher.",
   "dashboard.ytd.gain": "{amount} depuis le 1ᵉʳ janvier",
   "dashboard.ytd.pending": "historique pas encore reconstruit jusque-là",
+  "dashboard.ytd.noPreviousYear": "rien d’enregistré avant le 1ᵉʳ janvier, il n’y a pas encore d’année d’où compter",
   "dashboard.totalValue": "Valeur totale",
   "dashboard.netContributed": "Versé net",
   "dashboard.netContributed.explain": "Versé net : vos versements moins vos retraits, frais exclus. C’est le dénominateur silencieux des deux rendements, et la raison pour laquelle le gain total a un quatrième terme — un frais prélevé sur un virement sort de vos liquidités sans réduire ce que ce chiffre enregistre.",
