@@ -26,7 +26,15 @@ const DOCS_ORIGIN = 'https://pbrissaud.github.io/suivi-bourse'
 /** Frozen at the **major**: a 5.1 install still reads `/docs/v5`. */
 export const DOCS_VERSION = 'v5'
 
-/** One page, ten anchors — never one page per figure (ADR-0016). */
+/**
+ * **One page** — never one page per figure (ADR-0016). The count is descriptive
+ * and the rule is not: a figure that earns a bubble earns a heading on that same
+ * page, and the list grows with it. `net-contributed` is the first to arrive
+ * that way — its bubble pointed at `deposit-fees`, where the *second* half of
+ * its sentence lands and the first half has no home, so a reader asking what
+ * *Net contributed* means arrived at a section titled *Fees taken from your
+ * transfers*.
+ */
 export const DOCS_PAGE = 'read-your-figures'
 
 export const DOCS_ANCHORS = [
@@ -35,6 +43,7 @@ export const DOCS_ANCHORS = [
   'latent-gain',
   'realized-gain',
   'dividends',
+  'net-contributed',
   'deposit-fees',
   'twr',
   'xirr',

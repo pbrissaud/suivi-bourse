@@ -22,10 +22,13 @@ describe('the documentation link', () => {
     )
   })
 
-  it('names one page and ten anchors, never one page per figure', () => {
-    expect(DOCS_ANCHORS).toHaveLength(10)
+  it('names one page whatever the count of anchors, never one page per figure', () => {
+    // The rule is **one page**, and the count is descriptive: a figure that
+    // earns a bubble earns a heading there, and the list grows with it. What
+    // must not drift is the page, so that is what is asserted.
     for (const anchor of DOCS_ANCHORS) {
       expect(docsHref('fr', anchor)).toContain('/docs/v5/read-your-figures#')
     }
+    expect(new Set(DOCS_ANCHORS).size).toBe(DOCS_ANCHORS.length)
   })
 })

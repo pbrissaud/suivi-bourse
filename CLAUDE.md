@@ -202,7 +202,13 @@ livre d'événements datés ajouterait… »* printed under a portfolio that has
 for as long as the second request took, then a headline swapped for another
 number under the reader's eyes. `accounts` and `runtime` are *optional*: their
 absence removes a line instead of falsifying one, which is why they keep a
-`?? null` and the required pair does not. The perimeter line under the
+`?? null` and the required pair does not. **And there is no skeleton** — the
+block renders nothing until both land, deliberately: P1 is a DuckDB query on a
+local file (0,43 ms measured), so a placeholder would flash for a few tens of
+milliseconds, which is worse than an instant. If it ever stops being true it
+stops being true on all four pages at once, so the skeleton arrives **once, in
+the shell**, the way `Band` did — never local to one page, which is how a
+product ends up with four loading conventions. The perimeter line under the
 consolidated
 figures is **not written at all** while the accounts read has not landed:
 ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a state

@@ -41,10 +41,18 @@ showed does not survive the drawer.
 - **Anything without a browser stays English, with no setting**: logs, the boot lines
   of ADR-0015, Prometheus `HELP` text, problem `type` URIs, event-file column headers.
   A `SB_LANG` variable would resurrect the environment-shaped setting ADR-0014 removed.
-- **`Total gain` is not the English label.** `Total gain` and `Total return` — the TWR
-  index, on the same head — begin with the same word and both carry an ADR-0016 icon,
-  a collision French does not have. The English catalogue says `Total P&L`, which is
-  also literally what the four terms are.
+- **`Total gain` is not the English label.** The English catalogue says `Total P&L`,
+  because that is literally what the four terms are: two of them are gains and two are
+  losses as often as not, and `gain` names the sum after the answer. French has no such
+  word — `Gain total` is read as *the balance* and carries no claim about its sign — so
+  this is one of the places where the two catalogues part company rather than translate
+  each other.
+
+  *The reason first written here was a different one — a collision with `Total return`,
+  the TWR, sitting on the same head and beginning with the same word. It was true of
+  the mock-up and is not true of the product: #718 labels the TWR `Time-weighted
+  return`, and nothing collides. The decision stands on the clause above, which never
+  depended on the neighbour.*
 - **The six event types are named by effect, not by code.** In French `Attribution` is
   visibly not `GRANT`; in English a literal rendering makes all six labels equal to
   their own enum values, and ADR-0020's *labels that explain their effect rather than

@@ -155,8 +155,13 @@ export function DashboardHead() {
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
-  // Base 100 leaves this page (there is nothing to compare here): the reader is
-  // shown the move itself, `+102,89 %`, and the index stays the store's unit.
+  // Base 100 leaves this page and the mock-up's `TWR 202,89 (+102,9 %)` with it.
+  // An index on base 100 is an instrument for putting two series side by side,
+  // and this page has one; `+102,89 %` carries the same information in the unit
+  // the reader thinks in. Where the index earns its place is the accounts page
+  // (#721), which compares — and there it comes with the rebasing rule, since
+  // two indices counted from different origins share a unit without being a
+  // comparison. The index stays the store's own.
   const twrMove = totalsRow?.twr_index === null || totalsRow?.twr_index === undefined
     ? null
     : (totalsRow.twr_index - 100) / 100
@@ -246,7 +251,7 @@ export function DashboardHead() {
               <Explain
                 figure={t('dashboard.netContributed')}
                 body="dashboard.netContributed.explain"
-                anchor="deposit-fees"
+                anchor="net-contributed"
               />
             }
           />
