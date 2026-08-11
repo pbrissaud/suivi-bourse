@@ -197,6 +197,12 @@ event source according to its header, never both. Drop them into the drop folder
 of another install and it rebuilds the same ledger: the same positions, the same
 cash, the same realized gains.
 
+**Both belong in a version 5 drop folder; only `events.csv` belongs in a version
+4 one.** Version 4 has no accounts file and refuses a whole directory over a
+header it does not recognise, so `accounts.csv` sitting beside the events there
+refuses the portfolio rather than itself — see
+[Going back](./coming-from-v4.mdx#going-back).
+
 It is an HTTP route rather than a button only, for the reason every write path
 in this app is: *headless means without an interface, not without HTTP*. One
 `curl` is a complete backup, and the page is one client of it.

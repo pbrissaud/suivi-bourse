@@ -10,7 +10,7 @@ afterwards.
 ## Going back
 
 **[Export your events](./import-your-events.mdx#export-it-all-back-out), then
-point a version 4 install at the folder you exported them into.**
+point a version 4 install at a folder holding the exported `events.csv` alone.**
 
 That sentence is the whole procedure, and the export is what makes it true: your
 original files are never touched, so going back at the moment you switch costs
@@ -19,11 +19,21 @@ store, and the export is how it leaves. The exported file is an ordinary event
 file; version 4 reads it and ignores the one column it does not know, the
 `base_currency` version 5 writes on every row.
 
-One thing does not travel in that file: version 4 has no accounts file, so if
-you use several accounts you redeclare them in its `settings.yaml`, with the
-same ids the `account` column names. And the figures you land back on are
-version 4's, computed by version 4's conventions: only quantity, cash balance
-and net contribution are expected to coincide with what you were reading.
+**`alone` is the operative word**, and what it keeps out is the second file the
+export writes. Version 4 has no notion of an accounts file: it refuses any `.csv` whose header
+lacks `date` and `event_type`, and it refuses **the whole directory** with it —
+so an `accounts.csv` left beside the events is not skipped, it takes the entire
+portfolio down (`Error loading accounts.csv: Missing required columns`). A
+single-account install is caught by the same rule and not spared by having
+nothing to declare: its accounts export is a header row with no rows under it,
+and an empty file is still a file with the wrong header. So keep `accounts.csv`
+out of the folder version 4 reads — with your backup, where it is the half
+version 5 restores from — and redeclare what it holds in version 4's
+`settings.yaml`, with the same ids the `account` column names.
+
+And the figures you land back on are version 4's, computed by version 4's
+conventions: only quantity, cash balance and net contribution are expected to
+coincide with what you were reading.
 
 :::info Not written yet
 It is the subject of its own ticket. What it will hold:

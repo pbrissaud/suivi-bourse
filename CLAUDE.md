@@ -510,8 +510,13 @@ which is both "created in the UI" and "editable".
 `GET /api/export/events.csv` and `GET /api/export/accounts.csv` render the store
 in the **import format**, so the round trip is round by construction rather than
 by a mapping kept in step by hand — which is what makes *"can I go back to v4?"*
-a one-sentence answer (*export, then point v4 at the exported folder*) and a
-backup something other than a binary DuckDB file. `events/export.py` is pure —
+a one-sentence answer (*export, then point v4 at a folder holding the exported
+`events.csv` alone*) and a backup something other than a binary DuckDB file.
+The word *alone* is load-bearing and it is what the documentation has to carry:
+v4's `EventLoader._load_directory` **re-raises**, so an `accounts.csv` — a
+format v4 has no notion of — refuses the whole directory rather than itself,
+and a single-account install is not spared, its accounts export being a header
+row with no rows under it. `events/export.py` is pure —
 rows in, text out — and it is a **rewrite** of the "render a CSV" half spec #695
 § 6 had reserved when #711 deleted `events/editor.py` whole: the old one
 rendered a file being edited in place (an addressable `CsvFile`, an atomic
