@@ -30,7 +30,9 @@ backfill is terminal. What they do with it is the ticket's fifth criterion: the
 while **value** and **latent gain** are computed from the carrying price. That
 asymmetry is what makes the sum of the rows equal the total on the dashboard,
 which reads the same :func:`carrying.carrying_price` through
-:mod:`performance`.
+:mod:`performance`. What qualifies is a position **no cours was observed for** —
+``price_native``, not the converted column: a quote whose rate has not landed is
+*waiting*, and the two absences are never rendered alike.
 
 The trap a contributor will break is stated once, here and in the docs: **the
 realized gain is a decomposition of the absolute gain, never a term added to
@@ -39,10 +41,10 @@ it.** The proceeds of a sale are already in the cash balance.
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import (
-    Any, Callable, Collection, Dict, Iterable, List, Optional, Sequence,
+    Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Sequence,
 )
 
-from carrying import carrying_price
+from carrying import carrying_price, was_quoted
 
 #: Fields summed straight across a share's accounts. All three are *amounts* or
 #: quantities of the same instrument, so adding them is meaningful — unlike the
@@ -210,7 +212,13 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
     side: there is nothing left to reconcile between two accounts' observations.
 
     ``carry`` says this symbol's backfill is terminal, which is the second term
-    of ADR-0004's predicate; :func:`carrying.carrying_price` supplies the first.
+    of ADR-0004's predicate; :func:`carrying.carrying_price` supplies the first,
+    and it is handed **``price_native``** for it rather than being left to read
+    the converted price alone (issue #706). A row that carries a native quote and
+    no converted one is *waiting for a rate*, which is a different absence from
+    *carried at cost* and must not be rendered as one — and it is a durable state,
+    not a blink, for as long as a pair fails to resolve.
+
     Note what is **not** done with the answer: ``price`` keeps the observed
     value, ``None`` and all, so the column stays an em dash — the app states a
     convention, it does not invent a quote. The valuation figures below take the
@@ -226,7 +234,10 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
 
     quote = group[0]
     price = quote.get('price')
-    carried_at = carrying_price(price, quantity, cost_basis) if carry else price
+    carried_at = (
+        carrying_price(price, quote.get('price_native') is not None,
+                       quantity, cost_basis)
+        if carry else price)
     market_value = _product(quantity, carried_at)
 
     plus_value = _latent(market_value, cost_basis)
@@ -497,6 +508,7 @@ def valuation_series(
     positions_at: Callable[[date], Sequence[Dict[str, Any]]],
     carried_in: Optional[Dict[str, float]] = None,
     carried: Collection[str] = (),
+    first_quoted: Optional[Mapping[str, date]] = None,
 ) -> List[Dict[str, Any]]:
     """The daily valuation curve, from the day's closes and the day's holdings.
 
@@ -532,6 +544,14 @@ def valuation_series(
     of symbols whose backfill is terminal. A symbol still being reconstructed is
     not in it, so its priceless days stay hollow rather than flat-at-cost, which
     is the misreading ADR-0004 exists to prevent.
+
+    ``first_quoted`` is the **first** term, and it is a separate argument because
+    ``closes`` cannot answer it: those rows are the *converted* series, so a day
+    absent from them is either a day nobody quoted or a day whose rate never
+    landed. The second is *waiting*, not carried — so the day each symbol was
+    first quoted at all arrives beside the closes
+    (:func:`quotes.first_quoted_days`), and everything from that day on is treated
+    as observed whether or not its conversion did.
     """
     days = sorted({row['day'] for row in closes if row.get('day') is not None})
     by_day: Dict[Any, Dict[str, float]] = {}
@@ -542,6 +562,7 @@ def valuation_series(
         by_day.setdefault(day, {})[symbol] = row['price']
 
     price: Dict[str, float] = dict(carried_in or {})
+    quoted_from = first_quoted or {}
     series: List[Dict[str, Any]] = []
     for day in days:
         price.update(by_day.get(day, {}))
@@ -551,7 +572,7 @@ def valuation_series(
             'value': _sum_values(
                 _product(position.get('quantity'),
                          _valued_at(position, price.get(position['symbol']),
-                                    carried))
+                                    carried, day, quoted_from))
                 for position in held),
             'invested': _sum_values(
                 position.get('cost_basis') for position in held),
@@ -560,18 +581,25 @@ def valuation_series(
 
 
 def _valued_at(position: Dict[str, Any], observed: Optional[float],
-               carried: Collection[str]) -> Optional[float]:
+               carried: Collection[str], day: date,
+               first_quoted: Mapping[str, date]) -> Optional[float]:
     """The price one day of one position is valued at — ADR-0004's two terms.
 
     Membership of ``carried`` is the term the caller owns (*no price is coming*);
     :func:`carrying.carrying_price` is the term the helper owns (*no price is
-    here*). Written as one function because the same pair is asked once per
+    here*), and :func:`carrying.was_quoted` is what tells it apart from *no rate
+    is here* — a day past the symbol's first quote is observed even when its
+    conversion is missing, and it is then worth nothing computable rather than
+    its cost. Written as one function because the same pair is asked once per
     position per day, and inlining it three lines up would put the predicate in
     the middle of a generator expression.
     """
-    if position.get('symbol') not in carried:
+    symbol = position.get('symbol')
+    if symbol not in carried:
         return observed
-    return carrying_price(observed, position.get('quantity'),
+    return carrying_price(observed,
+                          was_quoted(first_quoted.get(symbol), day),
+                          position.get('quantity'),
                           position.get('cost_basis'))
 
 
@@ -727,14 +755,16 @@ def _build_account(row: Dict[str, Any], carry: bool = False) -> AccountPosition:
     aggregate, and it has to be: the PMP is a weighted mean, so two accounts
     holding the same share at different costs carry it at different prices, and a
     single figure applied to both would make the breakdown stop adding up to the
-    row above it (issue #706).
+    row above it (issue #706). ``price_native`` rides along for the same reason it
+    does one level up: a known quote with no rate is *waiting*, never carried.
     """
     quantity = row.get('quantity')
     cost_basis = row.get('cost_basis')
     price = row.get('price')
     market_value = _product(
         quantity,
-        carrying_price(price, quantity, cost_basis) if carry else price)
+        carrying_price(price, row.get('price_native') is not None,
+                       quantity, cost_basis) if carry else price)
     return AccountPosition(
         account=str(row.get('account') or 'default'),
         quantity=quantity,

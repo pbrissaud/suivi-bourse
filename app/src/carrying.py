@@ -30,7 +30,7 @@ Three things about it are decisions rather than details:
   module is read by :mod:`portfolio_view`, which stays free of the ``events``
   package — importing it pulls pandas and openpyxl into a pure view module.
 
-* **The predicate has two terms, not one.** *The price is absent* **and** *the
+* **The predicate has two terms, not one.** *No price was observed* **and** *the
   symbol's backfill is terminal*. The first term lives in :func:`carrying_price`;
   the second is the caller's, and it is the caller's because only the caller
   knows which symbol a figure belongs to. Without it the reconstruction replays a
@@ -39,6 +39,20 @@ Three things about it are decisions rather than details:
   for as long as the rebuild lasts. :func:`is_terminal` is the second term's one
   spelling, and :func:`quotes.terminal_symbols` is what puts the store's answer
   to it.
+
+* **"No price was observed" is about the quote, not about its conversion.**
+  Every money figure the app draws reads ``price_converted``, so the naive
+  spelling of the first term — *the converted price is absent* — also catches the
+  position whose **quote is known and whose rate is not**: a base currency not
+  answered yet, or a pair that does not resolve. Those are *waiting*, and
+  ``CONTEXT.md`` § Absence names them as a different kind of absence from *carried
+  at cost*, never rendered alike (`website/docs/read-your-figures.mdx`: "price
+  known, conversion rate missing → waiting for a rate"). Carrying them would
+  answer a valuation where the app owes a *pending*, and it would do it durably —
+  until #704's lateral pass repairs the stock. So :func:`carrying_price` takes
+  **both**: the converted price it may return, and ``quoted``, which says a quote
+  was observed at all. A quote with no rate yields ``None``, which is the same
+  absence the pre-#706 app showed and the honest one.
 
 The case where carrying **diverges** from a valuation, stated once so nobody has
 to rediscover it: a position mixing a purchase and a zero-cost grant *inside* the
@@ -54,6 +68,7 @@ from typing import Optional, Tuple
 
 
 def carrying_price(observed: Optional[float],
+                   quoted: bool,
                    quantity: Optional[float],
                    cost_basis: Optional[float]) -> Optional[float]:
     """The price the position is carried at: the market's, failing that its own.
@@ -63,6 +78,18 @@ def carrying_price(observed: Optional[float],
     read the same function, because two of them would make two users of the same
     software see two curves for the same portfolio with nothing on screen able to
     say so.
+
+    ``observed`` is the price in the **reporting** currency — the only unit any
+    figure downstream is allowed to be in — and ``quoted`` says whether a quote
+    was observed **at all**, in any currency: ``price_native`` on a P1 row, a
+    native close at or before the day on a series (:func:`was_quoted`). The two
+    are not the same question and this is where they stop being conflated
+    (issue #706): a security whose quote is known and whose rate is not is
+    *waiting*, not priceless, and carrying it at cost would publish a valuation
+    where the app owes a pending — durably, since an unresolvable pair keeps its
+    ``price_converted`` ``NULL`` until #704's lateral pass. ``quoted`` is required
+    rather than defaulted for the same reason: a default is a value some caller
+    would inherit without deciding, and either default is a bug.
 
     ``None`` when there is neither a price nor a quantity: a position nobody
     holds has no carrying price — it has a realized gain, exactly as it has no
@@ -77,9 +104,29 @@ def carrying_price(observed: Optional[float],
     """
     if observed is not None:
         return observed
+    if quoted:
+        # A quote exists and its conversion does not: *waiting for a rate*, which
+        # is the absence the page already knows how to say. Not a carrying price.
+        return None
     if not quantity:
         return None
     return (cost_basis or 0.0) / quantity
+
+
+def was_quoted(first_quoted: Optional[date], day: date) -> bool:
+    """Had **any** quote of this symbol been observed by ``day``?
+
+    The series form of :func:`carrying_price`'s ``quoted`` term, and it is a
+    forward fill for the same reason the price beside it is one: a valuation asks
+    *what was the last thing known on that day*, not *did that day trade*. So one
+    scalar per symbol answers it — the first calendar day carrying a
+    ``price_native`` (:func:`quotes.first_quoted_days`) — and everything from that
+    day on counts as quoted, whether or not its conversion landed.
+
+    ``None`` means the symbol has never been quoted at all, which is ``False``
+    on every day: that is the ticket's own subject.
+    """
+    return first_quoted is not None and day >= first_quoted
 
 
 def holding_bounds(acquired: date, exited: Optional[date],
@@ -147,4 +194,5 @@ def is_terminal(anchor: datetime, target: datetime) -> bool:
     return anchor.date() <= target.date()
 
 
-__all__ = ['carrying_price', 'holding_bounds', 'backward_anchor', 'is_terminal']
+__all__ = ['carrying_price', 'was_quoted', 'holding_bounds', 'backward_anchor',
+           'is_terminal']

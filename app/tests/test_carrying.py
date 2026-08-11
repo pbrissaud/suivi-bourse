@@ -71,17 +71,26 @@ def _declare_symbol(store, symbol):
                   'ON CONFLICT (symbol) DO NOTHING', [symbol])
 
 
+_SAME = object()
+
+
 def _p1_row(symbol='AAPL', account='default', quantity=10.0, cost_basis=1000.0,
-            price=None):
-    """One P1 row in the shape :meth:`store_reads.PortfolioReader.positions` returns."""
+            price=None, price_native=_SAME):
+    """One P1 row in the shape :meth:`store_reads.PortfolioReader.positions` returns.
+
+    ``price`` is the **converted** column and ``price_native`` the quote as the
+    exchange gave it; they move together unless a test parts them, which is the
+    *waiting for a rate* row (#702, #706).
+    """
     return {
         'account': account, 'symbol': symbol, 'name': 'Apple',
         'quantity': quantity, 'cost_basis': cost_basis,
         'realized_gain': 0.0, 'received_dividend': 0.0,
         'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
         'dividend_yield': None, 'pe_ratio': None, 'market_cap': None,
-        'price': price, 'price_native': price, 'fx_rate': None,
-        'price_time': None,
+        'price': price,
+        'price_native': price if price_native is _SAME else price_native,
+        'fx_rate': None, 'price_time': None,
     }
 
 
@@ -95,23 +104,37 @@ def _no_price(_symbol, _day):
 # --------------------------------------------------------------------------- #
 
 def test_the_observed_price_wins_over_the_cost():
-    assert carrying_price(187.5, 10.0, 1000.0) == 187.5
+    assert carrying_price(187.5, True, 10.0, 1000.0) == 187.5
 
 
 def test_a_position_with_no_price_is_carried_at_its_weighted_average_cost():
     """The PMP, never the execution price — that is what makes the day neutral."""
-    assert carrying_price(None, 10.0, 1000.0) == pytest.approx(100.0)
+    assert carrying_price(None, False, 10.0, 1000.0) == pytest.approx(100.0)
 
 
 def test_the_carrying_price_is_the_weighted_mean_and_not_the_last_paid():
     """Bought 1 at 100 then 9 at 200: carried at 190, the figure the tax rule names."""
-    assert carrying_price(None, 10.0, 100.0 + 9 * 200.0) == pytest.approx(190.0)
+    assert carrying_price(None, False, 10.0,
+                          100.0 + 9 * 200.0) == pytest.approx(190.0)
+
+
+def test_a_quote_with_no_rate_is_waiting_and_never_carried():
+    """The first term is *no cours observed*, not *no converted price*.
+
+    A security whose quote is known and whose conversion is not — the base
+    currency unanswered, or a pair that does not resolve — is *waiting for a
+    rate*, which ``CONTEXT.md`` § Absence names as a different kind of absence
+    from *carried at cost*, never rendered alike. Carrying it would answer a
+    valuation the app does not have, and durably: an unresolvable pair keeps its
+    ``price_converted`` ``NULL`` until #704's lateral pass.
+    """
+    assert carrying_price(None, True, 10.0, 1000.0) is None
 
 
 def test_a_sold_position_has_no_carrying_price():
     """Quantity zero: no unit cost, no carrying price — it has a realized gain."""
-    assert carrying_price(None, 0.0, 0.0) is None
-    assert carrying_price(None, None, 250.0) is None
+    assert carrying_price(None, False, 0.0, 0.0) is None
+    assert carrying_price(None, False, None, 250.0) is None
 
 
 def test_a_dilution_grant_is_carried_at_zero_which_is_a_figure():
@@ -120,8 +143,24 @@ def test_a_dilution_grant_is_carried_at_zero_which_is_a_figure():
     ``0.0`` and not ``None``: absence is kept for what could not be computed at
     all, and this one was computed.
     """
-    assert carrying_price(None, 10.0, 0.0) == 0.0
-    assert carrying_price(None, 10.0, None) == 0.0
+    assert carrying_price(None, False, 10.0, 0.0) == 0.0
+    assert carrying_price(None, False, 10.0, None) == 0.0
+
+
+def test_a_day_is_quoted_from_the_first_observation_on():
+    """The series form of the first term, forward-filled like the price beside it.
+
+    A valuation asks what was last known on a day, not whether that day traded —
+    so once a symbol has been quoted, every later day counts as observed even
+    when its conversion is missing. A symbol never quoted is ``False`` on every
+    day, which is the ticket's own subject.
+    """
+    first = date(2024, 3, 1)
+
+    assert carrying.was_quoted(first, date(2024, 2, 29)) is False
+    assert carrying.was_quoted(first, first) is True
+    assert carrying.was_quoted(first, date(2026, 8, 10)) is True
+    assert carrying.was_quoted(None, date(2024, 3, 1)) is False
 
 
 def test_there_is_one_implementation():
@@ -318,6 +357,41 @@ def test_a_symbol_outside_the_carried_set_keeps_its_em_dash():
     assert share.plus_value_latente is None
 
 
+def test_a_terminal_symbol_waiting_for_a_rate_is_not_carried():
+    """A cours *was* observed; only its conversion is missing (issue #706).
+
+    The predicate's first term reads ``price_native``, never the converted
+    column. Reading the converted one carries a position whose quote the app has
+    — every install whose backfill finished while ``base_currency`` is still
+    unanswered, and every symbol whose pair does not resolve, until #704's
+    lateral pass. *Waiting* and *carried at cost* are two of the four kinds of
+    absence ``CONTEXT.md`` says are never rendered alike.
+    """
+    rows = [_p1_row(quantity=10.0, cost_basis=1000.0,
+                    price=None, price_native=187.5)]
+
+    (share,) = portfolio_view.build_shares(rows, carried={'AAPL'})
+
+    assert share.price is None
+    assert share.price_native == 187.5
+    assert share.market_value is None
+    assert share.plus_value_latente is None
+    assert share.unit_gain is None
+
+
+def test_the_breakdown_of_a_row_waiting_for_a_rate_is_absent_too():
+    """The per-account rows read the same term, or the two stop agreeing."""
+    rows = [
+        _p1_row(account='PEA', price=None, price_native=187.5),
+        _p1_row(account='CTO', price=None, price_native=187.5),
+    ]
+
+    (share,) = portfolio_view.build_shares(rows, carried={'AAPL'})
+
+    assert [a.market_value for a in share.accounts] == [None, None]
+    assert share.market_value is None
+
+
 # --------------------------------------------------------------------------- #
 # The two readings reconcile — the reason there is one implementation
 # --------------------------------------------------------------------------- #
@@ -372,6 +446,54 @@ def test_the_valuation_curve_and_the_shares_page_agree_on_the_purchase_day():
     assert point['value'] == pytest.approx(point['invested'])
 
 
+def test_the_valuation_curve_leaves_the_hole_when_only_the_rate_is_missing():
+    """The curve reads the *converted* series, so it needs the first term told.
+
+    ``daily_closes`` returns ``price_converted``, and a day missing from it is
+    either a day nobody quoted or a day whose rate never landed. ``first_quoted``
+    is what parts them: the symbol was quoted on the purchase day, so the day is
+    observed and worth nothing computable — not carried at its cost.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, 'AAPL', 'Apple', quantity=10,
+              unit_price=100.0, account='default'),
+    ]
+    timeline = EventAggregator().replay(events)
+    closes = [{'day': date(2024, 1, 15), 'symbol': 'MSFT', 'price': 40.0}]
+
+    (point,) = portfolio_view.valuation_series(
+        closes, timeline.at, carried={'AAPL'},
+        first_quoted={'AAPL': date(2024, 1, 15)})
+
+    assert point['value'] is None
+    assert point['invested'] == pytest.approx(1000.0)
+
+
+def test_the_valuation_curve_carries_the_days_before_the_first_quote():
+    """And the same series is carried where the symbol was genuinely unquoted.
+
+    ``first_quoted`` is forward-filled, so the day before the first observation
+    has no cours and never will — the ticket's own case — while the day of it
+    does.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, 'AAPL', 'Apple', quantity=10,
+              unit_price=100.0, account='default'),
+    ]
+    timeline = EventAggregator().replay(events)
+    closes = [
+        {'day': date(2024, 1, 15), 'symbol': 'MSFT', 'price': 40.0},
+        {'day': date(2024, 1, 16), 'symbol': 'MSFT', 'price': 40.0},
+    ]
+
+    first, second = portfolio_view.valuation_series(
+        closes, timeline.at, carried={'AAPL'},
+        first_quoted={'AAPL': date(2024, 1, 16)})
+
+    assert first['value'] == pytest.approx(1000.0)
+    assert second['value'] is None
+
+
 def test_the_valuation_curve_leaves_the_hole_while_the_rebuild_runs():
     events = [
         Event(date(2024, 1, 15), EventType.BUY, 'AAPL', 'Apple', quantity=10,
@@ -405,6 +527,32 @@ def test_the_perf_recompute_carries_a_terminal_symbol(
         " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
     assert holdings == pytest.approx(1000.0)
     assert total == pytest.approx(1000.0)
+
+
+def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
+        store, declare_ledger, mocker):
+    """A stored quote with no conversion: the day is observed, not carried.
+
+    Reachable on any install whose pair does not resolve — the point is written
+    with ``price_converted`` ``NULL`` rather than not written (#702), and #704 is
+    what repairs the stock. ``price_at`` sees nothing there; ``first_quoted``
+    is what stops that reading as *nobody ever priced this*.
+    """
+    declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
+    store.execute(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
+        '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
+        ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
+    metrics = _metrics(store, mocker)
+    metrics.base_currency = 'EUR'
+
+    metrics.update_account_metrics()
+
+    (holdings, total) = store.query(
+        'SELECT holdings_value, total_value FROM account_metrics '
+        " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
+    assert holdings == pytest.approx(0.0)
+    assert total == pytest.approx(0.0)
 
 
 def test_the_perf_recompute_leaves_a_running_rebuild_alone(
@@ -490,7 +638,7 @@ def test_a_purchase_and_a_dilution_grant_are_carried_at_half(store):
 
     assert position['quantity'] == pytest.approx(20.0)
     assert position['cost_basis'] == pytest.approx(1000.0)
-    assert carrying_price(None, position['quantity'],
+    assert carrying_price(None, False, position['quantity'],
                           position['cost_basis']) == pytest.approx(50.0)
 
 

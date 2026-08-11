@@ -982,7 +982,7 @@ Three named figures replace one composite, each with its own domain:
 
 | Figure | Formula | Defined when |
 |---|---|---|
-| Latent gain | `holdings_value − cost_basis` | position open (`None` with no observed quote **whose backfill is still running**) |
+| Latent gain | `holdings_value − cost_basis` | position open (`None` with no observed quote **whose backfill is still running**, and `None` while a known quote waits for its rate) |
 | Realized gain | Σ sales `(net proceeds − basis removed)` | from the first sale, **permanently** |
 | Dividends received | `position.received_dividend` | always |
 
@@ -1000,8 +1000,8 @@ ever drew the hole. Five things about it are decisions:
   calendar would explain the hole without filling it — the surviving occurrence
   is an Amsterdam execution mis-valued because the app asks Yahoo for the
   *NASDAQ* quote of the same company.
-- **The predicate has two terms, not one**: the price is absent **and** the
-  symbol's backfill is terminal. `carrying_price(observed, quantity,
+- **The predicate has two terms, not one**: no cours was observed **and** the
+  symbol's backfill is terminal. `carrying_price(observed, quoted, quantity,
   cost_basis)` owns the first, the caller owns the second — a set from
   `quotes.terminal_symbols`, derived from the **store** (the ceiling, the oldest
   stored point, `oldest_window_tried`) rather than from the scheduler's
@@ -1009,6 +1009,17 @@ ever drew the hole. Five things about it are decisions:
   Without the second term a reconstruction replays a portfolio flat-at-cost for
   four years that takes off and then corrects itself, with the owner having done
   nothing.
+- **The first term is about the quote, not about its conversion.** Every money
+  figure the app draws reads `price_converted`, so the naive spelling — *the
+  price is absent* — also catches the position whose **quote is known and whose
+  rate is not**: `base_currency` unanswered, or a pair that does not resolve.
+  That state is *waiting*, one of `CONTEXT.md` § Absence's four kinds and never
+  rendered like *carried at cost*, and it is durable — the point is written with
+  `price_converted NULL` until #704's lateral pass repairs it. So `quoted` is a
+  required argument, and each caller supplies it from what it has: `price_native`
+  on a P1 row, and `carrying.was_quoted` against `quotes.first_quoted_days` —
+  `{symbol: first day quoted at all}`, one `GROUP BY` — on the two series paths,
+  forward-filled exactly as the close beside it is.
 - **One implementation, called by the valuation and by the shares page.** Two
   would make two users of the same software see two curves for the same
   portfolio with nothing on screen able to say so — so `performance.

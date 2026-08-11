@@ -147,6 +147,9 @@ def list_shares():
     ``market_value`` and ``plus_value_latente`` are computed from its own cost
     (issue #706). That is what makes the rows of this table add up to the head
     the dashboard publishes, which reads the same rule through the perf series.
+    *No observed price* is ``price_native`` being absent: a row carrying a native
+    quote and no converted one is **waiting for a rate**, and it keeps its
+    ``market_value`` at ``null`` — a different absence, never rendered alike.
     """
     rows = _reader().positions()
     shares = portfolio_view.build_shares(rows, _carried())
@@ -301,7 +304,12 @@ def get_portfolio_history():
             reader.daily_closes(start, stop), timeline.at,
             carried_in={row['symbol']: row['price']
                         for row in reader.prices_at(start)},
-            carried=_carried())})
+            carried=_carried(),
+            # The carrying predicate's first term, and it needs its own read
+            # here: ``daily_closes`` is the **converted** series, so a day
+            # missing from it is either a day nobody quoted or a day whose rate
+            # never landed — and only the first is carried (#706).
+            first_quoted=quotes.first_quoted_days(_store()))})
 
     return jsonify({**payload, 'points': [
         {

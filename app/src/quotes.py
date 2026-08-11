@@ -383,6 +383,33 @@ def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
     return finished
 
 
+def first_quoted_days(store) -> Dict[str, date]:
+    """``{symbol: first calendar day carrying a quote}`` — one query, whole store.
+
+    The **first** term of the carrying predicate for every read that works off the
+    price *series* rather than off a P1 row (issue #706). ``price_native``, never
+    ``price_converted``: the question is whether a quote was ever observed, and a
+    quote whose conversion has not landed is still a quote — a base currency not
+    answered yet, or a pair that does not resolve, is *waiting for a rate* and not
+    a security nobody prices. Reading the converted column here would carry those
+    positions at cost, which is the one thing ``CONTEXT.md`` § Absence says the
+    two states must never do: be rendered alike.
+
+    One scalar per symbol is enough because the consumers forward-fill: a day is
+    *quoted* from the first observation on, exactly as ``price_at`` carries the
+    last close forward (:func:`carrying.was_quoted`). One ``GROUP BY`` for the
+    whole portfolio, so the perf recompute and the history route each pay one
+    read rather than one per symbol.
+    """
+    return {
+        symbol: value
+        for symbol, value in store.query(
+            'SELECT symbol, min(CAST(ts AS DATE)) FROM price_point '
+            ' WHERE price_native IS NOT NULL GROUP BY symbol')
+        if value is not None
+    }
+
+
 def oldest_ts(store, symbol: str) -> Optional[datetime]:
     """The oldest stored instant of a symbol's series, or ``None``.
 
@@ -492,5 +519,6 @@ __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_history',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
+    'first_quoted_days',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
 ]

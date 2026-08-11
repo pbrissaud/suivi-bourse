@@ -2821,12 +2821,19 @@ class SuiviBourseMetrics:
             carried = quotes.terminal_symbols(
                 store_handle, holding_windows(events, held),
                 datetime.now(timezone.utc))
+            # And its **first** term, which ``price_at`` cannot supply: that
+            # callable reads ``price_converted``, so a symbol whose pair does not
+            # resolve is priceless to it while its quote is known. Carrying those
+            # would answer a valuation where the app owes *waiting for a rate*
+            # (#706, repaired in the store by #704).
+            first_quoted = quotes.first_quoted_days(store_handle)
 
             start = min(e.date for e in events)
 
             per_account = {
                 account.id: performance.compute_account(
-                    timeline, account, symbols, price_at, start, today, carried)
+                    timeline, account, symbols, price_at, start, today, carried,
+                    first_quoted)
                 for account in portfolio.accounts
             }
             total = performance.compute_portfolio_total(

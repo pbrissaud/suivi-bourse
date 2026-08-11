@@ -305,6 +305,31 @@ def test_a_share_whose_rebuild_is_still_running_keeps_its_em_dash(tmp_path):
     assert payload[0]['plus_value_latente'] is None
 
 
+def test_a_share_waiting_for_a_rate_is_not_carried_at_its_cost(tmp_path):
+    """The predicate's **first** term, on the wire (issue #706).
+
+    The quote is known and its conversion is not — a base currency not answered
+    yet, or a pair that does not resolve — and the backward pass has finished. A
+    first term reading *the converted price is absent* would carry this row at
+    its cost, answering a valuation where the app owes *waiting for a rate*
+    (``CONTEXT.md`` § Absence; ``read-your-figures.mdx``'s absence table). The
+    native price rides the payload so the page can say which of the two it is.
+    """
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
+        seed_quote(opened, price=187.5, converted=None, rate=None)
+        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 15))
+
+    payload = build_client(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
+        seed=seed).get('/api/shares').get_json()
+
+    assert payload[0]['price'] is None
+    assert payload[0]['price_native'] == pytest.approx(187.5)
+    assert payload[0]['market_value'] is None
+    assert payload[0]['plus_value_latente'] is None
+
+
 def test_an_unknown_symbol_is_404_problem_json(tmp_path):
     client = build_client(tmp_path)
     response = client.get('/api/shares/NOPE')
