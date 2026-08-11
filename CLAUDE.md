@@ -255,7 +255,50 @@ things about the pair that now serves it are decisions:
   outside the figure. `ytd: null` therefore means *the series does not reach the
   base* — the one state the reconstruction degrades — and never *a sum failed*;
   `test_web_api.py` pins `+40,69 €` against `−1,25 %` to the cent, opposite signs
-  over one period and both correct.
+  over one period and both correct. **And the identity of the four terms is
+  pinned end to end**, on a ledger carrying a transfer fee, with the perf cache
+  written by the real job rather than seeded: `transfer_fees` is derived from
+  `event` while `net_contributed` is computed in `performance.py` from the
+  `Timeline`, so two modules state what a cash movement is, and the sum is the
+  assertion that keeps the two statements from drifting apart — the symptom
+  otherwise being an identity that quietly stops holding, on the page that
+  exists to show that it holds.
+
+**#719's three members are served by the same ticket** (#763's enlargement),
+because it is the same work on the same two files and a ticket per page that
+rediscovers it has to write its own route is the pattern the map has now seen
+three times:
+
+- **`position.closed_at`** — the day the line reached zero, `null` while it is
+  held and `null` again after a buy-back. Derived **in P1's own query** (a
+  `LEFT JOIN` on the last `SELL`, under `CASE WHEN quantity = 0`), never a
+  thirteenth column on `position`, for the argument that decided `transfer_fees`:
+  no migration machinery, so a new column simply would not exist on a store
+  created before it. The shares page's folded section **sorts on it** and it is
+  the only column that discriminates those rows — market value is zero across
+  the whole section, and a column of zeros orders nothing.
+- **`GET /api/prices/<symbol>?window=`** — a **new** resource, not a rename of
+  `/api/shares/<symbol>/prices`, which goes on serving until the page reading it
+  is rewritten. The window is a **rung of the retention ladder** (`1M` / `1Y` /
+  `2Y` / `MAX`, ADR-0010), an unknown one is a `422` and never a fallback, and
+  `resolution` states the **coarsest of the bucket applied and the rung
+  traversed** — announced once, so the chart's *aggregated by X* caption reads a
+  field instead of stating a second bucketing of its own. A point whose
+  conversion never resolved is `price: null` and **never a missing point**,
+  which is what makes `chart_series` a third reader beside `raw_series` and
+  `bucketed_series` rather than an argument on either: a weekend and an
+  unresolved rate are two different pieces of news, and only the second repairs
+  itself (#704).
+- **`ytd: null` is rendered by its real cause.** Two of them — the
+  reconstruction has not reached January, **or** the portfolio is younger than
+  the year — and the head wrote one sentence for both, announcing a rebuild to
+  somebody with nothing to rebuild. The discriminant is `runtime.rebuilding`,
+  already on screen four lines above for the TWR's base date; no fourth kind of
+  absence is invented (ADR-0021). The young-portfolio sentence needs a
+  **positive** observation (`rebuilding === false`), #709's third-answer rule
+  applied: a runtime read that has not landed says nothing about this process,
+  and *your ledger does not go back that far* is a claim about the reader's own
+  data.
 
 ### Documentation Website (in `website/` directory)
 
