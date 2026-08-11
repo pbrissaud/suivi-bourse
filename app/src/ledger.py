@@ -37,9 +37,16 @@ The ``account`` table itself is :mod:`accounts`' — this module owns
 ``import_source``, hands it a ``source_id``, and never writes an account row of
 its own.
 
+Since #710 an event file may also **declare the reporting currency its amounts
+are recorded in**, which is the one thing an import writes outside its own three
+tables — and the exception is earned rather than convenient: the export states
+the currency so that a round trip cannot silently reinterpret every amount it
+carries, and reading that declaration is the whole reason it is worth writing.
+:func:`_currency_to_adopt` holds the rule and nothing else here knows about it.
+
 **Not in this module**: the replay into ``position`` / ``account_state`` (#699).
-What is here writes ``import_source``, ``symbol`` and ``event``, which is
-exactly the set of tables whose one writer is the import.
+What is here writes ``import_source``, ``symbol`` and ``event`` — and, under the
+paragraph above, one row of ``setting``.
 """
 import hashlib
 from dataclasses import dataclass
@@ -50,6 +57,7 @@ from typing import Dict, List, Optional, Sequence
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
+import settings_registry
 from events import EventAggregator, EventLoader, EventValidator
 from events.schemas import DEFAULT_ACCOUNT, Event, EventType
 
@@ -468,6 +476,11 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
        whole transaction back, so a bad file is *not imported at all* and what
        was already good is untouched.
 
+    A file that **declares a reporting currency** (issue #710) has that read
+    before anything else, by :func:`_currency_to_adopt`; the row it produces is
+    written first inside the transaction, so a refused import leaves the dial
+    exactly as it found it.
+
     Returns the number of event rows written.
 
     Raises:
@@ -475,12 +488,29 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
         EventValidationError: the file, or the ledger it would make, is invalid.
         AggregationError: the resulting ledger does not replay (an oversell).
         accounts.AccountInUse: it stopped declaring an account an event names.
+        settings_registry.InvalidSetting: the file declares a reporting currency
+            that is not a currency, or one this install can no longer take.
     """
     stamped = now or datetime.now(timezone.utc)
     digest = fingerprint or fingerprint_of(path)
-    parsed = EventLoader(str(path)).load()
+    loader = EventLoader(str(path))
+    parsed = loader.load()
+    # Decided **before** the transaction opens, and therefore against the ledger
+    # as it stands rather than as this import leaves it. Inside, step 2 has
+    # already deleted this source's own rows, so a re-drop of the only file in a
+    # store would be judged against an empty ledger and could quietly
+    # reinterpret every amount it is about to re-insert.
+    adopted = _currency_to_adopt(store, loader.declared_currency)
 
     with store.transaction():
+        if adopted is not None:
+            store.execute(
+                'INSERT INTO setting (key, value) VALUES (?, ?) '
+                'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+                ['base_currency', settings_registry.stored_form(
+                    'base_currency', adopted)])
+            logger.info(f"{path.name} declares {adopted} as the reporting "
+                        f"currency; taking it up")
         source_id = _upsert_source(store, path.name, KIND_EVENTS, stamped, digest)
         store.execute('DELETE FROM event WHERE source_id = ?', [source_id])
         accounts_module.forget_source(store, source_id)
@@ -565,6 +595,58 @@ def forget_import(store, source_id: int) -> int:
     logger.info(f"Forgot import {source_id}: {removed} event(s) and "
                 f"{len(retired)} account(s) removed")
     return removed
+
+
+def _currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
+    """What an event file's ``base_currency`` column asks this install to store.
+
+    ``None`` means *write nothing*: the file declares no currency, or it declares
+    the one already in force. Anything else is the value the import writes into
+    ``setting``.
+
+    The rule the whole thing rests on (ADR-0021): **the app reads a declaration,
+    it never asserts one.** An exported file states the currency its amounts were
+    recorded in — event amounts being the debit *in the reporting currency*
+    (ADR-0002), a file carrying none is a file every amount of which can be
+    silently re-read as another unit. So a store that has never answered the
+    question takes the file's answer, and that is what makes the headless round
+    trip work with no ``curl`` at all: drop the export, and the install is the
+    install it came from.
+
+    A **disagreement** is arbitrated by the dial's own mutability rule rather
+    than by a second one invented here — free while the ledger is empty, fixed
+    from the first recorded event (:func:`settings._refuse_a_reinterpretation`).
+    With no event, nothing has been interpreted and nothing can be
+    reinterpreted; with events, adopting would re-read every one of them in
+    another unit, which is the unrecoverable act ADR-0002 names. Two spellings of
+    *"may this install still answer"* would eventually disagree, and the symptom
+    would be a portfolio silently changing currency.
+
+    The **shape** of the code is not judged here either: it goes to
+    :func:`settings_registry.validate`, the one authority on what a currency
+    looks like, so an events file saying ``EURO`` is refused with the message the
+    settings form gives — and refused *whole*, since the raise happens before the
+    transaction opens.
+    """
+    if not declared:
+        return None
+
+    value = settings_registry.validate('base_currency', declared)
+    current = store.setting('base_currency')
+    if current == value:
+        return None
+    if current is None:
+        return value
+
+    (events,) = store.query('SELECT count(*) FROM event')[0:1][0]
+    if events:
+        raise settings_registry.InvalidSetting(
+            'base_currency',
+            f"the file declares {value} as the reporting currency while this "
+            f"install reports in {current} and {events} event(s) are recorded "
+            f"in it; importing it would reinterpret every amount already "
+            f"stored rather than convert it. Forget those imports first.")
+    return value
 
 
 # --------------------------------------------------------------------------- #

@@ -9,6 +9,17 @@ from typing import List, Optional
 
 from .schemas import Event, EventType
 
+#: The one column of an event file that is a fact about the **file** rather than
+#: about a row (issue #710): the reporting currency its amounts are recorded in.
+#: It is written by the export and read here, which is what makes a round trip
+#: unable to reinterpret every amount it carries.
+#:
+#: Named ``base_currency`` and not ``currency`` on purpose. A broker export
+#: routinely carries a ``currency`` column meaning the **security's quote**
+#: currency, and there are exactly two currency levels in v5 (ADR-0002) — reading
+#: one for the other is the silent reinterpretation this column exists against.
+BASE_CURRENCY_COLUMN = 'base_currency'
+
 
 class EventLoaderError(Exception):
     """Exception raised when loading events fails."""
@@ -33,6 +44,12 @@ class EventLoader:
             source_path: Path to a file or directory containing event files.
         """
         self.source_path = Path(source_path).expanduser()
+        #: The reporting currency the source **declares**, or ``None`` when it
+        #: declares none (issue #710). Set by :meth:`load`, and kept beside the
+        #: events rather than on them: it is a fact about the file, and an
+        #: ``Event`` that carried one would invite the idea that two rows could
+        #: disagree.
+        self.declared_currency: Optional[str] = None
 
     def load(self) -> List[Event]:
         """
@@ -42,11 +59,13 @@ class EventLoader:
             List of Event objects sorted by date.
 
         Raises:
-            EventLoaderError: If loading fails.
+            EventLoaderError: If loading fails, or if the source declares two
+                different reporting currencies (issue #710).
         """
         if not self.source_path.exists():
             raise EventLoaderError(f"Source path does not exist: {self.source_path}")
 
+        self.declared_currency = None
         events = []
 
         if self.source_path.is_file():
@@ -172,6 +191,12 @@ class EventLoader:
         workbook names the tab the row came from. Neither is ever used to write
         back — the store's primary key is what addresses a row.
         """
+        # The file's own declaration first (issue #710) — before anything that
+        # can reject the row, so a source that states two reporting currencies
+        # is refused for *that*, at the row where the second one appears, rather
+        # than for whatever the row happens to say next.
+        self._note_currency(row)
+
         # Parse date
         date_value = row.get('date')
         if not date_value:
@@ -235,6 +260,33 @@ class EventLoader:
             source_sheet=sheet,
             source_row=row_num,
         )
+
+    def _note_currency(self, row: dict) -> None:
+        """Read the row's ``base_currency`` cell into the source's declaration.
+
+        The value is upper-cased here and its *shape* is not checked at all —
+        three letters or not is :mod:`settings_registry`'s rule, and it is the
+        import that puts the question to it (``ledger.import_file``). What is
+        this module's business is the one thing only a reader of the file can
+        see: **a source states one reporting currency**. Two different codes in
+        one file is not a value to arbitrate between, it is a file that says two
+        contradictory things about every amount it carries.
+
+        A blank cell declares nothing and is not a disagreement, which is what
+        lets a hand-written file leave the column out entirely — and what lets an
+        install that has never answered the question export a file everyone can
+        import.
+        """
+        raw = row.get(BASE_CURRENCY_COLUMN)
+        code = '' if raw is None else str(raw).strip().upper()
+        if not code:
+            return
+        if self.declared_currency and self.declared_currency != code:
+            raise ValueError(
+                f"the file declares two reporting currencies, "
+                f"{self.declared_currency!r} then {code!r}; "
+                f"{BASE_CURRENCY_COLUMN} is one fact about the whole file")
+        self.declared_currency = code
 
     def _parse_float(self, value, field_name: str) -> Optional[float]:
         """Parse a value as float, returning None for empty values."""

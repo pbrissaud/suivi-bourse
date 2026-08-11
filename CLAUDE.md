@@ -619,6 +619,61 @@ account (issue #698) — `POST`/`PATCH`/`DELETE /api/accounts` — and it writes
 **row**, never a file: a declaration made in the app carries `source_id NULL`,
 which is both "created in the UI" and "editable".
 
+**And the ledger leaves the way it came in** (issue #710, ADR-0008, ADR-0021).
+`GET /api/export/events.csv` and `GET /api/export/accounts.csv` render the store
+in the **import format**, so the round trip is round by construction rather than
+by a mapping kept in step by hand — which is what makes *"can I go back to v4?"*
+a one-sentence answer (*export, then point v4 at a folder holding the exported
+`events.csv` alone*) and a backup something other than a binary DuckDB file.
+The word *alone* is load-bearing and it is what the documentation has to carry:
+v4's `EventLoader._load_directory` **re-raises**, so an `accounts.csv` — a
+format v4 has no notion of — refuses the whole directory rather than itself,
+and a single-account install is not spared, its accounts export being a header
+row with no rows under it. `events/export.py` is pure —
+rows in, text out — and it is a **rewrite** of the "render a CSV" half spec #695
+§ 6 had reserved when #711 deleted `events/editor.py` whole: the old one
+rendered a file being edited in place (an addressable `CsvFile`, an atomic
+rename, a workbook conversion), and none of those three has a subject once the
+rows come from the store and the bytes go into an HTTP response. Four decisions:
+
+- **Two files, not one**: a file is an accounts source or an event source
+  according to its header, never both, and an event file naming `pea` is refused
+  whole where nothing declares `pea` — so exporting the events alone would
+  restore a multi-account install into a refusal. The seeded `default` row is
+  **not** in the accounts file unless something changed it: it is on every
+  install and nobody declared it, and re-importing it would hand the one row
+  every install owns a `source_id`, making it read-only and forgettable.
+- **The file states its reporting currency**, in a `base_currency` column
+  repeated on every row. Event amounts are the debit *in the reporting currency*
+  (ADR-0002) and nothing else in the file says which one, so a round trip
+  through an install that answered differently re-reads every amount as another
+  unit. The name is the guard: a broker export routinely carries a `currency`
+  column meaning the **security's quote** currency, and there are two currency
+  levels and not three. A column and not a preamble, because a CSV has one
+  header row and a sidecar document would not be imported by the drop folder at
+  all — and the export must re-enter by the **normal** path or it proves
+  nothing.
+- **On the way back in, the app reads a declaration rather than asserting one**
+  (ADR-0021): a store that has never answered **takes** the file's currency,
+  which is what makes the headless round trip work without a single `curl`. A
+  disagreement is arbitrated by the dial's own rule and not by a second one —
+  free while the ledger is empty, fixed from the first recorded event — so an
+  install with events refuses the file **whole**, the raise happening before the
+  transaction opens. The *shape* of the code is `settings_registry`'s, so an
+  events file saying `EURO` is refused with the message the settings form gives.
+  A file declaring two different codes is refused by the loader: it is one fact
+  about the whole file.
+- **The import is the third writer of a dial**, and `ingest()` therefore
+  re-reads `base_currency` after a reload (`_adopt_declared_currency`). A dial
+  reaches the process at boot and from `PUT /api/settings`; without that line
+  the row would be in the store while the process went on converting nothing
+  until the next restart — invisibly, since a missing currency writes `NULL`
+  conversions rather than failing anything.
+
+Provenance and prices are deliberately **not** exported: the export replaces the
+imports it came from, and prices are re-fetched. An account created in the app
+therefore comes back file-declared and read-only.
+
 Flask serves the built SPA with a catch-all that must **not** swallow `/api` or
 `/metrics`: without those guards a typo'd endpoint returns the HTML shell with a
 `200`, and a Prometheus scraper reads `200` as a healthy target.
@@ -1012,6 +1067,7 @@ date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 | `fee` | Optional | Transaction fee. On a BUY it is absorbed into the cost basis; on a SELL it reduces the proceeds and lands in the realized gain |
 | `amount` | For DIVIDEND | Dividend amount received |
 | `notes` | Optional | Free text comment |
+| `base_currency` | Optional | The reporting currency the file's amounts are recorded in (issue #710). A fact about the **whole file**, so two different codes in one file is a refusal; written by the export, and read on the way in — a store that has none takes it. Never `currency`, which a broker export uses for the *security's* quote currency |
 
 #### Declaring accounts (issue #698, ADR-0013)
 
@@ -1418,13 +1474,14 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, imports, advisories (#709), config, runtime
+│   ├── api.py              # /api blueprint: shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
     ├── __init__.py
     ├── schemas.py          # Dataclasses: Event, EventType, ShareState + unit_cost (#699)
-    ├── loader.py           # CSV/XLSX loading
+    ├── loader.py           # CSV/XLSX loading, and the file's own base_currency (#710)
+    ├── export.py           # Pure: the ledger back out, in the import format (#710)
     ├── validator.py        # Event validation
     ├── aggregator.py       # Aggregation logic — the PMP, the realized gain, the dust clamp
     └── watcher.py          # File watcher (watchdog)

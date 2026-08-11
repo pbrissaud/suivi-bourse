@@ -23,6 +23,7 @@ import runtime_state
 import settings_registry
 import store
 import web as web_module
+from events import export as events_export
 from events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from web import create_app
 
@@ -863,6 +864,89 @@ def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
     payload = client.get('/api/events?symbol=AAPL').get_json()
 
     assert [row['symbol'] for row in payload] == ['AAPL']
+
+
+# --------------------------------------------------------------------- #
+# Export (issue #710)
+# --------------------------------------------------------------------- #
+
+_EXPORTABLE = (
+    "date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2024-01-15,BUY,pea,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase\n"
+    "2024-03-01,DIVIDEND,pea,AAPL,Apple Inc,,,,8.50,\n"
+)
+
+_EXPORTABLE_ACCOUNTS = "id,type,label\npea,PEA,PEA Boursorama\n"
+
+
+def test_the_export_is_reachable_over_http(tmp_path):
+    """The gesture is on the API, so a headless install has it too.
+
+    *Headless means without an interface, not without HTTP* — the same argument
+    that keeps ``PUT /api/settings`` a route. One ``curl`` is a complete backup.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE,
+        seed=lambda opened: opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')"))
+
+    response = client.get('/api/export/events.csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'] == 'text/csv; charset=utf-8'
+    assert 'attachment' in response.headers['Content-Disposition']
+    body = response.get_data(as_text=True)
+    assert body.splitlines()[0].split(',') == list(events_export.EVENT_COLUMNS)
+    # The reporting currency rides on every row, or a round trip reinterprets
+    # every amount in the file.
+    assert body.count(',EUR\n') == 2
+    opened.close()
+
+
+def test_the_accounts_export_serves_the_declaration(tmp_path):
+    """The other half of a round trip that is round for a multi-account install."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    body = client.get('/api/export/accounts.csv').get_data(as_text=True)
+
+    assert body == "id,type,label\npea,PEA,PEA Boursorama\n"
+    opened.close()
+
+
+def test_an_install_that_declared_nothing_exports_a_header_only(tmp_path):
+    """The seeded ``default`` is not a declaration and does not leave (ADR-0013)."""
+    client, opened = build_client_and_store(tmp_path)
+
+    body = client.get('/api/export/accounts.csv').get_data(as_text=True)
+
+    assert body == "id,type,label\n"
+    opened.close()
+
+
+def test_an_empty_ledger_exports_the_header_and_no_row(tmp_path):
+    """Emptiness is a state, not an error: the file is valid and carries nothing."""
+    client, opened = build_client_and_store(tmp_path)
+
+    body = client.get('/api/export/events.csv').get_data(as_text=True)
+
+    assert body == ','.join(events_export.EVENT_COLUMNS) + '\n'
+    opened.close()
+
+
+def test_an_unreadable_store_fails_the_export_rather_than_emptying_it(tmp_path):
+    """A backup that silently comes back empty is worse than one that fails.
+
+    Same contract as every other route in this blueprint: a query error
+    propagates and becomes a ``503``, never an empty collection.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)
+    opened.execute('DROP TABLE event')
+
+    response = client.get('/api/export/events.csv')
+
+    assert response.status_code == 503
+    opened.close()
 
 
 # --------------------------------------------------------------------- #

@@ -19,6 +19,15 @@ Reading is the sibling half and lives here too, so that "what does this install
 run?" and "change what this install runs" read the same table through the same
 registry — the acceptance criterion that ``/api/config`` must not carry a second
 enumeration of the dials.
+
+**One dial has a second writer since #710**, and it is named here rather than
+left to be discovered: an event file may *declare* the reporting currency its
+amounts are recorded in, and a store that has never answered takes it
+(``ledger._currency_to_adopt``, ADR-0021). It is a declaration read, not a
+setting written by a gesture — an exported ledger that did not state its unit
+would be reinterpreted by the install it lands in — and it obeys **this
+module's** rule for that dial, `_refuse_a_reinterpretation`'s, rather than a
+second one of its own.
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple

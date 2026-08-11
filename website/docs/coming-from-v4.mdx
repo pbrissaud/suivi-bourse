@@ -1,11 +1,48 @@
 ---
 title: Coming from v4
-description: Everything is redone, accounts are redeclared, and which figures are meant to differ
+description: Everything is redone, accounts are redeclared, which figures are meant to differ — and how to go back
 ---
 
 This page will carry what a version 4 owner has to do — which is a re-import
 and a rebuild, never an upgrade — and which figures are meant to differ
 afterwards.
+
+## Going back
+
+**[Export your events](./import-your-events.mdx#export-it-all-back-out), then
+point a version 4 install at a folder holding the exported `events.csv` alone.**
+
+That sentence is the whole procedure, and the export is what makes it true: your
+original files are never touched, so going back at the moment you switch costs
+nothing — but everything you record in version 5 afterwards lives only in its
+store, and the export is how it leaves. The exported file is an ordinary event
+file; version 4 reads it and ignores the one column it does not know, the
+`base_currency` version 5 writes on every row.
+
+**`alone` is the operative word**, and what it keeps out is the second file the
+export writes. Version 4 has no notion of an accounts file: it refuses any `.csv` whose header
+lacks `date` and `event_type`, and it refuses **the whole directory** with it —
+so an `accounts.csv` left beside the events is not skipped, it takes the entire
+portfolio down (`Error loading accounts.csv: Missing required columns`). A
+single-account install is caught by the same rule and not spared by having
+nothing to declare: its accounts export is a header row with no rows under it,
+and an empty file is still a file with the wrong header. So keep `accounts.csv`
+out of the folder version 4 reads — with your backup, where it is the half
+version 5 restores from — and redeclare what it holds in version 4's
+`settings.yaml`, with the same ids the `account` column names.
+
+**Version 4 asks each account for a `currency`, and the exported file cannot
+carry one**: version 5 has one reporting currency for the whole install and no
+currency on an account at all, so there is nothing in the export to copy across.
+Write your reporting currency on every account — the one all your amounts were
+already recorded in — and the declaration stands. This is not a degraded page if
+you forget: version 4 validates `settings.yaml` before anything else runs and
+refuses to start, so an account short of a `currency` is a boot that stops, not
+a figure that goes missing.
+
+And the figures you land back on are version 4's, computed by version 4's
+conventions: only quantity, cash balance and net contribution are expected to
+coincide with what you were reading.
 
 :::info Not written yet
 It is the subject of its own ticket. What it will hold:

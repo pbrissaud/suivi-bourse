@@ -22,7 +22,7 @@ So the rules here are thin on purpose. What the routes *do* own:
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
@@ -35,7 +35,9 @@ import runtime_state
 import runtime_view
 import settings as settings_module
 import settings_registry
+import store as store_module
 from events import EventAggregator
+from events import export as events_export
 from store_reads import PortfolioReader, bucket_for_window
 from web.problem import (
     bad_request,
@@ -633,6 +635,85 @@ def _event_to_dict(event) -> dict:
         'source_row': event.source_row,
         'provenance': ledger.provenance_label(event),
     }
+
+
+# --------------------------------------------------------------------- #
+# Export — the ledger back out, in the format it comes in (issue #710)
+# --------------------------------------------------------------------- #
+
+#: What the two exported files are called when a browser saves them. Plain
+#: names, because a re-import identifies a source by its **file name** (spec
+#: #695 § 6): a name carrying a date would make every export a new source, and
+#: restoring twice would double the ledger instead of replacing it.
+EXPORT_FILENAMES = {
+    'events': 'suivi-bourse-events.csv',
+    'accounts': 'suivi-bourse-accounts.csv',
+}
+
+
+@api_bp.get('/export/events.csv')
+def export_events():
+    """Every event, as a file this app imports.
+
+    The gesture that makes *"can I go back?"* answerable in one sentence, and
+    the reason a backup is not only a binary DuckDB file. It is on the API and
+    not only on a page, for the reason ``PUT /api/settings`` is: *headless means
+    without an interface, not without HTTP* — one ``curl`` is a complete backup,
+    and the page is one client of it.
+
+    Read from the **store**, not from the published snapshot. The two hold the
+    same rows on the common path, and they part exactly where it matters: a
+    snapshot the validator refused leaves the previous one standing (#658), so
+    an export taken from it would quietly hand back a ledger from before the
+    last import. What is exported is what is stored.
+
+    ``base_currency`` rides on every row, and is blank when the install has never
+    answered the question — see :mod:`events.export` for why a column rather
+    than a preamble, and why it is not called ``currency``.
+    """
+    opened = _store()
+    return _csv_response(
+        events_export.render_events(ledger.read_events(opened),
+                                    opened.setting('base_currency')),
+        EXPORT_FILENAMES['events'])
+
+
+@api_bp.get('/export/accounts.csv')
+def export_accounts():
+    """Every **declared** account, as a file this app imports (issue #698).
+
+    The other half of a round trip that is actually round: an event file naming
+    ``pea`` is refused whole where nothing declares ``pea``, so exporting the
+    events alone would restore a multi-account install into a refusal. Two files
+    and not one because that is the format — a file is an accounts source or an
+    event source according to its header, never both.
+
+    The seeded ``default`` row is **not** in it unless something changed it: it
+    is on every install and nobody declared it, so writing it out would turn "I
+    declared nothing" into a declaration — and re-importing that would hand the
+    one row every install owns a ``source_id``, making it read-only and
+    forgettable, which is exactly what ADR-0013 keeps it from being.
+    """
+    return _csv_response(
+        events_export.render_accounts(events_export.declared_accounts(
+            accounts_module.read_accounts(_store()),
+            store_module.DEFAULT_ACCOUNT_ROW)),
+        EXPORT_FILENAMES['accounts'])
+
+
+def _csv_response(body: str, filename: str) -> Response:
+    """One exported file on the wire.
+
+    ``attachment`` rather than an inline body: the browser's own *Save as* is
+    the whole of the interface this gesture needs, and a CSV rendered in a tab
+    is a backup nobody took. The charset is stated because the ledger carries
+    the user's own text — a share called *Société Générale* read as latin-1 is a
+    file that re-imports with a mangled name.
+    """
+    return Response(body, mimetype='text/csv', headers={
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': f'attachment; filename="{filename}"',
+    })
 
 
 # --------------------------------------------------------------------- #
