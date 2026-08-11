@@ -162,6 +162,21 @@ side), and `lib/gain.ts` (ADR-0018's identity). **No row-marker component is
 created** — *a per-row marker that does not discriminate is noise however
 correct it is*, and two independent tickets produced that defect under two names.
 
+**`absence.ts` is the classification, and `gain.ts` calls it rather than holding
+a second one.** That is the whole of what makes the rule a rule: written twice,
+the copy loses a branch. `positionTerms` held *quoted with no rate* and *no
+quote at all* inline — `absenceCase`'s second and third cases, **minus its
+first**, `quantity === 0`, which that module tests first and unconditionally
+because ordering it last is how *sold* and *broken ticker* collapse. One line the
+owner closed years ago, still carrying a `symbol_quote` price with no resolved
+rate, therefore turned the gain of the **entire portfolio** into an absence —
+the exact failure the four-term computation exists to prevent. And a sum carries
+its **reason** rather than a bare `null` (`Unrealised`), because a caller holding
+only the nullity can write nothing but an em dash — which by ADR-0016 says
+*there is nothing to compute* about a rate the app fetches by itself. The three
+`Rendering` constants are exported for that: a total wears the same one as a
+cell, and `absence.awaitingRate` stays in one file.
+
 The head itself **computes `Gain total` from its four terms and never reads
 `portfolio_totals.gain_absolu`**, which is the same number written down
 elsewhere; three of the four terms come off `/api/positions`, so a global row
@@ -178,7 +193,17 @@ Being two figures is also why **both** of them carry the rebuild's sentence.
 They are kept apart on purpose, so a reader looking at one never sees the
 other's caption, and a bare `—` on the percentage says — by this ticket's own
 rule — *there is nothing to compute*, when what is going on is a history not
-rebuilt that far back yet. And the perimeter line under the consolidated
+rebuilt that far back yet. **A read that has not landed is not a fact**, and the
+rule splits the block's four reads in two. `positions` and `portfolio-totals`
+are *needed*, so the head waits for **both** before rendering anything: the
+sentences it writes are about the totals as much as about the positions, so
+letting one land first turned *not arrived yet* into a statement — *« un grand
+livre d'événements datés ajouterait… »* printed under a portfolio that has one,
+for as long as the second request took, then a headline swapped for another
+number under the reader's eyes. `accounts` and `runtime` are *optional*: their
+absence removes a line instead of falsifying one, which is why they keep a
+`?? null` and the required pair does not. The perimeter line under the
+consolidated
 figures is **not written at all** while the accounts read has not landed:
 ADR-0013 seeds a `default` row that is never removed, so `0 compte` is a state
 the product declares impossible, and it was being printed as the statement of

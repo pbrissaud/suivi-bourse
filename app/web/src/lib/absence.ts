@@ -77,9 +77,18 @@ export interface PositionRenderings {
   unrealised: Rendering
 }
 
-const FIGURE: Rendering = { kind: 'figure' }
-const DASH: Rendering = { kind: 'dash' }
-const AWAITING: Rendering = { kind: 'named', message: 'absence.awaitingRate' }
+/**
+ * The three renderings are **exported**, because a *total* wears the same one as
+ * a *cell*. `Gain total` is unknown for exactly one reason — a held position
+ * whose rate has not resolved — and that reason has a sentence here already; a
+ * consumer holding only `number | null` cannot reach it, so it writes a bare
+ * dash and says *there is nothing to compute* about something perfectly
+ * nameable. Exporting the constant is what keeps the message key in one file
+ * while the surfaces that need it multiply.
+ */
+export const FIGURE: Rendering = { kind: 'figure' }
+export const DASH: Rendering = { kind: 'dash' }
+export const AWAITING_RATE: Rendering = { kind: 'named', message: 'absence.awaitingRate' }
 
 export function positionRenderings(input: PositionAbsenceInput): PositionRenderings {
   switch (absenceCase(input)) {
@@ -93,7 +102,7 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       // The native price is known and worth showing — it is the quote the
       // reader's broker shows them. What is missing is the rate, and it is
       // named rather than dashed, because it is repairable.
-      return { price: FIGURE, valuation: AWAITING, unrealised: AWAITING }
+      return { price: FIGURE, valuation: AWAITING_RATE, unrealised: AWAITING_RATE }
     case 'nothingToCompute':
       return { price: DASH, valuation: FIGURE, unrealised: DASH }
     case 'noQuote': {

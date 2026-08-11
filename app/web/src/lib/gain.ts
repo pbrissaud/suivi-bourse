@@ -22,20 +22,34 @@
  * not a dividend, and it belongs to no security — so the shares page, whose
  * header sums its rows, can never show it. With it the sum telescopes exactly.
  */
+import { AWAITING_RATE, DASH, FIGURE, absenceCase, type Rendering } from '@/lib/absence'
 import type { Position } from '@/lib/api'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const
 
 export type GainTermName = (typeof GAIN_TERMS)[number]
 
+/**
+ * A sum, or the **reason** there is not one.
+ *
+ * `number | null` was the shape, and it is one bit short: the nullity survived
+ * the return and the *case* did not, so every caller could do nothing but write
+ * an em dash — which by this product's own rule (ADR-0016) says *there is
+ * nothing to compute* about a rate that simply has not resolved yet. Carrying
+ * the reason is what lets the head name it, and it costs one discriminant.
+ */
+export type Unrealised =
+  | { known: true; value: number }
+  | { known: false; because: 'awaitingRate' }
+
 export interface GainTerms {
   /**
-   * `null` — **unknown**, not zero: at least one held position is quoted in a
-   * currency whose rate has not resolved, so its market value in the reporting
-   * currency has no value at all. A `?? 0` here is how a portfolio silently
-   * reports the gain of the part of itself it could convert.
+   * Unknown, not zero, when at least one held position is quoted in a currency
+   * whose rate has not resolved: its market value in the reporting currency has
+   * no value at all. A `?? 0` here is how a portfolio silently reports the gain
+   * of the part of itself it could convert.
    */
-  unrealised: number | null
+  unrealised: Unrealised
   realised: number
   dividends: number
   /**
@@ -68,29 +82,54 @@ export function termIsRendered(term: GainTermName, value: number | null): boolea
 /**
  * The three terms the positions carry, summed over the whole portfolio.
  *
- * A position carried at its cost contributes **exactly zero** to the latent
- * gain rather than a loss — that is the absence rule's first row, and composing
- * this out of null-tolerant helpers is what made a share whose price was never
+ * **The classification is `lib/absence.ts`'s, and never a second spelling of it
+ * here.** This function held one: *quoted with no rate* and *no quote at all*
+ * written out inline, which is `absenceCase`'s second and third branches — minus
+ * its first, `quantity === 0`, which that module tests **first and
+ * unconditionally** and says why: ordering it last is how *sold* and *broken
+ * ticker* collapse. Missing it, a sold position whose last quote carries no rate
+ * blanked the headline of the whole portfolio, which is the exact failure the
+ * four-term computation exists to prevent.
+ *
+ * A position carried at its cost contributes **exactly zero** to the latent gain
+ * rather than a loss — that is the absence rule's first row, and composing this
+ * out of null-tolerant helpers is what made a share whose price was never
  * observed report a total loss.
  */
 export function positionTerms(positions: readonly Position[]): Omit<GainTerms, 'transferFees'> {
-  let unrealised: number | null = 0
+  let unrealised: Unrealised = { known: true, value: 0 }
   let realised = 0
   let dividends = 0
 
   for (const position of positions) {
     realised += position.realised
     dividends += position.dividends
-    if (unrealised === null) continue
-    if (position.price !== null && position.converted === null) {
+    if (!unrealised.known) continue
+
+    // The sum is computed from the positions alone, deliberately (the whole
+    // point of the four terms), so there is no per-symbol failure counter to
+    // hand over. That splits *asked and got nothing* from *not asked yet* in a
+    // **cell**, and the two are one arithmetic here: both are carried at cost.
+    const which = absenceCase({
+      quantity: position.quantity,
+      price: position.price,
+      converted: position.converted,
+      consecutiveFailures: 0,
+    })
+
+    if (which === 'awaitingRate') {
       // Quoted, and the rate is missing: this position's market value has no
       // figure in the reporting currency, so neither has the sum.
-      unrealised = null
+      unrealised = { known: false, because: 'awaitingRate' }
       continue
     }
-    const marketValue =
-      position.converted === null ? position.cost_basis : position.converted.value * position.quantity
-    unrealised += marketValue - position.cost_basis
+    // Sold, carried at cost, or never quoted: a contribution of exactly zero,
+    // by construction — a sold position has a nil basis and a carried one is
+    // worth what it cost.
+    if (which !== 'quoted') continue
+
+    const marketValue = (position.converted?.value ?? 0) * position.quantity
+    unrealised = { known: true, value: unrealised.value + marketValue - position.cost_basis }
   }
 
   return { unrealised, realised, dividends }
@@ -108,13 +147,38 @@ export function portfolioTerms(
  *
  * `transferFees` absent counts as zero — an install with free transfers has
  * three terms and its three-term sum *is* the gain. `unrealised` absent does
- * not: the sum is then genuinely unknown, and saying so is the honest answer.
+ * not: the sum is then genuinely unknown, **and it inherits its reason**, so the
+ * headline names what is missing instead of wearing the dash that would claim
+ * there is nothing to compute.
  */
-export function gainTotal(terms: GainTerms): number | null {
-  if (terms.unrealised === null) return null
-  return terms.unrealised + terms.realised + terms.dividends + (terms.transferFees ?? 0)
+export function gainTotal(terms: GainTerms): Unrealised {
+  if (!terms.unrealised.known) return terms.unrealised
+  return {
+    known: true,
+    value:
+      terms.unrealised.value + terms.realised + terms.dividends + (terms.transferFees ?? 0),
+  }
 }
 
-export function termValue(terms: GainTerms, term: GainTermName): number | null {
-  return terms[term]
+/** How a sum reads — `absence.ts`'s own constants, so the key lives in one file. */
+export function unrealisedRendering(unrealised: Unrealised): Rendering {
+  return unrealised.known ? FIGURE : AWAITING_RATE
+}
+
+/**
+ * How one term reads, and the number to format when it reads as a figure. The
+ * pair travels together because splitting them is what let a caller format a
+ * `null` — the defect this shape removes.
+ */
+export function termRendering(terms: GainTerms, term: GainTermName): Rendering {
+  if (term === 'unrealised') return unrealisedRendering(terms.unrealised)
+  // The fourth term is *absent*, never zero, on an install whose broker moves
+  // money for free — and `termIsRendered` has already dropped it by then. A
+  // dash is right for anything else that reaches here with no figure.
+  return termAmount(terms, term) === null ? DASH : FIGURE
+}
+
+export function termAmount(terms: GainTerms, term: GainTermName): number | null {
+  if (term !== 'unrealised') return terms[term]
+  return terms.unrealised.known ? terms.unrealised.value : null
 }

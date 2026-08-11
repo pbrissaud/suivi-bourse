@@ -13,18 +13,20 @@
  * would be asserting the wrong thing about the right number.
  */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { HttpResponse, http } from 'msw'
+import { HttpResponse, delay, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccountsPayload,
+  aPosition,
   aPositionsPayload,
   aRuntime,
   aTotals,
   aTotalsPayload,
   defaultAccounts,
+  defaultPositions,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -367,6 +369,90 @@ describe('the convention bubble', () => {
       'Ce que veut dire TRI',
       'Ce que veut dire TWR',
     ])
+  })
+})
+
+describe('what is merely missing is named, never dashed', () => {
+  it('says the rate is awaited, on the headline and on its term', async () => {
+    // `lib/absence.ts` is the ticket's own primitive and it had **no consumer
+    // in production at all** — its key `absence.awaitingRate` sat in both
+    // catalogues, rendered nowhere. The head held `number | null`, so the case
+    // died at the return and every site could write nothing but an em dash:
+    // *there is nothing to compute* about a rate the app fetches by itself.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([aPosition({ price: 125, currency: 'USD', rate: null })]),
+        ),
+      ),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/en attente du taux/)
+    expect(head).not.toHaveTextContent(/^Gain total\s*—/)
+    expect(figure('Plus-value latente')).toHaveTextContent(/en attente du taux/)
+  })
+
+  it('does not let a **sold** line with no rate blank the whole headline', async () => {
+    // A position the owner closed years ago keeps a `symbol_quote` row, so it
+    // still carries a last price; while the base currency is unanswered that
+    // price has no rate. `absenceCase` tests `quantity === 0` first and
+    // unconditionally for exactly this reason — and the head's own arithmetic
+    // held a copy of the classification without that first test, so one closed
+    // line turned the gain of the entire portfolio into an absence.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            ...defaultPositions(),
+            aPosition({
+              symbol: 'ZZD',
+              quantity: 0,
+              cost_basis: 0,
+              realised: 120,
+              price: 125,
+              currency: 'USD',
+              rate: null,
+            }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+
+    // +300,00 latent · 50,00 + 120,00 realised · 25,00 dividends − 5,00 = 490,00
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/490,00/)
+    expect(head).not.toHaveTextContent(/en attente du taux/)
+    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+  })
+})
+
+describe('a read that has not landed is not a fact', () => {
+  it('waits for the totals rather than announcing there is no ledger', async () => {
+    // The two reads the block *needs* land at their own pace, and the sentences
+    // below are written about `portfolio_totals` as much as about the
+    // positions. Taking `totals.data?.totals ?? null` put *« un grand livre
+    // d’événements datés ajouterait… »* under a portfolio that has one, for as
+    // long as the second request took — then swapped the headline for another
+    // number under the reader's eyes.
+    server.use(
+      http.get(ROUTES.portfolioTotals, async () => {
+        await delay(120)
+        return HttpResponse.json(aTotalsPayload(aTotals()))
+      }),
+    )
+    renderApp()
+
+    // Nothing is claimed while it is in flight — not the three-term headline,
+    // and above all not the sentence that denies the ledger.
+    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+
+    // And once it lands, the four-term figure, in one go.
+    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
+    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
   })
 })
 

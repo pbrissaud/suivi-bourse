@@ -53,16 +53,19 @@ import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { api } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
+import type { Rendering } from '@/lib/absence'
 import {
   GAIN_TERMS,
   gainTotal,
   portfolioTerms,
+  termAmount,
   termCarriesSign,
   termIsRendered,
-  termValue,
+  termRendering,
+  unrealisedRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { useI18n, type MessageKey } from '@/lib/i18n'
+import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
 import { oneBand, readConditions } from '@/lib/status'
 
@@ -71,6 +74,27 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
   realised: 'gain.term.realised',
   dividends: 'gain.term.dividends',
   transferFees: 'gain.term.transferFees',
+}
+
+/**
+ * A figure's text, decided by `lib/absence.ts` and formatted here.
+ *
+ * The one place this block turns *there is no number* into words, and it is a
+ * switch over a closed set rather than a `value === null ? ABSENT : …` written
+ * at each site. Written per site, the dash won every time — including where the
+ * rule says something must be **named**, which is the whole of ADR-0016.
+ */
+type Translate = (key: MessageKey, values?: MessageValues) => string
+
+function figure(rendering: Rendering, format: () => string, t: Translate) {
+  switch (rendering.kind) {
+    case 'figure':
+      return format()
+    case 'dash':
+      return ABSENT
+    case 'named':
+      return t(rendering.message, rendering.values)
+  }
 }
 
 export function DashboardHead() {
@@ -93,13 +117,20 @@ export function DashboardHead() {
   )
   if (failure) return <Band>{t(failure.message)}</Band>
 
-  // Absence of data with no error is the first load, and it is not a state to
-  // write a sentence about.
-  if (!positions.data) return null
+  // **A read that has not landed is not a fact**, and the two the block *needs*
+  // are waited for together. Absence of data with no error is the first load,
+  // and it is not a state to write a sentence about — but the sentences below
+  // are written about `totals` as much as about `positions`, so letting one land
+  // first turns *not arrived yet* into a statement: `totals.data?.totals ?? null`
+  // put *« un grand livre d'événements datés ajouterait… »* under a portfolio
+  // that has one, for as long as the second request took, and then swapped the
+  // headline for a different number. The two optional reads below are not in
+  // this rule: their absence removes a line rather than falsifying one.
+  if (!positions.data || !totals.data) return null
 
   const rows = positions.data.positions
-  const totalsRow = totals.data?.totals ?? null
-  const currency = positions.data.base_currency ?? totals.data?.base_currency ?? null
+  const totalsRow = totals.data.totals
+  const currency = positions.data.base_currency ?? totals.data.base_currency ?? null
 
   // The two empties are not the same (spec #712 §6). *No events at all* is a
   // sentence and a way to the Data page — this page reads, it is not where one
@@ -144,8 +175,15 @@ export function DashboardHead() {
       <Stat
         size="head"
         label={t('dashboard.gainTotal')}
-        value={total === null ? ABSENT : f.currency(total, currency)}
-        valueClassName={signClass(total)}
+        // Unknown here has exactly one cause — a held position whose rate has
+        // not resolved — and it is **named**. A bare dash would say *there is
+        // nothing to compute* about the one absence the app repairs by itself.
+        value={figure(
+          unrealisedRendering(total),
+          () => f.currency(total.known ? total.value : null, currency),
+          t,
+        )}
+        valueClassName={signClass(total.known ? total.value : null)}
         explain={
           <Explain
             figure={t('dashboard.gainTotal')}
@@ -168,14 +206,14 @@ export function DashboardHead() {
       {/* The four terms, on their own row and never on the head's. */}
       <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
         {GAIN_TERMS.map((term) => {
-          const value = termValue(terms, term)
+          const value = termAmount(terms, term)
           if (!termIsRendered(term, value)) return null
           return (
             <Stat
               key={term}
               size="term"
               label={t(TERM_LABELS[term])}
-              value={value === null ? ABSENT : f.currency(value, currency)}
+              value={figure(termRendering(terms, term), () => f.currency(value, currency), t)}
               // Colour only where the sign can turn. A dividend received is
               // never negative and a transfer fee never positive; painting them
               // steals the signal from the red of a realised loss. An absent
