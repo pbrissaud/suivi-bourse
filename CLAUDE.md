@@ -75,11 +75,24 @@ after the merge.
 
 **The image separates what the app writes from what a human edits** (issue #742,
 ADR-0015), and the whole uid apparatus that existed only because the two shared
-a directory left with the cause: no `chmod 0755` on `/home/appuser`, no
-sticky-writable `.cache`, **no `ENV HOME`** — the container runs as `appuser`,
-who owns their own `$HOME`, so Debian's `HOME_MODE` 0700 is correct again and
-the inherited PaaS hazard (a platform that records no invoking uid landing on
-`1000:1000` by accident) has no subject left. Four things replace it:
+a directory loses its cause: `chmod 0755` on `/home/appuser`, the
+sticky-writable `.cache` and `ENV HOME` all become pointless the moment the
+container runs as `appuser`, who owns their own `$HOME` — Debian's `HOME_MODE`
+0700 is correct again, and the inherited PaaS hazard (a platform that records no
+invoking uid landing on `1000:1000` by accident) has no subject left.
+
+**The three lines are nonetheless still in the `Dockerfile`, marked
+`TRANSITIONAL`, and #743 deletes them.** `docker-compose/` still points
+`SB_STORE_DIR` **inside** the mount a human owns, so it still runs
+`user: "${SB_UID:-1000}:${SB_GID:-1000}"` — and a foreign uid needs all three or
+none: the traverse bit (without it gunicorn's `chdir` dies before a line of
+application code), the sticky cache, and `HOME` (Docker gives `/` to a uid with
+no `/etc/passwd` entry, which makes the other two inert *and* sends
+`ConfigurationManager`'s `expanduser` to `/.config/SuiviBourse`, so ADR-0008's
+*named, never read* never fires for the one population it exists for). **The
+first acceptance criterion of #742 is therefore deferred to #743**, deliberately
+and in writing, rather than half-met. Four things replace the apparatus once it
+goes:
 
 - **`/data` and `/import` exist in the image, empty and owned by `appuser`.**
   That is the mechanism, not a nicety: Docker initialises a fresh named volume
@@ -367,20 +380,31 @@ stack that said nothing would put the store in the container's writable layer
 and lose it on the next `up`. The human who edits the event files by hand must own them all the same —
 so the service runs
 as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
-invoking `id -u`/`id -g` in `.env`. **That `user:` is what keeps two lines of
-#742's image alive**, and they are marked transitional in the `Dockerfile`: the
-traverse bit on `/home/appuser` and the sticky `$HOME/.cache`. The first is not
-a comfort — `/home/appuser` is gunicorn's `chdir`, `useradd --create-home`
-leaves it `0700`, and a foreign uid dies on
-`Permission denied: '/home/appuser'` **before a line of application code runs**,
-which kills the macOS development loop this file prescribes on the one platform
-where the app cannot run natively at all (#657). The second keeps yfinance's
-timezone cache writable, its absence costing a network round-trip per ticker
-for ever. `ENV HOME=/home/appuser` did leave with the rest of the apparatus, and
-that one is harmless here: the store is at `SB_STORE_DIR`, which the stack names
-explicitly, and `~/.config/SuiviBourse` is only ever *stat*ed to name the files
-v4 left behind. #743 removes the two transitional lines together with the stack
-that is their whole subject. It is a seam of the same kind as the two dead
+invoking `id -u`/`id -g` in `.env`. **That `user:` is what keeps all three of
+#742's transitional lines alive**, and they are one gesture rather than three
+independent kindnesses:
+
+- **the traverse bit on `/home/appuser`** — it is gunicorn's `chdir`,
+  `useradd --create-home` leaves it `0700`, and a foreign uid dies on
+  `Permission denied: '/home/appuser'` **before a line of application code
+  runs**, which kills the macOS development loop this file prescribes on the one
+  platform where the app cannot run natively at all (#657);
+- **the sticky `$HOME/.cache`** — yfinance's timezone cache, whose absence costs
+  a network round-trip per ticker for ever;
+- **`ENV HOME=/home/appuser`** — and this one is what makes the other two *work
+  at all*. Docker gives `HOME=/` to a uid with no `/etc/passwd` entry, so
+  without it yfinance writes to `/.cache`, cannot, and takes its no-op dummy
+  anyway — the sticky directory above being addressed by nobody. A second
+  consequence has no relation to caches: `ConfigurationManager` resolves its
+  config directory through `expanduser`, so `HOME=/` sends it to
+  `/.config/SuiviBourse` rather than the mount, and ADR-0008's *named, never
+  read* observation for a v4 `config.yaml` / `settings.yaml` **never fires** —
+  for exactly the population the sentence was written for.
+
+Removing any one of the three is what produces a half-broken image, which is why
+**#742's first acceptance criterion is deferred to #743** in writing rather than
+declared met. #743 removes all three together with the stack that is their whole
+subject. It is a seam of the same kind as the two dead
 containers above — this directory goes entirely with #679/#680, and the named
 volume that makes the image's own arrangement whole arrives with it.
 `docker-compose.yaml` is never edited by

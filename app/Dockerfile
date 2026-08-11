@@ -127,6 +127,23 @@ COPY ./src /home/appuser
 # never shadow this one.
 COPY --from=web /build/src/static /home/appuser/static
 
+# ---- TRANSITIONAL, THE THIRD LINE OF THE BLOCK ABOVE — #743 DELETES IT TOO ----
+# Docker gives `HOME=/` to a uid with no `/etc/passwd` entry (501 on macOS), and
+# the compose stack still runs one. Without this the two lines above are
+# **inert**: yfinance writes its timezone cache to `/.cache`, cannot, and falls
+# back to its no-op dummy — measured, `TzCache will not be used` then
+# `dummy: True` — which is the exact degradation their own comment claims to
+# prevent. And a second consequence nobody had looked for:
+# `ConfigurationManager` resolves its config directory through `expanduser`, so
+# `HOME=/` sends it to `/.config/SuiviBourse` instead of the mount, and
+# ADR-0008's *named, never read* observation for a v4 `config.yaml` /
+# `settings.yaml` never fires — for exactly the population the sentence exists
+# for, someone upgrading from v4. Measured: 0 occurrences against 2.
+#
+# The three lines are one gesture and they leave together, or the image is
+# coherent for neither uid.
+ENV HOME=/home/appuser
+
 USER appuser
 
 # 8080 serves the web UI and /health, 8081 keeps serving /metrics for existing
@@ -156,7 +173,7 @@ EXPOSE 8080 8081
 # five years. A start period stretched over the rebuild would report *starting*
 # for that whole span on a container whose store never answers at all.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % (os.environ.get('SB_WEB_PORT') or '8080'), timeout=4).read()"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % ((os.environ.get('SB_WEB_PORT') or '').strip() or '8080'), timeout=4).read()"]
 
 # gunicorn, not `python3 main.py`: the API runs inside the scraper process, and
 # `preload_app` + `post_fork` in gunicorn.conf.py are what split the boot either
