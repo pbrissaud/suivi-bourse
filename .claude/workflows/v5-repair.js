@@ -31,6 +31,74 @@ if (!ITEMS.length) {
   return { merged: [], held: [], error: 'items vide' }
 }
 
+// **Les constats sont rendus ici, en texte, et jamais interpolés tels quels.**
+// Le gabarit écrivait `${it.findings}` dans un bloc annoncé « lis le fichier
+// entier », donc il attendait un chemin ; `v5-wave.js` produit ses items retenus
+// avec `defects` et `overstated`, deux tableaux d'objets. Un tableau interpolé
+// se rend `[object Object],[object Object]` : la preuve était détruite **avant**
+// que l'agent la voie, et la passe partait à l'aveugle en croyant avoir lu.
+// Elle a alors réparé ce qu'elle a retrouvé seule et déclaré, honnêtement, ne
+// pas pouvoir affirmer couvrir les constats d'origine — sur #708 le défaut
+// majeur a survécu à sa propre réparation.
+//
+// Les quatre formes qui arrivent réellement sont donc toutes acceptées : le
+// tableau d'objets de la vague, un tableau de phrases, un texte déjà rédigé, et
+// un chemin de fichier. Les identifiants `S1…` / `D1…` que le reste du gabarit
+// et le schéma de sortie exigent sont **posés ici**, jamais supposés présents.
+const findingText = (f, id) => {
+  if (typeof f === 'string') return `### ${id}\n\n${f}`
+  const head = [f.severity, f.scope, f.owner_issue ? `#${f.owner_issue}` : null]
+    .filter(Boolean).join(' · ')
+  return [
+    `### ${id}${head ? ` — ${head}` : ''}`,
+    '',
+    f.what || f.text || JSON.stringify(f),
+    f.where ? `\n**Où :** ${f.where}` : '',
+  ].join('\n').trim()
+}
+
+const renderFindings = (it) => {
+  const raw = it.findings
+  // Un chemin, ou un texte déjà rédigé : le distinguer sur la présence d'un
+  // saut de ligne est plus sûr qu'un test d'existence de fichier, que ce
+  // script ne peut pas faire (pas d'accès au système de fichiers).
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.includes('\n')
+      ? raw
+      : `Le fichier de constats est à \`${raw}\`. Lis-le **en entier** avant d'écrire une ligne.`
+  }
+
+  const overstated = (Array.isArray(it.overstated) ? it.overstated : [])
+  const defects = (Array.isArray(raw) ? raw : (Array.isArray(it.defects) ? it.defects : []))
+  const blocks = [
+    ...overstated.map((f, i) => findingText(f, `S${i + 1}`)),
+    ...defects.map((f, i) => findingText(f, `D${i + 1}`)),
+  ]
+  return blocks.length ? blocks.join('\n\n') : null
+}
+
+// Un item sans constat lisible ne part **pas** : la passe précédente a prouvé
+// qu'elle se poursuit en silence, produit un diff plausible et le déclare prêt.
+// Mieux vaut refuser bruyamment que réparer autre chose que ce qui était retenu.
+const withFindings = []
+const unreadable = []
+for (const it of ITEMS) {
+  const text = renderFindings(it)
+  if (text) withFindings.push({ ...it, findingsText: text })
+  else unreadable.push(it.issue)
+}
+if (unreadable.length) {
+  log(`Constats illisibles pour #${unreadable.join(', #')} — ces branches ne sont pas réparées`)
+}
+if (!withFindings.length) {
+  return {
+    base: BASE, merged: [], ready: [], held: [],
+    error: `aucun constat lisible (#${unreadable.join(', #')}) — attendu : items[].findings ` +
+           `(tableau d'objets {severity, scope, what, where}, texte, ou chemin), ` +
+           `ou items[].defects / items[].overstated tels que v5-wave.js les produit`,
+  }
+}
+
 const REPAIR_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -128,14 +196,17 @@ le chemin a disparu, rends \`committed: false\` en le disant, et ne touche à ri
 
 ## Les constats
 
-Lis **le fichier entier** avant d'écrire une ligne :
+Lis-les **en entier** avant d'écrire une ligne :
 
-\`\`\`
-${it.findings}
-\`\`\`
+${it.findingsText}
 
 Chaque constat porte un identifiant — \`S1\`, \`S2\` pour les critères surdéclarés, \`D1\`, \`D2\`
-pour les défauts. Ta sortie les reprend un par un.
+pour les défauts. Ta sortie les reprend un par un, **sous ces identifiants-là**.
+
+Si ce qui précède ne contient aucun constat lisible — un \`[object Object]\`, un bloc vide —
+**arrête-toi** : rends \`committed: false\` en le disant, et ne touche à rien. Une passe qui
+répare ce qu'elle retrouve seule au lieu de ce qui était retenu rend une branche qui a l'air
+réparée et ne l'est pas, ce qui est strictement pire que de ne rien rendre.
 
 Relis aussi le ticket lui-même (\`gh issue view ${it.issue} --comments\`) et sa spec parente : un
 constat se solde en tenant le critère, pas en faisant taire le symptôme.
@@ -244,10 +315,10 @@ Rends : { "issue": ${it.issue}, "merged": true|false, "reason": "..." }.
 `
 
 phase('Réparer')
-log(`Réparation : ${ITEMS.map(i => '#' + i.issue).join(', ')} — base ${BASE}`)
+log(`Réparation : ${withFindings.map(i => '#' + i.issue).join(', ')} — base ${BASE}`)
 
 const results = await pipeline(
-  ITEMS,
+  withFindings,
   (it) => agent(repairPrompt(it), { label: `repair:#${it.issue}`, phase: 'Réparer', schema: REPAIR_SCHEMA }),
   (rep, it) => {
     if (!rep || !rep.committed) return { it, rep, verdict: null }

@@ -18,6 +18,11 @@ the rules that stopped three bad merges out of three.
 ```
 Workflow({scriptPath: '.claude/workflows/v5-wave.js',
           args: {wave: [696], base: 'preview/v5'}})
+
+# A held item is handed to the repair pass as the wave produced it — the two
+# scripts agree on `findings`, and `defects`/`overstated` are read as well.
+Workflow({scriptPath: '.claude/workflows/v5-repair.js',
+          args: {base: 'preview/v5', items: [<the wave's `held` entries>]}})
 ```
 
 Every branch leaves from and lands on `preview/v5`. Nothing is pushed and nothing
@@ -70,6 +75,20 @@ Each one is here because a wave went wrong without it.
 - **Verification is adversarial and re-run from source.** The verifier reads the
   criteria from `gh issue view`, not from the implementer's summary, and runs the
   checkable ones itself.
+- **A repair pass with no readable findings refuses to start.** `v5-repair.js`
+  interpolated `${it.findings}` into a block announcing *read the whole file*, so
+  it expected a path, while `v5-wave.js` produced its held items with `defects`
+  and `overstated` — arrays of objects, which interpolate to
+  `[object Object],[object Object]`. The evidence was destroyed **before** the
+  agent saw it, and the pass went on believing it had read: on #708 it re-derived
+  a review of its own, repaired what it found, and returned a branch whose held
+  defect was still there — declared ready. The two names now agree, the four
+  shapes that actually arrive are all rendered to text (the wave's array, an
+  array of sentences, prose, a path), the `S1…`/`D1…` identifiers the output
+  schema demands are **assigned by the renderer** rather than assumed present,
+  and an item with nothing readable is refused loudly instead of repaired blind.
+  A branch that looks repaired and is not is worse than one that came back
+  empty.
 
 ## Reading a ticket
 

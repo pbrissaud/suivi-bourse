@@ -531,6 +531,14 @@ for (const r of results.filter(Boolean)) {
       worktree: impl.worktree_path,
       overstated: verdict ? verdict.overstated : ['vérification indisponible'],
       defects: serious,
+      // **Le nom que `v5-repair.js` lit.** Un item retenu se passe tel quel à la
+      // passe de réparation, et celle-ci attend `findings` : tant que la clé
+      // s'appelait `defects` ici, la reprise partait sans constat — l'agent
+      // recevait `[object Object]`, refaisait sa propre relecture et rendait une
+      // branche « réparée » dont le défaut retenu tenait toujours (#708). Les
+      // deux tableaux voyagent ensemble parce que la réparation doit solder les
+      // critères surdéclarés autant que les défauts.
+      findings: serious,
       flagged: impl.flagged,
     })
     log(`#${issue} retenu : ${serious.length} défaut(s) bloquant/majeur, branche ${impl.branch} conservée`)
