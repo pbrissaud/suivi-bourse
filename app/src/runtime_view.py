@@ -676,6 +676,7 @@ def build_runtime(
     scheduler_running: bool = True,
     reconstruction: Optional[Tuple[int, int]] = None,
     persistence: str = mounts.UNKNOWN,
+    store_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload.
 
@@ -693,6 +694,12 @@ def build_runtime(
     one route that survives a store nobody can open. The data page's *store*
     block (#724) is what renders it; it carries all three answers, ``unknown``
     included, because a front that only knew two would have to invent one.
+
+    ``store_path`` rides beside it for the same reason and travels in the same
+    object, because they are read as one line: *"the path, **and** whether it
+    survives"* (#724). It is boot knowledge — the master resolved it before it
+    opened anything — so it costs no query either, and it is the half a reader
+    needs precisely when the store block's own resource cannot answer.
     """
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
@@ -700,7 +707,7 @@ def build_runtime(
         'now': _iso(now),
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
-        'store': {'persistence': persistence},
+        'store': {'persistence': persistence, 'path': store_path},
         'symbols': [symbol.to_dict() for symbol in symbols],
         # The perf horizon per account (issue #708). A top-level row set beside
         # ``symbols`` rather than a member of ``perf``, because that is the shape

@@ -1782,19 +1782,21 @@ def test_the_runtime_publishes_the_mount_observation_to_the_front(tmp_path):
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
                           events=ACCOUNTS_EVENTS)
     runtime = web_module.current_runtime()
+    runtime.store_path = tmp_path / 'store.duckdb'
+    path = str(tmp_path / 'store.duckdb')
 
     # A test runtime observed nothing, and says so rather than claiming a kept
     # store.
     assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'unknown'}
+        'persistence': 'unknown', 'path': path}
 
     runtime.store_persistence = 'ephemeral'
     assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'ephemeral'}
+        'persistence': 'ephemeral', 'path': path}
 
     runtime.store_persistence = 'persistent'
     assert client.get('/api/runtime').get_json()['store'] == {
-        'persistence': 'persistent'}
+        'persistence': 'persistent', 'path': path}
 
 
 def test_the_mount_observation_survives_an_unreadable_store(tmp_path):
@@ -1809,6 +1811,137 @@ def test_the_mount_observation_survives_an_unreadable_store(tmp_path):
     assert client.get('/api/shares').status_code == 503
     assert client.get('/api/runtime').get_json()['store']['persistence'] \
         == 'ephemeral'
+
+
+# --------------------------------------------------------------------- #
+# The store block (issue #724, spec #695 § 10)
+# --------------------------------------------------------------------- #
+
+def test_the_store_resource_states_its_size_and_its_last_ledger_write(tmp_path):
+    """The two figures the block leads with, and what each one is *not*.
+
+    ``size_bytes`` is the file plus its write-ahead log, and it is published
+    rather than hidden: hiding it removes only its explanation — ``du`` still
+    finds the number — and the explanation is what stops the purge button beside
+    it reading as a way to get bytes back.
+
+    ``ledger_last_write`` is the newest **import**, and never the newest observed
+    price. The second is liveness and belongs to the banner; shown here it would
+    make a store whose last import was a year ago read as freshly written.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+
+    body = client.get('/api/store').get_json()
+
+    assert body['size_bytes'] > 0
+    assert body['ledger_last_write'] is not None
+    assert body['orphans'] == []
+
+
+def test_a_store_with_no_import_has_no_last_write_rather_than_a_zero(tmp_path):
+    """``null`` and never an epoch. A fresh install has never been written to,
+    which is a state and not a date at the beginning of time — and the block
+    renders the absence rather than *1 January 1970*."""
+    client = build_client(tmp_path)
+
+    assert client.get('/api/store').get_json()['ledger_last_write'] is None
+
+
+def test_an_orphan_is_named_with_the_series_it_holds(tmp_path):
+    """The symbols nothing declares any more, kept **deliberately** (#695 § 10).
+
+    Forgetting an import is reversible — re-drop the file — while a
+    reconstructed price series is not, so the app never throws one away by
+    itself. What it owes in exchange is that they be named and purgeable on
+    demand, and the count is what makes the gesture answerable *before* it is
+    made.
+    """
+    def seed(opened):
+        seed_quote(opened, symbol='ZZORPHAN', price=10.0,
+                   at=datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc))
+        seed_quote(opened, symbol='ZZORPHAN', price=11.0,
+                   at=datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS, seed=seed)
+
+    assert client.get('/api/store').get_json()['orphans'] == [
+        {'symbol': 'ZZORPHAN', 'points': 2}]
+
+
+def test_a_sold_position_is_not_an_orphan(tmp_path):
+    """The predicate is *no event names it*, never *its quantity is zero*.
+
+    A line the owner closed years ago still has every one of its events in the
+    ledger, so it is still declared — and offering to purge it would offer to
+    throw away the history of a position whose realised gain the product still
+    shows. ADR-0003 spent a table on that distinction; this is the one place it
+    could quietly be lost.
+    """
+    sold = ('date,event_type,account,symbol,name,quantity,unit_price\n'
+            '2024-01-02,BUY,pea,AAPL,Apple Inc,10,150.00\n'
+            '2024-06-02,SELL,pea,AAPL,Apple Inc,10,180.00\n')
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=sold)
+
+    assert client.get('/api/store').get_json()['orphans'] == []
+
+
+def test_the_purge_removes_rows_and_says_how_many(tmp_path):
+    """It answers **rows**, never bytes.
+
+    Measured on a real store: 79 % of its rows purged for zero bytes returned —
+    126,0 Mo before, 126,0 Mo after, the same content rebuilt from scratch
+    fitting in 26,0. DuckDB reuses its blocks. The figure the API can honestly
+    report is the one it removed, and the sentence beside the button is the rest.
+    """
+    def seed(opened):
+        seed_quote(opened, symbol='ZZORPHAN', price=10.0)
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS, seed=seed)
+
+    body = client.delete('/api/store/orphans').get_json()
+
+    assert body == {'symbols': ['ZZORPHAN'], 'points_removed': 1}
+    # The symbol row goes with its series: a symbol surviving its own prices
+    # would read as a line the app still knows about and can no longer chart.
+    assert opened.query(
+        "SELECT count(*) FROM symbol WHERE symbol = 'ZZORPHAN'")[0][0] == 0
+    assert opened.query(
+        "SELECT count(*) FROM price_point WHERE symbol = 'ZZORPHAN'")[0][0] == 0
+    # And the declared symbol is untouched.
+    assert opened.query(
+        "SELECT count(*) FROM symbol WHERE symbol = 'AAPL'")[0][0] == 1
+    assert client.get('/api/store').get_json()['orphans'] == []
+
+
+def test_purging_nothing_is_a_success_and_not_a_refusal(tmp_path):
+    """An empty purge is a legitimate answer, the way an import carrying no
+    event is still an import. The list is absent from the page at zero, so this
+    is what a second click on a stale page gets."""
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+
+    response = client.delete('/api/store/orphans')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'symbols': [], 'points_removed': 0}
+
+
+def test_the_store_resource_fails_with_the_store_it_describes(tmp_path):
+    """A ``503``, deliberately — and it is the split with ``/api/runtime``.
+
+    Everything on this resource needs the file, so it cannot claim to describe
+    an installation it can no longer read. The two facts that *do* survive that
+    failure — the path and its persistence — are on the runtime, which touches
+    nothing at all, which is why the block reads two resources rather than one.
+    """
+    client = build_client(tmp_path, break_store=True,
+                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    assert client.get('/api/store').status_code == 503
+    assert client.get('/api/runtime').status_code == 200
 
 
 def test_the_runtime_resource_issues_no_query_at_all(tmp_path, mocker):

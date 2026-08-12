@@ -500,6 +500,32 @@ def read_quote(store, symbol: str) -> Optional[Dict]:
     return row
 
 
+def forget_symbol(store, symbol: str) -> int:
+    """Drop every market row of one symbol — its series and its quote row.
+
+    The **only** way the market's two tables lose a symbol, and it exists for
+    exactly one caller: the orphan purge (:func:`ledger.purge_orphan_symbols`,
+    #695 § 10). A symbol whose events have all been forgotten keeps its series
+    on purpose — forgetting an import is reversible, a reconstructed series is
+    not, so the app never throws one away by itself — and what the spec owes in
+    exchange is a way to *see and purge them on demand*.
+
+    It writes ``price_point`` and ``symbol_quote``, which is why it is here:
+    those two tables have one writer (ADR-0006), and a ``DELETE`` is a write.
+    The caller owns the ``symbol`` row itself and the transaction the whole
+    gesture runs in.
+
+    Returns the number of ``price_point`` rows removed — the figure the purge
+    reports, and the one that has to be said beside *this returns rows, not
+    bytes*.
+    """
+    (points,) = store.query(
+        'SELECT count(*) FROM price_point WHERE symbol = ?', [symbol])[0]
+    store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
+    store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
+    return int(points)
+
+
 def _utc(value):
     """Stamp what DuckDB hands back as UTC-aware. One rule, applied on exit.
 
@@ -521,4 +547,5 @@ __all__ = [
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
     'first_quoted_days',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
+    'forget_symbol',
 ]

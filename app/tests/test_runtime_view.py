@@ -830,15 +830,33 @@ def test_the_payload_carries_the_mount_observation_verbatim():
     exactly when *"where did my data go"* gets asked.
 
     All three answers reach the front, ``unknown`` included: a payload that only
-    carried two would force #724's *store* block to invent the third."""
+    carried two would force #724's *store* block to invent the third.
+
+    The **path travels in the same object** since #724, because the block reads
+    the two as one line — *the path, and whether it survives* — and both are boot
+    knowledge answered with no query."""
     import mounts
 
     for state in (mounts.EPHEMERAL, mounts.PERSISTENT, mounts.UNKNOWN):
         payload = runtime_view.build_runtime(
             shares=[_share()], scrape={}, backfill={}, next_runs={},
-            ingest=None, perf=None, now=NOW, persistence=state)
+            ingest=None, perf=None, now=NOW, persistence=state,
+            store_path='/data/suivi-bourse.duckdb')
 
-        assert payload['store'] == {'persistence': state}
+        assert payload['store'] == {
+            'persistence': state, 'path': '/data/suivi-bourse.duckdb'}
+
+
+def test_a_runtime_that_named_no_store_publishes_no_path():
+    """``path: null`` and never an empty string (issue #724). A runtime built
+    with no store — a test harness, a process that failed before it opened one —
+    has no path to state, and the block renders the absence rather than a
+    plausible-looking ``''`` a reader would take for a root directory."""
+    payload = runtime_view.build_runtime(
+        shares=[_share()], scrape={}, backfill={}, next_runs={},
+        ingest=None, perf=None, now=NOW)
+
+    assert payload['store']['path'] is None
 
 
 def test_an_unobserved_runtime_defaults_to_unknown_rather_than_kept():

@@ -992,6 +992,10 @@ def get_runtime():
         # route's rule kept: no query, and readable on a store nobody can open,
         # which is exactly when *"where did my data go"* is asked.
         persistence=runtime.store_persistence,
+        # Beside it, and read as one line with it (#724): *the path, and whether
+        # it survives*. Boot knowledge, so this route's rule holds.
+        store_path=(str(runtime.store_path)
+                    if runtime.store_path is not None else None),
     ))
 
 
@@ -1016,6 +1020,77 @@ def _next_runs(scheduler) -> dict:
     import main
 
     return main.scrape_next_runs(scheduler)
+
+
+# --------------------------------------------------------------------- #
+# The store itself (issue #724, spec #695 § 10, ADR-0015)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/store')
+def get_store():
+    """What the installation's store *is*: its size, its last write, its orphans.
+
+    The fourth block of the data page's *installation* tab, and it is split from
+    ``/api/runtime`` along the line #668 drew rather than by subject: the path
+    and its persistence are **process memory** and ride on the runtime, where
+    they stay readable on a store nobody can open — which is exactly when *"where
+    did my data go?"* is asked. Everything here needs the file, so it fails with
+    it, and the ``503`` is the honest answer.
+
+    Three figures, and each is a different fact:
+
+    * ``size_bytes`` — the file and its write-ahead log (:func:`store.file_size`).
+      It is published **because hiding it removes only its explanation**: the
+      number is still there for anyone who runs ``du``. What must travel with it
+      is what a purge does *not* do — measured, 79 % of a real store's rows
+      purged for zero bytes returned.
+    * ``ledger_last_write`` — the newest import, and **never the newest observed
+      price**. The second is liveness, it belongs to the banner, and shown here
+      it would make a store whose last import was a year ago read as freshly
+      written.
+    * ``orphans`` — the symbols no event names any more, with the size of the
+      series each one holds. Kept deliberately (#695 § 10): forgetting an import
+      is reversible and a reconstructed series is not. A **sold position is not
+      one of them** — its events are still recorded.
+    """
+    runtime = current_runtime()
+    opened = _store()
+    return jsonify({
+        'size_bytes': store_module.file_size(opened.path),
+        'ledger_last_write': _iso(ledger.last_write(opened)),
+        'orphans': [
+            {'symbol': orphan.symbol, 'points': orphan.points}
+            for orphan in ledger.orphan_symbols(opened)
+        ],
+        # Repeated from ``/api/runtime`` on purpose, and it is the one member
+        # here that is not a query: a client rendering this block reads one
+        # resource for the three figures and the other for the two facts about
+        # the file, and a reader who lands on the block while the store is
+        # unreadable still gets the sentence that explains the emptiness.
+        'persistence': runtime.store_persistence,
+    })
+
+
+@api_bp.delete('/store/orphans')
+def purge_store_orphans():
+    """Purge every orphan symbol: its price series, its quote row, itself.
+
+    The gesture #695 § 10 owes in exchange for keeping them. It answers with
+    **rows**, never bytes, and the interface says the rest out loud: a purge
+    returns rows and not bytes, because the store reuses its blocks.
+
+    ``DELETE`` on the collection rather than a ``POST`` to a verb: the resource
+    is *the orphans of this store*, and what the gesture does to it is remove it
+    whole. There is no per-symbol form and there will not be one — an orphan is
+    a consequence of a forget the owner has just made, not a maintenance list to
+    work through row by row.
+    """
+    runtime = current_runtime()
+    # The writers' mutex, like every other write in this blueprint: a Flask
+    # handler and the scheduled jobs share one DuckDB connection.
+    with runtime.config_manager.writing() as opened:
+        symbols, points = ledger.purge_orphan_symbols(opened)
+    return jsonify({'symbols': symbols, 'points_removed': points})
 
 
 # --------------------------------------------------------------------- #

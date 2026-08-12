@@ -52,11 +52,12 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
+import quotes
 import settings_registry
 from events import EventAggregator, EventLoader, EventValidator
 from events.schemas import DEFAULT_ACCOUNT, Event, EventType
@@ -268,6 +269,119 @@ def stamp(store) -> Optional[str]:
     declarations = '|'.join(str(tuple(a)) for a in declared)
     payload = f'{imports}#{declarations}#{count}'
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def last_write(store) -> Optional[datetime]:
+    """When the ledger last changed — the newest ``imported_at``, or ``None``.
+
+    **The last write, never the last observation** (#724). The two are one
+    keystroke apart on a page and they are not the same fact: a price observed
+    two minutes ago says the scheduler is alive, which is liveness and belongs
+    to the banner, while *"nothing has entered your ledger since 3 January"* is
+    a property of the installation's own data — the one the store block exists
+    to state. Showing the newest ``price_point`` there would make a store whose
+    last import was a year ago look freshly written.
+
+    ``None`` is the fresh install: nothing has ever been imported. It is not a
+    hole and it is not zero.
+    """
+    rows = store.query('SELECT max(imported_at) FROM import_source')
+    return _utc(rows[0][0]) if rows else None
+
+
+@dataclass(frozen=True)
+class OrphanSymbol:
+    """A ``symbol`` row no event names any more, and the series hanging off it.
+
+    ``points`` is what the purge would remove, and it is published because the
+    gesture has to be answerable *before* it is made — the same rule that puts
+    an event count beside *forget this import*.
+    """
+
+    symbol: str
+    points: int
+
+
+def orphan_symbols(store) -> List[OrphanSymbol]:
+    """The symbols nothing declares any more, with the size of their series.
+
+    Spec #695 § 10 keeps them **deliberately**: forgetting an import is
+    reversible — re-drop the file — while a reconstructed price series is not,
+    so the app never throws one away by itself. What it owes in exchange is that
+    they be *named and purgeable on demand*, and this is the first half.
+
+    A **sold position is not an orphan**: its events are still in the ledger, so
+    it is still named here and never appears in this list. The predicate is the
+    absence of an event, not a quantity at zero — the two are the distinction
+    ADR-0003 spent a table on.
+
+    ``position`` is tested too, and not out of caution: it references
+    ``symbol(symbol)`` as well, so a row there would make the purge's ``DELETE``
+    trip a foreign key. It cannot happen — the replay rewrites ``position`` from
+    the events, so a symbol no event names has no position either — and the
+    clause is what makes *the purge always succeeds* true by construction rather
+    than by that reasoning holding.
+    """
+    rows = store.query(
+        'SELECT s.symbol, count(p.symbol) '
+        'FROM symbol s LEFT JOIN price_point p ON p.symbol = s.symbol '
+        'WHERE NOT EXISTS (SELECT 1 FROM event e WHERE e.symbol = s.symbol) '
+        '  AND NOT EXISTS (SELECT 1 FROM position q WHERE q.symbol = s.symbol) '
+        'GROUP BY s.symbol ORDER BY s.symbol')
+    return [OrphanSymbol(symbol=row[0], points=int(row[1])) for row in rows]
+
+
+def purge_orphan_symbols(store) -> Tuple[List[str], int]:
+    """Purge every orphan: its series, its quote row, then the symbol itself.
+
+    The second half of #695 § 10's exchange, and the **only** gesture on this
+    page that destroys anything.
+
+    What it returns is what the interface has to say next to it, and what it
+    deliberately does **not** say is *bytes*: measured, 79 % of the rows of a
+    real store were purged for **zero bytes** returned (126,0 Mo before, 126,0
+    Mo after, the same content rebuilt from scratch fitting in 26,0). DuckDB
+    reuses its blocks; the file does not shrink. Reporting rows is the truth,
+    and the sentence beside the button is the rest of it.
+
+    The market's two tables are written through :func:`quotes.forget_symbol`,
+    theirs being the only writer of them (ADR-0006); the ``symbol`` row is this
+    module's, which is why the gesture is assembled here.
+
+    **Two transactions, and not by preference** — the same engine limitation
+    :func:`forget_import` runs into, one table along: DuckDB refuses to delete a
+    referenced key in the transaction that deleted the rows referencing it,
+    because its foreign-key index still holds them. So ``symbol_quote`` is
+    committed away before ``symbol`` is touched. What the window between the two
+    can leave behind is a symbol row with no series, which reads as an orphan
+    holding zero points and is repaired by purging again — the alternative,
+    deleting the symbol first, is the one the engine forbids outright.
+    """
+    orphans = orphan_symbols(store)
+    if not orphans:
+        return [], 0
+
+    points = 0
+    with store.transaction():
+        for orphan in orphans:
+            points += quotes.forget_symbol(store, orphan.symbol)
+
+    symbols = [orphan.symbol for orphan in orphans]
+    with store.transaction():
+        for symbol in symbols:
+            store.execute('DELETE FROM symbol WHERE symbol = ?', [symbol])
+
+    logger.info(f"Purged {len(symbols)} orphan symbol(s) and {points} price "
+                f"point(s): {', '.join(symbols)}")
+    return symbols, points
+
+
+def _utc(value):
+    """Stamp what DuckDB hands back as UTC-aware. One rule, applied on exit."""
+    if not isinstance(value, datetime):
+        return value
+    return value if value.tzinfo is not None else value.replace(
+        tzinfo=timezone.utc)
 
 
 # --------------------------------------------------------------------------- #
@@ -728,11 +842,12 @@ def import_counts(outcomes: Sequence[SyncOutcome]) -> Dict[str, int]:
 
 
 __all__ = [
-    'ImportRecord', 'SyncOutcome', 'UnknownImport',
+    'ImportRecord', 'OrphanSymbol', 'SyncOutcome', 'UnknownImport',
     'KIND_EVENTS', 'KIND_ACCOUNTS', 'IMPORT_SUFFIXES',
     'IMPORTED', 'UNCHANGED', 'REFUSED',
     'fingerprint_of', 'provenance_label',
-    'read_events', 'list_imports', 'stamp',
+    'read_events', 'list_imports', 'stamp', 'last_write',
+    'orphan_symbols', 'purge_orphan_symbols',
     'sync_drop_folder', 'import_file', 'import_accounts_file', 'forget_import',
     'import_counts',
 ]
