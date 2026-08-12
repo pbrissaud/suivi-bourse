@@ -1,0 +1,23 @@
+466 275 0:61 / / rw,relatime - overlay overlay rw,lowerdir=/var/lib/docker/overlay2/l/35ELEETSAKIHROFB77ZA4GSVEG:/var/lib/docker/overlay2/l/YGQ3HNFQKE5NFRSZPVZVRPVXGV,upperdir=/var/lib/docker/overlay2/267726143d0eea61214c9b43b1cf1c7209a1305fc04bb2f456ffc35914bc2fbb/diff,workdir=/var/lib/docker/overlay2/267726143d0eea61214c9b43b1cf1c7209a1305fc04bb2f456ffc35914bc2fbb/work
+468 466 0:113 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+469 466 0:114 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+470 469 0:115 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+471 466 0:116 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+472 471 0:32 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw,nsdelegate
+473 469 0:111 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+474 469 0:117 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=4098048k
+475 466 0:35 /private/tmp/sb741-host /srv rw,relatime - virtiofs mac rw
+476 475 0:38 /docker/volumes/sb741-store/_data /srv/data rw,noatime master:66 - btrfs /dev/vdb1 rw,nodatasum,nodatacow,ssd,discard,space_cache=v2,subvolid=5,subvol=/
+477 466 0:38 /docker/containers/f621401ee977e2f2540e3efbd0246cb3ff3c9975caf00d7ffbb8734f7460c5b4/resolv.conf /etc/resolv.conf rw,noatime - btrfs /dev/vdb1 rw,nodatasum,nodatacow,ssd,discard,space_cache=v2,subvolid=5,subvol=/
+478 466 0:38 /docker/containers/f621401ee977e2f2540e3efbd0246cb3ff3c9975caf00d7ffbb8734f7460c5b4/hostname /etc/hostname rw,noatime - btrfs /dev/vdb1 rw,nodatasum,nodatacow,ssd,discard,space_cache=v2,subvolid=5,subvol=/
+479 466 0:38 /docker/containers/f621401ee977e2f2540e3efbd0246cb3ff3c9975caf00d7ffbb8734f7460c5b4/hosts /etc/hosts rw,noatime - btrfs /dev/vdb1 rw,nodatasum,nodatacow,ssd,discard,space_cache=v2,subvolid=5,subvol=/
+278 468 0:113 /bus /proc/bus ro,nosuid,nodev,noexec,relatime - proc proc rw
+279 468 0:113 /fs /proc/fs ro,nosuid,nodev,noexec,relatime - proc proc rw
+280 468 0:113 /irq /proc/irq ro,nosuid,nodev,noexec,relatime - proc proc rw
+344 468 0:113 /sys /proc/sys ro,nosuid,nodev,noexec,relatime - proc proc rw
+345 468 0:113 /sysrq-trigger /proc/sysrq-trigger ro,nosuid,nodev,noexec,relatime - proc proc rw
+346 468 0:118 / /proc/asound ro,relatime - tmpfs tmpfs ro,size=4k,nr_inodes=1
+347 468 0:114 /null /proc/interrupts rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+348 468 0:114 /null /proc/keys rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+349 468 0:114 /null /proc/timer_list rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+350 471 0:118 / /sys/firmware ro,relatime - tmpfs tmpfs ro,size=4k,nr_inodes=1
