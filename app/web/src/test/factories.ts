@@ -496,6 +496,14 @@ export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse
  * amounts were read as already being in the reporting currency* — because it is
  * the one a bulk acknowledgement would sweep away unread, and the only one with
  * a gesture inside the app.
+ *
+ * **It names three securities and not one.** That is the ordinary case rather
+ * than a corner — `_observe_assumed_base_currency` folds the events it found
+ * into `sorted({event['symbol'] …})`, so any portfolio reporting in EUR and
+ * holding two foreign currencies produces several — and the single-symbol
+ * fixture is what let a gesture keeping `symbols[0]` alone pass for correct.
+ * Two of the three are in `ledgerEvents()` and one is not, so a reduction can be
+ * checked on what it keeps *and* on what it drops.
  */
 export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   return {
@@ -504,8 +512,18 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
     acknowledged: false,
     acknowledged_at: null,
     message:
-      'Your amounts were read as EUR. 2 event(s) on 1 line(s) quoted in USD (ZZB) were imported before any price had been observed.',
-    detail: { base_currency: BASE_CURRENCY, symbols: ['ZZB'], events: [1, 2], currencies: ['USD'] },
+      'Your amounts were read as EUR. 4 event(s) on 3 line(s) quoted in USD, GBP (ZZA, ZZB, ZZC) were imported before any price had been observed.',
+    detail: {
+      base_currency: BASE_CURRENCY,
+      symbols: ['ZZA', 'ZZB', 'ZZC'],
+      events: [
+        { id: 1, date: '2026-02-10', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
+        { id: 2, date: '2026-01-12', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
+        { id: 3, date: '2025-12-24', event_type: 'GRANT', symbol: 'ZZC', account: 'alpha', quote_currency: 'GBP' },
+        { id: 4, date: '2025-11-04', event_type: 'SELL', symbol: 'ZZB', account: 'beta', quote_currency: 'USD' },
+      ],
+      currencies: ['GBP', 'USD'],
+    },
     ...overrides,
   }
 }

@@ -585,11 +585,31 @@ Two members joined the HTTP contract with it: **`runtime.store.path`** (beside
 the persistence, because the two are read as one line and both are boot
 knowledge) and **`GET /api/store`** with its `DELETE .../orphans`. The one
 gesture a notice carries inside the app is the **assumed-currency** one, which
-*names the events it was made about*, so it switches to the ledger tab with the
-search already reduced to what it names; the other four are about a file on disk
+*names the events it was made about*, so it switches to the ledger tab already
+reduced to **every** security it names; the other four are about a file on disk
 or a variable in the container's environment, and their own sentence — the
 server's, because it names *this* installation's paths — already says what to do
 out there.
+
+**That reduction is a filter of its own, and it names itself on screen.** The
+free-text search is single-term (`haystack(event).includes(needle)`), so a
+notice naming three securities — the ordinary case, since
+`_observe_assumed_base_currency` folds its events into
+`sorted({event['symbol'] …})` and any portfolio reporting in EUR while holding
+two foreign currencies produces several — would have to drop two of them to be
+expressible there, landing the reader on a ledger stating a repair
+perimeter smaller than the sentence they have just read, with nothing on screen
+saying so. So `LedgerFilters` carries a `symbols` set nothing types into, the
+reduction bar **states it with all its names and offers to undo it** — a table
+silently shorter than expected is the same defect one step on — and the gesture
+**sets** the filters rather than merging them, so a search left behind cannot
+subtract from the notice's own perimeter. The unit is the **security** and not
+the event, for two reasons that are one: `GET /api/events` publishes no
+`event.id` (#723's deferral, carried by #764), and the server names the symbols
+beside the ids precisely because *one re-export repairs every line of a
+security*. Rebuilding an address out of `(date, type, symbol, account)` to be
+exact instead would be #662's opaque token over `(file, sheet, row)` under
+another name.
 
 ### Documentation Website (in `website/` directory)
 

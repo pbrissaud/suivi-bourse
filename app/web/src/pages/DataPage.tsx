@@ -40,9 +40,10 @@ const INSTALLATION = 'installation'
 export default function DataPage() {
   const { t } = useI18n()
   const [tab, setTab] = useState(LEDGER)
-  // A fresh object per gesture, so asking twice for the same symbol reduces the
-  // ledger twice — the reader may well have cleared the field in between.
-  const [focus, setFocus] = useState<{ search: string } | undefined>(undefined)
+  // A fresh object per gesture, so asking twice for the same securities reduces
+  // the ledger twice — the reader may well have cleared the reduction between
+  // the two.
+  const [focus, setFocus] = useState<{ symbols: readonly string[] } | undefined>(undefined)
 
   // Read here as well as inside the tab: the badge is on the trigger, which is
   // visible while the other tab is. One query key, so it is one request.
@@ -75,8 +76,8 @@ export default function DataPage() {
         </TabsContent>
         <TabsContent value={INSTALLATION}>
           <Installation
-            onShowInLedger={(search) => {
-              setFocus({ search })
+            onShowInLedger={(symbols) => {
+              setFocus({ symbols })
               setTab(LEDGER)
             }}
           />

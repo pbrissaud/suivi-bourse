@@ -71,12 +71,20 @@ describe('what the badge counts', () => {
 })
 
 describe('the gesture a notice carries', () => {
-  it('leads to the events the currency assertion names', () => {
+  it('leads to every security the currency assertion names', () => {
+    // The multi-symbol case is the ordinary one — a portfolio reporting in EUR
+    // and holding two foreign currencies produces it — and the gesture carries
+    // the whole set. Keeping the first would state a repair perimeter smaller
+    // than the sentence rendered above the button, on the one notice the app
+    // cannot recompute.
     const gesture = advisoryGesture(
-      advisory({ key: 'assumed_base_currency', detail: { symbols: ['ZZB'], events: [1, 2] } }),
+      advisory({
+        key: 'assumed_base_currency',
+        detail: { symbols: ['ZZA', 'ZZB', 'ZZC'], events: [1, 2, 3, 4] },
+      }),
     )
 
-    expect(gesture).toEqual({ kind: 'ledger', search: 'ZZB' })
+    expect(gesture).toEqual({ kind: 'ledger', symbols: ['ZZA', 'ZZB', 'ZZC'] })
   })
 
   it('is nothing for a notice about a file the app cannot touch', () => {

@@ -182,10 +182,27 @@ describe('the notices', () => {
 
     await user.click(screen.getByRole('button', { name: 'Voir les événements concernés' }))
 
-    // The gesture is the notice's subject and not a generic link: the search
-    // field carries the symbol the sentence named.
-    expect(await screen.findByLabelText('Rechercher')).toHaveValue('ZZB')
+    // **Every security the sentence enumerated, not the first of them.** The
+    // notice named ZZA, ZZB and ZZC; a gesture keeping one would land the reader
+    // on a ledger stating a repair perimeter smaller than the one they have just
+    // read, with nothing on screen saying the other two were dropped.
+    const rows = await screen.findAllByRole('row')
+    const cells = rows.map((row) => row.textContent ?? '')
+    expect(cells.filter((text) => text.includes('ZZA'))).toHaveLength(2)
+    expect(cells.filter((text) => text.includes('ZZC'))).toHaveLength(1)
+    // And the reduction is *stated*, with all three names, and can be undone —
+    // a ledger silently shorter than the reader expects is the same defect one
+    // step further on.
+    expect(screen.getByText(/Réduit à 3 titres : ZZA, ZZB, ZZC/)).toBeInTheDocument()
+
+    // The cash movement names no security, so a reduction to securities drops
+    // it; clearing brings it back, which is what makes the reduction reversible
+    // rather than a shorter ledger.
+    expect(cells.some((text) => text.includes('Virement entrant'))).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Afficher de nouveau tous les titres' }))
+    expect(await screen.findByText(/Virement entrant/)).toBeInTheDocument()
   })
+
 
   it('gives a notice about a file on disk no button it cannot honour', async () => {
     await openInstallation([aLegacyFileAdvisory()])

@@ -87,6 +87,27 @@ describe('the reduction', () => {
     expect(filterEvents(events, { ...NO_FILTERS, account: 'alpha' })).toHaveLength(events.length)
   })
 
+  it('reduces to a whole set of securities, cash movements excluded', () => {
+    const events = ledgerEvents()
+
+    // The set and not one of it: the notice that produces this reduction names
+    // every security it concerns, and the search is single-term, which is why
+    // this is a dimension of its own rather than a word in the query.
+    expect(filterEvents(events, { ...NO_FILTERS, symbols: ['ZZA', 'ZZB', 'ZZC'] })).toHaveLength(3)
+    expect(filterEvents(events, { ...NO_FILTERS, symbols: ['ZZC'] })).toHaveLength(1)
+    // A transfer names no security at all — not a missing one, none — so a
+    // reduction to securities drops it rather than keeping it as unclassified.
+    expect(
+      filterEvents(events, { ...NO_FILTERS, symbols: ['ZZA', 'ZZB', 'ZZC'] }).some(
+        (event) => event.event_type === 'DEPOSIT',
+      ),
+    ).toBe(false)
+    // `null` is *every security*, and it is not the same object as the empty
+    // set: one reduces nothing, the other would empty the table.
+    expect(filterEvents(events, { ...NO_FILTERS, symbols: null })).toHaveLength(events.length)
+    expect(filterEvents(events, { ...NO_FILTERS, symbols: [] })).toHaveLength(0)
+  })
+
   it('sorts by date descending, and keeps the store’s order inside a day', () => {
     const sorted = byDateDescending([
       anEvent({ notes: 'b', date: '2025-01-01' }),

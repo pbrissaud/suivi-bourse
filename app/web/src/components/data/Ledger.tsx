@@ -45,11 +45,15 @@ export interface LedgerProps {
    * A reduction asked for from elsewhere — today, the assumed-currency notice
    * of the other tab, which **names the events it was made about** (#724).
    *
-   * A fresh object per gesture rather than a bare string: the reader may have
-   * cleared the field in between, and asking twice for the same symbol has to
-   * reduce the ledger twice.
+   * Every security it names, never the first of them: the sentence the reader
+   * has just read enumerates them all, and a ledger showing one of three states
+   * a repair perimeter the notice did not.
+   *
+   * A fresh object per gesture rather than a bare list: the reader may have
+   * cleared the reduction in between, and asking twice for the same securities
+   * has to reduce the ledger twice.
    */
-  focus?: { search: string }
+  focus?: { symbols: readonly string[] }
 }
 
 export function Ledger({ focus }: LedgerProps = {}) {
@@ -58,10 +62,14 @@ export function Ledger({ focus }: LedgerProps = {}) {
 
   useEffect(() => {
     if (!focus) return
-    // The search alone: the notice names symbols, and the type and account
-    // filters are the reader's own — a gesture that reset them would undo a
-    // reduction they made on purpose.
-    setFilters((current) => ({ ...current, query: focus.search }))
+    // **The reduction is set, never merged.** What is in force afterwards is
+    // exactly what the notice names — a free-text search or a type left behind
+    // would subtract from the notice's own perimeter in silence, landing the
+    // reader on fewer rows than the sentence above the button announced. Radix
+    // unmounts the inactive tab, so nothing survives the switch today and this
+    // is not repairing an observed defect; it is what keeps the property from
+    // depending on that.
+    setFilters({ ...NO_FILTERS, symbols: focus.symbols })
   }, [focus])
   // `undefined` is *the panel is shut*; `null` is *open on a new event*; a row is
   // *open on that row*. Three states, because "shut" and "creating" are two.

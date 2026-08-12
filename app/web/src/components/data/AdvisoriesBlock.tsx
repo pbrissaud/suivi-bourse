@@ -31,8 +31,12 @@ import { useI18n } from '@/lib/i18n'
 
 export interface AdvisoriesBlockProps {
   advisories: readonly Advisory[]
-  /** Take the reader to the ledger, reduced to what a notice names. */
-  onShowInLedger: (search: string) => void
+  /**
+   * Take the reader to the ledger, reduced to **every** security a notice
+   * names — never the first of them, which would state a repair perimeter
+   * smaller than the sentence rendered right above the button.
+   */
+  onShowInLedger: (symbols: readonly string[]) => void
 }
 
 export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockProps) {
@@ -78,7 +82,7 @@ export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockP
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => onShowInLedger(gesture.search)}
+                      onClick={() => onShowInLedger(gesture.symbols)}
                     >
                       {t('installation.advisory.showEvents')}
                     </Button>

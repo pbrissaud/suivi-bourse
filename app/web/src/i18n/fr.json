@@ -133,6 +133,8 @@
   "data.filter.account": "Compte",
   "data.filter.all": "Tous",
   "data.filter.count": "{count, plural, one {# événement} other {# événements}}",
+  "data.filter.symbols": "Réduit à {count, plural, one {un titre} other {# titres}} : {symbols}",
+  "data.filter.symbols.clear": "Afficher de nouveau tous les titres",
   "data.filter.none.title": "Aucun événement ne correspond",
   "data.filter.none.body": "Rien de ce que vous avez enregistré ne répond à cette recherche. Élargissez-la, ou retirez les filtres.",
   "data.new": "Saisir un événement",

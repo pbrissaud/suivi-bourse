@@ -33,8 +33,8 @@ import { useI18n } from '@/lib/i18n'
 import { oneBand, readConditions } from '@/lib/status'
 
 export interface InstallationProps {
-  /** Take the reader to the ledger, reduced to what a notice names. */
-  onShowInLedger: (search: string) => void
+  /** Take the reader to the ledger, reduced to every security a notice names. */
+  onShowInLedger: (symbols: readonly string[]) => void
 }
 
 export function Installation({ onShowInLedger }: InstallationProps) {

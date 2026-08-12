@@ -133,6 +133,8 @@
   "data.filter.account": "Account",
   "data.filter.all": "All",
   "data.filter.count": "{count, plural, one {# event} other {# events}}",
+  "data.filter.symbols": "Reduced to {count, plural, one {one security} other {# securities}}: {symbols}",
+  "data.filter.symbols.clear": "Show every security again",
   "data.filter.none.title": "No event matches",
   "data.filter.none.body": "Nothing you have recorded answers this search. Widen it, or clear the filters.",
   "data.new": "Enter an event",

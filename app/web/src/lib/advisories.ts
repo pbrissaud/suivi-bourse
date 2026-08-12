@@ -68,19 +68,38 @@ export function unacknowledgedCount(advisories: readonly Advisory[]): number {
  * One key has one today, and it is the only one that can: the assumed-currency
  * notice *names the events it was made about* — the join is re-derived on every
  * read, which is the whole trick — so the gesture is to go and look at them,
- * with the ledger already reduced to the symbols it names. The others are about
- * things that live outside the app (a file on disk, variables in the container's
- * environment), and their sentence already says what to do out there; inventing
- * a button for them would be inventing a power the app does not have.
+ * with the ledger already reduced to **every** security it names. The others are
+ * about things that live outside the app (a file on disk, variables in the
+ * container's environment), and their sentence already says what to do out
+ * there; inventing a button for them would be inventing a power the app does
+ * not have.
+ *
+ * **The whole set, never the first of it.** A portfolio reporting in EUR and
+ * holding USD, GBP and CHF lines is the ordinary case, not a corner:
+ * `_observe_assumed_base_currency` builds `symbols` as
+ * `sorted({event['symbol'] for event in events})`, and the sentence rendered two
+ * lines above the button enumerates all of them. Landing on one of the three,
+ * with a reduction bar that names a single security, would state a repair
+ * perimeter smaller than the one the notice just announced — on the one notice
+ * the app cannot recompute, and which this ticket protects from being swept
+ * away unread.
+ *
+ * **The unit is the security and not the event**, for two independent reasons.
+ * `GET /api/events` publishes no `event.id` today (#723's deferral, carried by
+ * #764), so the ids in `detail.events` address nothing the ledger renders; and
+ * the server names the symbols beside them precisely because they *are* the
+ * actionable unit — one re-export repairs every line of a security. Rebuilding
+ * an address out of `(date, type, symbol, account)` to be exact instead would
+ * be #662's opaque token over `(file, sheet, row)` under another name, which
+ * ADR-0020 removed.
  */
-export type AdvisoryGesture = { kind: 'ledger'; search: string } | null
+export type AdvisoryGesture = { kind: 'ledger'; symbols: string[] } | null
 
 export function advisoryGesture(advisory: Advisory): AdvisoryGesture {
   if (advisory.key !== 'assumed_base_currency') return null
   const symbols = advisory.detail?.symbols
-  if (!Array.isArray(symbols) || symbols.length === 0) return null
-  // One term, because the ledger's search is a single field and a list of
-  // symbols is not a query. The first is enough to land the reader *in* the
-  // rows the notice is about, which is what the gesture is for.
-  return { kind: 'ledger', search: String(symbols[0]) }
+  if (!Array.isArray(symbols)) return null
+  const named = symbols.map((symbol) => String(symbol)).filter((symbol) => symbol !== '')
+  if (named.length === 0) return null
+  return { kind: 'ledger', symbols: named }
 }
