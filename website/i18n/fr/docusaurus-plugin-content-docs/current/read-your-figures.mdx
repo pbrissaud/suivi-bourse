@@ -153,6 +153,24 @@ Absorbing the fee into your net contributions instead was the alternative, and
 it was refused: that would make the money disappear from the product entirely.
 It left your pocket, so it is counted.
 
+## What you have paid in {#net-contributed}
+
+**Net contributed: your deposits less your withdrawals, fees excluded.**
+
+It is the only figure on the page that owes nothing to a market. Prices move it
+by nothing; it changes when, and only when, you move money in or out. That is
+what makes it the silent denominator of both returns — [time-weighted](#twr) and
+[money-weighted](#xirr) alike are asking *what did this become, given what went
+in* — and it is why an account with no deposit recorded has no money-weighted
+return at all rather than a return of zero.
+
+**Fees are excluded, and that is the whole reason your total gain has a fourth
+term.** A fee taken out of a transfer leaves your cash without lowering what
+this figure records, so the money is gone from one side of the subtraction and
+not the other. The gap has to land somewhere, and it lands in fees taken from
+your transfers — a term of its own rather than a silent
+adjustment here.
+
 ## Time-weighted return {#twr}
 
 **Time-weighted return: how the positions themselves performed, independent of
@@ -171,6 +189,14 @@ the start of the *same* visible window — otherwise you are comparing a figure
 counted from 2019 with one counted from 2024, which is two numbers sharing a
 unit rather than a comparison. For the same reason a comparison never runs
 further back than the youngest of the things being compared.
+
+**While history is being rebuilt, the base date moves and the index is re-based
+every cycle.** The series starts at the earliest day on which everything you held
+has a price, and that day walks backwards as the rebuild advances — so this
+percentage, alone among the figures on the page, can change without a price
+having changed. The base date is shown beside it for exactly as long as it is
+still moving. See
+[the base of the time-weighted return](./rebuild-and-resolution.mdx#the-base-of-the-time-weighted-return-moves-while-the-rebuild-runs).
 
 **Returns are computed from the dates of your events.** Nothing else dates
 them: no event, no date, no return.
@@ -213,10 +239,28 @@ being rebuilt behind a symbol, nothing is carried at cost: the figure says it is
 waiting instead (see [below](#absence)). Confusing the two would turn "not yet"
 into "never", permanently.
 
+**"No price" means no quote at all.** A security the app has quoted but cannot
+convert into your base currency — because you have not chosen one yet, or because
+that currency pair does not resolve — is not in this case. It has a price; what
+it is missing is a rate. Those lines show their native price and say they are
+[waiting for a rate](#absence), and the value comes back on its own once the rate
+does.
+
 A position valued this way carries no badge of its own. The em dash where its
 price would be is already the whole signal, and after a rebuild the case is
 common enough that a marker on every such line would be noise across the page
 rather than information.
+
+**Where the rule visibly parts company with a market valuation.** Carrying at
+cost values the whole position at one price, and a position built from a
+purchase *and* a free grant did not cost one price. Buy ten shares at 100 and
+receive ten more by dilution, both in the days before the app has any quote for
+that security, and you hold twenty shares that cost 1 000 — so they are carried
+at 50 each, half of what the ten you paid for were worth. It takes both events
+inside the window with no price, which is a handful of days at the start of a
+line's life; from the first quote onwards the market answers and the question
+disappears. And the figure is still the honest one: the app knows exactly what
+the position cost you and does not know what it is worth.
 
 ## When a figure is absent {#absence}
 
