@@ -71,7 +71,8 @@ asks for them, so leaving it out fails the build on `ERR_PNPM_IGNORED_BUILDS`
 while every gate run *from* `app/web` stays green. A pull request touching
 `app/**` now builds the image for that reason — it is the only gate that reads
 the Dockerfile, which was otherwise built by the release workflow alone, i.e.
-after the merge.
+after the merge. Since #744 that build is the **first of nine assertions** of
+the `Container` job (below) rather than a job of its own.
 
 **The image separates what the app writes from what a human edits** (issue #742,
 ADR-0015), and the whole uid apparatus that existed only because the two shared
@@ -115,6 +116,56 @@ goes:
   the cache that serves a PaaS starting from nothing is a registry cache and
   belongs to the release workflow. The layer order is unchanged, and `docker
   build ./app` still needs neither buildx nor a custom syntax directive.
+
+**And that contract is attested rather than documented** (issue #744, spec #730
+§ 7). `pr-checks.yml` carries a `Container` job — the heir of `Image`, which
+built `./app` and stopped there — running
+`.github/scripts/container-contract.sh` against the image it has just built:
+
+```bash
+docker build -t suivi-bourse:pr ./app
+IMAGE=suivi-bourse:pr .github/scripts/container-contract.sh
+```
+
+**Nine assertions, and every one of them is on behaviour observable from
+outside** — never on the shape of a line of `Dockerfile`, which breaks at the
+first refactor **and passes on a broken probe**: the build succeeds; a bare
+`docker run` boots and stays up; it says it keeps nothing **once**; a mounted
+`/data` does not say it; `/health` and `/metrics` follow `SB_WEB_PORT` and
+`SB_METRICS_PORT` while `SB_PROMETHEUS_ENABLED=false` leaves the second socket
+unbound; `sb_store_ephemeral` is `1` bare and `0` mounted; the effective user is
+not root and `/data` is writable; a `HEALTHCHECK` is declared **and the
+container reaches `healthy`**; and `SB_INGESTION_INTERVAL=42` produces the
+grouped notice and changes nothing else. It is in CI rather than in `pytest`
+because its subject **is** the image: a Python test that simulates a container
+attests the simulation.
+
+Five things about the script are decisions:
+
+- **Each assertion fails for its own reason**, which is what forced liveness and
+  greenness apart: waiting on the image's own probe would have made a deleted
+  `HEALTHCHECK` report as *"the bare container does not start"*. So assertion 2
+  waits on `/health` and assertion 8 waits on `docker inspect`.
+- **The declaration is read as `Healthcheck.Test[0]`**, not as the presence of
+  the object: `HEALTHCHECK NONE` leaves a `Healthcheck` behind whose test is
+  `["NONE"]`, so a truthiness check passes on an image that has explicitly
+  disabled its probe — the regression the assertion exists to catch.
+- **The grep is on the logfmt `condition=` key**, never on the sentence: the key
+  is #741's contract, the wording is not. Assertion 9 is anchored on the
+  emitting function's name in `location=`, because the advisory (#709) names the
+  same variable on another line.
+- **The unbound metrics socket is asked from *inside*** (`docker exec … python
+  -c socket.create_connection`): a published host port whose upstream is not
+  listening still completes a handshake with the userland proxy, so probing it
+  from the runner confuses *unbound* with *refused later*. Python does the
+  asking because the runtime image ships no curl — which is also why the
+  `HEALTHCHECK` is a `python -c`.
+- **Everything created carries one label** and is removed from an `EXIT` trap,
+  so a failed assertion leaves nothing behind; the workflow repeats the query
+  under `if: always()` for the runner killed between two `docker run`s. The job
+  builds `linux/amd64` alone — multi-arch is the release's business and QEMU
+  would multiply a pull request's check by five — and it pushes nothing, logs
+  into no registry and holds no credential.
 
 **The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
 theme, the two catalogues and the shell, with the four routes reachable and the
