@@ -6,6 +6,7 @@ classification, no-external-flow => no xirr/gain, daily valuation, TWR base 100,
 GRANT valued at the day's price, and portfolio-total currency gating.
 """
 
+import itertools
 from datetime import date, timedelta
 
 import pytest
@@ -390,25 +391,39 @@ def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
     assert _horizon({}, {"AAPL": LEDGER_START}) == (None, None)
 
 
-def test_the_rule_stated_and_the_rule_coded_coincide_on_a_symbol_with_no_price():
-    """Criterion 2 of #765: the guard is about the **day**, not about the price.
+def test_the_empty_block_guard_is_one_spelling_of_708s_and_not_a_wider_one():
+    """What the guard does, and — as loudly — what it does not do.
 
-    #708 wrote *"a day before a position was acquired holds nothing of it"* in
-    its docstring and coded it as ``oldest ≤ acquired`` — a test that a symbol
-    absent from ``oldest_priced`` never reaches, so the stated rule and the coded
-    one diverged on exactly the population that empties the table. Here the block
-    is built for every symbol and dropped when it is empty, so a day before an
-    acquisition is never blocked by that acquisition, priced or not.
+    #708 wrote *"a day before a position was acquired holds nothing of it"* and
+    coded it as ``oldest ≤ acquired``; the block form spells it ``unpriced <
+    acquired``. The two are **the same guard**: on a symbol absent from
+    ``oldest_priced``, ``unpriced`` is ``last_held``, which
+    :meth:`events.schemas.Timeline.holding_window` never puts before ``acquired``
+    — so the branch is unreachable for exactly the population that empties the
+    table, and reading it as the repair of #765 is reading a no-op. The repair is
+    the **cap**, asserted in the next test; here the two spellings are pinned
+    side by side so a later edit cannot widen one silently.
     """
-    # The two spellings side by side, on the same window: the symbol quoted from
-    # its acquisition, and the symbol quoted nowhere at all.
-    priced = _horizon({"NEW": (BOUGHT, TODAY)}, {"NEW": BOUGHT})
-    unpriced = _horizon({"NEW": (BOUGHT, TODAY)}, {})
+    windows = {"NEW": (BOUGHT, TODAY)}
 
-    assert priced == (None, None)
-    # The unpriced one blocks its own two days and **only** those: 2019 through
-    # the day before the purchase hold nothing of a line bought this week.
-    assert unpriced == (None, BOUGHT - timedelta(days=1))
+    # Priced from its acquisition: the block is empty and the guard drops it.
+    assert _horizon(windows, {"NEW": BOUGHT}) == (None, None)
+    # Priced from *before* its acquisition: same, the block is still empty.
+    assert _horizon(windows, {"NEW": BOUGHT - timedelta(days=30)}) == (None, None)
+    # Quoted nowhere: the guard is **not** reached, the block stands whole, and
+    # what keeps the history is the cap moving the right edge left.
+    assert _horizon(windows, {}) == (None, BOUGHT - timedelta(days=1))
+    # Both spellings of the guard, over the whole shape of the input: they drop
+    # the same symbols, so the block form changed no verdict of #708's.
+    day = timedelta(days=1)
+    for acquired_off, held_off, oldest_off in itertools.product(
+            range(0, 40, 7), range(0, 40, 7), list(range(-10, 40, 7)) + [None]):
+        acquired = LEDGER_START + acquired_off * day
+        last_held = acquired + held_off * day
+        oldest = None if oldest_off is None else acquired + oldest_off * day
+        unpriced = (last_held if oldest is None
+                    else min(oldest - day, last_held))
+        assert (unpriced < acquired) == (oldest is not None and oldest <= acquired)
 
 
 def test_a_new_line_caps_the_series_instead_of_deleting_its_history():
@@ -462,8 +477,35 @@ def test_a_symbol_with_no_price_at_all_blocks_every_day_it_was_held():
     the first ones the app can state, and it states them from the first cycle.
     """
     assert _horizon({"AAPL": LONG_HELD}, {}) == (date(2026, 8, 13), None)
+
+
+def test_the_days_left_of_a_past_block_are_lost_with_it():
+    """The residue #765's second criterion asks for and this rule does not give.
+
+    ``SOLD`` was acquired 2020-03-02 and exited 2022-05-04; quoted nowhere, its
+    block is that whole window and it does **not** reach the ceiling, so the cap
+    has nothing to do and the left bound lands the day after it. 2019-01-01
+    through 2020-03-01 go with it — days on which the account held no share of
+    ``SOLD`` at all, so nothing of it is waiting there and no crater is being
+    avoided.
+
+    It is asserted rather than repaired, and the argument is
+    :func:`performance.account_horizon`'s own: a horizon is one interval, so the
+    only two ways to keep those days are to keep the *left* run instead —
+    abandoning today's figures, which is the whole of the sliding horizon — or to
+    return two runs with a hole between them, which is the per-day mask #708
+    refused for breaking the TWR's chaining. The state is transitory by the same
+    mechanism as every other block here: it ends when the backward pass reaches
+    2020-03-02, or concludes and settles the symbol.
+    """
     assert _horizon({"SOLD": (date(2020, 3, 2), date(2022, 5, 4))},
                     {}) == (date(2022, 5, 5), None)
+    # And it ends by itself, both ways: reconstructed to its acquisition the
+    # block is empty, settled it does not contribute.
+    assert _horizon({"SOLD": (date(2020, 3, 2), date(2022, 5, 4))},
+                    {"SOLD": date(2020, 3, 2)}) == (None, None)
+    assert _horizon({"SOLD": (date(2020, 3, 2), date(2022, 5, 4))},
+                    {}, settled={"SOLD"}) == (None, None)
 
 
 def test_the_horizon_is_bounded_by_each_symbols_holding_window():

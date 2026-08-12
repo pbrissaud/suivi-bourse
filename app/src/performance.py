@@ -149,7 +149,7 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
     three purchases on 2020-09-28, ``twr_index`` 0,057, the head reading
     **−100,00 %** on a portfolio worth eleven thousand euros).
 
-    Six things about it are decisions:
+    Seven things about it are decisions:
 
     * **It is bounded by each symbol's holding window.** Taken literally as *"the
       most recent of the oldest available prices"*, a line sold in 2022 whose
@@ -159,18 +159,39 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
       made that case ordinary.
     * **By the window's *two* ends**, which is the same rule seen from the other
       side: a day before a position was acquired holds nothing of it, so there is
-      no crater to avoid and the term is simply not about that day. #708 spelled
-      that guard as ``oldest ≤ acquired`` and it therefore only ever applied to a
-      symbol that **has** a price; the rule and the code parted company on
-      exactly the population that breaks the series — the symbol quoted nowhere
-      yet. Here the block is built first and dropped when it is empty
-      (``unpriced < acquired``), which is one statement covering both.
+      no crater to avoid and the term is simply not about that day. That is a
+      statement about the **block**, and about nothing beyond it: ``[acquired,
+      unpriced]`` never covers a day the line was not held.
+      ``unpriced < acquired`` is one spelling of #708's ``oldest ≤ acquired`` and
+      **not a wider guard** — the two drop exactly the same symbols, verified
+      exhaustively. On a symbol absent from ``oldest_priced`` it is unreachable
+      by construction: ``unpriced`` is then ``last_held``, and
+      :meth:`events.schemas.Timeline.holding_window` never answers a last day
+      before its first. So this line does **not** treat the symbol quoted nowhere
+      yet — the cap below is what treats it — and what it buys is that the block
+      is built before it is judged, which is what the cap needs to walk over.
     * **A block that reaches the ceiling caps the series instead of bounding
       it** — the repair itself (issue #765). The block is treated *where it is*:
       the series stops the day before it rather than starting the day after,
       so the dashboard keeps its history, its last point is a day old, and the
       next cycle catches up. The right edge walks left past every block covering
       it, repeatedly, since stepping over one block can land inside another.
+    * **The days left of a block that does *not* reach the ceiling go with it,
+      and that is the price of one contiguous run.** Such a block bounds the
+      series on its left edge, so the days before that symbol's own acquisition
+      fall too — not because the block covers them, it does not, but because a
+      horizon is a single interval and the run that survives is the one holding
+      today. A line acquired 2020-03-02, sold 2022-05-04 and quoted nowhere pins
+      a ledger opened in 2019 at 2022-05-05, 2019 included. #765's second
+      acceptance criterion asks for those days and **this function does not give
+      them**: the two ways to give them are refused by the same argument as the
+      per-day mask below — keeping the *left* run instead abandons today's
+      figures, which is the whole of the sliding horizon, and keeping both makes
+      the series two runs with a hole between them, which breaks the TWR's
+      chaining and contradicts the calendar density. The residue is therefore
+      named here rather than declared repaired, and it is transitory by the same
+      mechanism as the rest: the symbol leaves the blocking population as soon as
+      its backward pass reaches its acquisition, or concludes (``settled``).
     * **When no run survives, the reading falls back to the left bound.** The
       blocks then cover the ledger from its first day to the ceiling — the
       ordinary shape of a fresh install whose first purchase has no price yet —
@@ -238,7 +259,12 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
         unpriced = (last_held if oldest is None
                     else min(oldest - day, last_held))
         if unpriced < acquired:
-            continue  # priced from the day it was acquired: nothing is waiting
+            # An empty block: the symbol is priced from the day it was acquired,
+            # so nothing of it is waiting. Reachable only when ``oldest`` exists
+            # — with no price at all ``unpriced`` is ``last_held``, never before
+            # ``acquired`` — which is why the never-quoted symbol is the cap's
+            # business and not this line's.
+            continue
         blocked.append((acquired, unpriced))
 
     if not blocked:
