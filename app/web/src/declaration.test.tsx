@@ -454,5 +454,13 @@ describe('the create form on an install that has declared nothing', () => {
     // as an install that declared nothing.
     expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
     expect(screen.queryByRole('table', { name: 'Vos comptes' })).not.toBeInTheDocument()
+
+    // **And the ledger is still there.** Its own read answered — `GET /api/events`
+    // comes off process memory and has no `503` (#764) — so masking it here would
+    // take the 285 events, the filters and the only button that opens the form
+    // away for a fault they read no ledger about. A band over a page that still
+    // has everything to show is #718's white screen arrived from the other side.
+    expect(screen.getByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Saisir un événement' })).toBeInTheDocument()
   })
 })

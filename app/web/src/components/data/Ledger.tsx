@@ -97,6 +97,17 @@ export function Ledger({ focus }: LedgerProps = {}) {
   const failure = oneBand(
     readConditions({ shellError: runtime.error, errors: [events.error, accounts.error] }),
   )
+  // **The band names both reads; the masking follows only the ledger's own.**
+  // Folded into one condition, a failed `/api/accounts` erased the whole journal
+  // half — the 285 events, the filters, the only button that opens the form —
+  // while its own read had answered. And that is not a corner: `GET /api/events`
+  // answers from process memory and has no `503` (#764), so *the store is
+  // unreadable* is exactly the state where the two reads part company. A band
+  // over a page that still has everything to show is the white screen #718
+  // mounted `Band` to abolish, arrived from the other side.
+  const ledgerFailure = oneBand(
+    readConditions({ shellError: runtime.error, errors: [events.error] }),
+  )
   const currency = totals.data?.base_currency ?? null
 
   return (
@@ -105,7 +116,7 @@ export function Ledger({ focus }: LedgerProps = {}) {
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
-      {failure || !events.data ? null : all.length === 0 ? (
+      {ledgerFailure || !events.data ? null : all.length === 0 ? (
         <EntryPair
           entries={[
             {
