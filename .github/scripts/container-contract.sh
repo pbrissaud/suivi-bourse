@@ -36,10 +36,11 @@ NOMETRICS=sb-contract-nometrics
 LEGACY=sb-contract-legacy
 STORE_VOLUME=sb-contract-store
 
-# Host ports, all in one place and all above the ephemeral range the runner
-# uses. The container-side ports differ per case on purpose: $PORTS is the one
-# that proves `SB_WEB_PORT`/`SB_METRICS_PORT` are *read* rather than merely
-# defaulted.
+# Host ports, all in one place and all **below** the ephemeral range the runner
+# allocates from — Linux hands out 32768-60999 — so the kernel never gives one
+# of these to an outbound socket while the script is running. The container-side
+# ports differ per case on purpose: $PORTS is the one that proves
+# `SB_WEB_PORT`/`SB_METRICS_PORT` are *read* rather than merely defaulted.
 BARE_WEB=18080
 BARE_METRICS=18081
 KEPT_WEB=18090
@@ -97,8 +98,14 @@ start() {
     docker run -d --name "$name" --label "$LABEL" "$@" "$IMAGE" >/dev/null
 }
 
+# `000` is curl's own write-out for a transfer that never got a status line, so
+# the fallback covers only the case where curl printed nothing at all — appended
+# to the failure it already reported, it would answer `000000` and put that in
+# the message of assertions 5 and 9.
 http_code() {
-    curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$1" || echo '000'
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$1" || true)"
+    printf '%s' "${code:-000}"
 }
 
 # The ordinary wait, and deliberately **not** the image's own probe: the two
@@ -224,6 +231,15 @@ code="$(http_code "http://127.0.0.1:$NOMETRICS_WEB/health")"
 # probing 8081 from the runner would confuse *unbound* with *refused later*.
 # Python does the asking because the runtime image ships no curl (which is also
 # why the healthcheck is a `python -c`).
+#
+# The instrument is proved before it is trusted, because the probe below reads
+# **any** failure of `docker exec` as "nothing is listening": no python, no
+# container, an exec the daemon refused. That is the very shape this script
+# refuses elsewhere — an assertion that passes on a broken sonde — so one
+# separate `docker exec` establishes that python answers at all, and only then
+# is its silence allowed to mean an unbound socket.
+docker exec "$NOMETRICS" python -c 'import socket' >/dev/null 2>&1 \
+    || { dump "$NOMETRICS"; fail 'assertion 5: python does not answer in the container, so nothing below could tell an unbound socket from a broken probe'; }
 if docker exec "$NOMETRICS" python -c "import socket; socket.create_connection(('127.0.0.1', 8081), timeout=5).close()" >/dev/null 2>&1; then
     dump "$NOMETRICS"
     fail 'assertion 5: SB_PROMETHEUS_ENABLED=false still left SB_METRICS_PORT bound'
