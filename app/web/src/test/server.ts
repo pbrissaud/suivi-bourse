@@ -15,9 +15,11 @@
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
-import { ROUTES, type ChartWindow } from '@/lib/api'
+import { ROUTES, type ChartWindow, type EventDraft } from '@/lib/api'
 import {
   anAccountsPayload,
+  aTypedEvent,
+  aLedgerPayload,
   aPositionsPayload,
   aPriceSeries,
   aRuntime,
@@ -38,6 +40,18 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
+    http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
+    // The two writes echo the row back, which is the contract's own shape: the
+    // id and the provenance are the store's to decide, so a client cannot send
+    // them and the answer is where they come from.
+    http.post(ROUTES.events, async ({ request }) => {
+      const draft = (await request.json()) as EventDraft
+      return HttpResponse.json(aTypedEvent({ id: 'created', ...draft }), { status: 201 })
+    }),
+    http.patch(ROUTES.event, async ({ params, request }) => {
+      const draft = (await request.json()) as EventDraft
+      return HttpResponse.json(aTypedEvent({ id: String(params.id), ...draft }))
+    }),
   ]
 }
 

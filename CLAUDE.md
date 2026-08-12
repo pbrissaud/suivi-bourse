@@ -417,6 +417,100 @@ front of** the store: **`position.closed_at`** (the folded section sorts on it,
 and a position carries a quantity, never the event that emptied it),
 **`GET /api/prices/:symbol?window=`** and its announced **`resolution`**.
 
+**The data page: a revocation surface, not a repair one** (issue #723, ADR-0020,
+ADR-0005). #662's whole apparatus — the inline editor, the opaque token over
+`(file, sheet, row)`, the content fingerprint as an `ETag`, its `409` and
+*invalid → invalid allowed* — existed because the faulty line lived **in** the
+truth. With the store as the truth a bad file is not imported at all, so it
+loses its subject in one go and **none of it has a row-by-row successor**: the
+unit of the gesture is the import (#728). What this ticket lands is **two tabs
+under one route** — *Le grand livre* and *L'installation*, split by what the user
+**declared** against what the installation **is**, which is ADR-0014's boot test
+transposed to the render — with the first in its journal half.
+
+Two of its decisions were taken **against** the interview, both in front of a
+board mounted on the 285 real events:
+
+- **The identity column is not `Titre`.** The interview had the free-text label
+  leaving the table, *"empty almost everywhere"*; measured, **278 rows of 285**
+  carry one (median 36 characters, 101 distinct values), and a `DEPOSIT` has no
+  symbol at all — `Apple Pay Top up`, `Incoming transfer from BRISSAUD` — so
+  there the label **is** the identity. One column does the work for both
+  families of event, in place of a `Symbole` empty 105 times out of 285 doubled
+  by a `Notes` truncated one row in two. `Nom` leaves instead: a security's name
+  is an attribute of the security, not of each of its 285 events. And the
+  full-text search stops being a convenience — on nineteen purchases of the same
+  ETF the label is the only discriminant a row owns — which is also what pays
+  for **no pagination**: « page 4 sur 6 » means nothing on an axis of dates.
+- **The padlock is not a column.** Rendered, read-only-per-row gave 285 identical
+  locks on 285 rows, and nothing replaces it because nothing has to: *a row that
+  carries a provenance came from a file; a row that carries none was typed here*.
+  The information was already in the one column that discriminates. The editor
+  therefore survives **only** on a row with no provenance **and a key to address
+  it by**, which on an install that has only ever imported is never — and it is
+  the row's own name that carries it, never a tenth column whose heading would
+  appear on a table where no row can use it.
+
+Four more things about it are decisions:
+
+- **The provenance is a label, never an address**, and never the file's presence
+  on disk: the drop folder is an optional read-only bind (ADR-0015), so *file
+  not found* would be a permanent false defect. It is composed **in the front**
+  from the file's name — a rendering follows the reader's language (ADR-0024),
+  and the store's own `2024.csv, row 14` is kept as a fallback only.
+- **The create form is the onboarding** (ADR-0005), so it asks **the type
+  first** — six labels stating their *effect* (`Achat`, `Vente`, `Attribution`,
+  `Dividende`, `Versement`, `Retrait`, and `Free shares` / `Cash in` /
+  `Cash out` in English) and never the six codes — then shows **only** the
+  fields of that type: a transfer names no security at all, and a `GRANT`'s unit
+  price is the one field in the product whose **emptiness is a statement**. It
+  lives in a **lateral panel** because the form *changes shape* after the first
+  choice and an editable row cannot.
+- **Two ADR-0016 icons on the page and zero in a table**: on the `date` label —
+  extending the instrument from *the figure displayed* to *the entry that
+  produces it* is the one place where *returns are computed from the dates of
+  your events* arrives while it can still change a behaviour — and on a grant's
+  unit price.
+- **`<input type="date">` stops discarding in silence**, and the repair is *one
+  sentence for two states*: the field hands back an empty string both for what
+  was never typed and for what it could not read, the value being destroyed
+  before any code sees it, so the form names the trap rather than guessing which
+  happened — and records nothing. `lib/ledger.ts` owns that parse and the
+  decimal one beside it (`<input type="number">` drops a decimal comma exactly
+  as silently, in a form whose French reader types one).
+- **At zero events the ledger block is replaced by two entries of equal
+  weight** — drop a file, or type a first event — and never by an empty table
+  with a small button over it. `EntryPair` is a **shared primitive** beside
+  `Stat`, `EmptyState` and `Band` for one reason: the first-run modal's last
+  step is that same pair (#726), and a second design of it is what the criterion
+  forbids.
+
+The ledger is read through the shape **`GET /api/events` already serves**, field
+for field — #718 mounting a head over two routes nobody had written is what
+#763 had to repair, and a client that renamed the members would render an
+**empty ledger on a full install**, which is worse than a `404` because it reads
+as a fact. Three members are additions, the first two optional so today's server
+renders the page whole: **`source_filename`** (the label follows the reader),
+**`event.id`** (a row typed here is the one kind that can be edited, and editing
+needs an address), and **`POST /api/events`**, without which the create form has
+nowhere to write.
+
+**None of the three is served today, and the deferral is written here rather
+than left in a hand-over message.** Verified on `web/api.py`: `_event_to_dict`
+renders neither a file name nor a key, and there is no `POST /api/events` — the
+route's absence is not an oversight to fill silently either, `forget_import`'s
+docstring stating the absence of a `PATCH /api/events/<id>` as a **decision**
+(#697), so the server half owes the argument as much as the handler. What the
+page does meanwhile: the ledger renders whole and the provenance falls back to
+the store's own `2024.csv, row 14`; no row is editable, `id` being what the
+editor is guarded on, which is the read-only rule reached by another road; and
+**the create form's save answers `404`** — the one member of the three that is
+not optional, i.e. the onboarding ADR-0005 makes of it does not land until a
+ticket serves it. No open ticket carries that work at the time of writing. The
+precedent is #742's first acceptance criterion, deferred to #743 in writing and
+rewritten there as five criteria of its own: a deferral nobody writes down is a
+deferral lost on both sides.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -1810,12 +1904,15 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
+├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
 ├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
+├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 ├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
+├── src/components/data/           # The ledger, its reduction, and the create form (#723)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 
