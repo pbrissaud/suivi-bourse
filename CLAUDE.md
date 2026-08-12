@@ -1734,9 +1734,14 @@ no persistence, no reporting currency, no portfolio. *Once* is a property of
 the empty-portfolio line names the drop folder rather than a `curl`, the API
 having **no write path** for a ledger since #711.
 
-**"No persistence" is an advisory that can never be acknowledged.** It is not in
-#709's table — acknowledging it would make it go quiet while it is still true —
-and it does not count towards a page's screen obligations either: it is at the
+**"No persistence" is a condition and never an advisory** — in ADR-0021's exact
+sense, *the banner shows conditions the owner can end; the badge counts facts
+they can only acknowledge*. So none of the three lines is one of #709's five
+keys: no row, no `first_seen_at` and above all **no acknowledgement**, which
+would make *"this container keeps nothing"* go quiet while it is still true.
+`boot_conditions.py` says it and `test_boot_conditions.py` asserts it on the
+source — the three keys are disjoint from `advisories.SPECS`. They do not count
+towards a page's screen obligations either: they are at the
 terminal and in the metrics. The fact reaches the front by the **same path as
 the rest of the runtime state**, `GET /api/runtime`'s `store.persistence`, for
 the reason that put `rebuilding` there: it is a property of *this process* and

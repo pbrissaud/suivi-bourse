@@ -75,13 +75,17 @@ MOUNTINFO = '/proc/self/mountinfo'
 #:
 #: ``overlay`` is the one the amendment rests on and the one measured: it is
 #: what Docker's default storage driver makes the container root, and a bare
-#: ``docker run`` therefore lands ``/data`` there. ``overlayfs`` and ``aufs``
-#: are the same union filesystem under the two other names a storage driver has
-#: used. ``tmpfs``/``ramfs`` are here for a different reason and not for
-#: symmetry: a store on ``--tmpfs /data`` **is** a mount, so the mount test
-#: alone would call it persistent while it is the most ephemeral thing there is.
+#: ``docker run`` therefore lands ``/data`` there. ``overlayfs``, ``aufs`` and
+#: ``fuse.fuse-overlayfs`` are the same union filesystem under the three other
+#: names a storage driver has used — the last being what a **rootless** Docker
+#: or Podman container reports for its own root, so leaving it out would have a
+#: bare rootless container publish ``sb_store_ephemeral 0``, i.e. state that a
+#: store nothing keeps *is* kept. ``tmpfs``/``ramfs`` are here for a different
+#: reason and not for symmetry: a store on ``--tmpfs /data`` **is** a mount, so
+#: the mount test alone would call it persistent while it is the most ephemeral
+#: thing there is.
 VOLATILE_FILESYSTEMS = frozenset({
-    'overlay', 'overlayfs', 'aufs', 'tmpfs', 'ramfs',
+    'overlay', 'overlayfs', 'aufs', 'fuse.fuse-overlayfs', 'tmpfs', 'ramfs',
 })
 
 # --------------------------------------------------------------------------- #
