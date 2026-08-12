@@ -17,11 +17,13 @@ import { setupServer } from 'msw/node'
 
 import { ROUTES, type ChartWindow, type EventDraft } from '@/lib/api'
 import {
+  anAccountHistory,
   anAccountsPayload,
   anAdvisory,
   aConfig,
   aTypedEvent,
   aLedgerPayload,
+  aPortfolioHistory,
   aPositionsPayload,
   aPriceSeries,
   aRuntime,
@@ -34,6 +36,14 @@ export function defaultHandlers() {
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
     http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
+    // The two perf series, of one shape at two levels (#721). They answer the
+    // **whole** history whatever the window asked for, which is what the client
+    // asks for: the longest range it offers is a `max` over the accounts'
+    // openings, and only the series says when an account opened.
+    http.get(ROUTES.accountHistory, ({ params }) =>
+      HttpResponse.json(anAccountHistory(String(params.account))),
+    ),
+    http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory())),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window (ADR-0010): a
     // handler serving one frozen payload would make the presets look like four
