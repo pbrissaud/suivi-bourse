@@ -6,7 +6,7 @@ a `## Blocked by` section in every ticket body. That graph is nine levels deep,
 which is what makes running it as **waves** worth the machinery: everything at one
 level is independent, and nothing below it can start early.
 
-`.claude/workflows/` holds the two scripts that do it. They run under the
+`.claude/workflows/` holds the three scripts that do it. They run under the
 `Workflow` tool and are versioned here because they are the only written trace of
 the rules that stopped three bad merges out of three.
 
@@ -14,6 +14,13 @@ the rules that stopped three bad merges out of three.
 | ------ | --- |
 | `v5-wave.js` | implement a wave — one agent per ticket, verify, repair minors, merge |
 | `v5-repair.js` | take the branches a wave held, repair them against the findings, re-verify, merge |
+| `v5-verify.js` | read a branch adversarially with **no implementer's declaration** to contradict — recovered work, a hand-written branch, an outside PR. It establishes each criterion from the diff itself and never writes |
+
+The third is the harder read, and that is its point: `v5-wave.js`'s verifier is
+handed a claim per criterion and set to refute it, which is a sharper instrument
+*and* a narrower one — it looks where the claim points. With no declaration there
+is no checklist to steer by, so the reviewer has to find the criteria, and what
+the branch quietly decided, on their own.
 
 ```
 Workflow({scriptPath: '.claude/workflows/v5-wave.js',
