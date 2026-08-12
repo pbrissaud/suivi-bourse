@@ -37,8 +37,32 @@
  *    dashes) and *being rebuilt* (eight) are indistinguishable otherwise — and
  *    the reason is a reason, never a progress bar with a target date, which
  *    stays on the banner.
+ *
+ * **And since #729 the declaration's own rules** (ADR-0013, ADR-0002), because
+ * they are rules about the same rows and a second module would be a second
+ * authority on them. Three of them, each already stated by the server somewhere:
+ *
+ *  - **The row set is what `/api/accounts` serves, and nothing else.** It holds
+ *    `default` under the server's own rule — as soon as an event names it, and
+ *    always while nothing else is declared — so the block joins the ledger's
+ *    counts to those rows and synthesises none. Rebuilding the seeded row in the
+ *    client was the copy losing a branch in its worst form: the one field the
+ *    copy could not invent was the one the block exists to change.
+ *  - **Why a removal is not offered.** ADR-0013 refuses three of them, and the
+ *    interface's obligation is the opposite of the API's: a control that is
+ *    present and refuses teaches nothing, so it is **absent and names its
+ *    reason** — *« 71 événements nomment ce compte »* — which generalises *a row
+ *    with no figures names its reason* one notch.
+ *  - **What the create form may offer as an account.** Its states are different
+ *    repairs and exactly one of them is the reader's (#764's deferral): *you have
+ *    declared none* is not *the list has not arrived* is not *the list could not
+ *    be read*. Rendered as one empty `<select>` under a required-field refusal,
+ *    the onboarding form was unusable on precisely the install ADR-0005 wrote it
+ *    for.
  */
-import type { Account, PerfPoint, PortfolioTotals } from '@/lib/api'
+import type { Account, AccountsResponse, LedgerEvent, PerfPoint, PortfolioTotals } from '@/lib/api'
+import type { MessageKey } from '@/lib/i18n'
+import { accountOf } from '@/lib/ledger'
 
 /**
  * The bucket of the unassigned, and the one account id the **product** writes
@@ -51,6 +75,59 @@ export const DEFAULT_ACCOUNT_ID = 'default'
 
 export function isDefaultAccount(id: string): boolean {
   return id === DEFAULT_ACCOUNT_ID
+}
+
+/**
+ * The one catalogue entry that names it, **wherever it is rendered** (#729).
+ *
+ * A key and not a string: the accounts page and the declaration block must not
+ * name one thing two ways, and the only mechanism that makes that true by
+ * construction is a single entry the two of them read.
+ */
+export const DEFAULT_ACCOUNT_LABEL: MessageKey = 'accounts.default.label'
+export const DEFAULT_ACCOUNT_TYPE: MessageKey = 'accounts.default.type'
+
+/**
+ * What the schema seeded, quoted from `store.DEFAULT_ACCOUNT_ROW`.
+ *
+ * The front must not render either — they are English, written by the *server*
+ * about a row nobody declared, and ADR-0024 puts every rendering in the reader's
+ * language. Recognising them is what lets a value the owner **gave** the row win
+ * over the catalogue's, so *renamed here* is visible on screen; and they are
+ * literals rather than a column because the store publishes no *was this ever
+ * touched* flag and adding one would be a migration in a product that has no
+ * migration machinery (ADR-0001).
+ */
+const SEEDED_LABEL = 'Default account'
+const SEEDED_TYPE = 'OTHER'
+
+/** The two members a naming rule needs — an `Account` or an {@link AccountRow}. */
+export interface NamedAccount {
+  id: string
+  label?: string | null
+  type?: string | null
+}
+
+/**
+ * What the owner calls this account, or `null` where nothing they wrote says.
+ *
+ * `null` means **read {@link DEFAULT_ACCOUNT_LABEL}**, and it happens on exactly
+ * one row: the seeded one, while it still wears the name the product gave it.
+ * The moment somebody relabels it — which #729's block is the only place to do —
+ * the name they gave wins, on this page and on the accounts page alike, because
+ * both read this function. A rename rendered nowhere is not a rename.
+ */
+export function declaredLabel(account: NamedAccount): string | null {
+  const label = account.label?.trim() || null
+  if (!isDefaultAccount(account.id)) return label ?? account.id
+  return label === SEEDED_LABEL ? null : label
+}
+
+/** The same clause on the other seeded column. `null` — nothing was declared. */
+export function declaredType(account: NamedAccount): string | null {
+  const type = account.type?.trim() || null
+  if (!isDefaultAccount(account.id)) return type
+  return type === SEEDED_TYPE ? null : type
 }
 
 // ------------------------------------------------------------------------- //
@@ -418,4 +495,160 @@ export function figuresAsOf(rows: readonly AccountRow[]): string | null {
       row.as_of !== null && (newest === null || row.as_of > newest) ? row.as_of : newest,
     null,
   )
+}
+
+// ------------------------------------------------------------------------- //
+// The declaration (#729) — where a row comes from, and why it cannot go
+// ------------------------------------------------------------------------- //
+
+/**
+ * Where a row's declaration comes from, and it is **three** answers rather than
+ * `source_id === null`. The seeded row carries no `source_id` either, so read as
+ * a pair the column said *declared in the app* about the one row nobody
+ * declared — on the first-run screen, where it is the only row there is.
+ */
+export type Origin = 'file' | 'app' | 'seed'
+
+export function originOf(account: Account): Origin {
+  if ((account.source_id ?? null) !== null) return 'file'
+  // A file may take the seeded row over (#698), and it is then a file's row like
+  // any other — which the branch above has already answered. What is left here
+  // is the row as the schema wrote it, and a name the owner gave it is what says
+  // they have taken it over themselves.
+  return isDefaultAccount(account.id) && declaredLabel(account) === null ? 'seed' : 'app'
+}
+
+/**
+ * The three refusals and the offer.
+ *
+ * The **count** is what makes the refusal a sentence rather than a shrug, and it
+ * comes off the ledger the tab has already read — never off a second resource,
+ * and never guessed: the block is not rendered at all until that read has
+ * landed, which is #718's rule that *a read that has not landed is not a fact*,
+ * applied where it would otherwise print `0 événement` under a full ledger.
+ */
+export type Removal =
+  | { kind: 'offered' }
+  | { kind: 'seeded' }
+  | { kind: 'namedByEvents'; count: number }
+  | { kind: 'fromFile' }
+
+export function removalOf(account: Account, events: number): Removal {
+  // `accounts.delete_account`'s order, and it is not alphabetical: the seeded
+  // row first (there is always at least one account), then the events that name
+  // it, then the file that declared it. The middle one comes before the last on
+  // purpose — both apply to a file-provisioned account an event names, and only
+  // one of them is actionable, since forgetting the import is refused in cascade
+  // for exactly the same reason.
+  if (isDefaultAccount(account.id)) return { kind: 'seeded' }
+  if (events > 0) return { kind: 'namedByEvents', count: events }
+  if (account.editable === false) return { kind: 'fromFile' }
+  return { kind: 'offered' }
+}
+
+export interface DeclarationRow {
+  account: Account
+  /** How many events name it, off the ledger the tab has already read. */
+  events: number
+  removal: Removal
+}
+
+/**
+ * The declaration, as one table: the rows the resource served, each with the
+ * events that name it and the reason its removal is not offered.
+ *
+ * **Nothing is synthesised.** The server's list already holds `default` wherever
+ * the block needs it — while an event names it, and always while nothing else is
+ * declared — so there is one authority instead of two, and the `label` a rename
+ * writes is on the row rather than absent from a copy. An empty result therefore
+ * means one thing only: the read has not landed. `/api/accounts` never serves an
+ * empty list (ADR-0013 — there is always at least one account).
+ */
+export function declarationRows(
+  payload: AccountsResponse | undefined,
+  events: readonly LedgerEvent[],
+): DeclarationRow[] {
+  const counts = countByAccount(events)
+
+  return (payload?.accounts ?? []).map((account) => {
+    const count = counts.get(account.id) ?? 0
+    return { account, events: count, removal: removalOf(account, count) }
+  })
+}
+
+function countByAccount(events: readonly LedgerEvent[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const event of events) {
+    const id = accountOf(event)
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+}
+
+// ------------------------------------------------------------------------- //
+// What the create form may offer as an account (#764's deferral)
+// ------------------------------------------------------------------------- //
+
+/**
+ * The five states of the account field, and they are five renderings.
+ *
+ * `unassigned` is the one the deferral is about: #698's rule is that a **blank
+ * account means `default` until something is declared**, and the form has to
+ * reflect it rather than demand a choice from an empty list. The blank is sent
+ * as a blank — the server resolves it at the write, where `ledger._insert_events`
+ * resolves the file's own empty cell — so the two roads keep one rule.
+ */
+export type AccountChoice =
+  /**
+   * Nothing is declared, so there is nothing to choose — but the row still has
+   * a **name**, and it is the one the store holds rather than the catalogue's
+   * unconditionally. Dropping it here is what let the table and the form on the
+   * *same tab* call one account two things the moment its owner renamed it.
+   */
+  | { kind: 'unassigned'; account?: Account }
+  | { kind: 'single'; account: Account }
+  | { kind: 'choose'; accounts: readonly Account[] }
+  | { kind: 'pending' }
+  | { kind: 'failed' }
+
+export function accountChoice(
+  payload: AccountsResponse | undefined,
+  failed: boolean,
+): AccountChoice {
+  // The failure first: a read that failed and a read in flight both leave the
+  // payload undefined, and only one of them is going to arrive.
+  if (payload === undefined) return failed ? { kind: 'failed' } : { kind: 'pending' }
+  if (!payload.declared || payload.accounts.length === 0) {
+    return { kind: 'unassigned', account: payload.accounts[0] }
+  }
+  // The one case that answers itself. It is not a shortcut: with a single
+  // declared account there is nothing to choose, and a select of one entry is a
+  // question whose answer is already known.
+  if (payload.accounts.length === 1) return { kind: 'single', account: payload.accounts[0] }
+  return { kind: 'choose', accounts: payload.accounts }
+}
+
+/** What the form sends for the account, or the sentence that refuses to. */
+export type SubmittedAccount = { account: string } | { error: MessageKey }
+
+export function submittedAccount(choice: AccountChoice, typed: string): SubmittedAccount {
+  switch (choice.kind) {
+    case 'unassigned':
+      // The blank, on purpose. Resolving it here would be a second spelling of
+      // #698's rule, on the one road that could then disagree with the file's.
+      return { account: '' }
+    case 'single':
+      return { account: choice.account.id }
+    case 'choose': {
+      const chosen = typed.trim()
+      return chosen === '' ? { error: 'data.form.required' } : { account: chosen }
+    }
+    // Neither of these blames the reader for an empty field: the list is not
+    // there, and *this kind of event needs this field* would send them looking
+    // for a control that is empty for reasons of its own.
+    case 'pending':
+      return { error: 'data.form.account.pending' }
+    case 'failed':
+      return { error: 'data.form.account.failed' }
+  }
 }

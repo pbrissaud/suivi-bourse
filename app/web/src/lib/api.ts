@@ -28,6 +28,8 @@
  */
 export const ROUTES = {
   accounts: '/api/accounts',
+  /** One declared account. A **pattern**, like {@link ROUTES.prices} (#729). */
+  account: '/api/accounts/:id',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
   /**
@@ -60,6 +62,10 @@ export const ROUTES = {
 
 export function eventPath(id: string): string {
   return `/api/events/${encodeURIComponent(id)}`
+}
+
+export function accountPath(id: string): string {
+  return `/api/accounts/${encodeURIComponent(id)}`
 }
 
 export function advisoryAcknowledgementPath(key: string): string {
@@ -156,17 +162,21 @@ export interface Account {
   /** The id events carry. `default` is the bucket of the unassigned. */
   id: string
   /**
-   * What the owner called it — **except on `default`**, where the interface
-   * reads its own catalogue (#745). That row is `NOT NULL` in the store, so it
-   * always arrives named, but what it arrives with is documentation for whoever
-   * opens the file: it is the one row *every* install owns, headless ones
-   * included, and a value seeded once will never follow the reader's language.
-   * Every other account shows what it declares, without exception or fallback —
-   * the owner wrote it themselves, in the language they wanted.
+   * What the owner called it — **except on `default` while it still wears the
+   * name the schema seeded**, where the interface reads its own catalogue
+   * (#745). That row is `NOT NULL` in the store, so it always arrives named, but
+   * what it arrives with is documentation for whoever opens the file: it is the
+   * one row *every* install owns, headless ones included, and a value seeded
+   * once will never follow the reader's language. Every other account — and that
+   * one from the moment #729's block relabels it — shows what it declares.
+   *
+   * Nullable on the wire because `AccountSummary` publishes it so: the store's
+   * own column is, and the declaration falls back to the id where a file left it
+   * empty. The fold lives in `lib/accounts.ts` rather than in each cell.
    */
-  label: string
-  /** Same clause, same row: `default`'s type is read off the catalogue too. */
-  type: string
+  label: string | null
+  /** Same clause, same row: `default`'s seeded type is the catalogue's too. */
+  type: string | null
   /**
    * The declaration's provenance — the import that carried it, `null` for one
    * created in the app (#698). `editable` is published rather than derived from
@@ -217,6 +227,27 @@ export interface AccountsResponse {
    */
   declared: boolean
   accounts: Account[]
+}
+
+/**
+ * What the declaration form sends (#729, ADR-0013, ADR-0002).
+ *
+ * **There is no `currency` member and there will not be one.** ADR-0002 deleted
+ * `Account.currency` rather than converting it: there are two currency levels —
+ * the reporting currency, and the security's quote currency — and not three, so
+ * *an account whose positions disagree with its currency* stops being a sentence
+ * with a referent. A field for it here would put the third level back on the one
+ * surface that creates the rows.
+ *
+ * `id` is sent on a creation and **never on an edit**: it is the value events
+ * name, so changing it would be an edit of every imported row that names it, and
+ * imported rows are read-only. The server refuses it for that reason, and the
+ * form does not offer it.
+ */
+export interface AccountDraft {
+  id?: string
+  type: string
+  label: string
 }
 
 /**
@@ -745,6 +776,14 @@ export interface PurgeResult {
 
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
+  // The declaration's three gestures (#698, served since that ticket; read by a
+  // client since #729). They are the accounts half of the pair
+  // `POST`/`PATCH`/`DELETE /api/events` is the ledger half of, down to the
+  // column that decides them: `source_id NULL`.
+  createAccount: (draft: AccountDraft) => send<Account>(ROUTES.accounts, 'POST', draft),
+  updateAccount: (id: string, draft: AccountDraft) =>
+    send<Account>(accountPath(id), 'PATCH', draft),
+  removeAccount: (id: string) => remove<{ id: string; removed: boolean }>(accountPath(id)),
   events: () => get<EventsResponse>(ROUTES.events),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
