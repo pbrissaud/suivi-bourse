@@ -16,7 +16,16 @@
  * that is never removed, so a single-account install would get a control with
  * one option: a filter that cannot filter, which is the same defect as a column
  * that cannot discriminate.
+ *
+ * **A reduction that came from a gesture names itself and can be undone** (#724).
+ * The securities filter has no control to type into — it arrives from the
+ * assumed-currency notice of the other tab, which names *every* security it
+ * concerns — so without a line stating it the ledger would simply be shorter
+ * than the reader expects, with the search field empty and nothing on screen
+ * saying why or how to get the rest back. It lists them all, in one line, for
+ * the same reason: a set stated as its first element reads as its whole.
  */
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EVENT_TYPES, type LedgerEventType } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -103,6 +112,26 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
       <p className="ml-auto text-sm text-muted-foreground">
         {t('data.filter.count', { count: shown })}
       </p>
+
+      {filters.symbols && filters.symbols.length > 0 ? (
+        <div className="flex w-full flex-wrap items-center gap-3 rounded-md border border-dashed border-input px-3 py-2">
+          <p className="text-sm text-muted-foreground">
+            {t('data.filter.symbols', {
+              count: filters.symbols.length,
+              symbols: filters.symbols.join(', '),
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={() => onChange({ ...filters, symbols: null })}
+          >
+            {t('data.filter.symbols.clear')}
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

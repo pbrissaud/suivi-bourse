@@ -110,6 +110,30 @@ export function formatCompact(
   }).format(value)
 }
 
+/**
+ * A size on disk, in the reader's language (#724).
+ *
+ * Binary steps and decimal names, which is what every file manager the reader
+ * has ever opened shows them: `Intl`'s own `unit` list stops at `gigabyte` and
+ * has no mebibyte, so the division is ours and only the *number* crosses
+ * `Intl` — which is the point, since that is the half that follows the language.
+ *
+ * `null` is a store that has never been written, and it renders as the em dash
+ * every other absence does rather than as `0 o` — a zero here would read as *the
+ * purge worked*, on the one figure of the product that a purge does not move.
+ */
+export function formatBytes(locale: string, value: number | null | undefined): string {
+  if (value === null || value === undefined) return ABSENT
+  const units = ['B', 'kB', 'MB', 'GB', 'TB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${formatNumber(locale, size, unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
 export function formatDateTime(locale: string, value: string | null | undefined): string {
   if (!value) return ABSENT
   const date = new Date(value)
@@ -160,6 +184,7 @@ export function useFormatters() {
       percentPoints: (value: number | null | undefined) => formatPercentPoints(locale, value),
       compact: (value: number | null | undefined, currency: string | null | undefined) =>
         formatCompact(locale, value, currency),
+      bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
     }),

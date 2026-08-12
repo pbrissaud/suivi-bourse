@@ -40,10 +40,26 @@ export const ROUTES = {
   events: '/api/events',
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
+  /** What this install is configured with: the dials and the boot variables. */
+  config: '/api/config',
+  /** The dials' one writer, and it is an HTTP route so headless stays whole. */
+  settings: '/api/settings',
+  /** What this install has been told and has not acknowledged (#709). */
+  advisories: '/api/advisories',
+  /** One advisory's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
+  advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
+  /** The store's own figures — size, last ledger write, orphans (#724). */
+  store: '/api/store',
+  /** The orphans as a collection: the only thing done to it is removing it. */
+  storeOrphans: '/api/store/orphans',
 } as const
 
 export function eventPath(id: string): string {
   return `/api/events/${encodeURIComponent(id)}`
+}
+
+export function advisoryAcknowledgementPath(key: string): string {
+  return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
 }
 
 /**
@@ -108,7 +124,7 @@ async function get<T>(path: string): Promise<T> {
  * `problem+json` whose `type` the caller branches on, exactly like a failed
  * read. There is no second error contract for writes.
  */
-async function send<T>(path: string, method: 'POST' | 'PATCH', body: unknown): Promise<T> {
+async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unknown): Promise<T> {
   return unwrap<T>(
     await fetch(path, {
       method,
@@ -117,6 +133,15 @@ async function send<T>(path: string, method: 'POST' | 'PATCH', body: unknown): P
     }),
     path,
   )
+}
+
+/**
+ * A removal, with no body either way in. It is a third verb rather than a
+ * `POST` to a verb-shaped path because what the one caller does to the orphan
+ * collection is remove it whole (#724).
+ */
+async function remove<T>(path: string): Promise<T> {
+  return unwrap<T>(await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } }), path)
 }
 
 // ------------------------------------------------------------------------- //
@@ -291,6 +316,23 @@ export interface RuntimeSymbol {
   next_run: string | null
   /** Consecutive fruitless readings. Never "never", which is not computable. */
   consecutive_failures: number
+  /**
+   * Was this symbol's market shut on its **last completed pass**? `null` — it
+   * has never completed one.
+   *
+   * It is what the scheduler *acted on*, which is why the settings form counts
+   * the reach of a new cadence off it rather than off `next_run`: the armed time
+   * cannot tell a dead-ticker back-off from a market close, and it inverts the
+   * moment the dial it would be compared against is the one being changed
+   * (#701). Optional in the type, because a client that has it must not break
+   * on a server that has not published it yet.
+   */
+  closed?: boolean | null
+  /**
+   * Whether anybody holds it. A sold line is reconstructed and not polled, so
+   * it is in this row set and out of the cadence's reach.
+   */
+  held?: boolean
 }
 
 export interface RuntimeAccount {
@@ -315,6 +357,16 @@ export type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
 
 export interface RuntimeStore {
   persistence: StorePersistence
+  /**
+   * Where the file is. Boot knowledge, so it travels beside the persistence
+   * rather than on the store's own resource — the two are read as one line
+   * (*the path, and whether it survives*), and the pair has to stay legible on
+   * the one failure where the store cannot answer for itself.
+   *
+   * `null` is a process that named no store, which a browser will not meet and
+   * a test runtime does. Never an empty string, which reads as a root.
+   */
+  path: string | null
 }
 
 export interface RuntimeState {
@@ -442,6 +494,141 @@ export interface EventDraft {
   amount: number | null
 }
 
+// ------------------------------------------------------------------------- //
+// The installation (#724, ADR-0014, ADR-0020, ADR-0021)
+//
+// The second tab of the data page reads four resources and writes two, and the
+// split between them is **ADR-0014's boot test**, not a grouping of
+// convenience: what the process had to know before it could open the store
+// (`environment`) can never be a dial, and what lives in the store (`settings`)
+// can never need a restart. That line is why the two halves render as two
+// sections of **one** surface, the second a description rather than a form.
+// ------------------------------------------------------------------------- //
+
+/**
+ * One dial, as the registry describes it — `settings_registry.py` is the single
+ * list, and this is that list crossing HTTP. The form is **drawn from it**
+ * rather than written out: a second enumeration of the dials in a component
+ * would agree with the registry on the day it was written and not much longer,
+ * which is the whole argument of ADR-0014.
+ */
+export interface SettingDescription {
+  key: string
+  /** The effective value: the row if there is one, the code's default otherwise. */
+  value: string | number | null
+  default: string | number | null
+  type: 'integer' | 'string' | 'currency'
+  minimum: number | null
+  maximum: number | null
+  /** What changing it triggers, as a token the catalogue turns into a sentence. */
+  effect: string
+  /** The registry's own English note. Diagnostic, like `problem.detail`. */
+  doc: string
+  /**
+   * Whether the store holds an answer. Published rather than derived from
+   * `value !== default`: a dial answered *at* its default is answered, and
+   * `base_currency` is the one whose two states decide a whole screen.
+   */
+  stored: boolean
+}
+
+/**
+ * One boot variable — what the process had to know before it could open the
+ * store (ADR-0014). **Six and no seventh** (#740).
+ *
+ * It is a *description*: rendered as greyed-out fields it invites the click and
+ * reads as a form that refused, when the honest statement is that nothing here
+ * is answerable from in here at all. The section says *changes when the
+ * container is recreated* **once**, for all of them.
+ */
+export interface EnvironmentVariable {
+  name: string
+  /** What the app is running on — the variable's, or the app's own default. */
+  value: string | null
+  /** Whether the environment named it at all. */
+  set: boolean
+  /**
+   * Where the value came from, and it is **factual rather than helpful**:
+   * reporting a variable as *unset, using the default* because it happens to
+   * equal the default would be a guess (#654 trap 2).
+   */
+  source: 'environment' | 'default'
+}
+
+export interface ConfigResponse {
+  log_level: string
+  settings: SettingDescription[]
+  environment: EnvironmentVariable[]
+  /** Set in the environment and obeyed by nothing. Computed, so it cannot drift. */
+  unread_environment: string[]
+}
+
+/** What `PUT /api/settings` answers: the new list, what moved, and what it reached. */
+export interface SettingsWriteResponse {
+  settings: SettingDescription[]
+  changed: string[]
+  /**
+   * The effect, **quantified**. A portfolio-wide cadence that reaches 3 symbols
+   * out of 12 has to say so — the other nine are not misconfigured, they read
+   * the new value when their market opens.
+   */
+  effect: Record<string, unknown>
+}
+
+/**
+ * One standing advisory (#709, ADR-0021).
+ *
+ * `message` is the **server's** sentence, in English, and it is the one place
+ * the front renders a string it did not write. That is not a hole in ADR-0024:
+ * an advisory names paths, variables and symbols this installation holds, the
+ * closed list of five lives in `advisories.py` beside its predicate, and a
+ * catalogue key per advisory would be a second authority on what each one says.
+ * What the interface writes in the reader's language is everything around it —
+ * the block, the gesture, and what to do when there is nothing to press.
+ */
+export interface Advisory {
+  key: string
+  first_seen_at: string
+  acknowledged: boolean
+  acknowledged_at: string | null
+  message: string
+  /** What it names right now, re-derived per read. `null` — not observable here. */
+  detail: Record<string, unknown> | null
+}
+
+export type AdvisoriesResponse = Advisory[]
+
+/** One orphan symbol: nothing declares it, and this is the series it holds. */
+export interface OrphanSymbol {
+  symbol: string
+  points: number
+}
+
+/**
+ * The store's own figures. The path and the persistence are **not** here — they
+ * are process memory and ride on `/api/runtime`, which opens nothing and is
+ * therefore still answering when this resource is not.
+ */
+export interface StoreState {
+  /** The file and its write-ahead log. `null` — nothing written yet. */
+  size_bytes: number | null
+  /**
+   * The newest import, and never the newest observed price: that second one is
+   * liveness, it belongs to the banner, and here it would make a store whose
+   * last import was a year ago read as freshly written.
+   */
+  ledger_last_write: string | null
+  orphans: OrphanSymbol[]
+  /** Repeated from the runtime so a report quoting this resource is whole. */
+  persistence: StorePersistence
+}
+
+/** What the purge answers: rows, and never bytes. */
+export interface PurgeResult {
+  symbols: string[]
+  points_removed: number
+}
+
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
   events: () => get<EventsResponse>(ROUTES.events),
@@ -452,4 +639,12 @@ export const api = {
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
+  config: () => get<ConfigResponse>(ROUTES.config),
+  saveSettings: (values: Record<string, string | number>) =>
+    send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
+  advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
+  acknowledgeAdvisory: (key: string) =>
+    send<Advisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+  store: () => get<StoreState>(ROUTES.store),
+  purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
 }

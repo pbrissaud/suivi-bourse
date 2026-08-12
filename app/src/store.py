@@ -466,6 +466,33 @@ def store_path() -> Path:
         os.environ, STORE_DIR_VAR, DEFAULT_STORE_DIR) / STORE_FILENAME
 
 
+def file_size(path: Path) -> Optional[int]:
+    """What this store occupies on disk, write-ahead log included.
+
+    Two files and not one, and the sum is the honest figure rather than a
+    refinement: DuckDB writes into ``<file>.wal`` between checkpoints, so a
+    reading of the database file alone jumps down at a checkpoint that freed
+    nothing at all — the whole class of misreading this figure already invites.
+
+    ``None`` when the file is not there, which is a real state on a store that
+    has never been written, and never a zero. The figure is displayed **beside
+    the sentence that says what a purge does not do**: measured, 79 % of the
+    rows of a real store were purged for zero bytes returned, DuckDB reusing its
+    blocks rather than shrinking the file. Shown bare next to a purge button it
+    is a lie by juxtaposition; hidden, the number is still there — ``du`` finds
+    it — and only its explanation is gone.
+    """
+    total = 0
+    seen = False
+    for candidate in (path, path.with_name(path.name + '.wal')):
+        try:
+            total += candidate.stat().st_size
+        except OSError:
+            continue
+        seen = True
+    return total if seen else None
+
+
 def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
     """Bring an open connection to the current schema and seed it.
 
@@ -556,7 +583,8 @@ def open_store(path: Optional[Path] = None) -> Store:
 
 
 __all__ = [
-    'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path', 'finite',
+    'Store', 'StoreUnavailable', 'open_store', 'prepare', 'store_path',
+    'file_size', 'finite',
     'DDL', 'TABLES', 'STORE_FILENAME', 'STORE_DIR_VAR', 'DEFAULT_STORE_DIR',
     'DEFAULT_ACCOUNT_ROW',
 ]

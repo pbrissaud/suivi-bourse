@@ -113,18 +113,36 @@ export interface LedgerFilters {
   type: LedgerEventType | null
   /** `null` — every account. */
   account: string | null
+  /**
+   * A **set** of securities, or `null` for every one of them (#724).
+   *
+   * It is a dimension of its own rather than a word in `query` because the
+   * search is single-term — `haystack(event).includes(needle)` — so a notice
+   * naming three symbols would have to drop two of them to be expressible
+   * there, and a field showing `AAA` where the sentence above said
+   * `(AAA, BBB, CCC)` reads as the whole subject. Nothing in the reduction bar
+   * types into it: it arrives from a gesture and leaves by its own clear
+   * button, which is what makes the reduction **nameable** on screen rather
+   * than a table quietly shorter than it should be.
+   *
+   * A cash movement names no security at all, so a non-null set excludes every
+   * one of them — which is what a notice about quoted lines means.
+   */
+  symbols: readonly string[] | null
 }
 
-export const NO_FILTERS: LedgerFilters = { query: '', type: null, account: null }
+export const NO_FILTERS: LedgerFilters = { query: '', type: null, account: null, symbols: null }
 
 export function filterEvents(
   events: readonly LedgerEvent[],
   filters: LedgerFilters,
 ): LedgerEvent[] {
   const needle = fold(filters.query.trim())
+  const symbols = filters.symbols === null ? null : new Set(filters.symbols)
   return events.filter((event) => {
     if (filters.type !== null && event.event_type !== filters.type) return false
     if (filters.account !== null && accountOf(event) !== filters.account) return false
+    if (symbols !== null && (!event.symbol || !symbols.has(event.symbol))) return false
     if (needle === '') return true
     return haystack(event).includes(needle)
   })

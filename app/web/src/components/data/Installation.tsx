@@ -1,0 +1,73 @@
+/**
+ * Tab 2 — **the installation**, as opposed to what the user declared (#724,
+ * ADR-0020, ADR-0014).
+ *
+ * The line between the two tabs is ADR-0014's boot test transposed to the
+ * render, and this side of it holds three blocks in one order: **Notices ·
+ * Settings · The store**. What comes first is what the installation has to say
+ * to its owner, then what they can change about it, then what it *is*.
+ *
+ * **A block with nothing in it does not exist.** The notices block is absent at
+ * zero and the layout shifts when one appears — that shift is the point, and it
+ * is the counterpart of the badge on the tab: a badge that promised something
+ * and left the reader hunting for it is the failure the criterion names.
+ *
+ * The reads follow the rule the other pages keep: `/api/runtime` answers from
+ * process memory and never opens the store (#668), so the shell's banner is
+ * **silent** on the one failure that empties this tab — and a tab that rendered
+ * nothing there would make *the store is unreadable* and *there is nothing to
+ * say about this installation* the same screen, in its worst form, a blank one.
+ * `lib/status.ts` keeps the causal order, so it is still one band or none.
+ *
+ * The store block is the exception that proves it: its two facts about the file
+ * ride on the runtime, so they stay on screen through exactly that failure.
+ */
+import { useQuery } from '@tanstack/react-query'
+
+import { Band } from '@/components/Band'
+import { AdvisoriesBlock } from '@/components/data/AdvisoriesBlock'
+import { SettingsBlock } from '@/components/data/SettingsBlock'
+import { StoreBlock } from '@/components/data/StoreBlock'
+import { api } from '@/lib/api'
+import { useI18n } from '@/lib/i18n'
+import { oneBand, readConditions } from '@/lib/status'
+
+export interface InstallationProps {
+  /** Take the reader to the ledger, reduced to every security a notice names. */
+  onShowInLedger: (symbols: readonly string[]) => void
+}
+
+export function Installation({ onShowInLedger }: InstallationProps) {
+  const { t } = useI18n()
+
+  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  const store = useQuery({ queryKey: ['store'], queryFn: api.store })
+
+  const failure = oneBand(
+    readConditions({
+      shellError: runtime.error,
+      // Causal order: the dials and the notices both live in the store, so the
+      // first of the two to fail is the one that names the cause.
+      errors: [config.error, advisories.error, store.error],
+    }),
+  )
+
+  return (
+    <div className="space-y-8">
+      {failure ? <Band>{t(failure.message)}</Band> : null}
+
+      {advisories.data ? (
+        <AdvisoriesBlock advisories={advisories.data} onShowInLedger={onShowInLedger} />
+      ) : null}
+
+      {/* The settings surface needs the registry to draw itself, so it waits
+          for it: a form of six fields that appeared empty and then filled in
+          would let a reader type into a dial whose bounds had not arrived. */}
+      {config.data ? <SettingsBlock config={config.data} runtime={runtime.data} /> : null}
+
+      <StoreBlock runtimeStore={runtime.data?.store} store={store.data} />
+    </div>
+  )
+}

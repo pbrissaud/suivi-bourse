@@ -509,7 +509,107 @@ not optional, i.e. the onboarding ADR-0005 makes of it does not land until a
 ticket serves it. No open ticket carries that work at the time of writing. The
 precedent is #742's first acceptance criterion, deferred to #743 in writing and
 rewritten there as five criteria of its own: a deferral nobody writes down is a
-deferral lost on both sides.
+deferral lost on both sides. **#764 now carries it**, opened after the merge.
+
+**The data page's second tab: what the installation *is*** (issue #724,
+ADR-0014, ADR-0015, ADR-0020, ADR-0021). Three blocks in one order — **Avis ·
+Réglages · Le magasin** — and *a block with nothing in it does not exist*: the
+layout shifts when a notice appears, which is the counterpart of the badge on
+the tab. Five things about it are decisions:
+
+- **The badge counts unacknowledged notices and nothing else**, and the three
+  things it excludes are three things that *look* countable: the **ephemeral
+  store** (a predicate that is never acknowledgeable, so a permanent badge, so
+  noise that takes the notices that matter down with it), the **orphan symbols**
+  (*a choice, not a waste* — nobody is being told anything), and the
+  **reconstruction**, which is one of #709's five keys and has exactly **one**
+  announcer, the banner. That last one is why the exclusion lives in
+  `lib/advisories.ts` rather than in a filter: dropped from the badge alone it
+  would stay in the block and make the badge under-count what is on screen;
+  left in both it would put two announcers on one fact. `shownAdvisories` and
+  `unacknowledgedCount` read **one list**, so *a badge promises something to
+  find* is true by construction.
+- **The settings are one surface with two sections**, and the line between them
+  is ADR-0014's boot test transposed to the render. The **effective-configuration
+  card disappears as an object** — it was drawn twice from the same source on the
+  same page, answering a precedence problem that no longer exists. The form is
+  **drawn by the registry** (`/api/config`'s `settings`, which *is*
+  `settings_registry.py` crossing HTTP): a dial the catalogue has never heard of
+  renders under its key with its own bounds, which is what stops a seventh hand
+  written list appearing. The environment half is a **key/value list nothing in
+  which is focusable** — rendered as greyed fields it invites the click and reads
+  as a form that refused — with *changes when the container is recreated*
+  written **once for the section**. `unread_environment` is deliberately not
+  repeated there: it is one of the five notices, and the block above already
+  says it with the names it found.
+- **The cadence says who it reaches, and names its own trap.** The count is
+  `lib/installation.ts`'s `cadenceReach`, and it is read off **`closed`** — the
+  market state of the symbol's last completed pass, published per symbol — and
+  **not** off `next_run`, which the ticket names: #701 settled that with three
+  counter-examples, and the front would reproduce all three (a symbol asleep
+  until an open falling *inside* a long outgoing interval, a dead-ticker back-off
+  indistinguishable from a market close, and an instrument that inverts the
+  moment the dial it is compared against is the one being changed). Using the
+  server's own instrument is also what makes the forecast agree with the receipt
+  the save answers with — two instruments would give the reader two counts of one
+  gesture, and the receipt is therefore written **in the past tense and in its
+  own words** rather than repeating the forecast verbatim. The trap is stated
+  because no interface can hide it: the back-off waits `regular_interval ×
+  2^(n−3)` and stores no absolute delay, so the number in the form is the number
+  in the formula. And **only what moved is sent**: `reschedule_job` recomputes
+  the next run from *now*, so a form posting every field would reset every timer
+  on every click, invisibly.
+- **The store block reads two resources, and the split is #668's line.** The
+  **path and its persistence** ride on `/api/runtime`, which opens nothing, so
+  they are still on screen when the store cannot answer — which is exactly when
+  *« où sont passées mes données ? »* is asked; the **size**, the **last write of
+  the ledger** and the **orphans** are `GET /api/store`, which fails with the
+  file it describes. An **ephemeral store dominates the block** instead of
+  appearing in it as a note — the only screen where a trial run learns that it is
+  one — and is **never a notice**. The size never appears without *a purge
+  returns rows, not bytes: the store reuses its blocks* (measured: 79 % of a real
+  store's rows purged for **zero bytes**, 126,0 Mo before and after, the same
+  content rebuilt fitting in 26,0). The last write is the newest **import** and
+  never the newest observed price — that second one is liveness, it belongs to
+  the banner, and here it would make a store whose last import was a year ago
+  read as freshly written.
+- **The orphan list is absent at zero**, and a **sold position is not one**: the
+  predicate is *no event names this symbol*, never *its quantity is zero*.
+  `DELETE /api/store/orphans` is the gesture spec #695 § 10 owes in exchange for
+  keeping the series — forgetting an import is reversible, a reconstructed series
+  is not — and it runs in **two transactions** for `forget_import`'s reason:
+  DuckDB refuses to delete a referenced key in the transaction that deleted its
+  references.
+
+Two members joined the HTTP contract with it: **`runtime.store.path`** (beside
+the persistence, because the two are read as one line and both are boot
+knowledge) and **`GET /api/store`** with its `DELETE .../orphans`. The one
+gesture a notice carries inside the app is the **assumed-currency** one, which
+*names the events it was made about*, so it switches to the ledger tab already
+reduced to **every** security it names; the other four are about a file on disk
+or a variable in the container's environment, and their own sentence — the
+server's, because it names *this* installation's paths — already says what to do
+out there.
+
+**That reduction is a filter of its own, and it names itself on screen.** The
+free-text search is single-term (`haystack(event).includes(needle)`), so a
+notice naming three securities — the ordinary case, since
+`_observe_assumed_base_currency` folds its events into
+`sorted({event['symbol'] …})` and any portfolio reporting in EUR while holding
+two foreign currencies produces several — would have to drop two of them to be
+expressible there, landing the reader on a ledger stating a repair
+perimeter smaller than the sentence they have just read, with nothing on screen
+saying so. So `LedgerFilters` carries a `symbols` set nothing types into, the
+reduction bar **states it with all its names and offers to undo it** — a table
+silently shorter than expected is the same defect one step on — and the gesture
+**sets** the filters rather than merging them, so a search left behind cannot
+subtract from the notice's own perimeter. The unit is the **security** and not
+the event, for two reasons that are one: `GET /api/events` publishes no
+`event.id` (#723's deferral, carried by #764), and the server names the symbols
+beside the ids precisely because *one re-export repairs every line of a
+security*. Rebuilding an address out of `(date, type, symbol, account)` to be
+exact instead would be #662's opaque token over `(file, sheet, row)` under
+another name.
 
 ### Documentation Website (in `website/` directory)
 
@@ -1947,7 +2047,8 @@ the reason that put `rebuilding` there: it is a property of *this process* and
 its mount namespace, answered from memory with no query, so it survives the one
 failure that empties every page. It is observed **once**, in the master, and
 carried on `Runtime` across the fork — a mount namespace does not change under a
-running process. The data page's *store* block is #724's, and it consumes this.
+running process. The data page's *store* block (#724) consumes this, and it is
+where an ephemeral store **dominates** rather than appears in a note.
 
 ---
 
@@ -1980,7 +2081,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -2011,6 +2112,8 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
+├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
+├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
@@ -2018,7 +2121,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 ├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
-├── src/components/data/           # The ledger, its reduction, and the create form (#723)
+├── src/components/data/           # Tab 1: the ledger and the create form (#723) · Tab 2: notices, settings, the store (#724)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 

@@ -61,7 +61,10 @@
 import type {
   Account,
   AccountsResponse,
+  Advisory,
   ChartWindow,
+  ConfigResponse,
+  EnvironmentVariable,
   EventsResponse,
   LedgerEvent,
   PortfolioTotals,
@@ -71,6 +74,8 @@ import type {
   PriceSeriesResponse,
   Resolution,
   RuntimeState,
+  SettingDescription,
+  StoreState,
 } from '@/lib/api'
 
 /** The instant every fixture is written against. Tests freeze the clock to it. */
@@ -398,13 +403,150 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // The ordinary installation is the mounted one (#741), so the factory's
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
-    store: { persistence: 'persistent' },
-    symbols: defaultPositions().map((position) => ({
+    store: { persistence: 'persistent', path: '/data/suivi-bourse.duckdb' },
+    symbols: defaultPositions().map((position, index) => ({
       symbol: position.symbol,
       next_run: NOW,
       consecutive_failures: 0,
+      // Two markets open, one shut — the shape the cadence sentence exists for:
+      // a portfolio-wide dial that reaches part of the portfolio has to say so,
+      // or the reader concludes the rest is misconfigured.
+      closed: index === 2,
+      held: true,
     })),
     accounts: defaultAccounts().map((account) => ({ account: account.id, horizon: NOW })),
+    ...overrides,
+  }
+}
+
+// ------------------------------------------------------------------------- //
+// THE INSTALLATION (#724) — the second tab's four reads.
+//
+// Its fixtures reproduce the three shapes that decided it and nothing else: an
+// installation with a notice standing, a store on a mount, and no orphan. The
+// two states a test asks for by name are the ephemeral store and an orphan
+// symbol, because both are exactly what the block exists to render.
+// ------------------------------------------------------------------------- //
+
+/**
+ * One dial, as `settings_registry.py` describes it — the list the form is
+ * **drawn from**. The default here is the poll cadence, the one dial whose
+ * change is retroactive and whose reach has to be quantified.
+ */
+export function aSetting(overrides: Partial<SettingDescription> = {}): SettingDescription {
+  return {
+    key: 'regular_interval',
+    value: 120,
+    default: 120,
+    type: 'integer',
+    minimum: 10,
+    maximum: 86400,
+    effect: 'rearm_scrape',
+    doc: 'Poll cadence, in seconds.',
+    stored: true,
+    ...overrides,
+  }
+}
+
+/** The six, in the registry's order. Nothing here is written twice by the form. */
+export function defaultSettings(): SettingDescription[] {
+  return [
+    aSetting(),
+    aSetting({ key: 'backfill_interval', value: 60, default: 60, effect: 'rearm_backfill_job' }),
+    aSetting({ key: 'backfill_delay', value: 10, default: 10, minimum: 0, maximum: 3600, effect: 'next_cycle' }),
+    aSetting({ key: 'backfill_chunk_days', value: 365, default: 365, minimum: 1, maximum: 3650, effect: 'next_cycle' }),
+    aSetting({ key: 'staleness_horizon', value: 900, default: 900, minimum: 0, effect: 'next_cycle' }),
+    aSetting({
+      key: 'base_currency',
+      value: BASE_CURRENCY,
+      default: null,
+      type: 'currency',
+      minimum: null,
+      maximum: null,
+      effect: 'next_cycle',
+      doc: 'The reporting currency, as an ISO-4217 code.',
+    }),
+  ]
+}
+
+/** The six boot variables — a **description**, never a form (ADR-0014, #740). */
+export function defaultEnvironment(): EnvironmentVariable[] {
+  return [
+    { name: 'SB_STORE_DIR', value: '/data', set: false, source: 'default' },
+    { name: 'SB_IMPORT_DIR', value: '/import', set: false, source: 'default' },
+    { name: 'SB_WEB_PORT', value: '8080', set: true, source: 'environment' },
+    { name: 'SB_PROMETHEUS_ENABLED', value: 'true', set: false, source: 'default' },
+    { name: 'SB_METRICS_PORT', value: '8081', set: false, source: 'default' },
+    { name: 'LOG_LEVEL', value: 'INFO', set: true, source: 'environment' },
+  ]
+}
+
+export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse {
+  return {
+    log_level: 'INFO',
+    settings: defaultSettings(),
+    environment: defaultEnvironment(),
+    unread_environment: [],
+    ...overrides,
+  }
+}
+
+/**
+ * One notice. The default is the **one the app cannot recompute** — *your
+ * amounts were read as already being in the reporting currency* — because it is
+ * the one a bulk acknowledgement would sweep away unread, and the only one with
+ * a gesture inside the app.
+ *
+ * **It names three securities and not one.** That is the ordinary case rather
+ * than a corner — `_observe_assumed_base_currency` folds the events it found
+ * into `sorted({event['symbol'] …})`, so any portfolio reporting in EUR and
+ * holding two foreign currencies produces several — and the single-symbol
+ * fixture is what let a gesture keeping `symbols[0]` alone pass for correct.
+ * Two of the three are in `ledgerEvents()` and one is not, so a reduction can be
+ * checked on what it keeps *and* on what it drops.
+ */
+export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
+  return {
+    key: 'assumed_base_currency',
+    first_seen_at: '2026-03-01T09:00:00.000Z',
+    acknowledged: false,
+    acknowledged_at: null,
+    message:
+      'Your amounts were read as EUR. 4 event(s) on 3 line(s) quoted in USD, GBP (ZZA, ZZB, ZZC) were imported before any price had been observed.',
+    detail: {
+      base_currency: BASE_CURRENCY,
+      symbols: ['ZZA', 'ZZB', 'ZZC'],
+      events: [
+        { id: 1, date: '2026-02-10', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
+        { id: 2, date: '2026-01-12', event_type: 'BUY', symbol: 'ZZA', account: 'alpha', quote_currency: 'USD' },
+        { id: 3, date: '2025-12-24', event_type: 'GRANT', symbol: 'ZZC', account: 'alpha', quote_currency: 'GBP' },
+        { id: 4, date: '2025-11-04', event_type: 'SELL', symbol: 'ZZB', account: 'beta', quote_currency: 'USD' },
+      ],
+      currencies: ['GBP', 'USD'],
+    },
+    ...overrides,
+  }
+}
+
+/** A notice about a file on disk: outside the app's reach, so no gesture in it. */
+export function aLegacyFileAdvisory(overrides: Partial<Advisory> = {}): Advisory {
+  return anAdvisory({
+    key: 'legacy_config_file',
+    message:
+      '/config/config.yaml is still there and this version does not read it: a portfolio is a dated event ledger and nothing else.',
+    detail: { path: '/config/config.yaml' },
+    ...overrides,
+  })
+}
+
+export function aStore(overrides: Partial<StoreState> = {}): StoreState {
+  return {
+    size_bytes: 26 * 1024 * 1024,
+    ledger_last_write: '2026-02-10T08:30:00.000Z',
+    // Absent at zero on screen: the list is the visible consequence of a forget
+    // the reader has just made, not a maintenance table.
+    orphans: [],
+    persistence: 'persistent',
     ...overrides,
   }
 }

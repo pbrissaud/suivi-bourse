@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ABSENT,
+  formatBytes,
   formatCompact,
   formatCurrency,
   formatDate,
@@ -99,5 +100,22 @@ describe('absence is not zero', () => {
   it('renders an em dash for a date it cannot read, never "Invalid Date"', () => {
     expect(formatDate(FR, 'not a date')).toBe(ABSENT)
     expect(formatDateTime(EN, 'not a date')).toBe(ABSENT)
+  })
+})
+
+describe('a size on disk (#724)', () => {
+  it('steps in binary and follows the language for the number', () => {
+    // Only the number crosses `Intl` — its own unit list has no mebibyte — so
+    // this is not a ninth site, it composes the number one the way the signed
+    // currency composes the currency one.
+    expect(formatBytes(FR, 26 * 1024 * 1024)).toBe('26,0 MB')
+    expect(formatBytes(EN, 26 * 1024 * 1024)).toBe('26.0 MB')
+    expect(formatBytes(FR, 512)).toBe('512 B')
+  })
+
+  it('renders an em dash on a store that has never been written', () => {
+    // A zero here would read as *the purge worked*, on the one figure of the
+    // product that a purge does not move.
+    expect(formatBytes(FR, null)).toBe(ABSENT)
   })
 })

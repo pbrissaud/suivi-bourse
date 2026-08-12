@@ -18,11 +18,14 @@ import { setupServer } from 'msw/node'
 import { ROUTES, type ChartWindow, type EventDraft } from '@/lib/api'
 import {
   anAccountsPayload,
+  anAdvisory,
+  aConfig,
   aTypedEvent,
   aLedgerPayload,
   aPositionsPayload,
   aPriceSeries,
   aRuntime,
+  aStore,
   aTotalsPayload,
 } from '@/test/factories'
 
@@ -52,6 +55,32 @@ export function defaultHandlers() {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: String(params.id), ...draft }))
     }),
+
+    // The installation tab (#724). The default install has one notice standing,
+    // a store on a mount and no orphan — the ephemeral store and the orphan
+    // list are what a test asks for by name, both being exactly what the block
+    // exists to render.
+    http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
+    http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])),
+    http.get(ROUTES.store, () => HttpResponse.json(aStore())),
+    // The write answers with the new list and **quantifies its effect**: a
+    // portfolio-wide cadence that reaches part of the portfolio has to say so.
+    http.put(ROUTES.settings, async ({ request }) => {
+      const values = (await request.json()) as Record<string, string>
+      return HttpResponse.json({
+        settings: aConfig().settings,
+        changed: Object.keys(values),
+        effect: { symbols_rescheduled: 2, symbols_at_market_open: 1, jobs_rescheduled: [] },
+      })
+    }),
+    http.post(ROUTES.advisoryAcknowledgement, ({ params }) =>
+      HttpResponse.json(
+        anAdvisory({ key: String(params.key), acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+      ),
+    ),
+    http.delete(ROUTES.storeOrphans, () =>
+      HttpResponse.json({ symbols: ['ZZX'], points_removed: 1204 }),
+    ),
   ]
 }
 
