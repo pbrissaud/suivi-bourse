@@ -19,7 +19,7 @@
  * rendered nothing would make *the store is unreadable* and *you have recorded
  * nothing yet* the same screen, in its worst form, a blank one.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
@@ -40,9 +40,29 @@ import {
 } from '@/lib/ledger'
 import { oneBand, readConditions } from '@/lib/status'
 
-export function Ledger() {
+export interface LedgerProps {
+  /**
+   * A reduction asked for from elsewhere — today, the assumed-currency notice
+   * of the other tab, which **names the events it was made about** (#724).
+   *
+   * A fresh object per gesture rather than a bare string: the reader may have
+   * cleared the field in between, and asking twice for the same symbol has to
+   * reduce the ledger twice.
+   */
+  focus?: { search: string }
+}
+
+export function Ledger({ focus }: LedgerProps = {}) {
   const { t } = useI18n()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+
+  useEffect(() => {
+    if (!focus) return
+    // The search alone: the notice names symbols, and the type and account
+    // filters are the reader's own — a gesture that reset them would undo a
+    // reduction they made on purpose.
+    setFilters((current) => ({ ...current, query: focus.search }))
+  }, [focus])
   // `undefined` is *the panel is shut*; `null` is *open on a new event*; a row is
   // *open on that row*. Three states, because "shut" and "creating" are two.
   const [editing, setEditing] = useState<LedgerEvent | null | undefined>(undefined)
