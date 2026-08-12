@@ -1787,6 +1787,34 @@ def test_a_sold_line_publishes_its_backward_progress_and_says_it_is_not_polled(
     assert body['backfill']['in_scope'] == 1
 
 
+def test_the_runtime_publishes_the_perf_horizon_of_each_account(tmp_path):
+    """Criterion 9 of #708, and it obeys this route's one rule.
+
+    The horizon is computed inside the recompute and written down nowhere — the
+    rows say where a series *starts*, which is a different question the moment an
+    account's first activity is later than its horizon. So it rides on the perf
+    record, and the route reads it from **process memory** like everything else
+    here: it answers while the store is unreadable, which is exactly when *"the
+    page is filling in towards the left"* is the thing a reader needs told.
+
+    The shape is the one ``lib/api.ts`` announced before either half was written
+    — ``accounts: [{ account, horizon }]``, beside ``symbols`` — the same way
+    ``rebuilding`` and ``/api/portfolio-totals`` arrived.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+    runtime.recorder.record_perf(runtime_state.PerfRecord(
+        at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
+        verdict=runtime_state.PERF_RAN,
+        horizons={'pea': date(2021, 6, 3), 'cto': None}))
+
+    body = client.get('/api/runtime').get_json()
+
+    assert body['accounts'] == [{'account': 'cto', 'horizon': None},
+                                {'account': 'pea', 'horizon': '2021-06-03'}]
+
+
 def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
     client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)

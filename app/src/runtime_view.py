@@ -20,7 +20,7 @@ once, and a single pill has to choose. That choice is stated in
 :func:`symbol_pill` and it is the module's only opinion.
 """
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import runtime_state
@@ -546,6 +546,11 @@ def build_perf(record: Optional[runtime_state.PerfRecord]) -> Optional[Dict[str,
     left as three booleans nothing reads: a recompute that happens every cycle,
     in full, has no decision to publish. What is left is what the two other
     global records publish, a date and an outcome.
+
+    The horizons the record carries are **not** here: they are per account, and
+    the payload has a row set for that (:func:`build_accounts`). Publishing them
+    twice — as a mapping under the job and as a list beside the accounts — is how
+    a page ends up reading whichever it found first.
     """
     if record is None:
         return None
@@ -554,6 +559,34 @@ def build_perf(record: Optional[runtime_state.PerfRecord]) -> Optional[Dict[str,
         'verdict': record.verdict,
         'error': record.error,
     }
+
+
+def build_accounts(
+        record: Optional[runtime_state.PerfRecord]) -> List[Dict[str, Any]]:
+    """One row per account the last perf pass computed: its **horizon**.
+
+    The first day that account's figures were written from (issue #708) — a
+    *calendar day*, rendered as one, where every other member of this payload is
+    an instant. It comes from process memory like everything else on this route,
+    which matters here more than most: what it says is *"the page is filling in
+    towards the left"* rather than *"the app has lost four years"*, and a
+    resource that needed the store to say it would go quiet exactly when a
+    reader needs it.
+
+    It is on the perf record and not derived from the rows because the rows
+    answer another question: they say where a series *starts*, which stops being
+    the horizon the moment an account's first activity is later than it.
+
+    ``horizon: null`` says **nothing constrains this account** — it holds no
+    security still waiting for a price. An account **absent from the list** says
+    something else: this pass did not compute it, which is the state of a process
+    whose perf job has not run yet, or whose last one raised. Sorted by id, so a
+    reader diffing two payloads sees a horizon move rather than a list reorder.
+    """
+    if record is None:
+        return []
+    return [{'account': account, 'horizon': _day(horizon)}
+            for account, horizon in sorted(record.horizons.items())]
 
 
 def build_errors(
@@ -658,6 +691,12 @@ def build_runtime(
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
         'symbols': [symbol.to_dict() for symbol in symbols],
+        # The perf horizon per account (issue #708). A top-level row set beside
+        # ``symbols`` rather than a member of ``perf``, because that is the shape
+        # the front announced before either half was written — the same way
+        # ``rebuilding`` and ``portfolio-totals`` arrived — and because it is a
+        # list of accounts, which the job's own record is not.
+        'accounts': build_accounts(perf),
         'backfill': build_backfill_summary(symbols),
         'ingestion': build_ingestion(ingest),
         'perf': build_perf(perf),
@@ -701,6 +740,18 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
     return stamped.isoformat() if stamped is not None else None
 
 
+def _day(value: Optional[date]) -> Optional[str]:
+    """``YYYY-MM-DD`` for a **calendar day**, never an instant (issue #708).
+
+    The two kinds of time do not mix (spec #695 § 3), and this route is where the
+    distinction is easiest to lose: every other member of the payload is an
+    instant. A horizon is a day, so it is rendered as one — stamping it at
+    midnight would let a browser shift it by its own offset and read the day
+    before.
+    """
+    return value.isoformat() if value is not None else None
+
+
 __all__ = [
     'PILL_UNKNOWN', 'PILL_NOT_HELD', 'PILL_CLOSED', 'PILL_OPEN', 'PILL_FROZEN',
     'PILL_FAILING',
@@ -710,6 +761,6 @@ __all__ = [
     'BACKFILL_UNKNOWN', 'BACKFILL_RUNNING', 'BACKFILL_FAILING',
     'BackfillProgress', 'SymbolRuntime',
     'symbol_pill', 'backfill_progress', 'build_symbols',
-    'build_backfill_summary', 'build_ingestion', 'build_perf', 'build_errors',
-    'is_rebuilding', 'build_runtime',
+    'build_backfill_summary', 'build_ingestion', 'build_perf', 'build_accounts',
+    'build_errors', 'is_rebuilding', 'build_runtime',
 ]

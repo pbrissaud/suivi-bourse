@@ -11,7 +11,7 @@ a screen does not reveal by being looked at.
 The recorder is here too, because its one piece of logic is the consecutive
 failure fold, and that fold is the answer to #656's driving question.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -625,6 +625,31 @@ def test_the_perf_verdict_publishes_no_reasons():
     assert ran['verdict'] == 'ran' and ran['error'] is None
     assert failed['error'] == 'the store is unwritable'
     assert not hasattr(runtime_state, 'PERF_SKIPPED')
+
+
+def test_the_perf_record_publishes_the_horizon_of_each_account():
+    """``/api/runtime`` carries the horizon per account, from process memory.
+
+    A **calendar day**, rendered as one: every other member of this payload is an
+    instant, and stamping a day at midnight is how a browser reads the day
+    before. ``null`` says nothing constrains the account — it holds nothing whose
+    price is still on its way — which is a different statement from the account
+    being absent from the list, i.e. not computed by this pass at all.
+    """
+    rows = runtime_view.build_accounts(runtime_state.PerfRecord(
+        at=NOW, verdict=runtime_state.PERF_RAN,
+        horizons={'PEA': date(2021, 6, 3), 'CTO': None}))
+
+    assert rows == [{'account': 'CTO', 'horizon': None},
+                    {'account': 'PEA', 'horizon': '2021-06-03'}]
+
+
+def test_no_perf_pass_publishes_no_account_row_at_all():
+    """Absence rather than a list of nulls: this pass established nothing, and a
+    ``horizon: null`` would be a claim that nothing constrains the account."""
+    assert runtime_view.build_accounts(None) == []
+    assert runtime_view.build_accounts(runtime_state.PerfRecord(
+        at=NOW, verdict=runtime_state.PERF_FAILED, error='boom')) == []
 
 
 def test_errors_are_folded_newest_first_across_every_job():
