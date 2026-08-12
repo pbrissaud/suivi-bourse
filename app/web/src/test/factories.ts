@@ -62,6 +62,8 @@ import type {
   Account,
   AccountsResponse,
   ChartWindow,
+  EventsResponse,
+  LedgerEvent,
   PortfolioTotals,
   PortfolioTotalsResponse,
   Position,
@@ -283,6 +285,109 @@ export function aPriceSeries(
     ],
     ...rest,
   }
+}
+
+/**
+ * THE LEDGER — the shapes that decided the data page, with invented values.
+ *
+ * Four of them, and each is one of the readings that settled a criterion:
+ *
+ *  - **two purchases of the same security, on the same account**, told apart by
+ *    their label alone. That is the nineteen-identical-purchases case at its
+ *    smallest, and it is why the full-text search stopped being a convenience.
+ *  - **a cash movement with no symbol at all** (`Apple Pay Top up` on the real
+ *    portfolio). Its label is its whole identity, which is why the identity
+ *    column is not `Titre`.
+ *  - **a row with no provenance**, the only kind the app may edit. On the real
+ *    portfolio there are 285 imported rows and 0 of these, which is exactly what
+ *    the padlock column rendered 285 times.
+ *
+ * Every imported row carries a file **name** and a line, never a path: the
+ * provenance is worth a label and a revocation unit, never an address.
+ */
+export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
+  const base: LedgerEvent = {
+    date: '2026-02-10',
+    event_type: 'BUY',
+    account: 'alpha',
+    symbol: 'ZZA',
+    name: 'Zeta Alpha',
+    notes: 'Ordre au marché, exécution partielle',
+    quantity: 4,
+    unit_price: 120,
+    fee: 1.5,
+    amount: null,
+    source_id: 1,
+    source_sheet: null,
+    source_row: 118,
+    provenance: 'zeta-events_2.csv, row 118',
+    source_filename: 'zeta-events_2.csv',
+    id: null,
+  }
+  return { ...base, ...overrides }
+}
+
+/** A row typed in the app: no source, and a key to address it by. */
+export function aTypedEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
+  return anEvent({
+    source_id: null,
+    source_sheet: null,
+    source_row: null,
+    provenance: null,
+    source_filename: null,
+    id: 'typed-1',
+    ...overrides,
+  })
+}
+
+export function ledgerEvents(): LedgerEvent[] {
+  return [
+    anEvent({ date: '2026-02-10' }),
+    // Same security, same account, same amounts to a euro: the label is the only
+    // thing that tells the two apart.
+    anEvent({
+      date: '2026-01-12',
+      notes: 'Versement programmé mensuel',
+      quantity: 3,
+      unit_price: 118,
+      source_row: 96,
+      provenance: 'zeta-events_2.csv, row 96',
+    }),
+    // No security at all — the label is the identity.
+    anEvent({
+      date: '2026-01-05',
+      event_type: 'DEPOSIT',
+      symbol: null,
+      name: null,
+      notes: 'Virement entrant depuis le compte courant',
+      quantity: null,
+      unit_price: null,
+      fee: 0.35,
+      amount: 500,
+      source_row: 71,
+      provenance: 'zeta-events_2.csv, row 71',
+    }),
+    // Typed in the app: no provenance, and therefore the one editable row.
+    aTypedEvent({
+      date: '2025-12-24',
+      event_type: 'GRANT',
+      symbol: 'ZZC',
+      name: 'Zeta Gamma',
+      notes: 'Attribution gratuite',
+      quantity: 2,
+      unit_price: null,
+      fee: null,
+    }),
+  ]
+}
+
+/** The real portfolio's own shape: everything imported, nothing typed. */
+export function importedOnly(): LedgerEvent[] {
+  return ledgerEvents().filter((event) => event.source_id !== null)
+}
+
+export function aLedgerPayload(events: LedgerEvent[] = ledgerEvents()): EventsResponse {
+  return events
 }
 
 export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {

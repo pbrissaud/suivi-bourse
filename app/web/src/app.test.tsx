@@ -60,8 +60,8 @@ describe('the walking skeleton', () => {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
       // The pages that are not built yet say so — in the reader's language.
-      // `Shares` landed with #719 and has left that set.
-      if (entry !== 'Shares') {
+      // `Shares` (#719) and `Data` (#723) have landed and left that set.
+      if (entry !== 'Shares' && entry !== 'Data') {
         expect(screen.getByText('This page is not built yet.')).toBeInTheDocument()
       }
     }
@@ -69,7 +69,7 @@ describe('the walking skeleton', () => {
     // Back to French, on the page we happen to be standing on.
     await chooseInMenu(user, 'Language', 'Français')
     expect(await screen.findByRole('heading', { name: 'Données' })).toBeInTheDocument()
-    expect(screen.getByText('Cette page n’est pas encore construite.')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Le grand livre' })).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
   })
