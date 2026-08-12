@@ -326,15 +326,126 @@ def _fixed_today(mocker, y, mo, d):
     mocker.patch("main.datetime", _FixedDatetime)
 
 
-def test_update_account_metrics_gated_on_declared_accounts(store, declare_ledger):
-    # Nothing declared beyond the seeded `default` -> no account series. The
-    # opt-in guard is a *domain* gate and #708's business; #707 removed the
-    # change-detection one and left this standing.
+def test_the_seeded_default_account_gets_a_series_like_any_other(
+        store, declare_ledger):
+    """**The opt-in guard is gone** (issue #708), and this is what it hid.
+
+    It read ``declared_portfolio``, whose ``None`` means *"nothing beyond the
+    seed"* — and ADR-0013 seeds a ``default`` row at the creation of the schema
+    and never removes it, so the condition had lost its subject. What it produced
+    meanwhile was not an opt-in: a single-account install, the ordinary shape of
+    a v4 coming over, had **no performance series at all**, with nothing on
+    screen and nothing in the log to say why.
+    """
     m = _metrics(store, declare_ledger, events=[
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=100.0)],
         accounts=None)
     m.update_account_metrics()
-    assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
+    (day, cash, total) = store.query(
+        "SELECT day, cash_balance, total_value FROM account_metrics "
+        " WHERE account = 'default' ORDER BY day LIMIT 1")[0]
+    assert day == date(2024, 1, 1)
+    assert cash == pytest.approx(100.0)
+    assert total == pytest.approx(100.0)
+
+
+def test_an_account_with_no_cash_event_writes_holdings_and_gain_and_nothing_else(
+        store, declare_ledger, mocker):
+    """The per-field rule, through the writer (issue #708, ADR-0018).
+
+    A ledger of purchases alone: the replay debits the cash on every buy without
+    touching the contributions, so ``cash_balance = −invested`` and
+    ``net_contributed = 0`` — and ``total_value`` would then publish the **latent
+    gain under the label "total value"**. Those four are ``NULL`` and the two
+    that stay exact are written: ``holdings_value``, and ``gain_absolu``, which
+    with no contribution at all is ``holdings − invested`` — 220 − 200 here.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)
+
+    m.update_account_metrics()
+
+    (cash, holdings, total, net, xirr, gain, twr) = store.query(
+        "SELECT cash_balance, holdings_value, total_value, net_contributed, "
+        "       xirr, gain_absolu, twr_index FROM account_metrics "
+        " WHERE account = 'PEA'")[0]
+    assert holdings == pytest.approx(220.0)
+    assert gain == pytest.approx(20.0)
+    assert (cash, total, net, xirr, twr) == (None, None, None, None, None)
+
+
+def test_an_account_with_a_deposit_keeps_every_field(
+        store, declare_ledger, mocker):
+    """The other side of the same rule: nothing is withheld from an account whose
+    ledger says where the money came from."""
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)
+
+    m.update_account_metrics()
+
+    (cash, holdings, total, net, gain, twr) = store.query(
+        "SELECT cash_balance, holdings_value, total_value, net_contributed, "
+        "       gain_absolu, twr_index FROM account_metrics "
+        " WHERE account = 'PEA'")[0]
+    assert cash == pytest.approx(800.0)
+    assert holdings == pytest.approx(220.0)
+    assert total == pytest.approx(1020.0)
+    assert net == pytest.approx(1000.0)
+    assert gain == pytest.approx(20.0)
+    assert twr == pytest.approx(100.0)
+
+
+def test_the_global_is_written_from_the_max_of_the_horizons(
+        store, declare_ledger, mocker):
+    """Criterion 4, through the writer: ``portfolio_totals`` starts where the
+    **last** account starts, never where the first one does.
+
+    PEA holds a share priced only from 01-03; CTO holds cash alone and is
+    writable from its first day. Summing what is available on 01-02 would draw a
+    step nothing caused — the portfolio apparently gaining PEA's whole value
+    overnight — so the global waits for both.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA"),
+                           Account("CTO", "CTO", "My CTO")])
+    _seed_price(store, "AAPL", date(2024, 1, 3), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    horizons = m.update_account_metrics()
+
+    assert horizons == {'PEA': date(2024, 1, 3), 'CTO': None, 'default': None}
+    # PEA's series starts at its horizon, CTO's at its first day…
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"
+    ) == [(date(2024, 1, 3),)]
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'CTO'"
+    ) == [(date(2024, 1, 1),)]
+    # …and the global waits for the later of the two.
+    assert store.query("SELECT day FROM portfolio_totals ORDER BY day") == [
+        (date(2024, 1, 3),)]
 
 
 def test_update_account_metrics_writes_series_with_midnight_stamp(
