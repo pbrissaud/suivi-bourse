@@ -58,6 +58,18 @@ class Event:
     ``source_filename`` is the one derived field: it is joined on at read time
     (:func:`ledger.read_events`) so that whoever holds an event can render its
     provenance without going back to the store for the name.
+
+    ``id`` is the ``event`` table's own primary key (issue #764), read by
+    :func:`ledger.read_events` like any other column and ``None`` on an event
+    that has not been written yet — a row a loader has just parsed out of a
+    file, or a draft on its way in. It is what #662's opaque token over
+    ``(file, sheet, row)`` was reaching for and could not be: a key does not go
+    stale between the read and the write, which is why the apparatus that
+    guarded a stale one (the fingerprint as an ``ETag``, its ``409``) has no
+    successor here. It addresses **only** what it can address — a row typed in
+    the app, ``source_id IS NULL`` — and an imported row carries one too, for
+    the same reason every row of a table has a key: refusing to publish it would
+    not make the row editable, it would only make the refusal unexplainable.
     """
     date: date
     event_type: EventType
@@ -73,6 +85,7 @@ class Event:
     source_sheet: Optional[str] = None
     source_row: Optional[int] = None
     source_filename: Optional[str] = None
+    id: Optional[int] = None
 
     def __post_init__(self):
         # Convert string event_type to enum if needed
