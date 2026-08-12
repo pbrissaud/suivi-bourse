@@ -150,6 +150,31 @@ def unprocessable_parameter(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid parameter', detail, TYPE_BAD_REQUEST, **extra)
 
 
+def unprocessable_entry(detail: str, key: Optional[str] = None):
+    """422 — the event parsed, and the ledger's own rules refuse it (issue #764).
+
+    The third member of the family, and a third function for the same reason
+    :func:`unprocessable_parameter` is a second one: its **title**. *Invalid
+    setting* is the right sentence about a dial and a lie about an event, which
+    is neither stored in ``setting`` nor listed in the registry; *Invalid
+    parameter* is the right sentence about ``?window=`` and wrong about a
+    member of a body somebody typed into a form.
+
+    The ``type`` stays :data:`TYPE_BAD_REQUEST` for the argument #763 wrote
+    down: an unknown identifier falls back to *unexpected error* in the front's
+    table, which is a worse sentence than the true one, and inventing a fifth
+    here would need a table this ticket does not touch to learn it. The
+    **status** carries the distinction RFC 9457 cares about — the syntax parsed,
+    and it is the content that cannot be processed.
+
+    ``key`` is the field to mark, forwarded from
+    :class:`events.validator.ValidationIssue`, so a form marks the input it
+    refused rather than printing a paragraph over the whole panel.
+    """
+    extra = {'key': key} if key else {}
+    return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, **extra)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -157,6 +182,7 @@ def internal_error(detail: str):
 
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
-    'unprocessable', 'unprocessable_parameter', 'internal_error',
+    'unprocessable', 'unprocessable_parameter', 'unprocessable_entry',
+    'internal_error',
     'CONTENT_TYPE',
 ]

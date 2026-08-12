@@ -19,6 +19,7 @@ So the rules here are thin on purpose. What the routes *do* own:
   and since #700 it lives on the position rather than on the price series, so
   renaming one cannot cut its history in two.
 """
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
@@ -27,6 +28,7 @@ from logfmt_logger import getLogger
 
 import accounts as accounts_module
 import advisories
+import entries
 import ledger
 import main
 import portfolio_view
@@ -36,8 +38,9 @@ import runtime_view
 import settings as settings_module
 import settings_registry
 import store as store_module
-from events import EventAggregator
+from events import EventAggregator, Event, EventType
 from events import export as events_export
+from events.aggregator import AggregationError
 from store_reads import PortfolioReader, bucket_for_window, chart_window
 from web.problem import (
     bad_request,
@@ -45,6 +48,7 @@ from web.problem import (
     not_found,
     storage_unavailable,
     unprocessable,
+    unprocessable_entry,
     unprocessable_parameter,
 )
 
@@ -63,6 +67,13 @@ DEFAULT_WINDOW = timedelta(days=30)
 #: trap — the short presets that are natural on the shares page are degenerate
 #: here, and the window this endpoint defaults to has to reflect that.
 DEFAULT_HISTORY_WINDOW = timedelta(days=365)
+
+#: The one spelling of a calendar day this API takes on the way in (issue #764).
+#: ``date.fromisoformat`` accepts several others since Python 3.11 — a bare
+#: ``20260210``, a whole instant — and the store's rule is that a day is a day
+#: and never a midnight: a bound that arrived as an instant is what silently
+#: drops the first day of every window.
+_ISO_DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 
 
 def _reader() -> PortfolioReader:
@@ -703,7 +714,15 @@ def _account_to_dict(account) -> dict:
 
 
 # --------------------------------------------------------------------- #
-# Events — read-only, and read-only is now the whole of it (issue #711)
+# Events — read, and written one typed row at a time (issue #764)
+#
+# The **population** is what splits this section in two, and it is the whole of
+# what #764 settles. A row that came from a file is read-only and revoked with
+# its import (#697): the file and the store would otherwise be two truths about
+# the same purchase. A row somebody typed here came from no file, no revocation
+# can reach it, and ADR-0005 makes that form the *onboarding* — so a typo in the
+# first five minutes of using this app would be permanent. The three write
+# routes below serve the second population and refuse the first by name.
 # --------------------------------------------------------------------- #
 
 @api_bp.get('/events')
@@ -720,8 +739,33 @@ def list_events():
     one reason: **the file was the address**, so a row needed an opaque token
     over ``(file, sheet, row)`` and a fingerprint to guard it. #711 removes the
     apparatus without a row-by-row successor — the rows here are the ones the
-    aggregator actually ran on, in the order it sorted them, and nothing
-    addresses them.
+    aggregator actually ran on, in the order it sorted them.
+
+    **And the key rides in the snapshot rather than turning this into a store
+    read** (issue #764). Both were open: ``event.id`` is a column, so the
+    resource could have queried it directly. The two differ by their **error
+    contract**, and that is what settles it:
+
+    * *the field descends into the snapshot* — this resource goes on answering
+      from process memory, so its three states stay ``200`` + rows and ``200`` +
+      ``[]`` and it **has no** ``503``. The rows served are, by construction, the
+      ones the aggregator ran on, so the ledger a reader sees is the ledger the
+      figures on every other page were computed from. The snapshot is immutable
+      and republished by a single rebind (#658), so the key enters it like any
+      other field; and it cannot go stale against the store, because **every
+      writer of the** ``event`` **table replays synchronously in this process**
+      (:func:`main.replay_after_write`, and ``ingest()`` on a file landing).
+    * *the resource reads the store* — it would gain a ``503`` the way
+      ``/api/shares`` has one, and that ``503`` would take the shares page's
+      chart markers down with it for a fault they read no ledger about. It would
+      also serve rows the aggregator has not run on whenever a build raised,
+      i.e. show a ledger the app is not computing anything from.
+
+    The cost accepted, and it is the one the export pays in the other direction:
+    :func:`export_events` reads the **store** on purpose, because a snapshot the
+    validator refused leaves the previous one standing and a backup must be of
+    what is stored. Two resources over one table with two contracts, each named
+    where it is chosen.
 
     ``?symbol=`` narrows to one share's events. Cash events (DEPOSIT /
     WITHDRAWAL) carry no symbol and are therefore excluded by that filter, which
@@ -752,8 +796,26 @@ def _event_to_dict(event) -> dict:
     without re-parsing a sentence, and neither is an address: the row has a
     primary key now, and a key does not go stale. The label is ``null`` for a
     row with no source, which is what a line created in the UI is.
+
+    ``source_filename`` is the file's **name**, and it is served beside the
+    rendered ``provenance`` rather than instead of it (issue #764). The store's
+    label is one English sentence — ``2024.csv, row 14`` — and a rendering
+    follows the **reader's** language (ADR-0024), so a front that has only the
+    sentence can translate nothing. What it needs is the name; what it composes
+    from the name and the row number is its own. The field was already on the
+    event, joined at read time by :func:`ledger.read_events` precisely so that
+    whoever holds one can render its provenance, and it simply was not put on
+    the wire.
+
+    ``id`` is a **string**, and that is a decision. The column is a ``BIGINT``,
+    and a JSON number above 2^53 is not the integer that was sent; more to the
+    point, a client has no arithmetic to do with a key — it addresses a row with
+    it and uses it as a render key — so publishing it as text is publishing what
+    it is. ``null`` on an event that has no row of its own, which nothing
+    produces today and which the type has to allow all the same.
     """
     return {
+        'id': str(event.id) if event.id is not None else None,
         'date': event.date.isoformat() if event.date else None,
         'event_type': event.event_type.value,
         'symbol': event.symbol,
@@ -767,8 +829,250 @@ def _event_to_dict(event) -> dict:
         'source_id': event.source_id,
         'source_sheet': event.source_sheet,
         'source_row': event.source_row,
+        'source_filename': event.source_filename,
         'provenance': ledger.provenance_label(event),
     }
+
+
+@api_bp.post('/events')
+def create_event():
+    """Record one event typed in the app (issue #764, ADR-0005).
+
+    The onboarding, not a convenience: manual mode is gone, so *typing a
+    position* **means** creating dated events, and this is where they land. The
+    row carries ``source_id NULL`` — created here, therefore editable — which is
+    the same column, and the same sentence, as ``POST /api/accounts``' (#698).
+
+    ``422`` for a body the ledger refuses, and it refuses **before writing
+    anything**: the parse below runs over the whole body, and
+    :func:`entries.create` holds its single-row check, its write and its replay
+    inside one transaction. That is ``PUT /api/settings``' rule for the same
+    reason — a half-applied body is a state nobody asked for — and it is what
+    makes *"a date that does not exist"* a refusal rather than a row.
+
+    ``409`` when the ledger it would make does not replay: overselling is a
+    property of the *ledger*, not of a row, so a `SELL` that is legal alone can
+    be illegal in company. Well formed, and the store's state refuses it — which
+    is what that status is for.
+
+    The replay follows the write, synchronously and in this process, exactly as
+    on ``DELETE /imports/<id>``: whoever just recorded an event must not wait
+    for a timer to see their own gesture.
+    """
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+
+    try:
+        draft = _event_from_body(body)
+    except _InvalidBody as exc:
+        return unprocessable_entry(str(exc), key=exc.field)
+
+    runtime = current_runtime()
+    try:
+        # The writers' mutex, like every other write here: a Flask handler and
+        # the ingestion share one DuckDB connection, and a row written between
+        # another thread's BEGIN and its ROLLBACK disappears with it after this
+        # handler has answered 201.
+        with runtime.config_manager.writing() as opened:
+            created = entries.create(opened, draft)
+    except entries.InvalidEntry as exc:
+        return unprocessable_entry(str(exc), key=exc.field)
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify(_event_to_dict(created)), 201
+
+
+@api_bp.patch('/events/<event_id>')
+def update_event(event_id: str):
+    """Rewrite one event typed in the app — and refuse an imported one.
+
+    **This is the route** ``forget_import``'s docstring used to say did not
+    exist, and the two now say the same thing about two different populations:
+    a line provisioned by ``broker.csv`` is still uneditable here (``409``,
+    naming the import to forget), because the file and the store must not become
+    two truths about one purchase. A line somebody typed a minute ago is
+    reachable by no revocation at all, so refusing it too would make a typo in
+    the onboarding form permanent — which is the trap ADR-0005 walked into by
+    making that form the first gesture of a new arrival.
+
+    The **whole** row is rewritten, never the members the body happened to
+    carry: an event's fields are not independent — a type change turns a
+    purchase into a transfer — so a partial patch would leave a row nobody
+    typed.
+    """
+    key = _entry_key(event_id)
+    if key is None:
+        return not_found(f"No event with id {event_id!r}")
+
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+    try:
+        draft = _event_from_body(body)
+    except _InvalidBody as exc:
+        return unprocessable_entry(str(exc), key=exc.field)
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            updated = entries.update(opened, key, draft)
+    except entries.UnknownEntry as exc:
+        return not_found(str(exc))
+    except entries.ImportedEntry as exc:
+        return conflict(str(exc))
+    except entries.InvalidEntry as exc:
+        return unprocessable_entry(str(exc), key=exc.field)
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify(_event_to_dict(updated))
+
+
+@api_bp.delete('/events/<event_id>')
+def delete_event(event_id: str):
+    """Remove one event typed in the app — and refuse an imported one.
+
+    The pair of the route above and refused on the same predicate. It exists
+    because *edit* alone does not cover the mistake it is there for: an event
+    recorded on the wrong account, or recorded twice, is removed rather than
+    corrected — and the bulk gesture that would otherwise reach it, forgetting
+    an import, has nothing to forget on a row that came from no file.
+
+    The ``409`` on a ledger that would not replay is not symmetry either: taking
+    a purchase away can leave a later sale overselling, which is the same fact
+    ``POST`` meets from the other side.
+    """
+    key = _entry_key(event_id)
+    if key is None:
+        return not_found(f"No event with id {event_id!r}")
+
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            entries.remove(opened, key)
+    except entries.UnknownEntry as exc:
+        return not_found(str(exc))
+    except entries.ImportedEntry as exc:
+        return conflict(str(exc))
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify({'id': event_id, 'removed': True})
+
+
+def _entry_key(event_id: str) -> Optional[int]:
+    """The path segment as the ``event`` table's key, or ``None``.
+
+    The route takes a **string** rather than Flask's ``<int:…>`` converter, so
+    that ``/api/events/nope`` is answered by this blueprint — problem+json, with
+    the id in it — instead of by the router's own bare ``404``. The client is
+    handed a key as text (:func:`_event_to_dict`) and hands it back as text; what
+    it means is this table's business, not the URL's.
+    """
+    try:
+        return int(event_id)
+    except (TypeError, ValueError):
+        return None
+
+
+class _InvalidBody(Exception):
+    """A member of the body is not a value an event can carry.
+
+    The HTTP boundary's own refusal, and it is deliberately **not** a second
+    validator. :class:`events.loader.EventLoader` turns a CSV cell into a typed
+    value and raises when it cannot; this is that function for a JSON member,
+    and :mod:`events.validator` judges what comes out of either. So
+    *"2026-02-31 is not a day"* is refused here and *"a BUY needs a quantity"*
+    there — two questions, two owners, and the split is the one the file path
+    has always had rather than a new one invented for this road.
+    """
+
+    def __init__(self, message: str, field: str):
+        super().__init__(message)
+        self.field = field
+
+
+#: The members a client may send. ``id``, the provenance triplet and
+#: ``source_filename`` are **not** among them: they are the store's to write, and
+#: a client that could name one would be a client that could forge one.
+_EVENT_TEXT_FIELDS = ('symbol', 'name', 'notes', 'account')
+_EVENT_NUMBER_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
+
+
+def _event_from_body(body: Optional[dict]) -> Any:
+    """One JSON object as an :class:`events.schemas.Event`, or a named refusal.
+
+    Every member is read here and none is inferred, which is what makes
+    ``PATCH`` a rewrite rather than a merge.
+
+    The date is checked **twice on purpose**: for its shape, because a calendar
+    day is not an instant (the store's own rule, and ``date.fromisoformat``
+    accepts more spellings than the format this app writes), and then for its
+    existence, because ``2026-02-31`` has the shape of a day and is not one.
+    That second check is the one no browser can make for the app:
+    ``<input type="date">`` empties its own value before any script sees it, so
+    the front measured the trap and cannot prove the rule — it is observable
+    from here alone.
+    """
+    if not isinstance(body, dict):
+        raise _InvalidBody("a JSON object is required", 'date')
+
+    raw_type = body.get('event_type')
+    try:
+        event_type = EventType(str(raw_type).upper())
+    except (ValueError, AttributeError):
+        allowed = ", ".join(kind.value for kind in EventType)
+        raise _InvalidBody(
+            f"event_type {raw_type!r} is not one of {allowed}", 'event_type')
+
+    fields = {name: _text_member(body, name) for name in _EVENT_TEXT_FIELDS}
+    fields.update({name: _number_member(body, name)
+                   for name in _EVENT_NUMBER_FIELDS})
+
+    return Event(date=_day_member(body), event_type=event_type, **fields)
+
+
+def _day_member(body: dict) -> date:
+    raw = body.get('date')
+    if not isinstance(raw, str) or not _ISO_DAY.fullmatch(raw.strip()):
+        raise _InvalidBody(
+            f"date {raw!r} is not a calendar day (YYYY-MM-DD)", 'date')
+    try:
+        return date.fromisoformat(raw.strip())
+    except ValueError:
+        raise _InvalidBody(f"date {raw!r} is not a day that exists", 'date')
+
+
+def _text_member(body: dict, name: str) -> Optional[str]:
+    """A string member, blank read as absent — the empty cell of a CSV."""
+    raw = body.get(name)
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise _InvalidBody(f"{name} must be text", name)
+    return raw.strip() or None
+
+
+def _number_member(body: dict, name: str) -> Optional[float]:
+    """A numeric member, or ``None``.
+
+    A **bool is refused** rather than read as ``1``: Python says ``True`` is an
+    integer and a quantity of ``true`` is not a quantity. Text is refused too —
+    the decimal comma a French reader types is parsed by the form that shows it
+    (``lib/ledger.ts``), and a second parser here would be a second convention
+    for the same character.
+    """
+    raw = body.get(name)
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise _InvalidBody(f"{name} must be a number", name)
+    return float(raw)
 
 
 # --------------------------------------------------------------------- #
@@ -883,12 +1187,23 @@ def list_imports():
 def forget_import(source_id: int):
     """Forget an import: every row it laid down, in one gesture.
 
-    **The only destructive gesture in the API, and there is deliberately no
-    sibling that edits one event.** Read-only forbids editing line 42 of
-    ``broker.csv``; it does not forbid revoking the file. Without this, a line
-    provisioned by a file would be at once unalterable and indestructible —
-    which is the trap #697 exists to avoid, and why the absence of a
-    ``PATCH /api/events/<id>`` is a decision rather than an omission.
+    **The only gesture that reaches an imported row, and the only one there will
+    be.** Read-only forbids editing line 42 of ``broker.csv``; it does not
+    forbid revoking the file. Without this, a line provisioned by a file would
+    be at once unalterable and indestructible — which is the trap #697 exists to
+    avoid.
+
+    That sentence used to end *"...and why the absence of a*
+    ``PATCH /api/events/<id>`` *is a decision rather than an omission"*, and
+    issue #764 makes it **imprecise rather than false**: the route exists now,
+    and what it will not touch is exactly this population. The argument was
+    always about a row *a file provisioned* — the file and the store must not
+    become two truths about one purchase, and revoking the file is what is
+    offered instead. It never covered a row somebody typed here a minute ago,
+    which comes from no file and which no revocation can reach; refusing to edit
+    that one made a typo in the onboarding form (ADR-0005) permanent. So the
+    population is named, the sibling routes refuse an imported row by name
+    (``409``, quoting the import to forget), and the two texts say one thing.
 
     The replay follows the write, synchronously and in this process (issue
     #697): the caller has just changed the ledger, and must not have to wait for
