@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import mounts
 import runtime_state
 import scheduling
 
@@ -641,6 +642,7 @@ def build_runtime(
     now: datetime,
     scheduler_running: bool = True,
     reconstruction: Optional[Tuple[int, int]] = None,
+    persistence: str = mounts.UNKNOWN,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload.
 
@@ -650,6 +652,14 @@ def build_runtime(
     ``reconstruction`` is the scheduler's ``(complete, total)`` pair and defaults
     to ``None`` — *not observable from here* — which is the honest state of a
     runtime whose scheduler has never started. See :func:`is_rebuilding`.
+
+    ``persistence`` is the mount observation (#741, ADR-0015), and it rides
+    **here** rather than on a resource of its own for the reason that put
+    ``rebuilding`` here: it is a fact about *this process* — its mount namespace
+    — answered from memory with no query, which is what keeps it readable on the
+    one route that survives a store nobody can open. The data page's *store*
+    block (#724) is what renders it; it carries all three answers, ``unknown``
+    included, because a front that only knew two would have to invent one.
     """
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
@@ -657,6 +667,7 @@ def build_runtime(
         'now': _iso(now),
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
+        'store': {'persistence': persistence},
         'symbols': [symbol.to_dict() for symbol in symbols],
         'backfill': build_backfill_summary(symbols),
         'ingestion': build_ingestion(ingest),

@@ -794,3 +794,36 @@ def test_the_payload_says_whether_the_reconstruction_still_has_windows():
         ingest=None, perf=None, now=NOW, reconstruction=(1, 3))
 
     assert payload['rebuilding'] is True
+
+
+def test_the_payload_carries_the_mount_observation_verbatim():
+    """``store.persistence`` (issue #741, ADR-0015), published by the **same
+    path as the rest of the runtime state** and for the same reason
+    ``rebuilding`` is here: it is a fact about *this process* — its mount
+    namespace — answered from memory with no query, so it survives the one
+    failure that empties every other page (a store nobody can open), which is
+    exactly when *"where did my data go"* gets asked.
+
+    All three answers reach the front, ``unknown`` included: a payload that only
+    carried two would force #724's *store* block to invent the third."""
+    import mounts
+
+    for state in (mounts.EPHEMERAL, mounts.PERSISTENT, mounts.UNKNOWN):
+        payload = runtime_view.build_runtime(
+            shares=[_share()], scrape={}, backfill={}, next_runs={},
+            ingest=None, perf=None, now=NOW, persistence=state)
+
+        assert payload['store'] == {'persistence': state}
+
+
+def test_an_unobserved_runtime_defaults_to_unknown_rather_than_kept():
+    """The default is not ``persistent``. A test runtime, or the one a
+    Docker-less checkout builds, has observed nothing — and a payload saying
+    *kept* would be a claim nobody made."""
+    import mounts
+
+    payload = runtime_view.build_runtime(
+        shares=[_share()], scrape={}, backfill={}, next_runs={},
+        ingest=None, perf=None, now=NOW)
+
+    assert payload['store']['persistence'] == mounts.UNKNOWN
