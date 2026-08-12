@@ -72,6 +72,14 @@ describe('the one range control', () => {
     expect(windowStart('1Y', NOW, ALL)).toBe('2025-03-02')
   })
 
+  it('keeps a dated preset inside the month it aims at, whatever the day of the month', () => {
+    // `Date.UTC(y, m − 1, 31)` on a 28-day February answers the 3rd of March,
+    // so `1M` asked for on a 31st would cover 28 days instead of the month, and
+    // `1Y` on a 29 February would start on the 1st.
+    expect(windowStart('1M', new Date('2026-03-31T12:00:00.000Z'), ALL)).toBe('2026-02-28')
+    expect(windowStart('1Y', new Date('2024-02-29T12:00:00.000Z'), ALL)).toBe('2023-02-28')
+  })
+
   it('has nothing to compare when no series carries an index', () => {
     expect(windowStart('SINCE_OPENING', NOW, [series('gamma')])).toBeNull()
   })

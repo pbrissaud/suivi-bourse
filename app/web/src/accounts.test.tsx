@@ -231,6 +231,18 @@ describe('the two gestures', () => {
     expect(beta).toHaveAttribute('aria-selected', 'false')
   })
 
+  it('leaves a row with no curve out of the gesture that isolates one', async () => {
+    const { user } = renderAccounts()
+    await settled()
+
+    // `gamma` has no cash event, so no index, so no curve on the plot. Selected
+    // it would dim every drawn series and put none forward — the chart going
+    // out for a gesture with no subject, on a line reading as chosen.
+    await user.click(accountRow('Gamma'))
+    expect(accountRow('Gamma')).not.toHaveAttribute('aria-selected')
+    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
+  })
+
   it('lets the selection be undone by the same gesture', async () => {
     const { user } = renderAccounts()
     await settled()

@@ -91,7 +91,16 @@ export default function AccountsPage() {
   const failure = oneBand(
     readConditions({
       shellError: runtime.error,
-      errors: [accounts.error, totals.error, ...histories.map((one) => one.error)],
+      errors: [
+        accounts.error,
+        totals.error,
+        // The fourth read of the page, and it feeds a cell like the other
+        // three: without it a failing `/api/portfolio-totals/history` renders
+        // the `Portefeuille` row's `perf` as a silent dash — *there is nothing
+        // to compute* said about a store that did not answer.
+        portfolioHistory.error,
+        ...histories.map((one) => one.error),
+      ],
     }),
   )
 

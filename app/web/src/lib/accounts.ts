@@ -80,16 +80,19 @@ function day(at: Date): string {
   return at.toISOString().slice(0, 10)
 }
 
+/**
+ * The same calendar day, N years or N months back — **clamped to the target
+ * month's own length**, never overflowed into the next one. `Date.UTC(y, m, 31)`
+ * on a month of 28 days answers the 3rd of the month after, so a `1M` window
+ * asked for on a 31st would cover 28 days instead of the month, and `1Y` on a
+ * 29 February would start on 1 March.
+ */
 function shifted(now: Date, years: number, months: number): string {
-  return day(
-    new Date(
-      Date.UTC(
-        now.getUTCFullYear() - years,
-        now.getUTCMonth() - months,
-        now.getUTCDate(),
-      ),
-    ),
-  )
+  const year = now.getUTCFullYear() - years
+  const month = now.getUTCMonth() - months
+  // Day 0 of the month after is the last day of the month itself.
+  const lastOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  return day(new Date(Date.UTC(year, month, Math.min(now.getUTCDate(), lastOfMonth))))
 }
 
 /** The first day this series says anything about — its opening, in practice. */

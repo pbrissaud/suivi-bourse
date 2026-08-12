@@ -164,20 +164,29 @@ export function AccountsTable({
         {rows.map((row) => {
           const reason = degradedReason(row, visible, rebuilding)
           const colour = colourOf(row.id)
+          // **A row with no curve has no curve to isolate.** Selected, it would
+          // dim every drawn series and highlight none — the plot going out for
+          // a gesture with no subject, on a line that would nonetheless read as
+          // chosen. The swatch says the same thing: no colour, no curve.
+          const selectable = colour !== null
           return (
             <TableRow
               key={row.id}
-              aria-selected={selected === row.id}
-              tabIndex={0}
-              onClick={() => onSelect(row.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onSelect(row.id)
-                }
-              }}
+              aria-selected={selectable ? selected === row.id : undefined}
+              tabIndex={selectable ? 0 : undefined}
+              onClick={selectable ? () => onSelect(row.id) : undefined}
+              onKeyDown={
+                selectable
+                  ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onSelect(row.id)
+                      }
+                    }
+                  : undefined
+              }
               className={cn(
-                'cursor-pointer hover:bg-muted/60',
+                selectable && 'cursor-pointer hover:bg-muted/60',
                 selected === row.id && 'bg-muted',
               )}
             >
