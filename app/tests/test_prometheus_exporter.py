@@ -146,6 +146,66 @@ def test_the_global_gauges_are_absent_until_something_is_written(exporter):
     assert get('sb_portfolio_total_value', {}) == 1030.0
 
 
+def test_an_account_that_stops_being_computed_loses_its_series(exporter):
+    """The row-level half of criterion 8, and the counterpart of
+    ``retain_positions``.
+
+    ``update_account`` is only ever reached for a row a cycle produced, so an
+    account that stops producing one — its import forgotten, its events
+    withdrawn — is never visited, and a loop that only ever sets would leave its
+    seven gauges reporting the last values they ever had for the life of the
+    process. ``prune_account_metrics`` takes its days out of the store in the
+    same cycle; a stale real figure on ``/metrics`` is worse than the zero the
+    rule was written against, a scraper having no way to tell it from a current
+    one.
+    """
+    for account in ('PEA', 'CTO'):
+        exporter.update_account(AccountMetricPoint(
+            account=account, account_type=account, day=date(2024, 1, 1),
+            cash_balance=800.0, holdings_value=220.0, total_value=1020.0,
+            net_contributed=1000.0, gain_absolu=20.0, twr_index=100.0))
+
+    exporter.retain_accounts(['PEA'])
+
+    get = exporter.registry.get_sample_value
+    assert get('sb_account_total_value', {'account': 'PEA'}) == 1020.0
+    assert get('sb_account_info',
+               {'account': 'PEA', 'account_type': 'PEA'}) == 1
+    for name in ('sb_account_cash_balance', 'sb_account_holdings_value',
+                 'sb_account_total_value', 'sb_account_net_contributed',
+                 'sb_account_xirr', 'sb_account_gain_absolu',
+                 'sb_account_twr_index'):
+        assert get(name, {'account': 'CTO'}) is None
+    assert get('sb_account_info',
+               {'account': 'CTO', 'account_type': 'CTO'}) is None
+
+
+def test_a_cycle_with_no_global_series_takes_the_seven_away(exporter):
+    """``update_portfolio(None)`` — *this cycle produced no global series at
+    all*, which an emptied ledger makes and which is not the same call as a
+    point whose fields are absent.
+
+    Without it ``sb_portfolio_total_value`` reports the value of a portfolio
+    that no longer exists, for the life of the process — the unlabelled twin of
+    the defect ``forget_quotes`` exists against.
+    """
+    exporter.update_portfolio(PortfolioTotalPoint(
+        day=date(2024, 1, 1), cash_balance=800.0, holdings_value=220.0,
+        total_value=1020.0, net_contributed=1000.0, gain_absolu=20.0,
+        twr_index=100.0))
+    assert exporter.registry.get_sample_value(
+        'sb_portfolio_total_value', {}) == 1020.0
+
+    exporter.update_portfolio(None)
+
+    text = generate_latest(exporter.registry).decode()
+    for name in ('sb_portfolio_cash_balance', 'sb_portfolio_holdings_value',
+                 'sb_portfolio_total_value', 'sb_portfolio_net_contributed',
+                 'sb_portfolio_xirr', 'sb_portfolio_gain_absolu',
+                 'sb_portfolio_twr_index'):
+        assert name not in text
+
+
 def test_the_three_purchased_gauges_are_gone(exporter):
     """Renamed rather than redefined: a dashboard sees a gauge *leave* (#695 §12).
 

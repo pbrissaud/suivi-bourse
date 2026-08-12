@@ -2767,7 +2767,9 @@ class SuiviBourseMetrics:
 
         **Its only inputs are the store and the clock.** The events come from
         ``ledger.read_events`` and the declaration from
-        ``accounts.declared_portfolio``, not from the published snapshot — the
+        ``accounts.read_accounts`` — every declared row since #708, the opt-in
+        guard's ``declared_portfolio`` having gone with it — not from the
+        published snapshot: the
         snapshot's *identity* was the third gate signal, and reading it here
         would leave the cache's freshness tied to the configuration's
         publication rhythm rather than to what the store holds. What it costs is
@@ -2981,6 +2983,19 @@ class SuiviBourseMetrics:
                     f"({p.cash_balance:.2f}) — insufficient recorded cash")
 
         # Prometheus: expose the latest (today) value per account + global.
+        #
+        # **What a cycle publishes, and nothing more** (issue #708). The two
+        # retracts below are the same gesture ``retain_positions`` makes on the
+        # replay's side, and they are the row-level half of *"a gauge whose field
+        # is absent is not published"*: the per-field rule lives inside
+        # :meth:`PrometheusExporter.update_account`, which is only ever reached
+        # for a row this cycle produced. An account that stops producing rows —
+        # its import forgotten, its events withdrawn — is never visited, so
+        # without the retract its seven gauges would keep the last values they
+        # ever had for the life of the process, while ``prune_account_metrics``
+        # took its days out of the store in this very transaction. A stale real
+        # figure is worse than the zero the rule was written against: a scraper
+        # has no way to tell it from a current one.
         if self.prometheus is not None:
             for acc, p in latest_by_account.items():
                 try:
@@ -2988,11 +3003,19 @@ class SuiviBourseMetrics:
                 except Exception as e:
                     app_logger.error(
                         f"Failed to update Prometheus account metrics for {acc}: {e}")
-            if total is not None and total.daily:
-                try:
-                    self.prometheus.update_portfolio(total_points[-1])
-                except Exception as e:
-                    app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
+            try:
+                self.prometheus.retain_accounts(latest_by_account.keys())
+            except Exception as e:
+                app_logger.error(f"Failed to retract Prometheus accounts: {e}")
+            try:
+                # ``None`` says *this cycle produced no global series at all*,
+                # which is a different call from a point whose fields are absent
+                # — and it is the one an emptied ledger makes.
+                self.prometheus.update_portfolio(
+                    total_points[-1]
+                    if total is not None and total.daily else None)
+            except Exception as e:
+                app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
 
         # The horizons, handed back rather than stored: ``/api/runtime`` publishes
         # them from **process memory** (issue #708), and the record the perf job

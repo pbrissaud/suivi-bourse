@@ -1163,7 +1163,16 @@ either one alone produces a wrong figure rather than a missing one:
   real value, because an unlabelled gauge has no label set to remove and
   publishes `0` from construction — a fresh install was answering
   `sb_portfolio_total_value 0` while its reporting currency was unanswered,
-  the exact reading the rule exists against.
+  the exact reading the rule exists against. **The rule has two levels**, and
+  the second is not the first applied twice: absence of a *field* is
+  `update_account`'s, absence of the whole *row* is `retain_accounts`' —
+  `update_account` is only ever reached for a row a cycle produced, so an
+  account that stops producing one is never visited and its seven gauges would
+  keep the last values they ever had for the life of the process, while
+  `prune_account_metrics` emptied the table beside them in the same cycle. It is
+  `retain_positions`' argument on the perf's side, and `update_portfolio(None)`
+  says it for the global. A stale **real** figure is worse than the zero the
+  rule was written against: a scraper cannot tell it from a current one.
 - **`/api/runtime` publishes the horizon per account**, from process memory: it
   rides on `PerfRecord.horizons` and comes out as `accounts: [{account,
   horizon}]` — a **calendar day** rendered as one, the shape `lib/api.ts`

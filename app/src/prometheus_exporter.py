@@ -267,6 +267,12 @@ class PrometheusExporter:
         #: Which of the seven are currently *in* the registry — the only place an
         #: unlabelled gauge's absence can be recorded.
         self._registered_globals = set()
+        #: The accounts a cycle has published, so :meth:`retain_accounts` can
+        #: name the ones that stopped being computed. The same bookkeeping
+        #: :attr:`_published_positions` does for the replay's rows, and for the
+        #: same reason: a forgotten import leaves nothing behind to name them
+        #: with.
+        self._published_accounts = set()
 
     @staticmethod
     def _share_labels(share: dict) -> tuple:
@@ -431,10 +437,12 @@ class PrometheusExporter:
         everybody and ``sb_account_total_value`` does not.
 
         It is a *retract*, not a skip: a field that was published and stops being
-        writable — an import forgotten, an account whose deposits left with it —
-        has its series **removed**, or the previous cycle's value would sit there
-        for the life of the process, exactly as a departed symbol's price would
-        without :meth:`forget_quotes`.
+        writable — an account whose deposits left with it — has its series
+        **removed**, or the previous cycle's value would sit there for the life
+        of the process, exactly as a departed symbol's price would without
+        :meth:`forget_quotes`. The *account* leaving the cycle altogether is the
+        same rule one level up and it is :meth:`retain_accounts`'s job, because a
+        method taking one point cannot see a row that is no longer there.
 
         Args:
             point: an :class:`~events.schemas.AccountMetricPoint` (the latest,
@@ -442,8 +450,37 @@ class PrometheusExporter:
         """
         account = point.account
         self.account_info.labels(account, point.account_type or '').set(1)
+        self._published_accounts.add(account)
         for gauge, name in self._account_value_gauges:
             self._publish_labelled(gauge, (account,), getattr(point, name))
+
+    def retain_accounts(self, accounts) -> None:
+        """Keep the accounts this cycle computed, and **drop every other**.
+
+        The perf recompute's own gesture, and the exact counterpart of
+        :meth:`retain_positions` on the replay's side: what changes here is the
+        *set*, not a field, and :meth:`update_account` is called once per row the
+        cycle produced — so an account that stops producing rows is never
+        visited and a loop that only ever sets would leave its seven gauges
+        standing. Forgetting an import does exactly that, and the store says so
+        in the same cycle: ``prune_account_metrics`` takes its days away while
+        ``sb_account_total_value{account="pea"}`` went on reporting the last
+        value it ever had, for the life of the process.
+
+        Absence of a *field* is :meth:`update_account`'s rule; absence of the
+        whole *row* is this one. Both end in a series that is not there, which is
+        the only way Prometheus can say *no value* (issue #708).
+        """
+        keep = set(accounts)
+        for account in sorted(self._published_accounts - keep):
+            for gauge, _ in self._account_value_gauges:
+                self._remove(gauge, (account,))
+            for metric in self.account_info.collect():
+                for sample in metric.samples:
+                    if sample.labels.get('account') == account:
+                        self._remove(self.account_info,
+                                     (account, sample.labels['account_type']))
+            self._published_accounts.discard(account)
 
     def update_portfolio(self, point) -> None:
         """Update the global (untagged) portfolio gauges from a
@@ -457,9 +494,18 @@ class PrometheusExporter:
         ``sb_portfolio_*`` genuinely absent while the reporting currency is
         unanswered (issue #702), a sentence the documentation already made and
         the code did not keep.
+
+        ``point`` is ``None`` when the cycle produced **no global series at
+        all** — an emptied ledger, every import forgotten — and that is not the
+        same call as a point whose fields are absent: there is no point. It
+        unregisters the seven, for the reason above: the alternative is
+        ``sb_portfolio_total_value`` reporting the value of a portfolio that no
+        longer exists, which is worse than the zero the rule was written
+        against, a scraper having no way to tell it from a current one.
         """
         for gauge, name in self._portfolio_value_gauges:
-            self._publish_global(gauge, getattr(point, name))
+            self._publish_global(
+                gauge, None if point is None else getattr(point, name))
 
     def _publish_labelled(self, gauge: Gauge, labels: tuple, value) -> None:
         """Set one labelled series, or take it off — ``None`` is not a value."""
