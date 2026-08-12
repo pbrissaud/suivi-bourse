@@ -162,13 +162,18 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
       no crater to avoid and the term is simply not about that day. That is a
       statement about the **block**, and about nothing beyond it: ``[acquired,
       unpriced]`` never covers a day the line was not held.
-      ``unpriced < acquired`` is one spelling of #708's ``oldest ≤ acquired`` and
-      **not a wider guard** — the two drop exactly the same symbols, verified
-      exhaustively. On a symbol absent from ``oldest_priced`` it is unreachable
-      by construction: ``unpriced`` is then ``last_held``, and
-      :meth:`events.schemas.Timeline.holding_window` never answers a last day
-      before its first. So this line does **not** treat the symbol quoted nowhere
-      yet — the cap below is what treats it — and what it buys is that the block
+      ``unpriced < acquired`` is #708's ``oldest ≤ acquired`` **or the window is
+      degenerate**, and the second half is a real difference rather than a
+      re-spelling: :meth:`events.schemas.Timeline.holding_window` answers
+      ``acquired, (today if holding else emptied)`` with **no clamp**, and
+      ``events/validator.py`` forbids no event dated in the future — so a single
+      row dated next year gives a last day *before* its first. #708 did not skip
+      it, built a block ending before it began, and put the left bound past every
+      real day: the cycle wrote nothing and the prune emptied the table. Answering
+      *nothing constrains this account* is the truth about a window holding no
+      day. What this line is still **not** is the repair of #765 — on a held
+      symbol quoted nowhere the window is ordinary and the branch is not taken;
+      the cap below is what treats that one. What it buys there is that the block
       is built before it is judged, which is what the cap needs to walk over.
     * **A block that reaches the ceiling caps the series instead of bounding
       it** — the repair itself (issue #765). The block is treated *where it is*:

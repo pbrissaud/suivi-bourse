@@ -391,18 +391,29 @@ def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
     assert _horizon({}, {"AAPL": LEDGER_START}) == (None, None)
 
 
-def test_the_empty_block_guard_is_one_spelling_of_708s_and_not_a_wider_one():
+def test_the_empty_block_guard_is_708s_plus_the_degenerate_window():
     """What the guard does, and — as loudly — what it does not do.
 
     #708 wrote *"a day before a position was acquired holds nothing of it"* and
-    coded it as ``oldest ≤ acquired``; the block form spells it ``unpriced <
-    acquired``. The two are **the same guard**: on a symbol absent from
-    ``oldest_priced``, ``unpriced`` is ``last_held``, which
-    :meth:`events.schemas.Timeline.holding_window` never puts before ``acquired``
-    — so the branch is unreachable for exactly the population that empties the
-    table, and reading it as the repair of #765 is reading a no-op. The repair is
-    the **cap**, asserted in the next test; here the two spellings are pinned
-    side by side so a later edit cannot widen one silently.
+    coded it as ``oldest ≤ acquired``; the block form spells it
+    ``unpriced < acquired``. The two are **not** the same guard, and the earlier
+    claim that they were rested on a false premise:
+    :meth:`events.schemas.Timeline.holding_window` returns
+    ``acquired, (today if holding else emptied)`` with **no clamp**, so an
+    acquisition dated in the future — which ``events/validator.py`` forbids
+    nowhere — answers a last day *before* its first.
+
+    The exact relation is asserted below: the block form is #708's guard **or**
+    the window is degenerate. That extra case is not a widening to regret, it is
+    the one input on which #708 was wrong — a single event dated next year gave
+    ``last_held < acquired``, no skip, a block ending *before* it began, and the
+    left bound landed past every real day, so the cycle wrote nothing and the
+    prune emptied the table. The block form answers "nothing constrains this
+    account" instead, which is the truth about a window holding no day at all.
+
+    What the guard is still **not** is the repair of #765: on a held symbol
+    quoted nowhere the window is ordinary, the branch is not taken, and what
+    keeps the history is the **cap**, asserted in the next test.
     """
     windows = {"NEW": (BOUGHT, TODAY)}
 
@@ -413,17 +424,27 @@ def test_the_empty_block_guard_is_one_spelling_of_708s_and_not_a_wider_one():
     # Quoted nowhere: the guard is **not** reached, the block stands whole, and
     # what keeps the history is the cap moving the right edge left.
     assert _horizon(windows, {}) == (None, BOUGHT - timedelta(days=1))
-    # Both spellings of the guard, over the whole shape of the input: they drop
-    # the same symbols, so the block form changed no verdict of #708's.
+    # A window that holds no day at all — the acquisition dated after the last
+    # day held. `holding_window` produces it without a clamp and the validator
+    # allows the event, so it is reachable from a file somebody drops.
     day = timedelta(days=1)
+    degenerate = {"NEW": (BOUGHT, BOUGHT - 30 * day)}
+    assert _horizon(degenerate, {}) == (None, None)
+
+    # Both spellings, over the whole shape of the input — and `held_off` now
+    # sweeps **negative** offsets, which is where they part company. Sweeping
+    # only `last_held >= acquired` is what let the false equivalence stand: the
+    # single counter-example was structurally outside the loop, so the test
+    # attested a property it had never exercised.
     for acquired_off, held_off, oldest_off in itertools.product(
-            range(0, 40, 7), range(0, 40, 7), list(range(-10, 40, 7)) + [None]):
+            range(0, 40, 7), range(-21, 40, 7), list(range(-10, 40, 7)) + [None]):
         acquired = LEDGER_START + acquired_off * day
         last_held = acquired + held_off * day
         oldest = None if oldest_off is None else acquired + oldest_off * day
         unpriced = (last_held if oldest is None
                     else min(oldest - day, last_held))
-        assert (unpriced < acquired) == (oldest is not None and oldest <= acquired)
+        assert (unpriced < acquired) == (
+            (oldest is not None and oldest <= acquired) or last_held < acquired)
 
 
 def test_a_new_line_caps_the_series_instead_of_deleting_its_history():

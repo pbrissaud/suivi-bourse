@@ -1222,10 +1222,13 @@ either one alone produces a wrong figure rather than a missing one:
   overshoots the first acquisition, so a symbol's oldest price *is* its
   acquisition day once reconstructed, and without the lower bound a portfolio
   that bought a line this morning would take a horizon of this morning — and that
-  lower end is a statement about **the block**, `unpriced < acquired` being one
-  spelling of #708's `oldest ≤ acquired` and not a wider guard (a symbol quoted
-  nowhere has `unpriced = last_held`, never before its acquisition, so the branch
-  is unreachable for it: what treats that symbol is the cap); **a block
+  lower end is a statement about **the block**, `unpriced < acquired` being
+  #708's `oldest ≤ acquired` **or a degenerate window** — `holding_window` puts
+  no clamp on its two ends and the validator forbids no future-dated event, so a
+  single row dated next year answers a last day before its first, which #708 did
+  not skip and which emptied the table; on a held symbol quoted nowhere the
+  window is ordinary, the branch is not taken, and what treats that symbol is
+  the cap; **a block
   that reaches the ceiling caps the series instead of bounding it** (#765, below);
   **the days left of a block that does *not* reach the ceiling go with it**, the
   residue #765 leaves standing and names rather than repairs — a line acquired
@@ -1289,12 +1292,15 @@ either one alone produces a wrong figure rather than a missing one:
   mask: keeping the *left* run abandons today's figures, which is the whole of
   the sliding horizon, and keeping both makes the series two runs with a hole
   between them. The refactor into blocks is what made the cap expressible; it
-  changed **no verdict** of #708's guard, verified exhaustively, and reading it
-  as the repair reads a no-op (`test_the_empty_block_guard_is_one_spelling_of_
-  708s_and_not_a_wider_one`, and the residue asserted at
+  changed **one** verdict of #708's guard and only one, the degenerate window
+  above, and reading it as the repair of the ticket still reads a no-op
+  (`test_the_empty_block_guard_is_708s_plus_the_degenerate_window`, whose sweep
+  covers `last_held < acquired` — an earlier version claimed the two guards
+  equivalent and swept only the half where they agree, so it attested a property
+  it had never exercised; and the residue asserted at
   `test_the_days_left_of_a_past_block_are_lost_with_it`). Whether a horizon may
-  ever be **more than one interval** is the open question, and it is #708's
-  calendar-density decision to reopen, not this ticket's.
+  ever be **more than one interval** is the open question, carried by #766, and
+  it is #708's calendar-density decision to reopen, not this ticket's.
 - **The rule is by field, never by account.** The opt-in guard read
   `declared_portfolio`, whose `None` means *nothing declared beyond the seed* —
   and ADR-0013 seeds a `default` row at the creation of the schema and never
