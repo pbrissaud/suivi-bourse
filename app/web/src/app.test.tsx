@@ -56,14 +56,14 @@ describe('the walking skeleton', () => {
     await chooseInMenu(user, 'Langue', 'English')
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
 
+    // **The four routes now answer with four pages.** `PendingPage` and its one
+    // sentence left with #721, the last placeholder: a page that says it is not
+    // built yet has no subject once every one of them is, and keeping the
+    // component around for a fifth route nobody plans is how dead code is kept
+    // warm.
     for (const entry of ['Shares', 'Accounts', 'Data']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
-      // The pages that are not built yet say so — in the reader's language.
-      // `Shares` (#719) and `Data` (#723) have landed and left that set.
-      if (entry !== 'Shares' && entry !== 'Data') {
-        expect(screen.getByText('This page is not built yet.')).toBeInTheDocument()
-      }
     }
 
     // Back to French, on the page we happen to be standing on.

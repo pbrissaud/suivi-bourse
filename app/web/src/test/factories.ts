@@ -60,6 +60,7 @@
  */
 import type {
   Account,
+  AccountHistoryResponse,
   AccountsResponse,
   Advisory,
   ChartWindow,
@@ -67,7 +68,9 @@ import type {
   EnvironmentVariable,
   EventsResponse,
   LedgerEvent,
+  PerfPoint,
   PortfolioTotals,
+  PortfolioTotalsHistoryResponse,
   PortfolioTotalsResponse,
   Position,
   PositionsResponse,
@@ -83,8 +86,54 @@ export const NOW = '2026-03-02T12:00:00.000Z'
 
 export const BASE_CURRENCY = 'EUR'
 
+/**
+ * One declared account, joined to its newest `account_metrics` row — the shape
+ * `/api/accounts` serves, figures included.
+ *
+ * The figures are **not** the sum of anything and are not meant to be: the
+ * global row comes from `portfolio_totals`, and with one account carrying no
+ * cash ledger the accounts cannot be summed at all (#708). A fixture whose
+ * accounts added up to the totals would quietly license the arithmetic
+ * `build_accounts` refuses to do.
+ */
 export function anAccount(overrides: Partial<Account> = {}): Account {
-  return { id: 'alpha', label: 'Alpha', type: 'PEA', ...overrides }
+  return {
+    id: 'alpha',
+    label: 'Alpha',
+    type: 'PEA',
+    source_id: null,
+    editable: true,
+    as_of: '2026-03-02',
+    total_value: 1800,
+    holdings_value: 1300,
+    cash_balance: 500,
+    net_contributed: 1380,
+    gain_absolu: 420,
+    xirr: 0.0512,
+    // The stored index — counted from **this account's** first day, and
+    // therefore never rendered: it is what `pea 171,5` beside `TR 115,0` was.
+    twr_index: 171.5,
+    ...overrides,
+  }
+}
+
+/**
+ * An account for which no perf cycle has written anything — `as_of` null and
+ * every figure with it. **Eight dashes**, which is the other degraded shape and
+ * a different sentence from the five-dash one below.
+ */
+export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Account {
+  return anAccount({
+    as_of: null,
+    total_value: null,
+    holdings_value: null,
+    cash_balance: null,
+    net_contributed: null,
+    gain_absolu: null,
+    xirr: null,
+    twr_index: null,
+    ...overrides,
+  })
 }
 
 export interface PositionOptions extends Partial<Omit<Position, 'price' | 'converted'>> {
@@ -143,11 +192,55 @@ export function anAccountsPayload(
   return { declared, accounts }
 }
 
+/**
+ * THE THREE ACCOUNTS, AND WHAT EACH ONE IS THERE FOR (#721)
+ *
+ *   id     opened      stored index   what it exercises
+ *   -----  ----------  ------------   -------------------------------------
+ *   alpha  2019-10-30      171,5      the old account, the one whose stored
+ *                                     index is 6,8 years long
+ *   beta   2025-09-01      115,0      the young one — it **enters mid-chart**
+ *                                     on a one-year window, and it is what
+ *                                     bounds *since the opening*
+ *   gamma  —                   —      no cash movement: `total_value`,
+ *                                     `cash_balance`, `net_contributed`,
+ *                                     `xirr` and `twr_index` are `NULL` by
+ *                                     #708's per-field rule, `holdings_value`
+ *                                     and `gain_absolu` are written. **Five
+ *                                     dashes out of eight**, which is the
+ *                                     degraded shape the page has to name.
+ *
+ * `171,5` beside `115,0` is the pair ADR-0019 was written on, to the tenth.
+ */
 export function defaultAccounts(): Account[] {
   return [
     anAccount({ id: 'alpha', label: 'Alpha', type: 'PEA' }),
-    anAccount({ id: 'beta', label: 'Beta', type: 'CTO' }),
-    anAccount({ id: 'gamma', label: 'Gamma', type: 'CTO' }),
+    anAccount({
+      id: 'beta',
+      label: 'Beta',
+      type: 'CTO',
+      total_value: 900,
+      holdings_value: 400,
+      cash_balance: 500,
+      net_contributed: 950,
+      gain_absolu: -50,
+      xirr: -0.0104,
+      twr_index: 115,
+    }),
+    anAccount({
+      id: 'gamma',
+      label: 'Gamma',
+      type: 'CTO',
+      total_value: null,
+      cash_balance: null,
+      net_contributed: null,
+      xirr: null,
+      twr_index: null,
+      holdings_value: 600,
+      // A zero would have done too, and this is deliberately not one: `0,00 €`
+      // is a figure and wears the colour of text, which is a different test.
+      gain_absolu: 25,
+    }),
   ]
 }
 
@@ -218,6 +311,90 @@ export function aTotalsPayload(
   baseCurrency: string | null = BASE_CURRENCY,
 ): PortfolioTotalsResponse {
   return { base_currency: baseCurrency, totals }
+}
+
+// ------------------------------------------------------------------------- //
+// THE PERF SERIES (#721) — and the arithmetic of the comparison by hand.
+//
+// The stored indices are the measured pair, `alpha 171,5` against `beta 115,0`,
+// counted from two different origins. Rebased to 100 at the start of each
+// window they give:
+//
+//   window            alpha                          beta
+//   ----------------  -----------------------------  -----------------------
+//   1M   (02-02→)     171,5 / 165   = +3,94 %        115 / 112 = +2,68 %
+//   YTD  (01-01→)     171,5 / 180   = −4,72 %        115 / 110 = +4,55 %
+//   1A   (2025-03-02) 171,5 / 150   = +14,33 %       115 / 100 = +15,00 %
+//   opening (09-01)   171,5 / 180   = −4,72 %        115 / 100 = +15,00 %
+//
+// **The ranking inverts between `1M` and `1A`**, with every figure correct —
+// which is the whole subject of ADR-0019, and what the `perf` bubble warns
+// about. Read raw, the stored pair would have rendered `+71,50 %` beside
+// `+15,00 %`: 6,8 years beside 2,4.
+//
+// `beta` opens on 2025-09-01, so on a one-year window it **enters in the middle
+// of the drawing** — the case the dated marker exists for — and it is what
+// bounds *since the opening*.
+// ------------------------------------------------------------------------- //
+
+/** One day of a perf series. `twr_index` null is an account with no cash event. */
+export function aPerfPoint(t: string, twrIndex: number | null): PerfPoint {
+  return {
+    t,
+    cash_balance: twrIndex === null ? null : 500,
+    holdings_value: 1300,
+    total_value: twrIndex === null ? null : 1800,
+    net_contributed: twrIndex === null ? null : 1380,
+    twr_index: twrIndex,
+  }
+}
+
+const ACCOUNT_SERIES: Record<string, [string, number | null][]> = {
+  alpha: [
+    ['2019-10-30', 100],
+    ['2025-03-02', 150],
+    ['2026-01-01', 180],
+    ['2026-02-02', 165],
+    ['2026-03-02', 171.5],
+  ],
+  beta: [
+    ['2025-09-01', 100],
+    ['2026-01-01', 110],
+    ['2026-02-02', 112],
+    ['2026-03-02', 115],
+  ],
+  // No cash movement, so no index at all: the series exists and says nothing
+  // about performance, which is what puts a dash in `perf` and a reason in the
+  // account's own cell.
+  gamma: [
+    ['2026-02-02', null],
+    ['2026-03-02', null],
+  ],
+}
+
+export function anAccountHistory(account: string): AccountHistoryResponse {
+  return {
+    account,
+    from: '1970-01-01T00:00:00+00:00',
+    to: NOW,
+    points: (ACCOUNT_SERIES[account] ?? []).map(([t, index]) => aPerfPoint(t, index)),
+  }
+}
+
+/**
+ * The global series. Its `perf` over one year is `202,89 / 190 = +6,78 %`, a
+ * figure that appears **in the table's `Portefeuille` row and nowhere else** —
+ * the portfolio is not drawn, so the strip under the chart never carries it.
+ */
+export function aPortfolioHistory(
+  points: PerfPoint[] = [
+    aPerfPoint('2025-03-02', 190),
+    aPerfPoint('2026-01-01', 210),
+    aPerfPoint('2026-02-02', 195),
+    aPerfPoint('2026-03-02', 202.89),
+  ],
+): PortfolioTotalsHistoryResponse {
+  return { from: '1970-01-01T00:00:00+00:00', to: NOW, points }
 }
 
 /**

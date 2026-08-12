@@ -466,6 +466,52 @@ def get_portfolio_totals():
     return jsonify({'base_currency': _base_currency(), 'totals': totals})
 
 
+@api_bp.get('/portfolio-totals/history')
+def get_portfolio_totals_history():
+    """The global perf series — ``/api/accounts/<id>/history`` one level up (#721).
+
+    It exists because the accounts page owes its ``Portefeuille`` row a ``perf``
+    cell, and ``perf`` is **the series rebased to 100 at the start of the visible
+    window** (ADR-0019) rather than the stored index: at ``MAX`` that row read
+    ``+102,72 %`` above two accounts measured over two other periods, which is
+    exactly the comparison the rebasing exists to make possible. A rebasing needs
+    the series, and the newest row of ``/api/portfolio-totals`` is one day.
+
+    It is a **resource of its own** rather than a member of the row above, and
+    named after the store's table rather than after the page (#745). The obvious
+    alternative — ``/api/portfolio/history``, which already serves this table —
+    is a v4 route discriminated by a ``?mode=`` this version is dismantling, and
+    it publishes ``value``/``contributed`` for a chart rather than the perf
+    members. It goes on serving until the page reading it is rewritten, which is
+    the arrangement ``/api/prices/<symbol>`` and ``/api/shares/<symbol>/prices``
+    already stand in (#719).
+
+    **The five members are the account resource's, field for field**, so one
+    client shape reads both and the rebasing is written once. No ``currency``
+    here either: the head owns it, and since #702 there is exactly one to own.
+    """
+    try:
+        start, stop = _parse_window(DEFAULT_HISTORY_WINDOW)
+    except ValueError as exc:
+        return bad_request(str(exc))
+
+    return jsonify({
+        'from': start.isoformat(),
+        'to': stop.isoformat(),
+        'points': [
+            {
+                't': _iso(row.get('day')),
+                'cash_balance': row.get('cash_balance'),
+                'holdings_value': row.get('holdings_value'),
+                'total_value': row.get('total_value'),
+                'net_contributed': row.get('net_contributed'),
+                'twr_index': row.get('twr_index'),
+            }
+            for row in _reader().totals_series(start, stop)
+        ],
+    })
+
+
 @api_bp.get('/prices/<symbol>')
 def get_prices(symbol: str):
     """One symbol's series over a **rung of the retention ladder** (#719, #763).

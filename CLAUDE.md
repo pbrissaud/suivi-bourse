@@ -170,8 +170,10 @@ Five things about the script are decisions:
 **The v5 front is a walking skeleton** (issue #713, spec #712): the harness, the
 theme, the two catalogues and the shell, with the four routes reachable and the
 four pages still placeholders — they are **redesigned, not ported**, one ticket
-each, and two have landed since (the dashboard's head, #718, and the shares
-page, #719). Four things about it are decisions, not defaults:
+each, and **all four have landed since**: the dashboard's head (#718), the shares
+page (#719), the data page and its second tab (#723, #724) and the accounts page
+(#721), which took `PendingPage` with it. Four things about it are decisions, not
+defaults:
 
 - **One test seam, the outermost.** The real router, the real pages, the real
   catalogues, the real theme and a real `QueryClient` mount in jsdom; **HTTP is
@@ -717,6 +719,104 @@ security*: the repair the notice asks for is per-security, so a perimeter drawn
 per-event would be narrower than the gesture it introduces. Rebuilding an
 address out of `(date, type, symbol, account)` to be exact instead would be
 #662's opaque token over `(file, sheet, row)` under another name.
+
+**The accounts page: a comparison does not outrun the period where it exists**
+(issue #721, ADR-0019, ADR-0016). It was the only one of the four **rendered and
+never judged** — measured on a declared account it reproduced the dashboard's
+head to the cent — and what the measurement showed at N = 2 is not that each
+column discriminates: it is that **the instrument of comparison was not one**.
+`pea 171,5` against `TR 115,0` compares 6,8 years with 2,4. Rebased on a common
+window the same two accounts **swap places four times over seven windows**, every
+figure correct. Five things about it are decisions:
+
+- **One range control, and it drives the chart *and* the table's `perf`
+  column.** They read **one** rebasing — every curve at 100 on the first day of
+  the visible window, `lib/accounts.ts` — so the two stop being two announcers
+  that contradict each other, and the scalar strip under the chart is the same
+  number as the cell. `MAX` is **not offered**: what fails there is not the
+  differing bases (an account entering mid-chart reads perfectly, dated marker
+  included) but that a time-weighted index has **no bounded amplitude** — `pea`
+  spiked to +542 % in February 2022, the axis runs −58 % to +542 %, and both
+  accounts' recent history is crushed into the bottom sixth of the plot. The
+  bound's other half is the table: at `MAX` that column rendered `+71,49 %`
+  beside `+15,00 %` with nothing saying they cover 6,8 years and 2,4, which no
+  annotation could have repaired. The longest preset is therefore *since the
+  opening*, a `max` over the accounts' first days — and since **no payload states
+  an opening**, the page reads each series whole and applies the bound to the
+  **drawing**, which is where ADR-0019 puts it. Asking the server for the window
+  would mean knowing the bound before reading what defines it; the cost is ~2 500
+  days per account, read **once** for the four presets.
+- **Eight columns** — `Compte · Valeur totale · Titres · Liquidités · Versé net ·
+  Gain total · TRI · perf` — `Type` folded into the `Compte` cell. The table
+  carries **`Gain total` alone**: the twelve-column variant, the total beside its
+  four terms, **fits** at 1 440 px, which is exactly what condemns it — the
+  constraint is one of **form** and not of room, and it becomes sayable for the
+  whole product (*a total and its terms never share a row*, ADR-0016). `Versé
+  net` stays though it is `Valeur − Gain`: it is the silent denominator of the
+  two last columns. **`Portefeuille`, never `Total`**, at the bottom behind a
+  rule — six of its eight cells describe the whole, `TRI` and `perf` are not sums
+  and **not em dashes either**, the store holding both at portfolio level — and
+  it is **read** from `portfolio_totals` rather than summed, the accounts being
+  unsummable the moment one of them has no cash ledger (#708). **At N = 1 the row
+  is absent** (it would copy the single line above it), the page leaves the
+  navigation and the **route survives**.
+- **The click selects, the label opens.** The table becomes the chart's control
+  **without adding a control**: clicking a row isolates its curve, clicking the
+  one non-numeric cell opens the account's sheet. Two acceptance criteria came
+  out of the mock-up and are checked by eye — the two gestures must be *visibly
+  distinct at hover*, or the selection reads as a missed click, and the dimmed
+  series does not fall to 16 % opacity, where the highlight becomes a filter and
+  loses the context that justified it (`DIMMED_OPACITY`, pinned above that floor
+  by a test). **There is no *Amounts* view**: mounted here it is four curves at
+  two accounts, the pairs overlap and **no surface is anybody's gain**; at five
+  accounts, ten curves. The value-against-contributed shape keeps its two homes,
+  the dashboard and the account's own sheet.
+- **A row with no figures names its reason**, on a second line of its `Compte`
+  cell, the money columns keeping their dashes: *without a cash ledger* (five
+  dashes out of eight, #708's per-field rule) and *being rebuilt* (eight) are
+  otherwise **indistinguishable**. A **third** answer exists and is not an
+  invention — `rebuilding === false` on an account with no series at all means an
+  empty account, not a slow one, and telling its owner to wait is a sentence that
+  never comes true; a runtime read that has **not landed** keeps the rebuild's
+  sentence, exactly as the dashboard's year-to-date does (#709's third answer).
+  The row names a **reason**, never a progression with a target date, which stays
+  on the banner. **A column disappears when it is absent for *every* account**,
+  and `Liquidités` follows `total_value`: without a ledger the balance reads
+  `−6 517,26 €`, arithmetically defined and semantically false — five dashes, not
+  four. As soon as one account out of two has a ledger the dashes stay, where
+  they are a **difference between the accounts**, which is the subject of the
+  page. And **`Non affecté`** is distinguished and carries the reassignment link
+  to Données: it is the one line the promise *your declared accounts* does not
+  cover.
+- **Five icons — four here and the fifth is #722's**, on the sheet's `Gain total`
+  block, *one per figure and per surface*. The four are `Versé net`, `Gain
+  total`, `TRI` and `perf`; the two rate bubbles end on the **same** last
+  sentence (*returns are computed from the dates of your events*) deliberately,
+  the two being far more often misread together than apart, and **`perf` is the
+  one bubble in the product that warns against its own figure** — it depends on
+  the window and the ranking can reverse inside it. One mention of the date at
+  the level of the page (*Chiffres arrêtés au …*), the money figures being a
+  **day**; the **interval is never written in words**, the range control already
+  carrying it. The sheet itself arrives as a **shell**: the gesture is this
+  ticket's, its three objects and that fifth icon are #722's, exactly as
+  `ShareSheet` landed for #720.
+
+Two series resources join the HTTP contract with it, announced on #745 before
+being written into `lib/api.ts` — and **their server half is written in the same
+ticket**, the map having seen a page ticket declare an unserved contract five
+times: **`GET /api/accounts/<id>/history`** (already served; what changes is that
+a client reads it) and **`GET /api/portfolio-totals/history`**, new, with the
+**same five members field for field** so one client shape reads both and the
+rebasing is written once. `/api/portfolio/history` serves that table already and
+is not reused: it is a v4 route discriminated by a `?mode=` v5 is dismantling,
+and it publishes `value`/`contributed` for a chart. The declaration's figures
+join too — `/api/accounts` has been serving the newest `account_metrics` row all
+along while the client contract declared `{id, label, type}` alone, which is
+`declared`'s own defect one level down. **`twr_index` is published and rendered
+nowhere.**
+
+`PendingPage` and its one sentence leave with this ticket: it was the last
+placeholder, and *this page is not built yet* has no subject once all four are.
 
 ### Documentation Website (in `website/` directory)
 
@@ -2265,7 +2365,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read + declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -2298,6 +2398,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
+├── src/lib/accounts.ts     # Pure: the window, the rebasing to 100, the vanishing column, the reason (#721)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
@@ -2306,6 +2407,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 ├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
 ├── src/components/data/           # Tab 1: the ledger and the create form (#723) · Tab 2: notices, settings, the store (#724)
+├── src/components/accounts/       # The rebased chart · the eight columns · the sheet's shell (#721)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 

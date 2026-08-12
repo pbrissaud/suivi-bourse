@@ -52,6 +52,10 @@ export const ROUTES = {
   store: '/api/store',
   /** The orphans as a collection: the only thing done to it is removing it. */
   storeOrphans: '/api/store/orphans',
+  /** One account's perf series. A **pattern**, like {@link ROUTES.prices}. */
+  accountHistory: '/api/accounts/:account/history',
+  /** The global perf series — the same five members, one level up (#721). */
+  portfolioTotalsHistory: '/api/portfolio-totals/history',
 } as const
 
 export function eventPath(id: string): string {
@@ -151,8 +155,56 @@ async function remove<T>(path: string): Promise<T> {
 export interface Account {
   /** The id events carry. `default` is the bucket of the unassigned. */
   id: string
+  /**
+   * What the owner called it — **except on `default`**, where the interface
+   * reads its own catalogue (#745). That row is `NOT NULL` in the store, so it
+   * always arrives named, but what it arrives with is documentation for whoever
+   * opens the file: it is the one row *every* install owns, headless ones
+   * included, and a value seeded once will never follow the reader's language.
+   * Every other account shows what it declares, without exception or fallback —
+   * the owner wrote it themselves, in the language they wanted.
+   */
   label: string
+  /** Same clause, same row: `default`'s type is read off the catalogue too. */
   type: string
+  /**
+   * The declaration's provenance — the import that carried it, `null` for one
+   * created in the app (#698). `editable` is published rather than derived from
+   * it: a rule the front re-implements is a rule that can disagree with the API
+   * enforcing it.
+   */
+  source_id?: number | null
+  editable?: boolean
+  /**
+   * The account's **newest** `account_metrics` row, ridden on this resource
+   * rather than on a second one — one accounts resource with two consumers, the
+   * shares filter reading `id`/`label` and the comparison table reading the
+   * rest. Every member below is nullable *by field* since #708: `holdings_value`
+   * and `gain_absolu` are written always, the four cash-derived ones need a cash
+   * event and `xirr` an external flow. That is what makes *five dashes out of
+   * eight* a shape the page has to render rather than a fault.
+   *
+   * `as_of` is the day they describe — a **day**, never an instant — and `null`
+   * on an account for which no cycle has written anything at all, which is the
+   * other degraded shape: *eight* dashes, and a different sentence.
+   */
+  as_of?: string | null
+  cash_balance?: number | null
+  holdings_value?: number | null
+  total_value?: number | null
+  net_contributed?: number | null
+  gain_absolu?: number | null
+  /** Money-weighted, annualised **since the origin**: it has no window to narrow. */
+  xirr?: number | null
+  /**
+   * Time-weighted, base 100 since the account's own first day — and the
+   * comparison table **never renders it** (ADR-0019). Two indices counted from
+   * two origins share a unit without being a comparison: `pea 171,5` against
+   * `TR 115,0` puts 6,8 years beside 2,4. What the `perf` column shows is the
+   * series rebased to 100 at the start of the visible window, computed in
+   * `lib/accounts.ts` from {@link AccountHistoryResponse}.
+   */
+  twr_index?: number | null
 }
 
 export interface AccountsResponse {
@@ -165,6 +217,68 @@ export interface AccountsResponse {
    */
   declared: boolean
   accounts: Account[]
+}
+
+/**
+ * One day of a perf series, at either level (#721).
+ *
+ * **One shape for the account and for the portfolio**, deliberately: the
+ * accounts page draws N account curves and reads a portfolio scalar off the
+ * same rebasing, so two shapes would mean two rebasings and, sooner or later,
+ * two answers to *how did this period go*. The five members are the ones
+ * `account_metrics` and `portfolio_totals` have in common.
+ */
+export interface PerfPoint {
+  /** The calendar day — a bare `YYYY-MM-DD`, never an instant (the store's rule). */
+  t: string | null
+  cash_balance: number | null
+  holdings_value: number | null
+  total_value: number | null
+  net_contributed: number | null
+  /** Base 100 since the series' own origin. Rebased before it is ever shown. */
+  twr_index: number | null
+}
+
+export interface AccountHistoryResponse {
+  account: string
+  from: string
+  to: string
+  points: PerfPoint[]
+}
+
+export interface PortfolioTotalsHistoryResponse {
+  from: string
+  to: string
+  points: PerfPoint[]
+}
+
+/**
+ * The day a perf series is asked from, and it is the **origin of time** on
+ * purpose (#721, ADR-0019).
+ *
+ * `MAX` is not offered as a *range* — a time-weighted index has no bounded
+ * amplitude, and one account's spike at +542 % crushes every other curve into
+ * the bottom sixth of the plot. But the longest window offered, *since the
+ * opening*, is `max` over the accounts' first days, and no payload states an
+ * account's first day: the only place it is written is the series itself. So
+ * the page reads each series whole and applies the bound to the **drawing**,
+ * which is where ADR-0019 puts it. Asking the server for a bounded window
+ * instead would mean knowing the bound before reading what defines it.
+ *
+ * The cost is stated rather than hidden: on a 6,8-year account the series is
+ * ~2 500 days, dense over calendar days, five numbers each — and it is read
+ * **once** for the four presets rather than once per preset, which is the same
+ * property that makes the chart and the table's scalar column one announcer
+ * instead of two.
+ */
+export const SERIES_ORIGIN = '1970-01-01'
+
+export function accountHistoryPath(account: string, from: string = SERIES_ORIGIN): string {
+  return `/api/accounts/${encodeURIComponent(account)}/history?from=${from}`
+}
+
+export function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string {
+  return `${ROUTES.portfolioTotalsHistory}?from=${from}`
 }
 
 // ------------------------------------------------------------------------- //
@@ -634,8 +748,12 @@ export const api = {
   events: () => get<EventsResponse>(ROUTES.events),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
+  accountHistory: (account: string) =>
+    get<AccountHistoryResponse>(accountHistoryPath(account)),
   positions: () => get<PositionsResponse>(ROUTES.positions),
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
+  portfolioTotalsHistory: () =>
+    get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),

@@ -990,6 +990,75 @@ def test_portfolio_totals_storage_failure_is_503_problem_json(tmp_path):
     assert 'portfolio_totals' in response.get_json()['detail']
 
 
+# --------------------------------------------------------------------- #
+# `/api/portfolio-totals/history` — the global series, and the five members
+# it shares with one account's own (#721)
+# --------------------------------------------------------------------- #
+
+def test_portfolio_totals_history_carries_the_account_history_members(tmp_path):
+    """The accounts page rebases this series exactly as it rebases an account's.
+
+    One client shape reads both, which is what keeps the rebasing written once:
+    the `Portefeuille` row's `perf` and a `perf` cell above it are the same
+    arithmetic over the same window, or the row nobody can check contradicts the
+    two rows anybody can.
+    """
+    def seed(opened):
+        seed_totals(opened, day=date(2026, 8, 4), twr_index=120.0)
+        seed_totals(opened, day=date(2026, 8, 5), twr_index=124.0)
+
+    payload = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals/history').get_json()
+
+    assert [point['t'] for point in payload['points']] == [
+        '2026-08-04', '2026-08-05']
+    assert [point['twr_index'] for point in payload['points']] == [120.0, 124.0]
+    assert set(payload['points'][0]) == {
+        't', 'cash_balance', 'holdings_value', 'total_value',
+        'net_contributed', 'twr_index'}
+
+
+def test_portfolio_totals_history_is_200_and_empty_before_the_first_cycle(
+        tmp_path):
+    """The empty-collection state, never an error: an install whose perf cache
+    is empty has nothing to compare and is perfectly healthy."""
+    response = build_client(tmp_path).get('/api/portfolio-totals/history')
+
+    assert response.status_code == 200
+    assert response.get_json()['points'] == []
+
+
+def test_portfolio_totals_history_keeps_a_null_index_a_null(tmp_path):
+    """`twr_index` follows `total_value` (#708), so an install with no cash
+    event has none — and a zero here would rebase to a curve at the floor."""
+    def seed(opened):
+        seed_totals(opened, day=date(2026, 8, 5), total_value=None,
+                    cash_balance=None, net_contributed=None, twr_index=None)
+
+    points = build_client(
+        tmp_path, seed=seed).get(
+            '/api/portfolio-totals/history').get_json()['points']
+
+    assert points[0]['twr_index'] is None
+    assert points[0]['total_value'] is None
+
+
+def test_portfolio_totals_history_rejects_an_inverted_window(tmp_path):
+    response = build_client(tmp_path).get(
+        '/api/portfolio-totals/history?from=2026-08-05&to=2026-08-01')
+
+    assert response.status_code == 400
+    assert response.mimetype == 'application/problem+json'
+
+
+def test_portfolio_totals_history_storage_failure_is_503_problem_json(tmp_path):
+    response = build_client(
+        tmp_path, break_store=True).get('/api/portfolio-totals/history')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+
+
 def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
         tmp_path):
     """ADR-0018's identity, **through the API**, on a ledger with a fee (#763).
