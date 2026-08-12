@@ -143,6 +143,15 @@ class PrometheusExporter:
             "1 when the stored price is silently stale while the live quote moves",
             COMMON_LABELS, registry=self.registry)
 
+        # ``sb_store_ephemeral`` (issue #741, ADR-0015). Created by the first
+        # observation rather than here, which is the only way an *unlabelled*
+        # gauge can be absent: ``prometheus_client`` publishes one at ``0`` from
+        # the instant it is constructed, and ``0`` on this series states that
+        # the store **is** kept — the exact false statement a macOS developer,
+        # who has no mount table to read, would be handed. See
+        # :meth:`update_store_persistence`.
+        self.store_ephemeral = None
+
         # Everything a live quote feeds, and therefore everything that has to
         # **leave** when a symbol's scrape job does (#672 D6). Without the
         # removal, ``sb_share_price`` of a share sold four years ago sits at its
@@ -374,6 +383,35 @@ class PrometheusExporter:
         """
         self.price_staleness.labels(*self._share_labels(share)).set(
             1 if stale else 0)
+
+    def update_store_persistence(self, ephemeral) -> None:
+        """Publish ``sb_store_ephemeral`` — ``1`` **and** ``0``, never a gap.
+
+        The gauge is **the only form of notice a headless installation gets**
+        (issue #741): without it, ADR-0012's *"Prometheus stays"* serves the
+        portfolio's figures and never the state of the installation itself. A
+        gauge and not a counter, so it goes out on its own the day the container
+        is restarted with a volume — a counter would only ever say that it was
+        ephemeral once.
+
+        Both values are published for the same reason: a series that disappears
+        does not read as *off*, it reads as a scraper that lost its target. So
+        ``0`` is written explicitly on a mounted store.
+
+        ``None`` — :data:`mounts.UNKNOWN` — is the third answer and leaves the
+        series **absent**, which is this module's own rule (a gauge whose field
+        could not be computed is not published) rather than an exception to it.
+        """
+        if ephemeral is None:
+            return
+        if self.store_ephemeral is None:
+            self.store_ephemeral = Gauge(
+                "sb_store_ephemeral",
+                "1 when the store lives in the container's writable layer and "
+                "is lost with the container, 0 when it is on a mount that "
+                "outlives it",
+                registry=self.registry)
+        self.store_ephemeral.set(1 if ephemeral else 0)
 
     def update_account(self, point) -> None:
         """Update the per-account gauges from a computed account_metrics point.

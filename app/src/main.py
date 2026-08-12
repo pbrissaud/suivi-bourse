@@ -24,10 +24,12 @@ from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
 import advisories
+import boot_conditions
 import boot_env
 import carrying
 import fx
 import ledger
+import mounts
 import perf_series
 import performance
 import positions
@@ -205,6 +207,39 @@ def report_unread_environment() -> List[str]:
     if message is not None:
         app_logger.warning(message)
     return found
+
+
+def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
+                           base_currency: Optional[str],
+                           recorded_events: int) -> List[str]:
+    """Say the three things that are true of this start-up, once each (#741).
+
+    The same split as :func:`report_unread_environment`: the sentences and the
+    predicates are pure (:func:`boot_conditions.observe`), and what belongs here
+    is the one thing that is not — emitting them.
+
+    *Once* is a property of **where this is called** rather than of a flag: it
+    runs in :func:`build_runtime`, in the gunicorn master, under ``preload_app``
+    — one call per process, before any fork. A condition that ends afterwards
+    (a currency answered, a first file dropped) is not re-announced and its line
+    is not retracted; the live states are what ``/api/runtime`` and
+    ``/api/config`` carry, and the terminal is a record of the boot.
+
+    Returns the keys said, so a test asserts *which* lines stood rather than
+    capturing a logger.
+    """
+    said = []
+    for condition in boot_conditions.observe(
+            persistence=persistence,
+            store_dir=boot.store_dir,
+            base_currency=base_currency,
+            recorded_events=recorded_events,
+            web_port=boot.web_port,
+            import_dir=boot.import_dir):
+        app_logger.log(condition.level, condition.message,
+                       extra={'context': condition.context})
+        said.append(condition.key)
+    return said
 
 
 def effective_environment() -> List[Dict]:
@@ -2959,7 +2994,8 @@ class Runtime:
 
     def __init__(self, config_manager: ConfigurationManager,
                  prometheus: Optional[PrometheusExporter],
-                 store_path: Optional[Path] = None):
+                 store_path: Optional[Path] = None,
+                 store_persistence: str = mounts.UNKNOWN):
         self.config_manager = config_manager
         self.prometheus = prometheus
         self.metrics: Optional['SuiviBourseMetrics'] = None
@@ -2973,6 +3009,15 @@ class Runtime:
         # the connection the worker will actually use.
         self.store_path: Optional[Path] = store_path
         self.store: Optional[store.Store] = None
+
+        # Whether that path outlives the container (issue #741, ADR-0015).
+        # Observed **once**, in the master, and carried across the fork like the
+        # path itself: a mount namespace is fixed for the life of a process, so
+        # re-reading ``/proc/self/mountinfo`` per request would be a query whose
+        # answer was settled at ``execve``. It defaults to
+        # :data:`mounts.UNKNOWN`, which is the honest reading of a runtime
+        # nobody observed — a test's, or the one a Docker-less checkout builds.
+        self.store_persistence: str = store_persistence
 
         # The scheduler's last-pass records (issue #668). Master-side on
         # purpose — a mutex and three references, and a ``threading.Lock``
@@ -3042,6 +3087,15 @@ def build_runtime() -> Runtime:
     store_path = boot.store_dir / store.STORE_FILENAME
     opened = store.open_store(store_path)
 
+    # Whether that directory outlives the container (issue #741, ADR-0015).
+    # Observed here rather than demanded before: #677/D12 refused to boot
+    # without an explicit store location, and the amendment is safe precisely
+    # because ``/proc/self/mountinfo`` answers the question with certainty
+    # instead of leaving it to a generic "did you mount a volume?" printed at
+    # every start. Read after the store is proved openable, so a container that
+    # cannot write at all still dies of the one cause that matters.
+    persistence = mounts.store_persistence(boot.store_dir)
+
     config_manager = ConfigurationManager(opened_store=opened,
                                           import_dir=str(boot.import_dir))
 
@@ -3064,6 +3118,14 @@ def build_runtime() -> Runtime:
     # worker.
     try:
         config_manager.reload()
+        # The three lines (issue #741), here rather than before the load: two of
+        # the three are read off what the load just published, and a boot that
+        # ends in an exception has a fatal message to say instead of three
+        # conditions about a portfolio it never managed to read.
+        report_boot_conditions(
+            boot, persistence,
+            base_currency=opened.setting('base_currency'),
+            recorded_events=len(config_manager.current().events))
     finally:
         # The connection closes whichever way the load went, because it is the
         # file descriptor that must not cross ``fork()`` (issue #696) and a
@@ -3077,8 +3139,17 @@ def build_runtime() -> Runtime:
     # so SB_PROMETHEUS_ENABLED now means "do not mount /metrics" rather than
     # "run no HTTP server".
     prometheus = PrometheusExporter() if boot.prometheus_enabled else None
+    if prometheus is not None:
+        # ``sb_store_ephemeral``, published in the master so it crosses the fork
+        # with the registry the Flask app serves. It is **the only form of
+        # notice a headless install receives** (#741): the three lines above go
+        # to a terminal nobody is watching, and ADR-0012's "Prometheus stays"
+        # would otherwise serve the portfolio's figures and never the state of
+        # the installation itself.
+        prometheus.update_store_persistence(mounts.is_ephemeral(persistence))
 
-    return Runtime(config_manager, prometheus, store_path=store_path)
+    return Runtime(config_manager, prometheus, store_path=store_path,
+                   store_persistence=persistence)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:
