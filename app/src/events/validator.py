@@ -1,7 +1,23 @@
 """
 Event validator for validating portfolio events.
+
+**One owner.** Whatever the road an event took to get here — a ``.csv`` in the
+drop folder, a sheet of a workbook, or a form somebody filled in the app (issue
+#764) — it is judged by this class and by nothing else. A second set of rules
+for the typed event is how an event created here and an event imported stop
+obeying the same product: the ledger is replayed whole on every build, so a row
+one road let through and the other would have refused fails the *boot*, in the
+gunicorn master, in an app the user then cannot reach to repair it.
+
+What is **not** here is the parse. ``EventLoader`` turns a CSV cell into a typed
+value and raises its own error when it cannot; the API's write path does the
+same for a JSON member (issue #764). By the time an :class:`Event` exists its
+fields are already of the right types, so *"2026-02-31 is not a day"* is a
+refusal of the boundary and *"a BUY needs a quantity"* is a refusal of this
+module. Two questions, two owners, and the split is the loader's, not a new one.
 """
 
+from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
 from .schemas import (
@@ -12,6 +28,24 @@ from .schemas import (
 class EventValidationError(Exception):
     """Exception raised when event validation fails."""
     pass
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    """One refusal, and **which field it is about** (issue #764).
+
+    The message is what it always was, word for word, because it is read by a
+    human in a log line about a file. ``field`` is what a *form* needs: a
+    ``422`` naming the input it refused marks that input, where a sentence above
+    the whole panel leaves the reader to find it — the same reason
+    :func:`web.problem.unprocessable` carries a ``key``.
+
+    ``None`` for a refusal that is about the event rather than one of its cells
+    (nothing produces one today, and the shape says so rather than promising it
+    cannot happen).
+    """
+    field: Optional[str]
+    message: str
 
 
 class EventValidator:
@@ -45,6 +79,18 @@ class EventValidator:
         self.account_ids = account_ids
         self.accounts_declared = accounts_declared
 
+    def issues(self, events: List[Event]) -> List[ValidationIssue]:
+        """Every refusal these events earn, each naming the field it is about.
+
+        The structured form, and the one the two other entry points are built
+        out of — a validator with two implementations is a validator with two
+        answers.
+        """
+        found: List[ValidationIssue] = []
+        for i, event in enumerate(events):
+            found.extend(self._validate_event(event, i + 1))
+        return found
+
     def validate(self, events: List[Event]) -> Tuple[bool, List[str]]:
         """
         Validate a list of events.
@@ -55,13 +101,8 @@ class EventValidator:
         Returns:
             Tuple of (is_valid, list of error messages).
         """
-        errors = []
-
-        for i, event in enumerate(events):
-            event_errors = self._validate_event(event, i + 1)
-            errors.extend(event_errors)
-
-        return len(errors) == 0, errors
+        found = self.issues(events)
+        return len(found) == 0, [issue.message for issue in found]
 
     def validate_or_raise(self, events: List[Event]) -> None:
         """
@@ -79,7 +120,7 @@ class EventValidator:
             raise EventValidationError(
                 f"Event validation failed with {len(errors)} error(s):\n{error_list}")
 
-    def _validate_event(self, event: Event, event_num: int) -> List[str]:
+    def _validate_event(self, event: Event, event_num: int) -> List[ValidationIssue]:
         """Validate a single event."""
         errors = []
         context = event.symbol or event.account or "?"
@@ -93,9 +134,9 @@ class EventValidator:
             # Share events: symbol and name are required (the loader no longer
             # enforces them, so cash events can omit them).
             if not event.symbol:
-                errors.append(f"{prefix}: symbol is required")
+                errors.append(_issue('symbol', prefix, "symbol is required"))
             if not event.name:
-                errors.append(f"{prefix}: name is required")
+                errors.append(_issue('name', prefix, "name is required"))
 
             if event.event_type == EventType.BUY:
                 errors.extend(self._validate_buy(event, prefix))
@@ -108,7 +149,7 @@ class EventValidator:
 
         return errors
 
-    def _validate_cash(self, event: Event, prefix: str) -> List[str]:
+    def _validate_cash(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a DEPOSIT / WITHDRAWAL event.
 
         Required: amount (> 0). Optional: fee (>= 0). Forbidden: symbol / name /
@@ -123,27 +164,31 @@ class EventValidator:
         errors = []
 
         if event.amount is None:
-            errors.append(f"{prefix}: amount is required for {event.event_type.value}")
+            errors.append(_issue(
+                'amount', prefix,
+                f"amount is required for {event.event_type.value}"))
         elif event.amount <= 0:
-            errors.append(
-                f"{prefix}: amount must be positive for {event.event_type.value} "
-                f"(direction is carried by the event type, never the sign)")
+            errors.append(_issue(
+                'amount', prefix,
+                f"amount must be positive for {event.event_type.value} "
+                f"(direction is carried by the event type, never the sign)"))
 
         if event.fee is not None and event.fee < 0:
-            errors.append(f"{prefix}: fee cannot be negative")
+            errors.append(_issue('fee', prefix, "fee cannot be negative"))
 
         forbidden = [
             name for name in ('symbol', 'name', 'quantity', 'unit_price')
             if getattr(event, name) is not None
         ]
         if forbidden:
-            errors.append(
-                f"{prefix}: {', '.join(forbidden)} not allowed on "
-                f"{event.event_type.value} (cash events carry no share)")
+            errors.append(_issue(
+                forbidden[0], prefix,
+                f"{', '.join(forbidden)} not allowed on "
+                f"{event.event_type.value} (cash events carry no share)"))
 
         return errors
 
-    def _validate_account(self, event: Event, prefix: str) -> List[str]:
+    def _validate_account(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate the ``account`` column of one event (issue #698).
 
         The message on an unknown id **names the account to declare**, because
@@ -152,57 +197,61 @@ class EventValidator:
         """
         if not event.account:
             if self.accounts_declared:
-                return [f"{prefix}: account is required now that accounts are "
-                        f"declared (blank meant 'default' only while none were)"]
+                return [_issue(
+                    'account', prefix,
+                    "account is required now that accounts are declared "
+                    "(blank meant 'default' only while none were)")]
             return []
 
         if self.account_ids is None or event.account in self.account_ids:
             return []
 
         declared = ", ".join(sorted(self.account_ids)) or "none"
-        return [f"{prefix}: account '{event.account}' is not declared — declare "
-                f"it in an accounts file ({', '.join(ACCOUNT_FILE_COLUMNS)}) or "
-                f"in the app (declared: {declared})"]
+        return [_issue(
+            'account', prefix,
+            f"account '{event.account}' is not declared — declare it in an "
+            f"accounts file ({', '.join(ACCOUNT_FILE_COLUMNS)}) or in the app "
+            f"(declared: {declared})")]
 
-    def _validate_buy(self, event: Event, prefix: str) -> List[str]:
+    def _validate_buy(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a BUY event."""
         errors = []
 
         if event.quantity is None:
-            errors.append(f"{prefix}: quantity is required for BUY")
+            errors.append(_issue('quantity', prefix, "quantity is required for BUY"))
         elif event.quantity <= 0:
-            errors.append(f"{prefix}: quantity must be positive for BUY")
+            errors.append(_issue('quantity', prefix, "quantity must be positive for BUY"))
 
         if event.unit_price is None:
-            errors.append(f"{prefix}: unit_price is required for BUY")
+            errors.append(_issue('unit_price', prefix, "unit_price is required for BUY"))
         elif event.unit_price <= 0:
-            errors.append(f"{prefix}: unit_price must be positive for BUY")
+            errors.append(_issue('unit_price', prefix, "unit_price must be positive for BUY"))
 
         if event.fee is not None and event.fee < 0:
-            errors.append(f"{prefix}: fee cannot be negative")
+            errors.append(_issue('fee', prefix, "fee cannot be negative"))
 
         return errors
 
-    def _validate_sell(self, event: Event, prefix: str) -> List[str]:
+    def _validate_sell(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a SELL event."""
         errors = []
 
         if event.quantity is None:
-            errors.append(f"{prefix}: quantity is required for SELL")
+            errors.append(_issue('quantity', prefix, "quantity is required for SELL"))
         elif event.quantity <= 0:
-            errors.append(f"{prefix}: quantity must be positive for SELL")
+            errors.append(_issue('quantity', prefix, "quantity must be positive for SELL"))
 
         if event.unit_price is None:
-            errors.append(f"{prefix}: unit_price is required for SELL")
+            errors.append(_issue('unit_price', prefix, "unit_price is required for SELL"))
         elif event.unit_price <= 0:
-            errors.append(f"{prefix}: unit_price must be positive for SELL")
+            errors.append(_issue('unit_price', prefix, "unit_price must be positive for SELL"))
 
         if event.fee is not None and event.fee < 0:
-            errors.append(f"{prefix}: fee cannot be negative")
+            errors.append(_issue('fee', prefix, "fee cannot be negative"))
 
         return errors
 
-    def _validate_grant(self, event: Event, prefix: str) -> List[str]:
+    def _validate_grant(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a GRANT event.
 
         ``unit_price`` becomes **meaningful** with #699 — present it is a valued
@@ -221,19 +270,28 @@ class EventValidator:
         errors = []
 
         if event.quantity is None:
-            errors.append(f"{prefix}: quantity is required for GRANT")
+            errors.append(_issue('quantity', prefix, "quantity is required for GRANT"))
         elif event.quantity <= 0:
-            errors.append(f"{prefix}: quantity must be positive for GRANT")
+            errors.append(_issue('quantity', prefix, "quantity must be positive for GRANT"))
 
         return errors
 
-    def _validate_dividend(self, event: Event, prefix: str) -> List[str]:
+    def _validate_dividend(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a DIVIDEND event."""
         errors = []
 
         if event.amount is None:
-            errors.append(f"{prefix}: amount is required for DIVIDEND")
+            errors.append(_issue('amount', prefix, "amount is required for DIVIDEND"))
         elif event.amount <= 0:
-            errors.append(f"{prefix}: amount must be positive for DIVIDEND")
+            errors.append(_issue('amount', prefix, "amount must be positive for DIVIDEND"))
 
         return errors
+
+
+def _issue(field: Optional[str], prefix: str, message: str) -> ValidationIssue:
+    """One refusal, rendered exactly as it always was and tagged with its field.
+
+    The prefix is applied here rather than at each call site so that the
+    sentence a log line carries cannot drift between the twenty of them.
+    """
+    return ValidationIssue(field=field, message=f"{prefix}: {message}")

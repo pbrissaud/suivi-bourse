@@ -11,7 +11,7 @@ from .schemas import (
     CashFlow, CashState, AccountMetricPoint, PortfolioTotalPoint,
 )
 from .loader import EventLoader
-from .validator import EventValidator
+from .validator import EventValidator, ValidationIssue
 from .aggregator import EventAggregator
 from .watcher import EventWatcher
 
@@ -32,6 +32,7 @@ __all__ = [
     'PortfolioTotalPoint',
     'EventLoader',
     'EventValidator',
+    'ValidationIssue',
     'EventAggregator',
     'EventWatcher',
 ]
