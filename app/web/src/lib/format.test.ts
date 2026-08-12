@@ -73,6 +73,15 @@ describe('the format follows the language, not the currency', () => {
     expect(formatDateTime(FR, '2026-03-02T12:00:00Z')).toContain('2 mars 2026')
     expect(formatDateTime(EN, '2026-03-02T12:00:00Z')).toContain('2 Mar 2026')
   })
+
+  it('reads a bare day as a calendar day and never as an instant', () => {
+    // `new Date('2026-03-02')` is UTC midnight, so west of Greenwich the whole
+    // product renders a day early: an event dated the 2nd shown as the 1st, and
+    // a position closed the day before its sale. The store keeps its two kinds
+    // of time apart; so does this.
+    expect(formatDate(FR, '2026-03-02')).toBe('2 mars 2026')
+    expect(formatDate(EN, '2026-03-02')).toBe('2 Mar 2026')
+  })
 })
 
 describe('absence is not zero', () => {

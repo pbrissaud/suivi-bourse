@@ -117,12 +117,24 @@ export function formatDateTime(locale: string, value: string | null | undefined)
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
+/**
+ * A day, and **a bare `YYYY-MM-DD` is a calendar day rather than an instant**
+ * (#723). The store's own rule is that the two kinds of time never mix, and
+ * `new Date('2026-02-10')` breaks it: the string is read as UTC midnight, so
+ * every date in the product renders one day early for a reader west of
+ * Greenwich — a ledger dated the 9th for an event recorded the 10th, and a
+ * position closed the day before the sale. Parsed by its parts, the day is the
+ * day.
+ */
 export function formatDate(
   locale: string,
   value: string | number | Date | null | undefined,
 ): string {
   if (value === null || value === undefined) return ABSENT
-  const date = new Date(value)
+  const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
+  const date = day
+    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
+    : new Date(value)
   if (Number.isNaN(date.getTime())) return ABSENT
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date)
 }
