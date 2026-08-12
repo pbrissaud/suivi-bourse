@@ -616,7 +616,77 @@ declaration, ADR-0013), the form's account `<select>` is therefore empty, and
 its own client-side check blocks the save before a request leaves — so the
 onboarding form is unusable on exactly the install ADR-0005 wrote it for. That
 is a front defect on #723's side of the seam and it belongs to #729's accounts
-work; the server has never refused the body.
+work; the server has never refused the body. **#729 took it up**, and both
+halves of the sentence turned out to be one repair (below).
+
+**The declaration of the accounts, on the same tab and in the ledger's own
+shape** (issue #729, ADR-0013, ADR-0002, ADR-0020). It is the same thing said
+about another table — *what the user declared* — so it is the ledger's form
+rather than a second one: no padlock column (a row carrying a provenance came
+from a file, a row carrying none was declared here), a lateral panel and never
+an editable row, and the affordance is the row's **own name**, a button exactly
+where the row may be edited and plain text everywhere else. `lib/accounts.ts`
+grows the rules rather than a second module beside it, `#721`'s comparison
+arithmetic already living there. Five things about it are decisions:
+
+- **The form loses `currency`.** ADR-0002 deleted `Account.currency` rather than
+  converting it — two currency levels, the reporting one and the security's
+  quote, and not three — so *an account whose positions disagree with its
+  currency* has no referent to be a bug about. The page built during the
+  prototype still carried the field; there is no column for it either.
+- **A removal that cannot happen is absent and names its reason** — *« 71
+  événements nomment ce compte »* — never present and refused. The interface's
+  obligation is the opposite of the API's: a control the app knows will be
+  refused teaches nothing by being there, while the count is the exact thing the
+  owner has to act on. `removalOf` holds the classification in
+  `accounts.delete_account`'s own order, the events before the file on purpose:
+  both apply to a file-provisioned account an event names, and only one of them
+  is actionable, forgetting the import being refused in cascade for the same
+  reason. The count comes off the ledger this tab has already read, and the
+  block is withheld until that read lands — *not arrived yet* must not render as
+  *nothing names this account*.
+- **The server serves the seeded row, and the front synthesises nothing.**
+  `list_accounts` answered `{declared: false, accounts: []}` on an install that
+  declared nothing, which is a resource answering *none* to a question ADR-0013
+  says cannot be answered that way. The consequence was not cosmetic: `default`
+  is the only account a fresh install has, so it is the only one there is to
+  rename, and a payload that never carried the row made the rename **invisible**
+  — the store held `Mon PEA` while every page re-drew a row it had rebuilt from
+  nothing. `declared` keeps its exact meaning (*is there a declaration beyond the
+  one every install is given*) and carries the distinction alone. The cost is one
+  query where this route used to read no database; the property that argument was
+  written for — the shares filter surviving a store outage — left with the page
+  itself at #719.
+- **`default` is named by one function, read by both pages.** `declaredLabel`
+  answers `null` while the row still wears `Default account` — the *server's*
+  English about a row nobody declared, which ADR-0024 forbids rendering — and the
+  owner's name the moment they give one. That refines #745 rather than
+  contradicting it, on #745's own argument: what must never follow the reader is
+  a **seeded** value, and a name somebody typed is not one. The accounts page and
+  the declaration block call the same function, so *two pages do not name one
+  thing two ways* is true by construction rather than by discipline; `declaredType`
+  is the same clause on the other seeded column, which is also why the form opens
+  both fields **empty** (handing `OTHER` back had the reader typing `PEA` into it
+  and saving `OTHERPEA`).
+- **The block exists at every N, N = 1 and the true first run included.** The
+  accounts *page* leaves the navigation at one account because a comparison of
+  one term is not one; the declaration stays, being the only place `default` can
+  be renamed or replaced and the only place a first account can be declared
+  without writing a file. So `rows.length === 0` has exactly one meaning left —
+  *the read has not landed* — and the block renders nothing on it.
+
+**And the create form records on an install that has declared nothing**, which is
+#764's deferral discharged. `accountChoice` has five states because they are five
+renderings and three of them are three different repairs: a single declared
+account answers itself; **nothing declared** is #698's rule (*a blank account
+means `default` until something is declared*) and not a missing answer, so the
+panel states the row, the blank travels **as a blank**, and the server resolves
+it at the write exactly where the file road resolves its own empty cell; and a
+read **in flight** or **failed** says nothing about a declaration either way, so
+neither may claim the first state — the field names what is going on and the save
+is withheld rather than offered and refused, the same rule the removal follows.
+`/api/accounts` also joins the tab's causal order (`readConditions`), so *the
+store is unreadable* cannot come out as *you have declared nothing*.
 
 **The data page's second tab: what the installation *is*** (issue #724,
 ADR-0014, ADR-0015, ADR-0020, ADR-0021). Three blocks in one order — **Avis ·
@@ -2376,7 +2446,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read + declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -2410,6 +2480,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
 ├── src/lib/accounts.ts     # Pure: the window, the rebasing to 100, the vanishing column, the reason (#721)
+│                           #       plus the declaration: who names a row, where it came from, why it stays (#729)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
@@ -2417,7 +2488,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 ├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
-├── src/components/data/           # Tab 1: the ledger and the create form (#723) · Tab 2: notices, settings, the store (#724)
+├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns · the sheet's shell (#721)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
