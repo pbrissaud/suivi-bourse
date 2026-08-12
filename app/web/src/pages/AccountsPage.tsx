@@ -197,9 +197,11 @@ export default function AccountsPage() {
             currency={currency}
             rebuilding={runtime.data?.rebuilding ?? null}
             selected={selected}
-            onSelect={(account) =>
-              setSelected((previous) => (previous === account ? null : account))
-            }
+            // **Posé, jamais basculé.** Le basculement servait un clic, qui a
+            // deux états à alterner ; le survol en a deux qu'il nomme lui-même
+            // — entrer et sortir — et un basculement les ferait se battre dès
+            // que la souris repasse sur la même ligne.
+            onSelect={setSelected}
             onOpen={setOpened}
             sort={sort}
             onSort={(column: FigureColumn) =>

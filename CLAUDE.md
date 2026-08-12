@@ -760,14 +760,25 @@ figure correct. Five things about it are decisions:
   unsummable the moment one of them has no cash ledger (#708). **At N = 1 the row
   is absent** (it would copy the single line above it), the page leaves the
   navigation and the **route survives**.
-- **The click selects, the label opens.** The table becomes the chart's control
-  **without adding a control**: clicking a row isolates its curve, clicking the
-  one non-numeric cell opens the account's sheet. Two acceptance criteria came
-  out of the mock-up and are checked by eye — the two gestures must be *visibly
-  distinct at hover*, or the selection reads as a missed click, and the dimmed
-  series does not fall to 16 % opacity, where the highlight becomes a filter and
-  loses the context that justified it (`DIMMED_OPACITY`, pinned above that floor
-  by a test). **There is no *Amounts* view**: mounted here it is four curves at
+- **Pointing previews, clicking opens** — **one** gesture per row, and the table
+  is still the chart's control **without adding a control**: the pointer over a
+  row isolates its curve, a click anywhere along the row opens the account's
+  sheet. #721 shipped the other split — the click isolating, the *name* opening
+  — and that is what made *the two gestures must be visibly distinct at hover* an
+  acceptance criterion at all. Checked by eye on the real portfolio, the
+  criterion was met and the split was still wrong: two clicks on one row, told
+  apart by a rule the reader has to learn, where there is one thing to do. The
+  same look measured the two defects that left with it — the name's
+  `hover:text-primary` was a **no-op in both themes**, the preset giving
+  `--primary` the value of `--foreground` (black on black, then white on white),
+  and the name carried the browser's `cursor: default` inside a row carrying
+  `pointer`, so the affordance *lost* its pointer over the very word that opened
+  the sheet. What survives untouched is the other eye-checked criterion: the
+  dimmed series does not fall to 16 % opacity, where the highlight becomes a
+  filter and loses the context that justified it (`DIMMED_OPACITY`, pinned above
+  that floor by a test). **Hover is the one input that says nothing to a keyboard
+  or a finger**, so the name's *focus* carries the preview the pointer gets, and
+  a tap goes straight to the sheet — which is where the figures are anyway. **There is no *Amounts* view**: mounted here it is four curves at
   two accounts, the pairs overlap and **no surface is anybody's gain**; at five
   accounts, ten curves. The value-against-contributed shape keeps its two homes,
   the dashboard and the account's own sheet.

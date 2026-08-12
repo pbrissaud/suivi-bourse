@@ -213,43 +213,62 @@ describe('the two gestures', () => {
       .find((row) => (row.textContent ?? '').includes(name))!
   }
 
-  it('isolates a curve on the row and opens the panel on the label', async () => {
+  it('previews a curve on hover and puts it back on the way out', async () => {
     const { user } = renderAccounts()
     await settled()
 
-    await user.click(accountRow('Alpha'))
+    await user.hover(accountRow('Alpha'))
     expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'true')
+    // Pointing at a row is not choosing it: nothing opens, and nothing is left
+    // behind once the pointer goes.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    // The label is the one non-numeric cell, and it opens the account rather
-    // than selecting it — so the table is the chart's control without adding a
-    // control of its own. The row is held by reference: the open panel puts the
-    // whole column behind an `aria-hidden`, so it cannot be queried again.
-    const beta = accountRow('Beta')
-    await user.click(within(beta).getByRole('button', { name: 'Beta' }))
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Beta')
-    expect(beta).toHaveAttribute('aria-selected', 'false')
+    await user.unhover(accountRow('Alpha'))
+    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('leaves a row with no curve out of the gesture that isolates one', async () => {
+  it('opens the panel from anywhere on the row, not from the name alone', async () => {
     const { user } = renderAccounts()
     await settled()
 
-    // `gamma` has no cash event, so no index, so no curve on the plot. Selected
+    // The click target is the whole row — a figure cell is as good as the name.
+    // The row is held by reference: the open panel puts the whole column behind
+    // an `aria-hidden`, so it cannot be queried again.
+    const beta = accountRow('Beta')
+    await user.click(within(beta).getAllByRole('cell')[1])
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Beta')
+  })
+
+  it('lets the keyboard preview what the pointer previews', async () => {
+    const { user } = renderAccounts()
+    await settled()
+
+    // Hover says nothing to a keyboard, so focus carries the same preview —
+    // without it the isolated curve would exist for the mouse alone.
+    await user.tab()
+    while (
+      document.activeElement?.textContent !== 'Alpha' &&
+      document.activeElement !== document.body
+    ) {
+      await user.tab()
+    }
+    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('leaves a row with no curve out of the gesture that previews one', async () => {
+    const { user } = renderAccounts()
+    await settled()
+
+    // `gamma` has no cash event, so no index, so no curve on the plot. Previewed
     // it would dim every drawn series and put none forward — the chart going
-    // out for a gesture with no subject, on a line reading as chosen.
-    await user.click(accountRow('Gamma'))
+    // out for a gesture with no subject, on a line reading as chosen. It still
+    // **opens**, because a row with no curve is still an account.
+    await user.hover(accountRow('Gamma'))
     expect(accountRow('Gamma')).not.toHaveAttribute('aria-selected')
     expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
-  })
 
-  it('lets the selection be undone by the same gesture', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    await user.click(accountRow('Alpha'))
-    await user.click(accountRow('Alpha'))
-    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
+    await user.click(accountRow('Gamma'))
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Gamma')
   })
 })
 

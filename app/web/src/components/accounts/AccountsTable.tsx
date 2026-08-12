@@ -103,7 +103,8 @@ export interface AccountsTableProps {
   rebuilding: boolean | null
   /** The curve the chart isolates. Clicking a row toggles it. */
   selected: string | null
-  onSelect: (account: string) => void
+  /** The preview, **set** and never toggled: `null` puts every curve back. */
+  onSelect: (account: string | null) => void
   /** The label, and only the label, opens the account's sheet. */
   onOpen: (account: string) => void
   sort: Sort | null
@@ -169,24 +170,33 @@ export function AccountsTable({
           // a gesture with no subject, on a line that would nonetheless read as
           // chosen. The swatch says the same thing: no colour, no curve.
           const selectable = colour !== null
+          // **One gesture per row**: pointing at it *previews* — the curve lifts
+          // out of the others — and clicking it *opens*, anywhere along the row.
+          // The first spelling put two clicks on one row, the row isolating the
+          // curve and the name opening the panel, which is why it then had to
+          // make the two hover affordances tell each other apart. There is one
+          // thing to do here, so there is one thing to show.
+          //
+          // Two measured defects left with it: the label's `hover:text-primary`
+          // was a no-op — the preset gives `--primary` the value of
+          // `--foreground`, black on black in the light theme and white on white
+          // in the dark — and the name carried the browser's `cursor: default`
+          // inside a row carrying `pointer`, so the affordance *lost* its
+          // pointer over the very word that opened the panel.
+          //
+          // A preview that only answers to a mouse is no preview at all for a
+          // keyboard, so the name's focus does what the pointer's hover does. A
+          // finger has neither and taps straight through to the panel, which is
+          // the gesture carrying the figures anyway.
           return (
             <TableRow
               key={row.id}
               aria-selected={selectable ? selected === row.id : undefined}
-              tabIndex={selectable ? 0 : undefined}
-              onClick={selectable ? () => onSelect(row.id) : undefined}
-              onKeyDown={
-                selectable
-                  ? (event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        onSelect(row.id)
-                      }
-                    }
-                  : undefined
-              }
+              onClick={() => onOpen(row.id)}
+              onMouseEnter={selectable ? () => onSelect(row.id) : undefined}
+              onMouseLeave={selectable ? () => onSelect(null) : undefined}
               className={cn(
-                selectable && 'cursor-pointer hover:bg-muted/60',
+                'cursor-pointer hover:bg-muted/60',
                 selected === row.id && 'bg-muted',
               )}
             >
@@ -199,12 +209,17 @@ export function AccountsTable({
                       style={{ backgroundColor: colour }}
                     />
                   )}
-                  {/* The **label**, and only the label, opens the sheet. The
-                      click has to be kept off the row, or the one gesture would
-                      fire the other on its way out. */}
+                  {/* The row is the click target; this stays a **button** so the
+                      panel has a name in the tab order and a keyboard way in —
+                      a `<tr>` given a `tabIndex` is announced as neither. It
+                      does what the row does, so the propagation is stopped only
+                      to keep one call per gesture. Its focus carries the preview
+                      the pointer gets from hovering. */}
                   <button
                     type="button"
-                    className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                    className="font-medium text-foreground underline-offset-4 hover:underline"
+                    onFocus={selectable ? () => onSelect(row.id) : undefined}
+                    onBlur={selectable ? () => onSelect(null) : undefined}
                     onClick={(event) => {
                       event.stopPropagation()
                       onOpen(row.id)
