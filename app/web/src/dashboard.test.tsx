@@ -204,6 +204,29 @@ describe('during the reconstruction', () => {
     expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
   })
 
+  it('does not announce a rebuild for a member that is merely not computable', async () => {
+    // The ordinary v4 arrival: no `DEPOSIT` anywhere, so since #708 the
+    // cash-derived four are `NULL` and `twr_index` with them. The euro figure
+    // survives — it is the movement of `gain_absolu`, written always — while
+    // the percentage genuinely is not computable. Read through `?.` alone, an
+    // absent **member** was indistinguishable from an absent `ytd`, and the
+    // head announced a rebuild that had already finished, permanently, to
+    // exactly the population #708's per-field rule exists to serve. An absent
+    // member takes the bare em dash: *there is nothing to compute* (ADR-0016).
+    server.use(
+      totalsOf({ ytd: { gain: 40.69, twr: null } }),
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: false }))),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    await waitFor(() => expect(head).toHaveTextContent(/40,69/))
+    expect(figure('TWR')).toHaveTextContent('—')
+    // Neither sentence, on either figure — both would be false here.
+    expect(screen.queryByText(/historique pas encore reconstruit/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/rien d’enregistré avant le 1ᵉʳ janvier/)).not.toBeInTheDocument()
+  })
+
   it('says nothing about the ledger while the runtime has not answered', async () => {
     // The same rule the advisories follow (#709): asserting *your ledger does
     // not go back that far* takes a **positive** observation of this process,

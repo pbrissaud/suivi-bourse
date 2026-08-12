@@ -1157,6 +1157,25 @@ either one alone produces a wrong figure rather than a missing one:
   positions included, 13,95 € on the real portfolio. Absorbing the fee into
   `net_contributed` is **explicitly refused** — the money left the owner's
   pocket, and `gain_absolu` was the only figure that knew.
+- **The year-to-date gain is the movement of `gain_absolu`**, not the movement
+  of value minus the movement of contributions. The two are one quantity —
+  `gain_absolu = total_value − net_contributed`, so the difference of the
+  differences *is* the difference of the gains — and the spelling is chosen for
+  where they stop being **equally defined**: this ticket makes the two
+  subtracted terms `NULL` on an install with no cash event, while `gain_absolu`
+  is written always. Written the other way round, an ordinary v4 arrival — v4
+  having no cash events at all — got a **present** `ytd` object with two `null`
+  members, and the head printed *the history is not rebuilt that far back* under
+  a portfolio whose history is complete, permanently, for exactly the population
+  the per-field rule exists to serve. `twr` has no such repair and needs none:
+  `twr_index` follows `total_value`, so the percentage genuinely is not
+  computable there, and **the head owes an absent member an em dash rather than
+  a sentence** — *there is nothing to compute* (ADR-0016) is the truth about a
+  time-weighted return with no cash ledger under it. That is the second half:
+  `build_portfolio_totals` already said *an unwritable member stays a `null`
+  member inside a present object*, and `DashboardHead` read both through `?.`
+  alone, which collapses them. `ytd: null` still means, and only means, *the
+  series does not reach the base*.
 - **A gauge whose field is absent is not published**, and it is a *retract*:
   a field that stops being writable has its series removed. The seven
   `sb_portfolio_*` are built **outside the registry** and join it on their first

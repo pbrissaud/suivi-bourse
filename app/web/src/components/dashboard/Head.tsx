@@ -155,6 +155,19 @@ export function DashboardHead() {
 
   const ytdGain = totalsRow?.ytd?.gain ?? null
   const ytdTwr = totalsRow?.ytd?.twr ?? null
+  // `ytd` **absent** and a `ytd` **member** absent are two pieces of news, and
+  // the server says so in two shapes on purpose (`build_portfolio_totals`: *an
+  // unwritable member stays a null member inside a present object*). Read
+  // through `?.` alone the two collapse, and the sentences below — which are
+  // about a history not rebuilt that far back — get printed for a figure that
+  // simply is not computable on this install. Since #708 that is not a corner
+  // case: an install with no cash event has a `twr_index` of `NULL` for ever,
+  // so the collapse would make the sentence permanent. An absent member takes
+  // the bare em dash, which by ADR-0016 says *there is nothing to compute* —
+  // the truth about a time-weighted return with no cash ledger under it.
+  const ytdAbsent = (totalsRow?.ytd ?? null) === null
+  const ytdAbsence = (member: number | null) =>
+    member === null && ytdAbsent ? `${ABSENT} — ${ytdPending}` : ABSENT
   // `ytd: null` has **two** causes and they are not the same sentence (#763):
   // the reconstruction has not reached January, **or** the portfolio is younger
   // than the year — a first event in March, and no day on or before
@@ -223,7 +236,7 @@ export function DashboardHead() {
             {ytdGain === null
               ? // The one figure the rebuild degrades, and it says which figure
                 // and why — the head above it is exact from the first cycle.
-                `${ABSENT} — ${ytdPending}`
+                ytdAbsence(ytdGain)
               : t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
           </p>
         )}
@@ -311,7 +324,7 @@ export function DashboardHead() {
                 yet rebuilt that far — nameable and repairable. */}
             <p className="text-sm text-muted-foreground">
               {ytdTwr === null
-                ? `${ABSENT} — ${ytdPending}`
+                ? ytdAbsence(ytdTwr)
                 : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
             </p>
           </Stat>

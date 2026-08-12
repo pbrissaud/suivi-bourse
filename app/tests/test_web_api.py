@@ -860,10 +860,15 @@ def test_the_year_to_date_pins_a_positive_gain_against_a_negative_twr(tmp_path):
     """
     def seed(opened):
         # The close of the previous exercise — the base the delta counts from.
+        # `gain_absolu` is `total_value − net_contributed` on every row the perf
+        # job writes, so a seed that left the default standing would describe a
+        # row the job cannot produce.
         seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     payload = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()
@@ -885,11 +890,14 @@ def test_the_year_to_date_base_is_the_close_of_the_previous_year(tmp_path):
     """
     def seed(opened):
         seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 1, 2), total_value=12000.00,
-                    net_contributed=5000.00, twr_index=176.00)
+                    net_contributed=5000.00, gain_absolu=7000.00,
+                    twr_index=176.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     ytd = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
@@ -921,15 +929,55 @@ def test_a_base_before_the_thirty_first_still_counts(tmp_path):
     """
     def seed(opened):
         seed_totals(opened, day=date(2025, 12, 29), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     ytd = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
             'totals']['ytd']
 
     assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+
+
+def test_the_year_to_date_gain_survives_an_install_with_no_cash_event(tmp_path):
+    """The ordinary v4 arrival, and the sentence #708 nearly made permanent.
+
+    v4 has no cash events at all, so a ledger imported from one carries no
+    `DEPOSIT` and no `WITHDRAWAL` — and since #708 that is exactly the install
+    whose `total_value`, `net_contributed` and `twr_index` are `NULL` by the
+    per-field rule. Subtracting the movement of two `NULL` columns gave a
+    **present** `ytd` object with two `null` members, which the head read as
+    *the history is not rebuilt that far back* — under a portfolio whose history
+    is complete, permanently, and only for the population the rule was written
+    to serve.
+
+    `gain_absolu` is written **always** (ADR-0018) and *is* value minus
+    contributions, so the euro figure is not merely rescued here: it is the same
+    quantity, computed from the one column that survives. The percentage is not,
+    and must not be faked — `twr_index` follows `total_value`, so a `null` there
+    is the truth and the head owes it an em dash rather than a sentence.
+    """
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 12, 31), total_value=None,
+                    cash_balance=None, net_contributed=None, xirr=None,
+                    twr_index=None, holdings_value=10000.00,
+                    gain_absolu=5000.00)
+        seed_totals(opened, day=date(2026, 3, 2), total_value=None,
+                    cash_balance=None, net_contributed=None, xirr=None,
+                    twr_index=None, holdings_value=10500.00,
+                    gain_absolu=5040.69)
+
+    ytd = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
+            'totals']['ytd']
+
+    assert ytd is not None
+    assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+    # And the percentage stays absent rather than being invented from the euro.
+    assert ytd['twr'] is None
 
 
 def test_portfolio_totals_storage_failure_is_503_problem_json(tmp_path):
