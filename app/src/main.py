@@ -2051,17 +2051,23 @@ class SuiviBourseMetrics:
 
         Guarded so an error never kills the scheduler thread.
         """
+        horizons: Dict[str, Optional[date]] = {}
         try:
-            self.update_account_metrics()
+            horizons = self.update_account_metrics()
             verdict, error = runtime_state.PERF_RAN, None
         except Exception as e:
             app_logger.error(f"Failed to update account metrics: {e}")
             verdict, error = runtime_state.PERF_FAILED, str(e)
-        # Recorded rather than inferred, same as every other job's last pass —
-        # but with nothing beside it any more: a run that is unconditional has
-        # no decision to explain.
+        # Recorded rather than inferred, same as every other job's last pass. The
+        # horizons ride along (issue #708) rather than being a record of their
+        # own: they are *what this pass wrote from*, so a reader taking them from
+        # one pass and the verdict from another would be reading a cache that no
+        # longer exists. A failed pass publishes none, which is the honest state —
+        # the previous cycle's cache still stands but this cycle established
+        # nothing.
         self.recorder.record_perf(runtime_state.PerfRecord(
-            at=datetime.now(timezone.utc), verdict=verdict, error=error))
+            at=datetime.now(timezone.utc), verdict=verdict, error=error,
+            horizons=horizons))
 
     def ingest(self, import_files: bool = True):
         """Import the drop folder, replay the ledger, reconcile the scrape jobs.
@@ -2705,8 +2711,16 @@ class SuiviBourseMetrics:
         """Shared value + perf fields for a metric point built from a DailyPerf.
 
         twr_index is per-day; xirr / gain_absolu land only on the latest point.
+
+        **The per-field rule is applied here, once** (issue #708): a field the
+        entity may not publish is written as ``None`` — therefore as ``NULL``,
+        therefore as an absent Prometheus series — rather than as a zero that
+        every ``sum()`` would count. One site for the two tables, because the
+        rule is by *field* and the account and the global carry the same seven.
         """
-        return dict(
+        writable = performance.writable_fields(
+            perf.has_cash_ledger, perf.has_external_flow)
+        values = dict(
             cash_balance=dp.cash_balance,
             holdings_value=dp.holdings_value,
             total_value=dp.total_value,
@@ -2715,12 +2729,32 @@ class SuiviBourseMetrics:
             xirr=perf.xirr if last else None,
             gain_absolu=perf.gain_absolu if last else None,
         )
+        return {name: (value if name in writable else None)
+                for name, value in values.items()}
 
     # ``_mark_perf_dirty`` and ``_consume_perf_dirty_from`` stood here (issue
     # #707). They were the backfill's and the perf job's two ends of one
     # watermark, and they leave together with the incremental window they
     # bounded: the whole series is recomputed and upserted every cycle, so there
     # is no tail to remember and nothing to re-arm when a write fails.
+
+    @staticmethod
+    def _holding_windows(timeline, account_id: str, symbols,
+                         today: date) -> Dict[str, Tuple[date, date]]:
+        """``{symbol: (first, last) day this account held it}`` — the horizon's
+        bound (issue #708).
+
+        The symbols this account never touched are simply absent: a line held on
+        another account constrains nothing here, and reading the whole ledger's
+        symbol set into every account's horizon is exactly how one slow
+        reconstruction would hold back an account that owns none of it.
+        """
+        windows = {}
+        for symbol in symbols:
+            window = timeline.holding_window(account_id, symbol, today)
+            if window is not None:
+                windows[symbol] = window
+        return windows
 
     @staticmethod
     def _spans(points, key) -> Dict[Any, Tuple[date, date]]:
@@ -2738,8 +2772,24 @@ class SuiviBourseMetrics:
             spans[identity] = (min(first, point.day), max(last, point.day))
         return spans
 
-    def update_account_metrics(self):
+    def update_account_metrics(self) -> Dict[str, Optional[date]]:
         """Rebuild the daily ``account_metrics`` + ``portfolio_totals`` cache.
+
+        Returns ``{account: horizon}`` — the first day each account's figures were
+        written from, ``None`` where nothing constrained it (issue #708). It is
+        the one thing this method knows that no query can recover, which is why
+        it is returned and published on the runtime record rather than derived
+        from the rows: the rows say where the series *starts*, and an account
+        whose first activity is later than its horizon would answer the wrong
+        question.
+
+        **The series is written on a sliding horizon** (spec #695 § 11): the
+        figures of today are right from the first cycle, and the page fills in
+        towards the left as the reconstruction walks back. Below the horizon
+        nothing at all is written — not a zero, not a ``NULL`` row — because a
+        held position with no price yet would be counted as worth nothing beside a
+        cash ledger that has already paid for it, and a time-weighted index chains
+        that crater forward for the whole cycle.
 
         **Integral and unconditional** (issue #707, ADR-0011): every cycle
         recomputes the whole series — earliest event date → today, one point per
@@ -2752,7 +2802,9 @@ class SuiviBourseMetrics:
 
         **Its only inputs are the store and the clock.** The events come from
         ``ledger.read_events`` and the declaration from
-        ``accounts.declared_portfolio``, not from the published snapshot — the
+        ``accounts.read_accounts`` — every declared row since #708, the opt-in
+        guard's ``declared_portfolio`` having gone with it — not from the
+        published snapshot: the
         snapshot's *identity* was the third gate signal, and reading it here
         would leave the cache's freshness tied to the configuration's
         publication rhythm rather than to what the store holds. What it costs is
@@ -2799,23 +2851,31 @@ class SuiviBourseMetrics:
         if not self.base_currency:
             app_logger.debug(
                 "No base currency answered yet: no performance series is written")
-            return
+            return {}
 
         store_handle = self.config_manager.store
         events = ledger.read_events(store_handle)
-        # The opt-in guard #708 replaces with a per-field rule. Left standing
-        # here on purpose: it is a *domain* gate — is there a declaration to
-        # report on — and not a change-detection one, so it is not what this
-        # ticket removes.
-        portfolio = accounts_module.declared_portfolio(store_handle)
+        # **The opt-in guard is gone** (issue #708). It read
+        # ``accounts.declared_portfolio``, whose ``None`` means *"nothing was
+        # declared beyond the seed"* — and ADR-0013 seeds a ``default`` row at
+        # the creation of the schema and never removes it, so the condition had
+        # lost its subject: a single-account install, the ordinary shape of a v4
+        # coming over, had **no performance series written at all** while the
+        # guard read as a deliberate opt-in. Every account row is computed now,
+        # and what replaces the guard is the per-field rule
+        # (:func:`performance.writable_fields`), applied in :meth:`_value_kwargs`.
+        # An account the ledger never names produces no daily point, so it costs
+        # a replay of nothing and the prune takes its days away.
+        declared = accounts_module.read_accounts(store_handle)
 
         today = datetime.now(timezone.utc).date()
         acc_points: List[AccountMetricPoint] = []
         total_points: List[PortfolioTotalPoint] = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
+        horizons: Dict[str, Optional[date]] = {}
         total = None
 
-        if portfolio is not None and events:
+        if declared and events:
             timeline = EventAggregator().replay(events)
 
             # Injected price source: per-symbol daily closes, forward-filled. The
@@ -2856,18 +2916,49 @@ class SuiviBourseMetrics:
 
             start = min(e.date for e in events)
 
+            # --- the sliding horizon (issue #708) ----------------------------
+            # The oldest **usable** price of each symbol, which is the oldest day
+            # ``price_at`` can answer for: ``price_series`` is converted-only, so
+            # a symbol quoted in a currency whose pair does not resolve is absent
+            # here while being perfectly well quoted. That is the second half of
+            # ``settled`` below — an absence no cycle of the backward pass will
+            # ever repair, as opposed to the reconstruction simply not having
+            # reached that far yet.
+            oldest_priced = {symbol: pairs[0][0]
+                             for symbol, pairs in price_pairs.items() if pairs}
+            settled = set(carried) | {
+                symbol for symbol in first_quoted if symbol not in oldest_priced}
+            horizons = {
+                account.id: performance.account_horizon(
+                    self._holding_windows(timeline, account.id, symbols, today),
+                    oldest_priced, settled)
+                for account in declared
+            }
+
+            def _from(account_id: str) -> date:
+                """Where this account's series begins: its horizon, never before
+                the ledger's own first day."""
+                horizon = horizons[account_id]
+                return start if horizon is None else max(start, horizon)
+
             per_account = {
                 account.id: performance.compute_account(
-                    timeline, account, symbols, price_at, start, today, carried,
-                    first_quoted)
-                for account in portfolio.accounts
+                    timeline, account, symbols, price_at, _from(account.id),
+                    today, carried, first_quoted)
+                for account in declared
             }
+            # The global takes the **max** of the horizons: it is written only
+            # where every account is, since a sum missing one of its terms draws
+            # a step nothing caused. An account with no horizon at all does not
+            # raise it — it has nothing waiting for a price.
+            bounds = [horizon for horizon in horizons.values()
+                      if horizon is not None]
             total = performance.compute_portfolio_total(
-                timeline, portfolio.accounts, symbols, price_at, start, today,
-                per_account)
+                timeline, declared, symbols, price_at,
+                max([start] + bounds), today, per_account)
 
             # --- account_metrics --------------------------------------------
-            for account in portfolio.accounts:
+            for account in declared:
                 perf = per_account[account.id]
                 for i, dp in enumerate(perf.daily):
                     last = i == len(perf.daily) - 1
@@ -2916,14 +3007,30 @@ class SuiviBourseMetrics:
 
         # Permissive cash policy: a negative balance is allowed (it keeps a user
         # who adds accounts without rewriting their DEPOSIT history running), but
-        # it is worth a non-blocking warning.
+        # it is worth a non-blocking warning. ``None`` is not negative: an account
+        # with no cash ledger does not publish a balance at all since #708, and
+        # warning about the one it does not have would name the *ordinary* state
+        # the per-field rule exists to keep silent.
         for acc, p in latest_by_account.items():
-            if p.cash_balance < 0:
+            if p.cash_balance is not None and p.cash_balance < 0:
                 app_logger.warning(
                     f"Account '{acc}' has a negative cash balance "
                     f"({p.cash_balance:.2f}) — insufficient recorded cash")
 
         # Prometheus: expose the latest (today) value per account + global.
+        #
+        # **What a cycle publishes, and nothing more** (issue #708). The two
+        # retracts below are the same gesture ``retain_positions`` makes on the
+        # replay's side, and they are the row-level half of *"a gauge whose field
+        # is absent is not published"*: the per-field rule lives inside
+        # :meth:`PrometheusExporter.update_account`, which is only ever reached
+        # for a row this cycle produced. An account that stops producing rows —
+        # its import forgotten, its events withdrawn — is never visited, so
+        # without the retract its seven gauges would keep the last values they
+        # ever had for the life of the process, while ``prune_account_metrics``
+        # took its days out of the store in this very transaction. A stale real
+        # figure is worse than the zero the rule was written against: a scraper
+        # has no way to tell it from a current one.
         if self.prometheus is not None:
             for acc, p in latest_by_account.items():
                 try:
@@ -2931,11 +3038,25 @@ class SuiviBourseMetrics:
                 except Exception as e:
                     app_logger.error(
                         f"Failed to update Prometheus account metrics for {acc}: {e}")
-            if total is not None and total.daily:
-                try:
-                    self.prometheus.update_portfolio(total_points[-1])
-                except Exception as e:
-                    app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
+            try:
+                self.prometheus.retain_accounts(latest_by_account.keys())
+            except Exception as e:
+                app_logger.error(f"Failed to retract Prometheus accounts: {e}")
+            try:
+                # ``None`` says *this cycle produced no global series at all*,
+                # which is a different call from a point whose fields are absent
+                # — and it is the one an emptied ledger makes.
+                self.prometheus.update_portfolio(
+                    total_points[-1]
+                    if total is not None and total.daily else None)
+            except Exception as e:
+                app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
+
+        # The horizons, handed back rather than stored: ``/api/runtime`` publishes
+        # them from **process memory** (issue #708), and the record the perf job
+        # writes is where a figure computed by a job becomes readable without a
+        # query. They are the answer of *this* cycle, so they travel with it.
+        return horizons
 
     # ``reload()`` used to live here, assigning ``self.shares`` from a forced
     # load and thereby bypassing validation entirely — the one path that could

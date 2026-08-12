@@ -238,16 +238,23 @@ class AccountMetricPoint:
     ``account_currency`` is **gone** with ``Account.currency`` (issue #702,
     ADR-0002): an account has no currency of its own, there is one reporting
     currency for the install, and every figure below is already in it.
+
+    **Every figure is optional since #708**, and the shape is the per-field rule
+    (:func:`performance.writable_fields`) made structural: ``holdings_value`` and
+    ``gain_absolu`` are written for everybody, the cash-derived four only where
+    the account has a cash ledger, ``xirr`` only where it has an external flow.
+    ``None`` is written as ``NULL`` and never as a zero — a zero would make *"no
+    ledger"* and *"a ledger at zero"* the same row.
     """
     account: str
     account_type: str
     day: date
-    cash_balance: float
-    holdings_value: float
-    total_value: float
-    net_contributed: float
-    # Money-weighted performance (only present once computable; xirr/gain_absolu
-    # require at least one external flow, so they may be absent).
+    cash_balance: Optional[float] = None
+    holdings_value: Optional[float] = None
+    total_value: Optional[float] = None
+    net_contributed: Optional[float] = None
+    # Money-weighted performance (only present once computable; xirr requires at
+    # least one external flow, so it may be absent).
     xirr: Optional[float] = None
     gain_absolu: Optional[float] = None
     twr_index: Optional[float] = None
@@ -266,12 +273,17 @@ class PortfolioTotalPoint:
     they do not have. What gates it now is the reporting currency being answered
     at all — and that gate is above, on the whole perf recompute, since none of
     these figures has a unit until it is.
+
+    Optional field by field like its per-account twin, and for one reason more:
+    the global figure is written only where it is writable for **every** account
+    (ADR-0018), so a single account with no cash ledger takes the global
+    ``total_value`` away while ``holdings_value`` and ``gain_absolu`` stay.
     """
     day: date
-    cash_balance: float
-    holdings_value: float
-    total_value: float
-    net_contributed: float
+    cash_balance: Optional[float] = None
+    holdings_value: Optional[float] = None
+    total_value: Optional[float] = None
+    net_contributed: Optional[float] = None
     xirr: Optional[float] = None
     gain_absolu: Optional[float] = None
     twr_index: Optional[float] = None
@@ -335,6 +347,50 @@ class Timeline:
             return None
         state = self.state_at(snaps, target_date)
         return state.to_dict() if state is not None else None
+
+    def holding_window(self, account: str, symbol: str,
+                       today: date) -> Optional[Tuple[date, date]]:
+        """``(first day held, last day held)`` for one ``(account, symbol)``.
+
+        The last day is ``today`` while the line stands, the day it emptied
+        otherwise — and that day **counts as held**, since the price of the day
+        one sells is part of the history one held (the reading
+        :func:`carrying.holding_bounds` already makes of an exit). ``None`` when
+        the position never carried a quantity at all, which is the shape a
+        dividend-only row leaves behind.
+
+        Per ``(account, symbol)`` and deliberately so: it is what bounds the perf
+        **horizon** (issue #708, :func:`performance.account_horizon`), which is
+        per account, whereas :func:`main.holding_windows` answers the same
+        question for the *backfill*, whose unit is the symbol — a price belongs to
+        no account (#700). Two questions, two granularities, and collapsing them
+        would hold one account at another's dates.
+
+        A buy-back is answered by the position standing again: the scan keeps the
+        **last** emptying and forgets the earlier ones, so a line bought in 2020,
+        sold in 2022 and bought back in 2024 is held from 2020 through *today*.
+        That is the same simplification the backfill window makes, and it is the
+        conservative one here — the flat years are counted as held rather than
+        skipped.
+        """
+        snaps = self.snapshots.get((account, symbol))
+        if not snaps:
+            return None
+        acquired: Optional[date] = None
+        emptied: Optional[date] = None
+        holding = False
+        for day, state in snaps:
+            if state.quantity:
+                if acquired is None:
+                    acquired = day
+                holding = True
+                emptied = None
+            elif holding:
+                holding = False
+                emptied = day
+        if acquired is None:
+            return None
+        return acquired, (today if holding else emptied)
 
     def at(self, target_date: date) -> List[dict]:
         """Every position's state at ``target_date`` (forward-filled).

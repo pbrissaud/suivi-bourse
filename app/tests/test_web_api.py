@@ -860,10 +860,15 @@ def test_the_year_to_date_pins_a_positive_gain_against_a_negative_twr(tmp_path):
     """
     def seed(opened):
         # The close of the previous exercise — the base the delta counts from.
+        # `gain_absolu` is `total_value − net_contributed` on every row the perf
+        # job writes, so a seed that left the default standing would describe a
+        # row the job cannot produce.
         seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     payload = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()
@@ -885,11 +890,14 @@ def test_the_year_to_date_base_is_the_close_of_the_previous_year(tmp_path):
     """
     def seed(opened):
         seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 1, 2), total_value=12000.00,
-                    net_contributed=5000.00, twr_index=176.00)
+                    net_contributed=5000.00, gain_absolu=7000.00,
+                    twr_index=176.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     ytd = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
@@ -921,15 +929,55 @@ def test_a_base_before_the_thirty_first_still_counts(tmp_path):
     """
     def seed(opened):
         seed_totals(opened, day=date(2025, 12, 29), total_value=10000.00,
-                    net_contributed=5000.00, twr_index=160.00)
+                    net_contributed=5000.00, gain_absolu=5000.00,
+                    twr_index=160.00)
         seed_totals(opened, day=date(2026, 3, 2), total_value=16713.69,
-                    net_contributed=11673.00, twr_index=158.00)
+                    net_contributed=11673.00, gain_absolu=5040.69,
+                    twr_index=158.00)
 
     ytd = build_client(
         tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
             'totals']['ytd']
 
     assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+
+
+def test_the_year_to_date_gain_survives_an_install_with_no_cash_event(tmp_path):
+    """The ordinary v4 arrival, and the sentence #708 nearly made permanent.
+
+    v4 has no cash events at all, so a ledger imported from one carries no
+    `DEPOSIT` and no `WITHDRAWAL` — and since #708 that is exactly the install
+    whose `total_value`, `net_contributed` and `twr_index` are `NULL` by the
+    per-field rule. Subtracting the movement of two `NULL` columns gave a
+    **present** `ytd` object with two `null` members, which the head read as
+    *the history is not rebuilt that far back* — under a portfolio whose history
+    is complete, permanently, and only for the population the rule was written
+    to serve.
+
+    `gain_absolu` is written **always** (ADR-0018) and *is* value minus
+    contributions, so the euro figure is not merely rescued here: it is the same
+    quantity, computed from the one column that survives. The percentage is not,
+    and must not be faked — `twr_index` follows `total_value`, so a `null` there
+    is the truth and the head owes it an em dash rather than a sentence.
+    """
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 12, 31), total_value=None,
+                    cash_balance=None, net_contributed=None, xirr=None,
+                    twr_index=None, holdings_value=10000.00,
+                    gain_absolu=5000.00)
+        seed_totals(opened, day=date(2026, 3, 2), total_value=None,
+                    cash_balance=None, net_contributed=None, xirr=None,
+                    twr_index=None, holdings_value=10500.00,
+                    gain_absolu=5040.69)
+
+    ytd = build_client(
+        tmp_path, seed=seed).get('/api/portfolio-totals').get_json()[
+            'totals']['ytd']
+
+    assert ytd is not None
+    assert ytd['gain'] == pytest.approx(40.69, abs=1e-9)
+    # And the percentage stays absent rather than being invented from the euro.
+    assert ytd['twr'] is None
 
 
 def test_portfolio_totals_storage_failure_is_503_problem_json(tmp_path):
@@ -1828,6 +1876,34 @@ def test_a_sold_line_publishes_its_backward_progress_and_says_it_is_not_polled(
     assert row['next_run_state'] == 'not_held'
     assert row['backward']['written'] == 42
     assert body['backfill']['in_scope'] == 1
+
+
+def test_the_runtime_publishes_the_perf_horizon_of_each_account(tmp_path):
+    """Criterion 9 of #708, and it obeys this route's one rule.
+
+    The horizon is computed inside the recompute and written down nowhere — the
+    rows say where a series *starts*, which is a different question the moment an
+    account's first activity is later than its horizon. So it rides on the perf
+    record, and the route reads it from **process memory** like everything else
+    here: it answers while the store is unreadable, which is exactly when *"the
+    page is filling in towards the left"* is the thing a reader needs told.
+
+    The shape is the one ``lib/api.ts`` announced before either half was written
+    — ``accounts: [{ account, horizon }]``, beside ``symbols`` — the same way
+    ``rebuilding`` and ``/api/portfolio-totals`` arrived.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+    runtime.recorder.record_perf(runtime_state.PerfRecord(
+        at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
+        verdict=runtime_state.PERF_RAN,
+        horizons={'pea': date(2021, 6, 3), 'cto': None}))
+
+    body = client.get('/api/runtime').get_json()
+
+    assert body['accounts'] == [{'account': 'cto', 'horizon': None},
+                                {'account': 'pea', 'horizon': '2021-06-03'}]
 
 
 def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):

@@ -123,18 +123,32 @@ def test_twr_neutral_to_external_flow():
 # --------------------------------------------------------------------------- #
 # External vs internal classification
 # --------------------------------------------------------------------------- #
-def test_no_external_flow_no_xirr_no_gain():
-    """Only internal flows (BUY) => no external flow => no xirr, no gain_absolu."""
+def test_no_external_flow_takes_the_xirr_and_leaves_the_gain():
+    """Only internal flows (BUY): no xirr, but a gain — ADR-0018, issue #708.
+
+    The opt-in guard travelled with ``xirr`` by accident and took ``gain_absolu``
+    with it. With no ``DEPOSIT`` at all, ``cash = −invested`` and
+    ``net_contributed = 0``, so ``gain_absolu = holdings − invested`` is **exact**
+    — here 120 − 100 — and it is the only figure an owner who never recorded a
+    deposit can still be told. What genuinely has no meaning is the money-weighted
+    return: there is no flow to weight.
+    """
     events = [
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
               unit_price=100.0, account="PEA"),
     ]
     tl = EventAggregator().replay(events)
-    price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0}})
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 120.0}})
     perf = compute_account(tl, PEA, {"AAPL"}, price_at,
                            start=date(2024, 1, 1), today=date(2024, 1, 1))
     assert perf.xirr is None
-    assert perf.gain_absolu is None
+    assert perf.gain_absolu == pytest.approx(20.0)
+    # And the per-field rule reads the two conditions off the same result.
+    assert perf.has_cash_ledger is False
+    assert perf.has_external_flow is False
+    assert performance.writable_fields(
+        perf.has_cash_ledger, perf.has_external_flow) == frozenset(
+            {'holdings_value', 'gain_absolu'})
 
 
 def test_a_valued_grant_contributes_the_price_its_event_declares():
@@ -317,6 +331,361 @@ def test_portfolio_total_aggregates_the_accounts_it_is_given():
     assert total is not None
     assert total.daily[-1].total_value == pytest.approx(1500.0)
     assert total.gain_absolu == pytest.approx(0.0)  # 1500 terminal - 1500 contributed
+
+
+# --------------------------------------------------------------------------- #
+# The sliding horizon (issue #708, spec #695 § 11)
+#
+#   horizon(account) = 1 + max over s of min(oldest price(s) − 1,
+#                                            last held day(s))
+#
+# Pure: the three inputs are a mapping each, so the whole of the rule is testable
+# without a store, a clock or a backfill. A window is ``(first, last)`` day held.
+# --------------------------------------------------------------------------- #
+TODAY = date(2026, 8, 12)
+LONG_HELD = (date(2019, 1, 1), TODAY)
+
+
+def test_the_horizon_is_the_day_after_the_last_unpriced_held_day():
+    """The formula itself, on one symbol still held.
+
+    Bought in 2019, reconstructed as far back as 2021-06-03: every day from
+    there on has a price, and the first writable day is that one — never
+    2021-06-02, whose valuation would count the position as worth nothing beside
+    a cash ledger that had already paid for it.
+    """
+    horizon = performance.account_horizon(
+        {"AAPL": LONG_HELD}, {"AAPL": date(2021, 6, 3)})
+
+    assert horizon == date(2021, 6, 3)
+
+
+def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
+    """The window's **lower** end, and the case that makes it load-bearing.
+
+    A backward pass never overshoots the first acquisition (ADR-0004), so a
+    symbol's oldest price *is* its acquisition day once its reconstruction has
+    concluded. Without this end of the bound the formula would take the horizon
+    of a portfolio that bought a new line this morning to *this morning* — every
+    year it owns, gone, on the ordinary gesture of buying something.
+    """
+    assert performance.account_horizon(
+        {"NEW": (date(2026, 6, 1), TODAY)},
+        {"NEW": date(2026, 6, 1)}) is None
+    # …and a line bought yesterday does not blank an old line's history either.
+    assert performance.account_horizon(
+        {"OLD": LONG_HELD, "NEW": (date(2026, 6, 1), TODAY)},
+        {"OLD": date(2019, 1, 1), "NEW": date(2026, 6, 1)}) is None
+    assert performance.account_horizon({}, {"AAPL": date(2019, 1, 1)}) is None
+
+
+def test_the_horizon_is_bounded_by_each_symbols_holding_window():
+    """A line sold in 2022 whose backfill is only starting does not hold the
+    account at today — criterion 1, and the reason the bound exists.
+
+    Read literally as *"the most recent of the oldest available prices"*, the
+    sold symbol's oldest available price is dated this year and would pin the
+    **whole account** at today, while it constrains no day after its last exit.
+    ADR-0009 driving the backfill from the replay is what made the case ordinary:
+    a position sold four years ago is reconstructed, and its reconstruction
+    starts from the present.
+    """
+    horizon = performance.account_horizon(
+        {"SOLD": (date(2020, 3, 2), date(2022, 5, 4)), "HELD": LONG_HELD},
+        {"SOLD": date(2026, 1, 10), "HELD": date(2019, 1, 1)})
+
+    # The day after the sold line's last held day, not the day after its oldest
+    # price — which would have been 2026-01-10, i.e. nothing before today.
+    assert horizon == date(2022, 5, 5)
+
+
+def test_a_symbol_with_no_price_at_all_blocks_every_day_it_was_held():
+    """The reconstruction's first minutes, seen from here.
+
+    Absent from ``oldest_priced`` means *no usable price anywhere*, and the whole
+    holding window is therefore unwritable. On a position still standing that is
+    tomorrow, which is the honest reading: today's figures are the first ones the
+    app can state, and it states them from the first cycle.
+    """
+    assert performance.account_horizon({"AAPL": LONG_HELD}, {}) == date(2026, 8, 13)
+    assert performance.account_horizon(
+        {"SOLD": (date(2020, 3, 2), date(2022, 5, 4))}, {}) == date(2022, 5, 5)
+
+
+def test_a_settled_symbol_does_not_contribute_to_the_horizon():
+    """Criterion 2, and it is the clause that keeps the horizon from freezing.
+
+    A backfill that has concluded on zero point, and a symbol quoted in a
+    currency that does not resolve, are absences no cycle will repair. Taken at
+    their word they would pin the horizon at today **for ever**; excluded, their
+    priceless days fall to :func:`carrying.carrying_price`, whose domain is
+    exactly *terminal symbol, any day*.
+    """
+    blocked = performance.account_horizon({"DEAD": LONG_HELD}, {})
+    settled = performance.account_horizon({"DEAD": LONG_HELD}, {},
+                                          settled={"DEAD"})
+
+    assert blocked == date(2026, 8, 13)
+    assert settled is None
+
+
+def test_a_settled_symbol_does_not_lift_another_symbols_bound():
+    """Excluding one symbol says nothing about the next: the max is over the
+    rest, so a live reconstruction still holds the account back."""
+    assert performance.account_horizon(
+        {"DEAD": LONG_HELD, "AAPL": LONG_HELD},
+        {"AAPL": date(2021, 6, 3)},
+        settled={"DEAD"}) == date(2021, 6, 3)
+
+
+def test_the_horizon_takes_the_latest_of_the_symbols_it_keeps():
+    """A *max*, not a min: the account is writable only where **every** symbol
+    it holds is priced, since one unpriced line is enough to hollow the sum."""
+    assert performance.account_horizon(
+        {"A": LONG_HELD, "B": LONG_HELD},
+        {"A": date(2021, 6, 3), "B": date(2023, 2, 1)}) == date(2023, 2, 1)
+
+
+def test_the_horizon_bounds_where_the_series_starts():
+    """Through :func:`compute_account`: the caller raises ``start`` to it, and
+    below it nothing is computed — therefore nothing is written."""
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 3): 110.0}})
+
+    window = tl.holding_window("PEA", "AAPL", date(2024, 1, 4))
+    horizon = performance.account_horizon({"AAPL": window},
+                                          {"AAPL": date(2024, 1, 3)})
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at, start=horizon,
+                           today=date(2024, 1, 4))
+
+    assert window == (date(2024, 1, 1), date(2024, 1, 4))
+
+    assert horizon == date(2024, 1, 3)
+    assert [dp.date for dp in perf.daily] == [date(2024, 1, 3), date(2024, 1, 4)]
+    # No crater: the two days that had no price are not written at all, so the
+    # index is anchored on a day whose value is complete.
+    assert perf.daily[0].total_value == pytest.approx(1100.0)
+    assert perf.daily[0].twr_index == pytest.approx(100.0)
+
+
+def test_the_global_is_written_only_where_every_account_is():
+    """Criterion 4: ``portfolio_totals`` takes the **max** of the horizons.
+
+    Summing the accounts available on a day would draw a step nothing caused —
+    an account joining the sum as its own reconstruction reaches far enough
+    back, on the one page the product opens on. The consequence is accepted
+    rather than worked around: one slow account delays the whole home page.
+    """
+    cto = Account("CTO", "CTO", "My CTO")
+    tl = EventAggregator().replay([
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+    ])
+    price_at = _price_at({})
+    per_account = {
+        "PEA": compute_account(tl, PEA, set(), price_at, date(2024, 1, 1),
+                               date(2024, 1, 3)),
+        "CTO": compute_account(tl, cto, set(), price_at, date(2024, 1, 1),
+                               date(2024, 1, 3)),
+    }
+
+    # PEA has no horizon, CTO's is 2024-01-03: the max is what the global takes.
+    total = compute_portfolio_total(tl, [PEA, cto], set(), price_at,
+                                    date(2024, 1, 3), date(2024, 1, 3),
+                                    per_account)
+
+    assert [dp.date for dp in total.daily] == [date(2024, 1, 3)]
+    assert total.daily[0].total_value == pytest.approx(1500.0)
+
+
+# --------------------------------------------------------------------------- #
+# The per-field rule (issue #708, spec #695 § 11, ADR-0018)
+# --------------------------------------------------------------------------- #
+
+def test_the_rule_is_by_field_and_never_by_account():
+    """The table of spec #695 § 11, spelled once and read by both writers."""
+    assert performance.writable_fields(False, False) == frozenset(
+        {'holdings_value', 'gain_absolu'})
+    assert performance.writable_fields(True, False) == frozenset(
+        {'holdings_value', 'gain_absolu', 'cash_balance', 'total_value',
+         'net_contributed', 'twr_index'})
+    assert performance.writable_fields(True, True) == frozenset(
+        {'holdings_value', 'gain_absolu', 'cash_balance', 'total_value',
+         'net_contributed', 'twr_index', 'xirr'})
+    # An in-kind grant is an external flow with no cash event behind it: the
+    # money-weighted return has something to weight, the cash ledger does not
+    # exist.
+    assert performance.writable_fields(False, True) == frozenset(
+        {'holdings_value', 'gain_absolu', 'xirr'})
+
+
+def test_a_purchase_is_not_a_cash_event():
+    """The condition is a ``DEPOSIT``/``WITHDRAWAL``, never a debit.
+
+    Counting a purchase would put the rule back exactly where the defect is: a
+    ledger of purchases alone is the case it exists for, and it moves the balance
+    on every line.
+    """
+    tl = EventAggregator().replay([
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
+              unit_price=100.0, account="PEA"),
+    ])
+    perf = compute_account(tl, PEA, {"AAPL"}, _price_at({}),
+                           start=date(2024, 1, 1), today=date(2024, 1, 1))
+
+    assert perf.has_cash_ledger is False
+    # And the balance the replay computed is exactly the figure the rule keeps
+    # off the wire: minus what was invested, which labelled "total value" is the
+    # latent gain of somebody who never said where the money came from.
+    assert perf.daily[-1].cash_balance == pytest.approx(-100.0)
+
+
+def test_the_global_loses_its_cash_half_when_one_account_has_no_ledger():
+    """ADR-0018 seen from the other side: *a global figure is written only where
+    it is writable for every account*.
+
+    One account's ``cash_balance = −invested`` is **inside** the global sum, so a
+    global ``total_value`` carrying it is the very figure the per-field rule
+    exists to remove, at the level of the whole portfolio.
+    """
+    cto = Account("CTO", "CTO", "My CTO")
+    tl = EventAggregator().replay([
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=1,
+              unit_price=100.0, account="CTO"),
+    ])
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0}})
+    per_account = {
+        "PEA": compute_account(tl, PEA, {"AAPL"}, price_at, date(2024, 1, 1),
+                               date(2024, 1, 1)),
+        "CTO": compute_account(tl, cto, {"AAPL"}, price_at, date(2024, 1, 1),
+                               date(2024, 1, 1)),
+    }
+    total = compute_portfolio_total(tl, [PEA, cto], {"AAPL"}, price_at,
+                                    date(2024, 1, 1), date(2024, 1, 1),
+                                    per_account)
+
+    assert per_account["PEA"].has_cash_ledger is True
+    assert per_account["CTO"].has_cash_ledger is False
+    assert total.has_cash_ledger is False
+    # What survives is the pair every entity publishes.
+    assert total.daily[-1].holdings_value == pytest.approx(100.0)
+    assert total.gain_absolu == pytest.approx(0.0)
+
+
+def test_an_account_declared_and_never_used_does_not_veto_the_global():
+    """``all`` is folded over the accounts that **produce a series**.
+
+    An account with no event contributes nothing to the sum, so it has no figure
+    to make unwritable — and ADR-0013's seeded row would otherwise take the cash
+    half off every install that declared its accounts by hand.
+    """
+    cto = Account("CTO", "CTO", "My CTO")
+    tl = EventAggregator().replay([
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+    ])
+    price_at = _price_at({})
+    per_account = {
+        "PEA": compute_account(tl, PEA, set(), price_at, date(2024, 1, 1),
+                               date(2024, 1, 1)),
+        "CTO": compute_account(tl, cto, set(), price_at, date(2024, 1, 1),
+                               date(2024, 1, 1)),
+    }
+    total = compute_portfolio_total(tl, [PEA, cto], set(), price_at,
+                                    date(2024, 1, 1), date(2024, 1, 1),
+                                    per_account)
+
+    assert per_account["CTO"].daily == []
+    assert total.has_cash_ledger is True
+
+
+# --------------------------------------------------------------------------- #
+# The gain's fourth term (issue #708, ADR-0018)
+# --------------------------------------------------------------------------- #
+
+def test_the_four_terms_sum_to_the_absolute_gain_closed_positions_included():
+    """``Σ latent + Σ realized + Σ dividends + Σ transfer fees == gain_absolu``.
+
+    Measured at 13,95 € on the dev's real portfolio, over six ``DEPOSIT`` rows
+    carrying an *Apple Pay Top up* fee: the fee leaves the cash while
+    ``net_contributed`` records the gross, so it lands inside ``gain_absolu`` and
+    inside **none** of the three position terms. No position can carry it — it is
+    not an acquisition cost, not a disposal cost, not a dividend, and it belongs
+    to no security — so the shares page, whose header sums its rows, can never
+    show it.
+
+    On this ledger, with MSFT **sold out** and AAPL quoted at 100,00:
+
+        latente +197,00 · réalisée +47,00 · dividendes +12,00 · frais −2,25
+                                                       = gain_absolu 253,75
+    """
+    events = [
+        Event(date(2024, 1, 10), EventType.DEPOSIT, amount=1000.0, fee=1.50,
+              account="PEA"),
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=80.0, fee=3.0, account="PEA"),
+        Event(date(2024, 2, 1), EventType.BUY, "MSFT", "Microsoft", quantity=5,
+              unit_price=40.0, fee=1.0, account="PEA"),
+        Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple",
+              amount=12.0, account="PEA"),
+        Event(date(2024, 4, 1), EventType.SELL, "MSFT", "Microsoft", quantity=5,
+              unit_price=50.0, fee=2.0, account="PEA"),
+        Event(date(2024, 6, 1), EventType.WITHDRAWAL, amount=200.0, fee=0.75,
+              account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 15): 100.0}})
+
+    perf = compute_account(tl, PEA, {"AAPL", "MSFT"}, price_at,
+                           start=date(2024, 1, 10), today=date(2024, 6, 5))
+
+    # The three position terms, over **every** position the replay holds — the
+    # sold one included, which is where a header that folds its closed lines
+    # rather than hiding them comes from (ADR-0017).
+    positions = tl.current()
+    latent = sum(p['quantity'] * (price_at(p['symbol'], date(2024, 6, 5)) or 0.0)
+                 - p['cost_basis'] for p in positions)
+    realized = sum(p['realized_gain'] for p in positions)
+    dividends = sum(p['received_dividend'] for p in positions)
+    # The fourth: the fees a broker takes out of a *transfer*, signed as they
+    # enter the sum — negative, the money having left.
+    transfer_fees = -sum(e.fee or 0.0 for e in events
+                         if e.event_type in (EventType.DEPOSIT,
+                                             EventType.WITHDRAWAL))
+
+    assert latent == pytest.approx(197.0)
+    assert realized == pytest.approx(47.0)
+    assert dividends == pytest.approx(12.0)
+    assert transfer_fees == pytest.approx(-2.25)
+    assert perf.gain_absolu == pytest.approx(253.75)
+    assert (latent + realized + dividends + transfer_fees
+            == pytest.approx(perf.gain_absolu))
+
+
+def test_a_transfer_fee_is_never_absorbed_into_the_contributions():
+    """The refusal, pinned (issue #708, ADR-0018).
+
+    Absorbing the fee into ``net_contributed`` restores three terms and makes the
+    figure vanish from the product entirely. It is refused: the money left the
+    owner's pocket, and ``gain_absolu`` was the only figure that knew. So the
+    contribution stays the **gross** amount and the fee stays inside the gain.
+    """
+    tl = EventAggregator().replay([
+        Event(date(2024, 1, 10), EventType.DEPOSIT, amount=1000.0, fee=1.50,
+              account="PEA"),
+    ])
+    perf = compute_account(tl, PEA, set(), _price_at({}),
+                           start=date(2024, 1, 10), today=date(2024, 1, 10))
+
+    assert perf.daily[-1].net_contributed == pytest.approx(1000.0)
+    assert perf.daily[-1].cash_balance == pytest.approx(998.50)
+    # …and the gain is exactly minus the fee, which is the whole point.
+    assert perf.gain_absolu == pytest.approx(-1.50)
 
 
 def test_performance_module_has_no_infra_imports():

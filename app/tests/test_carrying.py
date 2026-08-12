@@ -555,20 +555,102 @@ def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
     assert total == pytest.approx(0.0)
 
 
-def test_the_perf_recompute_leaves_a_running_rebuild_alone(
+def test_a_symbol_waiting_for_a_rate_does_not_hold_the_horizon_back(
         store, declare_ledger, mocker):
-    """Same ledger, nothing attempted yet: the day stays hollow."""
+    """The second flavour of *settled* (issue #708, criterion 2).
+
+    Quoted, and not convertible: the backward pass can walk to the first
+    acquisition and every point it brings back will still carry
+    ``price_converted NULL``. Blocking on it would pin the horizon at today **for
+    ever** — the repair is #704's lateral pass, which fetches rates and not
+    history, so no cycle of the reconstruction can lift the condition.
+
+    What the day then says is *waiting for a rate*, which is #706's answer and
+    not this ticket's: the figure is not carried at cost, because the app knows
+    the quote and owes a conversion rather than a convention.
+    """
+    declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
+    store.execute(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
+        '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
+        ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
+    metrics = _metrics(store, mocker)
+    metrics.base_currency = 'EUR'
+
+    horizons = metrics.update_account_metrics()
+
+    assert horizons['PEA'] is None
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"
+    ) == [(date(2024, 1, 15),)]
+
+
+def test_the_perf_recompute_writes_nothing_at_all_under_the_horizon(
+        store, declare_ledger, mocker):
+    """Same ledger, nothing attempted yet: the day is **not written**.
+
+    It used to be written hollow, and #708 is where that was measured on the real
+    portfolio: a purchase day with no price yet takes ``holdings_value`` to zero
+    beside a cash ledger that has already paid, and a time-weighted index
+    *chains* the crater forward — ``twr_index`` 0,057 on 2020-09-28, the head
+    reading **−100,00 %** on a portfolio worth eleven thousand euros.
+
+    #706's second term does not catch it, and could not: it is right about an
+    absence that is **permanent** and silent about one that is **transitory**. The
+    horizon is the transitory half, and under it the honest figure is no row at
+    all — which is also what keeps ``carrying_price``'s domain exactly *terminal
+    symbol, any day*.
+    """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     metrics = _metrics(store, mocker)
     metrics.base_currency = 'EUR'
 
-    metrics.update_account_metrics()
+    horizons = metrics.update_account_metrics()
 
-    (holdings, total) = store.query(
-        'SELECT holdings_value, total_value FROM account_metrics '
-        " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
-    assert holdings == pytest.approx(0.0)
-    assert total == pytest.approx(0.0)
+    assert store.query(
+        "SELECT count(*) FROM account_metrics WHERE account = 'PEA'") == [(0,)]
+    # And the horizon says so, from process memory: the day after the last day
+    # the line was held with no price, which on a position still standing is
+    # tomorrow.
+    assert horizons['PEA'] > date(2024, 1, 15)
+
+
+def test_carrying_is_never_invoked_under_the_horizon(
+        store, declare_ledger, mocker):
+    """Criterion 3 of #708: its domain reduces to *terminal symbol, any day*.
+
+    Two lines bought on the same day. ``ALO`` is terminal on zero point — nothing
+    will ever price it, so it is carried at its cost; ``AAPL`` is still being
+    reconstructed and its earliest usable price is 2024-01-18, which is where the
+    account's horizon lands. Below that day nothing is computed at all, so the
+    carrying convention cannot be asked about a day the cache will not carry — and
+    the days it *is* asked about are exactly the ones the reader will see.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.DEPOSIT, amount=5000.0, account='PEA'),
+        Event(date(2024, 1, 15), EventType.BUY, 'AAPL', 'Apple', quantity=10,
+              unit_price=100.0, account='PEA'),
+        Event(date(2024, 1, 15), EventType.BUY, 'ALO', 'Alstom', quantity=5,
+              unit_price=40.0, account='PEA'),
+    ]
+    declare_ledger(store, events, [PEA])
+    # ALO: the backward pass has been to the acquisition and brought nothing.
+    quotes.record_window_tried(store, 'ALO', date(2024, 1, 15))
+    # AAPL: one converted point, three days after the purchase.
+    quotes.record_history(store, 'AAPL', [{
+        'timestamp': datetime(2024, 1, 18, 16, 0, tzinfo=UTC),
+        'price': 110.0, 'converted': 110.0, 'rate': 1.0}])
+    metrics = _metrics(store, mocker)
+    metrics.base_currency = 'EUR'
+    spy = mocker.spy(performance, 'carrying_price')
+
+    horizons = metrics.update_account_metrics()
+
+    assert horizons['PEA'] == date(2024, 1, 18)
+    assert spy.call_count > 0            # ALO *is* carried, above the horizon
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"
+    ) == [(date(2024, 1, 18),)]
 
 
 # --------------------------------------------------------------------------- #

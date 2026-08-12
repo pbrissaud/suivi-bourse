@@ -585,24 +585,39 @@ def _ytd(latest: Dict[str, Any],
          base: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """The year-to-date pair, or ``None`` when the series does not reach the base.
 
-    ``gain`` subtracts the movement of **contributions** from the movement of
-    **value**, and that second term is the whole figure: without it a deposit
-    made in January reads as performance, which is exactly the misreading the
-    pair exists to prevent. The measured case is ``+40,69 €`` of gain against
-    ``−1,25 %`` of time-weighted return over the same period — opposite signs,
-    both correct, because the portfolio grew by 6 673 € of deposits while its
-    holdings lost 1,25 %. It is pinned to the cent in ``test_web_api.py``.
+    ``gain`` is the movement of ``gain_absolu``, which **is** the movement of
+    value minus the movement of contributions — ``gain_absolu = total_value −
+    net_contributed``, so the difference of the differences and the difference
+    of the gains are one quantity, not two readings of it. Subtracting the
+    contributions is the whole figure: without that term a deposit made in
+    January reads as performance, and the measured case would print
+    ``+6 713,69 €`` instead of ``+40,69 €``. It is pinned to the cent in
+    ``test_web_api.py``, against ``−1,25 %`` of time-weighted return over the
+    same period — opposite signs, both correct, because the portfolio grew by
+    6 673 € of deposits while its holdings lost 1,25 %.
 
-    ``twr`` is a ratio of two base-100 indices, which is what makes it
-    period-relative without any rebasing: ``index / index_base − 1``.
+    Spelling it on ``gain_absolu`` rather than on the pair is what makes it
+    **defined more often**, and that is the reason for the spelling rather than
+    a side effect of it: since #708 the two terms it would otherwise subtract
+    are ``NULL`` on an install carrying no cash event, while ``gain_absolu`` is
+    written **always** (ADR-0018). Written the other way round, an ordinary v4
+    arrival — no ``DEPOSIT`` anywhere, v4 having no cash events at all — got a
+    present ``ytd`` object whose members were both ``null``, and the head read
+    that as *the history is not rebuilt that far back* under a portfolio whose
+    history is complete.
+
+    ``twr`` stays a ratio of two base-100 indices, which is what makes it
+    period-relative without any rebasing: ``index / index_base − 1``. It has no
+    such repair and needs none: ``twr_index`` follows ``total_value``, so on
+    that same install the time-weighted return is genuinely not computable —
+    an em dash there says *there is nothing to compute* (ADR-0016) and is the
+    truth, which is why the pair keeps two members that can fail apart.
     """
     if base is None:
         return None
     return {
-        'gain': _difference(
-            _difference(latest.get('total_value'), base.get('total_value')),
-            _difference(latest.get('net_contributed'),
-                        base.get('net_contributed'))),
+        'gain': _difference(latest.get('gain_absolu'),
+                            base.get('gain_absolu')),
         'twr': _relative(latest.get('twr_index'), base.get('twr_index')),
     }
 

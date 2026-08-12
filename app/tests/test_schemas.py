@@ -214,3 +214,70 @@ def test_to_dict_default_account_when_unset():
     s = ShareState(name="Apple", symbol="AAPL")
     assert s.account == 'default'
     assert s.to_dict()['account'] == 'default'
+
+
+# ---------------------------------------------------------------------------
+# Timeline.holding_window — what bounds the perf horizon (issue #708)
+# ---------------------------------------------------------------------------
+TODAY = date(2026, 8, 12)
+
+
+def _replayed(events):
+    from events import EventAggregator
+    return EventAggregator().replay(events)
+
+
+def test_a_standing_position_is_held_through_today():
+    tl = _replayed([
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "AAPL", TODAY) == (date(2024, 1, 15), TODAY)
+
+
+def test_a_sold_position_is_held_through_the_day_it_emptied():
+    """The day of the sale **counts as held**: the price of the day one sells is
+    part of the history one held, which is the reading ``holding_bounds`` makes
+    of an exit on the backfill's side."""
+    tl = _replayed([
+        Event(date(2020, 3, 2), EventType.BUY, "ALO", "Alstom", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2022, 5, 4), EventType.SELL, "ALO", "Alstom", quantity=10,
+              unit_price=120.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "ALO", TODAY) == (date(2020, 3, 2),
+                                                      date(2022, 5, 4))
+
+
+def test_a_bought_back_position_is_held_through_today_again():
+    """The last emptying is forgotten once the line stands again — the same
+    simplification the backfill window makes, and the conservative one here."""
+    tl = _replayed([
+        Event(date(2020, 3, 2), EventType.BUY, "ALO", "Alstom", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2022, 5, 4), EventType.SELL, "ALO", "Alstom", quantity=10,
+              unit_price=120.0, account="PEA"),
+        Event(date(2024, 9, 9), EventType.BUY, "ALO", "Alstom", quantity=4,
+              unit_price=130.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "ALO", TODAY) == (date(2020, 3, 2), TODAY)
+
+
+def test_a_window_is_per_account_and_absent_where_nothing_was_held():
+    """A line held on another account constrains nothing here."""
+    tl = _replayed([
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ])
+    assert tl.holding_window("CTO", "AAPL", TODAY) is None
+    assert tl.holding_window("PEA", "MSFT", TODAY) is None
+
+
+def test_a_dividend_only_row_never_carried_a_quantity():
+    """``None`` rather than a window of one day: nothing was ever held, so
+    nothing about it can be waiting for a price."""
+    tl = _replayed([
+        Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple",
+              amount=12.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "AAPL", TODAY) is None

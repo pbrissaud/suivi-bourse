@@ -44,9 +44,9 @@ the scheduler has not touched yet is an *unknown* cell, not a missing row. The
 one method that does iterate (:meth:`RuntimeRecorder.retain`) holds the lock
 while it does.
 """
-from dataclasses import dataclass, replace
-from datetime import datetime
-from typing import Dict, Iterable, Optional, Tuple
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
+from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 # --------------------------------------------------------------------- #
 # Vocabulary. Every constant below is a value a *job* writes, never one a
@@ -244,11 +244,22 @@ class PerfRecord:
     (issue #707), and so are they: there is no longer a decision to explain, only
     a pass that ran — every cycle, in full — or raised. What is left is the same
     shape every other record has, an observation and its date.
+
+    ``horizons`` is the one thing this record grew back (issue #708), and it obeys
+    decision 2 — *publish only what has no home*. The perf **horizon** of an
+    account is ``1 + max over s of min(oldest price(s) − 1, last held day(s))``,
+    computed inside the recompute and written down nowhere: the rows say where a
+    series *starts*, which is a different question the moment an account's first
+    activity is later than its horizon. ``None`` for an account nothing
+    constrains, and an **empty mapping** for a pass that failed or that ran
+    before a reporting currency was answered — never a stale copy of the previous
+    one, since it would then read as *this* pass's answer.
     """
 
     at: datetime
     verdict: str
     error: Optional[str] = None
+    horizons: Mapping[str, Optional[date]] = field(default_factory=dict)
 
 
 class RuntimeRecorder:
