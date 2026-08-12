@@ -26,6 +26,13 @@ ONE_BUY = (
     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase\n"
 )
 
+#: An accounts source (issue #698) — what turns a blank ``account`` column from
+#: *means default* into an error, on both roads.
+ACCOUNTS_FILE = (
+    "id,type,label\n"
+    "pea,PEA,Plan d'épargne en actions\n"
+)
+
 
 def _draft(**overrides) -> Event:
     """A draft in the shape the create form sends — **no name** (ADR-0020)."""
@@ -90,6 +97,53 @@ def test_a_blank_account_is_the_seeded_bucket(store):
     entries.create(store, _draft(account=''))
 
     assert store.query('SELECT account FROM event') == [('default',)]
+
+
+def test_a_blank_account_is_refused_once_something_is_declared(store, tmp_path):
+    """#698's rule, and it has to fire on **both** roads or there are two.
+
+    A blank ``account`` means ``default`` until something is declared and is an
+    error afterwards. Resolving the blank before the validator runs is how this
+    road loses the case: the file path refuses the same row whole, and an install
+    that declared ``pea`` grows the phantom ``default`` the rule exists against.
+    """
+    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
+
+    for blank in (None, '', '   '):
+        with pytest.raises(entries.InvalidEntry) as refusal:
+            entries.create(store, _draft(account=blank))
+        assert refusal.value.field == 'account'
+
+    assert store.query('SELECT count(*) FROM event') == [(0,)]
+    assert store.query(
+        "SELECT count(*) FROM account WHERE id = 'default'") == [(1,)]
+
+
+def test_the_file_road_refuses_that_same_blank(store, tmp_path):
+    """The comparison the test above is only half of — one product, one rule."""
+    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
+    _drop(store, tmp_path, body=ONE_BUY, name='2024.csv')
+
+    assert store.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_declared_account_is_written_as_it_was_named(store, tmp_path):
+    """The refusal above is about the blank, never about naming an account."""
+    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
+
+    created = entries.create(store, _draft(account='pea'))
+
+    assert store.query('SELECT account FROM event') == [('pea',)]
+    assert created.account == 'pea'
+
+
+def test_an_undeclared_account_is_refused_by_name(store):
+    """The other half of ``_validate_account``, and it fires in every install."""
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        entries.create(store, _draft(account='pea'))
+
+    assert refusal.value.field == 'account'
+    assert store.query('SELECT count(*) FROM event') == [(0,)]
 
 
 def test_the_security_gets_its_row_before_the_event_references_it(store):

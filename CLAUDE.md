@@ -540,12 +540,20 @@ which is what this ticket answered. Four things about it are decisions:
   *parse*, exactly as `EventLoader` owns a CSV cell's: `2026-02-31` has the
   shape of a day and is not one, and that rule is observable **from the server
   alone** — `<input type="date">` empties its own value before any script sees
-  it. Two members the form never sends are settled by the store rather than
-  invented by the client: a blank account is `default`, and the security's
-  **name** is read off whatever the ledger already calls that symbol, falling
-  back to the ticker — the argument that took `Nom` out of the table (ADR-0020)
-  applied to the write path, and what keeps *name is required* one rule for both
-  roads instead of a refusal the form could never satisfy.
+  it. One member the form never sends is settled by the store rather than
+  invented by the client: the security's **name**, read off whatever the ledger
+  already calls that symbol and falling back to the ticker — the argument that
+  took `Nom` out of the table (ADR-0020) applied to the write path, and what
+  keeps *name is required* one rule for both roads instead of a refusal the form
+  could never satisfy. **The account is not that second member**, and the
+  ordering is what makes it so: a blank one means `default` *until something is
+  declared and is an error afterwards* (#698), so the blank is what the
+  validator judges and it is resolved only **at the write**, `event.account or
+  DEFAULT_ACCOUNT`, exactly where and when `ledger._insert_events` resolves it.
+  Resolved before the validator instead, the rule fires on the file road alone:
+  an install declaring `pea` answered `201` to a body with an empty account and
+  grew the phantom `default` — all-zero figures on a third account nobody
+  declared — where the same row in a file is refused whole.
 
 `app/web` is **unchanged**: the client contract was already written and faked by
 MSW, and this ticket makes it true. One thing measured on the dev stack is

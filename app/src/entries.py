@@ -31,7 +31,11 @@ through and the other would have refused fails the *boot*, in the gunicorn
 master, in an app the owner then cannot reach to repair it. What this module
 adds is not a second rule set but the *context* the file path already had — the
 declared accounts — and the refusal it raises carries the field the validator
-named, so a form can mark the input rather than print a paragraph.
+named, so a form can mark the input rather than print a paragraph. **The
+validator is handed the draft as it arrived**, blank account included, and the
+file path's ordering is the reason: a blank means ``default`` only while nothing
+is declared, so resolving it first would hide the very cell the rule is about
+and let this road write a phantom account the other road refuses.
 
 **Nothing is written when anything refuses.** The single-row check, the write
 and the replay all live inside one ``store.transaction()``, so a refusal rolls
@@ -125,6 +129,7 @@ def create(store, draft: Event) -> Event:
     with store.transaction():
         event = _settled(store, draft)
         _refuse(store, event)
+        account = event.account or DEFAULT_ACCOUNT
 
         (next_id,) = store.query(
             'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
@@ -134,14 +139,14 @@ def create(store, draft: Event) -> Event:
             '                   quantity, unit_price, fee, amount, notes, '
             '                   source_id, source_sheet, source_row) '
             'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
-            [next_id, event.date, event.event_type.value, event.account,
+            [next_id, event.date, event.event_type.value, account,
              event.symbol, event.name, event.quantity, event.unit_price,
              event.fee, event.amount, event.notes])
 
         _replays(store)
         logger.info(f"Recorded event {next_id}: {event.event_type.value} "
-                    f"{event.symbol or event.account} on {event.date}")
-    return replace(event, id=next_id)
+                    f"{event.symbol or account} on {event.date}")
+    return replace(event, id=next_id, account=account)
 
 
 def update(store, event_id: int, draft: Event) -> Event:
@@ -161,6 +166,7 @@ def update(store, event_id: int, draft: Event) -> Event:
         _require_typed(store, event_id)
         event = _settled(store, draft)
         _refuse(store, event)
+        account = event.account or DEFAULT_ACCOUNT
 
         _insert_symbol(store, event)
         store.execute(
@@ -168,13 +174,13 @@ def update(store, event_id: int, draft: Event) -> Event:
             '                 symbol = ?, name = ?, quantity = ?, '
             '                 unit_price = ?, fee = ?, amount = ?, notes = ? '
             'WHERE id = ?',
-            [event.date, event.event_type.value, event.account, event.symbol,
+            [event.date, event.event_type.value, account, event.symbol,
              event.name, event.quantity, event.unit_price, event.fee,
              event.amount, event.notes, event_id])
 
         _replays(store)
         logger.info(f"Rewrote event {event_id}")
-    return replace(event, id=event_id)
+    return replace(event, id=event_id, account=account)
 
 
 def remove(store, event_id: int) -> None:
@@ -228,11 +234,7 @@ def _require_typed(store, event_id: int) -> None:
 
 
 def _settled(store, draft: Event) -> Event:
-    """The draft with the two things the store decides rather than the caller.
-
-    **The account**, blank meaning ``default`` — one expression with no branch,
-    the same one :func:`ledger._insert_events` uses, because a rule spelled twice
-    is a rule that loses a case.
+    """The draft with the one thing the store decides before it is judged.
 
     **The name**, which is an attribute of the *security* and not of each of its
     events — the argument that took ``Nom`` out of the ledger table (ADR-0020),
@@ -242,9 +244,21 @@ def _settled(store, draft: Event) -> Event:
     letting it be ``NULL`` is what keeps :meth:`EventValidator._validate_event`'s
     *"name is required"* one rule for both roads instead of a refusal the form
     could never satisfy.
+
+    **The account is deliberately not settled here**, and that is the whole of
+    what makes this road and the file's one road. A blank ``account`` means
+    ``default`` *until something is declared and is an error afterwards* (#698),
+    so the blank itself is what the validator judges: resolved before
+    :func:`_refuse`, ``EventValidator._validate_account`` never sees one, and an
+    install declaring ``pea`` would silently grow the phantom ``default`` that
+    rule exists to refuse — the file path refusing the same body whole. So the
+    blank is carried through the validation and resolved **at the write**, by
+    ``event.account or DEFAULT_ACCOUNT``, which is the expression and the
+    ordering of :func:`ledger._insert_events`. Whitespace is folded into the
+    blank rather than left standing: a ``account`` of ``"  "`` names no account
+    on either road, and the file path's own cells arrive stripped.
     """
-    account = (draft.account or '').strip() or DEFAULT_ACCOUNT
-    return replace(draft, account=account,
+    return replace(draft, account=(draft.account or '').strip() or None,
                    name=draft.name or _named(store, draft.symbol),
                    id=None, source_id=None, source_sheet=None,
                    source_row=None, source_filename=None)

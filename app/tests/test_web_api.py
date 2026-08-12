@@ -1594,6 +1594,44 @@ def test_the_refusal_is_the_one_validator_s(tmp_path):
     assert "'nope' is not declared" in response.get_json()['detail']
 
 
+def test_a_blank_account_is_refused_once_something_is_declared(tmp_path):
+    """#698's rule, measured on the road the form actually takes.
+
+    *A blank ``account`` means ``default`` until something is declared, and is
+    an error afterwards.* An install declaring ``pea`` must therefore refuse the
+    body the form sends with its account left empty — the file road refuses the
+    same row whole — or this road quietly grows the phantom ``default`` whose
+    figures are all zero, which is exactly what ``declared_portfolio`` exists to
+    keep off the page.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    for body in (_draft(), _draft(account='   '), _draft(account=None)):
+        response = client.post('/api/events', json=body)
+        assert response.status_code == 422
+        assert response.mimetype == 'application/problem+json'
+        assert response.get_json()['key'] == 'account'
+
+    # Nothing written, and no second account conjured beside the declared one.
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+    assert {row[0] for row in opened.query('SELECT id FROM account')} == {
+        'default', 'pea'}
+
+
+def test_a_declared_account_is_written_as_it_was_named(tmp_path):
+    """The refusal above is about the blank and never about naming an account."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    created = client.post('/api/events', json=_draft(account='pea'))
+
+    assert created.status_code == 201
+    assert created.get_json()['account'] == 'pea'
+    assert opened.query(
+        "SELECT account FROM event WHERE date = '2024-06-03'") == [('pea',)]
+
+
 def test_a_quantity_of_true_is_not_a_quantity(tmp_path):
     """Python calls ``True`` an integer; a ledger does not."""
     response = build_client(tmp_path).post(
