@@ -495,21 +495,67 @@ renders the page whole: **`source_filename`** (the label follows the reader),
 needs an address), and **`POST /api/events`**, without which the create form has
 nowhere to write.
 
-**None of the three is served today, and the deferral is written here rather
-than left in a hand-over message.** Verified on `web/api.py`: `_event_to_dict`
-renders neither a file name nor a key, and there is no `POST /api/events` — the
-route's absence is not an oversight to fill silently either, `forget_import`'s
-docstring stating the absence of a `PATCH /api/events/<id>` as a **decision**
-(#697), so the server half owes the argument as much as the handler. What the
-page does meanwhile: the ledger renders whole and the provenance falls back to
-the store's own `2024.csv, row 14`; no row is editable, `id` being what the
-editor is guarded on, which is the read-only rule reached by another road; and
-**the create form's save answers `404`** — the one member of the three that is
-not optional, i.e. the onboarding ADR-0005 makes of it does not land until a
-ticket serves it. No open ticket carries that work at the time of writing. The
-precedent is #742's first acceptance criterion, deferred to #743 in writing and
-rewritten there as five criteria of its own: a deferral nobody writes down is a
-deferral lost on both sides.
+**And the server half of that page is #764**, the fifth time the map has seen a
+page ticket declare a contract nobody serves — #713, #718, #719 and #763 being
+the first four, and the mechanism is stable rather than negligent: *a page
+ticket's acceptance criteria do not name a route*, so an adversarial reading
+counts them all met in good faith. #723 was the first to write the deferral
+down (in `lib/api.ts` and here) instead of leaving it in a hand-over message,
+which is what this ticket answered. Four things about it are decisions:
+
+- **The population is the whole subject.** `forget_import`'s docstring said the
+  absence of a `PATCH /api/events/<id>` was *a decision rather than an
+  omission*, and that argument is about a row **a file provisioned**: the file
+  and the store must not become two truths about one purchase, so revoking the
+  file is what is offered instead. It never covered a row somebody typed here a
+  minute ago — which comes from no file, which no revocation can reach, and
+  which ADR-0005 makes the *first* gesture of a new arrival. Refusing to edit
+  that one made a typo in the onboarding permanent. So the sentence is now
+  **imprecise rather than false**, it names its population, and `PATCH` /
+  `DELETE /api/events/<id>` refuse an imported row by name (`409`, quoting the
+  import to forget).
+- **The split is structural, not a comment.** `entries.py` owns the three row
+  gestures and writes only `source_id NULL` rows, the way `accounts.py` owns the
+  app's half of the `account` table — so *"the import path has no row-level
+  write"* stays true by inspection, and `test_ledger.py`'s assertion on
+  `ledger.__all__` keeps standing rather than being weakened.
+- **`event.id` descends into the snapshot**, and the alternative — the resource
+  reading the store — was open and is refused **by its error contract**.
+  `GET /api/events` answers from process memory, so it has no `503`: the shares
+  page's chart markers read it and would otherwise go down for a fault they read
+  no ledger about, and the rows served are by construction the ones the
+  aggregator ran on. It cannot go stale either, since every writer of `event`
+  replays synchronously in this process. The export keeps the opposite contract
+  on purpose (#710): a backup is of what is **stored**, a snapshot the validator
+  refused leaving the previous one standing. Two resources over one table, two
+  contracts, each argued where it is chosen. The key is served as **text** — a
+  `BIGINT` above 2^53 is not the number that was sent, and a client does no
+  arithmetic with an address.
+- **Validation keeps one owner, and the parse is not a second one.**
+  `events/validator.py` judges a typed event and an imported one word for word —
+  the ledger is replayed whole on every build, so a row one road let through
+  would fail the *boot*, in the gunicorn master. Its refusals now carry the
+  **field** they are about (`ValidationIssue`), which is what lets a `422` mark
+  an input instead of printing a paragraph. What the HTTP boundary owns is the
+  *parse*, exactly as `EventLoader` owns a CSV cell's: `2026-02-31` has the
+  shape of a day and is not one, and that rule is observable **from the server
+  alone** — `<input type="date">` empties its own value before any script sees
+  it. Two members the form never sends are settled by the store rather than
+  invented by the client: a blank account is `default`, and the security's
+  **name** is read off whatever the ledger already calls that symbol, falling
+  back to the ticker — the argument that took `Nom` out of the table (ADR-0020)
+  applied to the write path, and what keeps *name is required* one rule for both
+  roads instead of a refusal the form could never satisfy.
+
+`app/web` is **unchanged**: the client contract was already written and faked by
+MSW, and this ticket makes it true. One thing measured on the dev stack is
+worth writing down because no test covers it: on an install that has declared
+**no** account, `GET /api/accounts` answers `[]` (the seeded `default` is not a
+declaration, ADR-0013), the form's account `<select>` is therefore empty, and
+its own client-side check blocks the save before a request leaves — so the
+onboarding form is unusable on exactly the install ADR-0005 wrote it for. That
+is a front defect on #723's side of the seam and it belongs to #729's accounts
+work; the server has never refused the body.
 
 ### Documentation Website (in `website/` directory)
 
@@ -928,16 +974,20 @@ declared `shares`.
 edit, the opaque token over `(file, sheet, row)`, the `ETag`, the `409`, the
 file import and conversion, and `PUT /api/accounts`. The whole apparatus existed
 because **the file was the address**; in the store a row will have a primary
-key, which does not go stale, so nothing it did has a row-by-row successor. The
-front therefore has **no data-editing gestures** until block 2 rewrites it
-around the import as the unit. `GET /api/events` survives as a read of the
-published snapshot — the rows the aggregator ran on, with no id and no etag.
+key, which does not go stale, so nothing it did has a **file-shaped** successor:
+no token, no `ETag`, no `409` on a fingerprint. The front therefore has no
+data-editing gestures until block 2 rewrites it around the import as the unit.
+`GET /api/events` survives as a read of the published snapshot — the rows the
+aggregator ran on, with no etag, and since #764 **with the row's own key**,
+which is the primary key that sentence was pointing at all along.
 
 Its consequence for the config directory: no filename has a special meaning any
-more (`ui.csv` was the last one). The one write path that came back is the
-account (issue #698) — `POST`/`PATCH`/`DELETE /api/accounts` — and it writes a
-**row**, never a file: a declaration made in the app carries `source_id NULL`,
-which is both "created in the UI" and "editable".
+more (`ui.csv` was the last one). Two write paths came back, and they are the
+same shape twice: the account (issue #698) — `POST`/`PATCH`/`DELETE
+/api/accounts` — and the event (issue #764) — `POST`/`PATCH`/`DELETE
+/api/events`. Both write a **row**, never a file, and both are guarded by one
+column: `source_id NULL` is at once "created in the app" and "editable", and
+what a file provisioned is refused by name and revoked with its import.
 
 **And the ledger leaves the way it came in** (issue #710, ADR-0008, ADR-0021).
 `GET /api/export/events.csv` and `GET /api/export/accounts.csv` render the store
@@ -1972,6 +2022,7 @@ app/src/
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
 ├── ledger.py               # The import: import_source/symbol/event, provenance, revocation (#697)
+├── entries.py              # The typed row's three gestures — source_id NULL only (#764)
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
@@ -1980,7 +2031,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events, export (#710), imports, advisories (#709), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals (#763), shares, prices, portfolio, accounts (read + declare, #698), events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
