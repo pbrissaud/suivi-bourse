@@ -13,6 +13,15 @@ Three rules carry the whole module, and the third is the surprising one:
    would be at once *unalterable* and *indestructible*. There is therefore no
    function here that updates one event row, and its absence is asserted by the
    suite rather than left to good intentions.
+
+   Since #764 that sentence names its **population** rather than the whole
+   table: it is about a row *this module wrote*, which is a row that came from
+   a file. A row somebody typed in the app comes from no file, no revocation
+   can reach it, and leaving it uneditable would make a typo in the onboarding
+   form (ADR-0005) definitive. Its three gestures live in :mod:`entries`, in a
+   module of their own for the same reason :mod:`accounts` is one — so that
+   *"the import path has no row-level write"* stays true by construction and
+   not by care.
 3. **Removing the file from disk does nothing.** :func:`sync_drop_folder` only
    ever adds or replaces what it finds; it has no branch that reacts to a file
    that is gone, which is what makes the rule true by construction instead of
@@ -171,7 +180,7 @@ def provenance_label(event: Event) -> Optional[str]:
 # --------------------------------------------------------------------------- #
 
 _EVENT_COLUMNS = (
-    'e.date, e.event_type, e.symbol, e.name, e.quantity, e.unit_price, '
+    'e.id, e.date, e.event_type, e.symbol, e.name, e.quantity, e.unit_price, '
     'e.fee, e.amount, e.notes, e.account, e.source_id, e.source_sheet, '
     'e.source_row, s.filename'
 )
@@ -188,6 +197,14 @@ def read_events(store) -> List[Event]:
     The join to ``import_source`` is what carries the filename onto the event,
     so a caller holding an event can render its provenance without going back
     to the store for it.
+
+    **The key comes down with the row** (issue #764). ``event.id`` was in the
+    DDL from #696 and in nothing this function returned, so the ledger the app
+    published held no address at all — and an address is what a row typed in the
+    app needs to be editable. It rides here rather than being fetched a second
+    time by whoever wants it, exactly as the filename does: one ``SELECT``, and
+    a holder of an :class:`Event` holds everything it takes to say what that
+    event is and where it came from.
     """
     rows = store.query(
         f'SELECT {_EVENT_COLUMNS} FROM event e '
@@ -198,9 +215,11 @@ def read_events(store) -> List[Event]:
 
 def _event_from_row(row: Sequence) -> Event:
     """One ``event`` row (joined to its source) back into an :class:`Event`."""
-    (day, event_type, symbol, name, quantity, unit_price, fee, amount,
-     notes, account, source_id, source_sheet, source_row, filename) = row
+    (event_id, day, event_type, symbol, name, quantity, unit_price, fee,
+     amount, notes, account, source_id, source_sheet, source_row,
+     filename) = row
     return Event(
+        id=event_id,
         date=day,
         event_type=EventType(event_type),
         symbol=symbol,

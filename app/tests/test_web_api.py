@@ -1433,6 +1433,332 @@ def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
 
 
 # --------------------------------------------------------------------- #
+# The ledger's write path (issue #764, ADR-0005, ADR-0020, ADR-0021)
+#
+# The population is the whole subject: a row a file provisioned is read-only and
+# revoked with its import, a row somebody typed here is reachable by no
+# revocation and must therefore be editable. Every test below is about which of
+# the two it is looking at.
+# --------------------------------------------------------------------- #
+
+#: What the create form sends — its exact shape, with **no ``name``**: a
+#: security's name is an attribute of the security and not of each of its
+#: events, which is the reason ``Nom`` left the ledger table (ADR-0020).
+def _draft(**overrides) -> dict:
+    body = {
+        'date': '2024-06-03',
+        'event_type': 'BUY',
+        'account': '',
+        'symbol': 'AAPL',
+        'notes': 'Typed in the app',
+        'quantity': 2,
+        'unit_price': 100.0,
+        'fee': 1.0,
+        'amount': None,
+    }
+    body.update(overrides)
+    return body
+
+
+def test_an_event_carries_its_file_name_beside_the_rendered_label(tmp_path):
+    """The front composes the provenance in the reader's language (ADR-0024).
+
+    The store's own ``2024.csv, row 2`` is one English sentence and stays as a
+    fallback; what a client needs to write its own is the file's **name**, which
+    was already on the event and simply was not on the wire.
+    """
+    payload = build_client(tmp_path, events=_ONE_BUY).get('/api/events').get_json()
+
+    (row,) = payload
+    assert row['source_filename'] == '2024.csv'
+    assert row['provenance'] == '2024.csv, row 2'
+
+
+def test_every_row_carries_the_key_it_is_addressed_by(tmp_path):
+    """``event.id`` reaches the wire, as text, and it is the store's own key."""
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+
+    (row,) = client.get('/api/events').get_json()
+    stored = [key for (key,) in opened.query('SELECT id FROM event')]
+
+    assert row['id'] == str(stored[0])
+    # Text, not a number: a BIGINT above 2^53 is not the integer that was sent,
+    # and a client has no arithmetic to do with a key.
+    assert isinstance(row['id'], str)
+
+
+def test_a_typed_event_lands_with_no_provenance_and_is_visible_at_once(tmp_path):
+    """``POST`` writes a ``source_id NULL`` row, and the replay follows it.
+
+    Both halves in one test because one without the other is the bug: a row
+    written and not replayed is a ledger the app is not computing on, and the
+    caller would have to wait for a timer to see their own gesture.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+
+    created = client.post('/api/events', json=_draft())
+    assert created.status_code == 201
+    assert created.get_json()['source_id'] is None
+    assert created.get_json()['provenance'] is None
+    assert created.get_json()['id'] is not None
+
+    rows = opened.query(
+        "SELECT source_id, name, account, notes FROM event "
+        "WHERE date = '2024-06-03'")
+    # The name the form never asked for, read off what the ledger already calls
+    # this security; the account, blank, resolved to the seeded bucket.
+    assert rows == [(None, 'Apple Inc', 'default', 'Typed in the app')]
+
+    # Visible in the ledger the app publishes, with no timer in between.
+    ledger_rows = client.get('/api/events').get_json()
+    assert [row['date'] for row in ledger_rows] == ['2024-01-15', '2024-06-03']
+    # And the position the replay wrote counts it.
+    assert opened.query(
+        "SELECT quantity FROM position WHERE symbol = 'AAPL'") == [(12.0,)]
+
+
+def test_a_security_nothing_has_named_yet_is_called_by_its_ticker(tmp_path):
+    """The form does not ask for a name, so a first purchase carries the ticker.
+
+    Left ``NULL`` the row would fail ``EventValidator``'s *name is required* on
+    the next build — in the gunicorn master, i.e. a boot the owner cannot repair
+    from an app that is down.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+
+    client.post('/api/events', json=_draft(symbol='MSFT'))
+
+    assert opened.query(
+        "SELECT name FROM event WHERE symbol = 'MSFT'") == [('MSFT',)]
+    # And the symbol got its row before the event referenced it.
+    assert ('MSFT',) in opened.query('SELECT symbol FROM symbol')
+
+
+def test_a_day_that_does_not_exist_is_refused_by_the_server(tmp_path):
+    """``2026-02-31`` has the shape of a day and is not one.
+
+    The rule is only observable from here: ``<input type="date">`` empties its
+    own value before any script sees it, so the front measured the trap and
+    cannot prove it.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+
+    response = client.post('/api/events', json=_draft(date='2026-02-31'))
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['key'] == 'date'
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_an_instant_is_not_a_calendar_day(tmp_path):
+    """The store's two kinds of time never mix, and the boundary is where."""
+    response = build_client(tmp_path).post(
+        '/api/events', json=_draft(date='2024-06-03T10:00:00Z'))
+
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'date'
+
+
+def test_a_refused_body_writes_nothing_at_all(tmp_path):
+    """``PUT /api/settings``' rule, for the same reason.
+
+    The body below is valid in every member but one, and the one is what the
+    validator refuses — a BUY with no unit price. A half-applied body is a state
+    nobody asked for.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+
+    response = client.post('/api/events', json=_draft(unit_price=None))
+
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'unit_price'
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_refusal_is_the_one_validator_s(tmp_path):
+    """An event typed here obeys the rules an imported one obeys, word for word.
+
+    The message is ``EventValidator``'s own — the one an accounts-less install
+    reads in its logs when a file names an account nobody declared — and the
+    field it names travels with it, which is what lets a form mark the input
+    instead of printing a paragraph.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+
+    response = client.post('/api/events', json=_draft(account='nope'))
+
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'account'
+    assert "'nope' is not declared" in response.get_json()['detail']
+
+
+def test_a_blank_account_is_refused_once_something_is_declared(tmp_path):
+    """#698's rule, measured on the road the form actually takes.
+
+    *A blank ``account`` means ``default`` until something is declared, and is
+    an error afterwards.* An install declaring ``pea`` must therefore refuse the
+    body the form sends with its account left empty — the file road refuses the
+    same row whole — or this road quietly grows the phantom ``default`` whose
+    figures are all zero, which is exactly what ``declared_portfolio`` exists to
+    keep off the page.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    for body in (_draft(), _draft(account='   '), _draft(account=None)):
+        response = client.post('/api/events', json=body)
+        assert response.status_code == 422
+        assert response.mimetype == 'application/problem+json'
+        assert response.get_json()['key'] == 'account'
+
+    # Nothing written, and no second account conjured beside the declared one.
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+    assert {row[0] for row in opened.query('SELECT id FROM account')} == {
+        'default', 'pea'}
+
+
+def test_a_declared_account_is_written_as_it_was_named(tmp_path):
+    """The refusal above is about the blank and never about naming an account."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    created = client.post('/api/events', json=_draft(account='pea'))
+
+    assert created.status_code == 201
+    assert created.get_json()['account'] == 'pea'
+    assert opened.query(
+        "SELECT account FROM event WHERE date = '2024-06-03'") == [('pea',)]
+
+
+def test_a_quantity_of_true_is_not_a_quantity(tmp_path):
+    """Python calls ``True`` an integer; a ledger does not."""
+    response = build_client(tmp_path).post(
+        '/api/events', json=_draft(quantity=True))
+
+    assert response.status_code == 422
+    assert response.get_json()['key'] == 'quantity'
+
+
+def test_a_typed_row_is_rewritten_whole_and_then_removed(tmp_path):
+    """The two gestures a typo needs, on the row no revocation can reach."""
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    key = client.post('/api/events', json=_draft()).get_json()['id']
+
+    rewritten = client.patch(f'/api/events/{key}',
+                             json=_draft(quantity=5, notes='Corrected'))
+    assert rewritten.status_code == 200
+    assert rewritten.get_json()['quantity'] == 5
+    assert opened.query(
+        "SELECT quantity, notes FROM event WHERE id = ?",
+        [int(key)]) == [(5.0, 'Corrected')]
+
+    removed = client.delete(f'/api/events/{key}')
+    assert removed.status_code == 200
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+    # The replay followed the removal too: the position is back to the import's.
+    assert opened.query(
+        "SELECT quantity FROM position WHERE symbol = 'AAPL'") == [(10.0,)]
+
+
+def test_a_patch_is_a_rewrite_and_never_a_merge(tmp_path):
+    """An event's fields are not independent of one another.
+
+    Turning a purchase into a transfer must not leave the purchase's quantity
+    standing — the validator refuses a cash event carrying one, so a merge would
+    produce a row nobody typed and the boot would meet it.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    key = client.post('/api/events', json=_draft()).get_json()['id']
+
+    response = client.patch(f'/api/events/{key}', json={
+        'date': '2024-06-04', 'event_type': 'DEPOSIT', 'account': '',
+        'symbol': None, 'notes': 'Virement', 'quantity': None,
+        'unit_price': None, 'fee': None, 'amount': 500.0,
+    })
+
+    assert response.status_code == 200
+    assert opened.query(
+        "SELECT symbol, quantity, amount FROM event WHERE id = ?",
+        [int(key)]) == [(None, None, 500.0)]
+
+
+def test_an_imported_row_is_refused_by_both_row_gestures(tmp_path):
+    """Read-only is unchanged for the population it was written for.
+
+    ``409`` and not ``404``: the row is there, that is the whole problem — and
+    the answer **names the import to forget**, which is the gesture the owner
+    has instead.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    ((key,),) = opened.query('SELECT id FROM event')
+
+    for response in (client.patch(f'/api/events/{key}', json=_draft()),
+                     client.delete(f'/api/events/{key}')):
+        assert response.status_code == 409
+        assert '2024.csv' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_an_unaddressable_event_is_a_named_404(tmp_path):
+    """Both shapes of *no such row*, and both answered by this blueprint.
+
+    The route takes a string rather than Flask's ``<int:…>`` converter, so
+    ``/api/events/nope`` is problem+json with the id in it instead of the
+    router's own bare page.
+    """
+    client = build_client(tmp_path, events=_ONE_BUY)
+
+    unknown = client.delete('/api/events/9999')
+    assert unknown.status_code == 404
+    assert unknown.mimetype == 'application/problem+json'
+
+    unaddressable = client.delete('/api/events/nope')
+    assert unaddressable.status_code == 404
+    assert 'nope' in unaddressable.get_json()['detail']
+
+
+def test_a_removal_that_would_leave_an_oversell_is_refused(tmp_path):
+    """Overselling is a property of the **ledger**, never of a row.
+
+    So a deletion is refused exactly as an insertion is, and the store is never
+    left holding a ledger that would fail the next boot.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    bought = client.post('/api/events', json=_draft(quantity=10)).get_json()
+    client.post('/api/events',
+                json=_draft(date='2024-06-10', event_type='SELL', quantity=10))
+
+    response = client.delete(f"/api/events/{bought['id']}")
+
+    assert response.status_code == 409
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
+def test_a_typed_event_is_exported_like_any_other_row(tmp_path):
+    """Provenance is deliberately not exported (issue #710).
+
+    So a row typed here is rendered by exactly the columns an imported one is,
+    and the file carries nothing a re-import could read a ``source_id`` out of —
+    the export *replaces* the imports it came from, and describing them would
+    describe a file the exported one is not.
+    """
+    client = build_client(tmp_path, events=_ONE_BUY)
+    client.post('/api/events', json=_draft(symbol='MSFT'))
+
+    body = client.get('/api/export/events.csv').get_data(as_text=True)
+    header, *rows = body.strip().splitlines()
+
+    assert not {'source_id', 'source_row', 'source_sheet', 'source_filename',
+                'provenance', 'id'} & set(header.split(','))
+    assert len(rows) == 2
+    # Same column count on both, the typed one included.
+    assert len({len(row.split(',')) for row in rows}) == 1
+    assert any(row.startswith('2024-06-03,BUY,default,MSFT,MSFT,') for row in rows)
+
+
+# --------------------------------------------------------------------- #
 # Export (issue #710)
 # --------------------------------------------------------------------- #
 
@@ -1685,18 +2011,20 @@ def test_the_log_level_toggle_answers_with_what_it_set(tmp_path):
         main.set_log_level('INFO')
 
 
-def test_the_event_write_routes_are_gone_rather_than_refusing(tmp_path):
-    """Demolition, not a stub: the methods do not exist on the collection.
+def test_the_file_era_routes_are_gone_rather_than_refusing(tmp_path):
+    """Demolition, not a stub: #662's file gestures do not exist (issue #711).
 
-    A route answering 403/409 would keep the gesture alive in the front and in
-    the contract. #711 removes it, and the front loses its editing gestures —
-    a known, accepted consequence.
+    ``/api/events/files`` was the file import and conversion, and
+    ``PUT /api/accounts`` was the settings block written back — both existed
+    because **the file was the address**. Neither has a successor.
+
+    The row-level writes on ``/api/events`` are **not** in that list any more
+    (issue #764): they came back for the population no revocation reaches, and
+    what they refuse they refuse by name rather than by absence — see
+    ``test_an_imported_row_is_refused_by_both_row_gestures``.
     """
     client = ledger_client(tmp_path)
 
-    assert client.post('/api/events', json={'date': '2024-06-01'}).status_code == 405
-    assert client.patch('/api/events/anything', json={}).status_code == 405
-    assert client.delete('/api/events/anything').status_code == 405
     assert client.get('/api/events/files').status_code == 404
     assert client.put('/api/accounts', json={'accounts': []}).status_code == 405
 
@@ -2469,20 +2797,28 @@ def test_deleting_an_unknown_account_is_a_404(tmp_path):
     assert build_client(tmp_path).delete('/api/accounts/nope').status_code == 404
 
 
-def test_no_route_edits_a_single_event(tmp_path):
-    """Read-only forbids the pointwise edit; the absence is the decision.
+def test_the_row_gestures_exist_beside_the_bulk_one(tmp_path):
+    """Revocation in bulk, **and** three row gestures — for two populations.
 
-    Without it a line provisioned by a file would be at once unalterable and
-    indestructible — so the API offers revocation in bulk and nothing else, and
-    that is asserted on the URL map rather than left to good intentions.
+    The URL map is where the decision reads: ``DELETE /api/imports/<id>`` is
+    what reaches a row a file provisioned, and the three on ``/api/events`` are
+    what reaches a row somebody typed. Neither is a superset of the other, which
+    is why both are asserted here — an ``/api/events`` map that had emptied
+    again would mean the onboarding form has nowhere to write (issue #764), and
+    an imports map that had would mean an imported line is indestructible
+    (issue #697).
     """
     client = build_client(tmp_path, events=_ONE_BUY)
-    rules = [
+    rules = {
         (rule.rule, method)
         for rule in client.application.url_map.iter_rules()
         for method in (rule.methods or set())
         if method in {'PUT', 'PATCH', 'DELETE', 'POST'}
-    ]
+    }
 
-    assert not [r for r, _ in rules if r.startswith('/api/events')]
     assert ('/api/imports/<int:source_id>', 'DELETE') in rules
+    assert ('/api/events', 'POST') in rules
+    assert ('/api/events/<event_id>', 'PATCH') in rules
+    assert ('/api/events/<event_id>', 'DELETE') in rules
+    # And nothing writes a *file* — #711's demolition, still standing.
+    assert not [rule for rule, _ in rules if rule.startswith('/api/events/files')]

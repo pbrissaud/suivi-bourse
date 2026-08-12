@@ -336,6 +336,51 @@ def test_error_prefix_includes_date_type_and_symbol(validator):
 
 
 # ---------------------------------------------------------------------------
+# The structured form: one owner, and it names the field (issue #764)
+# ---------------------------------------------------------------------------
+
+def test_every_issue_names_the_field_it_is_about(validator):
+    """A ``422`` marks the input it refused; a sentence over the panel does not.
+
+    The field travels **with** the message rather than being re-derived by
+    whoever renders it: a form parsing *"unit_price is required for BUY"* back
+    into an input name would be a second copy of these rules, and the copy
+    disagrees on the day one message is reworded.
+    """
+    issues = validator.issues([_buy(quantity=None, unit_price=None)])
+
+    assert [issue.field for issue in issues] == ['quantity', 'unit_price']
+    assert all(issue.message.startswith('Event #1 (') for issue in issues)
+
+
+def test_the_two_entry_points_answer_the_same_thing(validator):
+    """``validate`` is built out of ``issues``, never beside it.
+
+    Two implementations of one validator are two answers, and the ledger is
+    replayed whole on every build — so the road an event took would decide
+    whether the app boots.
+    """
+    events = [_buy(quantity=None), _dividend(amount=-1.0)]
+
+    ok, messages = validator.validate(events)
+
+    assert ok is False
+    assert messages == [issue.message for issue in validator.issues(events)]
+
+
+def test_an_undeclared_account_names_the_account_column():
+    """The one refusal a create form meets that no per-type rule covers."""
+    strict = EventValidator(account_ids={'default', 'pea'})
+    typed = Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+                  quantity=1, unit_price=1.0, account='nope')
+
+    (issue,) = strict.issues([typed])
+
+    assert issue.field == 'account'
+    assert "'nope' is not declared" in issue.message
+
+
+# ---------------------------------------------------------------------------
 # validate_or_raise
 # ---------------------------------------------------------------------------
 

@@ -350,12 +350,19 @@ def test_forgetting_an_unknown_import_is_a_named_refusal(store):
 
 
 def test_the_module_offers_no_single_row_gesture():
-    """No line-level edit exists, by inspection of the module's surface.
+    """No line-level edit exists **here**, by inspection of the module's surface.
 
     The rule this guards is #697's second: read-only forbids the pointwise
     edit, not the bulk revocation. A helper that updated one event row would
     make a file-provisioned line editable, and the criterion names that as the
     thing not to build — so the absence is asserted rather than assumed.
+
+    Since #764 the sentence names its population, and this assertion is what
+    keeps the split **structural**: the three gestures a row somebody *typed*
+    earns live in :mod:`entries`, whose every entry point refuses a row with a
+    ``source_id`` (``tests/test_entries.py``). The import path having none is
+    what makes *"a file's row is revoked, never edited"* true by construction
+    rather than by care.
     """
     surface = set(ledger.__all__)
     forbidden = {name for name in surface
