@@ -54,6 +54,48 @@ over a **sliding horizon**, the earliest day on which every security an account
 held has a price. A page filling in from the right is the best progress bar
 available, and it is the reason nothing is gated on the rebuild being finished.
 
+Outside that horizon **nothing is written at all** — not a zero, not an empty
+row. A day where a position you held has no price yet would value it at nothing
+beside a cash balance that had already paid for it, and the resulting crater is
+not cosmetic: it is the difference between a portfolio and a portfolio minus a
+purchase.
+
+### Just after a purchase, the last point can be a day old
+
+The days with no price yet are not always the oldest ones. Buy a security your
+portfolio did not hold before and, for a few minutes, it has no price anywhere —
+so the days it blocks are **the most recent ones**. The series then stops the day
+before the purchase instead of starting the day after it: your history stays
+where it is, the consolidated figures are those of the day before, and the cycle
+that follows the first fetched chunk catches everything up. Nothing is lost and
+there is nothing to do.
+
+The horizon is bounded by each security's own holding window, which is what stops
+a line you sold years ago from holding the whole account at today while its
+history is being fetched. And a security the app has **finished** looking for and
+never found does not hold it back at all: those days are
+[valued at their own cost](./read-your-figures.mdx#carrying-price) instead, which
+is a statement rather than a wait. The two cases are *no price yet* and *no price
+ever*, and only the first is worth pausing for.
+
+## The base of the time-weighted return moves while the rebuild runs
+
+The [time-weighted return](./read-your-figures.mdx#twr) is an index on base 100,
+and 100 is placed on the first day of the series. While the rebuild walks
+backwards that first day keeps moving, so **the index is re-based on every
+cycle**: the same account can read 112 at one refresh and 104 at the next with no
+price having changed.
+
+This is expected, and it is not corrected. Chaining the index from a day whose
+holdings had no price would carry that day's error for the life of the series,
+and freezing the base early would freeze it on the least complete history you
+will ever have. So the app shows the base date beside the figure for exactly as
+long as it is still moving, and stops showing it once the rebuild concludes.
+
+The percentage is the only figure with this property. Values, gains and
+contributions are recomputed from scratch every cycle and are simply *right* over
+the range that exists.
+
 ## The resolution ladder
 
 A point's fineness is a function of its age, and there is **not a single setting**
