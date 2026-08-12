@@ -80,8 +80,22 @@ jobs:
           pnpm test
           pnpm build
 
-  image:
-    name: "Image"
+  # The smoke seam on the container (issue #744, spec #730 § 7). It is the heir
+  # of the `Image` job, which built `./app` and stopped there: building is the
+  # first of nine assertions, so a second job doing only that would pay for the
+  # same build twice and attest strictly less.
+  #
+  # It is in CI rather than in `pytest` because its subject **is** the image: a
+  # Python test that simulates a container attests the simulation. And every
+  # assertion is on behaviour observable from outside — never on the shape of a
+  # line of `Dockerfile`, which breaks at the first refactor and passes on a
+  # broken probe.
+  #
+  # It reads the checkout and nothing else: no registry credentials, no login,
+  # no push, and `linux/amd64` alone — multi-arch is the release's business and
+  # QEMU would multiply a pull request's check by five.
+  container:
+    name: "Container"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -93,16 +107,36 @@ jobs:
         with:
           files: |
             app/**
-      # The jobs above run each half where every file of its directory is
-      # present. The image's install layer sees only what the Dockerfile copies
-      # into it, so a workspace file left out of that COPY breaks the build with
-      # all the other gates green — which is how #713 shipped a broken image.
-      # Until now the image was built only by the release workflow, i.e. after
-      # the merge. This is the one gate that reads the Dockerfile.
-      - name: Build the image if the app changed
+            .github/scripts/container-contract.sh
+            .github/workflows/pr-checks.yml
+      # Assertion 1. The jobs above run each half where every file of its
+      # directory is present. The image's install layer sees only what the
+      # Dockerfile copies into it, so a workspace file left out of that COPY
+      # breaks the build with all the other gates green — which is how #713
+      # shipped a broken image. Until this job existed the image was built only
+      # by the release workflow, i.e. after the merge.
+      - name: "1. docker build ./app succeeds"
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         working-directory: app
-        run: docker build -t suivi-bourse:pr .
+        run: docker build --platform linux/amd64 -t suivi-bourse:pr .
+      # Assertions 2 to 9, each failing for its own reason. The script owns the
+      # containers and the volume it creates and removes them from an EXIT trap,
+      # so a failed assertion leaves nothing behind either.
+      - name: "2-9. The image honours its contract"
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        env:
+          IMAGE: suivi-bourse:pr
+        run: .github/scripts/container-contract.sh
+      # Belt and braces, on the same label the script cleans by: a runner killed
+      # between two `docker run`s never reaches the trap.
+      - name: Remove anything the contract run left behind
+        if: always()
+        run: |
+          docker ps -aq --filter label=suivi-bourse-contract=744 \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter label=suivi-bourse-contract=744 \
+            | xargs -r docker volume rm -f || true
+          exit 0
 
   build-docs:
     name: "Building doc"
