@@ -1672,6 +1672,84 @@ obeying). Which of the three clauses a name lands in — *moved to a dial*,
 with nothing in `boot_env.py` edited. One grouped logfmt line at start-up, and
 only when there is something to say.
 
+### Persistence is observed and said, never demanded (issue #741, ADR-0015)
+
+**`docker run ghcr.io/pbrissaud/suivi-bourse` starts, and what it lacks is a
+volume rather than a variable.** #677/D12 refused to boot without an explicit
+store location, the error message being the guide; ADR-0015 amends it, and the
+ephemeral container becomes a **trial run** — type three positions, look at what
+it gives, lose it all on the way out — which is exactly what ADR-0005 needs now
+that typing a position is the onboarding.
+
+What makes the amendment *safe* is one fact, **asserted false in session before
+it was verified**: `/proc/self/mountinfo` distinguishes a mounted path — named
+volume *or* bind — from the container's writable layer with certainty. The
+predicate was in the wrong place, not wrong: it refused at boot what it is
+enough to **observe and state**. `app/tests/fixtures/mountinfo/` holds the
+verification — four tables captured in a real container, versioned beside the
+`docker run` that produced each — and it is the proof rather than an
+illustration.
+
+- **`mounts.py` is pure and takes the *text*.** That is what makes the whole of
+  it testable without a container; reading `/proc` is one function at the
+  bottom, and `resolve` is injected the way `now` is in `scheduling.py`, so
+  symlinks are followed by `os.path.realpath` in production and by a fake in a
+  test. `..` is collapsed either way.
+- **The match is on the longest mount point that *prefixes* the path**, never on
+  equality: a bind of `/data` and a bind of an ancestor both answer *persistent*,
+  and a volume mounted inside a bind wins over the bind. Ties go to the later
+  line — a second mount over one point shadows the first.
+- **What that match then decides is its filesystem, not its name.** The captured
+  tables are why: an unmounted `/data` is absent, but `/` is always there, so
+  *"the path is not in the table"* is never the observation actually made. The
+  naive spelling — *the longest match is `/`, therefore ephemeral* — is right in
+  a container and **false on a Docker-less install**, where `/` is an ordinary
+  filesystem that survives everything. So the discriminant is the field already
+  parsed beside the mount point: `overlay`/`aufs` is the writable layer,
+  `tmpfs`/`ramfs` is a RAM disk, anything else outlives the container.
+- **Off Linux the answer is `unknown`, and `unknown` prints nothing.** The
+  observation is a property of the kernel, and an absent `/proc` must not
+  manufacture a false *ephemeral* on the machine of a macOS developer — the one
+  platform this app cannot run natively on at all (#657).
+
+**`sb_store_ephemeral` (`1`/`0`) is not an ornament: it is the only form of
+notice a headless installation receives**, and without it ADR-0012's *"Prometheus
+stays"* serves the portfolio's figures and never the state of the installation.
+A **gauge and not a counter**, so it goes out the day the container is restarted
+with a volume, and published **in both directions** — a series that disappears
+reads as a scraper that lost its target, not as *off*. On `unknown` it is
+**absent**, which is the exporter's own rule rather than an exception to it: a
+`0` states that the store *is* kept, and an observer that could not look has no
+ground to state it. That is also why it is created by the first observation:
+`prometheus_client` publishes an unlabelled gauge at `0` from the instant it is
+constructed.
+
+**Three lines at start-up** (`boot_conditions.py`, pure — the text and the
+predicate here, the one impure emission in `main.report_boot_conditions`), each
+in logfmt with a `condition=` key to grep for, **once each and only when true**:
+no persistence, no reporting currency, no portfolio. *Once* is a property of
+*where* they are said — `build_runtime`, in the gunicorn master, under
+`preload_app` — and not of a flag. The currency line carries the `curl` on
+`PUT /api/settings`, the only non-interactive path to answering it (ADR-0015);
+the empty-portfolio line names the drop folder rather than a `curl`, the API
+having **no write path** for a ledger since #711.
+
+**"No persistence" is a condition and never an advisory** — in ADR-0021's exact
+sense, *the banner shows conditions the owner can end; the badge counts facts
+they can only acknowledge*. So none of the three lines is one of #709's five
+keys: no row, no `first_seen_at` and above all **no acknowledgement**, which
+would make *"this container keeps nothing"* go quiet while it is still true.
+`boot_conditions.py` says it and `test_boot_conditions.py` asserts it on the
+source — the three keys are disjoint from `advisories.SPECS`. They do not count
+towards a page's screen obligations either: they are at the
+terminal and in the metrics. The fact reaches the front by the **same path as
+the rest of the runtime state**, `GET /api/runtime`'s `store.persistence`, for
+the reason that put `rebuilding` there: it is a property of *this process* and
+its mount namespace, answered from memory with no query, so it survives the one
+failure that empties every page. It is observed **once**, in the master, and
+carried on `Runtime` across the fork — a mount namespace does not change under a
+running process. The data page's *store* block is #724's, and it consumes this.
+
 ---
 
 ## Module Structure
@@ -1681,6 +1759,8 @@ app/src/
 ├── gunicorn.conf.py        # Container entrypoint AND boot sequence (issue #651)
 ├── main.py                 # Runtime/build_runtime/start_runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── boot_env.py             # Pure: the six boot variables and the computed list of names gone quiet (#740)
+├── mounts.py               # Pure: mountinfo text + a path → persistent / ephemeral / unknown (#741)
+├── boot_conditions.py      # Pure: the three start-up lines — text and predicate, said once each (#741)
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
 ├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
 ├── carrying.py             # Pure: the carrying price, the holding window, the backward anchor (#706)
@@ -1762,6 +1842,13 @@ price-freshness liveness sonde (issue #628): `1` when a symbol's stored price is
 silently stale (frozen past `staleness_horizon` during `REGULAR` while the
 live quote moves), `0` otherwise — a gauge so it auto-clears when the writer
 recovers.
+
+`sb_store_ephemeral` carries **no label at all** and is not about a share (issue
+#741): `1` when the store lives in the container's writable layer, `0` when it
+is on a mount that outlives it, **absent** while the mount is unobservable. It
+is the one series that reports the state of the *installation* rather than of
+the portfolio, and it is what makes a bare `docker run` say — to a headless
+install too — that it keeps nothing.
 
 **Never a gauge whose unit depends on a setting** (issue #702, spec #695 § 12).
 A single `sb_share_price` would mean dollars on one install, euros on another and

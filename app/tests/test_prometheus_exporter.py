@@ -318,6 +318,52 @@ def test_forget_quotes_on_a_symbol_never_published_is_a_no_op(exporter):
     exporter.forget_quotes('NOSUCH')
 
 
+# --- sb_store_ephemeral: the headless install's only notice (#741) ----------
+
+def test_the_store_gauge_is_published_at_one_when_nothing_is_kept(exporter):
+    """**The only form of notice a headless installation receives** (#741). The
+    three start-up lines go to a terminal nobody is watching, and without this
+    ADR-0012's *"Prometheus stays"* would serve the portfolio's figures and
+    never the state of the installation itself."""
+    exporter.update_store_persistence(True)
+
+    assert exporter.registry.get_sample_value('sb_store_ephemeral') == 1.0
+    assert '# HELP sb_store_ephemeral ' in \
+        generate_latest(exporter.registry).decode()
+
+
+def test_the_store_gauge_is_published_at_zero_when_the_store_is_kept(exporter):
+    """**Present in both cases.** A series that disappears does not read as
+    *off*, it reads as a scraper that lost its target — so ``0`` is written
+    explicitly rather than left to the absence of the series."""
+    exporter.update_store_persistence(False)
+
+    assert exporter.registry.get_sample_value('sb_store_ephemeral') == 0.0
+
+
+def test_the_store_gauge_goes_out_when_the_container_is_remounted(exporter):
+    """A gauge and not a counter, so it can be *cleared*: the same process
+    observing a volume next time publishes ``0`` over the ``1``. A counter would
+    only ever be able to say that it was ephemeral once."""
+    exporter.update_store_persistence(True)
+    exporter.update_store_persistence(False)
+
+    assert exporter.registry.get_sample_value('sb_store_ephemeral') == 0.0
+
+
+def test_the_store_gauge_is_absent_while_the_mount_is_unobservable(exporter):
+    """``None`` is :data:`mounts.UNKNOWN`, and it leaves the series **absent** —
+    this module's own rule (a gauge whose field could not be computed is not
+    published) rather than an exception to it. A ``0`` here would state that the
+    store *is* kept, on the machine of a developer who has no ``/proc`` to read
+    (#657)."""
+    exporter.update_store_persistence(None)
+
+    assert exporter.registry.get_sample_value('sb_store_ephemeral') is None
+    assert 'sb_store_ephemeral' not in \
+        generate_latest(exporter.registry).decode()
+
+
 # --- None handling ----------------------------------------------------------
 
 def test_none_optional_fields_are_not_set(exporter):

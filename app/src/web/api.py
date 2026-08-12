@@ -987,6 +987,11 @@ def get_runtime():
         # cannot see the scheduler at all, and ``None`` is what says so.
         reconstruction=(runtime.metrics.reconstruction_state()
                         if runtime.metrics is not None else None),
+        # The mount observation (#741, ADR-0015), made once in the master and
+        # carried on the runtime — process memory again, and therefore this
+        # route's rule kept: no query, and readable on a store nobody can open,
+        # which is exactly when *"where did my data go"* is asked.
+        persistence=runtime.store_persistence,
     ))
 
 

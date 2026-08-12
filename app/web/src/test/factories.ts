@@ -290,6 +290,10 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     now: NOW,
     scheduler_running: true,
     rebuilding: false,
+    // The ordinary installation is the mounted one (#741), so the factory's
+    // default is the state that says nothing on screen; the other two are what
+    // a test asks for by name.
+    store: { persistence: 'persistent' },
     symbols: defaultPositions().map((position) => ({
       symbol: position.symbol,
       next_run: NOW,

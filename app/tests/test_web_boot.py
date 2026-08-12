@@ -24,12 +24,14 @@ be exactly that.
 """
 
 import importlib.util
+import logging
 import threading
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import boot_conditions
 import main
 import store
 import web
@@ -255,6 +257,137 @@ def test_build_runtime_skips_the_exporter_when_disabled(fake_config, monkeypatch
     monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
 
     assert main.build_runtime().prometheus is None
+
+
+# ---------------------------------------------------------------------------
+# The mount observation and the three lines (issue #741, ADR-0015)
+# ---------------------------------------------------------------------------
+
+def _conditions_said(caplog):
+    """The ``condition=`` keys of the logfmt lines the boot emitted, in order."""
+    return [record.context['condition'] for record in caplog.records
+            if 'condition' in getattr(record, 'context', {})]
+
+
+def test_a_bare_container_says_the_three_lines_once_each(
+        fake_config, monkeypatch, caplog):
+    """#741's whole shape: the boot **observes and states** where #677/D12
+    refused to start. The fake config publishes no event and the store has no
+    ``base_currency`` row, so all three conditions stand at once — which is
+    exactly the state of ``docker run`` with nothing attached to it."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+    monkeypatch.setattr(main.mounts, "store_persistence",
+                        lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
+    caplog.set_level(logging.INFO)
+
+    main.build_runtime()
+
+    assert _conditions_said(caplog) == [
+        boot_conditions.NO_PERSISTENCE,
+        boot_conditions.NO_BASE_CURRENCY,
+        boot_conditions.NO_PORTFOLIO,
+    ]
+
+
+def test_a_mounted_container_says_nothing_at_all_about_persistence(
+        fake_config, monkeypatch, caplog):
+    """The criterion, stated on the boot rather than on the pure function: a
+    container whose store is on a volume must not be told to mount one."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+    monkeypatch.setattr(main.mounts, "store_persistence",
+                        lambda *_args, **_kwargs: main.mounts.PERSISTENT)
+    caplog.set_level(logging.INFO)
+
+    main.build_runtime()
+
+    assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
+
+
+def test_an_unobservable_mount_prints_nothing_and_leaves_the_gauge_absent(
+        fake_config, monkeypatch, caplog):
+    """The third answer, end to end. On a developer's macOS there is no
+    ``/proc/self/mountinfo`` at all, and neither the line nor a ``0`` on the
+    gauge — which would state that the store *is* kept — may be manufactured
+    from that silence."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
+    monkeypatch.setattr(main.mounts, "store_persistence",
+                        lambda *_args, **_kwargs: main.mounts.UNKNOWN)
+    caplog.set_level(logging.INFO)
+
+    runtime = main.build_runtime()
+
+    assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
+    assert runtime.store_persistence == main.mounts.UNKNOWN
+    assert runtime.prometheus.registry.get_sample_value(
+        'sb_store_ephemeral') is None
+
+
+@pytest.mark.parametrize("state,expected", [
+    (main.mounts.EPHEMERAL, 1.0),
+    (main.mounts.PERSISTENT, 0.0),
+])
+def test_the_boot_publishes_the_gauge_in_both_directions(
+        fake_config, monkeypatch, state, expected):
+    """Published in the **master**, so it crosses the fork with the registry the
+    Flask app serves — and published at ``0`` too, because a series that
+    disappears reads as a scraper that lost its target rather than as *off*."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
+    monkeypatch.setattr(main.mounts, "store_persistence",
+                        lambda *_args, **_kwargs: state)
+
+    runtime = main.build_runtime()
+
+    assert runtime.store_persistence == state
+    assert runtime.prometheus.registry.get_sample_value(
+        'sb_store_ephemeral') == expected
+
+
+def test_the_observation_interrogates_the_store_directory_it_was_given(
+        fake_config, monkeypatch, tmp_path):
+    """The **directory**, never the file: the store file does not exist yet on a
+    first boot, and #740's *"they are directories, never files"* is what makes
+    the question answerable at all."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+    monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
+    asked = []
+
+    def _spy(store_dir, *_args, **_kwargs):
+        asked.append(store_dir)
+        return main.mounts.PERSISTENT
+
+    monkeypatch.setattr(main.mounts, "store_persistence", _spy)
+
+    main.build_runtime()
+
+    assert asked == [tmp_path / "vol"]
+
+
+def test_the_conditions_are_not_said_when_the_boot_fails_on_the_config(
+        monkeypatch, caplog):
+    """A boot that ends in an exception has a fatal message to say instead of
+    three conditions about a portfolio it never managed to read."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
+    monkeypatch.setattr(main.mounts, "store_persistence",
+                        lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
+    monkeypatch.setattr(
+        main, "ConfigurationManager",
+        lambda **kwargs: _FakeConfigManager(
+            load_error=EventValidationError("row 3: unknown event_type")))
+    caplog.set_level(logging.INFO)
+
+    with pytest.raises(EventValidationError):
+        main.build_runtime()
+
+    assert _conditions_said(caplog) == []
+
+
+def test_the_runtime_answers_unknown_until_something_observed_it():
+    """The default on ``Runtime`` is not *persistent*. A test runtime, and the
+    one a Docker-less checkout builds, has observed nothing — and there is no
+    honest reading of that other than :data:`mounts.UNKNOWN`."""
+    runtime = main.Runtime(_FakeConfigManager(), None)
+
+    assert runtime.store_persistence == main.mounts.UNKNOWN
 
 
 def test_build_runtime_propagates_a_broken_config(monkeypatch):

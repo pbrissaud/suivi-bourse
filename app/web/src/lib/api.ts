@@ -275,9 +275,28 @@ export interface RuntimeAccount {
   horizon: string | null
 }
 
+/**
+ * Does the store outlive the container? (issue #741, ADR-0015)
+ *
+ * Observed once at boot from `/proc/self/mountinfo` and answered from process
+ * memory, which is why it travels on this resource and not beside the figures.
+ *
+ * `unknown` is a real answer and not a placeholder: the observation is a
+ * property of the kernel, so a deployment with no `/proc` — a developer on
+ * macOS — has nothing to report, and a reader must not turn that silence into
+ * either of the other two. The data page's *store* block (#724) is what renders
+ * the three; nothing else on the front branches on it.
+ */
+export type StorePersistence = 'persistent' | 'ephemeral' | 'unknown'
+
+export interface RuntimeStore {
+  persistence: StorePersistence
+}
+
 export interface RuntimeState {
   now: string
   scheduler_running: boolean
+  store: RuntimeStore
   /**
    * The backfill still has windows to cover. It is here rather than beside the
    * figures because it is a fact about *this process*, and rule four of the map

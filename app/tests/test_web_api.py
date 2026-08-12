@@ -1720,6 +1720,49 @@ def test_a_runtime_with_no_scheduler_does_not_claim_a_rebuild(tmp_path):
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
+def test_the_runtime_publishes_the_mount_observation_to_the_front(tmp_path):
+    """`store.persistence` (issue #741, ADR-0015) — *the fact is published for
+    the front by the same path as the rest of the runtime state*.
+
+    Here rather than on a resource of its own, for the reason that put
+    `rebuilding` here: it is a fact about *this process* and its mount
+    namespace, answered from memory with no query. Which is also why the
+    assertion above matters more than it looks — a store that cannot be opened
+    is exactly when *"where did my data go"* gets asked, and this route is the
+    one still answering.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+
+    # A test runtime observed nothing, and says so rather than claiming a kept
+    # store.
+    assert client.get('/api/runtime').get_json()['store'] == {
+        'persistence': 'unknown'}
+
+    runtime.store_persistence = 'ephemeral'
+    assert client.get('/api/runtime').get_json()['store'] == {
+        'persistence': 'ephemeral'}
+
+    runtime.store_persistence = 'persistent'
+    assert client.get('/api/runtime').get_json()['store'] == {
+        'persistence': 'persistent'}
+
+
+def test_the_mount_observation_survives_an_unreadable_store(tmp_path):
+    """The fact stays readable on the one failure that empties every page. It is
+    observed once in the master and carried in memory, so nothing about it goes
+    through the store it describes."""
+    client = build_client(
+        tmp_path, break_store=True,
+        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    web_module.current_runtime().store_persistence = 'ephemeral'
+
+    assert client.get('/api/shares').status_code == 503
+    assert client.get('/api/runtime').get_json()['store']['persistence'] \
+        == 'ephemeral'
+
+
 def test_the_runtime_resource_issues_no_query_at_all(tmp_path, mocker):
     """Not merely tolerant of a dead store — it never asks it anything.
 
