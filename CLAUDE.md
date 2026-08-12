@@ -1363,32 +1363,104 @@ The application runs independent scheduled jobs on a single APScheduler:
 § 11, ADR-0011, ADR-0018). The two halves arrive together because removing
 either one alone produces a wrong figure rather than a missing one:
 
-- **The horizon** is `1 + max over s of min(oldest price(s) − 1, last held
-  day(s))`, per account, in `performance.account_horizon`. Under it **nothing is
-  written at all** — not a zero, not a `NULL` row: a held position with no price
-  yet counts as worth nothing beside a cash ledger that has already paid for it,
-  and a chained index carries that crater for the whole cycle. Measured on the
-  real portfolio at #708: three purchases on 2020-09-28, `twr_index` 0,057, the
-  dashboard reading **`TWR −100,00 %`** on eleven thousand euros. #706's second
-  term cannot catch it — it is right about a **permanent** absence and silent
-  about a **transitory** one, which is exactly what a reconstruction is. Four
-  things about the formula: it is **bounded by each symbol's holding window**
+- **The horizon** is an **interval**, `[first, last]`, per account, in
+  `performance.account_horizon`. Every symbol blocks `[acquired(s), min(oldest
+  price(s) − 1, last held day(s))]` and the series is **the latest run of days no
+  block covers**. Outside it **nothing is written at all** — not a zero, not a
+  `NULL` row: a held position with no price yet counts as worth nothing beside a
+  cash ledger that has already paid for it, and a chained index carries that
+  crater for the whole cycle. Measured on the real portfolio at #708: three
+  purchases on 2020-09-28, `twr_index` 0,057, the dashboard reading
+  **`TWR −100,00 %`** on eleven thousand euros. #706's second term cannot catch
+  it — it is right about a **permanent** absence and silent about a
+  **transitory** one, which is exactly what a reconstruction is. Seven things
+  about the formula: it is **bounded by each symbol's holding window**
   (unbounded, a line sold in 2022 whose backfill is starting has its oldest
   available price dated *this year* and holds the whole account at today, a case
   ADR-0009 made ordinary); it is bounded by that window's **two** ends, the lower
   one being the same decision on the other side — the backward pass never
   overshoots the first acquisition, so a symbol's oldest price *is* its
   acquisition day once reconstructed, and without the lower bound a portfolio
-  that bought a line this morning would take a horizon of this morning; a
+  that bought a line this morning would take a horizon of this morning — and that
+  lower end is a statement about **the block**, `unpriced < acquired` being
+  #708's `oldest ≤ acquired` **or a degenerate window** — `holding_window` puts
+  no clamp on its two ends and the validator forbids no future-dated event, so a
+  single row dated next year answers a last day before its first, which #708 did
+  not skip and which emptied the table; on a held symbol quoted nowhere the
+  window is ordinary, the branch is not taken, and what treats that symbol is
+  the cap; **a block
+  that reaches the ceiling caps the series instead of bounding it** (#765, below);
+  **the days left of a block that does *not* reach the ceiling go with it**, the
+  residue #765 leaves standing and names rather than repairs — a line acquired
+  2020-03-02, exited 2022-05-04 and quoted nowhere pins a ledger opened in 2019
+  at 2022-05-05, 2019 included, on days it held nothing of that line, because a
+  horizon is **one interval** and the run that survives is the one holding today;
+  **when no run survives the reading falls back to the left bound**, which is the
+  fresh install whose first purchase has no price yet — the series is empty
+  either way and `first` names the day it could resume rather than claiming
+  nothing constrains the account, which is what `/api/runtime`'s `null` means; a
   **settled** symbol does not contribute (terminal backfill, or quoted in a
   currency that does not resolve), or the horizon would freeze at today for ever
   and `carrying_price`'s domain — *terminal symbol, any day* — would be
   unreachable; and a **per-day mask was refused** though nearly free, since it
   holes the middle of the series the moment a symbol is imported late, which
-  breaks the TWR's chaining and contradicts the calendar density.
-  `portfolio_totals` takes the **max** of the horizons: the global is written
-  only where every account is, one slow account delaying the whole home page,
-  because summing whichever accounts are ready draws a step nothing caused.
+  breaks the TWR's chaining and contradicts the calendar density — a cap is not a
+  mask, it moves an **end** and the run stays contiguous.
+  `portfolio_totals` takes the **max** of the horizons and the **min** of the
+  caps: the global is written only where every account is, one slow account
+  delaying the whole home page, because summing whichever accounts are ready
+  draws a step nothing caused — upwards on the left, downwards on the right.
+- **The block is treated where it is, and a purchase stops deleting the
+  history** (issue #765). #708's horizon is a *left* bound, and it happened to
+  bound a block sitting on the *right*: buying a line of a security the portfolio
+  did not hold yet gives a symbol with no price anywhere, its block is
+  `[acquired, today]`, and the bound landed on **tomorrow** — so the cycle
+  produced no point for **anybody** and `prune_account_metrics`, doing exactly
+  what its docstring says (*an empty `spans` empties the table, and that is the
+  honest reading*), took the whole cache away. Measured on a real store: **1 perf
+  cycle out of 2 wrote an empty table**, 1 468 days of figures gone on the
+  ordinary gesture of buying something (`test_a_new_line_leaves_no_perf_cycle_
+  writing_an_empty_table`). The window is short — one `PERF_TICK` ended by one
+  backfill cycle, two to three minutes, the backfill being an interval job driven
+  by the replay and not by `marketState` — and it lasts as long as Yahoo fails,
+  or until a mistyped ticker's backward pass concludes and settles it. **That it
+  is short is not what repairs it**: over that window the page does not degrade,
+  it is entirely empty, and no band names it — nothing failed, the computation
+  concluded there was nothing to write, which is the white screen #718 mounted
+  `Band` in the content column to abolish. So the series now **stops the day
+  before the block** rather than starting the day after it: the history stays,
+  the last point is a day old, the next cycle catches up, and the right edge
+  walks left past every block it lands in so the cap and the left bound stay
+  **one rule on one axis** rather than two guards crossing. The three other exits
+  are refused in the code where the choice is taken: never letting the horizon
+  rise above what a previous cycle wrote contradicts ADR-0011 head on (reading
+  the cache to decide what to write destroys the property the integral
+  unconditional recompute bought, and repairs nothing on a fresh install);
+  treating *held, never quoted, backfill not yet run* as settled contradicts
+  #706's two-term predicate, whose whole argument is that carrying at cost needs
+  a **permanent** absence; and assuming the blank page is the failure mode the
+  product refuses everywhere else. The prune is **not** modified — its argument is
+  right, it was being lied to upstream — and `carrying_price` keeps its domain:
+  the cap removes days from the series, it never hands a transitory absence to
+  the carrying convention.
+  **What the ticket asked for and did not get is written down rather than
+  counted**: its second acceptance criterion — *a day before a symbol's
+  acquisition is never blocked by it, priced or not* — is held for the **block**
+  and **not** for the horizon the blocks feed. A block lying wholly in the past
+  bounds the series on its left edge and takes those days with it, and the two
+  ways to give them back are refused by the argument that refused the per-day
+  mask: keeping the *left* run abandons today's figures, which is the whole of
+  the sliding horizon, and keeping both makes the series two runs with a hole
+  between them. The refactor into blocks is what made the cap expressible; it
+  changed **one** verdict of #708's guard and only one, the degenerate window
+  above, and reading it as the repair of the ticket still reads a no-op
+  (`test_the_empty_block_guard_is_708s_plus_the_degenerate_window`, whose sweep
+  covers `last_held < acquired` — an earlier version claimed the two guards
+  equivalent and swept only the half where they agree, so it attested a property
+  it had never exercised; and the residue asserted at
+  `test_the_days_left_of_a_past_block_are_lost_with_it`). Whether a horizon may
+  ever be **more than one interval** is the open question, carried by #766, and
+  it is #708's calendar-density decision to reopen, not this ticket's.
 - **The rule is by field, never by account.** The opt-in guard read
   `declared_portfolio`, whose `None` means *nothing declared beyond the seed* —
   and ADR-0013 seeds a `default` row at the creation of the schema and never
@@ -2289,7 +2361,8 @@ costing +563 MB on a 319 MB base. Uniqueness moves to the writers.
 | `price_converted` / `fx_rate` | the close in the reporting currency and the rate that produced it (#702). `NULL` means *transient* — no currency answered yet, or a pair that did not resolve — repaired by #704's lateral pass. `price_converted == price_native × fx_rate` holds on every row, which is what makes the row a journal |
 
 **`account_metrics`** (every declared account since #708; one row per calendar
-**day**, from the account's **horizon** on and never below it, block
+**day**, inside the account's **horizon** `[first, last]` and never outside it
+— the cap being what keeps a purchase from deleting the series (#765) — block
 upsert on `(account, day)`). The series is recomputed **and rewritten in full**
 every cycle since #707: the stale-tail window lost its subject, an upsert on a
 primary key not growing the file the way a `DELETE`+`INSERT` replacement does
@@ -2324,8 +2397,9 @@ single-currency condition that used to gate it left with `Account.currency`
 (#702): accounts cannot disagree about a currency they do not have. What gates
 **both** tables is the base currency being answered at all — and, per row, the
 horizon and the per-field rule (#708): the global's days start at the **max** of
-the accounts' horizons, and its cash-derived four are `NULL` unless every account
-that produces a series has a cash ledger.
+the accounts' horizons and stop at the **min** of their caps (#765), and its
+cash-derived four are `NULL` unless every account that produces a series has a
+cash ledger.
 
 Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
 computed in `app/src/performance.py` — a pure module taking a `Timeline` and an

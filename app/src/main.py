@@ -2785,11 +2785,20 @@ class SuiviBourseMetrics:
 
         **The series is written on a sliding horizon** (spec #695 § 11): the
         figures of today are right from the first cycle, and the page fills in
-        towards the left as the reconstruction walks back. Below the horizon
+        towards the left as the reconstruction walks back. Outside the horizon
         nothing at all is written — not a zero, not a ``NULL`` row — because a
         held position with no price yet would be counted as worth nothing beside a
         cash ledger that has already paid for it, and a time-weighted index chains
         that crater forward for the whole cycle.
+
+        **The horizon has two ends since #765** (:class:`performance.Horizon`).
+        A block of unpriced days sitting at *today* — an ordinary purchase of a
+        security the portfolio did not hold yet — used to push the left bound
+        past today, so the cycle produced no point for anybody and the prune,
+        doing exactly what it is written for, emptied the table: **years of
+        history deleted by a purchase**. It is now treated where it is: the
+        series stops the day before it, the dashboard keeps its history, its
+        last point is a day old and the next cycle catches up.
 
         **Integral and unconditional** (issue #707, ADR-0011): every cycle
         recomputes the whole series — earliest event date → today, one point per
@@ -2916,7 +2925,7 @@ class SuiviBourseMetrics:
 
             start = min(e.date for e in events)
 
-            # --- the sliding horizon (issue #708) ----------------------------
+            # --- the sliding horizon and its cap (issues #708, #765) ---------
             # The oldest **usable** price of each symbol, which is the oldest day
             # ``price_at`` can answer for: ``price_series`` is converted-only, so
             # a symbol quoted in a currency whose pair does not resolve is absent
@@ -2928,34 +2937,54 @@ class SuiviBourseMetrics:
                              for symbol, pairs in price_pairs.items() if pairs}
             settled = set(carried) | {
                 symbol for symbol in first_quoted if symbol not in oldest_priced}
-            horizons = {
+            writable = {
                 account.id: performance.account_horizon(
                     self._holding_windows(timeline, account.id, symbols, today),
-                    oldest_priced, settled)
+                    oldest_priced, settled, start=start, ceiling=today)
                 for account in declared
             }
+            # What travels to ``/api/runtime`` is the left end, unchanged in
+            # meaning by #765: *the first day this account's figures may be
+            # written*. The cap stays here — it is a property of the days this
+            # cycle produced, which the rows themselves already state.
+            horizons = {account_id: span.first
+                        for account_id, span in writable.items()}
 
             def _from(account_id: str) -> date:
                 """Where this account's series begins: its horizon, never before
                 the ledger's own first day."""
-                horizon = horizons[account_id]
+                horizon = writable[account_id].first
                 return start if horizon is None else max(start, horizon)
+
+            def _to(account_id: str) -> date:
+                """Where it stops: its cap, and today when nothing caps it.
+
+                A block reaching today is treated *where it is* (issue #765): the
+                series stops the day before it rather than starting the day after
+                it, which is what keeps a purchase of a security the portfolio
+                did not hold yet from deleting every year it owns.
+                """
+                cap = writable[account_id].last
+                return today if cap is None else cap
 
             per_account = {
                 account.id: performance.compute_account(
                     timeline, account, symbols, price_at, _from(account.id),
-                    today, carried, first_quoted)
+                    _to(account.id), carried, first_quoted)
                 for account in declared
             }
-            # The global takes the **max** of the horizons: it is written only
-            # where every account is, since a sum missing one of its terms draws
-            # a step nothing caused. An account with no horizon at all does not
-            # raise it — it has nothing waiting for a price.
-            bounds = [horizon for horizon in horizons.values()
-                      if horizon is not None]
+            # The global takes the **max** of the horizons and the **min** of the
+            # caps: it is written only where every account is, since a sum
+            # missing one of its terms draws a step nothing caused — upwards on
+            # the left, downwards on the right. An account with neither does not
+            # move either end — it has nothing waiting for a price.
+            bounds = [span.first for span in writable.values()
+                      if span.first is not None]
+            caps = [span.last for span in writable.values()
+                    if span.last is not None]
             total = performance.compute_portfolio_total(
                 timeline, declared, symbols, price_at,
-                max([start] + bounds), today, per_account)
+                max([start] + bounds), min([today] + caps), per_account)
 
             # --- account_metrics --------------------------------------------
             for account in declared:
