@@ -15,7 +15,7 @@ No network, no real InfluxDB.
 
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
@@ -446,6 +446,161 @@ def test_the_global_is_written_from_the_max_of_the_horizons(
     # …and the global waits for the later of the two.
     assert store.query("SELECT day FROM portfolio_totals ORDER BY day") == [
         (date(2024, 1, 3),)]
+
+
+# --------------------------------------------------------------------------- #
+# The horizon caps the block where it is (issue #765)
+#
+# #708's horizon is a **left** bound, and it happens to bound a block that sits
+# on the right — the ordinary gesture of buying a line of a security the
+# portfolio did not hold yet. Everything to the left of that block, i.e. the
+# whole history, was then dropped by a prune doing exactly what it is written
+# for. These four pin the repair on the real store.
+# --------------------------------------------------------------------------- #
+
+#: Two days before the fixed today of this section. A line acquired **today** is
+#: terminal from its first cycle (``carrying.is_terminal``: the backward anchor
+#: is already at the target), so it is settled and blocks nothing; an
+#: acquisition dated earlier with no price yet is what empties the table — which
+#: is every file import, and every purchase seen the morning after.
+_BOUGHT = date(2024, 1, 8)
+
+
+def _a_portfolio_that_buys_a_new_line():
+    """Four years of history on a priced line, plus a line bought two days ago."""
+    return [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(_BOUGHT, EventType.BUY, "NEW", "New", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ]
+
+
+def _pea_days(store):
+    """``(first, last)`` day of PEA's cached series, or ``None`` when empty."""
+    rows = store.query("SELECT min(day), max(day) FROM account_metrics "
+                       " WHERE account = 'PEA'")
+    return None if rows[0][0] is None else rows[0]
+
+
+def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
+        store, declare_ledger, mocker):
+    """Criterion 1 of #765: the window is **measured** before it is treated.
+
+    The cycles are run for real — a perf recompute on the store as the purchase
+    lands, the backward pass' first chunk with the suite's one faked edge, then
+    the next perf recompute — and the empty ones are **counted**.
+
+    Measured on ``preview/v5`` before the repair: **1** cycle out of the 2 wrote
+    an empty table, and it emptied it for *every* account, four years of history
+    included. On the default dials that is one ``PERF_TICK`` (120 s) after the
+    ingestion that imported the line, ended by one backfill cycle (60 s) plus the
+    perf cycle that follows it — two to three minutes, and for as long as Yahoo
+    keeps failing or the ticker is mistyped, until the backward pass concludes
+    and ``quotes.terminal_symbols`` settles it. After the repair: **0**.
+
+    A few minutes of blank page is not what the number licenses, which is why it
+    is measured rather than estimated: the page does not *degrade* over that
+    window, it is entirely empty, and no band names it — nothing failed, the
+    computation concluded there was nothing to write (#718 mounted ``Band`` in
+    the content column precisely so that state stops being a white screen).
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+    m.backfill_delay = 0
+    m._share_info_cache["NEW"] = {"currency": "EUR"}
+
+    empty_cycles = 0
+
+    m.update_account_metrics()
+    empty_cycles += _pea_days(store) is None
+
+    # The backward pass, with yfinance faked and everything else real: it is what
+    # ends the window, and it needs no market to be open — the backfill is an
+    # interval job driven by the replay, not by ``marketState``.
+    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+        {"timestamp": datetime(2024, 1, 8, 16, 0, tzinfo=timezone.utc),
+         "price": 50.0},
+        {"timestamp": datetime(2024, 1, 9, 16, 0, tzinfo=timezone.utc),
+         "price": 52.0},
+    ])
+    m._backfill_backward("NEW",
+                         datetime(2024, 1, 8, tzinfo=timezone.utc),
+                         datetime(2024, 1, 10, 12, 0, tzinfo=timezone.utc))
+
+    m.update_account_metrics()
+    empty_cycles += _pea_days(store) is None
+
+    assert empty_cycles == 0
+    # And the second cycle is whole again: the cap is gone with the block.
+    assert _pea_days(store) == (date(2020, 1, 1), date(2024, 1, 10))
+
+
+def test_buying_a_never_quoted_line_does_not_delete_four_years_of_history(
+        store, declare_ledger, mocker):
+    """Criterion 3 of #765, on a series of several years.
+
+    The whole defect in one assertion: 1 468 days of cached figures, and a
+    purchase of something the portfolio did not hold yet used to take the lot.
+    They are still there, and the series stops the day before the block instead
+    of starting the day after it — its last point is two days old here, and the
+    cycle that follows the first chunk catches it up.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert _pea_days(store) == (date(2020, 1, 1), _BOUGHT - timedelta(days=1))
+    # Nothing bounds the account on the **left** — which is what the payload has
+    # always meant by ``null`` — and the cap stays where it belongs, in the rows.
+    assert horizons["PEA"] is None
+    # The global is capped by the same day: a sum whose accounts stop on
+    # different days would draw the step the max of the horizons exists against,
+    # downwards this time.
+    assert store.query(
+        "SELECT min(day), max(day) FROM portfolio_totals"
+    ) == [(date(2020, 1, 1), _BOUGHT - timedelta(days=1))]
+    # And no crater on the last day written: the value is the priced line alone,
+    # the new one having been bought after it. It is also where criterion 6 is
+    # checked — ``carrying_price`` keeps its domain, *terminal symbol, any day*,
+    # and is **not** extended to a transitory absence by the cap: carried at its
+    # cost, ``NEW`` would put 250 € here, on a day it was not even held.
+    (holdings,) = store.query(
+        "SELECT holdings_value FROM account_metrics "
+        " WHERE account = 'PEA' AND day = ?", [_BOUGHT - timedelta(days=1)])[0]
+    assert holdings == pytest.approx(1000.0)
+
+
+def test_a_first_purchase_with_no_price_still_writes_nothing_at_all(
+        store, declare_ledger, mocker):
+    """The other end of the same rule, and #708's crater kept impossible.
+
+    Nothing precedes the purchase here, so there is no run of days to keep: the
+    cap would fall before the ledger's own first day. The series is empty either
+    way — a hollow ``holdings_value`` beside a cash ledger that has already paid
+    is what dug ``twr_index`` 0,057 — and the horizon says so on the left,
+    naming the first day the account could resume rather than claiming nothing
+    constrains it.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    m = _metrics(store, declare_ledger, [
+        Event(_BOUGHT, EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(_BOUGHT, EventType.BUY, "NEW", "New", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ], Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert _pea_days(store) is None
+    assert horizons["PEA"] > _BOUGHT
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
 
 
 def test_update_account_metrics_writes_series_with_midnight_stamp(

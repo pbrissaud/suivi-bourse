@@ -29,7 +29,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import (
-    Callable, Collection, Dict, FrozenSet, List, Mapping, Optional, Tuple,
+    Callable, Collection, Dict, FrozenSet, List, Mapping, NamedTuple, Optional,
+    Tuple,
 )
 
 from carrying import carrying_price, was_quoted
@@ -99,30 +100,56 @@ def writable_fields(has_cash_ledger: bool,
 
 
 # --------------------------------------------------------------------------- #
-# The sliding horizon (issue #708, spec #695 § 11)
+# The sliding horizon (issue #708, spec #695 § 11) — and its cap (issue #765)
 # --------------------------------------------------------------------------- #
+
+class Horizon(NamedTuple):
+    """The days an account's figures may be written on: ``[first, last]``.
+
+    **Two ends of one axis, and one rule** (issue #765). #708 published a single
+    left bound, which is right for the block a reconstruction leaves — the oldest
+    days of a symbol's window, walking left to right as the backward pass
+    advances. It is wrong for a block sitting at the **other** end, and there is
+    an ordinary gesture that produces one: buying a line of a security the
+    portfolio did not hold yet. That symbol has no price at all for one backfill
+    cycle, its block is ``[today, today]``, and a left bound placed the day after
+    it lands on *tomorrow* — so the whole series falls under the horizon, the
+    cycle produces no point for anybody, and :func:`perf_series.
+    prune_account_metrics` correctly empties the table. **Years of history
+    deleted by a purchase**, until the next backfill chunk lands.
+
+    ``first`` is ``None`` when nothing bounds the series on the left, ``last``
+    when nothing caps it on the right — the caller's own ceiling then stands.
+    """
+    first: Optional[date]
+    last: Optional[date]
+
 
 def account_horizon(windows: Mapping[str, Tuple[date, date]],
                     oldest_priced: Mapping[str, date],
-                    settled: Collection[str] = ()) -> Optional[date]:
-    """The first day this account's figures may be written.
+                    settled: Collection[str] = (), *,
+                    start: date, ceiling: date) -> Horizon:
+    """The days this account's figures may be written on.
 
+    Every symbol blocks the closed interval ``[acquired(s), unpriced(s)]``, with
     ::
 
-        horizon(account) = 1 + max over s of min( oldest_price(s) − 1,
-                                                 last_held_day(s) )
+        unpriced(s) = min( oldest_price(s) − 1, last_held_day(s) )
+
+    and the series is **the latest run of days no block covers**, inside
+    ``[start, ceiling]``.
 
     The perf series is written on a **sliding horizon** and never behind a door:
     today's figures are right from the first cycle, and a page filling in towards
-    the left is the best progress bar available. What the horizon bounds is the
-    day a held position has **no price yet** — a day where ``holdings_value``
-    would count that position as nothing while the cash ledger has already paid
-    for it, which digs a crater in the value curve and, because a time-weighted
-    index *chains*, leaves a scar for the whole cycle (measured on the real
-    portfolio: three purchases on 2020-09-28, ``twr_index`` 0,057, the head
-    reading **−100,00 %** on a portfolio worth eleven thousand euros).
+    the left is the best progress bar available. What a block bounds is the day a
+    held position has **no price yet** — a day where ``holdings_value`` would
+    count that position as nothing while the cash ledger has already paid for it,
+    which digs a crater in the value curve and, because a time-weighted index
+    *chains*, leaves a scar for the whole cycle (measured on the real portfolio:
+    three purchases on 2020-09-28, ``twr_index`` 0,057, the head reading
+    **−100,00 %** on a portfolio worth eleven thousand euros).
 
-    Four things about the formula are decisions:
+    Six things about it are decisions:
 
     * **It is bounded by each symbol's holding window.** Taken literally as *"the
       most recent of the oldest available prices"*, a line sold in 2022 whose
@@ -130,20 +157,54 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
       and would hold the **whole account** at today — while it constrains no day
       after 2022. ADR-0009 driving the backfill from the replay is exactly what
       made that case ordinary.
-    * **By the window's *two* ends.** Spec #695 § 11 writes the upper one; the
-      lower one is the same decision on the other side, and without it the
-      formula says something nobody meant. A symbol never overshoots its first
-      acquisition — the backward pass stops there on purpose (ADR-0004) — so its
-      oldest price *is* its acquisition day once the reconstruction concludes,
-      and a portfolio that bought a new line this morning would take a horizon of
-      *this morning* and lose every year it has. A day before a position was
-      acquired holds nothing of it: there is no crater to avoid, and the term is
-      simply not about that day.
+    * **By the window's *two* ends**, which is the same rule seen from the other
+      side: a day before a position was acquired holds nothing of it, so there is
+      no crater to avoid and the term is simply not about that day. #708 spelled
+      that guard as ``oldest ≤ acquired`` and it therefore only ever applied to a
+      symbol that **has** a price; the rule and the code parted company on
+      exactly the population that breaks the series — the symbol quoted nowhere
+      yet. Here the block is built first and dropped when it is empty
+      (``unpriced < acquired``), which is one statement covering both.
+    * **A block that reaches the ceiling caps the series instead of bounding
+      it** — the repair itself (issue #765). The block is treated *where it is*:
+      the series stops the day before it rather than starting the day after,
+      so the dashboard keeps its history, its last point is a day old, and the
+      next cycle catches up. The right edge walks left past every block covering
+      it, repeatedly, since stepping over one block can land inside another.
+    * **When no run survives, the reading falls back to the left bound.** The
+      blocks then cover the ledger from its first day to the ceiling — the
+      ordinary shape of a fresh install whose first purchase has no price yet —
+      and there is no history to save: the series is empty either way, and
+      ``first`` names the first day it could resume rather than claiming nothing
+      constrains this account. That distinction is not cosmetic: ``first`` is
+      what ``/api/runtime`` publishes (issue #708), where ``null`` means *nothing
+      constrains this account*.
     * **A settled symbol does not contribute at all** — see ``settled`` below.
     * **A per-day mask was refused** although it is almost free: it produces holes
       **in the middle** as soon as a symbol is imported late, which breaks the
       chaining of the time-weighted return *and* contradicts the series' calendar
-      density.
+      density. The cap is not a mask: it moves an **end** of the interval, so the
+      series stays one contiguous run of calendar days.
+
+    Three other exits were instructed and refused (issue #765):
+
+    * **Assuming the blank page.** It is the failure mode the product refuses
+      everywhere else — #718 mounted ``Band`` in the content column exactly so
+      that *"the store is unreadable"* and *"you own nothing"* stop being one
+      white screen — and here no band names it: nothing failed, the computation
+      concluded there was nothing to write.
+    * **Never letting the horizon rise above what a previous cycle wrote.** It
+      contradicts ADR-0011 head on: the two tables are a *cache, a pure function
+      of the ledger, the prices and the declared accounts*, and reading what one
+      wrote to decide what to write next destroys the property the integral
+      unconditional recompute bought by deleting ``perf_should_run`` and its four
+      state variables. It also repairs nothing on a fresh install, which has no
+      previous cycle.
+    * **Treating "held, never quoted, backfill not yet run" as settled**, hence
+      carried at cost. It contradicts #706's two-term predicate, whose whole
+      argument is that carrying at cost requires a **permanent** absence: applied
+      to a transitory one it replays a portfolio flat-at-cost that then takes off
+      and corrects itself with the owner having done nothing.
 
     ``windows`` is ``{symbol: (first day held, last day held)}`` for **this
     account** (:meth:`events.schemas.Timeline.holding_window`) — the last being
@@ -159,24 +220,47 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
     rather than blocking, and for two reasons that are one: taken at their word
     they would pin the horizon at today **for ever**, and their priceless days are
     precisely :func:`carrying.carrying_price`'s domain — *terminal symbol, any
-    day* — which nothing below the horizon could ever reach, since below it
-    nothing is written at all.
+    day* — which nothing outside the horizon could ever reach, since outside it
+    nothing is written at all. **That domain is unchanged by this repair**: the
+    cap removes days from the series, it never hands a transitory absence to the
+    carrying convention.
 
-    ``None`` when nothing constrains the account: it holds no symbol, or every one
-    of its symbols is settled or priced from the first day it was held.
+    ``Horizon(None, None)`` when nothing constrains the account: it holds no
+    symbol, or every one of its symbols is settled or priced from the first day
+    it was held.
     """
-    blocked: Optional[date] = None
+    day = timedelta(days=1)
+    blocked: List[Tuple[date, date]] = []
     for symbol, (acquired, last_held) in windows.items():
         if symbol in settled:
             continue
         oldest = oldest_priced.get(symbol)
-        if oldest is not None and oldest <= acquired:
-            continue  # priced from the day it was acquired: nothing is waiting
         unpriced = (last_held if oldest is None
-                    else min(oldest - timedelta(days=1), last_held))
-        if blocked is None or unpriced > blocked:
-            blocked = unpriced
-    return None if blocked is None else blocked + timedelta(days=1)
+                    else min(oldest - day, last_held))
+        if unpriced < acquired:
+            continue  # priced from the day it was acquired: nothing is waiting
+        blocked.append((acquired, unpriced))
+
+    if not blocked:
+        return Horizon(None, None)
+
+    last = ceiling
+    moved = True
+    while moved:
+        moved = False
+        for acquired, unpriced in blocked:
+            if acquired <= last <= unpriced:
+                last = acquired - day
+                moved = True
+
+    if last < start:
+        # No run of days survives the blocks. The series is empty whichever end
+        # one reads it from, and the honest ``first`` is the day it could resume.
+        return Horizon(max(unpriced for _, unpriced in blocked) + day, None)
+
+    left = [unpriced for acquired, unpriced in blocked if unpriced <= last]
+    return Horizon(max(left) + day if left else None,
+                   None if last >= ceiling else last)
 
 
 @dataclass
@@ -408,7 +492,12 @@ def compute_account(timeline: Timeline, account: Account, symbols,
     the account's **horizon** (issue #708, :func:`account_horizon`): below it
     nothing is written at all, so nothing is computed either — which is what
     keeps :func:`carrying.carrying_price`'s domain exactly *terminal symbol, any
-    day* rather than *any symbol whose history has not arrived yet*.
+    day* rather than *any symbol whose history has not arrived yet*. ``today`` is
+    the other end of that same interval and it is **not always the current day**
+    since #765: a block sitting at the ceiling caps the series below itself, so
+    the caller passes :attr:`Horizon.last` when there is one. It is the terminal
+    date of the money-weighted return too, which is the point — every figure the
+    series carries is measured at the day it stops on.
     """
     acc = account.id
     cash_flows, grant_flows = _account_flows(timeline, acc)
@@ -485,15 +574,22 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
     page. It is also ADR-0018's rule seen from the other side — *a global figure
     is written only where it is writable for every account* — which is why
     :attr:`Performance.has_cash_ledger` is folded with ``all`` below.
+
+    ``today`` is the **min** of the per-account caps (issue #765), and it is the
+    same argument on the other end of the axis: an account whose series stops
+    two days ago simply stops contributing to the sum, so a global point written
+    past it would draw the very step the max of the horizons exists to prevent —
+    downwards this time, by the whole of that account.
     """
     if not accounts:
         return None
 
-    # Sum the per-account daily series by date (accounts start on different days).
+    # Sum the per-account daily series by date (accounts start on different days,
+    # and since #765 they do not all stop on the same one either).
     by_date: Dict[date, DailyPerf] = {}
     for perf in per_account.values():
         for dp in perf.daily:
-            if dp.date < start:
+            if dp.date < start or dp.date > today:
                 continue
             agg = by_date.get(dp.date)
             if agg is None:

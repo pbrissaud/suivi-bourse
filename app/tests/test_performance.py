@@ -6,7 +6,7 @@ classification, no-external-flow => no xirr/gain, daily valuation, TWR base 100,
 GRANT valued at the day's price, and portfolio-total currency gating.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -334,16 +334,29 @@ def test_portfolio_total_aggregates_the_accounts_it_is_given():
 
 
 # --------------------------------------------------------------------------- #
-# The sliding horizon (issue #708, spec #695 § 11)
+# The sliding horizon (issue #708, spec #695 § 11) — and its cap (issue #765)
 #
-#   horizon(account) = 1 + max over s of min(oldest price(s) − 1,
-#                                            last held day(s))
+#   block(s)  = [ acquired(s), min(oldest price(s) − 1, last held day(s)) ]
+#   the series = the latest run of days no block covers, inside [start, ceiling]
 #
-# Pure: the three inputs are a mapping each, so the whole of the rule is testable
-# without a store, a clock or a backfill. A window is ``(first, last)`` day held.
+# Pure: the inputs are a mapping each plus two days, so the whole of the rule is
+# testable without a store, a clock or a backfill. A window is ``(first, last)``
+# day held.
 # --------------------------------------------------------------------------- #
 TODAY = date(2026, 8, 12)
-LONG_HELD = (date(2019, 1, 1), TODAY)
+LEDGER_START = date(2019, 1, 1)
+LONG_HELD = (LEDGER_START, TODAY)
+#: A purchase of two days ago — the reproducing shape of #765. A line acquired
+#: **today** is terminal from its first cycle (``carrying.is_terminal``: the
+#: backward anchor is already at the target), so it is settled and blocks
+#: nothing; any earlier acquisition with no price yet is what empties the table.
+BOUGHT = date(2026, 8, 10)
+
+
+def _horizon(windows, oldest_priced, settled=(), start=LEDGER_START):
+    """The rule, on the ordinary caller's two days: the ledger's first, today."""
+    return performance.account_horizon(windows, oldest_priced, settled,
+                                       start=start, ceiling=TODAY)
 
 
 def test_the_horizon_is_the_day_after_the_last_unpriced_held_day():
@@ -354,10 +367,9 @@ def test_the_horizon_is_the_day_after_the_last_unpriced_held_day():
     2021-06-02, whose valuation would count the position as worth nothing beside
     a cash ledger that had already paid for it.
     """
-    horizon = performance.account_horizon(
-        {"AAPL": LONG_HELD}, {"AAPL": date(2021, 6, 3)})
+    horizon = _horizon({"AAPL": LONG_HELD}, {"AAPL": date(2021, 6, 3)})
 
-    assert horizon == date(2021, 6, 3)
+    assert horizon == (date(2021, 6, 3), None)
 
 
 def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
@@ -369,19 +381,94 @@ def test_a_symbol_priced_from_the_day_it_was_acquired_constrains_nothing():
     of a portfolio that bought a new line this morning to *this morning* — every
     year it owns, gone, on the ordinary gesture of buying something.
     """
-    assert performance.account_horizon(
-        {"NEW": (date(2026, 6, 1), TODAY)},
-        {"NEW": date(2026, 6, 1)}) is None
+    assert _horizon({"NEW": (date(2026, 6, 1), TODAY)},
+                    {"NEW": date(2026, 6, 1)}) == (None, None)
     # …and a line bought yesterday does not blank an old line's history either.
-    assert performance.account_horizon(
-        {"OLD": LONG_HELD, "NEW": (date(2026, 6, 1), TODAY)},
-        {"OLD": date(2019, 1, 1), "NEW": date(2026, 6, 1)}) is None
-    assert performance.account_horizon({}, {"AAPL": date(2019, 1, 1)}) is None
+    assert _horizon({"OLD": LONG_HELD, "NEW": (date(2026, 6, 1), TODAY)},
+                    {"OLD": LEDGER_START,
+                     "NEW": date(2026, 6, 1)}) == (None, None)
+    assert _horizon({}, {"AAPL": LEDGER_START}) == (None, None)
+
+
+def test_the_rule_stated_and_the_rule_coded_coincide_on_a_symbol_with_no_price():
+    """Criterion 2 of #765: the guard is about the **day**, not about the price.
+
+    #708 wrote *"a day before a position was acquired holds nothing of it"* in
+    its docstring and coded it as ``oldest ≤ acquired`` — a test that a symbol
+    absent from ``oldest_priced`` never reaches, so the stated rule and the coded
+    one diverged on exactly the population that empties the table. Here the block
+    is built for every symbol and dropped when it is empty, so a day before an
+    acquisition is never blocked by that acquisition, priced or not.
+    """
+    # The two spellings side by side, on the same window: the symbol quoted from
+    # its acquisition, and the symbol quoted nowhere at all.
+    priced = _horizon({"NEW": (BOUGHT, TODAY)}, {"NEW": BOUGHT})
+    unpriced = _horizon({"NEW": (BOUGHT, TODAY)}, {})
+
+    assert priced == (None, None)
+    # The unpriced one blocks its own two days and **only** those: 2019 through
+    # the day before the purchase hold nothing of a line bought this week.
+    assert unpriced == (None, BOUGHT - timedelta(days=1))
+
+
+def test_a_new_line_caps_the_series_instead_of_deleting_its_history():
+    """Criterion 3 of #765, and the whole subject of the ticket.
+
+    Buying a security the portfolio did not hold yet gives a symbol with no price
+    anywhere until the backward pass brings its first chunk back. #708's left
+    bound landed the day after the last day it was held with no price — *tomorrow*
+    on a line still standing — so the entire series fell outside the horizon, the
+    cycle produced no point for anybody, and the prune, doing exactly what it is
+    written for, emptied the table. Years of history, deleted by a purchase.
+
+    Treated where it is, the block caps: the years stay, the last point is a day
+    older than the purchase, and the next cycle catches up.
+    """
+    horizon = _horizon({"OLD": LONG_HELD, "NEW": (BOUGHT, TODAY)},
+                       {"OLD": LEDGER_START})
+
+    assert horizon == (None, BOUGHT - timedelta(days=1))
+    # The left bound is untouched by the cap: an old line still being
+    # reconstructed goes on bounding the series where it always did.
+    assert _horizon({"OLD": LONG_HELD, "NEW": (BOUGHT, TODAY)},
+                    {"OLD": date(2021, 6, 3)}) == (date(2021, 6, 3),
+                                                   BOUGHT - timedelta(days=1))
+
+
+def test_the_cap_walks_left_past_every_block_it_lands_in():
+    """One rule and not two guards: the right edge steps over the blocks it
+    meets, and stepping over one can land it inside another.
+
+    ``NEW`` was bought this week and is quoted nowhere; ``OLD`` is quoted from
+    the day after the edge ``NEW`` alone would leave. A single step would stop
+    the series on a day ``OLD`` cannot value either, which is the crater again,
+    one day wide — so the edge walks until it stands on a day no block covers.
+    The ledger opened a year before the first purchase, so there is something
+    left to keep.
+    """
+    horizon = _horizon({"OLD": (LEDGER_START, TODAY), "NEW": (BOUGHT, TODAY)},
+                       {"OLD": BOUGHT}, start=date(2018, 1, 1))
+
+    assert horizon == (None, LEDGER_START - timedelta(days=1))
+
+
+def test_a_symbol_with_no_price_at_all_blocks_every_day_it_was_held():
+    """The reconstruction's first minutes, seen from here.
+
+    Absent from ``oldest_priced`` means *no usable price anywhere*, and the whole
+    holding window is therefore unwritable. On a position held since the ledger's
+    own first day there is no run of days left to keep, so the reading falls back
+    to the left bound and it is tomorrow — the honest one: today's figures are
+    the first ones the app can state, and it states them from the first cycle.
+    """
+    assert _horizon({"AAPL": LONG_HELD}, {}) == (date(2026, 8, 13), None)
+    assert _horizon({"SOLD": (date(2020, 3, 2), date(2022, 5, 4))},
+                    {}) == (date(2022, 5, 5), None)
 
 
 def test_the_horizon_is_bounded_by_each_symbols_holding_window():
     """A line sold in 2022 whose backfill is only starting does not hold the
-    account at today — criterion 1, and the reason the bound exists.
+    account at today — #708's criterion 1, and the reason the bound exists.
 
     Read literally as *"the most recent of the oldest available prices"*, the
     sold symbol's oldest available price is dated this year and would pin the
@@ -390,60 +477,48 @@ def test_the_horizon_is_bounded_by_each_symbols_holding_window():
     a position sold four years ago is reconstructed, and its reconstruction
     starts from the present.
     """
-    horizon = performance.account_horizon(
+    horizon = _horizon(
         {"SOLD": (date(2020, 3, 2), date(2022, 5, 4)), "HELD": LONG_HELD},
-        {"SOLD": date(2026, 1, 10), "HELD": date(2019, 1, 1)})
+        {"SOLD": date(2026, 1, 10), "HELD": LEDGER_START})
 
     # The day after the sold line's last held day, not the day after its oldest
     # price — which would have been 2026-01-10, i.e. nothing before today.
-    assert horizon == date(2022, 5, 5)
-
-
-def test_a_symbol_with_no_price_at_all_blocks_every_day_it_was_held():
-    """The reconstruction's first minutes, seen from here.
-
-    Absent from ``oldest_priced`` means *no usable price anywhere*, and the whole
-    holding window is therefore unwritable. On a position still standing that is
-    tomorrow, which is the honest reading: today's figures are the first ones the
-    app can state, and it states them from the first cycle.
-    """
-    assert performance.account_horizon({"AAPL": LONG_HELD}, {}) == date(2026, 8, 13)
-    assert performance.account_horizon(
-        {"SOLD": (date(2020, 3, 2), date(2022, 5, 4))}, {}) == date(2022, 5, 5)
+    assert horizon == (date(2022, 5, 5), None)
 
 
 def test_a_settled_symbol_does_not_contribute_to_the_horizon():
-    """Criterion 2, and it is the clause that keeps the horizon from freezing.
+    """Criterion 2 of #708, and it is the clause that keeps the horizon from
+    freezing.
 
     A backfill that has concluded on zero point, and a symbol quoted in a
     currency that does not resolve, are absences no cycle will repair. Taken at
     their word they would pin the horizon at today **for ever**; excluded, their
     priceless days fall to :func:`carrying.carrying_price`, whose domain is
-    exactly *terminal symbol, any day*.
+    exactly *terminal symbol, any day* — and #765 does not widen it: the cap
+    removes days from the series, it never hands a transitory absence to the
+    carrying convention.
     """
-    blocked = performance.account_horizon({"DEAD": LONG_HELD}, {})
-    settled = performance.account_horizon({"DEAD": LONG_HELD}, {},
-                                          settled={"DEAD"})
+    blocked = _horizon({"DEAD": LONG_HELD}, {})
+    settled = _horizon({"DEAD": LONG_HELD}, {}, settled={"DEAD"})
 
-    assert blocked == date(2026, 8, 13)
-    assert settled is None
+    assert blocked == (date(2026, 8, 13), None)
+    assert settled == (None, None)
 
 
 def test_a_settled_symbol_does_not_lift_another_symbols_bound():
     """Excluding one symbol says nothing about the next: the max is over the
     rest, so a live reconstruction still holds the account back."""
-    assert performance.account_horizon(
-        {"DEAD": LONG_HELD, "AAPL": LONG_HELD},
-        {"AAPL": date(2021, 6, 3)},
-        settled={"DEAD"}) == date(2021, 6, 3)
+    assert _horizon({"DEAD": LONG_HELD, "AAPL": LONG_HELD},
+                    {"AAPL": date(2021, 6, 3)},
+                    settled={"DEAD"}) == (date(2021, 6, 3), None)
 
 
 def test_the_horizon_takes_the_latest_of_the_symbols_it_keeps():
     """A *max*, not a min: the account is writable only where **every** symbol
     it holds is priced, since one unpriced line is enough to hollow the sum."""
-    assert performance.account_horizon(
-        {"A": LONG_HELD, "B": LONG_HELD},
-        {"A": date(2021, 6, 3), "B": date(2023, 2, 1)}) == date(2023, 2, 1)
+    assert _horizon({"A": LONG_HELD, "B": LONG_HELD},
+                    {"A": date(2021, 6, 3),
+                     "B": date(2023, 2, 1)}) == (date(2023, 2, 1), None)
 
 
 def test_the_horizon_bounds_where_the_series_starts():
@@ -458,14 +533,15 @@ def test_the_horizon_bounds_where_the_series_starts():
     price_at = _price_at({"AAPL": {date(2024, 1, 3): 110.0}})
 
     window = tl.holding_window("PEA", "AAPL", date(2024, 1, 4))
-    horizon = performance.account_horizon({"AAPL": window},
-                                          {"AAPL": date(2024, 1, 3)})
-    perf = compute_account(tl, PEA, {"AAPL"}, price_at, start=horizon,
+    horizon = performance.account_horizon(
+        {"AAPL": window}, {"AAPL": date(2024, 1, 3)},
+        start=date(2024, 1, 1), ceiling=date(2024, 1, 4))
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at, start=horizon.first,
                            today=date(2024, 1, 4))
 
     assert window == (date(2024, 1, 1), date(2024, 1, 4))
 
-    assert horizon == date(2024, 1, 3)
+    assert horizon == (date(2024, 1, 3), None)
     assert [dp.date for dp in perf.daily] == [date(2024, 1, 3), date(2024, 1, 4)]
     # No crater: the two days that had no price are not written at all, so the
     # index is anchored on a day whose value is complete.
