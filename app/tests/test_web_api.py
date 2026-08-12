@@ -1266,15 +1266,48 @@ def test_the_price_series_propagates_a_storage_failure(tmp_path):
 # Accounts — the discriminator, not an empty list
 # --------------------------------------------------------------------- #
 
-def test_accounts_says_undeclared_rather_than_returning_nothing(tmp_path):
-    """`declared: false` is the opt-out setup every default install runs.
+def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
+    """`declared: false` is the opt-out setup every default install runs, and it
+    is the **member** that says so — never an empty list.
 
     Letting the front infer it from `[]` is what would eventually make "no
     declared accounts" and "the config failed to load" render the same screen.
+    And the list holds the one account ADR-0013 gives every install: `[]` was a
+    resource answering *none* to a question the product says cannot be answered
+    that way, which left the declaration block with nothing to render on a fresh
+    install — no row to rename, and no way to declare a first account (#729).
     """
     payload = build_client(tmp_path).get('/api/accounts').get_json()
 
-    assert payload == {'declared': False, 'accounts': []}
+    assert payload['declared'] is False
+    assert [a['id'] for a in payload['accounts']] == ['default']
+    # The row as the seed wrote it: `source_id` NULL, therefore editable, which
+    # is what makes the rename an ordinary `PATCH`.
+    seeded = payload['accounts'][0]
+    assert (seeded['label'], seeded['type']) == ('Default account', 'OTHER')
+    assert (seeded['source_id'], seeded['editable']) == (None, True)
+
+
+def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
+    """The measurement #729 rests on, server-side.
+
+    `PATCH /api/accounts/default` answered `200`, the store held the new label,
+    and `GET /api/accounts` went on serving `{declared: false, accounts: []}` —
+    so every page rebuilt the row from nothing and re-drew the catalogue's name
+    over it. A rename is only a gesture if the resource carries its result, and
+    `declared` stays `false`: renaming the row every install owns declares
+    nothing beyond it.
+    """
+    client = build_client(tmp_path)
+
+    renamed = client.patch('/api/accounts/default',
+                           json={'label': 'Mon PEA', 'type': 'PEA'})
+
+    assert renamed.status_code == 200
+    payload = client.get('/api/accounts').get_json()
+    assert payload['declared'] is False
+    assert [(a['id'], a['label'], a['type']) for a in payload['accounts']] == [
+        ('default', 'Mon PEA', 'PEA')]
 
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
@@ -2830,7 +2863,11 @@ def test_an_account_can_be_declared_here_and_is_editable(tmp_path):
     assert renamed.get_json()['label'] == 'PEA Fortuneo'
 
     assert client.delete('/api/accounts/pea').status_code == 200
-    assert client.get('/api/accounts').get_json()['declared'] is False
+    # Back to the install that has declared nothing: the discriminator says so,
+    # and the seeded row is what is left to show (#729).
+    after = client.get('/api/accounts').get_json()
+    assert after['declared'] is False
+    assert [a['id'] for a in after['accounts']] == ['default']
 
 
 def test_declaring_an_id_twice_is_a_409(tmp_path):

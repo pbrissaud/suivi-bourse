@@ -588,23 +588,51 @@ def list_accounts():
 
     ``declared: false`` is a *designed* state, not an empty one — the opt-out
     setup every default install runs. Stating it explicitly rather than letting
-    the front infer it from ``[]`` is #655 decision 8's discriminator rule. It is
-    also what keeps the enrichment free for that install: with no declaration
-    there is no query, so the default setup's shares filter still cannot fail on
-    a database it never reads.
+    the front infer it from ``[]`` is #655 decision 8's discriminator rule, and
+    it is the member that carries the whole distinction now that the list is
+    never empty.
+
+    **The list always holds at least one row** (issue #729, ADR-0013). While
+    nothing else is declared that row is the seeded ``default`` one, and it is
+    *served* rather than left to a client to synthesise, for one reason: its
+    ``label`` is the one thing no client can know. Renaming that account is a
+    ``PATCH`` on this very resource — it is the only account a fresh install has,
+    so it is the only one there is to rename — and a payload that never carried
+    the row made the rename **invisible**: the store held ``Mon PEA`` while every
+    page went on drawing a row it had rebuilt from nothing. ``declared`` keeps
+    its meaning exactly (*is there a declaration beyond the one every install is
+    given*), so nothing reading the discriminator changes; what changes is that a
+    reader asking *which accounts are there* is no longer answered *none*, which
+    ADR-0013 says is impossible.
+
+    The cost accepted is one query on an install that declared nothing, where
+    this route used to read no database at all. The property that argument was
+    written for — the shares page's account filter surviving a store outage —
+    left with the page itself: since #719 that filter reads ``/api/positions``,
+    which opens the store on every install.
     """
     accounts = _snapshot().accounts
-    if accounts is None:
-        return jsonify({'declared': False, 'accounts': []})
-
-    rows = _reader().latest_account_metrics() if accounts.accounts else []
+    declaration = accounts.accounts if accounts is not None else _seeded_only()
+    rows = _reader().latest_account_metrics() if declaration else []
     return jsonify({
-        'declared': True,
+        'declared': accounts is not None,
         'accounts': [
             summary.to_dict()
-            for summary in portfolio_view.build_accounts(accounts.accounts, rows)
+            for summary in portfolio_view.build_accounts(declaration, rows)
         ],
     })
+
+
+def _seeded_only():
+    """The ``default`` row as the store holds it — the whole declaration.
+
+    Read from the table and never rebuilt from :data:`store.DEFAULT_ACCOUNT_ROW`:
+    the point is to publish what the row says *now*, seed included until somebody
+    relabels it. ``declared_portfolio`` answering ``None`` means the table holds
+    this row and nothing else, so the filter is a guard rather than a search.
+    """
+    return [row for row in accounts_module.read_accounts(_store())
+            if row.id == accounts_module.DEFAULT_ACCOUNT]
 
 
 @api_bp.get('/accounts/<account_id>/history')
