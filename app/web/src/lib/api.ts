@@ -36,7 +36,15 @@ export const ROUTES = {
    */
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
+  /** The ledger itself — read, and written one row at a time (#723). */
+  events: '/api/events',
+  /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
+  event: '/api/events/:id',
 } as const
+
+export function eventPath(id: string): string {
+  return `/api/events/${encodeURIComponent(id)}`
+}
 
 /**
  * The window a chart asks for. The four are the **rungs of the retention
@@ -93,6 +101,22 @@ async function unwrap<T>(response: Response, path: string): Promise<T> {
 
 async function get<T>(path: string): Promise<T> {
   return unwrap<T>(await fetch(path, { headers: { Accept: 'application/json' } }), path)
+}
+
+/**
+ * The write half, and it goes through the same `unwrap`: a refusal is a
+ * `problem+json` whose `type` the caller branches on, exactly like a failed
+ * read. There is no second error contract for writes.
+ */
+async function send<T>(path: string, method: 'POST' | 'PATCH', body: unknown): Promise<T> {
+  return unwrap<T>(
+    await fetch(path, {
+      method,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    path,
+  )
 }
 
 // ------------------------------------------------------------------------- //
@@ -292,8 +316,118 @@ export interface RuntimeState {
   accounts: RuntimeAccount[]
 }
 
+// ------------------------------------------------------------------------- //
+// The ledger (#723, ADR-0020, ADR-0005)
+//
+// **The shape below is the one `GET /api/events` already serves**, field for
+// field, and that is deliberate: #718 mounted a head over two routes nobody had
+// written and turned a page from *not built yet* into *the app is not
+// answering*, which took #763 to repair. Here the read exists, so the page is
+// written on it rather than on a nicer shape somebody would have to catch up
+// with — a client that had renamed the members would render an **empty ledger**
+// on a full install, which is worse than a 404 because it reads as a fact.
+//
+// Two members are **additions**, both optional in the type so that today's
+// server renders the page whole, and each is what one criterion of #723 rests
+// on:
+//
+//  - **`source_filename`** — the provenance is worth exactly two things
+//    (ADR-0020): a displayable label and the unit of revocation. Never an
+//    address, and never the file's presence on disk — the drop folder is an
+//    optional read-only bind (ADR-0015), so *file not found* would be a
+//    permanent false defect on every install without one. The store renders a
+//    label of its own (`2024.csv, row 14`) and the front cannot use it: a
+//    rendering follows the **reader's** language (ADR-0024), so what the front
+//    needs is the file's name, not a sentence about it. Absent, the served
+//    label is shown rather than an em dash — which would say *typed here*, and
+//    that is a different row.
+//  - **`id`** — a row the app itself created is the one kind it may edit, and
+//    editing needs an address. That address is a **primary key**, which is the
+//    whole of what killed #662's apparatus: the opaque token over `(file, sheet,
+//    row)`, the content fingerprint as an `ETag` and its `409` existed because
+//    the *file* was the address and a file address goes stale between the read
+//    and the write. Absent — today, on every row — the editor is not offered at
+//    all, which is exactly what the criterion says happens on an install that
+//    has only ever imported.
+//
+// And one route is genuinely new: **`POST /api/events`**, without which the
+// create form has nowhere to write. It is ADR-0005's onboarding rather than a
+// convenience — manual mode is gone, so typing a position *is* creating dated
+// events — and it is announced here, in the one module that knows a URL.
+// `PATCH` is its bounded sibling: `web/api.py` states that no sibling edits an
+// *imported* event, and that argument is about a file being read-only, not
+// about a row somebody typed here a minute ago.
+// ------------------------------------------------------------------------- //
+
+/**
+ * The six, in the order the form offers them — the two acquisitions, the
+ * disposal, the income, then the two cash movements. The catalogue names them by
+ * their **effect** (`Free shares`, `Cash in`, `Cash out`) rather than by their
+ * code: six codes are a decoding exercise at the exact moment a first-time owner
+ * has nothing yet to decode them against.
+ */
+export const EVENT_TYPES = ['BUY', 'SELL', 'GRANT', 'DIVIDEND', 'DEPOSIT', 'WITHDRAWAL'] as const
+
+export type LedgerEventType = (typeof EVENT_TYPES)[number]
+
+export interface LedgerEvent {
+  /** A calendar day, `YYYY-MM-DD` — never an instant (the store's own rule). */
+  date: string | null
+  event_type: LedgerEventType
+  /** `null` on a cash movement, which names no security at all. */
+  symbol: string | null
+  /** The security's name. Read by no column of the ledger — see #723. */
+  name: string | null
+  quantity: number | null
+  /** In the reporting currency — an event amount is a debit (ADR-0002). */
+  unit_price: number | null
+  fee: number | null
+  amount: number | null
+  /** The row's free text. On a cash movement it is the whole identity. */
+  notes: string | null
+  /** Blank means `default`, which is the aggregator's own rule. */
+  account: string
+  /** The import this row came from — `null` is *typed in the app*. */
+  source_id: number | null
+  source_sheet: string | null
+  source_row: number | null
+  /** The store's own label. A fallback, never the rendering (ADR-0024). */
+  provenance: string | null
+  /** #723: the file's **name**, so the label follows the reader's language. */
+  source_filename?: string | null
+  /** #723: the key a row typed here is addressed by. Absent on an import. */
+  id?: string | null
+}
+
+/** A bare collection, as served: `200` + `[]` on an install that has nothing. */
+export type EventsResponse = LedgerEvent[]
+
+/**
+ * What the form sends. Deliberately **not** a `LedgerEvent` minus a few fields:
+ * the row's key and its provenance are the store's to write, and a client that
+ * could name either would be a client that could forge one.
+ *
+ * `name` is not a member either. It is an attribute of the *security*, not of
+ * each of its events — the reason `Nom` left the table is the reason it never
+ * enters here — and the symbol is what identifies the line.
+ */
+export interface EventDraft {
+  date: string
+  event_type: LedgerEventType
+  account: string
+  symbol: string | null
+  notes: string | null
+  quantity: number | null
+  unit_price: number | null
+  fee: number | null
+  amount: number | null
+}
+
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
+  events: () => get<EventsResponse>(ROUTES.events),
+  createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
+  updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
   positions: () => get<PositionsResponse>(ROUTES.positions),
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
   prices: (symbol: string, window: ChartWindow) =>
