@@ -81,6 +81,28 @@ Each one is here because a wave went wrong without it.
 - **Scope is not widened silently.** A defect belonging to another ticket is
   reported with its owner, never repaired in place — repairing another ticket's
   file here dissolves the decomposition the map is made of.
+- **A wave is composed on the files it will touch, never on its subjects.** Two
+  tickets about different *pages* are not disjoint work if they are about the
+  same *word*: #721 (the accounts page) and #729 (the accounts declaration on
+  the data page) were put in one wave as "three disjoint trees", and each created
+  `app/web/src/lib/accounts.ts` and redefined `anAccount` / `defaultAccounts()`
+  in `test/factories.ts`, the fixtures 245 tests read. Five files conflicted, two
+  of them test files, and the substance was worse than the mechanics: the two
+  modules held **two spellings of one constant** — `DEFAULT_ACCOUNT_ID` and
+  `UNASSIGNED`, both `'default'` — which is the *written twice, the copy loses a
+  branch* defect both module headers invoke, each against the other without
+  knowing. Branches leave from the same base in parallel, so nothing warns: the
+  collision is only visible at the second merge. Before composing, name the
+  **module** each ticket will write and the **fixtures** it will touch, and put
+  two tickets naming the same one in two different waves.
+- **A merge conflict inside prose is resolved by an author, not by a union.**
+  The same wave's second merge could not be finished mechanically: the conflict
+  boundaries in `lib/api.ts` fell *inside* doc comments, so concatenating both
+  sides produced text that no longer parsed, and reconciling the fixtures meant
+  guessing which shape each of 245 tests wanted. What that costs is a re-run —
+  the held branch is rebuilt on the merged base, where its implementer
+  reconciles with the context — and what it saves is a merge that compiles and
+  is quietly wrong about a fixture.
 - **Gates are run, never dressed up.** No disabled test, no `--no-verify`, no link
   turned into text to quiet a build. Whatever the diff touches gets its gate:
   `pnpm build` for `website/`, `flake8` + `pytest` for `app/src/`, `pnpm lint` +
