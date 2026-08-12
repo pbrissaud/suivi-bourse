@@ -1213,16 +1213,25 @@ either one alone produces a wrong figure rather than a missing one:
   purchases on 2020-09-28, `twr_index` 0,057, the dashboard reading
   **`TWR −100,00 %`** on eleven thousand euros. #706's second term cannot catch
   it — it is right about a **permanent** absence and silent about a
-  **transitory** one, which is exactly what a reconstruction is. Six things about
-  the formula: it is **bounded by each symbol's holding window**
+  **transitory** one, which is exactly what a reconstruction is. Seven things
+  about the formula: it is **bounded by each symbol's holding window**
   (unbounded, a line sold in 2022 whose backfill is starting has its oldest
   available price dated *this year* and holds the whole account at today, a case
   ADR-0009 made ordinary); it is bounded by that window's **two** ends, the lower
   one being the same decision on the other side — the backward pass never
   overshoots the first acquisition, so a symbol's oldest price *is* its
   acquisition day once reconstructed, and without the lower bound a portfolio
-  that bought a line this morning would take a horizon of this morning; **a block
+  that bought a line this morning would take a horizon of this morning — and that
+  lower end is a statement about **the block**, `unpriced < acquired` being one
+  spelling of #708's `oldest ≤ acquired` and not a wider guard (a symbol quoted
+  nowhere has `unpriced = last_held`, never before its acquisition, so the branch
+  is unreachable for it: what treats that symbol is the cap); **a block
   that reaches the ceiling caps the series instead of bounding it** (#765, below);
+  **the days left of a block that does *not* reach the ceiling go with it**, the
+  residue #765 leaves standing and names rather than repairs — a line acquired
+  2020-03-02, exited 2022-05-04 and quoted nowhere pins a ledger opened in 2019
+  at 2022-05-05, 2019 included, on days it held nothing of that line, because a
+  horizon is **one interval** and the run that survives is the one holding today;
   **when no run survives the reading falls back to the left bound**, which is the
   fresh install whose first purchase has no price yet — the series is empty
   either way and `first` names the day it could resume rather than claiming
@@ -1271,6 +1280,21 @@ either one alone produces a wrong figure rather than a missing one:
   right, it was being lied to upstream — and `carrying_price` keeps its domain:
   the cap removes days from the series, it never hands a transitory absence to
   the carrying convention.
+  **What the ticket asked for and did not get is written down rather than
+  counted**: its second acceptance criterion — *a day before a symbol's
+  acquisition is never blocked by it, priced or not* — is held for the **block**
+  and **not** for the horizon the blocks feed. A block lying wholly in the past
+  bounds the series on its left edge and takes those days with it, and the two
+  ways to give them back are refused by the argument that refused the per-day
+  mask: keeping the *left* run abandons today's figures, which is the whole of
+  the sliding horizon, and keeping both makes the series two runs with a hole
+  between them. The refactor into blocks is what made the cap expressible; it
+  changed **no verdict** of #708's guard, verified exhaustively, and reading it
+  as the repair reads a no-op (`test_the_empty_block_guard_is_one_spelling_of_
+  708s_and_not_a_wider_one`, and the residue asserted at
+  `test_the_days_left_of_a_past_block_are_lost_with_it`). Whether a horizon may
+  ever be **more than one interval** is the open question, and it is #708's
+  calendar-density decision to reopen, not this ticket's.
 - **The rule is by field, never by account.** The opt-in guard read
   `declared_portfolio`, whose `None` means *nothing declared beyond the seed* —
   and ADR-0013 seeds a `default` row at the creation of the schema and never
