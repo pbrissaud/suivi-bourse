@@ -36,7 +36,7 @@ design merely tolerated. Cascade forgetting is therefore refused, not performed.
 requires.
 """
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set
 
@@ -359,6 +359,42 @@ def declared_portfolio(store) -> Optional[Portfolio]:
     if fallback is not None and is_named_by_events(store, DEFAULT_ACCOUNT):
         declared.append(fallback)
     return Portfolio(accounts=declared)
+
+
+def as_declared(account: Account) -> Account:
+    """The row as a **reader** must see it: what nobody declared reads ``None``.
+
+    The seed writes ``Default account`` / ``OTHER`` into a row every install
+    owns and nobody asked for, and those two values are English the front must
+    not render (ADR-0024) — so the interface names that row from its own
+    catalogue until its owner gives it a name, and shows the name they gave the
+    moment they do.
+
+    **Which side recognises the seed is the whole decision.** The value is
+    written here, in ``store.DEFAULT_ACCOUNT_ROW``, so it is recognised here:
+    the wire carries ``null`` and the front folds *nothing declared* into its
+    catalogue with no literal of its own. Recognising it in the client instead
+    was written and undone — it put a **third copy** of a server-owned string on
+    the far side of HTTP, where no compiler and no test spans both ends (the
+    front's only faked edge is MSW, so its fixtures would have gone on agreeing
+    with themselves). Reworded here for a typo, the seed would then have started
+    rendering as a name its owner had typed, silently, every gate green — which
+    is the exact failure the rule exists to prevent, arrived from the other side.
+
+    Only the ``default`` row is concerned, and only while it still says what the
+    seed said: an owner who names their own account ``Default account`` is
+    naming it, and a comparison is what the store's lack of migration machinery
+    leaves (ADR-0001) — there is no *renamed* column to add to a row every
+    install already has.
+    """
+    if account.id != DEFAULT_ACCOUNT:
+        return account
+    _, seeded_type, seeded_label, _ = store_module.DEFAULT_ACCOUNT_ROW
+    return replace(
+        account,
+        label=None if account.label == seeded_label else account.label,
+        type=None if account.type == seeded_type else account.type,
+    )
 
 
 def is_named_by_events(store, account_id: str) -> bool:

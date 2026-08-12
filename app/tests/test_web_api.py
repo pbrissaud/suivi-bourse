@@ -1281,10 +1281,13 @@ def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
 
     assert payload['declared'] is False
     assert [a['id'] for a in payload['accounts']] == ['default']
-    # The row as the seed wrote it: `source_id` NULL, therefore editable, which
-    # is what makes the rename an ordinary `PATCH`.
+    # The row **as a reader must see it**: what nobody declared is `null`, so the
+    # interface names it from its own catalogue rather than recognising the
+    # seed's English on the far side of HTTP — see the test below, which is where
+    # that rule is guarded. `source_id` NULL, therefore editable, is what makes
+    # the rename an ordinary `PATCH`.
     seeded = payload['accounts'][0]
-    assert (seeded['label'], seeded['type']) == ('Default account', 'OTHER')
+    assert (seeded['label'], seeded['type']) == (None, None)
     assert (seeded['source_id'], seeded['editable']) == (None, True)
 
 
@@ -1308,6 +1311,51 @@ def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
     assert payload['declared'] is False
     assert [(a['id'], a['label'], a['type']) for a in payload['accounts']] == [
         ('default', 'Mon PEA', 'PEA')]
+
+
+def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
+    """What nobody declared goes out as ``null``, and the recognising is here.
+
+    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` / ``OTHER`` into a
+    row every install owns and nobody asked for. The front must not render
+    either — they are the *server's* English, and ADR-0024 puts every rendering
+    in the reader's language — so one side has to recognise them, and it is the
+    side that writes them.
+
+    Recognising them in the client was written first and undone: it put a third
+    copy of this string across HTTP, where nothing spans both ends. The front's
+    only faked edge is MSW, so its fixtures would have gone on agreeing with
+    themselves; reworded here for a typo, the seed would have started rendering
+    as a name its owner had typed, with every gate green. This assertion is that
+    guard, and it is the one place both halves of the sentence run in one
+    process.
+
+    The store is **not** what changes: ``read_accounts`` keeps serving the row as
+    written, which is what the export and the replay want. It is the wire that
+    carries the declaration alone.
+    """
+    client = build_client(tmp_path)
+
+    served = client.get('/api/accounts').get_json()['accounts']
+    assert [(a['id'], a['label'], a['type']) for a in served] == [
+        ('default', None, None)]
+    # Read off the constant rather than quoted: this assertion has to fail when
+    # the seed is reworded, which is the whole reason it exists.
+    _, seeded_type, seeded_label, _ = store.DEFAULT_ACCOUNT_ROW
+    assert (seeded_label, seeded_type) not in [
+        (a['label'], a['type']) for a in served]
+
+    # An account that is **not** the seeded one keeps whatever it says, the
+    # seed's own words included if its owner chose them: what is recognised is
+    # one row, never a string.
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': seeded_label, 'type': seeded_type})
+    named = [(a['id'], a['label'], a['type'])
+             for a in client.get('/api/accounts').get_json()['accounts']]
+    assert ('pea', seeded_label, seeded_type) in named
+    # The seeded row leaves the list here for its own reason and not this one:
+    # nothing names it, so ADR-0013 keeps it out of a declaration it did not
+    # join (#698). What is asserted above is that its *words* are not the guard.
 
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):

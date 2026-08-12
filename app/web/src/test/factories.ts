@@ -147,16 +147,20 @@ export function aFileAccount(overrides: Partial<Account> = {}): Account {
 }
 
 /**
- * The row the schema seeds and never removes (ADR-0013), **as the store holds
- * it**: `label` and `type` are `store.DEFAULT_ACCOUNT_ROW`'s own English values,
- * quoted here rather than nulled, because that is what the API serves and the
- * front's whole job on this row is to recognise them and not render them.
+ * The row the schema seeds and never removes (ADR-0013), **as the API serves
+ * it**: `label` and `type` are `null` while nobody has named it. The seed's own
+ * English (`Default account` / `OTHER`) never crosses the wire —
+ * `accounts.as_declared` recognises it beside the constant that writes it — so
+ * this fixture cannot hold a copy of it either. That the front then reads its
+ * own catalogue is asserted here; that the server sends `null` is asserted in
+ * `test_web_api.py`, which is the only place both halves of that sentence are
+ * in the same process.
  *
  * `source_id` is `NULL` on the seed, which is what makes it editable — the one
  * property the rename rests on.
  */
 export function theSeededAccount(overrides: Partial<Account> = {}): Account {
-  return anAccount({ id: 'default', label: 'Default account', type: 'OTHER', ...overrides })
+  return anAccount({ id: 'default', label: null, type: null, ...overrides })
 }
 
 export interface PositionOptions extends Partial<Omit<Position, 'price' | 'converted'>> {

@@ -613,6 +613,13 @@ def list_accounts():
     """
     accounts = _snapshot().accounts
     declaration = accounts.accounts if accounts is not None else _seeded_only()
+    # **What nobody declared goes out as `null`**, and it is done here rather
+    # than in the store: `read_accounts` keeps serving the row as it is written,
+    # which is what the export and the replay want, while the *wire* carries the
+    # declaration alone. `accounts.as_declared` holds the comparison, beside the
+    # constant it compares against — the front then folds `null` into its own
+    # catalogue with no copy of a server-owned string.
+    declaration = [accounts_module.as_declared(row) for row in declaration]
     rows = _reader().latest_account_metrics() if declaration else []
     return jsonify({
         'declared': accounts is not None,

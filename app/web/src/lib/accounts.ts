@@ -87,20 +87,6 @@ export function isDefaultAccount(id: string): boolean {
 export const DEFAULT_ACCOUNT_LABEL: MessageKey = 'accounts.default.label'
 export const DEFAULT_ACCOUNT_TYPE: MessageKey = 'accounts.default.type'
 
-/**
- * What the schema seeded, quoted from `store.DEFAULT_ACCOUNT_ROW`.
- *
- * The front must not render either — they are English, written by the *server*
- * about a row nobody declared, and ADR-0024 puts every rendering in the reader's
- * language. Recognising them is what lets a value the owner **gave** the row win
- * over the catalogue's, so *renamed here* is visible on screen; and they are
- * literals rather than a column because the store publishes no *was this ever
- * touched* flag and adding one would be a migration in a product that has no
- * migration machinery (ADR-0001).
- */
-const SEEDED_LABEL = 'Default account'
-const SEEDED_TYPE = 'OTHER'
-
 /** The two members a naming rule needs — an `Account` or an {@link AccountRow}. */
 export interface NamedAccount {
   id: string
@@ -116,18 +102,26 @@ export interface NamedAccount {
  * The moment somebody relabels it — which #729's block is the only place to do —
  * the name they gave wins, on this page and on the accounts page alike, because
  * both read this function. A rename rendered nowhere is not a rename.
+ *
+ * **The recognising is the server's** (`accounts.as_declared`): the seed's own
+ * words are written there, so the wire already carries `null` and this fold has
+ * no copy of them. Written here instead — and it was — the front held a third
+ * copy of a server-owned string across HTTP, where nothing spans both ends: the
+ * only faked edge here is MSW, so the fixtures would have gone on agreeing with
+ * themselves while a reworded seed rendered as a name its owner had typed.
+ *
+ * What is left is the fold the reader needs: a declared account with no label
+ * falls back to the id it is addressed by, since a row must be nameable on
+ * screen even where a file left the column empty.
  */
 export function declaredLabel(account: NamedAccount): string | null {
   const label = account.label?.trim() || null
-  if (!isDefaultAccount(account.id)) return label ?? account.id
-  return label === SEEDED_LABEL ? null : label
+  return isDefaultAccount(account.id) ? label : label ?? account.id
 }
 
 /** The same clause on the other seeded column. `null` — nothing was declared. */
 export function declaredType(account: NamedAccount): string | null {
-  const type = account.type?.trim() || null
-  if (!isDefaultAccount(account.id)) return type
-  return type === SEEDED_TYPE ? null : type
+  return account.type?.trim() || null
 }
 
 // ------------------------------------------------------------------------- //
