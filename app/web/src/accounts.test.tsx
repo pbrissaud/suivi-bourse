@@ -29,6 +29,7 @@ import {
   anAccountWithoutSeries,
   aRuntime,
   defaultAccounts,
+  theSeededAccount,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -314,13 +315,32 @@ describe('the degraded rows', () => {
   })
 
   it('distinguishes the unassigned line and gives it the way back', async () => {
-    renderAccounts([...defaultAccounts(), anAccount({ id: 'default', label: 'Compte par défaut' })])
+    renderAccounts([...defaultAccounts(), theSeededAccount()])
     await settled()
 
     // The one line the promise *your declared accounts* does not cover — and
-    // the label comes from the catalogue, never from the payload (#745).
+    // while it still wears the name the schema seeded, that name comes from the
+    // catalogue rather than from the payload (#745).
     expect(screen.getByRole('button', { name: 'Non affecté' })).toBeInTheDocument()
-    expect(screen.queryByText('Compte par défaut')).not.toBeInTheDocument()
+    expect(screen.queryByText('Default account')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
+    ).toHaveAttribute('href', '/donnees')
+  })
+
+  it('wears the name its owner gave it, once they have given one', async () => {
+    // #729 refines #745 rather than contradicting it, and the argument is
+    // #745's own: what must never follow the reader is a value *the server*
+    // seeded — English, written about a row nobody declared. A name the owner
+    // typed is not that, and the declaration block is the only place the row
+    // can be renamed at all, so a rename rendered nowhere would not be one.
+    // Both surfaces read `declaredLabel`, so they cannot disagree.
+    renderAccounts([...defaultAccounts(), theSeededAccount({ label: 'Mon PEA' })])
+    await settled()
+
+    expect(screen.getByRole('button', { name: 'Mon PEA' })).toBeInTheDocument()
+    expect(screen.queryByText('Non affecté')).not.toBeInTheDocument()
+    // Still the unassigned line, by its id: only the name moved.
     expect(
       screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
     ).toHaveAttribute('href', '/donnees')
@@ -329,16 +349,14 @@ describe('the degraded rows', () => {
   it('reads the unassigned line’s name in the reader’s language', async () => {
     server.use(
       http.get(ROUTES.accounts, () =>
-        HttpResponse.json(
-          anAccountsPayload([...defaultAccounts(), anAccount({ id: 'default', label: 'Compte par défaut' })]),
-        ),
+        HttpResponse.json(anAccountsPayload([...defaultAccounts(), theSeededAccount()])),
       ),
     )
     renderApp({ url: '/comptes', browserLanguages: ['en-GB'] })
 
-    // A value seeded once in a file never follows the reader; the catalogue
-    // does. Every other account shows what it declares, in the language its
-    // owner wrote it in.
+    // A value seeded once never follows the reader; the catalogue does. Every
+    // other account shows what it declares, in the language its owner wrote it
+    // in.
     expect(await screen.findByRole('button', { name: 'Unassigned' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
   })

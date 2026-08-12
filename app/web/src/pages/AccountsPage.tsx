@@ -38,9 +38,10 @@ import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import {
   buildAccountRows,
+  declaredLabel,
+  DEFAULT_ACCOUNT_LABEL,
   DEFAULT_RANGE,
   figuresAsOf,
-  isDefaultAccount,
   portfolioRow,
   PORTFOLIO_KEY,
   rebase,
@@ -142,7 +143,7 @@ export default function AccountsPage() {
   const labels = new Map(
     declared.map((account) => [
       account.id,
-      isDefaultAccount(account.id) ? t('accounts.default.label') : account.label ?? account.id,
+      declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL),
     ]),
   )
 

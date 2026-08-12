@@ -24,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { isDefaultAccount, type AccountRow } from '@/lib/accounts'
+import { declaredLabel, DEFAULT_ACCOUNT_LABEL, type AccountRow } from '@/lib/accounts'
 import { useI18n } from '@/lib/i18n'
 
 export interface AccountSheetProps {
@@ -41,7 +41,7 @@ export function AccountSheet({ row, onClose }: AccountSheetProps) {
         {row === null ? null : (
           <SheetHeader>
             <SheetTitle>
-              {isDefaultAccount(row.id) ? t('accounts.default.label') : row.label ?? row.id}
+              {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
             </SheetTitle>
             <SheetDescription>{t('accounts.sheet.description')}</SheetDescription>
           </SheetHeader>

@@ -40,6 +40,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  declaredLabel,
+  DEFAULT_ACCOUNT_LABEL,
   degradedReason,
   figure,
   isDefaultAccount,
@@ -225,9 +227,12 @@ export function AccountsTable({
                       onOpen(row.id)
                     }}
                   >
-                    {isDefaultAccount(row.id)
-                      ? t('accounts.default.label')
-                      : row.label ?? row.id}
+                    {/* The catalogue's name while the seeded row still wears the
+                        one the product gave it, and the owner's the moment
+                        #729's declaration block relabels it — **one function**,
+                        read here and there, so the two pages cannot name one
+                        thing two ways. */}
+                    {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
                   </button>
                 </span>
                 <span className="block text-xs text-muted-foreground">
