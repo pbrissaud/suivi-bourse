@@ -4,9 +4,12 @@ Since #699 the gauges have **two feeders and two lives**: the replay publishes
 what the events say about a position, the scrape publishes what the market says
 about its price — and only the second half leaves when a symbol's job departs.
 """
+from datetime import date
+
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
+from events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from prometheus_exporter import PrometheusExporter
 
 
@@ -64,6 +67,83 @@ def test_all_expected_gauges_are_registered(exporter):
         'sb_price_staleness',
     ):
         assert f'# HELP {name} ' in text
+
+
+def test_a_gauge_whose_field_is_absent_is_not_published(exporter):
+    """Criterion 8 of #708 — and *the asymmetry is the message*.
+
+    An account with no cash ledger publishes ``sb_account_holdings_value`` and
+    ``sb_account_gain_absolu`` and **nothing else**. Neither a zero nor a NaN
+    will do: a zero makes *"no ledger"* and *"a ledger at zero"* the same series,
+    so an alert on ``< 100`` fires on an empty account, and a NaN propagates
+    through every aggregation that touches it. An absent series is how Prometheus
+    itself says *no value*.
+    """
+    exporter.update_account(AccountMetricPoint(
+        account='PEA', account_type='PEA', day=date(2024, 1, 1),
+        holdings_value=220.0, gain_absolu=20.0))
+
+    labels = {'account': 'PEA'}
+    get = exporter.registry.get_sample_value
+    assert get('sb_account_holdings_value', labels) == 220.0
+    assert get('sb_account_gain_absolu', labels) == 20.0
+    for name in ('sb_account_cash_balance', 'sb_account_total_value',
+                 'sb_account_net_contributed', 'sb_account_xirr',
+                 'sb_account_twr_index'):
+        assert get(name, labels) is None
+    # The account still exists as far as the scraper is concerned.
+    assert get('sb_account_info', {'account': 'PEA', 'account_type': 'PEA'}) == 1
+
+
+def test_a_field_that_stops_being_writable_takes_its_series_away(exporter):
+    """A *retract*, not a skip: the previous cycle's value would otherwise sit
+    there for the life of the process, exactly as a departed symbol's price
+    would without ``forget_quotes``."""
+    labels = {'account': 'PEA'}
+    exporter.update_account(AccountMetricPoint(
+        account='PEA', account_type='PEA', day=date(2024, 1, 1),
+        cash_balance=800.0, holdings_value=220.0, total_value=1020.0,
+        net_contributed=1000.0, gain_absolu=20.0, twr_index=100.0))
+    assert exporter.registry.get_sample_value(
+        'sb_account_total_value', labels) == 1020.0
+
+    exporter.update_account(AccountMetricPoint(
+        account='PEA', account_type='PEA', day=date(2024, 1, 2),
+        holdings_value=230.0, gain_absolu=30.0))
+
+    assert exporter.registry.get_sample_value(
+        'sb_account_total_value', labels) is None
+    assert exporter.registry.get_sample_value(
+        'sb_account_holdings_value', labels) == 230.0
+
+
+def test_the_global_gauges_are_absent_until_something_is_written(exporter):
+    """The unlabelled half of the same rule, and the one that cost a mechanism.
+
+    A gauge with no labels exposes ``0`` from the instant it is constructed, so a
+    fresh install with no reporting currency answered was publishing
+    ``sb_portfolio_total_value 0`` — the exact reading the rule exists against,
+    on the series a headless dashboard puts on its front page. They are held out
+    of the registry until they carry a real value.
+    """
+    text = generate_latest(exporter.registry).decode()
+    assert 'sb_portfolio_total_value' not in text
+    assert 'sb_portfolio_holdings_value' not in text
+
+    exporter.update_portfolio(PortfolioTotalPoint(
+        day=date(2024, 1, 1), holdings_value=220.0, gain_absolu=20.0))
+
+    get = exporter.registry.get_sample_value
+    assert get('sb_portfolio_holdings_value', {}) == 220.0
+    assert get('sb_portfolio_gain_absolu', {}) == 20.0
+    assert get('sb_portfolio_total_value', {}) is None
+    assert get('sb_portfolio_cash_balance', {}) is None
+
+    # And a field that comes back joins the registry again.
+    exporter.update_portfolio(PortfolioTotalPoint(
+        day=date(2024, 1, 2), holdings_value=230.0, total_value=1030.0,
+        gain_absolu=30.0))
+    assert get('sb_portfolio_total_value', {}) == 1030.0
 
 
 def test_the_three_purchased_gauges_are_gone(exporter):

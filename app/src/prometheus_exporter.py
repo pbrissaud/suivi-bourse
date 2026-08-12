@@ -176,8 +176,10 @@ class PrometheusExporter:
         )
         self._published_positions = set()
 
-        # Per-account cash & value gauges (opt-in accounts feature). Labelled by
-        # account so each account is its own series.
+        # Per-account cash & value gauges. Labelled by account so each account is
+        # its own series — and **every account has some of them since #708**: the
+        # opt-in guard is replaced by the per-field rule, so the question stopped
+        # being *which accounts publish* and became *which figures do*.
         self.account_cash_balance = Gauge(
             "sb_account_cash_balance", "Cash balance of the account", ['account'],
             registry=self.registry)
@@ -209,24 +211,62 @@ class PrometheusExporter:
             "sb_account_twr_index", "Time-weighted return index (base 100) of the account",
             ['account'], registry=self.registry)
 
+        # The account's seven figures, paired with the field of the point they
+        # read. One list, so the per-field rule is applied by iteration rather
+        # than by seven hand-written ``if``s that would eventually disagree with
+        # :func:`performance.writable_fields`.
+        self._account_value_gauges = (
+            (self.account_cash_balance, 'cash_balance'),
+            (self.account_holdings_value, 'holdings_value'),
+            (self.account_total_value, 'total_value'),
+            (self.account_net_contributed, 'net_contributed'),
+            (self.account_xirr, 'xirr'),
+            (self.account_gain_absolu, 'gain_absolu'),
+            (self.account_twr_index, 'twr_index'),
+        )
+
         # Global portfolio perf gauges — NO account label (a single global series;
         # an account label would double every aggregation).
+        #
+        # **Built outside the registry**, and that is the one place *"a gauge
+        # whose field is absent is not published"* costs a mechanism rather than
+        # an ``if``: an unlabelled gauge has no label set, so ``remove()`` cannot
+        # reach it, and it exposes ``0`` from the instant it is constructed. A
+        # fresh install with no reporting currency answered was therefore
+        # publishing ``sb_portfolio_total_value 0`` — the exact reading the rule
+        # exists against, on the series a headless dashboard puts on its front
+        # page. They join the registry on their first real value
+        # (:meth:`_publish_global`) and leave it again when the figure stops
+        # being writable.
         self.portfolio_cash_balance = Gauge(
-            "sb_portfolio_cash_balance", "Global cash balance", registry=self.registry)
+            "sb_portfolio_cash_balance", "Global cash balance", registry=None)
         self.portfolio_holdings_value = Gauge(
-            "sb_portfolio_holdings_value", "Global holdings value", registry=self.registry)
+            "sb_portfolio_holdings_value", "Global holdings value", registry=None)
         self.portfolio_total_value = Gauge(
-            "sb_portfolio_total_value", "Global total value", registry=self.registry)
+            "sb_portfolio_total_value", "Global total value", registry=None)
         self.portfolio_net_contributed = Gauge(
-            "sb_portfolio_net_contributed", "Global net contributed", registry=self.registry)
+            "sb_portfolio_net_contributed", "Global net contributed", registry=None)
         self.portfolio_xirr = Gauge(
             "sb_portfolio_xirr", "Global money-weighted return (XIRR, annualized)",
-            registry=self.registry)
+            registry=None)
         self.portfolio_gain_absolu = Gauge(
-            "sb_portfolio_gain_absolu", "Global absolute gain", registry=self.registry)
+            "sb_portfolio_gain_absolu", "Global absolute gain", registry=None)
         self.portfolio_twr_index = Gauge(
             "sb_portfolio_twr_index", "Global time-weighted return index (base 100)",
-            registry=self.registry)
+            registry=None)
+
+        self._portfolio_value_gauges = (
+            (self.portfolio_cash_balance, 'cash_balance'),
+            (self.portfolio_holdings_value, 'holdings_value'),
+            (self.portfolio_total_value, 'total_value'),
+            (self.portfolio_net_contributed, 'net_contributed'),
+            (self.portfolio_xirr, 'xirr'),
+            (self.portfolio_gain_absolu, 'gain_absolu'),
+            (self.portfolio_twr_index, 'twr_index'),
+        )
+        #: Which of the seven are currently *in* the registry — the only place an
+        #: unlabelled gauge's absence can be recorded.
+        self._registered_globals = set()
 
     @staticmethod
     def _share_labels(share: dict) -> tuple:
@@ -378,34 +418,69 @@ class PrometheusExporter:
     def update_account(self, point) -> None:
         """Update the per-account gauges from a computed account_metrics point.
 
+        **A gauge whose field is absent is not published** (issue #708, spec
+        #695 § 11), and here that is the whole method: since the per-field rule
+        replaced the opt-in guard, ``cash_balance`` / ``total_value`` /
+        ``net_contributed`` / ``twr_index`` are ``None`` on an account with no
+        cash ledger, and ``xirr`` on one with no external flow. Neither a ``0``
+        nor a ``NaN`` will do — a zero makes *"no ledger"* and *"a ledger at
+        zero"* the same series, so an alert on ``< 100`` fires on an empty
+        account; a ``NaN`` propagates through every aggregation that touches it.
+        An **absent series** is how Prometheus itself says *no value*, and the
+        asymmetry is the message: ``sb_account_holdings_value`` exists for
+        everybody and ``sb_account_total_value`` does not.
+
+        It is a *retract*, not a skip: a field that was published and stops being
+        writable — an import forgotten, an account whose deposits left with it —
+        has its series **removed**, or the previous cycle's value would sit there
+        for the life of the process, exactly as a departed symbol's price would
+        without :meth:`forget_quotes`.
+
         Args:
             point: an :class:`~events.schemas.AccountMetricPoint` (the latest,
                 today's, values for the account).
         """
         account = point.account
-        self.account_cash_balance.labels(account).set(point.cash_balance)
-        self.account_holdings_value.labels(account).set(point.holdings_value)
-        self.account_total_value.labels(account).set(point.total_value)
-        self.account_net_contributed.labels(account).set(point.net_contributed)
         self.account_info.labels(account, point.account_type or '').set(1)
-        # Performance fields: only when computable (absent otherwise).
-        if point.xirr is not None:
-            self.account_xirr.labels(account).set(point.xirr)
-        if point.gain_absolu is not None:
-            self.account_gain_absolu.labels(account).set(point.gain_absolu)
-        if point.twr_index is not None:
-            self.account_twr_index.labels(account).set(point.twr_index)
+        for gauge, name in self._account_value_gauges:
+            self._publish_labelled(gauge, (account,), getattr(point, name))
 
     def update_portfolio(self, point) -> None:
         """Update the global (untagged) portfolio gauges from a
-        :class:`~events.schemas.PortfolioTotalPoint`."""
-        self.portfolio_cash_balance.set(point.cash_balance)
-        self.portfolio_holdings_value.set(point.holdings_value)
-        self.portfolio_total_value.set(point.total_value)
-        self.portfolio_net_contributed.set(point.net_contributed)
-        if point.xirr is not None:
-            self.portfolio_xirr.set(point.xirr)
-        if point.gain_absolu is not None:
-            self.portfolio_gain_absolu.set(point.gain_absolu)
-        if point.twr_index is not None:
-            self.portfolio_twr_index.set(point.twr_index)
+        :class:`~events.schemas.PortfolioTotalPoint`.
+
+        Same rule as :meth:`update_account`, and it costs one mechanism more: an
+        **unlabelled** gauge has no label set to remove and publishes ``0`` from
+        the instant it is constructed, so *"absent"* cannot be said with
+        ``remove()``. These seven are therefore built outside the registry and
+        registered on their first real value — which is also what makes
+        ``sb_portfolio_*`` genuinely absent while the reporting currency is
+        unanswered (issue #702), a sentence the documentation already made and
+        the code did not keep.
+        """
+        for gauge, name in self._portfolio_value_gauges:
+            self._publish_global(gauge, getattr(point, name))
+
+    def _publish_labelled(self, gauge: Gauge, labels: tuple, value) -> None:
+        """Set one labelled series, or take it off — ``None`` is not a value."""
+        if value is None:
+            self._remove(gauge, labels)
+        else:
+            gauge.labels(*labels).set(value)
+
+    def _publish_global(self, gauge: Gauge, value) -> None:
+        """Set one unlabelled series, registering or unregistering the gauge.
+
+        The registry is the only place an unlabelled gauge's absence can live:
+        ``Gauge.remove`` needs labels, and a gauge with none exposes a sample as
+        soon as it exists.
+        """
+        if value is None:
+            if gauge in self._registered_globals:
+                self.registry.unregister(gauge)
+                self._registered_globals.discard(gauge)
+            return
+        if gauge not in self._registered_globals:
+            self.registry.register(gauge)
+            self._registered_globals.add(gauge)
+        gauge.set(value)
