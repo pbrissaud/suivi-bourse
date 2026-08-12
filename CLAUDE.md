@@ -495,6 +495,22 @@ renders the page whole: **`source_filename`** (the label follows the reader),
 needs an address), and **`POST /api/events`**, without which the create form has
 nowhere to write.
 
+**None of the three is served today, and the deferral is written here rather
+than left in a hand-over message.** Verified on `web/api.py`: `_event_to_dict`
+renders neither a file name nor a key, and there is no `POST /api/events` — the
+route's absence is not an oversight to fill silently either, `forget_import`'s
+docstring stating the absence of a `PATCH /api/events/<id>` as a **decision**
+(#697), so the server half owes the argument as much as the handler. What the
+page does meanwhile: the ledger renders whole and the provenance falls back to
+the store's own `2024.csv, row 14`; no row is editable, `id` being what the
+editor is guarded on, which is the read-only rule reached by another road; and
+**the create form's save answers `404`** — the one member of the three that is
+not optional, i.e. the onboarding ADR-0005 makes of it does not land until a
+ticket serves it. No open ticket carries that work at the time of writing. The
+precedent is #742's first acceptance criterion, deferred to #743 in writing and
+rewritten there as five criteria of its own: a deferral nobody writes down is a
+deferral lost on both sides.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version

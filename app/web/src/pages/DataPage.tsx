@@ -33,7 +33,11 @@ export default function DataPage() {
           <Ledger />
         </TabsContent>
         <TabsContent value="installation">
-          <p className="text-sm text-muted-foreground">{t('page.pending')}</p>
+          {/* Its own sentence, and not the four pages' `page.pending`: this
+              ticket's opening argument is that **a tab is not a page**, and
+              reusing the string would have the product say the opposite inside
+              the very object that makes the cut at four pages hold. */}
+          <p className="text-sm text-muted-foreground">{t('data.tab.installation.pending')}</p>
         </TabsContent>
       </Tabs>
     </div>

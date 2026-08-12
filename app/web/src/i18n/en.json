@@ -112,6 +112,7 @@
 
   "data.tab.ledger": "Your ledger",
   "data.tab.installation": "The installation",
+  "data.tab.installation.pending": "This tab is not built yet.",
   "data.ledger.label": "Your events",
   "data.column.date": "Date",
   "data.column.type": "Type",

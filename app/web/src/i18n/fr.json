@@ -112,6 +112,7 @@
 
   "data.tab.ledger": "Le grand livre",
   "data.tab.installation": "L’installation",
+  "data.tab.installation.pending": "Cet onglet n’est pas encore construit.",
   "data.ledger.label": "Vos événements",
   "data.column.date": "Date",
   "data.column.type": "Type",

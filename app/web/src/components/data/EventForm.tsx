@@ -270,13 +270,21 @@ export function EventForm({ open, event, accounts, onClose }: EventFormProps) {
                 )}
               </Field>
 
-              {accounts.length > 1 ? (
+              {/* The field is hidden on the **one** case that answers itself —
+                  a single declared account, which `submit()` fills in. Every
+                  other case shows it, the empty one included: the accounts read
+                  can be in flight or have failed, and there `single` is `null`,
+                  so hiding the field put the refusal on a control absent from
+                  the screen and the save button did nothing and said nothing —
+                  which is the very failure the date field exists to end. */}
+              {single === null ? (
                 <Field name="account" label="data.form.account" error={errors.account}>
                   {(id, described) => (
                     <select
                       id={id}
                       className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
                       value={draft.account}
+                      aria-invalid={errors.account !== undefined}
                       aria-describedby={described}
                       onChange={(changed) => set('account', changed.target.value)}
                     >
