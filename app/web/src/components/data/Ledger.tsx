@@ -9,9 +9,10 @@
  * apparatus loses its subject in one go, and none of it has a row-by-row
  * successor: the unit of the gesture is the **import** (#728), not the line.
  *
- * What this half owes is the journal itself, its reduction, and the create form
- * that is the onboarding. The import block, the export and the accounts
- * declaration are #728 and #729, and they land under this same tab.
+ * What this half owes is the journal itself, its reduction, the create form that
+ * is the onboarding, and — since #729 — the **declaration of the accounts**,
+ * which is the same thing said about another table: what the user declared. The
+ * import block and the export are #728, and they land under this same tab.
  *
  * Reads and failures follow the rule the shares page keeps: `/api/runtime`
  * answers from process memory and never opens the store (#668), so the shell's
@@ -25,6 +26,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
+import { AccountsBlock } from '@/components/data/AccountsBlock'
 import { EventForm } from '@/components/data/EventForm'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
 import { LedgerTable } from '@/components/data/LedgerTable'
@@ -88,7 +90,24 @@ export function Ledger({ focus }: LedgerProps = {}) {
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
 
-  const failure = oneBand(readConditions({ shellError: runtime.error, errors: [events.error] }))
+  // The accounts read joins the causal order rather than failing quietly: it is
+  // a second read of the same store, and this tab now renders a table off it —
+  // so *the store is unreadable* must not come out as *you have declared
+  // nothing*. `oneBand` keeps it to one band on screen or none.
+  const failure = oneBand(
+    readConditions({ shellError: runtime.error, errors: [events.error, accounts.error] }),
+  )
+  // **The band names both reads; the masking follows only the ledger's own.**
+  // Folded into one condition, a failed `/api/accounts` erased the whole journal
+  // half — the 285 events, the filters, the only button that opens the form —
+  // while its own read had answered. And that is not a corner: `GET /api/events`
+  // answers from process memory and has no `503` (#764), so *the store is
+  // unreadable* is exactly the state where the two reads part company. A band
+  // over a page that still has everything to show is the white screen #718
+  // mounted `Band` to abolish, arrived from the other side.
+  const ledgerFailure = oneBand(
+    readConditions({ shellError: runtime.error, errors: [events.error] }),
+  )
   const currency = totals.data?.base_currency ?? null
 
   return (
@@ -97,7 +116,7 @@ export function Ledger({ focus }: LedgerProps = {}) {
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
-      {failure || !events.data ? null : all.length === 0 ? (
+      {ledgerFailure || !events.data ? null : all.length === 0 ? (
         <EntryPair
           entries={[
             {
@@ -137,10 +156,24 @@ export function Ledger({ focus }: LedgerProps = {}) {
         </>
       )}
 
+      {/* Beside the ledger and never in place of it, at **every N** — three
+          declared accounts, one, none at all and the seeded row alone, or a
+          declaration with no event under it yet. It is beside the branch above
+          rather than inside it precisely for that last case: an install that
+          imported an accounts file and no event still has accounts to name, and
+          the block that renames them cannot be the one thing the empty screen
+          hides. It takes the ledger rather than a read of its own, because the
+          count a refusal is made of comes off the table above —
+          *« 71 événements nomment ce compte »* is that same ledger, grouped —
+          and it is withheld until that read has landed, which is what keeps
+          *not arrived yet* from rendering as *nothing names this account*. */}
+      {failure || !events.data ? null : <AccountsBlock accounts={accounts.data} events={all} />}
+
       <EventForm
         open={editing !== undefined}
         event={editing ?? null}
-        accounts={accounts.data?.accounts ?? []}
+        accounts={accounts.data}
+        accountsFailed={accounts.isError}
         onClose={() => setEditing(undefined)}
       />
     </div>

@@ -10,27 +10,40 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  accountChoice,
   buildAccountRows,
+  declarationRows,
+  declaredLabel,
+  declaredType,
   degradedReason,
   DEFAULT_RANGE,
   DIMMED_OPACITY,
   firstDay,
+  originOf,
   portfolioRow,
   rebase,
   RANGES,
+  removalOf,
   seriesColour,
   sortRows,
+  submittedAccount,
   visibleColumns,
   windowStart,
   type AccountRow,
 } from '@/lib/accounts'
 import type { PerfPoint } from '@/lib/api'
 import {
+  aFileAccount,
   anAccount,
   anAccountHistory,
+  anAccountsPayload,
   anAccountWithoutSeries,
+  anEvent,
   aPortfolioHistory,
   defaultAccounts,
+  ledgerEvents,
+  noAccountsDeclared,
+  theSeededAccount,
 } from '@/test/factories'
 
 const NOW = new Date('2026-03-02T12:00:00.000Z')
@@ -249,5 +262,139 @@ describe('a row with no figures names its reason', () => {
       new Map([['one', 0.1]]),
     )
     expect(degradedReason(rows[0], visibleColumns(rows), true)).toBeNull()
+  })
+})
+
+// ------------------------------------------------------------------------- //
+// The declaration (#729)
+// ------------------------------------------------------------------------- //
+
+describe('the name one account wears, on both pages', () => {
+  it('reads the catalogue while the seeded row still wears the seed', () => {
+    // `null` is *read the catalogue*, and it is the only thing that keeps the
+    // declaration table and the accounts page from naming one row two ways:
+    // both call this function, so the rule cannot be written twice.
+    expect(declaredLabel(theSeededAccount())).toBeNull()
+    expect(declaredType(theSeededAccount())).toBeNull()
+    expect(declaredLabel(theSeededAccount({ label: '  ' }))).toBeNull()
+  })
+
+  it('hands the row back the moment its owner names it', () => {
+    // The whole point of the block: a rename rendered nowhere is not a rename.
+    expect(declaredLabel(theSeededAccount({ label: 'Mon PEA' }))).toBe('Mon PEA')
+    expect(declaredType(theSeededAccount({ type: 'PEA' }))).toBe('PEA')
+  })
+
+  it('never sends any other account to the catalogue, and falls back to the id', () => {
+    expect(declaredLabel(anAccount({ id: 'pea', label: 'Default account' }))).toBe('Default account')
+    expect(declaredLabel(anAccount({ id: 'pea', label: null }))).toBe('pea')
+    expect(declaredType(anAccount({ id: 'pea', type: null }))).toBeNull()
+  })
+})
+
+describe('where a declaration comes from — three answers, not two', () => {
+  it('does not credit the owner with the row nobody declared', () => {
+    // Read as `source_id === null` the column said *declared in the app* about
+    // the seeded row, on the first-run screen where it is the only row there is.
+    expect(originOf(theSeededAccount())).toBe('seed')
+    expect(originOf(anAccount())).toBe('app')
+    expect(originOf(aFileAccount())).toBe('file')
+  })
+
+  it('counts a relabelled seed as the owner’s own, and a file’s take-over as a file’s', () => {
+    expect(originOf(theSeededAccount({ label: 'Mon PEA' }))).toBe('app')
+    expect(originOf(theSeededAccount({ source_id: 2, editable: false }))).toBe('file')
+  })
+})
+
+describe('a removal that cannot happen names its reason', () => {
+  it('follows `accounts.delete_account`’s own order', () => {
+    // Not alphabetical: the seeded row first, then the events naming it, then
+    // the file that declared it. The middle one before the last on purpose —
+    // both apply to a file-provisioned account an event names, and only one of
+    // them is actionable, forgetting the import being refused in cascade.
+    expect(removalOf(theSeededAccount(), 0)).toEqual({ kind: 'seeded' })
+    expect(removalOf(aFileAccount({ id: 'beta' }), 71)).toEqual({
+      kind: 'namedByEvents',
+      count: 71,
+    })
+    expect(removalOf(aFileAccount({ id: 'beta' }), 0)).toEqual({ kind: 'fromFile' })
+    expect(removalOf(anAccount({ id: 'gamma' }), 0)).toEqual({ kind: 'offered' })
+  })
+})
+
+describe('the row set is what the resource served', () => {
+  it('joins the ledger’s counts to those rows and synthesises none', () => {
+    const rows = declarationRows(anAccountsPayload(), ledgerEvents())
+
+    expect(rows.map((row) => row.account.id)).toEqual(['alpha', 'beta', 'gamma'])
+    // The four fixture events all name `alpha`; nothing invents a fourth row for
+    // an account the resource did not serve.
+    expect(rows.map((row) => row.events)).toEqual([4, 0, 0])
+  })
+
+  it('counts an event with a blank account against the seeded row', () => {
+    // #698's rule, read from the ledger's side: a blank account means `default`
+    // until something is declared, so the count has to resolve it the same way.
+    const rows = declarationRows(noAccountsDeclared(), [
+      anEvent({ account: '' }),
+      anEvent({ account: 'default', date: '2026-01-12' }),
+    ])
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].events).toBe(2)
+  })
+
+  it('answers nothing while the read has not landed — never an empty declaration', () => {
+    // `/api/accounts` never serves an empty list (ADR-0013), so *no row* has
+    // exactly one meaning left and the block renders nothing on it.
+    expect(declarationRows(undefined, ledgerEvents())).toEqual([])
+  })
+})
+
+describe('what the create form may offer as an account (#764’s deferral)', () => {
+  it('tells the three absences apart, because they are three repairs', () => {
+    expect(accountChoice(undefined, false)).toEqual({ kind: 'pending' })
+    expect(accountChoice(undefined, true)).toEqual({ kind: 'failed' })
+    expect(accountChoice(noAccountsDeclared(), false)).toEqual({
+      kind: 'unassigned',
+      account: theSeededAccount(),
+    })
+  })
+
+  it('does not ask a question whose answer is already known', () => {
+    const one = anAccountsPayload([anAccount({ id: 'alpha' })])
+    expect(accountChoice(one, false).kind).toBe('single')
+    expect(accountChoice(anAccountsPayload(), false).kind).toBe('choose')
+  })
+
+  it('sends the blank as a blank, so the two roads keep one rule', () => {
+    // Resolving `default` here would be a second spelling of #698's rule, on the
+    // one road that could then disagree with the file's — and the server refuses
+    // an empty account once something *is* declared, which this state is not.
+    expect(submittedAccount(accountChoice(noAccountsDeclared(), false), '')).toEqual({
+      account: '',
+    })
+    expect(
+      submittedAccount(accountChoice(anAccountsPayload([anAccount({ id: 'alpha' })]), false), ''),
+    ).toEqual({ account: 'alpha' })
+    expect(submittedAccount(accountChoice(anAccountsPayload(), false), 'beta')).toEqual({
+      account: 'beta',
+    })
+  })
+
+  it('never blames the reader for a list that is not there', () => {
+    // *This kind of event needs this field* over an empty control sends them
+    // looking for something to type where there is nothing to choose.
+    expect(submittedAccount({ kind: 'pending' }, '')).toEqual({
+      error: 'data.form.account.pending',
+    })
+    expect(submittedAccount({ kind: 'failed' }, '')).toEqual({
+      error: 'data.form.account.failed',
+    })
+    // And it does ask, where the question is real and unanswered.
+    expect(submittedAccount(accountChoice(anAccountsPayload(), false), ' ')).toEqual({
+      error: 'data.form.required',
+    })
   })
 })

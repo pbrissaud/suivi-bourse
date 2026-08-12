@@ -1266,15 +1266,96 @@ def test_the_price_series_propagates_a_storage_failure(tmp_path):
 # Accounts — the discriminator, not an empty list
 # --------------------------------------------------------------------- #
 
-def test_accounts_says_undeclared_rather_than_returning_nothing(tmp_path):
-    """`declared: false` is the opt-out setup every default install runs.
+def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
+    """`declared: false` is the opt-out setup every default install runs, and it
+    is the **member** that says so — never an empty list.
 
     Letting the front infer it from `[]` is what would eventually make "no
     declared accounts" and "the config failed to load" render the same screen.
+    And the list holds the one account ADR-0013 gives every install: `[]` was a
+    resource answering *none* to a question the product says cannot be answered
+    that way, which left the declaration block with nothing to render on a fresh
+    install — no row to rename, and no way to declare a first account (#729).
     """
     payload = build_client(tmp_path).get('/api/accounts').get_json()
 
-    assert payload == {'declared': False, 'accounts': []}
+    assert payload['declared'] is False
+    assert [a['id'] for a in payload['accounts']] == ['default']
+    # The row **as a reader must see it**: what nobody declared is `null`, so the
+    # interface names it from its own catalogue rather than recognising the
+    # seed's English on the far side of HTTP — see the test below, which is where
+    # that rule is guarded. `source_id` NULL, therefore editable, is what makes
+    # the rename an ordinary `PATCH`.
+    seeded = payload['accounts'][0]
+    assert (seeded['label'], seeded['type']) == (None, None)
+    assert (seeded['source_id'], seeded['editable']) == (None, True)
+
+
+def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
+    """The measurement #729 rests on, server-side.
+
+    `PATCH /api/accounts/default` answered `200`, the store held the new label,
+    and `GET /api/accounts` went on serving `{declared: false, accounts: []}` —
+    so every page rebuilt the row from nothing and re-drew the catalogue's name
+    over it. A rename is only a gesture if the resource carries its result, and
+    `declared` stays `false`: renaming the row every install owns declares
+    nothing beyond it.
+    """
+    client = build_client(tmp_path)
+
+    renamed = client.patch('/api/accounts/default',
+                           json={'label': 'Mon PEA', 'type': 'PEA'})
+
+    assert renamed.status_code == 200
+    payload = client.get('/api/accounts').get_json()
+    assert payload['declared'] is False
+    assert [(a['id'], a['label'], a['type']) for a in payload['accounts']] == [
+        ('default', 'Mon PEA', 'PEA')]
+
+
+def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
+    """What nobody declared goes out as ``null``, and the recognising is here.
+
+    ``store.DEFAULT_ACCOUNT_ROW`` writes ``Default account`` / ``OTHER`` into a
+    row every install owns and nobody asked for. The front must not render
+    either — they are the *server's* English, and ADR-0024 puts every rendering
+    in the reader's language — so one side has to recognise them, and it is the
+    side that writes them.
+
+    Recognising them in the client was written first and undone: it put a third
+    copy of this string across HTTP, where nothing spans both ends. The front's
+    only faked edge is MSW, so its fixtures would have gone on agreeing with
+    themselves; reworded here for a typo, the seed would have started rendering
+    as a name its owner had typed, with every gate green. This assertion is that
+    guard, and it is the one place both halves of the sentence run in one
+    process.
+
+    The store is **not** what changes: ``read_accounts`` keeps serving the row as
+    written, which is what the export and the replay want. It is the wire that
+    carries the declaration alone.
+    """
+    client = build_client(tmp_path)
+
+    served = client.get('/api/accounts').get_json()['accounts']
+    assert [(a['id'], a['label'], a['type']) for a in served] == [
+        ('default', None, None)]
+    # Read off the constant rather than quoted: this assertion has to fail when
+    # the seed is reworded, which is the whole reason it exists.
+    _, seeded_type, seeded_label, _ = store.DEFAULT_ACCOUNT_ROW
+    assert (seeded_label, seeded_type) not in [
+        (a['label'], a['type']) for a in served]
+
+    # An account that is **not** the seeded one keeps whatever it says, the
+    # seed's own words included if its owner chose them: what is recognised is
+    # one row, never a string.
+    client.post('/api/accounts',
+                json={'id': 'pea', 'label': seeded_label, 'type': seeded_type})
+    named = [(a['id'], a['label'], a['type'])
+             for a in client.get('/api/accounts').get_json()['accounts']]
+    assert ('pea', seeded_label, seeded_type) in named
+    # The seeded row leaves the list here for its own reason and not this one:
+    # nothing names it, so ADR-0013 keeps it out of a declaration it did not
+    # join (#698). What is asserted above is that its *words* are not the guard.
 
 
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
@@ -2830,7 +2911,11 @@ def test_an_account_can_be_declared_here_and_is_editable(tmp_path):
     assert renamed.get_json()['label'] == 'PEA Fortuneo'
 
     assert client.delete('/api/accounts/pea').status_code == 200
-    assert client.get('/api/accounts').get_json()['declared'] is False
+    # Back to the install that has declared nothing: the discriminator says so,
+    # and the seeded row is what is left to show (#729).
+    after = client.get('/api/accounts').get_json()
+    assert after['declared'] is False
+    assert [a['id'] for a in after['accounts']] == ['default']
 
 
 def test_declaring_an_id_twice_is_a_409(tmp_path):

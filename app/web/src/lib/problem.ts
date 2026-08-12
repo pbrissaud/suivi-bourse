@@ -20,6 +20,14 @@ export const PROBLEM_TYPES = {
   storageUnavailable: '/problems/storage-unavailable',
   notFound: '/problems/not-found',
   badRequest: '/problems/bad-request',
+  /**
+   * The request is well formed and the **store's state** refuses it (#698): an
+   * account an event names, an account a file provisioned, an id already taken.
+   * It joins the table with #729, the first ticket whose gestures can meet one —
+   * and until then a `409` fell through to *an error it did not expect*, which
+   * is the opposite of what a refusal by design is.
+   */
+  conflict: '/problems/conflict',
   internal: '/problems/internal-error',
 } as const
 
@@ -27,6 +35,7 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.storageUnavailable]: 'problem.storageUnavailable',
   [PROBLEM_TYPES.notFound]: 'problem.notFound',
   [PROBLEM_TYPES.badRequest]: 'problem.badRequest',
+  [PROBLEM_TYPES.conflict]: 'problem.conflict',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 

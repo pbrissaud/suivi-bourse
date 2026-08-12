@@ -15,8 +15,9 @@
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 
-import { ROUTES, type ChartWindow, type EventDraft } from '@/lib/api'
+import { ROUTES, type AccountDraft, type ChartWindow, type EventDraft } from '@/lib/api'
 import {
+  anAccount,
   anAccountHistory,
   anAccountsPayload,
   anAdvisory,
@@ -34,6 +35,21 @@ import {
 export function defaultHandlers() {
   return [
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
+    // The declaration's three gestures (#698, read by a client since #729). They
+    // echo the row back the way the two event writes do: `source_id` is the
+    // store's to decide, so a client cannot send it and the answer is where it
+    // comes from.
+    http.post(ROUTES.accounts, async ({ request }) => {
+      const draft = (await request.json()) as AccountDraft
+      return HttpResponse.json(anAccount({ ...draft, id: draft.id ?? '' }), { status: 201 })
+    }),
+    http.patch(ROUTES.account, async ({ params, request }) => {
+      const draft = (await request.json()) as AccountDraft
+      return HttpResponse.json(anAccount({ ...draft, id: String(params.id) }))
+    }),
+    http.delete(ROUTES.account, ({ params }) =>
+      HttpResponse.json({ id: String(params.id), removed: true }),
+    ),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
     http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
     // The two perf series, of one shape at two levels (#721). They answer the
