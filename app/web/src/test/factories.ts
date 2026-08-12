@@ -95,6 +95,11 @@ export const BASE_CURRENCY = 'EUR'
  * cash ledger the accounts cannot be summed at all (#708). A fixture whose
  * accounts added up to the totals would quietly license the arithmetic
  * `build_accounts` refuses to do.
+ *
+ * The default is one **created in the app** — `source_id` `null`, therefore
+ * editable — because that is the row #729's declaration block can act on; a
+ * file-declared one is what a test asks for by name, exactly as the ledger's
+ * imported row is.
  */
 export function anAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -134,6 +139,24 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
     twr_index: null,
     ...overrides,
   })
+}
+
+/** Declared by a file: read-only, revoked with its import and never edited. */
+export function aFileAccount(overrides: Partial<Account> = {}): Account {
+  return anAccount({ source_id: 1, editable: false, ...overrides })
+}
+
+/**
+ * The row the schema seeds and never removes (ADR-0013), **as the store holds
+ * it**: `label` and `type` are `store.DEFAULT_ACCOUNT_ROW`'s own English values,
+ * quoted here rather than nulled, because that is what the API serves and the
+ * front's whole job on this row is to recognise them and not render them.
+ *
+ * `source_id` is `NULL` on the seed, which is what makes it editable — the one
+ * property the rename rests on.
+ */
+export function theSeededAccount(overrides: Partial<Account> = {}): Account {
+  return anAccount({ id: 'default', label: 'Default account', type: 'OTHER', ...overrides })
 }
 
 export interface PositionOptions extends Partial<Omit<Position, 'price' | 'converted'>> {
@@ -193,6 +216,16 @@ export function anAccountsPayload(
 }
 
 /**
+ * The install that has declared nothing — **the body the API actually produces**
+ * there, which is `declared: false` and the seeded row (#729). Not an empty
+ * list: a fixture serving one would let a test attest a screen no install can
+ * show, and that is exactly how a rename that never reached the table passed.
+ */
+export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsResponse {
+  return anAccountsPayload([theSeededAccount(overrides)], false)
+}
+
+/**
  * THE THREE ACCOUNTS, AND WHAT EACH ONE IS THERE FOR (#721)
  *
  *   id     opened      stored index   what it exercises
@@ -211,11 +244,16 @@ export function anAccountsPayload(
  *                                     degraded shape the page has to name.
  *
  * `171,5` beside `115,0` is the pair ADR-0019 was written on, to the tenth.
+ *
+ * **`beta` is declared by a file** (#729), which is the shape the real install
+ * has — everything came in by import. It is what makes the declaration's
+ * read-only half visible on the default screen rather than only in the test that
+ * asks for it: what a file declared is corrected in the file, never in the app.
  */
 export function defaultAccounts(): Account[] {
   return [
     anAccount({ id: 'alpha', label: 'Alpha', type: 'PEA' }),
-    anAccount({
+    aFileAccount({
       id: 'beta',
       label: 'Beta',
       type: 'CTO',

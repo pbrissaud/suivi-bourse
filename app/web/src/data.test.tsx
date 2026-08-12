@@ -176,7 +176,10 @@ describe('the reduction, which is what pays for no pagination', () => {
 
     await user.type(screen.getByLabelText('Rechercher'), 'zzzz')
     expect(await screen.findByText('Aucun événement ne correspond')).toBeInTheDocument()
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    // Named, since #729: the declaration is a second table on this tab, and it
+    // is not reduced by a search over the ledger. What the assertion is about is
+    // that the *ledger* is replaced rather than left empty.
+    expect(screen.queryByRole('table', { name: 'Vos événements' })).not.toBeInTheDocument()
   })
 })
 
@@ -390,7 +393,11 @@ describe('the ledger at zero', () => {
     const manual = screen.getByRole('region', { name: 'Saisir un premier événement' })
     expect(file).toBeInTheDocument()
     expect(manual).toBeInTheDocument()
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    // Named, since #729: what this criterion refuses is *the ledger* rendered as
+    // an empty table with a small button over it. The declaration of the
+    // accounts is a table of its own, it is not empty, and it replaces nothing
+    // here — the install of this fixture has three declared accounts to name.
+    expect(screen.queryByRole('table', { name: 'Vos événements' })).not.toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })
