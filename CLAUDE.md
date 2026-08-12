@@ -1073,7 +1073,7 @@ The application runs independent scheduled jobs on a single APScheduler:
   any other time of its life, and a code path that runs once per installation is
   a code path nobody ever tests. ~25 minutes for 30 symbols over 5 years.
 - **Performance**: Rebuilds the `account_metrics` / `portfolio_totals` series
-  (opt-in accounts only until #708) as its **own interval job** on
+  (every account since #708) as its **own interval job** on
   `scheduling.PERF_TICK` — 120s, a constant and not a dial (#701, #707) —
   decoupled from the per-symbol scrape jobs (issue #618), and firing at the boot
   rather than one tick later (`next_run_time = now`). The recompute is
@@ -1102,6 +1102,83 @@ The application runs independent scheduled jobs on a single APScheduler:
   rebuild gesture to design. The cost accepted: the two tables stop being a trace
   of what the app believed at an instant — if a figure shown yesterday changed
   today, the backfill advanced, and nothing remembers.
+  **It writes on a sliding horizon and by field** (issue #708, ADR-0018): see
+  below.
+
+**The perf writes on a sliding horizon, and by field** (issue #708, spec #695
+§ 11, ADR-0011, ADR-0018). The two halves arrive together because removing
+either one alone produces a wrong figure rather than a missing one:
+
+- **The horizon** is `1 + max over s of min(oldest price(s) − 1, last held
+  day(s))`, per account, in `performance.account_horizon`. Under it **nothing is
+  written at all** — not a zero, not a `NULL` row: a held position with no price
+  yet counts as worth nothing beside a cash ledger that has already paid for it,
+  and a chained index carries that crater for the whole cycle. Measured on the
+  real portfolio at #708: three purchases on 2020-09-28, `twr_index` 0,057, the
+  dashboard reading **`TWR −100,00 %`** on eleven thousand euros. #706's second
+  term cannot catch it — it is right about a **permanent** absence and silent
+  about a **transitory** one, which is exactly what a reconstruction is. Four
+  things about the formula: it is **bounded by each symbol's holding window**
+  (unbounded, a line sold in 2022 whose backfill is starting has its oldest
+  available price dated *this year* and holds the whole account at today, a case
+  ADR-0009 made ordinary); it is bounded by that window's **two** ends, the lower
+  one being the same decision on the other side — the backward pass never
+  overshoots the first acquisition, so a symbol's oldest price *is* its
+  acquisition day once reconstructed, and without the lower bound a portfolio
+  that bought a line this morning would take a horizon of this morning; a
+  **settled** symbol does not contribute (terminal backfill, or quoted in a
+  currency that does not resolve), or the horizon would freeze at today for ever
+  and `carrying_price`'s domain — *terminal symbol, any day* — would be
+  unreachable; and a **per-day mask was refused** though nearly free, since it
+  holes the middle of the series the moment a symbol is imported late, which
+  breaks the TWR's chaining and contradicts the calendar density.
+  `portfolio_totals` takes the **max** of the horizons: the global is written
+  only where every account is, one slow account delaying the whole home page,
+  because summing whichever accounts are ready draws a step nothing caused.
+- **The rule is by field, never by account.** The opt-in guard read
+  `declared_portfolio`, whose `None` means *nothing declared beyond the seed* —
+  and ADR-0013 seeds a `default` row at the creation of the schema and never
+  removes it, so the condition had lost its subject while silently leaving a
+  **single-account install with no performance series at all**. Removing it alone
+  would have been the other half of the bug: the replay debits cash on every
+  purchase without touching the contributions, so an owner who never wrote a
+  `DEPOSIT` carries `cash_balance = −invested` and `net_contributed = 0`, and
+  `total_value` publishes their **latent gain under the label "total value"**.
+  So `holdings_value` and `gain_absolu` are written **always** — with no external
+  flow, `gain_absolu = holdings − invested` is exact, and only `xirr` has nothing
+  to weight — while `cash_balance` / `total_value` / `net_contributed` /
+  `twr_index` need a cash event and `xirr` an external flow.
+  `performance.writable_fields` is the one spelling, applied in
+  `_value_kwargs` for both tables, and the global folds the condition with
+  `all` over the accounts that produce a series (ADR-0018: *a global figure is
+  written only where it is writable for every account*).
+- **The gain's fourth term** is the fees a broker takes out of a transfer:
+  `Σ latent + Σ realized + Σ dividends + Σ transfer fees == gain_absolu`, closed
+  positions included, 13,95 € on the real portfolio. Absorbing the fee into
+  `net_contributed` is **explicitly refused** — the money left the owner's
+  pocket, and `gain_absolu` was the only figure that knew.
+- **A gauge whose field is absent is not published**, and it is a *retract*:
+  a field that stops being writable has its series removed. The seven
+  `sb_portfolio_*` are built **outside the registry** and join it on their first
+  real value, because an unlabelled gauge has no label set to remove and
+  publishes `0` from construction — a fresh install was answering
+  `sb_portfolio_total_value 0` while its reporting currency was unanswered,
+  the exact reading the rule exists against.
+- **`/api/runtime` publishes the horizon per account**, from process memory: it
+  rides on `PerfRecord.horizons` and comes out as `accounts: [{account,
+  horizon}]` — a **calendar day** rendered as one, the shape `lib/api.ts`
+  announced before either half was written, the way `rebuilding` and
+  `/api/portfolio-totals` arrived. It is the one thing the recompute knows that
+  no query recovers: the rows say where a series *starts*, which is another
+  question the moment an account's first activity is later than its horizon.
+  `horizon: null` means *nothing constrains this account*; an account **absent
+  from the list** means this pass computed nothing — a perf job that has not run
+  yet, or one that raised.
+- **The TWR re-bases on every cycle while the reconstruction runs**, and that is
+  assumed rather than corrected: the base is the first day of the series, the
+  series' left edge walks backwards, so the percentage moves with no price having
+  changed. It is written down in `website/docs/rebuild-and-resolution.mdx` and
+  it is what `runtime.rebuilding` and `twr_since` exist to say on screen.
 
 **The price and the position stopped sharing a row** (issue #700). `quotes.py`
 is the market's own writer — `symbol_quote` and `price_point`, and nothing else
@@ -1684,6 +1761,7 @@ app/src/
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
 ├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
 ├── carrying.py             # Pure: the carrying price, the holding window, the backward anchor (#706)
+├── performance.py          # Pure: XIRR/TWR, the sliding horizon and the per-field rule (#563, #708)
 ├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
@@ -1834,7 +1912,8 @@ costing +563 MB on a 319 MB base. Uniqueness moves to the writers.
 | `price_native` | the close, in the security's own currency |
 | `price_converted` / `fx_rate` | the close in the reporting currency and the rate that produced it (#702). `NULL` means *transient* — no currency answered yet, or a pair that did not resolve — repaired by #704's lateral pass. `price_converted == price_native × fx_rate` holds on every row, which is what makes the row a journal |
 
-**`account_metrics`** (opt-in accounts only; one row per calendar **day**, block
+**`account_metrics`** (every declared account since #708; one row per calendar
+**day**, from the account's **horizon** on and never below it, block
 upsert on `(account, day)`). The series is recomputed **and rewritten in full**
 every cycle since #707: the stale-tail window lost its subject, an upsert on a
 primary key not growing the file the way a `DELETE`+`INSERT` replacement does
@@ -1847,13 +1926,13 @@ is therefore a **write mechanism** and not only a constraint.
 |---|---|
 | `account` | account id, referencing `account(id)` |
 | `day` | the calendar day the figures describe — a `DATE`, never a midnight instant (#700) |
-| `cash_balance` | per-account cash ledger balance |
-| `holdings_value` | Σ(quantity × price) over the account's symbols |
-| `total_value` | `cash_balance + holdings_value` |
-| `net_contributed` | Σ deposits − Σ withdrawals (fees excluded) |
+| `cash_balance` | per-account cash ledger balance. `NULL` without a cash event (#708) |
+| `holdings_value` | Σ(quantity × price) over the account's symbols — **always written** |
+| `total_value` | `cash_balance + holdings_value`. `NULL` without a cash event |
+| `net_contributed` | Σ deposits − Σ withdrawals (fees excluded). `NULL` without a cash event |
 | `xirr` | money-weighted return (annualized); latest point only, `NULL` without an external flow |
-| `twr_index` | time-weighted return, base 100 (per day) |
-| `gain_absolu` | absolute gain (`value − contributions`); latest point only |
+| `twr_index` | time-weighted return, base 100 (per day). `NULL` without a cash event — it follows `total_value` |
+| `gain_absolu` | absolute gain (`value − contributions`); latest point only, **always written** (ADR-0018) |
 
 `account_type` has **no column**: it was an InfluxDB tag, and a page reads it
 from the declaration (ADR-0013), which is what the account *is* rather than what
@@ -1867,7 +1946,10 @@ constraint that made it untagged is gone, but its columns will diverge the day
 the global level carries something the per-account level does not. The
 single-currency condition that used to gate it left with `Account.currency`
 (#702): accounts cannot disagree about a currency they do not have. What gates
-**both** tables is the base currency being answered at all.
+**both** tables is the base currency being answered at all — and, per row, the
+horizon and the per-field rule (#708): the global's days start at the **max** of
+the accounts' horizons, and its cash-derived four are `NULL` unless every account
+that produces a series has a cash ledger.
 
 Money-weighted performance (XIRR by home-grown bisection, TWR base 100) is
 computed in `app/src/performance.py` — a pure module taking a `Timeline` and an
