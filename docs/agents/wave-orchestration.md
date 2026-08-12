@@ -25,6 +25,15 @@ Workflow({scriptPath: '.claude/workflows/v5-repair.js',
           args: {base: 'preview/v5', items: [<the wave's `held` entries>]}})
 ```
 
+**Always `scriptPath`, never `name`.** `Workflow({name: 'v5-wave'})` resolves a
+copy of the script captured when the session started, so an edit made — and
+committed — during that session has **no effect** on any run launched by name.
+That is not a subtlety to remember for style: this session fixed the findings
+hand-off in `v5-wave.js`, launched the next wave by name, and got the identical
+broken hand-off, with the committed fix sitting on disk untouched. The symptom
+is silence — the run succeeds, on the old code. Launched by path, the two files
+above are the ones that run.
+
 Every branch leaves from and lands on `preview/v5`. Nothing is pushed and nothing
 is written to the tracker by an agent.
 
