@@ -356,6 +356,155 @@ def test_an_empty_chunk_writes_nothing_and_touches_nothing(declared):
 
 
 # --------------------------------------------------------------------------- #
+# The lateral pass's two gestures (issue #704)
+# --------------------------------------------------------------------------- #
+
+def _seed_unconverted(store, symbol='AAPL', days=(1, 2, 3), price=100.0):
+    """A series whose points landed with no conversion — #702's ordinary state."""
+    quotes.record_history(store, symbol, [
+        {'timestamp': datetime(2024, 6, day, 17, 0, tzinfo=UTC),
+         'price': price + day}
+        for day in days])
+
+
+def test_the_points_missing_a_conversion_are_found_by_their_own_span(declared):
+    """The pass works on rows that exist and are short of a column.
+
+    ``price_native IS NOT NULL`` is part of the predicate rather than an
+    optimisation: a point with no native price has nothing to convert, so
+    counting it would hand the pass a day it can never repair — and therefore a
+    reason to come back for ever.
+    """
+    _seed_unconverted(declared)
+    declared.execute(
+        'INSERT INTO price_point (symbol, ts, price_native) VALUES (?, ?, NULL)',
+        ['AAPL', datetime(2024, 6, 9, 17, 0, tzinfo=UTC)])
+
+    assert quotes.unconverted_span(declared, 'AAPL') == (
+        date(2024, 6, 1), date(2024, 6, 3), 3)
+    assert quotes.unconverted_days(
+        declared, 'AAPL', date(2024, 6, 1), date(2024, 6, 2)) == [
+        date(2024, 6, 1), date(2024, 6, 2)]
+
+
+def test_nothing_to_repair_is_an_absence_and_not_an_empty_span(declared):
+    """The steady state of an install that answered before its first scrape."""
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW, 'price': 100.0, 'converted': 92.0, 'rate': 0.92}])
+
+    assert quotes.unconverted_span(declared, 'AAPL') is None
+    assert quotes.unconverted_span(declared, 'MSFT') is None
+
+
+def test_the_repair_is_an_update_and_never_an_insert(declared):
+    """The whole shape of the pass: the **same rows**, short of a column.
+
+    An ``INSERT`` here would duplicate the very series it repairs — on a table
+    that carries no key to refuse it (ADR-0007) — so the row count is the
+    assertion, beside the journal identity the stored rate exists for:
+    ``price_converted == price_native × fx_rate``.
+    """
+    _seed_unconverted(declared)
+    before = declared.query(
+        'SELECT count(*) FROM price_point WHERE symbol = ?', ['AAPL'])[0][0]
+
+    repaired = quotes.repair_conversions(declared, 'AAPL', {
+        date(2024, 6, 1): 0.90,
+        date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92,
+    })
+
+    assert repaired == 3
+    assert declared.query(
+        'SELECT count(*) FROM price_point WHERE symbol = ?',
+        ['AAPL'])[0][0] == before
+    rows = declared.query(
+        'SELECT price_native, price_converted, fx_rate FROM price_point '
+        ' WHERE symbol = ? ORDER BY ts', ['AAPL'])
+    assert [rate for _, _, rate in rows] == [0.90, 0.91, 0.92]
+    for native, converted, rate in rows:
+        assert native * rate == pytest.approx(converted)
+
+
+def test_a_day_with_no_rate_keeps_its_null_rather_than_taking_a_neighbour_s(
+        declared):
+    """The rate of a point is the rate of **its own day**, or nothing.
+
+    Filling a day from the day beside it would put a currency move into a chart
+    of a share price, which is the defect the historical prefetch exists against
+    — so a day the caller has no factor for is simply not passed, keeps its
+    ``NULL``, and comes back on a later cycle.
+    """
+    _seed_unconverted(declared)
+
+    assert quotes.repair_conversions(
+        declared, 'AAPL', {date(2024, 6, 2): 0.91}) == 1
+
+    assert declared.query(
+        'SELECT price_converted FROM price_point WHERE symbol = ? ORDER BY ts',
+        ['AAPL']) == [(None,), (pytest.approx(102.0 * 0.91),), (None,)]
+    assert quotes.unconverted_span(declared, 'AAPL') == (
+        date(2024, 6, 1), date(2024, 6, 3), 2)
+
+
+def test_repairing_the_newest_point_moves_latest_under_the_one_rule(declared):
+    """*Any writer of a point whose ``ts >= last_price_ts`` moves ``last_*``.*
+
+    The maintenance rule covers the repair with **no additional clause** (spec
+    #695 § 7): the newest repaired point is handed to it exactly as the live
+    writer hands its own, and the ``WHERE`` decides. The invariant stays *the
+    most recent point, whatever its completeness* — weakening it to *the most
+    recent complete point* is the per-field last-non-null row the store exists
+    to avoid.
+    """
+    _seed_unconverted(declared)
+    assert declared.query(
+        'SELECT last_price_ts, last_price_converted, last_fx_rate '
+        '  FROM symbol_quote WHERE symbol = ?', ['AAPL']) == [
+        (datetime(2024, 6, 3, 17, 0, tzinfo=UTC), None, None)]
+
+    quotes.repair_conversions(declared, 'AAPL', {
+        date(2024, 6, 1): 0.90, date(2024, 6, 3): 0.92})
+
+    assert declared.query(
+        'SELECT last_price_native, last_price_converted, last_fx_rate, '
+        '       last_price_ts FROM symbol_quote WHERE symbol = ?',
+        ['AAPL']) == [(103.0, pytest.approx(103.0 * 0.92), 0.92,
+                       datetime(2024, 6, 3, 17, 0, tzinfo=UTC))]
+
+
+def test_repairing_an_older_point_leaves_latest_alone(declared):
+    """The other half of the same clause, and the reason there is no second one.
+
+    A repair that lands strictly before ``last_price_ts`` is refused by the very
+    predicate that lets the newest one through — so the ``latest`` line can never
+    end up carrying an old observation because a *newer* column was filled in.
+    """
+    _seed_unconverted(declared)
+
+    quotes.repair_conversions(declared, 'AAPL', {date(2024, 6, 1): 0.90})
+
+    assert declared.query(
+        'SELECT last_price_native, last_price_converted, last_price_ts '
+        '  FROM symbol_quote WHERE symbol = ?', ['AAPL']) == [
+        (103.0, None, datetime(2024, 6, 3, 17, 0, tzinfo=UTC))]
+
+
+def test_the_quote_currency_is_read_from_the_store_and_absent_is_a_state(
+        declared):
+    """It is only ever learnt at a first successful fetch (issue #704).
+
+    So ``None`` is durable and ordinary — a symbol nobody has managed to quote —
+    and never a pair that failed to resolve: there is no pair to name yet.
+    """
+    assert quotes.quote_currency(declared, 'AAPL') is None
+
+    quotes.record_quote(declared, 'AAPL', NOW, 100.0, ATTRIBUTES)
+
+    assert quotes.quote_currency(declared, 'AAPL') == 'USD'
+
+
+# --------------------------------------------------------------------------- #
 # The anchors the scheduler reads
 # --------------------------------------------------------------------------- #
 

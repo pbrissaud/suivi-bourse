@@ -514,6 +514,131 @@ def test_the_forward_pass_healthy_no_op_is_not_folded_into_the_bar():
 
 
 # ===================================================================== #
+# The lateral pass, the third direction (issue #704)
+# ===================================================================== #
+
+def _lateral(**overrides):
+    base = dict(direction=runtime_state.LATERAL)
+    base.update(overrides)
+    return _backfill(**base)
+
+
+def test_the_lateral_pass_is_a_member_of_its_own_beside_the_other_two():
+    """What it reports is orthogonal to both, so it cannot be folded into either.
+
+    A series can be complete backwards, up to date forwards, and entirely
+    unconverted — three independent facts, three members.
+    """
+    rows = runtime_view.build_symbols(
+        [_share()], {},
+        {
+            ('AAPL', runtime_state.BACKWARD): _backfill(
+                terminal=runtime_state.TERMINAL_COMPLETE),
+            ('AAPL', runtime_state.FORWARD): _backfill(
+                direction=runtime_state.FORWARD,
+                skipped=runtime_state.SKIP_TOO_RECENT),
+            ('AAPL', runtime_state.LATERAL): _lateral(written=42),
+        },
+        {}, NOW)
+
+    payload = rows[0].to_dict()
+    assert payload['backward']['state'] == runtime_state.TERMINAL_COMPLETE
+    assert payload['forward']['state'] == runtime_state.SKIP_TOO_RECENT
+    assert payload['lateral']['state'] == runtime_view.BACKFILL_RUNNING
+    assert payload['lateral']['written'] == 42
+
+
+def test_an_unconvertible_series_carries_the_reason_and_not_an_error():
+    """The one terminal that asks the reader to act, so it has to name itself.
+
+    *"Waiting for a conversion"* and *"will never convert"* are two different
+    sentences; a state word with no subject leaves the second one in front of an
+    empty column with no explanation. It is a **reply** and not a failure, so it
+    stays out of the errors list, where a retry would be expected to clear it.
+    """
+    progress = runtime_view.backfill_progress(
+        _lateral(terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
+                 reason='no exchange rate exists between XYZ and EUR'),
+        runtime_state.LATERAL, NOW)
+
+    assert progress.state == runtime_state.TERMINAL_UNCONVERTIBLE
+    assert progress.to_dict()['reason'] == \
+        'no exchange rate exists between XYZ and EUR'
+    assert progress.error is None
+    # No bar: what it walks is a set of rows missing a column, which is not an
+    # interval of time and grows again every time the other two passes write.
+    assert progress.ratio is None
+
+
+def test_an_unconvertible_series_is_not_a_reconstruction_that_finished():
+    """The banner counts the **backward** pass, and this is why it stays that way.
+
+    The lateral pass's terminal is not an achievement but a fault to act on, so
+    counting it as *done* beside a reconstructed series would have the banner
+    announce as finished the very thing it should be naming. Its healthy steady
+    state (``nothing_to_repair``) is out for the reason the forward pass's is.
+    """
+    symbols = runtime_view.build_symbols(
+        [_share()], {},
+        {
+            ('AAPL', runtime_state.BACKWARD): _backfill(),
+            ('AAPL', runtime_state.LATERAL): _lateral(
+                terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
+                reason='no exchange rate exists between XYZ and EUR'),
+        },
+        {}, NOW)
+
+    summary = runtime_view.build_backfill_summary(symbols)
+
+    assert summary['complete'] == 0
+    assert summary['running'] == 1
+    assert summary['ratio'] == 0.0
+
+
+def test_an_unanswered_reporting_currency_is_a_skip_and_never_a_terminal():
+    """The trap the ticket writes down, seen from the payload.
+
+    That absence is transitory and lifted by a write of the owner's, so it is a
+    no-op the reader can wait out — never the sentence that says a currency will
+    never resolve.
+    """
+    progress = runtime_view.backfill_progress(
+        _lateral(skipped=runtime_state.SKIP_NO_BASE_CURRENCY),
+        runtime_state.LATERAL, NOW)
+
+    assert progress.state == runtime_state.SKIP_NO_BASE_CURRENCY
+    assert progress.reason is None
+
+
+def test_a_symbol_never_quoted_can_say_so_durably():
+    """A quote currency is only ever learnt at a first successful fetch, so a
+    symbol may sit with no converted point for as long as Yahoo says nothing —
+    and the runtime state has to be able to say which of the two absences it
+    is."""
+    progress = runtime_view.backfill_progress(
+        _lateral(skipped=runtime_state.SKIP_NO_QUOTE_CURRENCY),
+        runtime_state.LATERAL, NOW)
+
+    assert progress.state == runtime_state.SKIP_NO_QUOTE_CURRENCY
+
+
+def test_a_lateral_fetch_that_failed_is_an_error_like_any_other():
+    """The other half of the split: a fetch that did not complete *is* a failure,
+    and it belongs where the other two passes publish theirs."""
+    symbols = runtime_view.build_symbols(
+        [_share()], {},
+        {('AAPL', runtime_state.LATERAL): _lateral(
+            failed=True, failures=2,
+            error='the USD→EUR rates could not be fetched')},
+        {}, NOW)
+
+    errors = runtime_view.build_errors(symbols, None, None)
+
+    assert [error['source'] for error in errors] == ['backfill:lateral']
+    assert errors[0]['key'] == 'AAPL'
+
+
+# ===================================================================== #
 # The row set comes from the snapshot, never from the recorder
 # ===================================================================== #
 

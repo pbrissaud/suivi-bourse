@@ -22,6 +22,8 @@ import pytest
 import fx
 import main
 import quotes
+import runtime_state
+import scheduling
 import settings as settings_module
 import settings_registry
 
@@ -193,6 +195,84 @@ def test_a_day_with_no_close_of_its_own_takes_the_last_one_before_it():
     assert len(fetched) == 1
     # A day before the window is a hole, not Friday's rate reaching backwards.
     assert rates.rate('USD', 'EUR', date(2024, 5, 1)) is None
+
+
+# --- The three answers, and why two is not enough (issue #704) -------------- #
+
+def test_a_window_that_came_back_empty_is_a_reply_and_not_a_failure():
+    """``rate()`` folds every unanswerable case into ``None`` on purpose — the
+    writer writes the point either way. The lateral pass is the one caller for
+    which the difference *is* the subject: a pair yfinance has never heard of is
+    an answer that will not change, while a fetch that did not complete is
+    nothing at all. So :meth:`fx.Rates.observe` keeps them apart."""
+    rates = fx.Rates(lambda pair: None, lambda pair, start, end: {})
+
+    outcome, known = rates.observe(
+        'XYZ', 'EUR', date(2024, 6, 1), date(2024, 6, 4))
+
+    assert outcome == fx.UNRESOLVED
+    assert known == {}
+
+
+def test_a_fetch_that_raises_is_a_failure_and_concludes_nothing():
+    """Nothing was learnt about the pair, so nothing may be concluded about it —
+    which is what stops a Yahoo hiccup arming a terminal that tells the owner
+    their currency will never resolve."""
+    def _boom(pair, start, end):
+        raise RuntimeError('nope')
+
+    outcome, known = fx.Rates(lambda pair: None, _boom).observe(
+        'USD', 'EUR', date(2024, 6, 1), date(2024, 6, 4))
+
+    assert outcome == fx.FAILED
+    assert known == {}
+
+
+def test_the_reporting_currency_s_own_code_resolves_without_a_fetch():
+    """A portfolio reported in the currency its securities are quoted in must
+    not depend on Yahoo answering anything — there is no pair to ask about."""
+    fetched = []
+    rates = fx.Rates(lambda pair: None,
+                     lambda pair, start, end: fetched.append(pair) or {})
+
+    assert rates.observe('EUR', 'EUR', date(2024, 6, 1), date(2024, 6, 4)) == (
+        fx.RESOLVED, {})
+    assert fetched == []
+
+
+def test_a_missing_code_is_a_failure_and_never_an_unresolvable_pair():
+    """The trap #704 writes in black and white, locked twice.
+
+    A ``price_converted`` of ``NULL`` caused by an **unanswered reporting
+    currency** is transitory and lifted by a write of the owner's. Reading it as
+    a pair that does not resolve would make answering the dial change nothing
+    for the whole stock already scraped — so the answer here is the one that
+    arms no terminal.
+    """
+    rates = fx.Rates(lambda pair: None, lambda pair, start, end: {})
+
+    assert rates.observe('USD', None, date(2024, 6, 1), date(2024, 6, 4))[0] \
+        == fx.FAILED
+    assert rates.observe(None, 'EUR', date(2024, 6, 1), date(2024, 6, 4))[0] \
+        == fx.FAILED
+
+
+def test_a_window_already_asked_for_answers_off_the_cache():
+    """What lets a symbol carrying an unresolvable pair re-arm its terminal
+    every cycle without emitting a single request — the difference between this
+    and #703's silent loop is that no window is ever re-fetched."""
+    calls = []
+
+    def _fetch(pair, start, end):
+        calls.append(pair)
+        return {}
+
+    rates = fx.Rates(lambda pair: None, _fetch)
+    window = (date(2024, 6, 1), date(2024, 6, 4))
+
+    assert rates.observe('XYZ', 'EUR', *window)[0] == fx.UNRESOLVED
+    assert rates.observe('XYZ', 'EUR', *window)[0] == fx.UNRESOLVED
+    assert calls == ['XYZEUR=X']
 
 
 def test_convert_answers_both_halves_together_or_neither():
@@ -543,12 +623,27 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
         date(2024, 6, 2): pytest.approx(-0.08),
         date(2024, 6, 3): pytest.approx(0.92),
     }
-    # A pair yfinance cannot answer for is a missing rate, never an exception.
-    monkeypatch.setattr(main.yf, 'Ticker',
-                        lambda s: (_ for _ in ()).throw(RuntimeError('nope')))
+    # A pair yfinance answers *nothing* for is a missing rate on both halves —
+    # never an exception, and the point is written with no converted price.
+    monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(rows=0))
     assert metrics._fetch_fx_rate('XYZEUR=X') is None
     assert metrics._fetch_fx_series(
         'XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {}
+
+    # A fetch that *raises* parts the two halves (issue #704). The live one goes
+    # on swallowing: its caller writes the point either way. The historical one
+    # re-raises, because it is the one the lateral pass reads, and there
+    # *"nothing came back"* and *"the request did not complete"* are the two
+    # stopping conditions the ticket forbids collapsing — one retries for ever,
+    # the other says the pair will never resolve. `fx.Rates` catches it and logs
+    # exactly as this method used to, so the rebuild sees no change.
+    monkeypatch.setattr(main.yf, 'Ticker',
+                        lambda s: (_ for _ in ()).throw(RuntimeError('nope')))
+    assert metrics._fetch_fx_rate('XYZEUR=X') is None
+    with pytest.raises(RuntimeError):
+        metrics._fetch_fx_series('XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4))
+    assert fx.Rates(lambda pair: None, metrics._fetch_fx_series).series(
+        'XYZ', 'EUR', date(2024, 6, 1), date(2024, 6, 4)) == {}
 
 
 def test_the_freshness_sonde_still_watches_the_native_price(
@@ -563,3 +658,351 @@ def test_the_freshness_sonde_still_watches_the_native_price(
     metrics._scrape_symbol('AAPL', now=NOW)
 
     assert quotes.last_price(store, 'AAPL') == 185.0
+
+
+# =========================================================================== #
+# The lateral pass — what makes a NULL conversion viable (issue #704)
+# =========================================================================== #
+
+class _SeriesFetch:
+    """The rebuild's historical fetch, counted, and able to fail on demand.
+
+    Three behaviours, because #704 turns on telling them apart: a pair with
+    rates (**resolved**), a pair with none (**unresolved** — a reply), and a
+    request that does not complete (**failed**).
+    """
+
+    def __init__(self, answers=None, raises=None):
+        self.answers = answers or {}
+        self.raises = raises
+        self.calls = []
+
+    def __call__(self, pair, start, end):
+        self.calls.append((pair, start, end))
+        if self.raises is not None:
+            raise self.raises
+        return dict(self.answers.get(pair, {}))
+
+
+def _unconverted(store, symbol='AAPL', currency='USD', days=(1, 2, 3)):
+    """A stored series whose points landed with no conversion — #702's own state.
+
+    ``currency`` is the *security's*, and it is written onto ``symbol_quote``
+    because that is where a first successful fetch leaves it; ``None`` is the
+    symbol nobody has managed to quote yet.
+    """
+    quotes.record_history(store, symbol, [
+        {'timestamp': datetime(2024, 6, day, 17, 0, tzinfo=UTC),
+         'price': 100.0 + day} for day in days])
+    if currency is not None:
+        store.execute('UPDATE symbol_quote SET currency = ? WHERE symbol = ?',
+                      [currency, symbol])
+
+
+def _lateral(metrics, symbol='AAPL'):
+    """One cycle of the pass, and the record it published."""
+    written = metrics._backfill_lateral(symbol)
+    return written, metrics.recorder.backfill_of(symbol, runtime_state.LATERAL)
+
+
+def test_the_lateral_pass_repairs_by_update_and_never_by_insert(
+        store, mocker, monkeypatch):
+    """The pass works on the **same rows** as the series, short of a column.
+
+    That is what makes #702's decision viable at all: a rate that could not be
+    had writes the point with ``price_converted NULL`` rather than losing the
+    quote — and Yahoo gives nothing back under the hour past sixty days, so the
+    quote is what cannot be re-fetched while the conversion can be repaired for
+    ever. Each day is converted at the rate of **its own day**, so the stored row
+    stays a journal one can read back.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90,
+        date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92}}))
+
+    written, record = _lateral(metrics)
+
+    assert written == 3
+    assert _point(store) == [
+        (101.0, pytest.approx(101.0 * 0.90), 0.90),
+        (102.0, pytest.approx(102.0 * 0.91), 0.91),
+        (103.0, pytest.approx(103.0 * 0.92), 0.92),
+    ]
+    assert record.terminal is None and record.failed is False
+    assert record.written == 3
+    # The next cycle has nothing left to do, and says so rather than going quiet.
+    assert _lateral(metrics)[1].skipped == runtime_state.SKIP_NOTHING_TO_REPAIR
+
+
+def test_an_unanswered_reporting_currency_never_arms_unconvertible(
+        store, mocker, monkeypatch):
+    """The trap the ticket writes in black and white.
+
+    Every ``price_converted`` in the store is ``NULL`` while the question is
+    unanswered, and **none of them is a pair that failed**: the absence is
+    transitory and lifted by a write of the owner's. Arming ``unconvertible``
+    here would make answering the dial change nothing for the whole stock
+    already scraped — which is the one gesture the pass exists to honour.
+    """
+    metrics = _metrics(store, mocker, base_currency=None)
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    fetch = _SeriesFetch()
+    metrics.rates = fx.Rates(lambda pair: None, fetch)
+
+    written, record = _lateral(metrics)
+
+    assert written == 0
+    assert record.terminal is None
+    assert record.skipped == runtime_state.SKIP_NO_BASE_CURRENCY
+    assert record.failed is False
+    # And nothing was asked of Yahoo: there is nothing to convert *into*.
+    assert fetch.calls == []
+    assert _point(store) == [(101.0, None, None), (102.0, None, None),
+                             (103.0, None, None)]
+
+
+def test_a_pair_that_does_not_resolve_arms_unconvertible_and_names_itself(
+        store, mocker, monkeypatch):
+    """A **reply**, not a failure — and the one terminal that asks for an action.
+
+    *"Waiting for a conversion"* and *"will never convert"* are two different
+    sentences, and only the second needs the owner. The reason travels with it,
+    because a state word with no subject leaves a reader in front of an empty
+    column with no explanation.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store, currency='XYZ')
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
+
+    written, record = _lateral(metrics)
+
+    assert written == 0
+    assert record.terminal == runtime_state.TERMINAL_UNCONVERTIBLE
+    assert record.failed is False and record.failures == 0
+    assert 'XYZEUR=X' in record.reason and 'AAPL' in record.reason
+    # Never an error: a fact the owner has to repair does not belong among the
+    # transient failures the next cycle clears.
+    assert record.error is None
+
+
+def test_a_failed_rate_fetch_backs_off_like_617_and_retries_indefinitely(
+        store, mocker, monkeypatch):
+    """#617's guard, transposed onto a pass that rides an interval job.
+
+    The first :data:`scheduling.FAILURE_GRACE` failures wait the base interval,
+    then the wait doubles — and there is **no terminal**, ever: nothing was
+    learnt about the pair, so nothing may be concluded about it.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.rates = fx.Rates(
+        lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
+
+    delays = []
+    for _ in range(5):
+        at = datetime.now(UTC)
+        _lateral(metrics)
+        delays.append(
+            (metrics._lateral_retry_at['AAPL'] - at).total_seconds())
+        # The back-off is honoured against the *clock*; clearing it here counts
+        # five attempts rather than five ticks.
+        metrics._lateral_retry_at.clear()
+
+    record = metrics.recorder.backfill_of('AAPL', runtime_state.LATERAL)
+    assert record.failed is True and record.failures == 5
+    assert record.terminal is None
+    base = metrics.regular_interval
+    assert delays == [pytest.approx(scheduling.backoff_delay(base, n), abs=2)
+                      for n in (1, 2, 3, 4, 5)]
+    assert delays[:3] == [pytest.approx(base, abs=2)] * 3
+    assert delays[4] == pytest.approx(base * 4, abs=2)
+
+
+def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
+        store, mocker, monkeypatch):
+    """Publishing nothing while the delay holds is the point.
+
+    A record with ``failed=False`` would reset the recorder's fold and flatten
+    the wait back to the base interval on the very next cycle; one with
+    ``failed=True`` would count a cycle nobody attempted. The previous record
+    stands, which is the honest reading — the last pass *is* still the last one.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    fetch = _SeriesFetch(raises=RuntimeError('yahoo is down'))
+    metrics.rates = fx.Rates(lambda pair: None, fetch)
+
+    _lateral(metrics)
+    assert len(fetch.calls) == 1
+    for _ in range(3):
+        _lateral(metrics)
+
+    assert len(fetch.calls) == 1
+    assert metrics.recorder.backfill_of(
+        'AAPL', runtime_state.LATERAL).failures == 1
+
+
+def test_the_first_conversion_that_lands_resets_the_back_off(
+        store, mocker, monkeypatch):
+    """The reset #617 states, on the pass's own terms."""
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.rates = fx.Rates(
+        lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
+    _lateral(metrics)
+    assert metrics.recorder.backfill_of(
+        'AAPL', runtime_state.LATERAL).failures == 1
+
+    metrics._lateral_retry_at.clear()
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90}}))
+
+    written, record = _lateral(metrics)
+
+    assert written == 3          # one rate, forward-filled onto the three days
+    assert record.failures == 0
+    assert 'AAPL' not in metrics._lateral_retry_at
+
+
+def test_a_symbol_never_quoted_says_so_instead_of_failing_at_it(
+        store, mocker, monkeypatch):
+    """A quote currency is only ever learnt at a first successful fetch.
+
+    So a symbol can sit **durably** with no converted point at all, and that is
+    neither a failure nor an unresolvable pair — there is no pair to name yet.
+    The runtime state is what has to be able to say it.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store, currency=None)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    fetch = _SeriesFetch()
+    metrics.rates = fx.Rates(lambda pair: None, fetch)
+
+    written, record = _lateral(metrics)
+
+    assert written == 0
+    assert record.skipped == runtime_state.SKIP_NO_QUOTE_CURRENCY
+    assert record.terminal is None and record.failed is False
+    assert fetch.calls == []
+
+
+def test_the_pass_walks_one_chunk_a_cycle_from_the_oldest_missing_day(
+        store, mocker, monkeypatch):
+    """The backward pass's rhythm, applied to a set of rows rather than a window.
+
+    The chunk is the backfill's own dial, and the pass starts from the **oldest**
+    day still missing a conversion, so a stock of five years is repaired the way
+    it was fetched: one chunk per cycle, on the backfill's cadence.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    quotes.record_history(store, 'AAPL', [
+        {'timestamp': datetime(2022, 6, 1, 17, 0, tzinfo=UTC), 'price': 100.0},
+        {'timestamp': datetime(2024, 6, 1, 17, 0, tzinfo=UTC), 'price': 200.0},
+    ])
+    store.execute("UPDATE symbol_quote SET currency = 'USD'")
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.backfill_chunk_days = 365
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2022, 6, 1): 0.90, date(2024, 6, 1): 0.92}}))
+
+    assert _lateral(metrics)[0] == 1
+    assert _point(store) == [(100.0, pytest.approx(90.0), 0.90),
+                             (200.0, None, None)]
+
+    assert _lateral(metrics)[0] == 1
+    assert _point(store) == [(100.0, pytest.approx(90.0), 0.90),
+                             (200.0, pytest.approx(184.0), 0.92)]
+
+
+def test_answering_the_reporting_currency_starts_the_repair_of_the_whole_stock(
+        store, mocker, monkeypatch):
+    """The acceptance criterion: *posing the currency triggers the pass*.
+
+    It is the one dial whose value is **retroactive** — every point written
+    before it carries a ``NULL`` conversion — so the effect is *start now* rather
+    than *the next cycle will read it*. The pass rides on the backfill, so
+    triggering it is bringing that job's next run forward.
+    """
+    metrics = _metrics(store, mocker, base_currency=None)
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    scheduler = mocker.MagicMock()
+    metrics.scheduler = scheduler
+    runtime = mocker.MagicMock(metrics=metrics, scheduler=scheduler)
+
+    changes = settings_module.save(store, {'base_currency': 'EUR'})
+    report = main.apply_settings(runtime, changes)
+
+    assert metrics.base_currency == 'EUR'
+    assert report['jobs_rescheduled'] == [main.BACKFILL_JOB_ID]
+    assert scheduler.modify_job.call_args.args[0] == main.BACKFILL_JOB_ID
+    assert 'next_run_time' in scheduler.modify_job.call_args.kwargs
+
+    # And the cycle it brings forward repairs what was already scraped.
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90}}))
+    assert _lateral(metrics)[0] == 3
+    assert [converted for _, converted, _ in _point(store)] == [
+        pytest.approx(101.0 * 0.90), pytest.approx(102.0 * 0.90),
+        pytest.approx(103.0 * 0.90)]
+
+
+def test_a_declared_currency_taken_from_an_import_triggers_it_too(
+        store, mocker, monkeypatch):
+    """The same pose, on the road a headless install actually takes (#710).
+
+    An exported ledger states its reporting currency and a store that has none
+    takes it — which *is* the answer to the app's one question, so it owes the
+    same repair as the one typed into the form.
+    """
+    metrics = _metrics(store, mocker, base_currency=None)
+    scheduler = mocker.MagicMock()
+    metrics.scheduler = scheduler
+    store.execute(
+        "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    metrics._adopt_declared_currency()
+
+    assert metrics.base_currency == 'EUR'
+    assert scheduler.modify_job.call_args.args[0] == main.BACKFILL_JOB_ID
+
+
+def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
+    """It is gated by nothing the other two passes decide.
+
+    A series can be complete backwards, up to date forwards and entirely
+    unconverted; and a sold line is squarely in the subject — its reconstructed
+    history is what the account's returns are computed from, so an unconverted
+    point there is a day missing from that computation.
+    """
+    metrics = _metrics(store, mocker, shares=[_share(quantity=0)],
+                       base_currency='EUR')
+    _unconverted(store)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90}}))
+
+    # The whole of ``_backfill_symbol``, so the gating is the production one:
+    # the backward pass reaches its terminal by itself (its anchor is already the
+    # first acquisition), the forward one is refused by ``held=False``, and the
+    # lateral one runs regardless — which is the claim.
+    metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
+                             held=False)
+
+    assert metrics.recorder.backfill_of(
+        'AAPL', runtime_state.BACKWARD).terminal \
+        == runtime_state.TERMINAL_COMPLETE
+
+    assert metrics.recorder.backfill_of(
+        'AAPL', runtime_state.LATERAL).written == 3
+    # And the forward pass did **not** run: there is no live writer to catch up.
+    assert metrics.recorder.backfill_of('AAPL', runtime_state.FORWARD) is None

@@ -36,6 +36,15 @@ what makes the row a journal one can read back (*"2 345 € — 10 × 234,50 $ a
 The write path turns it into a ``price_converted`` of ``NULL`` beside a
 ``price_native`` that landed: the quote is never lost over a currency, and the
 lateral pass (#704) is what repairs the column afterwards.
+
+**And that pass needs one thing :meth:`Rates.rate` deliberately refuses to
+say** (issue #704): *why* there is no rate. Three answers, not two —
+:func:`observe` names them — because a fetch that did not complete and a pair
+yfinance has never heard of ask for opposite things: the first is retried for
+ever behind #617's back-off, the second is a **reply** and arms the
+``unconvertible`` terminal that tells the owner to act. Collapsing them into
+``None`` is right for a writer (which writes the point either way) and wrong
+for the pass whose whole subject is the difference.
 """
 import bisect
 from datetime import date, datetime, timezone
@@ -68,6 +77,20 @@ DEFAULT_TTL = 300.0
 #: series: a Sunday, a holiday and a Christmas week have no close of their own,
 #: and the honest answer for them is the last one before.
 _DAILY_LOOKBACK_DAYS = 10
+
+#: What one window fetch **did**, for the caller that has to tell a failure from
+#: a reply (issue #704). ``rate()`` folds all three into ``None`` on purpose;
+#: :meth:`Rates.observe` is the one entry point that keeps them apart.
+#:
+#: * :data:`RESOLVED` — the pair is known and its rates are cached.
+#: * :data:`UNRESOLVED` — the fetch **completed** and the pair has nothing:
+#:   ``XYZEUR=X`` is not a ticker. A reply, never a failure, and the only one of
+#:   the three that may arm a terminal.
+#: * :data:`FAILED` — the fetch itself did not complete (a raise). Nothing was
+#:   learnt about the pair, so nothing may be concluded about it.
+RESOLVED = 'resolved'
+UNRESOLVED = 'unresolved'
+FAILED = 'failed'
 
 
 def normalise(currency: Optional[str]) -> Tuple[Optional[str], float]:
@@ -203,13 +226,61 @@ class Rates:
         quoted one: it is a prefetch, and the subunit is applied by
         :meth:`rate`, once, where the price is.
         """
+        return self.observe(from_ccy, to_ccy, start, end)[1]
+
+    def observe(self, from_ccy: Optional[str], to_ccy: Optional[str],
+                start: date, end: date) -> Tuple[str, Dict[date, float]]:
+        """The same fetch as :meth:`series`, **and what it did** (issue #704).
+
+        Answers ``(outcome, rates)`` where the outcome is one of
+        :data:`RESOLVED` / :data:`UNRESOLVED` / :data:`FAILED`. The lateral pass
+        is the caller: it repairs the points whose conversion is missing, and its
+        two stopping conditions must never be confused — a failure retries for
+        ever, a pair that does not resolve arms ``unconvertible`` and asks the
+        owner to act.
+
+        **The reporting currency's own code answers `RESOLVED` with no rates and
+        no fetch**: there is no pair, :meth:`rate` returns ``1 / per_unit`` for
+        every day, and a portfolio reported in the currency its securities are
+        quoted in must not depend on Yahoo answering anything.
+
+        **A code that is missing answers `FAILED`, never `UNRESOLVED`**, and the
+        asymmetry is the trap the ticket writes down: a ``price_converted`` of
+        ``NULL`` caused by an unanswered reporting currency is *transient* and
+        lifted by a write of the owner's, so reading it as a pair that does not
+        resolve would make answering the dial change nothing for the whole stock
+        already scraped. The caller names those two states before it ever gets
+        here; this is the second lock on the same door.
+        """
+        source, _ = normalise(from_ccy)
+        target, _ = normalise(to_ccy)
+        if source is None or target is None:
+            return FAILED, {}
+        if source == target:
+            return RESOLVED, {}
+        pair = pair_symbol(source, target)
+        outcome = self._ensure_window(pair, start, end)
+        return outcome, dict(self._daily.get(pair, {}))
+
+    def answers_from_cache(self, from_ccy: Optional[str],
+                           to_ccy: Optional[str],
+                           start: date, end: date) -> bool:
+        """Whether :meth:`observe` over that window would ask Yahoo nothing.
+
+        The lateral pass reads it to decide whether it owes the backfill's
+        politeness delay: sleeping between two requests is a courtesy, sleeping
+        after an answer served off the cache is a wait nobody is owed — and a
+        pair that never resolves answers off the cache **for ever**, so an
+        unconditional sleep would burn ``backfill_delay`` on it every cycle for
+        the life of the process.
+        """
         source, _ = normalise(from_ccy)
         target, _ = normalise(to_ccy)
         if source is None or target is None or source == target:
-            return {}
+            return True
         pair = pair_symbol(source, target)
-        self._ensure_window(pair, start, end)
-        return dict(self._daily.get(pair, {}))
+        return any(known[0] <= start and end <= known[1]
+                   for known in self._windows.get(pair, ()))
 
     # ------------------------------------------------------------------ #
     # The two halves of the cache
@@ -257,22 +328,53 @@ class Rates:
         index = bisect.bisect_right(days, day)
         return known[days[index - 1]] if index else None
 
-    def _ensure_window(self, pair: str, start: date, end: date) -> None:
-        """Fetch a window unless it has already been asked for."""
-        if self._fetch_series is None:
-            return
+    def _ensure_window(self, pair: str, start: date, end: date) -> str:
+        """Fetch a window unless it has already been asked for. Says what it did.
+
+        The outcome is :meth:`observe`'s, and it is decided **here** because this
+        is the only place that knows whether a fetch happened: an injected fetch
+        that *raises* did not complete (:data:`FAILED`), one that answers nothing
+        did (:data:`UNRESOLVED`) — that is the contract the two yfinance calls in
+        :mod:`main` honour, and the whole of how #704 tells a Yahoo hiccup from a
+        pair that does not exist.
+
+        A window already covered answers off the cache and asks nothing, which is
+        what lets a symbol carrying an unresolvable pair re-arm its terminal every
+        cycle without emitting a single request. **The verdict is about the
+        window, never about the pair** — see :meth:`_resolves`.
+        """
         if any(known[0] <= start and end <= known[1]
                for known in self._windows.get(pair, ())):
-            return
+            return RESOLVED if self._resolves(pair, end) else UNRESOLVED
+        if self._fetch_series is None:
+            # No historical fetch injected: nothing was asked, so nothing may be
+            # concluded. ``FAILED`` is the only answer that arms no terminal.
+            return FAILED
         try:
             fetched = self._fetch_series(pair, start, end) or {}
         except Exception as exc:
             logger.warning(
                 f"Could not fetch the {pair} history over [{start}, {end}]: {exc}")
-            return
+            return FAILED
         self._daily.setdefault(pair, {}).update(
             {_as_date(day): float(value) for day, value in fetched.items()})
         self._windows.setdefault(pair, []).append((start, end))
+        return RESOLVED if self._resolves(pair, end) else UNRESOLVED
+
+    def _resolves(self, pair: str, end: date) -> bool:
+        """Whether the pair carries a rate a window ending on ``end`` can use.
+
+        A day of its own, or an earlier one :meth:`_daily_rate`'s forward-fill
+        carries in — and never *the pair has some rate somewhere*, which is a
+        statement about **another** window. Read globally the verdict is not
+        stable in time: a window lying before everything the pair has ever
+        quoted answers nothing, arms ``unconvertible`` and is remembered; a
+        later prefetch then fills ``_daily`` for a window of its own, the same
+        question comes back "covered, and the pair has rates", the terminal
+        disappears and the pass publishes ``written=0`` for ever with nothing on
+        screen saying why those points stay unconverted.
+        """
+        return any(day <= end for day in self._daily.get(pair, ()))
 
     def _covers(self, pair: str, day: date) -> bool:
         return any(start <= day <= end
@@ -315,5 +417,6 @@ def _as_date(value) -> date:
 
 
 __all__ = [
-    'SUBUNITS', 'DEFAULT_TTL', 'normalise', 'pair_symbol', 'Rates', 'convert',
+    'SUBUNITS', 'DEFAULT_TTL', 'RESOLVED', 'UNRESOLVED', 'FAILED',
+    'normalise', 'pair_symbol', 'Rates', 'convert',
 ]

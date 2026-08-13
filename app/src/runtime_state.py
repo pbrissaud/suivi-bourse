@@ -65,10 +65,22 @@ SCRAPE_CLOSED = 'closed'
 #: Not closed, no writable price: #617's definition of a failure.
 SCRAPE_NO_PRICE = 'no_price'
 
-#: The two backfill passes, which are independent (#626) and therefore keyed
-#: apart: a completed backward watermark never suppresses the forward pass.
+#: The **three** backfill passes, independent (#626, #704) and therefore keyed
+#: apart: a completed backward watermark never suppresses the forward pass, and
+#: neither of them says anything about a conversion that is still missing.
+#: :data:`LATERAL` joined them as *one more direction* rather than as a record of
+#: its own, which is the whole of what "it rides on the backfill" buys — the
+#: recorder, the fold of consecutive failures, the retention on a forgotten
+#: import and the payload's shape all come for free.
 BACKWARD = 'backward'
 FORWARD = 'forward'
+LATERAL = 'lateral'
+
+#: The three, in one tuple, because a reader has to fetch one record per
+#: direction and a hand-written pair at that call site is exactly what left the
+#: lateral pass invisible on ``/api/runtime`` when it landed. Adding a direction
+#: is adding it here.
+DIRECTIONS = (BACKWARD, FORWARD, LATERAL)
 
 #: The backward pass's **one** terminal state: there is nothing left to fetch.
 #: It had two others and both lost their subject. ``manual_mode`` left with the
@@ -79,11 +91,38 @@ FORWARD = 'forward'
 #: backfill's set at all: the state is not renamed, it has no instances.
 TERMINAL_COMPLETE = 'complete'
 
+#: The lateral pass's terminal, and the fourth of the family (issue #704): the
+#: currency pair a symbol's conversion needs **does not resolve**. It is a reply
+#: and never a failure — yfinance completed the request and answered that
+#: ``XYZEUR=X`` is not a ticker — which is exactly why it is a terminal rather
+#: than a counter: *"waiting for a conversion"* and *"will never convert"* are
+#: two different sentences, and only the second asks the owner to do something.
+#: The record carries ``reason`` beside it, because a terminal with no pair named
+#: leaves a reader in front of an empty column with no explanation.
+TERMINAL_UNCONVERTIBLE = 'unconvertible'
+
 #: The forward pass's no-op reasons. ``SKIP_TOO_RECENT`` is the *normal* one
 #: during live trading: ``newest ≈ now``, the window is sub-day, and the pass
 #: stands aside so the ``REGULAR`` writer stays the sole writer of the present.
 SKIP_NO_SERIES = 'no_series'
 SKIP_TOO_RECENT = 'too_recent'
+#: The lateral pass's three no-ops, and two of them are the reason it has skips
+#: at all rather than terminals (issue #704):
+#:
+#: * ``SKIP_NO_BASE_CURRENCY`` — the reporting currency is unanswered, so every
+#:   ``price_converted`` in the store is ``NULL`` and **none of them is a pair
+#:   that failed**. The absence is transitory and lifted by a write of the
+#:   owner's; arming ``unconvertible`` here would make answering the dial change
+#:   nothing for the whole stock already scraped, which is the trap the ticket
+#:   writes down in black and white.
+#: * ``SKIP_NO_QUOTE_CURRENCY`` — the *security's* currency is unknown, and it is
+#:   only ever learnt at a first successful fetch. A symbol can therefore sit
+#:   durably with no converted point, and this is the runtime state saying so.
+#: * ``SKIP_NOTHING_TO_REPAIR`` — the steady state: every point carries its
+#:   conversion.
+SKIP_NO_BASE_CURRENCY = 'no_base_currency'
+SKIP_NO_QUOTE_CURRENCY = 'no_quote_currency'
+SKIP_NOTHING_TO_REPAIR = 'nothing_to_repair'
 #: The backward pass's own: a window under a day, which is what a chunk boundary
 #: landing inside a single trading session leaves.
 #:
@@ -208,6 +247,15 @@ class BackfillRecord:
     written: int = 0
     terminal: Optional[str] = None
     skipped: Optional[str] = None
+    #: Why a terminal was reached, in one sentence, when the terminal alone does
+    #: not say it (issue #704). ``complete`` needs none — it is the conclusion of
+    #: a pass whose target is on the record already — while ``unconvertible``
+    #: names the pair that does not resolve: the owner is being asked to act, and
+    #: a state word with no subject is an empty line with no explanation.
+    #: Deliberately **not** ``error``: a reply is not a failure, and
+    #: :func:`runtime_view.build_errors` folds ``error`` into the page's error
+    #: list, where this does not belong.
+    reason: Optional[str] = None
     #: Whether this pass counts against the consecutive-failure counter. A fetch
     #: that came back empty is **not** a failure — an empty window is how a
     #: weekend classifies itself (#606), and counting it would make every Monday
@@ -373,10 +421,12 @@ class RuntimeRecorder:
 
 
 __all__ = [
-    'BACKWARD', 'FORWARD',
+    'BACKWARD', 'FORWARD', 'LATERAL', 'DIRECTIONS',
     'SCRAPE_WROTE', 'SCRAPE_WRITE_FAILED', 'SCRAPE_CLOSED', 'SCRAPE_NO_PRICE',
-    'TERMINAL_COMPLETE',
+    'TERMINAL_COMPLETE', 'TERMINAL_UNCONVERTIBLE',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
+    'SKIP_NO_BASE_CURRENCY', 'SKIP_NO_QUOTE_CURRENCY',
+    'SKIP_NOTHING_TO_REPAIR',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
     'PERF_RAN', 'PERF_FAILED',
     'ScrapeRecord', 'BackfillRecord', 'IngestRecord', 'PerfRecord',

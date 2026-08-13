@@ -54,7 +54,7 @@ may legitimately call the same line differently, and renaming a share no longer
 cuts its history in two (spec #695 § 3).
 """
 from datetime import date, datetime, timezone
-from typing import Dict, Mapping, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from logfmt_logger import getLogger
 
@@ -288,6 +288,133 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# The lateral pass — an UPDATE, and never an INSERT (issue #704)
+# --------------------------------------------------------------------------- #
+
+def unconverted_span(store, symbol: str) -> Optional[Tuple[date, date, int]]:
+    """``(oldest day, newest day, how many)`` of the points missing a conversion.
+
+    What the lateral pass works on: the **same rows** as the series, short of a
+    column. A quote that landed with ``price_converted NULL`` — no reporting
+    currency yet, or a rate that could not be had (issue #702) — is what makes
+    writing the point rather than losing it viable at all, and this is the read
+    that finds them again.
+
+    ``price_native IS NOT NULL`` is part of the predicate rather than an
+    optimisation: a point with no native price has nothing to convert, and
+    counting it would give the pass a day it can never repair and therefore a
+    reason to come back for ever.
+
+    ``None`` when there is nothing to repair, which is the steady state of an
+    install whose currency was answered before its first scrape.
+    """
+    rows = store.query(
+        'SELECT min(CAST(ts AS DATE)), max(CAST(ts AS DATE)), count(*) '
+        '  FROM price_point '
+        ' WHERE symbol = ? AND price_native IS NOT NULL '
+        '   AND price_converted IS NULL', [symbol])
+    if not rows or rows[0][2] in (None, 0):
+        return None
+    oldest, newest, count = rows[0]
+    return oldest, newest, int(count)
+
+
+def unconverted_days(store, symbol: str, first: date,
+                     last: date) -> List[date]:
+    """The calendar days of ``[first, last]`` carrying a point to repair.
+
+    The chunk :func:`unconverted_span` sizes, resolved to the days that actually
+    need a rate. Asking for the days rather than walking the interval is what
+    keeps the repair proportional to the gap instead of to the window: a chunk of
+    a year holds 365 days and a handful of them may be all that is missing, and
+    every day named here becomes a bound parameter in the ``UPDATE`` below.
+
+    The bounds are **cast**, because ``ts`` is a ``TIMESTAMPTZ`` and the two
+    kinds of time never mix (spec #695 § 3): compared against a bare ``DATE``,
+    DuckDB widens the day to midnight and silently drops the last day of every
+    window.
+    """
+    return [row[0] for row in store.query(
+        'SELECT DISTINCT CAST(ts AS DATE) AS day FROM price_point '
+        ' WHERE symbol = ? AND price_native IS NOT NULL '
+        '   AND price_converted IS NULL '
+        '   AND CAST(ts AS DATE) BETWEEN ? AND ? '
+        ' ORDER BY day', [symbol, first, last])]
+
+
+def repair_conversions(store, symbol: str,
+                       factors: Mapping[date, float]) -> int:
+    """Give a day's points the conversion they were written without. Returns rows.
+
+    **An ``UPDATE``, never an ``INSERT``** (spec #695 § 5): the pass works on
+    rows that exist and are short of a column, so inserting anything here would
+    duplicate the very series it is repairing — on a table that carries no key to
+    refuse it (ADR-0007).
+
+    ``factors`` maps a calendar day to the number a **price** is multiplied by,
+    subunit folded in — :meth:`fx.Rates.rate`'s answer for that day, and the
+    caller's to compute, exactly as the live writer hands its conversion in
+    rather than having it worked out here. The figure is written as
+    ``price_native * factor`` so ``price_converted == price_native × fx_rate``
+    goes on holding on the stored row: it is a journal, not three numbers that
+    do not reconcile.
+
+    A day the caller has no factor for is simply **not passed**, and its points
+    stay ``NULL`` for a later cycle. That is the honest state, and it is why the
+    pass has no notion of a day it has "done".
+
+    **The ``latest`` maintenance rule applies with no extra clause** (spec #695
+    § 7). The newest point this call repairs is handed to :func:`_advance_latest`
+    exactly as the live writer and the forward pass hand theirs; its ``WHERE``
+    decides by itself, updating the row when the repaired point *is* the most
+    recent one and refusing when it is not. The invariant stays *the most recent
+    point, whatever its completeness* — a rule about the point, not about which
+    of its columns are filled.
+
+    One transaction, like every other writer here: a reader landing between the
+    ``UPDATE`` and the ``latest`` row would see a series and a summary that
+    disagree about the same observation.
+    """
+    days = sorted(day for day, factor in factors.items() if factor is not None)
+    if not days:
+        return 0
+
+    placeholders = ', '.join('?' * len(days))
+    predicate = (
+        ' WHERE symbol = ? AND price_native IS NOT NULL '
+        '   AND price_converted IS NULL '
+        f'  AND CAST(ts AS DATE) IN ({placeholders})')
+
+    with store.transaction():
+        # Counted **before** the write, over the very rows about to be touched:
+        # the count is what the cycle reports as written, and a DuckDB
+        # ``executemany`` has no row count to hand back.
+        rows = store.query(
+            'SELECT count(*), max(ts) FROM price_point' + predicate,
+            [symbol, *days])
+        repaired, newest = (int(rows[0][0]), rows[0][1]) if rows else (0, None)
+        if not repaired:
+            return 0
+
+        store.executemany(
+            'UPDATE price_point '
+            '   SET price_converted = price_native * ?, fx_rate = ? '
+            ' WHERE symbol = ? AND price_native IS NOT NULL '
+            '   AND price_converted IS NULL AND CAST(ts AS DATE) = ?',
+            [(factors[day], factors[day], symbol, day) for day in days])
+
+        latest = store.query(
+            'SELECT price_native, price_converted, fx_rate FROM price_point '
+            ' WHERE symbol = ? AND ts = ? AND price_converted IS NOT NULL '
+            ' ORDER BY ts LIMIT 1', [symbol, newest])
+        if latest:
+            _advance_latest(store, symbol, _utc(newest), *latest[0])
+
+    logger.debug(f"Repaired {repaired} conversion(s) for {symbol}")
+    return repaired
+
+
+# --------------------------------------------------------------------------- #
 # The backward pass's persisted anchor (issue #703)
 # --------------------------------------------------------------------------- #
 
@@ -408,6 +535,27 @@ def first_quoted_days(store) -> Dict[str, date]:
             ' WHERE price_native IS NOT NULL GROUP BY symbol')
         if value is not None
     }
+
+
+def quote_currency(store, symbol: str) -> Optional[str]:
+    """The currency the exchange quotes a symbol in, or ``None``.
+
+    Read from ``symbol_quote`` rather than from the scheduler's
+    ``_share_info_cache`` for the reason :func:`terminal_symbols` gives about the
+    backfill watermark: the cache is empty for the whole first cycle after every
+    boot, and it never holds a symbol this process has not scraped — a position
+    sold before the install existed, which the live scrape by design never polls.
+
+    ``None`` is a **durable and ordinary** state, and it is the one the lateral
+    pass has to name rather than act on (issue #704): a quote currency is only
+    ever learnt at a first successful fetch, so a symbol may legitimately sit
+    with no converted point at all for as long as Yahoo says nothing about it.
+    That is not a pair failing to resolve — there is no pair yet — and it must
+    never arm ``unconvertible``.
+    """
+    rows = store.query(
+        'SELECT currency FROM symbol_quote WHERE symbol = ?', [symbol])
+    return rows[0][0] if rows and rows[0][0] else None
 
 
 def oldest_ts(store, symbol: str) -> Optional[datetime]:
@@ -544,8 +692,10 @@ def _utc(value):
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_history',
+    'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
     'first_quoted_days',
+    'quote_currency',
     'oldest_ts', 'newest_ts', 'last_price', 'price_series', 'read_quote',
     'forget_symbol',
 ]
