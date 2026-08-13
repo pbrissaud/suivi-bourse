@@ -25,8 +25,7 @@ If applicable, add screenshots to help explain your problem.
 
 **Installation mode:** (choose one)
 - [ ] Standalone
-- [ ] Docker 
-- [ ] Docker-Compose
+- [ ] Docker
 
 **Environnement:**
 Please provide any useful information of your environnement (os, software version, etc ...)
