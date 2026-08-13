@@ -1363,7 +1363,10 @@ def get_runtime():
         if not symbol:
             continue
         scrape.setdefault(symbol, recorder.scrape_of(symbol))
-        for direction in (runtime_state.BACKWARD, runtime_state.FORWARD):
+        # Every direction the recorder knows, from its own list (issue #704):
+        # the pair spelled out here is what left the lateral pass out of this
+        # payload on the day it landed.
+        for direction in runtime_state.DIRECTIONS:
             backfill[(symbol, direction)] = recorder.backfill_of(
                 symbol, direction)
 

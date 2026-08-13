@@ -97,11 +97,14 @@ BACKFILL_FAILING = 'failing'
 class BackfillProgress:
     """One ``(symbol, direction)`` pass, made into a bar.
 
-    ``state`` is either the record's terminal (``complete``), a skip reason, or
-    one of the three above, carried through **verbatim**. ``no_buy`` was the
-    second terminal and is gone with #703: the target is the first *acquisition*
-    now, ``GRANT`` included, so a symbol that would have carried it has no
-    holding window and never reaches the backfill at all.
+    ``state`` is either the record's terminal (``complete``,
+    ``unconvertible``), a skip reason, or one of the three above, carried
+    through **verbatim**. ``no_buy`` was the second terminal and is gone with
+    #703: the target is the first *acquisition* now, ``GRANT`` included, so a
+    symbol that would have carried it has no holding window and never reaches
+    the backfill at all. ``unconvertible`` is the fourth and arrived with #704,
+    on the lateral pass — and it is the one terminal that carries a
+    :attr:`reason`, because it asks the reader to do something.
     """
 
     direction: str
@@ -126,6 +129,12 @@ class BackfillProgress:
     #: Lags by one cycle on purpose — see :class:`runtime_state.BackfillRecord`.
     ratio: Optional[float]
     error: Optional[str]
+    #: Why the pass concluded what it concluded, when the state word alone does
+    #: not say it (issue #704) — today the currency pair ``unconvertible`` is
+    #: about. Beside ``error`` and never inside it: a pair that does not resolve
+    #: is a **reply**, and folding it into the errors list would put a fact the
+    #: owner has to act on among the transient failures a retry clears.
+    reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -145,6 +154,7 @@ class BackfillProgress:
             'failures': self.failures,
             'ratio': self.ratio,
             'error': self.error,
+            'reason': self.reason,
         }
 
 
@@ -183,6 +193,11 @@ class SymbolRuntime:
     written: bool
     backward: Optional[BackfillProgress]
     forward: Optional[BackfillProgress]
+    #: The lateral pass (issue #704): the conversion of the points already
+    #: fetched. A third member rather than a field folded into the other two,
+    #: because what it reports is orthogonal to both — a series can be complete
+    #: backwards, up to date forwards, and entirely unconverted.
+    lateral: Optional[BackfillProgress]
     #: The accounts **holding** this symbol, and empty when nobody does. Kept as
     #: a plain list because the page shows *who holds it*; nothing per-account
     #: is measured about the series.
@@ -207,6 +222,7 @@ class SymbolRuntime:
             'written': self.written,
             'backward': self.backward.to_dict() if self.backward else None,
             'forward': self.forward.to_dict() if self.forward else None,
+            'lateral': self.lateral.to_dict() if self.lateral else None,
             'accounts': list(self.accounts),
             'error': self.error,
         }
@@ -280,7 +296,7 @@ def backfill_progress(
             direction=direction, state=BACKFILL_UNKNOWN,
             at=None, target=None, ceiling=None, anchor=None, oldest=None,
             newest=None, window=None, written=0, failures=0, ratio=None,
-            error=None)
+            error=None, reason=None)
 
     return BackfillProgress(
         direction=direction,
@@ -296,6 +312,7 @@ def backfill_progress(
         failures=record.failures,
         ratio=_ratio(record, now),
         error=record.error,
+        reason=record.reason,
     )
 
 
@@ -341,10 +358,14 @@ def _ratio(record: runtime_state.BackfillRecord,
     the target falls on a day the market never traded, where the arithmetic
     would stop just short of 1 forever and read as a stall.
 
-    ``None`` for the forward pass, and for a series with nothing stored yet:
-    there is no span to measure against, and a bar with an invented denominator
-    is worse than no bar. A mute symbol therefore draws no bar at all until it
-    reaches its terminal, which is the honest rendering of *zero point fetched*.
+    ``None`` for the forward pass, for the lateral one, and for a series with
+    nothing stored yet: there is no span to measure against, and a bar with an
+    invented denominator is worse than no bar. A mute symbol therefore draws no
+    bar at all until it reaches its terminal, which is the honest rendering of
+    *zero point fetched*. The lateral pass falls out of the arithmetic by itself,
+    carrying no ``target``: what it walks is the set of points missing a column,
+    which is not an interval of time and shrinks from both ends as the other two
+    passes add to it.
     """
     if record.terminal == runtime_state.TERMINAL_COMPLETE:
         return 1.0
@@ -467,6 +488,9 @@ def build_symbols(
             forward=backfill_progress(
                 backfill.get((symbol, runtime_state.FORWARD)),
                 runtime_state.FORWARD, now),
+            lateral=backfill_progress(
+                backfill.get((symbol, runtime_state.LATERAL)),
+                runtime_state.LATERAL, now),
             accounts=sorted(by_symbol[symbol]),
             error=record.error if record else None,
         ))
@@ -479,7 +503,11 @@ def build_backfill_summary(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
     Counted over the **backward** pass only. The forward pass has no target — it
     recovers a session missed while the app was down and its healthy steady state
     is a no-op (``too_recent``), so folding it in would make a perfectly well
-    portfolio look permanently half-done.
+    portfolio look permanently half-done. The lateral pass (#704) is out for the
+    same reason twice over: its healthy steady state is ``nothing_to_repair``,
+    and its terminal is not an achievement but a **fault to act on** — counting
+    an ``unconvertible`` series as *done* beside a reconstructed one would make
+    the banner announce as finished the very thing it should be naming.
 
     A count of terminal states rather than a mean of the per-series ratios, and
     the difference is not cosmetic: averaging a five-year history against a
@@ -611,7 +639,13 @@ def build_errors(
             errors.append({
                 'source': 'scrape', 'key': symbol.symbol,
                 'at': _iso(symbol.last_pass), 'message': symbol.error})
-        for progress in (symbol.backward, symbol.forward):
+        # The lateral pass is in the list for its **failures** only: its
+        # ``error`` is a fetch that did not complete, which is exactly what the
+        # other two publish here. An ``unconvertible`` terminal carries no
+        # ``error`` at all — it travels as a ``reason`` on the pass itself, and
+        # a fact the owner has to repair does not belong among the transient
+        # failures the next cycle clears.
+        for progress in (symbol.backward, symbol.forward, symbol.lateral):
             if progress is not None and progress.error:
                 errors.append({
                     'source': f'backfill:{progress.direction}',
