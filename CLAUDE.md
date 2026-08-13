@@ -470,6 +470,61 @@ front of** the store: **`position.closed_at`** (the folded section sorts on it,
 and a position carries a quantity, never the event that emptied it),
 **`GET /api/prices/:symbol?window=`** and its announced **`resolution`**.
 
+**The share's sheet: ADR-0016's form naked, and the liaison is a selection**
+(issue #720, ADR-0016, ADR-0017). The sheet **shrinks, and the room is not
+filled back in** — `RuntimeDetail` (a per-account backfill readout on a
+*security*'s card, answering a question `/api/runtime` has a page for), the
+per-account breakdown when it would have one line, and `Variation`, the
+percentage already glued to the latent gain in the table. Three things about
+what is left are decisions:
+
+- **`Gain total` dominates its three terms because it is a block**, and the
+  nesting *is* the statement: the terms are rendered **inside** the total's own
+  group. That is possible here and nowhere else on the page for a reason of
+  geometry rather than of taste — a table row has the horizontal axis and
+  nothing else, so a total mounted beside its terms is four numeric figures of
+  equal weight and nothing says the last three are inside the first. The
+  position facts — `Cours · PRU · Détenu · Valorisation · Investi`, `Investi`
+  being the `Valorisation − latente` that stayed off the table — drop behind it.
+  **Five bubbles**, and `Cours` / `Valorisation` carry none for the reason the
+  table's own headers do not: the carrying rule is stated once, on the page
+  header this sheet was opened from.
+- **The breakdown does not exist at one account** (`accountBreakdown` answers
+  `[]` there, the rule living beside the arithmetic rather than in a component),
+  and comes back the moment a share is held on two — the ordinary case of the
+  domain, contingently absent from the nineteen real symbols. Each of its lines
+  is a `ShareRow` of one account, so every figure on it is the same function the
+  folded row uses and the breakdown cannot drift from what it decomposes.
+- **The liaison between the chart and the list is a selection**, amending
+  #675/D2's *hovering a line lights its point* on ADR-0016's own argument: hover
+  does not exist on a finger and says nothing to a keyboard. **The unit of the
+  selection is the day**, which is what makes *several lines when the marker
+  announces `×3`* true by construction rather than by a second rule — a marker
+  cannot grow for a third of itself. The collisions are measured, not
+  hypothetical: one real symbol carries `×2`, `×2`, `×3`, `×3` over four days,
+  so **one marker per day announcing its count** and never three points merged
+  in silence. The markers are a **band under the plot rather than dots inside
+  it**, for two reasons: a marker has to be a *control* (clicked, and reached by
+  keyboard), and `lib/shares.ts` gives each day a fraction of the visible span
+  so there is **one** statement of the x-axis — the rule the resolution caption
+  already follows one line above. The window bounds them, so changing the range
+  changes what is announced.
+
+One member joined the HTTP contract with it and **its server half is in the same
+ticket**: **`position.fundamentals`** — the instrument's own attributes
+(`currency`, `exchange`, `quote_type`, `dividend_yield`, `pe_ratio`,
+`market_cap`), which P1 already selected and nothing published. It rides on the
+holding's row the way `price` does and is **read, never summed** (holding the
+same ETF on two accounts does not double its market capitalisation). Its two
+absences are two: a `null` **member** is the ordinary one — yfinance publishes
+no `pe_ratio` for an ETF, and `quote_type` beside it is what makes that legible
+rather than suspicious — while the object being `null` is the symbol the fetch
+has never reached, and the sheet then draws **no block at all** rather than five
+em dashes (#724's *a block with nothing in it does not exist*). `exchange` is in
+there rather than left out as decoration: ADR-0004's one surviving
+mis-valuation is an Amsterdam execution priced against the NASDAQ quote of the
+same company.
+
 **The data page: a revocation surface, not a repair one** (issue #723, ADR-0020,
 ADR-0005). #662's whole apparatus — the inline editor, the opaque token over
 `(file, sheet, row)`, the content fingerprint as an `ETag`, its `409` and
@@ -2476,6 +2531,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
+│                           #       plus the sheet: the breakdown that is absent at one account, the day-markers (#720)
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
@@ -2487,7 +2543,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
 ├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
-├── src/components/shares/         # Head · table · the fold · the chart · the sheet (#719)
+├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns · the sheet's shell (#721)
 └── src/test/               # setup · MSW server · payload factory · renderApp
