@@ -29,10 +29,18 @@
  *    transfer belong to no security, so a table whose header sums its rows can
  *    never show them — which is the one line ADR-0017's identity had to be
  *    corrected on (ADR-0018) and the one thing this page's bubble has to say.
+ *
+ * **The sheet's two rules grow this module rather than a second one beside it**
+ * (#720, the way `lib/accounts.ts` took the declaration at #729): the
+ * per-account breakdown, which **does not exist at one account** because it
+ * would then repeat the sheet's own header line for line, and the chart's event
+ * markers, where *a day carrying three events is one marker announcing three*
+ * and never three points merged in silence.
  */
 import { absenceCase, type AbsenceCase, type PositionAbsenceInput } from '@/lib/absence'
-import type { Converted, Position, Quote } from '@/lib/api'
+import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
 import { type Unrealised } from '@/lib/gain'
+import { byDateDescending } from '@/lib/ledger'
 
 /** One line of the page — one symbol, whatever the number of accounts on it. */
 export interface ShareRow extends PositionAbsenceInput {
@@ -55,6 +63,12 @@ export interface ShareRow extends PositionAbsenceInput {
   /** The day the last account sold out. `null` while it is held. */
   closedAt: string | null
   consecutiveFailures: number
+  /**
+   * The instrument's own attributes — read off the first row of the group that
+   * carries them, never summed (#720). `null` is *nothing has ever been observed
+   * about this symbol*, and the sheet then renders no block at all.
+   */
+  fundamentals: Fundamentals | null
 }
 
 /** Closed is a derivation over `quantity` — there is no stored flag (ADR-0003). */
@@ -159,6 +173,7 @@ export function buildShareRows(
       accounts: [],
       closedAt: null,
       consecutiveFailures: failures.get(position.symbol) ?? 0,
+      fundamentals: null,
     }
 
     row.name = row.name ?? position.name
@@ -168,6 +183,9 @@ export function buildShareRows(
     row.dividends += position.dividends
     row.price = row.price ?? position.price
     row.converted = row.converted ?? position.converted
+    // Read, never added: the attributes describe the security, and holding it
+    // on two accounts does not double its market capitalisation.
+    row.fundamentals = row.fundamentals ?? position.fundamentals
     if (position.closed_at !== null && (row.closedAt === null || position.closed_at > row.closedAt)) {
       row.closedAt = position.closed_at
     }
@@ -235,4 +253,107 @@ export function valuationTotal(rows: readonly ShareRow[]): Unrealised {
     total += value
   }
   return { known: true, value: total }
+}
+
+/**
+ * The sheet's per-account breakdown — **and it does not exist at one account**
+ * (#720).
+ *
+ * The empty answer at N = 1 is the rule and not a shortcut: a breakdown of one
+ * repeats the sheet's own header line for line, quantity for quantity, and a
+ * table whose every column already appears three centimetres above it teaches
+ * nothing. It comes back the moment a symbol is held on two accounts — which is
+ * the most ordinary case of the domain even though none of the nineteen real
+ * symbols shows it, so the rendering is what bends and never the model
+ * (`buildShareRows`' own argument, one level down).
+ *
+ * Each line is a `ShareRow` of one account, so every figure on it is computed by
+ * the functions above — the breakdown cannot drift from the line it decomposes.
+ */
+export function accountBreakdown(
+  positions: readonly Position[],
+  symbol: string,
+  failures: ReadonlyMap<string, number>,
+): ShareRow[] {
+  const held = positions.filter((position) => position.symbol === symbol)
+  const accounts = Array.from(new Set(held.map((position) => position.account)))
+  if (accounts.length < 2) return []
+  return accounts.map((account) => {
+    const [row] = buildShareRows(
+      held.filter((position) => position.account === account),
+      failures,
+    )
+    return { ...row, accounts: [account] }
+  })
+}
+
+/** The events of one security, newest first — what the sheet's list renders. */
+export function shareEvents(
+  events: readonly LedgerEvent[],
+  symbol: string,
+): LedgerEvent[] {
+  return byDateDescending(events.filter((event) => event.symbol === symbol))
+}
+
+/**
+ * A day of the ledger, as the chart announces it (#720).
+ *
+ * **One marker per day, carrying its count**, never one point per event: a
+ * single symbol of the real portfolio carries `×2`, `×2`, `×3`, `×3` over four
+ * days, so points drawn per event overlap and the reader is shown three
+ * purchases as one with nothing saying so. The collision is measured, not
+ * hypothetical.
+ */
+export interface EventMarker {
+  /** The calendar day, `YYYY-MM-DD` — it is what the selection is keyed on. */
+  day: string
+  /** How many events fall on it. Above one it is announced as `×N`. */
+  count: number
+  /**
+   * Where it sits along the visible series: `0` at its first point, `1` at its
+   * last. A fraction rather than a pixel, because the band that draws it is laid
+   * out in the chart's own width and knows nothing of Recharts' scale.
+   */
+  offset: number
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The markers of one symbol over the points the chart is showing.
+ *
+ * Two decisions in five lines. **The window bounds the markers**, so changing
+ * the range genuinely changes what is announced instead of piling every event
+ * the ledger holds onto one edge; a day is kept when the *day* intersects the
+ * span, not when its midnight does — a series whose first point is an afternoon
+ * close would otherwise drop the very purchase that opened it. And **a span of
+ * one point has no abscissa**, so it carries no marker at all: placing one at a
+ * fraction of nothing would be an invented position, which is the one thing a
+ * marker must not be.
+ */
+export function eventMarkers(
+  events: readonly LedgerEvent[],
+  symbol: string,
+  points: readonly SeriesPoint[],
+): EventMarker[] {
+  if (points.length < 2) return []
+  const first = Date.parse(points[0].ts)
+  const last = Date.parse(points[points.length - 1].ts)
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last <= first) return []
+
+  const counts = new Map<string, number>()
+  for (const event of events) {
+    if (event.symbol !== symbol || !event.date) continue
+    counts.set(event.date, (counts.get(event.date) ?? 0) + 1)
+  }
+
+  return Array.from(counts.entries())
+    .map(([day, count]) => ({ day, count, start: Date.parse(`${day}T00:00:00Z`) }))
+    .filter(({ start }) => Number.isFinite(start) && start + DAY_MS > first && start <= last)
+    .sort((left, right) => left.start - right.start)
+    .map(({ day, count, start }) => ({
+      day,
+      count,
+      offset: Math.min(1, Math.max(0, (start - first) / (last - first))),
+    }))
 }
