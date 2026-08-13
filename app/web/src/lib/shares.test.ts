@@ -10,18 +10,28 @@ import { describe, expect, it } from 'vitest'
 
 import type { Position } from '@/lib/api'
 import {
+  accountBreakdown,
   buildShareRows,
   closedRows,
+  eventMarkers,
   heldRows,
   isAnomalous,
   isClosed,
   marketValue,
+  shareEvents,
   unitCost,
   unrealised,
   unrealisedRatio,
   valuationTotal,
 } from '@/lib/shares'
-import { aClosedPosition, aPosition, sharesPortfolio } from '@/test/factories'
+import {
+  aClosedPosition,
+  aPosition,
+  aPriceSeries,
+  anEvent,
+  shareLedger,
+  sharesPortfolio,
+} from '@/test/factories'
 
 const NO_FAILURES = new Map<string, number>()
 
@@ -148,5 +158,135 @@ describe('the percentage under the latent gain', () => {
     // A pure grant costs nothing: dividing by it would be a percentage of zero.
     const [granted] = rowsOf([aPosition({ symbol: 'ZZG', quantity: 4, cost_basis: 0, price: 10 })])
     expect(unrealisedRatio(granted)).toBeNull()
+  })
+})
+
+describe('the instrument’s attributes', () => {
+  it('are read off the group, never added across its accounts', () => {
+    // Owning the same ETF in a PEA and a CTO does not double its market
+    // capitalisation — which is the whole reason they are not in `_ADDITIVE`
+    // on the other side of the wire either.
+    const [row] = rowsOf([
+      aPosition({ account: 'alpha', symbol: 'ZZF', quantity: 2, cost_basis: 200 }),
+      aPosition({ account: 'beta', symbol: 'ZZF', quantity: 3, cost_basis: 300 }),
+    ])
+    expect(row.fundamentals?.market_cap).toBe(1.2e9)
+  })
+
+  it('are absent on a symbol the fetch has never reached', () => {
+    const [row] = rowsOf([aPosition({ symbol: 'ZZC', price: null })])
+    expect(row.fundamentals).toBeNull()
+  })
+})
+
+describe('the per-account breakdown', () => {
+  it('does not exist at one account', () => {
+    // It would repeat the sheet's own header line for line, quantity for
+    // quantity — which is what took it off the sheet in the first place.
+    const positions = [aPosition({ account: 'alpha', symbol: 'ZZA' })]
+    expect(accountBreakdown(positions, 'ZZA', NO_FAILURES)).toEqual([])
+  })
+
+  it('comes back the moment a share is held on two accounts', () => {
+    const positions = [
+      aPosition({ account: 'alpha', symbol: 'ZZF', quantity: 2, cost_basis: 200, price: 110 }),
+      aPosition({ account: 'beta', symbol: 'ZZF', quantity: 3, cost_basis: 300, price: 110 }),
+      // Another share entirely: the breakdown is one symbol's.
+      aPosition({ account: 'alpha', symbol: 'ZZA' }),
+    ]
+    const lines = accountBreakdown(positions, 'ZZF', NO_FAILURES)
+
+    expect(lines.map((line) => line.accounts)).toEqual([['alpha'], ['beta']])
+    // Every figure of a line is the same function the folded row uses, so the
+    // breakdown cannot drift from what it decomposes: 2 × 110 = 220 against
+    // 200, and 3 × 110 = 330 against 300.
+    expect(lines.map(marketValue)).toEqual([220, 330])
+    expect(lines.map(unrealised)).toEqual([20, 30])
+    expect(lines.map(unitCost)).toEqual([100, 100])
+  })
+})
+
+describe('the chart’s event markers', () => {
+  const POINTS = aPriceSeries().points
+
+  it('is one marker per day, announcing its count', () => {
+    // `×2, ×2, ×3, ×3` over four days on one real symbol: drawn per event those
+    // points overlap and three purchases read as one, in silence.
+    const markers = eventMarkers(shareLedger(), 'ZZA', POINTS)
+    expect(markers.map((marker) => [marker.day, marker.count])).toEqual([
+      ['2026-02-28', 1],
+      ['2026-03-01', 3],
+    ])
+  })
+
+  it('drops what falls outside the visible range, and what is another share’s', () => {
+    // 2025-01-05 is in the ledger and not on the chart: the window bounds the
+    // markers, so changing the range genuinely changes what is announced. And
+    // the `ZZC` event of 2026-03-01 never joins `ZZA`'s count of three.
+    const days = eventMarkers(shareLedger(), 'ZZA', POINTS).map((marker) => marker.day)
+    expect(days).not.toContain('2025-01-05')
+    expect(eventMarkers(shareLedger(), 'ZZC', POINTS)).toHaveLength(1)
+  })
+
+  it('keeps a day whose events precede the first point of that same day', () => {
+    // The series opens on an afternoon close; a purchase made that morning is
+    // still a purchase of the visible range, and dropping it would lose the
+    // very event that opened the line.
+    const markers = eventMarkers(
+      [anEvent({ date: '2026-02-28' })],
+      'ZZA',
+      [
+        { ts: '2026-02-28T17:30:00.000Z', price: 126 },
+        { ts: '2026-03-02T12:00:00.000Z', price: 130 },
+      ],
+    )
+    expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-02-28', 0]])
+  })
+
+  it('sits on the rank of its point, never on a fraction of the elapsed span', () => {
+    // The chart draws on a **category** axis: N points are N even steps
+    // whatever the time between them. A fraction of the span is therefore a
+    // second statement of the same abscissa, and the two part company exactly
+    // where the reader needs them together — on `1M`, whose rung is the raw
+    // series, the live scrape writes a point every 120 s in session while the
+    // reconstruction writes one per hour or per day.
+    const points = [
+      { ts: '2026-02-01T17:30:00.000Z', price: 100 },
+      { ts: '2026-03-01T17:30:00.000Z', price: 110 },
+      { ts: '2026-03-01T17:32:00.000Z', price: 111 },
+    ]
+    const markers = eventMarkers([anEvent({ date: '2026-03-01' })], 'ZZA', points)
+    // Its point is the second of three, so the marker is at mid-plot. Read as a
+    // fraction of the span the same day lands at 0,97 — under the curve of the
+    // last two minutes, which is the wrong place on the one liaison this sheet
+    // exists to make.
+    expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-03-01', 0.5]])
+  })
+
+  it('names the nearest point when the day itself carries none', () => {
+    // A Saturday carries no session; the marker of an event dated there belongs
+    // on the close that framed it, not on an edge of the plot.
+    const points = [
+      { ts: '2026-03-02T17:30:00.000Z', price: 100 },
+      { ts: '2026-03-06T17:30:00.000Z', price: 110 },
+      { ts: '2026-03-20T17:30:00.000Z', price: 120 },
+    ]
+    const markers = eventMarkers([anEvent({ date: '2026-03-07' })], 'ZZA', points)
+    expect(markers.map((marker) => marker.offset)).toEqual([0.5])
+  })
+
+  it('places nothing at all on a span of one point', () => {
+    // A fraction of nothing is an invented position, which is the one thing a
+    // marker must not be.
+    expect(eventMarkers(shareLedger(), 'ZZA', POINTS.slice(0, 1))).toEqual([])
+  })
+})
+
+describe('a share’s own events', () => {
+  it('are its own, newest first', () => {
+    const events = shareEvents(shareLedger(), 'ZZA')
+    expect(events.every((event) => event.symbol === 'ZZA')).toBe(true)
+    expect(events[0].date).toBe('2026-03-01')
+    expect(events.at(-1)?.date).toBe('2025-01-05')
   })
 })

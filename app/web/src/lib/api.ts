@@ -331,6 +331,35 @@ export interface Converted {
   rate_at: string
 }
 
+/**
+ * What the instrument **is**, beside what the holding is worth (#720).
+ *
+ * It rides on the position's row the way `price` does, and for the same reason:
+ * P1 hands it back per `(account, symbol)`, and the shares page folds a symbol's
+ * rows into one line. Nothing here is ever summed — owning the same ETF in a PEA
+ * and a CTO does not double its market capitalisation.
+ *
+ * A `null` member is the ordinary absence: yfinance publishes no `pe_ratio` for
+ * an ETF, and `quote_type` beside it is what makes that legible rather than
+ * suspicious. The **object** being `null` is the other one — nothing has ever
+ * been observed about this symbol — and the sheet then renders no block at all.
+ */
+export interface Fundamentals {
+  /** The security's own quote currency, not the reporting one (ADR-0002). */
+  currency: string | null
+  /**
+   * The place the quote comes from. Not decoration: ADR-0004's one surviving
+   * mis-valuation is an Amsterdam execution priced against the NASDAQ quote of
+   * the same company, and the sheet is where a reader can see it.
+   */
+  exchange: string | null
+  quote_type: string | null
+  /** In **percent points**, not a ratio — the writer multiplies by 100. */
+  dividend_yield: number | null
+  pe_ratio: number | null
+  market_cap: number | null
+}
+
 export interface Position {
   account: string
   symbol: string
@@ -356,6 +385,8 @@ export interface Position {
    * it.
    */
   closed_at: string | null
+  /** `null` — nothing has ever been observed about this symbol. */
+  fundamentals: Fundamentals | null
 }
 
 export interface PositionsResponse {

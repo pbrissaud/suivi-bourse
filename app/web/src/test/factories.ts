@@ -67,6 +67,7 @@ import type {
   ConfigResponse,
   EnvironmentVariable,
   EventsResponse,
+  Fundamentals,
   LedgerEvent,
   PerfPoint,
   PortfolioTotals,
@@ -175,6 +176,24 @@ export interface PositionOptions extends Partial<Omit<Position, 'price' | 'conve
   rate?: number | null
 }
 
+/**
+ * The instrument's own attributes (#720). The default is a share Yahoo answers
+ * about in full; **`pe_ratio: null` is the ordinary case a test asks for by
+ * name** — an ETF has none, and `quote_type` beside it is what makes the absence
+ * legible rather than suspicious.
+ */
+export function fundamentalsOf(overrides: Partial<Fundamentals> = {}): Fundamentals {
+  return {
+    currency: BASE_CURRENCY,
+    exchange: 'ZZE',
+    quote_type: 'EQUITY',
+    dividend_yield: 1.75,
+    pe_ratio: 21.4,
+    market_cap: 1.2e9,
+    ...overrides,
+  }
+}
+
 export function aPosition(options: PositionOptions = {}): Position {
   const {
     price = 130,
@@ -197,6 +216,10 @@ export function aPosition(options: PositionOptions = {}): Position {
         ? null
         : { value: price * rate, currency: BASE_CURRENCY, rate, rate_at: NOW },
     closed_at: null,
+    // The symbol the fetch has never reached carries none at all, which is what
+    // makes *a block with nothing in it does not exist* observable on the sheet
+    // rather than only stated.
+    fundamentals: price === null ? null : fundamentalsOf({ currency }),
   }
 
   return { ...base, ...rest }
@@ -602,6 +625,43 @@ export function ledgerEvents(): LedgerEvent[] {
       unit_price: null,
       fee: null,
     }),
+  ]
+}
+
+/**
+ * THE SHARE SHEET'S LEDGER (#720) — the collision, at its smallest.
+ *
+ * `aPriceSeries` spans 2026-02-28 → 2026-03-02, and these events are placed
+ * against that span deliberately:
+ *
+ *   day           events on ZZA   what it exercises
+ *   ------------  --------------  --------------------------------------------
+ *   2026-02-28          1         one marker, no count to announce
+ *   2026-03-01          3         **one** marker announcing `×3` — the shape a
+ *                                 real symbol carries four times over
+ *                                 (`×2, ×2, ×3, ×3`), and the reason three
+ *                                 points drawn per event read as one
+ *   2025-01-05          1         **outside the visible range**: the window
+ *                                 bounds the markers, so changing it changes
+ *                                 what is announced
+ *
+ * plus one event on `ZZC`, which must never appear on `ZZA`'s sheet.
+ */
+export function shareLedger(): LedgerEvent[] {
+  return [
+    anEvent({ date: '2026-02-28', quantity: 2, unit_price: 126, source_row: 10 }),
+    anEvent({ date: '2026-03-01', quantity: 1, unit_price: 128, source_row: 11 }),
+    anEvent({ date: '2026-03-01', quantity: 3, unit_price: 129, source_row: 12 }),
+    anEvent({
+      date: '2026-03-01',
+      event_type: 'DIVIDEND',
+      quantity: null,
+      unit_price: null,
+      amount: 12,
+      source_row: 13,
+    }),
+    anEvent({ date: '2025-01-05', quantity: 5, unit_price: 90, source_row: 14 }),
+    anEvent({ date: '2026-03-01', symbol: 'ZZC', name: 'Zeta Gamma', source_row: 15 }),
   ]
 }
 
