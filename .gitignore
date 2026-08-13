@@ -99,13 +99,10 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
-# Compose deployment: the user's own config directory and env file. The
-# templates (data.example/, .env.example) are the versioned ones.
-docker-compose/data/
-
 # The store (issue #696). The app creates one wherever SB_STORE_DIR points, and
-# the default is the config directory — so a dev run against the versioned
-# data.example/ template leaves one there. It is state, never a template.
+# a run outside the container puts it in the working copy. It is state, never a
+# template — and the templates that used to live beside it left with the compose
+# stack (#743).
 *.duckdb
 *.duckdb.wal
 

@@ -1,5 +1,0 @@
-# Drop your broker exports (.csv / .xlsx) here.
-#
-# This folder *is* the portfolio: SuiviBourse reads dated events and nothing
-# else (issue #711). There is no mode to pick and no other file to edit — see
-# ../../examples/events-example.csv for the expected columns.
