@@ -49,6 +49,16 @@ REARM_SCRAPE = 'rearm_scrape'
 #: Changing it reschedules the fixed-cadence backfill job.
 REARM_BACKFILL_JOB = 'rearm_backfill_job'
 
+#: Answering it makes the whole stock already scraped repairable (issue #704).
+#: ``base_currency`` is the one dial whose value is retroactive: every point
+#: written before it was answered carries ``price_converted NULL``, and those
+#: rows are not lost — the lateral pass repairs them. The effect is therefore
+#: *"start now"* rather than *"the next cycle will read it"*: the pass rides on
+#: the backfill's cadence, so without this the owner answers the one question
+#: the app asks and watches nothing happen for up to a full backfill interval,
+#: on the gesture that unblocks every figure in the product.
+REPAIR_CONVERSIONS = 'repair_conversions'
+
 #: What a value *is*, for the form and for the error message. The table stores
 #: strings either way; this says what the string has to be parseable as.
 INTEGER = 'integer'
@@ -155,7 +165,7 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'Price-freshness sonde horizon, in seconds. 0 disables it.',
         minimum=0, maximum=_ONE_DAY, attribute='staleness_horizon'),
     SettingSpec(
-        'base_currency', None, CURRENCY, _currency, NEXT_CYCLE,
+        'base_currency', None, CURRENCY, _currency, REPAIR_CONVERSIONS,
         'The reporting currency, as an ISO-4217 code. No default: it is asked, '
         'never assumed, and it is fixed from the first recorded event.',
         attribute='base_currency'),
@@ -301,7 +311,7 @@ def stored_form(key: str, value: Any) -> str:
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
     'INTEGER', 'STRING', 'CURRENCY',
-    'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB',
+    'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'default_for', 'defaults', 'resolve',
     'validate', 'stored_form',
 ]

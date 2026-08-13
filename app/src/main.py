@@ -10,7 +10,9 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timezone, timedelta
+# ``time`` the stdlib module is already imported above for ``time.sleep``, so
+# the clock-of-day class comes in under its own name rather than shadowing it.
+from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Tuple
 
@@ -327,8 +329,30 @@ def register_interval_jobs(scheduler, sb_metrics,
         name='Performance recompute')
 
 
-#: The interval job a dial's ``REARM_BACKFILL_JOB`` effect reschedules.
+#: The interval job a dial's ``REARM_BACKFILL_JOB`` effect reschedules — and,
+#: since #704, the one a ``REPAIR_CONVERSIONS`` effect brings forward: the
+#: lateral pass rides on it rather than owning a job of its own.
 BACKFILL_JOB_ID = 'backfill'
+
+#: How far **before** the oldest day it has to repair the lateral pass asks the
+#: currency pair for (issue #704). The mirror of ``fx``'s own daily lookback, and
+#: it earns its place twice: a rate is a market series, so the first day of a
+#: chunk may be a Sunday whose rate is Friday's; and an answer that came back
+#: empty must mean *this pair is not a ticker* rather than *this window held no
+#: trading day*, which is the difference between a terminal and a no-op.
+LATERAL_LOOKBACK_DAYS = 10
+
+
+def _span_instants(first: date, last: date) -> Tuple[datetime, datetime]:
+    """Two calendar days as the two UTC instants a last-pass record carries.
+
+    ``BackfillRecord.window`` is a pair of *instants* — every other member of
+    ``/api/runtime`` is one, and the payload renders them as such. The lateral
+    pass walks calendar days, so the conversion happens here, once, rather than
+    letting a ``date`` travel into a field whose reader would render it ``null``.
+    """
+    return (datetime.combine(first, time_of_day.min, tzinfo=timezone.utc),
+            datetime.combine(last, time_of_day.min, tzinfo=timezone.utc))
 
 
 def apply_settings(runtime, changes) -> Dict:
@@ -373,6 +397,16 @@ def apply_settings(runtime, changes) -> Dict:
         elif effect == settings_registry.REARM_BACKFILL_JOB:
             if _reschedule_interval_job(
                     runtime.scheduler, BACKFILL_JOB_ID, change.after):
+                report['jobs_rescheduled'].append(BACKFILL_JOB_ID)
+        elif effect == settings_registry.REPAIR_CONVERSIONS:
+            # Answering the reporting currency is the one dial change that is
+            # **retroactive** (issue #704): every point written before it carries
+            # a ``NULL`` conversion, and the lateral pass is what gives them one.
+            # Reported as a rescheduled job because that is literally what it is
+            # — the pass rides the backfill, so triggering it is advancing that
+            # job's next run.
+            started = metrics.repair_conversions_now()
+            if started and BACKFILL_JOB_ID not in report['jobs_rescheduled']:
                 report['jobs_rescheduled'].append(BACKFILL_JOB_ID)
     return report
 
@@ -1122,6 +1156,16 @@ class SuiviBourseMetrics:
         # ``symbol_quote.oldest_window_tried`` (issue #703).
         self._backfill_complete: Dict[str, datetime] = {}
 
+        # The lateral pass's back-off (issue #704): when a symbol whose rate
+        # fetch **failed** may be tried again. #617's guard transposed onto a
+        # job that is an interval trigger rather than a self-rescheduling one —
+        # there is no ``run_date`` to push out, so what is remembered is the
+        # instant, and the pass steps over the symbol until it. The counter
+        # itself is not copied here (decision 2 of ``runtime_state``): it lives
+        # on the last-pass record, folded by the recorder, and one ``get``
+        # retrieves it.
+        self._lateral_retry_at: Dict[str, datetime] = {}
+
         # There is **no perf state here**, and its absence is the ticket (issue
         # #707, ADR-0011). Four attributes stood at this line — a mutex, a
         # backfill watermark, the identity of the last events list, and a
@@ -1344,14 +1388,16 @@ class SuiviBourseMetrics:
         Daily whatever the window's age, unlike the price fetch: an hourly rate
         would be a hundredfold more rows for a series whose consumer is a
         calendar day, and Yahoo caps hourly at 730 days anyway.
+
+        **It raises rather than swallowing** (issue #704), and that is the whole
+        of how the lateral pass tells its two stopping conditions apart: a raise
+        is a fetch that did not complete, an empty answer is yfinance saying the
+        pair is not a ticker. :meth:`fx.Rates._ensure_window` catches it and
+        logs exactly as this used to, so the *rebuild's* behaviour is unchanged —
+        what changes is that the difference survives as far as the caller that
+        needs it.
         """
-        try:
-            history = yf.Ticker(pair).history(
-                start=start, end=end, interval='1d')
-        except Exception as e:
-            app_logger.warning(
-                f"Could not fetch the {pair} history over [{start}, {end}]: {e}")
-            return {}
+        history = yf.Ticker(pair).history(start=start, end=end, interval='1d')
         if history is None or history.empty:
             return {}
 
@@ -2234,12 +2280,57 @@ class SuiviBourseMetrics:
 
         Read after the reload and not before it: the value this looks for is
         written *by* the import the reload performs.
+
+        And it triggers the lateral pass for the same reason ``PUT
+        /api/settings`` does (issue #704): this **is** the pose of the reporting
+        currency, on the road a headless install actually takes, and every point
+        already scraped is carrying a ``NULL`` conversion waiting for it.
         """
         stored = self.config_manager.store.setting('base_currency')
         if stored and stored != self.base_currency:
             app_logger.info(
                 f"Reporting currency taken from an imported file: {stored}")
             self.base_currency = stored
+            self.repair_conversions_now()
+
+    def repair_conversions_now(self) -> bool:
+        """Put the lateral pass in front of the queue (issue #704). Did it move?
+
+        The effect of answering the reporting currency, and it is the *only*
+        dial with one of this shape, because it is the only one whose value is
+        **retroactive**: while it was unanswered every scrape and every rebuilt
+        chunk wrote its point with ``price_converted NULL``, and those rows are
+        not lost — the lateral pass gives them the column they are short of. The
+        whole stock is therefore repairable the instant the question is answered,
+        and what this does is make it start now rather than up to one
+        ``backfill_interval`` later, on the single gesture that unblocks every
+        money figure in the product.
+
+        Two things happen, and the first is what makes the second honest. The
+        back-off memory is **cleared**: a symbol backing off after a failed rate
+        fetch was failing at a question that has just changed, and making it wait
+        out a delay computed against the old world would be the interface
+        punishing the repair. Then the backfill job's next run is advanced —
+        the pass rides on it, so there is nothing else to start.
+
+        Returns whether the job was actually moved. ``False`` on a runtime with
+        no scheduler (the master, a test) is not a failure: the dial is in the
+        store, the attribute is set, and the next cycle reads both.
+        """
+        self._lateral_retry_at.clear()
+        if self.scheduler is None:
+            return False
+        try:
+            self.scheduler.modify_job(
+                BACKFILL_JOB_ID, next_run_time=datetime.now(timezone.utc))
+        except Exception as e:
+            app_logger.error(
+                f"Failed to bring the conversion repair forward: {e}")
+            return False
+        app_logger.info(
+            "Reporting currency answered: repairing the conversions of every "
+            "price already stored")
+        return True
 
     def backfill(self):
         """
@@ -2247,14 +2338,17 @@ class SuiviBourseMetrics:
         directions. This runs as its own scheduled job, progressively filling
         gaps.
 
-        For each symbol, delegates to ``_backfill_symbol`` which runs two
-        independent passes (issue #626):
+        For each symbol, delegates to ``_backfill_symbol`` which runs three
+        independent passes (issues #626, #704):
           * Backward: extend the series toward the first **acquisition**, one
             ``backfill_chunk_days`` chunk per cycle, until ``_backfill_complete``
             is set.
           * Forward: recover a session missed while the app was down by fetching
             ``[newest, now]`` (issue #627) — independent of the backward
             watermark.
+          * Lateral: repair the points that landed with no ``price_converted``
+            (issue #704) — an ``UPDATE`` on rows that exist, never an
+            ``INSERT``, and independent of both the others.
         Fetches one chunk (default: 1 year) of history per direction and rate
         limits between requests.
 
@@ -2324,13 +2418,16 @@ class SuiviBourseMetrics:
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
                          held: bool) -> int:
-        """Backfill one symbol over its own holding window (issue #626, #703).
+        """Backfill one symbol over its own holding window (issue #626, #703, #704).
 
         The **backward** pass extends the series toward the first acquisition and
         stops once ``_backfill_complete`` is set; the **forward** pass recovers a
-        recent session missed while the app was down. The two directions are
-        **independent** — a completed backward watermark never suppresses the
-        forward pass (issue #627). Returns points written this cycle.
+        recent session missed while the app was down; the **lateral** pass gives
+        the points already stored the conversion they were written without. The
+        three directions are **independent** — a completed backward watermark
+        never suppresses the forward pass (issue #627), and neither of them says
+        anything about a conversion still missing (issue #704). Returns points
+        written this cycle.
 
         ``window`` is ``(first acquisition, last exit or None)``. A ``None`` end
         means *still held*, so the ceiling is **now**; a closed position's
@@ -2370,6 +2467,15 @@ class SuiviBourseMetrics:
         # position is sold out.
         if held:
             written += self._backfill_forward(symbol)
+
+        # Lateral pass — independent of both, and of the holding too (issue
+        # #704). It repairs the conversion of points that already exist, so it
+        # is gated by nothing the other two decide: a series can be complete
+        # backwards, up to date forwards and entirely unconverted. A sold line
+        # is squarely in its subject — its reconstructed history is what the
+        # account's returns are computed from, and an unconverted point is a day
+        # missing from that computation.
+        written += self._backfill_lateral(symbol)
         return written
 
     def _fetch_and_store(self, symbol, start_date, end_date):
@@ -2684,6 +2790,164 @@ class SuiviBourseMetrics:
 
         publish(window=(start_date, end_date), written=written)
         return written
+
+    def _backfill_lateral(self, symbol: str) -> int:
+        """Lateral pass: give the stored points the conversion they lack (#704).
+
+        It works on **the same rows as the other two, short of a column** — an
+        ``UPDATE``, never an ``INSERT`` — and that is what makes #702's decision
+        viable at all: a rate that could not be had writes the point with
+        ``price_converted NULL`` instead of losing the quote, and Yahoo gives
+        nothing back under the hour past sixty days, so a lost quote is lost for
+        good while a missing conversion is repairable for ever. Without this pass
+        the ``NULL`` would be a permanent absence every reader had to work
+        around, and ``latest`` would have to become *the most recent **complete**
+        point* — the per-field last-non-null row the store exists to avoid.
+
+        It rides on the backfill rather than owning a job: the rhythm, the
+        politeness delay and the chunk are the backfill's, and its last-pass
+        record is one more **direction** on the same recorder.
+
+        **Two stopping conditions, and they never collapse into each other.**
+        That is the ticket:
+
+        * a **fetch that did not complete** is a failure. It follows #617's
+          back-off — the first :data:`scheduling.FAILURE_GRACE` at the base
+          interval, then ``base × 2^(n − 3)`` capped at 24 h, reset to zero by
+          the first conversion that lands — and it retries **indefinitely**.
+          Nothing was learnt about the pair, so nothing may be concluded about
+          it.
+        * a **pair that does not resolve** is a *reply*: yfinance completed the
+          request and ``XYZEUR=X`` is not a ticker. It arms the
+          :data:`runtime_state.TERMINAL_UNCONVERTIBLE` terminal and names the
+          pair, because *"waiting for a conversion"* and *"will never convert"*
+          are two different sentences and only the second asks the owner to act.
+
+        **And an unanswered reporting currency arms neither.** It is the trap
+        the ticket writes in black and white: that absence is transitory and
+        lifted by a write of the owner's, so reading it as an unresolvable pair
+        would make answering the dial change nothing for the entire stock already
+        scraped — the one gesture the whole feature exists to honour. The pass
+        stands down on :data:`runtime_state.SKIP_NO_BASE_CURRENCY` before it
+        looks at anything else.
+
+        The **security's** own currency is the second thing that can be missing,
+        and it is not a failure either: it is only ever learnt at a first
+        successful fetch, so a symbol nobody has managed to quote sits durably
+        with no converted point at all. :data:`runtime_state.SKIP_NO_QUOTE_CURRENCY`
+        is the runtime state saying exactly that.
+
+        Returns the number of points repaired this cycle.
+        """
+        now = datetime.now(timezone.utc)
+
+        def publish(**fields) -> None:
+            self.recorder.record_backfill(runtime_state.BackfillRecord(
+                symbol=symbol, direction=runtime_state.LATERAL, at=now,
+                **fields))
+
+        if not self.base_currency:
+            publish(skipped=runtime_state.SKIP_NO_BASE_CURRENCY)
+            return 0
+
+        # The back-off, and the one place it is honoured. Publishing nothing
+        # while it holds is deliberate: a record with ``failed=False`` would
+        # reset the recorder's fold and flatten the delay back to the base
+        # interval on the very next cycle, while one with ``failed=True`` would
+        # count a cycle nobody attempted. The previous record stands, which is
+        # the honest reading — the last pass *is* still the last pass.
+        retry_at = self._lateral_retry_at.get(symbol)
+        if retry_at is not None and now < retry_at:
+            return 0
+
+        store_open = self.config_manager.store
+        span = quotes.unconverted_span(store_open, symbol)
+        if span is None:
+            # The steady state, and the one that clears the back-off: every
+            # point carries its conversion.
+            self._lateral_retry_at.pop(symbol, None)
+            publish(skipped=runtime_state.SKIP_NOTHING_TO_REPAIR)
+            return 0
+        oldest, newest, pending = span
+
+        currency = quotes.quote_currency(store_open, symbol)
+        if not currency:
+            publish(window=_span_instants(oldest, newest),
+                    skipped=runtime_state.SKIP_NO_QUOTE_CURRENCY)
+            return 0
+
+        # One chunk per cycle, from the **oldest** unconverted day, exactly as
+        # the backward pass walks one chunk per cycle from its anchor.
+        end = min(newest, oldest + timedelta(days=self.backfill_chunk_days))
+        window = _span_instants(oldest, end)
+
+        outcome, _ = self.rates.observe(
+            currency, self.base_currency,
+            oldest - timedelta(days=LATERAL_LOOKBACK_DAYS),
+            end + timedelta(days=1))
+        # The backfill's politeness, on the pass that has just asked Yahoo for a
+        # window. Only reached when there was something to repair, so a portfolio
+        # whose conversions are all in pays nothing for it.
+        time.sleep(self.backfill_delay)
+
+        if outcome == fx.FAILED:
+            record = self.recorder.backfill_of(symbol, runtime_state.LATERAL)
+            failures = (record.failures if record is not None else 0) + 1
+            # #617's own formula, and its own base: the wait is a multiple of
+            # ``regular_interval``, which is what makes the number in the
+            # settings form the number in the formula here too.
+            self._lateral_retry_at[symbol] = now + timedelta(
+                seconds=scheduling.backoff_delay(
+                    self.regular_interval, failures))
+            app_logger.warning(
+                f"Could not fetch the rates to convert {symbol}, will retry")
+            publish(window=window, failed=True,
+                    error=f"the {currency}→{self.base_currency} rates for "
+                          f"{oldest} → {end} could not be fetched")
+            return 0
+
+        if outcome == fx.UNRESOLVED:
+            # A reply, not a failure: the counter is reset rather than raised,
+            # and no retry is scheduled because there is nothing to retry.
+            self._lateral_retry_at.pop(symbol, None)
+            pair = fx.pair_symbol(
+                fx.normalise(currency)[0] or currency, self.base_currency)
+            app_logger.warning(
+                f"{symbol} cannot be converted: no {pair} rate exists "
+                f"({pending} price(s) will stay unconverted)")
+            publish(window=window,
+                    terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
+                    reason=f"no exchange rate exists between {currency} and "
+                           f"{self.base_currency} ({pair}), so {pending} stored "
+                           f"price(s) of {symbol} cannot be converted")
+            return 0
+
+        # Resolved: one factor per day that actually carries a point to repair —
+        # the rate of **its own day**, forward-filled inside the window that was
+        # just fetched, exactly as a rebuilt chunk is converted. A day the pair
+        # has no rate for at all keeps its ``NULL`` and comes back next cycle;
+        # the window is cached by then, so no request is emitted for it.
+        days = quotes.unconverted_days(store_open, symbol, oldest, end)
+        factors = {}
+        for day in days:
+            factor = self.rates.rate(currency, self.base_currency, day)
+            if factor is not None:
+                factors[day] = factor
+
+        self._lateral_retry_at.pop(symbol, None)
+        repaired = 0
+        try:
+            with self.config_manager.writing() as opened:
+                repaired = quotes.repair_conversions(opened, symbol, factors)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to repair the conversions of {symbol}: {e}")
+        if repaired:
+            app_logger.info(
+                f"Converted {repaired} stored price(s) of {symbol} "
+                f"({oldest} → {end})")
+        publish(window=window, written=repaired)
+        return repaired
 
     def scrape(self):
         """
