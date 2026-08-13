@@ -163,11 +163,17 @@ def directory(env: Mapping[str, str], name: str, default: str) -> Path:
 #: already get (ADR-0008, ADR-0014): name, do not read, do not decide.
 PREFIXES = ('SB_', 'INFLUXDB_')
 
-#: Carried the prefix and were **never read by Python** — they belong to the
+#: Carried the prefix and were **never read by Python** — they belonged to the
 #: compose file and the docker daemon (#654 trap 13). They are a *fourth*
 #: category and stay out of the notice entirely: naming them would introduce
 #: names the app has never obeyed into a sentence about names it has stopped
 #: obeying.
+#:
+#: The compose file left with #743 and this list did **not**, which is the whole
+#: point of it: the environment it guards against is not this repository's, it
+#: is the one a v4 install still sources its own ``.env`` into. Deleting the
+#: tuple would not remove the four names from the product — it would move them
+#: into the notice, which is the one place spec #730 § 3 forbids them.
 NEVER_READ: frozenset = frozenset({
     'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID',
 })

@@ -23,7 +23,7 @@ import store as store_module
 from events.schemas import Event, EventType
 
 
-# Canonical valid events CSV. Same columns as docker-compose/events/example.csv:
+# Canonical valid events CSV, in the drop folder's own format (#711):
 #   date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
 # Covers BUY/GRANT/DIVIDEND/SELL across two symbols (AAPL, MSFT). Rows are in
 # date order and load/validate/aggregate cleanly through the events pipeline.
@@ -70,7 +70,7 @@ def sample_events():
 def events_csv(tmp_path):
     """Write a valid events CSV into tmp_path and return its Path.
 
-    Columns match docker-compose/events/example.csv. Point an EventLoader or
+    Columns match the drop folder's own format. Point an EventLoader or
     ConfigurationManager at the returned file path to exercise CSV loading.
     """
     csv_path = tmp_path / "events.csv"

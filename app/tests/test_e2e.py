@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 # --------------------------------------------------------------------------- #
 # Canonical events CSV used by the events-mode tests.
 #
-# Columns match docker-compose/events/example.csv. Hand-computed end state
+# Columns match the drop folder's own format. Hand-computed end state
 # (verified against the real EventAggregator), in the v5 shape — one quantity
 # and a cost basis that has absorbed the acquisition fees (#699):
 #
