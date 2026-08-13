@@ -1,5 +1,6 @@
 /**
- * One symbol's price, over one of four ranges (#684 D10, ADR-0010).
+ * One symbol's price, over one of four ranges (#684 D10, ADR-0010) — **and the
+ * days its ledger names, under it** (#720).
  *
  * **The presets are the rungs of the retention ladder** — `1M / 1A / 2A / MAX`
  * — and not four round numbers. A stored point's resolution is a function of its
@@ -13,28 +14,65 @@
  * *two announcers for one fact* is the defect the map found independently on
  * four pages. It also stops a sparse far end reading as an outage.
  *
- * The chart's event overlay — a day carrying several events being **one** marker
- * that announces its count, and the selection that links it to the list under it
- * — is #720's, and it lands on this component.
+ * The event overlay is **a band under the plot rather than dots inside it**, and
+ * that is a decision with two halves:
+ *
+ *  - **a marker has to be a control.** The link to the list is a *selection*
+ *    (#675/D2 as amended by ADR-0016), so it is clicked and it is reached by
+ *    keyboard — hover does not exist on a finger and says nothing to a keyboard.
+ *    A `<button>` is what carries both; a Recharts dot is a shape.
+ *  - **it is laid out in the chart's own width and knows nothing of its scale.**
+ *    `lib/shares.ts` gives each day a fraction of the visible span and the band
+ *    spans the plot area, so there is one statement of the x-axis rather than
+ *    two — the same rule the resolution caption follows one line above. The
+ *    inset below mirrors the `YAxis` width and the `LineChart` margin, which are
+ *    the only two numbers that place the plot.
+ *
+ * **One marker per day, announcing its count.** A single symbol of the real
+ * portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event those
+ * points overlap, and three purchases read as one with nothing saying so.
  */
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
-import { api, CHART_WINDOWS, type ChartWindow } from '@/lib/api'
+import { api, CHART_WINDOWS, type ChartWindow, type LedgerEvent } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
+import { eventMarkers } from '@/lib/shares'
 import { cn } from '@/lib/utils'
+
+/** The `YAxis` width plus the `LineChart` left margin: where the plot starts. */
+const PLOT_INSET_LEFT = 77
+/** The `LineChart` right margin. */
+const PLOT_INSET_RIGHT = 5
 
 export interface PriceChartProps {
   symbol: string
   window: ChartWindow
   onWindowChange: (window: ChartWindow) => void
+  /**
+   * The ledger, whole — the markers are the days of **this** symbol and the
+   * filtering is `lib/shares.ts`'s, so the sheet and the chart cannot disagree
+   * about which day carries what.
+   */
+  events?: readonly LedgerEvent[]
+  /** The selected day, or `null`. The selection is a **day**, never an event. */
+  selectedDay?: string | null
+  /** Clicking a marker: select that day, and take the list to it. */
+  onSelectDay?: (day: string) => void
 }
 
-export function PriceChart({ symbol, window, onWindowChange }: PriceChartProps) {
+export function PriceChart({
+  symbol,
+  window,
+  onWindowChange,
+  events = [],
+  selectedDay = null,
+  onSelectDay,
+}: PriceChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const series = useQuery({
@@ -46,6 +84,7 @@ export function PriceChart({ symbol, window, onWindowChange }: PriceChartProps) 
   // unit. `null` while the dial is unanswered, which `formatCurrency` renders as
   // the plain number rather than guessing.
   const currency = series.data?.base_currency ?? null
+  const markers = eventMarkers(events, symbol, series.data?.points ?? [])
 
   return (
     <section className="space-y-3">
@@ -106,6 +145,51 @@ export function PriceChart({ symbol, window, onWindowChange }: PriceChartProps) 
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* A band with nothing in it does not exist: a symbol whose events are
+              all outside the visible range shows no rail rather than an empty
+              one. */}
+          {markers.length === 0 ? null : (
+            <div
+              role="group"
+              aria-label={t('shares.events.markers')}
+              className="relative h-6"
+              style={{ marginLeft: PLOT_INSET_LEFT, marginRight: PLOT_INSET_RIGHT }}
+            >
+              {markers.map((marker) => {
+                const selected = marker.day === selectedDay
+                return (
+                  <button
+                    key={marker.day}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={t('shares.events.marker', {
+                      count: marker.count,
+                      date: f.date(marker.day),
+                    })}
+                    onClick={() => onSelectDay?.(marker.day)}
+                    className="absolute top-0 -translate-x-1/2"
+                    style={{ left: `${marker.offset * 100}%` }}
+                  >
+                    {/* The point **grows** on selection — the one thing the
+                        marker owes the reader who clicked a line of the list. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'block rounded-full bg-grant',
+                        selected ? 'size-3 ring-2 ring-grant/40' : 'size-2',
+                      )}
+                    />
+                    {marker.count > 1 ? (
+                      <span aria-hidden className="block text-[0.625rem] text-muted-foreground">
+                        {t('shares.events.count', { count: marker.count })}
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
     </section>

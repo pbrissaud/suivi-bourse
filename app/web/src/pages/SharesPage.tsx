@@ -154,8 +154,14 @@ export default function SharesPage() {
         </>
       )}
 
+      {/* The raw rows go with the folded one: the sheet's per-account breakdown
+          is keyed by `(account, symbol)`, which is exactly what `buildShareRows`
+          has just folded away. */}
       <ShareSheet
         row={rows.find((row) => row.symbol === selected) ?? null}
+        positions={positions.data?.positions ?? []}
+        failures={failures}
+        currency={currency}
         onClose={() => setSelected(null)}
       />
     </div>
