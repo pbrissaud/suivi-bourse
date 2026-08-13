@@ -1034,9 +1034,16 @@ one reaches is the app itself, and there is no choice left to express.
 
 **Grafana's retreat took two more things with it**:
 `assets/grafana-dashboard-external-v8..v11.json` — four dashboards published for
-a user-supplied Grafana, whose only reference surface was `deployment/` and
-`advanced/`, both deleted with the corpus — and `assets/screenshot.png`, the
-`README` having moved to `website/static/img/screenshot.png`, which shows the app.
+a user-supplied Grafana, whose reference surface in the **live** corpus was
+`deployment/` and `advanced/`, both deleted with it — and `assets/screenshot.png`,
+the `README` having moved to `website/static/img/screenshot.png`, which shows the
+app. **The frozen v3 page links all four all the same**
+(`versioned_docs/version-3.x/deployment/standalone.mdx`), by absolute GitHub URL
+on `blob/master` rather than by a relative link — so Docusaurus checks nothing,
+the build stays green, and the four links become `404` the day v5 reaches
+`master`. That is written down here rather than repaired: a frozen corpus is not
+rewritten, `versioned_docs/` is excluded from this ticket's own criterion, and
+whether v3's readers are owed those files back is the owner's arbitration.
 
 **And the image's `HEALTHCHECK` starts applying here.** The stack's own file
 declared a `healthcheck:` block, which overrides the image's, so the only stack
