@@ -99,6 +99,13 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
+# The compose stack left with #743, and its templates with it — but the config
+# directory a contributor pointed it at is *their portfolio*, and it is still on
+# their disk. Dropping the rule with the stack un-ignored a real ledger — dated
+# events, account declarations — in a working copy where `git add -A` publishes
+# it. The stack is gone; the hazard it created is not, so the rule outlives it.
+docker-compose/data/
+
 # The store (issue #696). The app creates one wherever SB_STORE_DIR points, and
 # a run outside the container puts it in the working copy. It is state, never a
 # template — and the templates that used to live beside it left with the compose
