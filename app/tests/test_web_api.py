@@ -64,6 +64,13 @@ class FakeMetrics:
         # all (``runtime.metrics is None``), which is what ``with_scheduler``
         # below builds.
         self.reconstruction = (0, 0)
+        # What answering the reporting currency triggers (issue #704): the
+        # lateral pass is brought forward on the backfill job. Counted rather
+        # than performed — the real one moves a live jobstore, which these tests
+        # have no business standing up — and answering ``False`` is the honest
+        # shape of a runtime with no scheduler.
+        self.repair_calls = 0
+        self.repair_result = False
 
     def reconstruction_state(self):
         return self.reconstruction
@@ -71,6 +78,10 @@ class FakeMetrics:
     def rearm_regular_scrapes(self):
         self.rearm_calls += 1
         return self.rearm_result
+
+    def repair_conversions_now(self):
+        self.repair_calls += 1
+        return self.repair_result
 
     def ingest(self, import_files=True):
         self.ingest_calls += 1
@@ -2487,6 +2498,35 @@ def test_a_sold_line_publishes_its_backward_progress_and_says_it_is_not_polled(
     assert row['next_run_state'] == 'not_held'
     assert row['backward']['written'] == 42
     assert body['backfill']['in_scope'] == 1
+
+
+def test_the_runtime_publishes_an_unconvertible_series_with_its_reason(tmp_path):
+    """#704's terminal, on the route that answers while nothing else can.
+
+    A conversion that will never resolve is the one backfill state that asks the
+    owner to *do* something, so it travels with the pair it is about — a state
+    word alone would leave a reader in front of an empty column with no
+    explanation. It is a **reply** and not a failure, so it stays out of the
+    errors list.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = web_module.current_runtime()
+    runtime.recorder.record_backfill(runtime_state.BackfillRecord(
+        symbol='AAPL', direction=runtime_state.LATERAL,
+        at=datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc),
+        terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
+        reason='no exchange rate exists between XYZ and EUR (XYZEUR=X)'))
+
+    body = client.get('/api/runtime').get_json()
+    lateral = body['symbols'][0]['lateral']
+
+    assert lateral['state'] == 'unconvertible'
+    assert 'XYZEUR=X' in lateral['reason']
+    assert lateral['error'] is None
+    assert body['errors'] == []
+    # And it is not counted as a reconstruction that finished.
+    assert body['backfill']['complete'] == 0
 
 
 def test_the_runtime_publishes_the_perf_horizon_of_each_account(tmp_path):

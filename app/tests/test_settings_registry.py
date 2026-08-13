@@ -86,6 +86,11 @@ def test_every_dial_says_what_changing_it_triggers():
     assert effects['regular_interval'] == registry.REARM_SCRAPE
     assert effects['backfill_interval'] == registry.REARM_BACKFILL_JOB
     assert effects['backfill_delay'] == registry.NEXT_CYCLE
+    # The one dial whose value is **retroactive** (issue #704): every point
+    # written while it was unanswered carries a ``NULL`` conversion, and those
+    # rows are repairable rather than lost — so answering it starts the lateral
+    # pass instead of merely being read by the next cycle.
+    assert effects['base_currency'] == registry.REPAIR_CONVERSIONS
 
 
 def test_every_integer_dial_is_bounded_on_both_sides():
