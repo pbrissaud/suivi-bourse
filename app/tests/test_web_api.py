@@ -671,7 +671,7 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
                         'realised', 'dividends', 'price', 'converted',
-                        'closed_at'}
+                        'closed_at', 'fundamentals'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')
     assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
@@ -680,6 +680,34 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
                             'at': '2024-06-01T12:00:00+00:00'}
     assert row['converted'] == {'value': 180.0, 'currency': 'EUR', 'rate': 0.9,
                                 'rate_at': '2024-06-01T12:00:00+00:00'}
+
+
+def test_the_instrument_rides_on_the_holding_and_is_absent_unfetched(tmp_path):
+    """The share sheet's fundamentals block, and its two absences (issue #720).
+
+    They ride on the position's row the way ``price`` does — P1 hands them back
+    per ``(account, symbol)`` and the front folds a symbol's rows into one line —
+    and they are **read, never summed**: holding the same ETF on two accounts
+    does not double its market capitalisation.
+
+    The two absences are not one. A ``null`` **member** is the ordinary case,
+    yfinance publishing no ``pe_ratio`` for an ETF; the object being ``null`` is
+    the symbol the fetch has never reached, and the sheet then draws no block at
+    all rather than five em dashes.
+    """
+    def seed(opened):
+        seed_position(opened, symbol='AAPL', account='pea')
+        seed_position(opened, symbol='MSFT', name='Microsoft', account='pea')
+        seed_quote(opened, symbol='AAPL', price=200.0, pe_ratio=None)
+
+    payload = build_client(tmp_path, seed=seed).get('/api/positions').get_json()
+    rows = {row['symbol']: row for row in payload['positions']}
+
+    assert rows['AAPL']['fundamentals'] == {
+        'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
+        'dividend_yield': 0.5, 'pe_ratio': None, 'market_cap': 3.0e12,
+    }
+    assert rows['MSFT']['fundamentals'] is None
 
 
 def test_a_sold_line_and_a_never_quoted_one_are_rows_and_never_absences(tmp_path):

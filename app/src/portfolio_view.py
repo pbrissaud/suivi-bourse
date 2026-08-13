@@ -462,6 +462,13 @@ def _build_position(row: Dict[str, Any],
     available on the client either: a position carries a quantity, never the
     event that emptied it. The predicate lives in the SQL beside the sale it
     reads (:meth:`store_reads.PortfolioReader.positions`).
+
+    ``fundamentals`` is the **instrument's** own attributes, and it rides on the
+    holding's row for the reason ``price`` already does (#720): P1 hands them
+    back per ``(account, symbol)``, the front folds a symbol's rows into one line
+    and reads the first that carries them. They are never summed —
+    :data:`_ADDITIVE` says which fields are, and owning the same ETF in a PEA and
+    a CTO does not double its market capitalisation.
     """
     price_native = row.get('price_native')
     converted = row.get('price')
@@ -489,7 +496,40 @@ def _build_position(row: Dict[str, Any],
             'rate_at': at,
         },
         'closed_at': _iso(row.get('closed_at')),
+        'fundamentals': _build_fundamentals(row),
     }
+
+
+def _build_fundamentals(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """What the instrument is, beside what the holding is worth (issue #720).
+
+    ``None`` when **no** attribute has ever been observed, which is the symbol
+    the fetch has never reached — the share's sheet then renders no block at all
+    rather than five em dashes, *a block with nothing in it does not exist*
+    (#724). A member that is ``None`` inside a present object is the other
+    absence and it is the ordinary one: yfinance publishes no ``pe_ratio`` for an
+    ETF, and ``quote_type`` beside it is what makes that legible rather than
+    suspicious.
+
+    ``exchange`` is in here rather than left out as decoration: ADR-0004's one
+    surviving mis-valuation is an Amsterdam execution priced against the NASDAQ
+    quote of the same company, and the sheet is where a reader can see it.
+
+    The three figures are **current values only** and carry no history — yfinance
+    supplies them on the live quote alone (`store.py`), so there is nothing to
+    date them against and nothing to chart.
+    """
+    values = {
+        'currency': row.get('currency'),
+        'exchange': row.get('exchange'),
+        'quote_type': row.get('quote_type'),
+        'dividend_yield': row.get('dividend_yield'),
+        'pe_ratio': row.get('pe_ratio'),
+        'market_cap': row.get('market_cap'),
+    }
+    if all(value is None for value in values.values()):
+        return None
+    return values
 
 
 def build_price_series(symbol: str, rows: Sequence[Dict[str, Any]],
