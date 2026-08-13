@@ -7,7 +7,9 @@ clock or real market is required. ``zoneinfo`` is exercised for real (no new
 dependency) to prove DST handling.
 """
 
+import json
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +23,32 @@ from scheduling import (
 UTC = timezone.utc
 NOW = datetime(2024, 1, 15, 12, 0, tzinfo=UTC)
 BASE = 120
+
+_CAPTURES = Path(__file__).parent / "fixtures" / "trading_period"
+
+
+def _capture(name):
+    """A real reading, split as ``extract_market_context`` takes its arguments.
+
+    Read from a file rather than written inline (issue #769): the defect is a
+    field that means something other than what its name suggests, and a
+    hand-written dict says whatever its author already believed. The README
+    beside it holds the reading and the fields it deliberately does not carry.
+    """
+    data = json.loads((_CAPTURES / f"{name}.json").read_text(encoding="utf-8"))
+    return data["info"], data["history_meta"]
+
+
+# ``BNP.PA`` on 2026-08-12, Euronext Paris (CEST). The reading was taken at
+# 20:47 UTC, over five hours after the 15:30 UTC close, and its
+# ``regular.start`` is that same morning's 07:00 — the whole subject of #769.
+BNP = "bnp-pa-2026-08-12"
+BNP_REGULAR_START = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
+BNP_BEFORE_OPEN = datetime(2026, 8, 12, 5, 30, tzinfo=UTC)    # 07:30 local
+BNP_AFTER_CLOSE = datetime(2026, 8, 12, 20, 47, tzinfo=UTC)   # the reading itself
+# ~08:00 local the next day, which is what ``_approx_next_open`` answers and the
+# only producer that guarantees a strictly future date.
+BNP_APPROX_NEXT_OPEN = datetime(2026, 8, 13, 6, 0, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +105,14 @@ def test_decide_closed_with_unknown_next_open_short_retries():
 
 
 def test_decide_closed_with_past_next_open_short_retries():
-    """Woken on/after the expected open but still closed (holiday/half-day)."""
+    """A non-future open is read as *unknown*, which is the only thing
+    ``SHORT_RETRY`` is for (issue #769).
+
+    This is the **guard** and no longer a case: ``extract_market_context`` holds
+    the invariant that a date it hands over is strictly future, so the only way
+    into this branch is a caller that does not. It used to be reached every
+    single evening, and was described here as a holiday or a half-day.
+    """
     next_open = NOW - timedelta(seconds=10)
     _, next_delay, _ = decide("PRE", False, next_open, NOW, 0, BASE)
     assert next_delay == SHORT_RETRY
@@ -249,13 +284,82 @@ def test_extract_missing_state_is_none():
 # extract_market_context — exact next-open from history metadata (#603)
 # ---------------------------------------------------------------------------
 
-def test_extract_prefers_exact_next_open_from_history_meta():
-    ts = 1_700_000_000
-    meta = {"currentTradingPeriod": {"regular": {"start": ts, "end": ts + 23400}}}
-    # exchangeTimezoneName present too — exact must win over the ~08:00 guess.
-    info = {"marketState": "CLOSED", "exchangeTimezoneName": "America/New_York"}
-    _, next_open = extract_market_context(info, meta, NOW)
-    assert next_open == datetime.fromtimestamp(ts, tz=UTC)
+@pytest.mark.parametrize("now, expected", [
+    pytest.param(BNP_BEFORE_OPEN, BNP_REGULAR_START, id="morning"),
+    pytest.param(BNP_AFTER_CLOSE, BNP_APPROX_NEXT_OPEN, id="evening"),
+])
+def test_extract_sweeps_both_sides_of_the_captured_open(now, expected):
+    """One **real** reading, read at two instants — the sweep that was missing.
+
+    ``currentTradingPeriod`` describes the current period and never the next
+    one, so the same ``regular.start`` is the next open in the morning and this
+    morning's open in the evening. Before it, the exact value wins over the
+    ~08:00 guess (which would answer the *next* day here, so the two are
+    distinguishable); after it, the exact value is discarded and the guess —
+    the one producer that guarantees a future date — takes over.
+
+    The predecessor of this test pinned ``ts = 1_700_000_000``, i.e.
+    2023-11-14, *before* its own ``NOW`` of 2024-01-15, and asserted the
+    function returned it: the evening case was **inside** the sweep with the
+    defect written down as the expected answer. That is one turn worse than
+    #765's *a test attesting a property it never exercised*, and it is why the
+    successor reads one capture at two instants rather than adding a case
+    beside the old one.
+    """
+    info, meta = _capture(BNP)
+    _, next_open = extract_market_context(info, meta, now)
+    assert next_open == expected
+
+
+@pytest.mark.parametrize("hour", range(0, 24))
+def test_extract_never_answers_a_next_open_that_has_already_happened(hour):
+    """The invariant, swept across the captured day: strictly future, or None.
+
+    Stated on the whole day rather than on the two interesting instants, because
+    what makes it an invariant is that no caller has to know which side of the
+    open it is on — ``decide``'s non-positive-delta branch stops being reachable
+    from here at any hour.
+    """
+    info, meta = _capture(BNP)
+    now = datetime(2026, 8, 12, hour, 13, tzinfo=UTC)
+    _, next_open = extract_market_context(info, meta, now)
+    assert next_open is not None          # the reading names a timezone
+    assert next_open > now
+
+
+def test_a_closed_evening_sleeps_to_the_next_open():
+    """End to end on the reading: the evening sleeps, it does not re-probe.
+
+    The measured symptom was ~70 to 90 seconds per symbol all evening —
+    ``SHORT_RETRY`` plus #619's jitter — of the order of 4 000 Yahoo requests a
+    night on eleven European lines, not one of which may write: ``decide``'s
+    write gate is shut on a closed market by construction, which the assertion
+    on ``should_write`` re-states here.
+    """
+    info, meta = _capture(BNP)
+    state, next_open = extract_market_context(info, meta, BNP_AFTER_CLOSE)
+
+    assert scheduling.is_closed(state)    # POSTPOST, as read
+    should_write, next_delay, _ = decide(
+        state, False, next_open, BNP_AFTER_CLOSE, 0, BASE)
+
+    assert should_write is False
+    assert next_delay != SHORT_RETRY
+    assert next_delay == pytest.approx(
+        (BNP_APPROX_NEXT_OPEN - BNP_AFTER_CLOSE).total_seconds())
+    assert next_delay > 9 * 3600          # the closure, not a minute
+
+
+def test_no_helper_claims_to_read_the_next_open():
+    """The name says what the field holds, not what a scheduler would like.
+
+    Asserted on the module rather than left to the reading of a docstring: the
+    old ``_exact_next_open`` announced *"the exact next regular open"* and the
+    statement was simply false half of every day, which is the divergence #769
+    is about. Its successor is named after the period the field describes.
+    """
+    assert not hasattr(scheduling, '_exact_next_open')
+    assert hasattr(scheduling, '_current_regular_open')
 
 
 @pytest.mark.parametrize("meta", [
