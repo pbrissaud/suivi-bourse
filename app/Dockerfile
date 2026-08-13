@@ -65,40 +65,18 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project
 
-# The whole uid apparatus left here with #742: no `chmod 0755` on the home, no
-# sticky-writable cache, no `ENV HOME`. All three existed because the container
-# ran under the *host* user's uid — the price of a config directory the app and
-# a human both wrote in. The store now has a named volume of its own (ADR-0015),
-# so the container runs as `appuser`, who owns their own `$HOME`: Debian's
-# HOME_MODE 0700 is correct again, gunicorn's `chdir` lands in a directory its
-# own user owns, and yfinance's timezone cache under `$HOME/.cache` belongs to
-# whoever writes it. The inherited PaaS hazard — a platform that never records
-# an invoking uid landing on `1000:1000` by accident — closes with the cause
-# rather than by being handled.
+# The whole uid apparatus is gone (issues #742 and #743): no `chmod 0755` on the
+# home, no sticky-writable cache, no `ENV HOME`. All three existed because the
+# container ran under the *host* user's uid — the price of a config directory
+# the app and a human both wrote in — and the last thing that still ran one was
+# the compose stack, which #743 deleted. The store has a named volume of its own
+# (ADR-0015), so the container runs as `appuser`, who owns their own `$HOME`:
+# Debian's HOME_MODE 0700 is correct again, gunicorn's `chdir` lands in a
+# directory its own user owns, and yfinance's timezone cache belongs to whoever
+# writes it. The inherited PaaS hazard — a platform that never records an
+# invoking uid landing on `1000:1000` by accident — closes with the cause rather
+# than by being handled: there is no uid to guess left.
 RUN useradd --create-home appuser \
-    # ---- TRANSITIONAL, AND #743 DELETES BOTH LINES WITH ITS OWN SUBJECT ----
-    # The paragraph above is true of the target state and premature by exactly
-    # one ticket. `docker-compose/` still points `SB_STORE_DIR` **inside** the
-    # host-mounted config directory, which the human owns, so the stack still
-    # runs `user: "${SB_UID:-1000}:${SB_GID:-1000}"` — 501 on a Mac. And
-    # `/home/appuser` is that uid's `$HOME` *and* gunicorn's `chdir` (the
-    # WORKDIR below): `useradd --create-home` leaves it 0700, so without the
-    # traverse bit the container dies on `Permission denied: '/home/appuser'`
-    # before a line of application code runs. Measured, not feared — and it
-    # kills the macOS development loop `CLAUDE.md` prescribes, on the one
-    # platform where the app cannot run natively at all (#657).
-    #
-    # `0755` and not `0700`, and not `0711` either: CPython's import system
-    # caches a **directory listing** per package path, so a traverse-only home
-    # would make `import web` fail on the WORKDIR gunicorn is chdir'd into. It
-    # is also the ordinary mode of a home directory — Debian's `HOME_MODE 0700`
-    # is that distribution's hardening, not a norm — and everything under it is
-    # application source the image already ships world-readable.
-    #
-    # The cache is **not** here, and that is the point: see `XDG_CACHE_HOME`
-    # below. This image ships no world-writable directory of its own.
-    && chmod 0755 /home/appuser \
-    # ---- END TRANSITIONAL ----
     # The two directories the environment names by default (issue #740,
     # ADR-0015): `/data` is where the store is written, `/import` is the drop
     # folder and is read-only in use. They exist in the image because a bare
@@ -114,7 +92,7 @@ RUN useradd --create-home appuser \
     # And no `VOLUME` instruction: it would have Docker create an anonymous
     # volume on every bare `docker run`, making the trial run persist behind
     # the user's back into a volume they cannot name — the opposite of what a
-    # trial run is, and the notice #743 prints would be a lie.
+    # trial run is, and the notice #741 prints would be a lie.
     && mkdir -p /data /import \
     && chown appuser:appuser /data /import
 WORKDIR /home/appuser
@@ -137,22 +115,16 @@ COPY --from=web /build/src/static /home/appuser/static
 # It also stops depending on `HOME` being right. Measured: with `HOME=/nowhere`
 # and this variable set, `yfinance.cache.get_tz_cache()` reports `dummy: False`,
 # writes `py-yfinance/tkr-tz.db` and reads the value back — so the cache is
-# whole for **every** uid, including the target state's `appuser`, and it
-# survives #743 rather than leaving with it.
+# whole for **every** uid, including `appuser`, and that is why it survived #743
+# where `ENV HOME` did not.
 ENV XDG_CACHE_HOME=/tmp/.cache
 
-# ---- TRANSITIONAL, THE SECOND LINE OF THE BLOCK ABOVE — #743 DELETES IT TOO ----
-# Docker gives `HOME=/` to a uid with no `/etc/passwd` entry (501 on macOS), and
-# the compose stack still runs one. The cache no longer depends on this — see
-# `XDG_CACHE_HOME` above — so what is left is the consequence that has nothing
-# to do with caches: `ConfigurationManager` resolves its config directory
-# through `expanduser`, so `HOME=/` sends it to `/.config/SuiviBourse` instead
-# of the mount, and ADR-0008's *named, never read* observation for a v4
-# `config.yaml` / `settings.yaml` never fires — for exactly the population the
-# sentence exists for, someone upgrading from v4. Measured: 0 occurrences
-# against 2.
-ENV HOME=/home/appuser
-
+# No `ENV HOME` (issue #743). It compensated for a uid absent from `/etc/passwd`
+# — Docker hands such a uid `HOME=/` — and the only thing that ever ran one was
+# the compose stack, which pointed the store inside a directory the human owned
+# and therefore had to run `user:`. `appuser` *is* in `/etc/passwd`, so the base
+# image's own `HOME` is right, `expanduser` lands where it should, and there is
+# nothing left to compensate for.
 USER appuser
 
 # 8080 serves the web UI and /health, 8081 keeps serving /metrics for existing

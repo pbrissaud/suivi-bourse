@@ -225,7 +225,7 @@ Fais tourner ce qui concerne les fichiers que tu as touchés, et **corrige jusqu
   (\`onBrokenLinks: 'throw'\` : un lien mort casse la construction — c'est voulu)
 - \`app/src/\` ou \`app/tests/\` → \`cd app && uv sync && uv run flake8 src/ --ignore=E501 && uv run pytest tests/\`
 - \`app/web/\` → \`cd app/web && pnpm install && pnpm lint\` puis \`pnpm build\`, et \`pnpm test\` s'il existe
-- \`app/Dockerfile\`, \`docker-compose/\` → au minimum \`docker compose config\` sur les fichiers touchés
+- \`app/Dockerfile\` → \`docker build -t suivi-bourse:pr ./app\` puis \`IMAGE=suivi-bourse:pr .github/scripts/container-contract.sh\` (le job \`Container\` de la CI, #744)
 
 Un portail rouge que tu ne sais pas réparer se déclare \`passed: false\` avec sa sortie. **Tu ne
 maquilles jamais un portail** (pas de test désactivé, pas de \`--no-verify\`, pas de lien

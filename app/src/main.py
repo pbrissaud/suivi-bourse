@@ -73,10 +73,11 @@ def set_log_level(level: str) -> str:
     """Change the log level of the running process. **Ephemeral** by design.
 
     The one survivor of #654's settings page, and the reason it survived is the
-    reason it is not persisted: ``.env`` is a host file the container never
-    sees, so a "saved" level would revert on the next ``docker compose up`` —
-    a setting that silently reverts is worse than one that never claimed to
-    stick. This lasts until the process restarts, and says so.
+    reason it is not persisted: ``LOG_LEVEL`` is read from the environment the
+    container was created with, so a "saved" level would revert the next time
+    that container is recreated — a setting that silently reverts is worse than
+    one that never claimed to stick. This lasts until the process restarts, and
+    says so.
 
     The trap is the second line of the loop. ``logfmt_logger.getLogger`` attaches
     a ``StreamHandler`` and calls ``ch.setLevel(level)`` on it, so a logger

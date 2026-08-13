@@ -31,11 +31,11 @@ export default defineConfig({
   server: {
     port: 5173,
     // The dev loop #655 decision 2 is arguing for: hot reload on the front
-    // while the *real* scheduler runs against the *real* InfluxDB. On a Mac the
+    // while the *real* scheduler runs against the *real* store. On a Mac the
     // target has to be the container — #657 found the app can no longer run
     // natively at all (gunicorn forks, and libcurl's Curl_macos_init then dies
-    // in CoreFoundation), so `docker compose -f docker-compose.dev.yaml up` is
-    // the other half of this proxy.
+    // in CoreFoundation), so `docker build ./app` then `docker run` is the
+    // other half of this proxy; point `SB_API_URL` at it if it is not on 8080.
     proxy: {
       '/api': {
         target: process.env.SB_API_URL || 'http://localhost:8080',

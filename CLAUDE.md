@@ -24,7 +24,7 @@ cd app && uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
 # worker and libcurl's macOS-only Curl_macos_init (reached from curl_easy_init
 # in yfinance's HTTP backend) reads the system proxy config through
 # CoreFoundation, which is unsafe after a fork without exec. Linux has no such
-# init and is unaffected; on a Mac use docker-compose.dev.yaml instead.
+# init and is unaffected; on a Mac build the image and run it (below).
 
 # Lint
 cd app && uv run flake8 src/ --ignore=E501
@@ -57,8 +57,13 @@ pnpm dev       # Vite on :5173, proxying /api to http://localhost:8080
 
 # `pnpm dev` needs the API running. On a Mac that means the container, not a
 # local process — #657: gunicorn forks and libcurl's Curl_macos_init then dies
-# in CoreFoundation. Point it elsewhere with SB_API_URL if needed.
-cd docker-compose && SB_UID=$(id -u) SB_GID=$(id -g) docker compose -f docker-compose.dev.yaml up -d
+# in CoreFoundation. Build it and run it (issue #743 — there is no composed
+# development stack any more, and nothing replaces it). From the repo root:
+docker build -t suivi-bourse:dev ./app
+docker run -d --name suivi-bourse-dev -p 8080:8080 \
+  -v suivi-bourse-dev:/data -v "$PWD/my-events:/import:ro" suivi-bourse:dev
+# Then, back in app/web, point Vite at it if it is not on 8080:
+SB_API_URL=http://localhost:9000 pnpm dev
 ```
 
 The image builds the bundle itself in a first `node` stage and `COPY --from`s
@@ -82,18 +87,21 @@ container runs as `appuser`, who owns their own `$HOME` — Debian's `HOME_MODE`
 0700 is correct again, and the inherited PaaS hazard (a platform that records no
 invoking uid landing on `1000:1000` by accident) has no subject left.
 
-**The three lines are nonetheless still in the `Dockerfile`, marked
-`TRANSITIONAL`, and #743 deletes them.** `docker-compose/` still points
-`SB_STORE_DIR` **inside** the mount a human owns, so it still runs
-`user: "${SB_UID:-1000}:${SB_GID:-1000}"` — and a foreign uid needs all three or
-none: the traverse bit (without it gunicorn's `chdir` dies before a line of
-application code), the sticky cache, and `HOME` (Docker gives `/` to a uid with
-no `/etc/passwd` entry, which makes the other two inert *and* sends
-`ConfigurationManager`'s `expanduser` to `/.config/SuiviBourse`, so ADR-0008's
-*named, never read* never fires for the one population it exists for). **The
-first acceptance criterion of #742 is therefore deferred to #743**, deliberately
-and in writing, rather than half-met. Four things replace the apparatus once it
-goes:
+**Two of the three survived #742 as `TRANSITIONAL` lines, and #743 deleted them
+with their subject.** They were kept because a foreign uid needs all of them or
+none — the traverse bit (without it gunicorn's `chdir` dies before a line of
+application code) and `HOME` (Docker gives `/` to a uid with no `/etc/passwd`
+entry, which sends `ConfigurationManager`'s `expanduser` to
+`/.config/SuiviBourse`, so ADR-0008's *named, never read* never fires for the one
+population it exists for) — and the only thing that still ran a foreign uid was
+the compose stack, which pointed `SB_STORE_DIR` **inside** the mount a human
+owns and therefore ran the service under the invoking user's own uid. **#742's
+first acceptance criterion was therefore deferred rather than half-met**, and it
+is discharged here: the stack is gone, so `/home/appuser` is back to Debian's
+`HOME_MODE` 0700 and `Config.Env` carries no `HOME=`. The third line — the
+sticky-writable `.cache` — had already left with `ENV XDG_CACHE_HOME` at #742,
+on an argument of its own that survives (below). Four things replace the
+apparatus:
 
 - **`/data` and `/import` exist in the image, empty and owned by `appuser`.**
   That is the mechanism, not a nicety: Docker initialises a fresh named volume
@@ -110,7 +118,10 @@ goes:
   wedged backfill is something `/api/runtime` displays, not something a probe
   restarts the container over. The `start-period` covers the store opening and
   deliberately not the reconstruction, whose ~25 minutes would otherwise read as
-  *starting* on a container whose store never answers.
+  *starting* on a container whose store never answers. **It only started
+  applying at #743**: the stack's own file declared a `healthcheck:` block,
+  which overrides the image's, so the one stack the repository shipped masked
+  the one probe it had.
 - **Two `--mount=type=cache`**, on the pnpm store (`$PNPM_HOME/store`) and on
   uv's cache (`/root/.cache/uv`). They serve **the contributor who rebuilds**;
   the cache that serves a PaaS starting from nothing is a registry cache and
@@ -1043,92 +1054,90 @@ cd .. && CROWDIN_PROJECT_ID=0 CROWDIN_PERSONAL_TOKEN=config-lint-only \
   npx @crowdin/cli@4.15.0 config lint
 ```
 
-### Docker Compose (in `docker-compose/` directory)
+### Running it — there is no compose stack (issue #743)
+
+`docker-compose/` is **gone in its entirety**, `Makefile` included, and **nothing
+replaces it**: `docker run` is the canonical form, and a PaaS deploys from an
+image or from a `Dockerfile` without ever needing compose.
 
 ```bash
-cd docker-compose
-make init                         # .env from .env.example, data/ from data.example/
-docker compose up -d              # Full stack: app + InfluxDB + Grafana
-docker compose -f docker-compose.dev.yaml up -d  # Development mode (uses data.example/)
+# No buildx, no custom syntax directive — the build context is ./app.
+docker build -t suivi-bourse:dev ./app
 
-# A portfolio is a ledger: drop a .csv/.xlsx into the config dir's events/
-# folder and it is loaded. There is no mode to choose (issue #711).
+# /data is the store and is the one argument to keep; /import is the drop
+# folder, read-only, and its absence is an ordinary state (ADR-0015).
+docker run -d --name suivi-bourse \
+  -p 8080:8080 \
+  -v suivi-bourse:/data \
+  -v "$PWD/my-events:/import:ro" \
+  suivi-bourse:dev
+
+# A portfolio is a ledger: drop a .csv/.xlsx into the mounted drop folder and it
+# is loaded. There is no mode to choose (issue #711). With no /import at all the
+# first event is typed in the app, which is what ADR-0005 made the onboarding.
+
+# The image contract is asserted in CI and runnable here (issue #744):
+docker build -t suivi-bourse:pr ./app
+IMAGE=suivi-bourse:pr .github/scripts/container-contract.sh
 ```
 
-**The stack still starts InfluxDB and Grafana, and the app no longer speaks to
-either** (issue #700). That is a deliberate seam, not an oversight: the price
-path moved into the store here, while retiring the two containers is #679/#680's
-packaging work. Until then a `docker compose up` runs two services that receive
-nothing, and the boot names the three `INFLUXDB_*` variables it found and does
-not read — which is what stops *"my token must be wrong"* being the conclusion.
-Grafana's dashboards stop advancing at the upgrade instant for the same reason.
+The detail worth keeping is that **the `Makefile`'s four preparation jobs died
+of four independent causes, and not one of them was "compose is leaving"**:
+generating the InfluxDB token (there is no InfluxDB), copying the example config
+directory (there is no manual mode), recording the invoking uid and gid (the uid
+apparatus died with its cause at #742/#743), and warning that the variable
+chaining the port overlay was missing (there is no overlay). It was not a tool,
+it was **a stack of workarounds each with its own cause** — which is why nothing
+was left to port, and why *"what becomes of `docker-compose/`"* had no partial
+answer available.
 
-The stack owns exactly two user-writable things, both git-ignored: `.env` (every
-setting, names identical to the app's own env vars) and the **config directory**
-(`SB_CONFIG_DIR`, default `./data`) mounted as a single volume at
-`/home/appuser/.config/SuiviBourse`. That mount is **writable**, for two
-independent reasons since #696: the app no longer writes the *event files*
-(#711 removed `config_writer.py`), but it does write **in** that directory —
-`suivi-bourse.duckdb` is created and written there from the first boot on (#679
-is what moves the store to a volume of its own). Since #740 the two compose
-files **name `SB_STORE_DIR` and `SB_IMPORT_DIR` explicitly** rather than
-inheriting them: the app's defaults are the image's (`/data`, `/import`), so a
-stack that said nothing would put the store in the container's writable layer
-and lose it on the next `up`. The human who edits the event files by hand must own them all the same —
-so the service runs
-as `user: "${SB_UID:-1000}:${SB_GID:-1000}"` and `make init` records the
-invoking `id -u`/`id -g` in `.env`. **That `user:` is what keeps all three of
-#742's transitional lines alive**, and they are one gesture rather than three
-independent kindnesses:
+**The port overlay lost its subject rather than its support.** It existed so that
+Grafana would *not* be published when a reverse proxy fronted it; in v5 the thing
+one reaches is the app itself, and there is no choice left to express.
 
-- **the traverse bit on `/home/appuser`** — it is gunicorn's `chdir`,
-  `useradd --create-home` leaves it `0700`, and a foreign uid dies on
-  `Permission denied: '/home/appuser'` **before a line of application code
-  runs**, which kills the macOS development loop this file prescribes on the one
-  platform where the app cannot run natively at all (#657);
-- **`ENV HOME=/home/appuser`** — Docker gives `HOME=/` to a uid with no
-  `/etc/passwd` entry. The consequence has nothing to do with caches since the
-  cache left `$HOME` (below): `ConfigurationManager` resolves its
-  config directory through `expanduser`, so `HOME=/` sends it to
-  `/.config/SuiviBourse` rather than the mount, and ADR-0008's *named, never
-  read* observation for a v4 `config.yaml` / `settings.yaml` **never fires** —
-  for exactly the population the sentence was written for.
+**Grafana's retreat took two more things with it**:
+`assets/grafana-dashboard-external-v8..v11.json` — four dashboards published for
+a user-supplied Grafana, whose reference surface in the **live** corpus was
+`deployment/` and `advanced/`, both deleted with it — and `assets/screenshot.png`,
+the `README` having moved to `website/static/img/screenshot.png`, which shows the
+app. **The frozen v3 page links all four all the same**
+(`versioned_docs/version-3.x/deployment/standalone.mdx`), by absolute GitHub URL
+on `blob/master` rather than by a relative link — so Docusaurus checks nothing,
+the build stays green, and the four links become `404` the day v5 reaches
+`master`. That is written down here rather than repaired: a frozen corpus is not
+rewritten, `versioned_docs/` is excluded from this ticket's own criterion, and
+whether v3's readers are owed those files back is the owner's arbitration.
 
-Removing either of the two is what produces a half-broken image, which is why
-**#742's first acceptance criterion is deferred to #743** in writing rather than
-declared met — and #743 now carries it as five criteria of its own, since a
-deferral nobody wrote down on the ticket that inherits it is a deferral lost in
-both.
+**And the image's `HEALTHCHECK` starts applying here.** The stack's own file
+declared a `healthcheck:` block, which overrides the image's, so the only stack
+the repository shipped masked the only probe it had. Nothing declares one now,
+so #742's probe is the one that runs.
 
-**The third line is gone rather than deferred, and the image is tighter for it.**
-`$HOME/.cache` was shipped at `1777` so a foreign uid could write yfinance's
-timezone cache; `ENV XDG_CACHE_HOME=/tmp/.cache` puts it in the directory the
-base image already publishes world-writable, so **this image ships no
-world-writable directory of its own** — audited, the only two left are
-`/run/lock` and `/var/tmp`, both `python:3.14-slim`'s. It is strictly better
-than what was there and it is not transitional: measured `dummy: False` under
-uid 501 *and* under `appuser`, so it survives #743 instead of leaving with it. #743 removes all three together with the stack that is their whole
-subject. It is a seam of the same kind as the two dead
-containers above — this directory goes entirely with #679/#680, and the named
-volume that makes the image's own arrangement whole arrives with it.
-`docker-compose.yaml` is never edited by
-users: the image tag is `${SB_VERSION:-4}`, ports and container-name prefix are
-variables, and the InfluxDB admin token has one source (`INFLUXDB_TOKEN` in
-`.env`) that `influxdb3-init.sh` materialises into a token file and Grafana's
-datasource reads via `$__env{}`.
+**The *no reference left* criterion is held on its intention, and the arbitration
+is written down here rather than left for the next reader to redo.** It listed
+seven strings — `docker compose`, `make init`, `SB_UID`, `SB_GID`,
+`SB_CONFIG_DIR`, `SB_VERSION`, `COMPOSE_FILE` — and three of them are held to the
+letter: outside `versioned_docs/` there is **zero `docker compose`, zero `make
+init`, zero `COMPOSE_FILE`** in the repository, the release `CHANGELOG` aside,
+whose `docker-compose:` scopes are the record of shipped releases and not a
+reference to a stack. The **four names the app has never read** stay, deliberately:
+they are not references to the compose stack, they are the tuple that keeps them
+**out** of the boot notice (`boot_env.NEVER_READ`, required by spec #730 § 3).
+Deleting it would not remove the four names from the product — it would move them
+into the one sentence spec #730 § 3 forbids them, i.e. a behaviour regression, and
+it would break the four tests that pin the exclusion. So they survive in six
+places and no others, each of them a statement *about* their disappearance rather
+than a use of them: `app/src/boot_env.py`'s `NEVER_READ`; the four tests pinning
+it (`test_boot_env.py`, `test_runtime_wiring.py`, `test_scheduling_wiring.py`,
+`test_web_api.py`); `website/docs/settings.mdx`'s *a different case again* row;
+and **ADR-0015's opening sentence**, which is the sentence that *decides* the uid
+apparatus goes — taking the names out of it would make the ADR say less than it
+decided, and an ADR is not rewritten to satisfy a grep.
 
-**Port publishing is an overlay.** `docker-compose.yaml` declares no `ports:`
-— the services reach each other over the compose network — and
-`docker-compose.expose.yaml` holds the three blocks. `.env.example` chains them
-with `COMPOSE_FILE=docker-compose.yaml:docker-compose.expose.yaml`, so local use
-is unchanged; `GRAFANA_PORT`/`INFLUXDB_PORT`/`SB_WEB_PORT`/`SB_METRICS_PORT` are
-read by the overlay. PaaS platforms that regenerate from `docker-compose.yaml` alone and
-write their own env (Coolify, Dokploy) never load the overlay and get the
-unpublished stack, which is what a reverse proxy in front of Grafana wants.
-`docker-compose.dev.yaml` is standalone and keeps its own `ports:` (an explicit
-`-f` overrides `COMPOSE_FILE`). Existing `.env` files predate the line — `make
-init` warns when it is missing, since the stack would otherwise come up with
-nothing published.
+**There is no composed development mode either**, and the replacement is the two
+commands above with `pnpm dev` pointed at the container through `SB_API_URL` (see
+the Web UI section). That is also why this work came **after** the image's: one
+does not delete the only way to start the stack before `docker run` replaces it.
 
 ## Architecture
 
@@ -2472,6 +2481,19 @@ obeying). Which of the three clauses a name lands in — *moved to a dial*,
 `settings_registry`, so adding a dial takes `SB_<KEY>` out of the last clause
 with nothing in `boot_env.py` edited. One grouped logfmt line at start-up, and
 only when there is something to say.
+
+**That fourth list survives #743, and it is the only *live* one of the six places
+those four names are still written.** It survives on purpose: they belonged to the
+compose file, the compose file is gone, and the population the exclusion protects
+is precisely someone who still has a v4 `.env` sourced into their environment.
+Deleting the tuple would not remove the names from the product, it would move them
+into the notice — which is the one thing spec #730 § 3 says they must never enter
+— and it would break the four tests that pin the exclusion (`test_boot_env.py`,
+`test_runtime_wiring.py`, `test_scheduling_wiring.py`, `test_web_api.py`). The two
+remaining mentions are prose about the disappearance rather than uses of the
+names: `website/docs/settings.mdx`'s *a different case again* row, and ADR-0015's
+opening sentence. The arbitration that keeps all six is written up with #743
+above.
 
 ### Persistence is observed and said, never demanded (issue #741, ADR-0015)
 
