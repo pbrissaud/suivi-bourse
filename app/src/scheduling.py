@@ -8,7 +8,8 @@ testable against dicts and an injected clock (issue #616, design #602-#609).
 
   * ``decide`` — one scrape cycle's write gate + next re-arm delay.
   * ``extract_market_context`` — parse ``marketState`` + the next regular open
-    from the ticker ``info`` and ``history()`` metadata.
+    from the ticker ``info`` and ``history()`` metadata. A ``next_open`` it
+    returns is **strictly future, or it is None** (issue #769).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,12 @@ except ImportError:  # pragma: no cover - defensive, py<3.9 unsupported anyway
 CLOSED_STATES = frozenset({'CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'})
 
 # Hardcoded safety constants (design #607) — not operator dials.
-SHORT_RETRY = 60           # s: re-probe when woken but still not REGULAR
+# ``SHORT_RETRY`` is what a closed cycle does when the next open is **unknown**,
+# and only that (issue #769). It stopped being that for a while: an ordinary
+# evening handed ``decide`` this morning's open, the non-positive-delta branch
+# fired, and 60 s became the cadence of a fifteen-hour closure — one Yahoo
+# request a minute per symbol, none of which may write.
+SHORT_RETRY = 60           # s: re-probe when the next open is unknown
 MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 
 # How often the perf job recomputes, in full and unconditionally (issue #707,
@@ -101,10 +107,15 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     state quiets it.
 
     Two-tier cadence (design #607): ``REGULAR`` re-arms in ``base_interval``;
-    every closed-family state sleeps to the exact ``next_open`` (capped at
-    ``MAX_SLEEP``, no lead-in margin), short-retrying at ``SHORT_RETRY`` when
-    ``next_open`` is unknown or already past (self-resolves holidays/half-days
-    forward once the job wakes and re-reads ``marketState``).
+    every closed-family state sleeps to ``next_open`` (capped at ``MAX_SLEEP``,
+    no lead-in margin), short-retrying at ``SHORT_RETRY`` when ``next_open`` is
+    **unknown** — which is the whole of what ``SHORT_RETRY`` is for (issue #769).
+    A non-future ``next_open`` is read as unknown too, and that is now a guard
+    rather than a case: ``extract_market_context`` holds the invariant that a
+    date it returns is strictly future, so the only way in is a caller that does
+    not. It used to be described here as a *holiday / half-day* — a rarity —
+    while it in fact happened every single evening, ``currentTradingPeriod``
+    naming the **current** period and not the next one.
 
     Dead-ticker guard (design #608, issue #617): a **failure** is one
     non-closed cycle with no writable price. A closed cycle is *never* a
@@ -132,8 +143,9 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
         else:
             delta = (next_open - now).total_seconds()
             # No lead-in margin: target exactly next_open. A non-positive delta
-            # means we woke on/after the expected open but the state is still
-            # closed (holiday / half-day) — short-retry and re-read next time.
+            # is a next open we do not actually know — the same answer as None
+            # and for the same reason. Its producer here holds #769's invariant,
+            # so this is the guard for one that does not, never the evening.
             next_delay = min(delta, MAX_SLEEP) if delta > 0 else SHORT_RETRY
     elif should_write:
         # Success: reset the failure counter and resume the base cadence.
@@ -402,27 +414,67 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
                            now: datetime) -> Tuple[Optional[str], Optional[datetime]]:
     """Extract ``(marketState, next_open)`` from ticker data.
 
-    Prefers the exact next regular open from ``history()`` metadata
-    ``currentTradingPeriod.regular.start`` (design #603 amendment). Falls back
-    to ``exchangeTimezoneName`` + stdlib ``zoneinfo`` at ~08:00 local on the
-    next day (DST handled by ``zoneinfo``; an approximate open is fine — the
-    freshly-read ``marketState`` is the authority on wake). ``now`` is injected
-    and must be timezone-aware. Returns ``(state, next_open|None)``.
+    **The invariant, and it is the point of this function** (issue #769): a
+    ``next_open`` returned here is **strictly in the future, or it is None**.
+    Nothing downstream has to ask whether the date it was handed has already
+    happened, and ``SHORT_RETRY`` goes back to meaning *we do not know when this
+    market opens*.
+
+    Prefers ``history()`` metadata's ``currentTradingPeriod.regular.start``
+    (design #603 amendment) — but only while it is still ahead of ``now``, see
+    below. Falls back to ``exchangeTimezoneName`` + stdlib ``zoneinfo`` at
+    ~08:00 local on the next day (DST handled by ``zoneinfo``; an approximate
+    open is fine — the freshly-read ``marketState`` is the authority on wake).
+    ``now`` is injected and must be timezone-aware. Returns
+    ``(state, next_open|None)``.
     """
     info = info or {}
     state = info.get('marketState')
 
-    next_open = _exact_next_open(history_meta)
-    if next_open is None:
+    # ``currentTradingPeriod`` describes the **current** period and never the
+    # next one, so after the close ``regular.start`` is the open of that same
+    # morning — measured on ``BNP.PA`` at 2026-08-12 20:47 UTC, Paris shut since
+    # 15:30 (``tests/fixtures/trading_period/``). Passed on as-is it gave
+    # ``decide`` a non-positive delta, i.e. ``SHORT_RETRY``, i.e. one Yahoo
+    # request a minute per symbol for the whole evening — of the order of 4 000
+    # a night on eleven European lines, not one of which may write, the write
+    # gate being shut on a closed market by construction.
+    #
+    # So a non-future value is **discarded here** and ``_approx_next_open``, the
+    # one producer that guarantees a strictly future date, does its work. It was
+    # never reached in the evening: the exact field parsed perfectly, it simply
+    # meant something else, and the better fallback was masked by a field that
+    # reads well.
+    #
+    # The two exits not taken, with their reasons, at the place where the choice
+    # is made:
+    #   * **derive the real next open** from ``post.end`` or the venue's
+    #     calendar. More exact, and it rests on fields Yahoo documents nowhere
+    #     and does not guarantee — the day one of them is missing the app is
+    #     back on this line with no invariant to state at all.
+    #   * **assume ``SHORT_RETRY``** and document it. 60 s across the fifteen
+    #     hours of a closure is not a *short* retry; the constant carries that
+    #     name because it answers an open that is unknown, not one that is far.
+    # The cost accepted is that the evening loses the exactness the morning
+    # keeps: ~08:00 local instead of the venue's real open. Design #603 already
+    # assumes that, ``marketState`` being re-read on wake and being the
+    # authority — an early guess costs one extra fetch, a late one costs a
+    # session.
+    next_open = _current_regular_open(history_meta)
+    if next_open is None or next_open <= now:
         next_open = _approx_next_open(info, now)
     return state, next_open
 
 
-def _exact_next_open(history_meta: Optional[dict]) -> Optional[datetime]:
-    """The exact regular-session open from ``history()`` metadata, or None.
+def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
+    """The **current** trading period's regular open, or None.
 
     Reads ``currentTradingPeriod.regular.start`` (a Unix timestamp) defensively
-    — any missing/garbage layer yields None so the caller falls back.
+    — any missing/garbage layer yields None so the caller falls back. The name
+    says what the field holds and not what a scheduler would like it to hold:
+    before the open it *is* the next open, after the close it is this morning's
+    (issue #769). Deciding what to do with a past one belongs to the caller,
+    which is where the invariant is stated.
     """
     if not isinstance(history_meta, dict):
         return None
@@ -444,7 +496,9 @@ def _exact_next_open(history_meta: Optional[dict]) -> Optional[datetime]:
 def _approx_next_open(info: dict, now: datetime) -> Optional[datetime]:
     """~08:00 local on the next day in the exchange timezone, or None.
 
-    Used only when the exact next-open is unavailable. Returns a UTC datetime.
+    Used when the current period's regular open is unavailable **or already
+    past** (issue #769). Returns a UTC datetime, and it is the only producer
+    that carries the strictly-future guarantee in its own body.
     """
     tz_name = info.get('exchangeTimezoneName')
     if not tz_name or ZoneInfo is None:
