@@ -1554,6 +1554,15 @@ The application runs independent scheduled jobs on a single APScheduler:
   is precisely what that writer was keeping true, so left running it would
   refetch `[newest → now]` from Yahoo **every day, forever**, for every symbol
   the owner has ever sold out of.
+  **Lateral** (issue #704): repairs the points whose `price_converted` is
+  missing — an `UPDATE` on rows that exist, never an `INSERT` — gated by
+  nothing the other two decide, the holding included: a series can be complete
+  backwards, up to date forwards and entirely unconverted, and a sold line's
+  reconstructed history is exactly what an account's returns are computed from.
+  Its two stopping conditions never collapse (a fetch that failed retries for
+  ever behind #617's back-off; a pair that does not resolve arms the
+  `unconvertible` terminal), and an unanswered reporting currency arms neither.
+  See below.
   **The rhythm does not change and there is no accelerated mode**: `backfill_delay`
   is a courtesy to Yahoo at the exact moment the app emits more requests than at
   any other time of its life, and a code path that runs once per installation is
@@ -1858,6 +1867,71 @@ beside P1's row so a reader can recognise the quote their broker shows them. The
 freshness sonde (#628) is the one read pointed at `price_native`, because a
 currency tick would otherwise pass for a price that is still being refreshed.
 
+**And the lateral pass is what makes that `NULL` viable** (issue #704, spec #695
+§ 4 / § 5 / § 7). A third backfill pass repairs the points whose
+`price_converted` is missing: it works on **the same rows as the series, short
+of a column**, so it is an `UPDATE` and never an `INSERT` — on a table that
+carries no key to refuse a duplicate (ADR-0007). Without it the `NULL` would be
+a permanent absence every reader had to work around, and the `latest` rule would
+have to become *the most recent **complete** point*, which is the per-field
+last-non-null pass the store exists to avoid. It rides on the backfill rather
+than owning a job: same cadence, same politeness delay, same chunk, and its
+last-pass record is **one more direction** (`runtime_state.LATERAL`) on the same
+recorder — so the fold of consecutive failures, the retention on a forgotten
+import and the payload's shape all come for free. Five things about it are
+decisions:
+
+- **Two stopping conditions that never collapse into each other**, and that is
+  the ticket. A **fetch that did not complete** is a failure: it follows #617's
+  back-off (`regular_interval × 2^(n−3)` past the grace of three, capped at 24 h,
+  reset by the first conversion that lands) and retries **indefinitely** —
+  nothing was learnt about the pair, so nothing may be concluded about it. A
+  **pair that does not resolve** is a *reply*: yfinance completed the request and
+  `XYZEUR=X` is not a ticker, so it arms the `unconvertible` terminal — the
+  fourth of the family — and names the pair. *« En attente de conversion »* and
+  *« ne se convertira jamais »* are two different sentences and only the second
+  asks the owner to act.
+- **The difference is made structural rather than guessed.** `rate()` folds every
+  unanswerable case into `None` on purpose — a writer writes the point either way
+  — so a second entry point, `fx.Rates.observe`, answers `resolved` /
+  `unresolved` / `failed` beside the rates. What decides it is the injected
+  fetch's own shape: `main._fetch_fx_series` **raises** now instead of swallowing
+  (`fx.Rates` catches and logs exactly as it used to, so the rebuild sees no
+  change), and an empty answer is the pair saying it does not exist. A window is
+  asked for with ten days of padding on its left, which is both the forward-fill
+  a Sunday needs and what keeps *a window with no trading day* from reading as
+  *this pair is not a ticker*.
+- **An unanswered reporting currency arms neither**, and it is locked twice —
+  in the pass, which stands down on `no_base_currency` before it looks at
+  anything, and in `observe`, which answers `failed` for a missing code. That
+  absence is transitory and lifted by a write of the owner's; reading it as an
+  unresolvable pair would make answering the dial change nothing for the whole
+  stock already scraped, which is the one gesture the feature exists to honour.
+  The **security's** currency missing is a third state and not a failure either
+  (`no_quote_currency`): it is only ever learnt at a first successful fetch, so a
+  symbol nobody has managed to quote sits durably with no converted point at all,
+  and the runtime state is what says so.
+- **Answering the currency starts the pass**, which is why `base_currency` is the
+  one dial carrying a `REPAIR_CONVERSIONS` effect rather than `NEXT_CYCLE`: its
+  value is **retroactive**. `repair_conversions_now` clears the back-off memory —
+  a symbol backing off was failing at a question that has just changed — and
+  advances the backfill job's next run; it is called by `PUT /api/settings` *and*
+  by `_adopt_declared_currency`, an import declaring its currency (#710) being
+  the same pose on the road a headless install takes.
+- **The `latest` rule covers the repair with no additional clause** (spec #695
+  § 7). The newest repaired point is handed to `_advance_latest` exactly as the
+  live writer hands its own, and its `WHERE` decides by itself: the row moves
+  when the repaired point *is* the most recent one, and is refused when it is
+  not. A day the pair has no rate for keeps its `NULL` and comes back next cycle
+  — with the window cached by then, so no request is emitted for it.
+
+`runtime_state.DIRECTIONS` exists for one reason worth writing down: the route
+enumerated the two directions by hand, so the pass was invisible on
+`/api/runtime` the day it landed. `build_backfill_summary` still counts the
+**backward** pass alone — an `unconvertible` series is not an achievement but a
+fault to act on, and counting it as *done* would have the banner announce as
+finished the very thing it should be naming.
+
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
@@ -1866,8 +1940,8 @@ currency tick would otherwise pass for a price that is still being refreshed.
 │                          │  │                   │  │   interval dial) │  │   ungated)         │
 │ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • Replay the       │
 │ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
-│ • REGULAR: poll & write  │  │   write — never   │  │ • Chunk 1 yr/req │  │ • Full recompute   │
-│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Rate limit 10s │  │ • Upsert + prune   │
+│ • REGULAR: poll & write  │  │   write — never   │  │ • Lateral pass   │  │ • Full recompute   │
+│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Chunk 1 yr/req │  │ • Upsert + prune   │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -2174,7 +2248,7 @@ Four lists would agree on the day they were written and not much longer.
 | `backfill_delay` | `10` | 0–3600 | read by the next backfill cycle |
 | `backfill_chunk_days` | `365` | 1–3650 | read by the next backfill cycle |
 | `staleness_horizon` | `900` | 0–86400 | read by the next scrape cycle; `0` disables the sonde |
-| `base_currency` | *none* | ISO-4217, 3 letters | the reporting currency. No default, upper-cased on the way in, **fixed from the first recorded event** and free before that; the next cycle converts (#704 repairs the stock) |
+| `base_currency` | *none* | ISO-4217, 3 letters | the reporting currency. No default, upper-cased on the way in, **fixed from the first recorded event** and free before that; the next cycle converts, and answering it **starts the lateral pass over the whole stock already scraped** (#704) — the one dial whose value is retroactive |
 
 `PUT /api/settings` is the **only writer**, and it being HTTP is what keeps a
 headless install whole — *headless means without an interface, not without
@@ -2425,14 +2499,14 @@ app/src/
 ├── boot_env.py             # Pure: the six boot variables and the computed list of names gone quiet (#740)
 ├── mounts.py               # Pure: mountinfo text + a path → persistent / ephemeral / unknown (#741)
 ├── boot_conditions.py      # Pure: the three start-up lines — text and predicate, said once each (#741)
-├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700)
-├── fx.py                   # Pure: the reporting currency, GBp, and one TTL cache per pair (#702)
+├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700), and the lateral repair — an UPDATE, never an INSERT (#704)
+├── fx.py                   # Pure: the reporting currency, GBp, one TTL cache per pair (#702), and the three answers a window fetch carries back (#704)
 ├── carrying.py             # Pure: the carrying price, the holding window, the backward anchor (#706)
 ├── performance.py          # Pure: XIRR/TWR, the sliding horizon and the per-field rule (#563, #708)
 ├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)
 ├── portfolio_view.py       # Pure: P1 rows → page objects (weighted mean, per-account rollup) (#659)
-├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668)
+├── runtime_state.py        # The scheduler's last-pass records — the one writer, one shape (#668), three backfill directions (#704)
 ├── runtime_view.py         # Pure: records + snapshot + jobstore → pills and the banner (#668)
 ├── prometheus_exporter.py  # Legacy Prometheus sb_* gauges (registry only, no server)
 ├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
