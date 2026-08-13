@@ -1942,6 +1942,7 @@ finished the very thing it should be naming.
 │ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
 │ • REGULAR: poll & write  │  │   write — never   │  │ • Lateral pass   │  │ • Full recompute   │
 │ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Chunk 1 yr/req │  │ • Upsert + prune   │
+│                          │  │                   │  │ • Rate limit 10s │  │                    │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘

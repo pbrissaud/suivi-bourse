@@ -2396,12 +2396,26 @@ class SuiviBourseMetrics:
         held = {share['symbol'] for share in snapshot.shares
                 if share.get('symbol') and share.get('quantity')}
 
-        for symbol in sorted(windows):
-            backfilled_count += self._backfill_symbol(
-                symbol, windows[symbol], symbol in held)
+        # The two figures are counted apart, and never summed (issue #704): a
+        # lateral repair is an ``UPDATE`` of a column on a row that already
+        # exists, so counting it as a *data point written* both overstates what
+        # was fetched and makes "no new data to write" unreachable for as long
+        # as a repair runs — on a cycle that recovered no point at all.
+        repaired_count = 0
 
-        if backfilled_count > 0:
-            app_logger.info(f"Backfill cycle complete: {backfilled_count} data points written")
+        for symbol in sorted(windows):
+            written, repaired = self._backfill_symbol(
+                symbol, windows[symbol], symbol in held)
+            backfilled_count += written
+            repaired_count += repaired
+
+        if backfilled_count > 0 or repaired_count > 0:
+            said = []
+            if backfilled_count > 0:
+                said.append(f"{backfilled_count} data points written")
+            if repaired_count > 0:
+                said.append(f"{repaired_count} conversions repaired")
+            app_logger.info(f"Backfill cycle complete: {', '.join(said)}")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
@@ -2417,7 +2431,7 @@ class SuiviBourseMetrics:
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
-                         held: bool) -> int:
+                         held: bool) -> Tuple[int, int]:
         """Backfill one symbol over its own holding window (issue #626, #703, #704).
 
         The **backward** pass extends the series toward the first acquisition and
@@ -2426,8 +2440,9 @@ class SuiviBourseMetrics:
         the points already stored the conversion they were written without. The
         three directions are **independent** — a completed backward watermark
         never suppresses the forward pass (issue #627), and neither of them says
-        anything about a conversion still missing (issue #704). Returns points
-        written this cycle.
+        anything about a conversion still missing (issue #704). Returns
+        ``(points written, conversions repaired)`` — two figures and not their
+        sum, a repaired point being one the store already held.
 
         ``window`` is ``(first acquisition, last exit or None)``. A ``None`` end
         means *still held*, so the ceiling is **now**; a closed position's
@@ -2475,8 +2490,8 @@ class SuiviBourseMetrics:
         # is squarely in its subject — its reconstructed history is what the
         # account's returns are computed from, and an unconverted point is a day
         # missing from that computation.
-        written += self._backfill_lateral(symbol)
-        return written
+        repaired = self._backfill_lateral(symbol)
+        return written, repaired
 
     def _fetch_and_store(self, symbol, start_date, end_date):
         """Fetch one ``[start, end]`` chunk and, if non-empty, write it.
@@ -2881,14 +2896,25 @@ class SuiviBourseMetrics:
         end = min(newest, oldest + timedelta(days=self.backfill_chunk_days))
         window = _span_instants(oldest, end)
 
+        fetch_start = oldest - timedelta(days=LATERAL_LOOKBACK_DAYS)
+        fetch_end = end + timedelta(days=1)
+        # Asked **before** the fetch, because afterwards the window is cached
+        # either way and the question can no longer be put.
+        cached = self.rates.answers_from_cache(
+            currency, self.base_currency, fetch_start, fetch_end)
         outcome, _ = self.rates.observe(
-            currency, self.base_currency,
-            oldest - timedelta(days=LATERAL_LOOKBACK_DAYS),
-            end + timedelta(days=1))
-        # The backfill's politeness, on the pass that has just asked Yahoo for a
-        # window. Only reached when there was something to repair, so a portfolio
-        # whose conversions are all in pays nothing for it.
-        time.sleep(self.backfill_delay)
+            currency, self.base_currency, fetch_start, fetch_end)
+        # The backfill's politeness, and it is ``_fetch_and_store``'s rule
+        # rather than a second one: rate-limit after a fetch that **completed**,
+        # never after one that failed — and never at all when nothing was asked.
+        # That last clause is the one that matters here, because it is
+        # permanent: a symbol whose pair does not resolve, or whose oldest
+        # unconverted day the pair has no rate for, answers off the cache every
+        # cycle for the life of the process. Slept through unconditionally,
+        # three such symbols spend half of every default cycle waiting for a
+        # request nobody emitted.
+        if not cached and outcome != fx.FAILED:
+            time.sleep(self.backfill_delay)
 
         if outcome == fx.FAILED:
             record = self.recorder.backfill_of(symbol, runtime_state.LATERAL)

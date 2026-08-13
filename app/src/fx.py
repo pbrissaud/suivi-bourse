@@ -262,6 +262,26 @@ class Rates:
         outcome = self._ensure_window(pair, start, end)
         return outcome, dict(self._daily.get(pair, {}))
 
+    def answers_from_cache(self, from_ccy: Optional[str],
+                           to_ccy: Optional[str],
+                           start: date, end: date) -> bool:
+        """Whether :meth:`observe` over that window would ask Yahoo nothing.
+
+        The lateral pass reads it to decide whether it owes the backfill's
+        politeness delay: sleeping between two requests is a courtesy, sleeping
+        after an answer served off the cache is a wait nobody is owed — and a
+        pair that never resolves answers off the cache **for ever**, so an
+        unconditional sleep would burn ``backfill_delay`` on it every cycle for
+        the life of the process.
+        """
+        source, _ = normalise(from_ccy)
+        target, _ = normalise(to_ccy)
+        if source is None or target is None or source == target:
+            return True
+        pair = pair_symbol(source, target)
+        return any(known[0] <= start and end <= known[1]
+                   for known in self._windows.get(pair, ()))
+
     # ------------------------------------------------------------------ #
     # The two halves of the cache
     # ------------------------------------------------------------------ #
@@ -320,11 +340,12 @@ class Rates:
 
         A window already covered answers off the cache and asks nothing, which is
         what lets a symbol carrying an unresolvable pair re-arm its terminal every
-        cycle without emitting a single request.
+        cycle without emitting a single request. **The verdict is about the
+        window, never about the pair** — see :meth:`_resolves`.
         """
         if any(known[0] <= start and end <= known[1]
                for known in self._windows.get(pair, ())):
-            return RESOLVED if self._daily.get(pair) else UNRESOLVED
+            return RESOLVED if self._resolves(pair, end) else UNRESOLVED
         if self._fetch_series is None:
             # No historical fetch injected: nothing was asked, so nothing may be
             # concluded. ``FAILED`` is the only answer that arms no terminal.
@@ -338,7 +359,22 @@ class Rates:
         self._daily.setdefault(pair, {}).update(
             {_as_date(day): float(value) for day, value in fetched.items()})
         self._windows.setdefault(pair, []).append((start, end))
-        return RESOLVED if fetched else UNRESOLVED
+        return RESOLVED if self._resolves(pair, end) else UNRESOLVED
+
+    def _resolves(self, pair: str, end: date) -> bool:
+        """Whether the pair carries a rate a window ending on ``end`` can use.
+
+        A day of its own, or an earlier one :meth:`_daily_rate`'s forward-fill
+        carries in — and never *the pair has some rate somewhere*, which is a
+        statement about **another** window. Read globally the verdict is not
+        stable in time: a window lying before everything the pair has ever
+        quoted answers nothing, arms ``unconvertible`` and is remembered; a
+        later prefetch then fills ``_daily`` for a window of its own, the same
+        question comes back "covered, and the pair has rates", the terminal
+        disappears and the pass publishes ``written=0`` for ever with nothing on
+        screen saying why those points stay unconverted.
+        """
+        return any(day <= end for day in self._daily.get(pair, ()))
 
     def _covers(self, pair: str, day: date) -> bool:
         return any(start <= day <= end
