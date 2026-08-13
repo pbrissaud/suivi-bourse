@@ -1533,7 +1533,32 @@ The application runs independent scheduled jobs on a single APScheduler:
   the shares page grows a phantom row. Each job fetches its symbol from Yahoo Finance, writes a point
   per account holding it, then re-arms on its own cadence: `REGULAR` markets
   re-poll every `regular_interval` (a store dial, default 120s); closed markets sleep to
-  the next open (capped 24h). A **dead-ticker guard** (issue #617) backs a
+  the next open (capped 24h). **And a closed market really does sleep** (issue
+  #769): `extract_market_context` now holds one invariant — *a `next_open` it
+  returns is strictly future, or it is `None`* — because `currentTradingPeriod`
+  describes the **current** period and never the next one, so after the close
+  `regular.start` is that same morning's open. Handed on as-is it made
+  `decide`'s non-positive-delta branch — written for a holiday or a half-day —
+  fire *every evening*, and `SHORT_RETRY` became the cadence of a fifteen-hour
+  closure: 70 to 90 s per symbol with #619's jitter, of the order of 4 000 Yahoo
+  requests a night on eleven European lines, **not one of which may write**, the
+  write gate being shut on a closed market by construction. A non-future value
+  is discarded and `_approx_next_open` — ~08:00 local the next day, the one
+  producer that guarantees a future date in its own body — takes over; it was
+  never reached in the evening, the exact field parsing perfectly and simply
+  meaning something else. *The best fallback was masked by a field that reads
+  well.* The cost accepted is the evening losing the exactness the morning
+  keeps, which design #603 already assumes (`marketState` is the authority on
+  wake). The two exits not taken are argued in `scheduling.py` where the choice
+  is made: deriving the real open from `post.end` or the venue calendar rests on
+  fields Yahoo does not guarantee, and assuming `SHORT_RETRY` contradicts the
+  word *short*. The test that let it live did **not** miss the case — it pinned
+  it: `ts = 1_700_000_000` is 2023-11-14, *before* the test's own `NOW`, and the
+  assertion was that the function returned that past date. The successor reads
+  **one real capture at two instants**
+  (`app/tests/fixtures/trading_period/`, the `mountinfo` fixtures' rule applied
+  to a field whose name misleads), and the invariant is swept across the whole
+  captured day. A **dead-ticker guard** (issue #617) backs a
   symbol off when non-closed cycles keep producing no writable price: the first
   3 failures still re-arm at `base_interval`, then the delay grows
   `base_interval × 2^(n−3)` capped at 24h, resetting to 0 on the first
