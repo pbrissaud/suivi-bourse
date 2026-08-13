@@ -32,8 +32,19 @@ Three things about the file are deliberate:
   and asserted the returned `next_open` equalled it: a past date, handed to
   `decide`, is `SHORT_RETRY`. The case was not outside the sweep; it was inside
   it with the defect pinned as the expected answer. Which is why the successor
-  test reads **one** capture at **two** instants rather than adding a case beside
-  the old one.
+  test reads **one** capture at **several** instants rather than adding a case
+  beside the old one.
+* **`marketState` is the one field a test overrides**, and only for the third
+  instant. `regular.start` past says two different things at two distances, and
+  the distance is the whole discriminant: five hours after the close the session
+  is over, thirty seconds after the open it has merely not registered yet — the
+  state the scheduler is *guaranteed* to meet, since `decide` arms the job at the
+  open with no margin and #619's jitter lands it 0–30 s late. So
+  `test_a_market_that_has_not_opened_yet_retries_within_the_minute` reads this
+  same period with `PRE` in place of `POSTPOST`, which is a substitution of one
+  measured value by another measured value of the same field, never an invented
+  period.
 * **The dates are in the future of the repository, not of the reader.** The
   reading was taken on the day the ticket was written; the test injects its own
-  `now` either side of that day's open, so nothing here goes stale.
+  `now` before that day's open, just after it, and long after its close, so
+  nothing here goes stale.

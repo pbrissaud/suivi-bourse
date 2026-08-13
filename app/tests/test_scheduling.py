@@ -319,12 +319,22 @@ def test_extract_never_answers_a_next_open_that_has_already_happened(hour):
     what makes it an invariant is that no caller has to know which side of the
     open it is on — ``decide``'s non-positive-delta branch stops being reachable
     from here at any hour.
+
+    ``None`` is not a hole in the sweep, it is the other half of the invariant
+    and it has exactly one home: the ``OPENING_LAG`` that follows the open, where
+    the honest answer is *we do not know when this market opens* — one minute's
+    retry, never a night's sleep (asserted end to end below). The hour that lands
+    in it is asserted rather than tolerated, so a lag silently widened to swallow
+    the evening would fail here.
     """
     info, meta = _capture(BNP)
     now = datetime(2026, 8, 12, hour, 13, tzinfo=UTC)
     _, next_open = extract_market_context(info, meta, now)
-    assert next_open is not None          # the reading names a timezone
-    assert next_open > now
+    if next_open is None:
+        past = (now - BNP_REGULAR_START).total_seconds()
+        assert 0 <= past <= scheduling.OPENING_LAG
+    else:
+        assert next_open > now
 
 
 def test_a_closed_evening_sleeps_to_the_next_open():
@@ -348,6 +358,60 @@ def test_a_closed_evening_sleeps_to_the_next_open():
     assert next_delay == pytest.approx(
         (BNP_APPROX_NEXT_OPEN - BNP_AFTER_CLOSE).total_seconds())
     assert next_delay > 9 * 3600          # the closure, not a minute
+
+
+@pytest.mark.parametrize("eps", [0, 15, 30, 60, 300, 899])
+def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
+    """End to end on the same reading: the morning re-probes, it does not sleep.
+
+    This is **the daily path**, not a corner: ``decide`` arms the job *at*
+    ``next_open`` with no lead-in margin and #619 adds ``uniform(0, 30)``, so
+    every wake lands 0 to 30 s **after** the open — and the state has not
+    necessarily flipped yet (Yahoo's own lag, an opening auction, a half-day).
+    Reading *past, therefore over* there hands the day to ``_approx_next_open``,
+    whose ~08:00 local is itself already past at a 09:00 open, i.e. **tomorrow**:
+    measured 82 800 s of sleep at 0, 15, 60 and 300 s past the open alike. The
+    symbol then writes no ``price_point`` for the whole session, in silence —
+    ``_reconcile_jobs`` only revives a symbol with **no** job, and #628's sonde
+    only runs on a ``REGULAR`` write.
+
+    The capture is read with ``marketState`` set to ``PRE``: the same real
+    ``currentTradingPeriod``, at the one instant the ticket's own measurement
+    never visited. ``next_open`` is ``None`` and not a date, which is the
+    invariant's other half — *we do not know when this market opens* is what
+    ``SHORT_RETRY`` answers, and it is true here.
+    """
+    info, meta = _capture(BNP)
+    info = {**info, "marketState": "PRE"}     # the open has not registered yet
+    now = BNP_REGULAR_START + timedelta(seconds=eps)
+
+    state, next_open = extract_market_context(info, meta, now)
+    assert next_open is None
+
+    should_write, next_delay, _ = decide(state, False, next_open, now, 0, BASE)
+    assert should_write is False              # closed is closed, the gate holds
+    assert next_delay == SHORT_RETRY
+    assert next_delay < 3600                  # a minute, never a session
+
+
+def test_the_opening_lag_gives_the_day_up_rather_than_probing_it_away():
+    """The retry above is bounded, which is what keeps ``SHORT_RETRY`` short.
+
+    Past ``OPENING_LAG`` the market has not opened and this metadata names no
+    other period, so the reading goes back to *the session is over* and the
+    approximation takes over. Fifteen probes per symbol on a day that never
+    opens, against the ~900 a night #769 measured.
+    """
+    info, meta = _capture(BNP)
+    info = {**info, "marketState": "PRE"}
+    now = BNP_REGULAR_START + timedelta(seconds=scheduling.OPENING_LAG + 1)
+
+    state, next_open = extract_market_context(info, meta, now)
+    assert next_open == BNP_APPROX_NEXT_OPEN
+
+    _, next_delay, _ = decide(state, False, next_open, now, 0, BASE)
+    assert next_delay != SHORT_RETRY
+    assert next_delay > 20 * 3600
 
 
 def test_no_helper_claims_to_read_the_next_open():
