@@ -21,12 +21,16 @@
  *    (#675/D2 as amended by ADR-0016), so it is clicked and it is reached by
  *    keyboard — hover does not exist on a finger and says nothing to a keyboard.
  *    A `<button>` is what carries both; a Recharts dot is a shape.
- *  - **it is laid out in the chart's own width and knows nothing of its scale.**
- *    `lib/shares.ts` gives each day a fraction of the visible span and the band
- *    spans the plot area, so there is one statement of the x-axis rather than
- *    two — the same rule the resolution caption follows one line above. The
- *    inset below mirrors the `YAxis` width and the `LineChart` margin, which are
- *    the only two numbers that place the plot.
+ *  - **it is laid out in the chart's own width, on the chart's own abscissa.**
+ *    The `XAxis` below is a **category** axis — Recharts' default, one step per
+ *    point whatever the interval before it — so `lib/shares.ts` gives each day
+ *    the *rank* of the point it names and the band spans the plot area: there
+ *    is one statement of the x-axis rather than two, which is the same rule the
+ *    resolution caption follows one line above. A fraction of the elapsed time
+ *    was the second statement, and the two part company worst on `1M`, where
+ *    the raw series mixes a point every 120 s in session with one per hour or
+ *    per day out of it. The inset below mirrors the `YAxis` width and the
+ *    `LineChart` margin, which are the only two numbers that place the plot.
  *
  * **One marker per day, announcing its count.** A single symbol of the real
  * portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event those

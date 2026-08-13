@@ -310,26 +310,66 @@ export interface EventMarker {
   /** How many events fall on it. Above one it is announced as `×N`. */
   count: number
   /**
-   * Where it sits along the visible series: `0` at its first point, `1` at its
-   * last. A fraction rather than a pixel, because the band that draws it is laid
-   * out in the chart's own width and knows nothing of Recharts' scale.
+   * Where it sits along the visible series: the **rank** of the point it names,
+   * `0` at the first and `1` at the last. A fraction rather than a pixel,
+   * because the band that draws it is laid out in the chart's own width; and a
+   * fraction of the **index** rather than of the elapsed time, because that is
+   * the abscissa the chart itself uses — a Recharts category axis gives every
+   * point one step whatever the interval before it. Written as a fraction of
+   * the span it was a *second* statement of the x-axis, and the two part
+   * company exactly where the reader needs them together: on `1M`, whose rung
+   * is the raw series, the live scrape writes a point every 120 s in session
+   * and the reconstruction one per hour or per day, so the density varies by a
+   * factor of ~25 inside one window and a three-week-old event lands under the
+   * curve of six days ago.
    */
   offset: number
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** One drawn point: where it is in time, and **which step of the axis it is**. */
+interface Stop {
+  index: number
+  at: number
+}
+
+/**
+ * The step nearest a day — zero distance to any point falling inside it.
+ *
+ * A day holding several points takes the **first** of them: a tie broken the
+ * other way would put the marker of a purchase made at the open under the last
+ * close of that session. Everything else is a plain distance to the nearer end
+ * of the day, so an event on a closed market lands on the session that framed
+ * it rather than on an edge of the plot.
+ */
+function nearestStop(stops: readonly Stop[], start: number): Stop {
+  const end = start + DAY_MS
+  let best = stops[0]
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const stop of stops) {
+    const distance = stop.at < start ? start - stop.at : stop.at < end ? 0 : stop.at - end
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = stop
+    }
+  }
+  return best
+}
+
 /**
  * The markers of one symbol over the points the chart is showing.
  *
- * Two decisions in five lines. **The window bounds the markers**, so changing
- * the range genuinely changes what is announced instead of piling every event
- * the ledger holds onto one edge; a day is kept when the *day* intersects the
- * span, not when its midnight does — a series whose first point is an afternoon
- * close would otherwise drop the very purchase that opened it. And **a span of
- * one point has no abscissa**, so it carries no marker at all: placing one at a
- * fraction of nothing would be an invented position, which is the one thing a
- * marker must not be.
+ * Three decisions. **The window bounds the markers**, so changing the range
+ * genuinely changes what is announced instead of piling every event the ledger
+ * holds onto one edge; a day is kept when the *day* intersects the span, not
+ * when its midnight does — a series whose first point is an afternoon close
+ * would otherwise drop the very purchase that opened it. **A span of one point
+ * has no abscissa**, so it carries no marker at all: placing one at a fraction
+ * of nothing would be an invented position, which is the one thing a marker
+ * must not be. And **a marker names a point of the series**, never an instant
+ * of its span — which is what makes the chart and its band one statement of the
+ * x-axis rather than two (see `offset` above).
  */
 export function eventMarkers(
   events: readonly LedgerEvent[],
@@ -337,9 +377,18 @@ export function eventMarkers(
   points: readonly SeriesPoint[],
 ): EventMarker[] {
   if (points.length < 2) return []
-  const first = Date.parse(points[0].ts)
-  const last = Date.parse(points[points.length - 1].ts)
-  if (!Number.isFinite(first) || !Number.isFinite(last) || last <= first) return []
+  const stops: Stop[] = []
+  for (const [index, point] of points.entries()) {
+    const at = Date.parse(point.ts)
+    if (Number.isFinite(at)) stops.push({ index, at })
+  }
+  if (stops.length < 2) return []
+  // The span is read off the stops rather than off the first and last rows, so
+  // one unparseable timestamp shortens the range instead of voiding it.
+  const first = Math.min(...stops.map((stop) => stop.at))
+  const last = Math.max(...stops.map((stop) => stop.at))
+  if (last <= first) return []
+  const steps = points.length - 1
 
   const counts = new Map<string, number>()
   for (const event of events) {
@@ -354,6 +403,6 @@ export function eventMarkers(
     .map(({ day, count, start }) => ({
       day,
       count,
-      offset: Math.min(1, Math.max(0, (start - first) / (last - first))),
+      offset: nearestStop(stops, start).index / steps,
     }))
 }

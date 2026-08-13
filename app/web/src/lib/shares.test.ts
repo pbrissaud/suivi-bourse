@@ -243,6 +243,38 @@ describe('the chart’s event markers', () => {
     expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-02-28', 0]])
   })
 
+  it('sits on the rank of its point, never on a fraction of the elapsed span', () => {
+    // The chart draws on a **category** axis: N points are N even steps
+    // whatever the time between them. A fraction of the span is therefore a
+    // second statement of the same abscissa, and the two part company exactly
+    // where the reader needs them together — on `1M`, whose rung is the raw
+    // series, the live scrape writes a point every 120 s in session while the
+    // reconstruction writes one per hour or per day.
+    const points = [
+      { ts: '2026-02-01T17:30:00.000Z', price: 100 },
+      { ts: '2026-03-01T17:30:00.000Z', price: 110 },
+      { ts: '2026-03-01T17:32:00.000Z', price: 111 },
+    ]
+    const markers = eventMarkers([anEvent({ date: '2026-03-01' })], 'ZZA', points)
+    // Its point is the second of three, so the marker is at mid-plot. Read as a
+    // fraction of the span the same day lands at 0,97 — under the curve of the
+    // last two minutes, which is the wrong place on the one liaison this sheet
+    // exists to make.
+    expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-03-01', 0.5]])
+  })
+
+  it('names the nearest point when the day itself carries none', () => {
+    // A Saturday carries no session; the marker of an event dated there belongs
+    // on the close that framed it, not on an edge of the plot.
+    const points = [
+      { ts: '2026-03-02T17:30:00.000Z', price: 100 },
+      { ts: '2026-03-06T17:30:00.000Z', price: 110 },
+      { ts: '2026-03-20T17:30:00.000Z', price: 120 },
+    ]
+    const markers = eventMarkers([anEvent({ date: '2026-03-07' })], 'ZZA', points)
+    expect(markers.map((marker) => marker.offset)).toEqual([0.5])
+  })
+
   it('places nothing at all on a span of one point', () => {
     // A fraction of nothing is an invented position, which is the one thing a
     // marker must not be.

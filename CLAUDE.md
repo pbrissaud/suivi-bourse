@@ -505,10 +505,18 @@ what is left are decisions:
   so **one marker per day announcing its count** and never three points merged
   in silence. The markers are a **band under the plot rather than dots inside
   it**, for two reasons: a marker has to be a *control* (clicked, and reached by
-  keyboard), and `lib/shares.ts` gives each day a fraction of the visible span
-  so there is **one** statement of the x-axis — the rule the resolution caption
-  already follows one line above. The window bounds them, so changing the range
-  changes what is announced.
+  keyboard), and `lib/shares.ts` gives each day the **rank** of the point it
+  names so there is **one** statement of the x-axis — the rule the resolution
+  caption already follows one line above. The rank and not a fraction of the
+  elapsed span: the chart draws on Recharts' **category** axis, one step per
+  point whatever the interval before it, so a span fraction is a *second*
+  abscissa. The two agree to ~0,5 % on `1A / 2A / MAX`, where only the weekends
+  are missing, and part company on `1M` — whose rung is the raw series, where
+  the live scrape writes a point every 120 s in session and the reconstruction
+  one per hour or per day, a density varying by a factor of ~25 inside one
+  window. A three-week-old event then lands under the curve of six days ago,
+  i.e. the liaison this ticket exists for points at the wrong place. The window
+  bounds them, so changing the range changes what is announced.
 
 One member joined the HTTP contract with it and **its server half is in the same
 ticket**: **`position.fundamentals`** — the instrument's own attributes
