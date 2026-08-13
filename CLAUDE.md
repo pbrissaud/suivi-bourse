@@ -1050,6 +1050,27 @@ declared a `healthcheck:` block, which overrides the image's, so the only stack
 the repository shipped masked the only probe it had. Nothing declares one now,
 so #742's probe is the one that runs.
 
+**The *no reference left* criterion is held on its intention, and the arbitration
+is written down here rather than left for the next reader to redo.** It listed
+seven strings — `docker compose`, `make init`, `SB_UID`, `SB_GID`,
+`SB_CONFIG_DIR`, `SB_VERSION`, `COMPOSE_FILE` — and three of them are held to the
+letter: outside `versioned_docs/` there is **zero `docker compose`, zero `make
+init`, zero `COMPOSE_FILE`** in the repository, the release `CHANGELOG` aside,
+whose `docker-compose:` scopes are the record of shipped releases and not a
+reference to a stack. The **four names the app has never read** stay, deliberately:
+they are not references to the compose stack, they are the tuple that keeps them
+**out** of the boot notice (`boot_env.NEVER_READ`, required by spec #730 § 3).
+Deleting it would not remove the four names from the product — it would move them
+into the one sentence spec #730 § 3 forbids them, i.e. a behaviour regression, and
+it would break the four tests that pin the exclusion. So they survive in six
+places and no others, each of them a statement *about* their disappearance rather
+than a use of them: `app/src/boot_env.py`'s `NEVER_READ`; the four tests pinning
+it (`test_boot_env.py`, `test_runtime_wiring.py`, `test_scheduling_wiring.py`,
+`test_web_api.py`); `website/docs/settings.mdx`'s *a different case again* row;
+and **ADR-0015's opening sentence**, which is the sentence that *decides* the uid
+apparatus goes — taking the names out of it would make the ADR say less than it
+decided, and an ADR is not rewritten to satisfy a grep.
+
 **There is no composed development mode either**, and the replacement is the two
 commands above with `pnpm dev` pointed at the container through `SB_API_URL` (see
 the Web UI section). That is also why this work came **after** the image's: one
@@ -2323,12 +2344,18 @@ obeying). Which of the three clauses a name lands in — *moved to a dial*,
 with nothing in `boot_env.py` edited. One grouped logfmt line at start-up, and
 only when there is something to say.
 
-**That fourth list is the one place in the repository those four names survive
-#743**, and it survives on purpose: they belonged to the compose file, the
-compose file is gone, and the population the exclusion protects is precisely
-someone who still has a v4 `.env` sourced into their environment. Deleting the
-tuple would not remove the names from the product, it would move them into the
-notice — which is the one thing spec #730 § 3 says they must never enter.
+**That fourth list survives #743, and it is the only *live* one of the six places
+those four names are still written.** It survives on purpose: they belonged to the
+compose file, the compose file is gone, and the population the exclusion protects
+is precisely someone who still has a v4 `.env` sourced into their environment.
+Deleting the tuple would not remove the names from the product, it would move them
+into the notice — which is the one thing spec #730 § 3 says they must never enter
+— and it would break the four tests that pin the exclusion (`test_boot_env.py`,
+`test_runtime_wiring.py`, `test_scheduling_wiring.py`, `test_web_api.py`). The two
+remaining mentions are prose about the disappearance rather than uses of the
+names: `website/docs/settings.mdx`'s *a different case again* row, and ADR-0015's
+opening sentence. The arbitration that keeps all six is written up with #743
+above.
 
 ### Persistence is observed and said, never demanded (issue #741, ADR-0015)
 
