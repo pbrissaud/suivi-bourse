@@ -115,9 +115,14 @@ SKIP_TOO_RECENT = 'too_recent'
 #:   owner's; arming ``unconvertible`` here would make answering the dial change
 #:   nothing for the whole stock already scraped, which is the trap the ticket
 #:   writes down in black and white.
-#: * ``SKIP_NO_QUOTE_CURRENCY`` — the *security's* currency is unknown, and it is
-#:   only ever learnt at a first successful fetch. A symbol can therefore sit
-#:   durably with no converted point, and this is the runtime state saying so.
+#: * ``SKIP_NO_QUOTE_CURRENCY`` — the *security's* currency is unknown **and
+#:   asking for it answered nothing** (issue #773). It used to mean the weaker
+#:   *nobody has asked*, which covered a line sold before the install existed —
+#:   never polled by the live scrape (#699), fully reconstructed by the backfill
+#:   (ADR-0009), and so quoted for years in a unit the app had no path left to
+#:   learn. The pass now asks, once per symbol; what is left under this key is
+#:   the reply *Yahoo names no currency for this*, which is durable, is not a
+#:   failure, and still never arms ``unconvertible`` — there is no pair yet.
 #: * ``SKIP_NOTHING_TO_REPAIR`` — the steady state: every point carries its
 #:   conversion.
 SKIP_NO_BASE_CURRENCY = 'no_base_currency'

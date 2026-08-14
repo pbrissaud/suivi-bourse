@@ -206,6 +206,42 @@ def record_quote(store, symbol: str, moment: datetime,
         _advance_latest(store, symbol, ts, native, converted, rate)
 
 
+def record_attributes(store, symbol: str, moment: datetime,
+                      attributes: Mapping) -> None:
+    """Write what the instrument **is**, with no price claimed beside it (#773).
+
+    :func:`record_quote` is the other writer of these columns and it cannot
+    serve here: it appends a ``price_point``, and the pass that needs this one is
+    the lateral pass, whose whole contract is *an ``UPDATE``, never an
+    ``INSERT``* (issue #704). A row inserted to carry a currency would be a
+    market observation nobody made, on a table with no key to refuse it
+    (ADR-0007).
+
+    The subject is the symbol the live scrape **never meets** — a line sold
+    before this install existed, which ``_held_symbols`` filters out by design
+    (#699) — and whose history the backfill reconstructs all the same since
+    ADR-0009. ``symbol_quote.currency`` is the only memory
+    :func:`quote_currency` reads and the only one the perf job may consult
+    (#707), so a currency learnt anywhere else would be learnt for the length of
+    one process and forgotten.
+
+    ``attributes`` **replaces**, for :func:`record_quote`'s reason: a fetch that
+    came back without a currency is a fetch that no longer knows one, and the
+    row must not claim an observation it did not make. ``fetched_at`` moves with
+    them, which is exactly what that column says — *when the attributes above
+    were last refreshed* — and it is why this is not a targeted
+    ``UPDATE ... SET currency``.
+    """
+    refreshed = ('fetched_at',) + QUOTE_ATTRIBUTES
+    assignments = ', '.join(f'{name} = excluded.{name}' for name in refreshed)
+    store.execute(
+        f'INSERT INTO symbol_quote (symbol, {", ".join(refreshed)}) '
+        f'VALUES (?{", ?" * len(refreshed)}) '
+        f'ON CONFLICT (symbol) DO UPDATE SET {assignments}',
+        [symbol, truncate(moment),
+         *(finite(attributes.get(name)) for name in QUOTE_ATTRIBUTES)])
+
+
 # --------------------------------------------------------------------------- #
 # The range writer — deletes what it is about to insert
 # --------------------------------------------------------------------------- #
@@ -546,12 +582,18 @@ def quote_currency(store, symbol: str) -> Optional[str]:
     boot, and it never holds a symbol this process has not scraped — a position
     sold before the install existed, which the live scrape by design never polls.
 
-    ``None`` is a **durable and ordinary** state, and it is the one the lateral
-    pass has to name rather than act on (issue #704): a quote currency is only
-    ever learnt at a first successful fetch, so a symbol may legitimately sit
-    with no converted point at all for as long as Yahoo says nothing about it.
-    That is not a pair failing to resolve — there is no pair yet — and it must
-    never arm ``unconvertible``.
+    ``None`` is still an **ordinary** state and still never arms
+    ``unconvertible`` — there is no pair yet, so nothing has failed to resolve —
+    but it stopped being a **durable** one at #773. This docstring used to say
+    the lateral pass had to *name it rather than act on it*, and it was written
+    for a symbol *Yahoo says nothing about*; the population it actually
+    described was a line sold before the install existed, which the live scrape
+    never polls (#699) and whose history the backfill reconstructs all the same
+    (ADR-0009) — a symbol Yahoo answers years of prices for, in a unit the app
+    had no path left to learn. So the pass now **asks**, once per symbol, and
+    :func:`record_attributes` writes the answer here. What survives under this
+    ``None`` is the case the sentence was aimed at: the request came back naming
+    no currency, which is durable, nameable, and still not a failure.
     """
     rows = store.query(
         'SELECT currency FROM symbol_quote WHERE symbol = ?', [symbol])
@@ -691,7 +733,7 @@ def _utc(value):
 
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
-    'record_quote', 'record_history',
+    'record_quote', 'record_attributes', 'record_history',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
     'first_quoted_days',

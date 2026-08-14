@@ -14,7 +14,7 @@ from dataclasses import dataclass
 # the clock-of-day class comes in under its own name rather than shadowing it.
 from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from pathlib import Path
-from typing import Any, List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Set, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -1166,6 +1166,20 @@ class SuiviBourseMetrics:
         # on the last-pass record, folded by the recorder, and one ``get``
         # retrieves it.
         self._lateral_retry_at: Dict[str, datetime] = {}
+
+        # The symbols the lateral pass has asked Yahoo about and got **no
+        # currency** for (issue #773). It is what keeps the cost of #773's
+        # repair *bounded and per symbol*: a currency that is learnt is written
+        # to ``symbol_quote`` and never asked for again — the store answers —
+        # while a symbol Yahoo names no currency for has nothing to write, so
+        # without this set the pass would re-ask on every cycle, for ever.
+        # Process memory rather than a column, and deliberately: the answer is
+        # *"Yahoo said nothing this time"*, which a restart is entitled to put
+        # again, one request per symbol per process. A `NULL` column already
+        # means something else — nobody has asked yet — and a second meaning on
+        # it would make the two indistinguishable at the exact moment
+        # ``SKIP_NO_QUOTE_CURRENCY`` has to tell them apart.
+        self._quote_currency_unknown: Set[str] = set()
 
         # There is **no perf state here**, and its absence is the ticket (issue
         # #707, ADR-0011). Four attributes stood at this line — a mutex, a
@@ -2597,12 +2611,16 @@ class SuiviBourseMetrics:
         day.
 
         The symbol's currency is read from ``_share_info_cache`` rather than
-        fetched: the backfill runs on symbols the scrape has already met, and a
-        second ``.info`` call per chunk would double the rate-limit exposure of
-        the job that already emits the most requests in the app. A symbol not in
-        the cache yet — a position sold before this install existed, which the
-        live scrape never polls — simply leaves the conversion ``NULL`` until
-        #704's lateral pass, which is exactly what that pass is for.
+        fetched **here**, and the argument is per chunk: a second ``.info`` call
+        on this path would double the rate-limit exposure of the job that already
+        emits the most requests in the app, for a fact that changes once in a
+        symbol's life. The sentence that used to justify it — *the backfill runs
+        on symbols the scrape has already met* — was true before #703 and false
+        after it (ADR-0009), and a symbol absent from the cache therefore leaves
+        its conversion ``NULL``. What repairs that is #704's lateral pass, which
+        since #773 **learns the currency itself**, once per symbol, and fills
+        this cache on its way — so the chunks fetched after it are converted at
+        write time and the pass has less to repair on every following cycle.
 
         Nothing is raised: a chunk that cannot be converted is still a chunk of
         prices, and losing it over a currency is the one outcome ADR-0002 rules
@@ -2807,6 +2825,104 @@ class SuiviBourseMetrics:
         publish(window=(start_date, end_date), written=written)
         return written
 
+    def _learn_quote_currency(self, symbol: str) -> Tuple[Optional[str], bool]:
+        """Ask Yahoo what unit a symbol is quoted in. ``(currency, failed)``.
+
+        **The exit #773 chose, and the argument is one of place**: the lateral
+        pass is what *knows* the currency is missing, it already owns a back-off
+        (#617), the backfill's politeness delay and a last-pass record, and the
+        cost lands on the one job whose rhythm is designed for it. The other two
+        exits were refused where they stood. Asking from the **backfill's
+        conversion** step contradicts ``_convert_history``'s own argument head on
+        — a second ``.info`` per *chunk* doubles the rate-limit exposure of the
+        job that already emits the most requests in the app — and the need is per
+        **symbol**, once. Widening ``capture_exchange_of`` to the replay's symbol
+        set is worse: that fetch is in ``post_fork``, the whole boot blocks on it,
+        and its time cap is already load-bearing rather than defensive (#701).
+
+        The defect it repairs is dated. ``_convert_history`` deferred to the
+        lateral pass *naming exactly this case*, and the lateral pass named it and
+        stood down — because :func:`quotes.quote_currency`'s ``None`` was written
+        for a symbol Yahoo says nothing about. ADR-0009 made the backfill's set
+        the union over the **whole** timeline while the three paths that can learn
+        a currency (``_scrape_symbol``, ``capture_exchange_of`` and the cache both
+        fill) stayed bounded by the held lines, so a position sold before the
+        install existed got years of reconstructed prices and no unit for any of
+        them: `no_quote_currency` was the one lateral condition with **no exit**.
+
+        Three answers, and the middle one is why this is not a bare
+        ``Optional[str]``:
+
+        * ``(currency, False)`` — learnt, and written to ``symbol_quote`` before
+          it is returned. The store is what the next cycle reads, so the request
+          is emitted **once for the life of the install** and not once a cycle.
+        * ``(None, False)`` — the request completed and named no currency. That
+          is a *reply*, it is remembered in ``_quote_currency_unknown`` so it is
+          not put again, and it is what ``SKIP_NO_QUOTE_CURRENCY`` keeps as its
+          subject: nothing is concluded about a pair, because there is still no
+          pair.
+        * ``(None, True)`` — the request did not complete, or the write did not.
+          Nothing was learnt, so nothing may be concluded: the caller backs off
+          exactly as it does for a rate fetch that failed, and retries for ever.
+
+        The politeness delay is paid after a fetch that **completed**, which is
+        ``_fetch_and_store``'s rule rather than a second one — and never after one
+        that failed.
+        """
+        if symbol in self._quote_currency_unknown:
+            return None, False
+
+        try:
+            raw = yf.Ticker(symbol).info or {}
+        except Exception as e:
+            app_logger.warning(
+                f"Could not fetch the attributes of {symbol}: {e}")
+            return None, True
+
+        currency = raw.get('currency')
+        # ``undefined`` is yfinance's own sentinel for a field it has no value
+        # for, and it must not reach the column: stored, it would be read back as
+        # a currency and named as one half of a pair (``UNDEFINEDEUR=X``), which
+        # resolves to nothing and would arm ``unconvertible`` — the terminal that
+        # asks the owner to act, on a symbol they can do nothing about.
+        currency = currency if currency and currency != 'undefined' else None
+        info = {
+            'currency': currency,
+            'exchange': raw.get('exchange'),
+            'quoteType': raw.get('quoteType'),
+            'dividendYield': raw.get('dividendYield'),
+            'peRatio': raw.get('trailingPE') or raw.get('forwardPE'),
+            'marketCap': raw.get('marketCap'),
+        }
+        time.sleep(self.backfill_delay)
+
+        if not currency:
+            self._quote_currency_unknown.add(symbol)
+            app_logger.info(
+                f"Yahoo names no quote currency for {symbol}; its stored prices "
+                f"stay unconverted")
+            return None, False
+
+        try:
+            with self.config_manager.writing() as opened:
+                quotes.record_attributes(
+                    opened, symbol, datetime.now(timezone.utc),
+                    self._quote_attributes(info))
+        except Exception as e:
+            app_logger.error(
+                f"Failed to record the attributes of {symbol}: {e}")
+            return None, True
+
+        # And into the cache the *rebuild* reads, which is the second half of the
+        # repair rather than a convenience: the backward pass goes on fetching
+        # chunks of this symbol, and ``_convert_history`` converting them at write
+        # time leaves the lateral pass with less to repair on every cycle that
+        # follows. ``setdefault``, so a live fetch's fuller entry — market state,
+        # trading period — is never overwritten by this one.
+        self._share_info_cache.setdefault(symbol, info)
+        app_logger.info(f"{symbol} is quoted in {currency}")
+        return currency, False
+
     def _backfill_lateral(self, symbol: str) -> int:
         """Lateral pass: give the stored points the conversion they lack (#704).
 
@@ -2848,10 +2964,16 @@ class SuiviBourseMetrics:
         looks at anything else.
 
         The **security's** own currency is the second thing that can be missing,
-        and it is not a failure either: it is only ever learnt at a first
-        successful fetch, so a symbol nobody has managed to quote sits durably
-        with no converted point at all. :data:`runtime_state.SKIP_NO_QUOTE_CURRENCY`
-        is the runtime state saying exactly that.
+        and since #773 the pass **asks for it** instead of only naming its
+        absence. Standing down there was right about a symbol Yahoo says nothing
+        about and wrong about the one it was actually meeting: a line sold before
+        this install existed is never polled by the live scrape (#699) and is
+        fully in the backfill's set (ADR-0009), so it collected years of
+        reconstructed prices in a unit nothing could learn — the one lateral
+        condition with no exit, and a whole account reading −99,98 % underneath
+        it. :meth:`_learn_quote_currency` is that exit, one request per symbol
+        and once. :data:`runtime_state.SKIP_NO_QUOTE_CURRENCY` keeps the case the
+        sentence was aimed at: the request came back naming no currency.
 
         Returns the number of points repaired this cycle.
         """
@@ -2861,6 +2983,17 @@ class SuiviBourseMetrics:
             self.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol, direction=runtime_state.LATERAL, at=now,
                 **fields))
+
+        def back_off() -> None:
+            """#617's own formula, and its own base: the wait is a multiple of
+            ``regular_interval``, which is what makes the number in the settings
+            form the number in the formula here too. Read **before** the record
+            of this cycle is published, so the fold counts this failure once."""
+            record = self.recorder.backfill_of(symbol, runtime_state.LATERAL)
+            failures = (record.failures if record is not None else 0) + 1
+            self._lateral_retry_at[symbol] = now + timedelta(
+                seconds=scheduling.backoff_delay(
+                    self.regular_interval, failures))
 
         if not self.base_currency:
             publish(skipped=runtime_state.SKIP_NO_BASE_CURRENCY)
@@ -2888,9 +3021,25 @@ class SuiviBourseMetrics:
 
         currency = quotes.quote_currency(store_open, symbol)
         if not currency:
-            publish(window=_span_instants(oldest, newest),
-                    skipped=runtime_state.SKIP_NO_QUOTE_CURRENCY)
-            return 0
+            # Nobody has asked yet — the live scrape never met this symbol
+            # (issue #773). The pass that knows the unit is missing is the one
+            # that asks for it, once, and writes the answer where the store can
+            # give it back.
+            currency, failed = self._learn_quote_currency(symbol)
+            if failed:
+                back_off()
+                app_logger.warning(
+                    f"Could not establish the currency {symbol} is quoted in, "
+                    f"will retry")
+                publish(window=_span_instants(oldest, newest), failed=True,
+                        error=f"the currency {symbol} is quoted in could not "
+                              f"be established, so its {pending} stored price(s)"
+                              f" cannot be converted yet")
+                return 0
+            if not currency:
+                publish(window=_span_instants(oldest, newest),
+                        skipped=runtime_state.SKIP_NO_QUOTE_CURRENCY)
+                return 0
 
         # One chunk per cycle, from the **oldest** unconverted day, exactly as
         # the backward pass walks one chunk per cycle from its anchor.
@@ -2918,14 +3067,7 @@ class SuiviBourseMetrics:
             time.sleep(self.backfill_delay)
 
         if outcome == fx.FAILED:
-            record = self.recorder.backfill_of(symbol, runtime_state.LATERAL)
-            failures = (record.failures if record is not None else 0) + 1
-            # #617's own formula, and its own base: the wait is a multiple of
-            # ``regular_interval``, which is what makes the number in the
-            # settings form the number in the formula here too.
-            self._lateral_retry_at[symbol] = now + timedelta(
-                seconds=scheduling.backoff_delay(
-                    self.regular_interval, failures))
+            back_off()
             app_logger.warning(
                 f"Could not fetch the rates to convert {symbol}, will retry")
             publish(window=window, failed=True,
