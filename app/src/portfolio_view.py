@@ -725,6 +725,14 @@ class AccountSummary:
     #: for one created in the app (issue #698). It rides on the row because the
     #: page has to render the difference — what came from a file is read-only.
     source_id: Optional[int] = None
+    #: ADR-0018's fourth term for **this** account (issue #722), signed as it
+    #: enters the sum. It rides here rather than on a resource of its own for
+    #: the reason the figures beside it do: one accounts resource, two
+    #: consumers, and the account's panel decomposes the gain the table states.
+    #: ``None`` when no cycle has written this account a day — there is nothing
+    #: to bound the fees by, and a term measured over another period does not
+    #: belong in a sum with them.
+    transfer_fees: Optional[float] = None
 
     @property
     def editable(self) -> bool:
@@ -745,18 +753,27 @@ class AccountSummary:
             'gain_absolu': self.gain_absolu,
             'xirr': self.xirr,
             'twr_index': self.twr_index,
+            'transfer_fees': self.transfer_fees,
         }
 
 
 def build_accounts(
     declared: Sequence[Any],
     rows: Sequence[Dict[str, Any]],
+    transfer_fees: Optional[Mapping[str, float]] = None,
 ) -> List[AccountSummary]:
     """Join the declared accounts to their newest ``account_metrics`` row.
 
     Nothing is summed across accounts here, deliberately. The consolidated
     figures have exactly one source — ``portfolio_totals`` — and a second
     arithmetic path to the same number is how the two would eventually disagree.
+
+    ``transfer_fees`` is the one member that is not a column of that row
+    (issue #722): it comes from
+    :meth:`store_reads.PortfolioReader.transfer_fees_by_account`, keyed by
+    account and already bounded by each account's own day. Absent from the
+    mapping is ``None`` on the row, which is exactly the account no cycle has
+    written.
     """
     by_id = {
         row.get('account'): row for row in rows
@@ -779,6 +796,7 @@ def build_accounts(
             xirr=row.get('xirr'),
             twr_index=row.get('twr_index'),
             source_id=getattr(account, 'source_id', None),
+            transfer_fees=(transfer_fees or {}).get(account.id),
         ))
     return summaries
 

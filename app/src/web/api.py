@@ -610,6 +610,15 @@ def list_accounts():
     written for — the shares page's account filter surviving a store outage —
     left with the page itself: since #719 that filter reads ``/api/positions``,
     which opens the store on every install.
+
+    **And one member is not a column of that row**: ``transfer_fees``, ADR-0018's
+    fourth term per account (issue #722). The account's own panel shows the gain
+    dominating its four terms and three of them come off ``/api/positions``; the
+    fourth belongs to no position at all. It is derived at read time exactly as
+    ``/api/portfolio-totals`` derives the global one, and it rides here rather
+    than on a resource of its own for the reason the figures beside it do — one
+    accounts resource, two consumers. The cost is the same one written down
+    there: a resource that names accounts reads the ``event`` table, once.
     """
     accounts = _snapshot().accounts
     declaration = accounts.accounts if accounts is not None else _seeded_only()
@@ -620,12 +629,22 @@ def list_accounts():
     # constant it compares against — the front then folds `null` into its own
     # catalogue with no copy of a server-owned string.
     declaration = [accounts_module.as_declared(row) for row in declaration]
-    rows = _reader().latest_account_metrics() if declaration else []
+    reader = _reader()
+    rows = reader.latest_account_metrics() if declaration else []
+    # Bounded per account by the day its own row describes: the days differ the
+    # moment one account's series is capped in the past (#765), and ADR-0018's
+    # identity only holds between terms measured at the same instant. An account
+    # with no day is out of the mapping and therefore out of the answer.
+    through = {
+        row['account']: row['day'] for row in rows
+        if row.get('account') is not None and row.get('day') is not None
+    }
     return jsonify({
         'declared': accounts is not None,
         'accounts': [
             summary.to_dict()
-            for summary in portfolio_view.build_accounts(declaration, rows)
+            for summary in portfolio_view.build_accounts(
+                declaration, rows, reader.transfer_fees_by_account(through))
         ],
     })
 
