@@ -208,11 +208,106 @@ describe('the notices', () => {
     await openInstallation([aLegacyFileAdvisory()])
     await screen.findByRole('heading', { name: 'Avis' })
 
-    // A file on disk is outside the app's reach, and its own sentence — the
-    // server's, because it names this installation's path — says what to do.
+    // A file on disk is outside the app's reach, and the sentence — which names
+    // this installation's own path — says what to do out there.
     const notices = block('Avis')
     expect(within(notices).queryByRole('button', { name: /Voir les événements/ })).not.toBeInTheDocument()
     expect(notices).toHaveTextContent('/config/config.yaml')
+  })
+})
+
+/**
+ * The notices are read in the reader's language (#768, ADR-0024).
+ *
+ * `AdvisoriesBlock` rendered `advisory.message` verbatim, and those sentences
+ * are built in English by `advisories.py` — so the **whole content** of the
+ * block was English on a French installation, framed by a title, a date and a
+ * button that were not. The tests below are at the same seam as the rest of the
+ * file: the whole app in jsdom, HTTP the only faked edge, and the language taken
+ * from the browser because it defaults to `auto`.
+ */
+describe('the language of a notice', () => {
+  async function openNotices(advisories: Advisory[], browserLanguages: readonly string[]) {
+    server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
+    const rendered = renderApp({ url: '/donnees', browserLanguages })
+    const tab = browserLanguages[0].startsWith('fr') ? /L’installation/ : /The installation/
+    await rendered.user.click(await screen.findByRole('tab', { name: tab }))
+    return rendered
+  }
+
+  it('reads French for a French reader, and never the server’s English', async () => {
+    await openNotices([aLegacyFileAdvisory(), anAdvisory()], ['fr-FR'])
+
+    const notices = block('Avis')
+    // The path is the server's — it names *this* installation — and everything
+    // around it is the catalogue's.
+    expect(notices).toHaveTextContent(
+      /\/config\/config\.yaml est toujours là et cette version ne le lit pas/,
+    )
+    expect(notices).toHaveTextContent(/Vos montants ont été lus en EUR/)
+    // Plurals through ICU, and an enumeration the language closes on *et* —
+    // never `4 event(s)` and never `ZZA, ZZB, ZZC`.
+    expect(notices).toHaveTextContent(/4 événements sur 3 lignes cotées en GBP et USD \(ZZA, ZZB et ZZC\)/)
+    expect(notices).not.toHaveTextContent('event(s)')
+    expect(notices).not.toHaveTextContent('Your amounts were read as EUR')
+  })
+
+  it('reads English for an English reader, plurals and list included', async () => {
+    await openNotices([aLegacyFileAdvisory(), anAdvisory()], ['en-GB'])
+
+    const notices = screen.getByRole('region', { name: 'Notices' })
+    expect(notices).toHaveTextContent(
+      /\/config\/config\.yaml is still there and this version does not read it/,
+    )
+    expect(notices).toHaveTextContent(/4 events on 3 lines quoted in GBP and USD \(ZZA, ZZB and ZZC\)/)
+    // The English catalogue is the source, not a copy of the payload: the `(s)`
+    // and the `', '.join(...)` are the log line's, and they stay there.
+    expect(notices).not.toHaveTextContent('event(s)')
+    expect(notices).not.toHaveTextContent('line(s)')
+  })
+
+  it('says the four the block owns, and each of them in French', async () => {
+    // Not only the one that is easy to provoke. The fifth key,
+    // `reconstruction_running`, has exactly one announcer and it is the banner
+    // (#724) — its sentence is in the same catalogue and composed by the same
+    // function, pinned in `lib/advisories.test.ts` in both languages.
+    await openNotices(
+      [
+        aLegacyFileAdvisory(),
+        aLegacyFileAdvisory({
+          key: 'legacy_settings_file',
+          detail: { path: '/config/settings.yaml' },
+        }),
+        anAdvisory({
+          key: 'unread_environment',
+          detail: { variables: ['SB_PERF_INTERVAL', 'INFLUXDB_TOKEN'] },
+        }),
+        anAdvisory(),
+      ],
+      ['fr-FR'],
+    )
+
+    const notices = block('Avis')
+    expect(notices).toHaveTextContent(/un grand livre d’événements datés/)
+    expect(notices).toHaveTextContent(/les comptes se déclarent par un fichier/)
+    expect(notices).toHaveTextContent(
+      /2 variables d’environnement sont définies et ne sont lues par rien : SB_PERF_INTERVAL et INFLUXDB_TOKEN/,
+    )
+    expect(notices).toHaveTextContent(/Vos montants ont été lus en EUR/)
+  })
+
+  it('says what the notice *is* when this process observed nothing', async () => {
+    // `detail: null` is #709's third answer — a runtime that cannot see the
+    // source — and the server does the same thing one level up, falling back to
+    // `AdvisorySpec.doc`. A paragraph with `undefined` where a path belongs
+    // would be the alternative.
+    await openNotices([aLegacyFileAdvisory({ detail: null })], ['fr-FR'])
+
+    const notices = block('Avis')
+    expect(notices).toHaveTextContent(
+      'Un config.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.',
+    )
+    expect(notices).not.toHaveTextContent('undefined')
   })
 })
 
