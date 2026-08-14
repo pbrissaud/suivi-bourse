@@ -289,13 +289,17 @@ describe('the nine columns of the live table', () => {
       'tr',
     ) as HTMLElement
     // Its cost, and a latent gain of exactly zero — the first row of the absence
-    // table, not a fifth rendering of its own.
+    // table, not a fifth rendering of its own. Both are read **on their own
+    // cell**: `Cours` is the second and `Latente` the sixth of the nine, and a
+    // `0,00` sought anywhere in the row is already satisfied by the valuation
+    // `600,00` and the PRU `100,00` beside it, i.e. it could not fail alone.
+    const cells = within(row).getAllByRole('cell')
     expect(row).toHaveTextContent(/600,00/)
-    expect(row).toHaveTextContent(/0,00/)
+    expect(cells[5]).toHaveTextContent(/^0,00/)
     expect(row).not.toHaveTextContent(/en attente du taux/)
     // And no number under a unit nothing named: 130 is not 130 €.
     expect(row).not.toHaveTextContent(/130,00/)
-    expect(row).toHaveTextContent(/—/)
+    expect(cells[1]).toHaveTextContent(/^—$/)
 
     // The header stays a figure and does not move: the line contributes exactly
     // zero, so the three terms are the ones `defaultPositions()` already sums to.
