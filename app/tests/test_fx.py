@@ -1066,20 +1066,26 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
 # and two accounts reading −99,98 % and −29 120,25 %.
 # =========================================================================== #
 
-def _sold_before_the_install(store, mocker, monkeypatch, closes):
+def _sold_before_the_install(store, mocker, monkeypatch, closes, info=None):
     """The staging state, rebuilt: a line sold before the first boot.
 
     Its quantity is zero, so ``_held_symbols`` filters it out of the scrape by
     design (#699) and the cache the rebuild reads is empty for it; its window is
     in the backfill's set all the same (ADR-0009), so Yahoo is asked for its
     prices — and answers.
+
+    ``info`` is the second population of the ticket's fifth criterion: ``{}`` is
+    Yahoo answering **cours and no currency at all**, which the repair cannot
+    dissolve and which ADR-0004 takes instead.
     """
     frame = pd.DataFrame(
         {'Close': list(closes)},
         index=pd.date_range(start='2024-06-01', periods=len(closes),
                             freq='D', tz=UTC))
-    instrument = _Instrument(info={'currency': 'USD', 'exchange': 'NMS',
-                                   'quoteType': 'EQUITY'}, frame=frame)
+    instrument = _Instrument(
+        info={'currency': 'USD', 'exchange': 'NMS', 'quoteType': 'EQUITY'}
+        if info is None else info,
+        frame=frame)
     metrics = _metrics(store, mocker, shares=[_share(quantity=0)],
                        base_currency='EUR')
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -1235,3 +1241,70 @@ def test_the_repaired_line_stops_being_valued_at_zero(
     metrics._backfill_lateral('AAPL')
 
     assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 102.0 * 0.91), True)
+
+
+def test_a_line_yahoo_names_no_unit_for_is_carried_at_its_cost(
+        store, mocker, monkeypatch, declare_ledger):
+    """The criterion's **second** branch, for the population the first misses.
+
+    Learning the unit repairs every symbol Yahoo names one for. It leaves the
+    other one exactly where it was — quoted (``first_quoted_days`` knew it),
+    terminal (so the absence is permanent in #706's own sense), never converted,
+    absent from ``oldest_priced``, therefore ``settled``, therefore not bounding
+    the horizon, therefore counted **zero** on every day it was held while the
+    cash ledger had paid. Measured by the review at ``(0.0, True)`` on a line
+    worth ten shares.
+
+    So the third state joins one of the two existing conventions rather than
+    inventing a fourth (ADR-0021), and it is the **carrying** one: a number with
+    no unit is not a cours. #706 refuses to carry *quoted with no rate* because
+    that absence is transitory; here Yahoo has been asked and names none, so
+    there is no pair, no rate coming, and nothing to wait for. The cost is
+    defined in the right unit already — event amounts are the debit in the
+    reporting currency (ADR-0002) — so the PMP needs no conversion.
+
+    The two terms are read **from the store**, which is the constraint that
+    decided the implementation: the perf job's only inputs are the store and the
+    clock (#707), so ``_quote_currency_unknown`` — process memory — could not
+    have carried the distinction.
+    """
+    events = [
+        Event(date(2024, 6, 1), EventType.BUY, 'AAPL', 'Apple',
+              quantity=10, unit_price=100.0),
+        Event(date(2024, 6, 4), EventType.SELL, 'AAPL', 'Apple',
+              quantity=10, unit_price=110.0),
+    ]
+    declare_ledger(store, events)
+    timeline = EventAggregator().replay(events)
+    window = {'AAPL': (date(2024, 6, 1), date(2024, 6, 4))}
+
+    def value_on(day):
+        pairs = sorted(quotes.price_series(store, 'AAPL').items())
+        return performance._holdings_value(
+            timeline, 'default', {'AAPL'},
+            lambda symbol, at: timeline.state_at(pairs, at) if pairs else None,
+            day,
+            quotes.terminal_symbols(store, window, datetime.now(UTC)),
+            quotes.first_quoted_days(store))
+
+    metrics, instrument = _sold_before_the_install(
+        store, mocker, monkeypatch, (101.0, 102.0, 103.0), info={})
+    metrics._backfill_backward(
+        'AAPL', datetime(2024, 6, 1, tzinfo=UTC),
+        datetime(2024, 6, 5, tzinfo=UTC))
+    _, record = _lateral(metrics)
+
+    # The pass asked and Yahoo named nothing: #704's own state, kept whole.
+    assert instrument.reads == 1
+    assert record.skipped == runtime_state.SKIP_NO_QUOTE_CURRENCY
+    assert record.terminal is None               # never ``unconvertible``
+    assert quotes.quote_currency(store, 'AAPL') is None
+    assert store.query(
+        'SELECT count(*) FROM price_point WHERE price_converted IS NULL')[0] \
+        == (3,)
+
+    # The second term of ADR-0004's predicate holds — the backward pass has
+    # nothing left to fetch — so the absence is permanent and the day is carried
+    # at the position's own cost rather than counted at nothing.
+    assert quotes.terminal_symbols(store, window, datetime.now(UTC)) == {'AAPL'}
+    assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 100.0), True)

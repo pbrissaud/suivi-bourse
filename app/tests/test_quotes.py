@@ -545,6 +545,50 @@ def test_the_attributes_reach_a_symbol_the_scrape_never_fetched(store):
     assert quotes.read_quote(store, 'ALO.PA')['last_price_native'] is None
 
 
+def test_a_number_with_no_unit_is_not_a_quote(declared):
+    """``first_quoted_days`` asks for a number **and** a unit — issue #773.
+
+    The first term of the carrying predicate on the series paths. A symbol whose
+    ``symbol_quote.currency`` was never recorded carries closes no rate can turn
+    into money — there is no pair to name — so it is not quoted for a valuation
+    and the position joins ADR-0004's convention instead of *waiting for a rate*
+    for ever, counted at zero on every day it was held.
+
+    The symbol beside it is the state #706 owns and this must not disturb: the
+    unit is known, only the rate is missing, so the day stays observed.
+    """
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW, 'price': 100.0}])
+    quotes.record_history(declared, 'MSFT', [
+        {'timestamp': NOW, 'price': 200.0}])
+    quotes.record_attributes(declared, 'MSFT', NOW, {'currency': 'USD'})
+
+    assert quotes.first_quoted_days(declared) == {'MSFT': date(2024, 6, 3)}
+
+    # And the moment the unit lands — the lateral pass asking, #773 — the symbol
+    # is quoted again, with no point having been written or rewritten.
+    quotes.record_attributes(declared, 'AAPL', NOW, {'currency': 'EUR'})
+
+    assert quotes.first_quoted_days(declared) == {
+        'AAPL': date(2024, 6, 3), 'MSFT': date(2024, 6, 3)}
+
+
+def test_an_empty_currency_is_read_as_no_unit_by_both_readings(declared):
+    """One reading of ``symbol_quote.currency``, not two.
+
+    :func:`quotes.quote_currency` treats the empty string as absent, so this one
+    must too — or a row written by a fetch that answered ``''`` would be *no
+    currency* to the lateral pass and *quoted* to the valuation, which is the
+    disagreement #773's repair exists to remove.
+    """
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW, 'price': 100.0}])
+    quotes.record_attributes(declared, 'AAPL', NOW, {'currency': ''})
+
+    assert quotes.quote_currency(declared, 'AAPL') is None
+    assert quotes.first_quoted_days(declared) == {}
+
+
 # --------------------------------------------------------------------------- #
 # The anchors the scheduler reads
 # --------------------------------------------------------------------------- #
