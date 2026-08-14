@@ -66,6 +66,19 @@ def _metrics(store, mocker):
     return m
 
 
+def _record_unit(store, symbol='AAPL', currency='USD'):
+    """The unit the exchange quotes ``symbol`` in — ``symbol_quote.currency``.
+
+    Written by the scrape in production, and by the lateral pass since #773. It
+    is a **fact of the fixture** rather than a convenience: since that ticket a
+    quote is a number *and* a unit, so a series of ``price_native`` with no
+    currency beside it is not the *waiting for a rate* state a test means to set
+    up — it is the third one, and it is carried at cost.
+    """
+    quotes.record_attributes(store, symbol, datetime(2024, 1, 15, tzinfo=UTC),
+                             {'currency': currency})
+
+
 def _declare_symbol(store, symbol):
     store.execute('INSERT INTO symbol (symbol) VALUES (?) '
                   'ON CONFLICT (symbol) DO NOTHING', [symbol])
@@ -537,6 +550,46 @@ def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
     with ``price_converted`` ``NULL`` rather than not written (#702), and #704 is
     what repairs the stock. ``price_at`` sees nothing there; ``first_quoted``
     is what stops that reading as *nobody ever priced this*.
+
+    The quote's own **unit** is part of the state and is recorded as such: a pair
+    that does not resolve is a pair, so there is a currency to name it with. With
+    none the row is #773's third state and is carried, which the test below
+    pins — the two must not be told apart by a fixture's omission.
+    """
+    declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
+    store.execute(
+        'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
+        '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
+        ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
+    _record_unit(store)
+    metrics = _metrics(store, mocker)
+    metrics.base_currency = 'EUR'
+
+    metrics.update_account_metrics()
+
+    (holdings, total) = store.query(
+        'SELECT holdings_value, total_value FROM account_metrics '
+        " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
+    assert holdings == pytest.approx(0.0)
+    assert total == pytest.approx(0.0)
+
+
+def test_the_perf_recompute_carries_a_symbol_quoted_in_no_nameable_unit(
+        store, declare_ledger, mocker):
+    """The same rows as the test above, minus the unit — issue #773.
+
+    A number with no currency beside it is not a quote a valuation can spend:
+    every figure the perf job computes is money in the reporting currency, and
+    nothing turns an unnamed unit into one — there is no pair to fetch a rate
+    for. Left in the *waiting* state the position counted **zero** on every day
+    it was held while the cash ledger had already paid for it, which is the
+    crater ADR-0004 exists to fill; measured on staging as two accounts reading
+    −99,98 % and −29 120,25 %.
+
+    So the third state joins the **carrying** convention rather than becoming a
+    fourth kind of absence (ADR-0021), and #706's second term is what makes the
+    reading permanent rather than premature: the symbol is terminal here, and a
+    terminal symbol with no recorded unit is one Yahoo has been asked about.
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     store.execute(
@@ -551,8 +604,30 @@ def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
     (holdings, total) = store.query(
         'SELECT holdings_value, total_value FROM account_metrics '
         " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
-    assert holdings == pytest.approx(0.0)
-    assert total == pytest.approx(0.0)
+    assert holdings == pytest.approx(1000.0)
+    assert total == pytest.approx(1000.0)
+
+
+def test_a_p1_row_quoted_in_no_nameable_unit_is_carried_at_its_cost():
+    """The shares page reads the rule the valuation does — issue #773, #706.
+
+    One implementation is the acceptance criterion, and it covers the *term* as
+    much as the function: a position carried at cost in the curve and left at an
+    em dash in the table is two users of one software seeing two figures for one
+    holding. ``price_native`` alone said *a number was observed* and nothing
+    about the unit, so this row read as *waiting for a rate* — permanently, since
+    no rate is coming for a pair nobody can name.
+    """
+    rows = [_p1_row(quantity=10.0, cost_basis=1000.0,
+                    price=None, price_native=187.5)]
+    rows[0]['currency'] = None
+
+    (share,) = portfolio_view.build_shares(rows, carried={'AAPL'})
+
+    assert share.price is None                       # no quote is invented
+    assert share.market_value == pytest.approx(1000.0)
+    assert share.plus_value_latente == pytest.approx(0.0)
+    assert [a.market_value for a in share.accounts] == [pytest.approx(1000.0)]
 
 
 def test_a_symbol_waiting_for_a_rate_does_not_hold_the_horizon_back(
@@ -567,13 +642,16 @@ def test_a_symbol_waiting_for_a_rate_does_not_hold_the_horizon_back(
 
     What the day then says is *waiting for a rate*, which is #706's answer and
     not this ticket's: the figure is not carried at cost, because the app knows
-    the quote and owes a conversion rather than a convention.
+    the quote and owes a conversion rather than a convention — and knowing the
+    quote is knowing its **unit** as well, which is why the fixture records one
+    (#773).
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     store.execute(
         'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
+    _record_unit(store)
     metrics = _metrics(store, mocker)
     metrics.base_currency = 'EUR'
 

@@ -44,7 +44,7 @@ from typing import (
     Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Sequence,
 )
 
-from carrying import carrying_price, was_quoted
+from carrying import carrying_price, is_quoted, was_quoted
 
 #: Fields summed straight across a share's accounts. All three are *amounts* or
 #: quantities of the same instrument, so adding them is meaningful — unlike the
@@ -213,11 +213,14 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
 
     ``carry`` says this symbol's backfill is terminal, which is the second term
     of ADR-0004's predicate; :func:`carrying.carrying_price` supplies the first,
-    and it is handed **``price_native``** for it rather than being left to read
-    the converted price alone (issue #706). A row that carries a native quote and
-    no converted one is *waiting for a rate*, which is a different absence from
-    *carried at cost* and must not be rendered as one — and it is a durable state,
-    not a blink, for as long as a pair fails to resolve.
+    and it is handed :func:`carrying.is_quoted` for it rather than being left to
+    read the converted price alone (issue #706). A row that carries a native
+    quote **and the unit it is in** and no converted one is *waiting for a rate*,
+    which is a different absence from *carried at cost* and must not be rendered
+    as one — and it is a durable state, not a blink, for as long as a pair fails
+    to resolve. The unit is half of that term since #773: ``price_native`` with
+    no ``currency`` beside it is a number nothing can turn into money, so it is
+    carried rather than left pending for ever.
 
     Note what is **not** done with the answer: ``price`` keeps the observed
     value, ``None`` and all, so the column stays an em dash — the app states a
@@ -235,7 +238,9 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
     quote = group[0]
     price = quote.get('price')
     carried_at = (
-        carrying_price(price, quote.get('price_native') is not None,
+        carrying_price(price,
+                       is_quoted(quote.get('price_native'),
+                                 quote.get('currency')),
                        quantity, cost_basis)
         if carry else price)
     market_value = _product(quantity, carried_at)
@@ -1034,15 +1039,18 @@ def _build_account(row: Dict[str, Any], carry: bool = False) -> AccountPosition:
     aggregate, and it has to be: the PMP is a weighted mean, so two accounts
     holding the same share at different costs carry it at different prices, and a
     single figure applied to both would make the breakdown stop adding up to the
-    row above it (issue #706). ``price_native`` rides along for the same reason it
-    does one level up: a known quote with no rate is *waiting*, never carried.
+    row above it (issue #706). :func:`carrying.is_quoted` rides along for the
+    same reason it does one level up: a known quote **in a known unit** with no
+    rate is *waiting*, never carried — and a number with no unit is not a quote
+    at all (#773).
     """
     quantity = row.get('quantity')
     cost_basis = row.get('cost_basis')
     price = row.get('price')
     market_value = _product(
         quantity,
-        carrying_price(price, row.get('price_native') is not None,
+        carrying_price(price,
+                       is_quoted(row.get('price_native'), row.get('currency')),
                        quantity, cost_basis) if carry else price)
     return AccountPosition(
         account=str(row.get('account') or 'default'),

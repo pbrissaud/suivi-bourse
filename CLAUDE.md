@@ -2088,6 +2088,87 @@ enumerated the two directions by hand, so the pass was invisible on
 fault to act on, and counting it as *done* would have the banner announce as
 finished the very thing it should be naming.
 
+**And the pass learns the unit it used to only name the absence of** (issue
+#773, ADR-0009, ADR-0002, ADR-0004). Measured on staging: two accounts reading
+**−99,98 %** and **−29 120,25 %**, seven `/api/positions` rows out of nineteen
+with `converted: null` and **all seven `quantity = 0`**, `lateral:
+{'no_quote_currency': 7}` stable over thirty backfill cycles on an install
+otherwise healthy. The chain is two modules deferring to each other, each in
+writing: `_convert_history` read the currency from `_share_info_cache` *"because
+the backfill runs on symbols the scrape has already met"*, and left the case it
+did not cover to *"#704's lateral pass, which is exactly what that pass is
+for"*; the lateral pass stood down on `no_quote_currency` because a quote
+currency *"is only ever learnt at a first successful fetch"*. **The faulty
+premise is dated**: it was true before #703, and ADR-0009 made the backfill's set
+the union over the *whole* timeline while the three paths that can learn a
+currency — `_scrape_symbol`, `capture_exchange_of` and the cache both fill —
+stayed bounded by the **held** lines. So a line sold before the install existed
+got years of reconstructed prices in a unit nothing could ever record, and
+`no_quote_currency` was the one lateral condition with **no exit** (the other two
+have one: an owner's write, and a terminal that says to act). Downstream, the
+symbol was absent from `oldest_priced`, therefore classed `settled`, therefore
+did not bound the horizon, therefore counted **zero** in `_holdings_value` on
+every day it was held while the cash ledger had paid — and the TWR chained the
+crater. Four things about the repair are decisions:
+
+- **The pass asks, because it is the one that knows.** It already owns #617's
+  back-off, the backfill's politeness delay and a last-pass record, and the cost
+  lands on the job whose rhythm is built for it. The two other exits are refused
+  where they stand: asking from the rebuild's own conversion step contradicts
+  `_convert_history`'s argument head on — a second `.info` **per chunk** doubles
+  the rate-limit exposure of the job that already emits the most requests —
+  where the need is one fact **per symbol**; and widening `capture_exchange_of`
+  to the replay's set puts it in `post_fork`, where the whole boot blocks and
+  the time cap is already load-bearing rather than defensive (#701).
+- **The answer goes to `symbol_quote.currency`**, through a writer of its own
+  (`quotes.record_attributes`) rather than through `record_quote`, which appends
+  a `price_point`: the lateral pass is *an `UPDATE`, never an `INSERT`*, and a
+  row inserted to carry a unit would be a market observation nobody made on a
+  table with no key to refuse it (ADR-0007). The store is also what makes the
+  cost **bounded and per symbol**: the next cycle reads the answer instead of
+  asking. What is *not* learnable is bounded by process memory
+  (`_quote_currency_unknown`) — a reply of *Yahoo names no currency* has nothing
+  to write, and a `NULL` column already means *nobody has asked*, so a second
+  meaning on it would collapse the two states at the exact moment
+  `SKIP_NO_QUOTE_CURRENCY` has to tell them apart.
+- **The three lateral answers stay three.** A request that does not complete is
+  a **failure** — #617's back-off, retried for ever, nothing concluded because
+  nothing was learnt — and a request that completes naming no currency is a
+  **reply** that keeps `SKIP_NO_QUOTE_CURRENCY` as its subject and still never
+  arms `unconvertible`: there is no pair yet, so nothing has refused to resolve.
+  #704's distinction is not overwritten by the repair.
+- **The third state shrinks, and what is left of it joins the carrying
+  convention** (ADR-0004, ADR-0021) — the criterion's two branches, and it takes
+  both. Learning the unit repairs every symbol Yahoo **names** one for: the
+  position is priced and `_holdings_value` stops counting it zero. It leaves
+  intact the population Yahoo answers *cours and no currency at all* for — which
+  criterion 3 requires be kept as a distinct state — and for that one the whole
+  chain still stood: quoted, terminal, never converted, absent from
+  `oldest_priced`, therefore `settled`, therefore not bounding the horizon,
+  therefore **zero** on every day it was held. Measured on a real store at
+  `value_on(2024-06-02) == (0.0, True)` on a line worth ten shares. So it joins
+  one of the two existing conventions rather than becoming a fourth kind of
+  absence, and the argument is one sentence: **a number with no unit is not a
+  cours**. #706 refuses to carry *quoted with no rate* because that absence is
+  **transitory**; here Yahoo has been asked and names none, so there is no pair,
+  no rate coming and nothing to wait for — and the cost is defined in the right
+  unit already, event amounts being the debit in the reporting currency
+  (ADR-0002). The rule is therefore in the `quoted` **term**, never in
+  `carrying_price`, whose domain is untouched: `quotes.first_quoted_days` joins
+  `symbol_quote.currency` on the series paths and `carrying.is_quoted` says the
+  same on a P1 row, so the valuation and the shares page cannot answer
+  differently. **It is derivable from the store, which is what decided the
+  implementation**: the perf job's only inputs are the store and the clock
+  (#707), so `_quote_currency_unknown` — process memory — could not have carried
+  it, and no column is added (the DDL is applied `IF NOT EXISTS` with no
+  migration machinery, the argument that decided `transfer_fees` and
+  `closed_at`). What makes the reading permanent rather than premature is #706's
+  **second** term, unchanged: a symbol whose backward pass has not concluded is
+  never handed to the convention at all — it blocks the horizon instead, so its
+  days are *not written* rather than written at nothing. `_share_info_cache` is
+  filled on the way, so the chunks the backward pass fetches **after** the learn
+  are converted at write time and the pass has less to repair each cycle.
+
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
@@ -2308,10 +2389,14 @@ ever drew the hole. Five things about it are decisions:
   That state is *waiting*, one of `CONTEXT.md` § Absence's four kinds and never
   rendered like *carried at cost*, and it is durable — the point is written with
   `price_converted NULL` until #704's lateral pass repairs it. So `quoted` is a
-  required argument, and each caller supplies it from what it has: `price_native`
-  on a P1 row, and `carrying.was_quoted` against `quotes.first_quoted_days` —
-  `{symbol: first day quoted at all}`, one `GROUP BY` — on the two series paths,
-  forward-filled exactly as the close beside it is.
+  required argument, and each caller supplies it from what it has:
+  `carrying.is_quoted` on a P1 row, and `carrying.was_quoted` against
+  `quotes.first_quoted_days` — one `GROUP BY` — on the two series paths,
+  forward-filled exactly as the close beside it is. **And a quote is a number
+  *and* a unit** (#773): both spellings ask for `symbol_quote.currency` beside
+  `price_native`, because a close in no nameable unit is one no rate can turn
+  into money — that one is *carried at cost*, and reading it as *waiting* counted
+  it zero for ever.
 - **One implementation, called by the valuation and by the shares page.** Two
   would make two users of the same software see two curves for the same
   portfolio with nothing on screen able to say so — so `performance.
