@@ -35,7 +35,7 @@ than moving it:
   tuples, where the frontier is not the cost.
 """
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import store
 
@@ -427,6 +427,54 @@ class PortfolioReader:
             '   AND date <= CAST(? AS DATE)', [through])
         total = store.finite(rows[0][0]) if rows else None
         return -total if total else 0.0
+
+    def transfer_fees_by_account(self,
+                                 through: Mapping[str, date]
+                                 ) -> Dict[str, float]:
+        """The same fourth term, **per account** (issue #722).
+
+        The account's own panel shows ``Gain total`` dominating its four terms,
+        and three of them come off ``/api/positions``. The fourth belongs to no
+        position — it is what a broker takes out of a *transfer* — so it is
+        derived here, exactly as :meth:`transfer_fees` derives it one level up,
+        and for the same reason: no column, no migration machinery, and a figure
+        that is a function of the event ledger alone.
+
+        **Each account is bounded by its own day.** ``through`` maps an account
+        to the day its ``account_metrics`` row describes, and the days differ:
+        an account whose series is capped in the past (#765) would otherwise
+        carry fees recorded after the figures beside them, and ADR-0018's
+        identity only holds between terms measured at the same instant. That is
+        also why the fold is done here rather than in ``SQL``: one ``GROUP BY``
+        over ``(account, date)`` collapses the ledger to a handful of rows and
+        each account's bound is applied to its own — where a single ``WHERE``
+        would have to pick one day for everybody.
+
+        An account absent from ``through`` is absent from the answer: there is
+        no day to bound it against, so there is no coherent statement to make.
+        Zero rather than ``None`` for an account that never transferred
+        anything, which is :meth:`transfer_fees`' own rule.
+        """
+        if not through:
+            return {}
+
+        # The widest bound as a pre-filter — the per-account cut below is the
+        # one that decides, and this only keeps the ledger's tail out of Python.
+        rows = self._store.query(
+            'SELECT account, date, sum(fee) FROM event '
+            " WHERE event_type IN ('DEPOSIT', 'WITHDRAWAL') "
+            '   AND date <= CAST(? AS DATE) '
+            ' GROUP BY account, date', [max(through.values())])
+
+        gathered = {account: 0.0 for account in through}
+        for account, day, fee in rows:
+            bound = through.get(account)
+            amount = store.finite(fee)
+            if bound is None or day is None or day > bound or not amount:
+                continue
+            gathered[account] += amount
+        return {account: (-total if total else 0.0)
+                for account, total in gathered.items()}
 
     def total_value_at(self, moment: datetime) -> Optional[float]:
         """The global total value on the last day at or **before** ``moment``.

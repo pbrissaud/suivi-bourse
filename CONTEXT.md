@@ -215,6 +215,15 @@ a page explaining itself instead of showing figures. On a table it goes on the c
 header, never on a cell.
 _Avoid_: tooltip, hint, help text, disclaimer
 
+**Reduction**:
+A table shown for one subject only — the ledger reduced to the securities a notice
+names, the shares page reduced to one account. It is not a *filter* in the sense the
+product refuses: it **states itself, with what it names, and offers the way out**, and
+whatever sums the table above it goes on summing the lines it sits above. A table
+silently shorter than expected is the defect; worse where a total sits over it, since a
+correct sum of the wrong perimeter reads exactly like the figure it is not.
+_Avoid_: filter (as a hidden state), view, scope selector
+
 **Banner**:
 The one thing the app interrupts with: why what you are looking at is wrong or empty — a
 missing base currency, a reconstruction still running, a scheduler that stopped. It shows

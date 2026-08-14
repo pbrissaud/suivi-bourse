@@ -37,10 +37,24 @@ const dashboardRoute = createRoute({
   component: DashboardPage,
 })
 
+/**
+ * The one route that reads a search parameter (#722).
+ *
+ * `?compte=` is the reduction an account's panel leads to, and it lives in the
+ * **URL** rather than in a state the link would have to carry: it survives a
+ * reload, it can be handed to somebody else, and the way out of it is the
+ * browser's own back button as much as the bar the page draws. It is validated
+ * rather than read raw — a blank one is *no reduction* and never a filter onto
+ * an account named by the empty string.
+ */
 const sharesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/titres',
   component: SharesPage,
+  validateSearch: (search: Record<string, unknown>): { compte?: string } => {
+    const account = typeof search.compte === 'string' ? search.compte.trim() : ''
+    return account === '' ? {} : { compte: account }
+  },
 })
 
 const accountsRoute = createRoute({

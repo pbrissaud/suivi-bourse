@@ -973,6 +973,83 @@ nowhere.**
 `PendingPage` and its one sentence leave with this ticket: it was the last
 placeholder, and *this page is not built yet* has no subject once all four are.
 
+**The account's panel: the four terms are the explanation, not a detail** (issue
+#722, ADR-0018, ADR-0016, ADR-0019). It **shrinks, and the shrinking is a
+promotion**. Two things leave and the room is not filled back in: the six
+statistics — `Valeur totale`, `Titres`, `Liquidités`, `Versé net`, `TRI`, `perf`
+— every one of them already read one line higher in the row the panel was opened
+from, so a panel repeating them is a second announcer of six figures at once;
+and the **positions table**, which duplicated a page whose nine columns had just
+been fixed (#719). Six things about what is left are decisions:
+
+- **`Gain total` dominating its four terms is the point of the surface.**
+  `−0,62 €` over `−47,65 · +60,97 · 0,00 · −13,95`: one *sees* that the account
+  went nowhere because its latent and its realised gains cancel and it has no
+  dividend. That retracts nothing of ADR-0016's *a total and its terms never
+  share a row* — it is the other half of it, a **block** being the only place
+  subordination can be expressed, which is what took the terms out of the table
+  in the first place. The head is **computed** from the four and never read off
+  `gain_absolu` (ADR-0018), which is the same number written down elsewhere —
+  and which the row behind the panel renders, so the two are an identity rather
+  than a decomposition somebody has to trust.
+- **And nothing is composed before `/api/positions` has answered** — the
+  dashboard head's rule (*a read that has not landed is not a fact*), which this
+  panel held for the **failure** branch alone. A `503` was named; a request
+  still in flight had its three position terms summed over `?? []` and rendered
+  as `0,00 €` beside a fourth term the account row already carried, so a panel
+  opened cold announced `Gain total −3,00 €` — **contradicting the very cell it
+  was opened from** — and then exchanged it for `+322,00 €` under the reader's
+  eyes. Three zeros explain no total, which is the criterion itself. It is
+  **integral on a cold open** (arriving on `/comptes`, or reloading it) and
+  invisible from `/titres`, where the `['positions']` cache is already warm —
+  and the six tests of the panel all `waitFor`ed the expected total, which is
+  exactly how none of them saw it. The block and the **link** wait at the same
+  door, the count being drawn from the same rows; the curve does not, being
+  another read. What is **left standing and flagged rather than repaired**: the
+  panel computes the total from the four terms while the row behind it renders
+  `gain_absolu`, so on a real store the two figures on one screen can differ —
+  which is ADR-0018's own arrangement, and whether the panel should say so is
+  the owner's arbitration.
+- **The fourth term is the account's own, and it needed a server half.** Three
+  of the four come off `/api/positions`; the fees a broker takes out of a
+  transfer belong to no position, and `−5,00` on the portfolio is the sum of
+  three accounts' — read here it would make one account's panel state another's
+  cost. So **`account.transfer_fees`** joins `/api/accounts`, derived at read
+  time from `event` exactly as `/api/portfolio-totals` derives the global one
+  (no column, no migration machinery) and **bounded by that account's own day**,
+  since the days differ the moment one series is capped in the past (#765) and
+  ADR-0018's identity only holds between terms measured at the same instant.
+  `null` where no cycle wrote a day: nothing to bound it by is no coherent
+  statement to make, and zero is a **figure** meaning the broker moved the money
+  for free — the panel then shows three terms and never learns the fourth
+  exists.
+- **The value-against-contributed curve, the only place it exists per account.**
+  The comparison above refuses that shape at N accounts — four curves at two,
+  ten at five, the pairs overlapping and no surface being anybody's gain
+  (ADR-0019) — and at one account the surface between the two lines *is* the
+  gain the block over it decomposes. It reads the **whole** series and not the
+  page's window: the range control drives the comparison, and an account's own
+  history is not one. A block with nothing in it does not exist, so an account
+  with no cash ledger draws none — its row has already named that reason.
+- **A link where the table was, and the reduction is a URL.** `?compte=` on
+  `/titres`, so it survives a reload and can be handed to somebody else. It is
+  **not** the *hide the closed ones* switch that page refuses: that one hid part
+  of the table its header summed, silently, leaving two correct figures with
+  nothing on screen to tell them apart. This one **states itself with the
+  account it names and offers the way out**, and the header goes on summing the
+  lines it sits above — reduced, those are the account's lines and the total is
+  that account's (`455,00` against the portfolio's `460,00` on the fixture). It
+  reduces the **positions** before the folding, a row of that page being a
+  symbol across its accounts; it names the account by its **id**, which is what
+  the `Compte` column already renders, rather than paying a fifth read for a
+  label that would disagree with the column beside it; and *empty* under a
+  reduction is its own sentence, since *you own nothing* is a claim about the
+  reader's data made on the strength of a filter they can lift in one click.
+- **The fifth ADR-0016 icon**, on that block — *one per figure and per surface*,
+  the table's four being on its column heads and read scrolled with the panel
+  shut. It is the bubble that states a **scope**: this account's closed
+  positions included, and never another account's transfer fees.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -2828,7 +2905,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
+│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729, and the account's own fourth term, #722 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -2864,6 +2941,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
 ├── src/lib/accounts.ts     # Pure: the window, the rebasing to 100, the vanishing column, the reason (#721)
 │                           #       plus the declaration: who names a row, where it came from, why it stays (#729)
+│                           #       plus the panel: whose positions it sums, and the curve read whole (#722)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
@@ -2872,7 +2950,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
 ├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
-├── src/components/accounts/       # The rebased chart · the eight columns · the sheet's shell (#721)
+├── src/components/accounts/       # The rebased chart · the eight columns (#721) · the panel: four terms, the value/contributed curve, the link (#722)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 

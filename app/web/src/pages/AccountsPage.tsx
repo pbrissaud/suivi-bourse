@@ -23,6 +23,12 @@
  *    `−0,62 €` of gain and `+15 %` of performance in the same row, and both are
  *    correct.
  *
+ * The panel one row opens is **#722's**, and it holds what the table cannot say:
+ * `Gain total` dominating its four terms, and the value-against-contributed
+ * curve — the only surface in the product where that shape exists per account.
+ * It repeats none of the eight columns, and in place of a positions table it
+ * carries a link to the shares page reduced to this account.
+ *
  * Reads and failures follow the shares page's rule and for the same reason:
  * `/api/runtime` answers from process memory and never opens the store (#668),
  * so the shell's banner is silent on the one failure that empties this page.
@@ -69,6 +75,14 @@ export default function AccountsPage() {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The panel's three position terms, and **only** while a panel is open: the
+  // page under it owes the positions nothing, its eight columns coming off
+  // `/api/accounts`. Same arrangement as the share sheet's ledger read (#720).
+  const positions = useQuery({
+    queryKey: ['positions'],
+    queryFn: api.positions,
+    enabled: opened !== null,
+  })
 
   const declared = accounts.data?.accounts ?? []
 
@@ -217,8 +231,20 @@ export default function AccountsPage() {
         </>
       )}
 
+      {/* The panel reads the account's **whole** series rather than the visible
+          window: the range control drives the comparison, and an account's own
+          history is not one (ADR-0019). The page has already read it, so the
+          curve costs no request of its own. */}
       <AccountSheet
         row={rows.find((row) => row.id === opened) ?? null}
+        // `?? null` and never `?? []`: the panel's block is composed from these
+        // rows, and an empty array is a *payload*, not a request in flight —
+        // read as one it summed three terms over nothing (#722's own rule,
+        // held for the failure branch alone).
+        positions={positions.data?.positions ?? null}
+        points={points[declared.findIndex((account) => account.id === opened)] ?? []}
+        currency={currency}
+        positionsError={positions.error}
         onClose={() => setOpened(null)}
       />
     </div>

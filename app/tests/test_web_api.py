@@ -1466,6 +1466,85 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
     assert payload['accounts'][0]['total_value'] is None
 
 
+def test_accounts_carry_the_fourth_term_of_the_gain_per_account(tmp_path):
+    """ADR-0018's identity **per account**, through the API (#722).
+
+    The account's own panel shows `Gain total` dominating its four terms, and
+    three of them come off `/api/positions`. The fourth belongs to no position
+    at all — it is what a broker takes out of a *transfer* — so the account
+    resource derives it the way `/api/portfolio-totals` derives the global one.
+    What this pins is that it is **not** the global one repeated: two accounts,
+    two deposits, two different fees, and each row's four terms sum to its own
+    `gain_absolu`.
+
+    Nothing is seeded but the quote: the ledger is a file and the perf cache is
+    written by the real job, so the assertion is that the two *modules* agree —
+    `transfer_fees` off `event`, `net_contributed` off the `Timeline`.
+
+        pea  latente +197,00 · réalisée 0,00 · dividendes 0,00 · frais −1,50
+        cto  latente  +19,00 · réalisée 0,00 · dividendes 0,00 · frais −0,75
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2024-01-10,DEPOSIT,,,,,1.50,1000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,80.00,3.00,,pea\n"
+        "2024-01-10,DEPOSIT,,,,,0.75,500.00,cto\n"
+        "2024-02-01,BUY,AAPL,Apple Inc,2,90.00,1.00,,cto\n"
+    )
+    accounts = ACCOUNTS_FILE + "cto,CTO,CTO Degiro\n"
+
+    def seed(opened):
+        seed_quote(opened, price=100.0, currency='EUR', converted=100.0,
+                   rate=1.0, at=datetime(2024, 6, 5, 17, 0, tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts=accounts, events=events, seed=seed)
+
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+    assert opened.query('SELECT count(*) FROM account_metrics')[0][0] > 0
+
+    positions = client.get('/api/positions').get_json()['positions']
+    rows = {row['id']: row
+            for row in client.get('/api/accounts').get_json()['accounts']}
+
+    # Each account's own fee, and never the −2,25 the global term would carry.
+    assert rows['pea']['transfer_fees'] == pytest.approx(-1.50, abs=5e-3)
+    assert rows['cto']['transfer_fees'] == pytest.approx(-0.75, abs=5e-3)
+
+    for account, latent in (('pea', 197.00), ('cto', 19.00)):
+        held = [row for row in positions if row['account'] == account]
+        terms = (
+            sum(row['quantity'] * row['converted']['value'] - row['cost_basis']
+                for row in held)
+            + sum(row['realised'] for row in held)
+            + sum(row['dividends'] for row in held)
+            + rows[account]['transfer_fees'])
+        assert sum(row['quantity'] * row['converted']['value'] - row['cost_basis']
+                   for row in held) == pytest.approx(latent, abs=5e-3)
+        assert terms == pytest.approx(rows[account]['gain_absolu'], abs=5e-3)
+
+
+def test_accounts_leave_the_fourth_term_absent_where_no_cycle_wrote_a_day(
+        tmp_path):
+    """No day to bound the fees by is no coherent statement to make (#722).
+
+    An account whose perf cycle has not run has no `as_of`, so a fee total
+    covering *everything* would be a term measured over another period sitting
+    in a sum with figures that are all `null` anyway. `null`, and the panel
+    drops the term exactly as it drops a zero.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    row = client.get('/api/accounts').get_json()['accounts'][0]
+
+    assert row['as_of'] is None
+    assert row['transfer_fees'] is None
+
+
 def test_accounts_drops_a_series_left_by_an_undeclared_account(tmp_path):
     """Historical residue is not a row. The declaration is the list."""
     def seed(opened):

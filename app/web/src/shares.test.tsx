@@ -544,3 +544,84 @@ describe('a portfolio with nothing closed', () => {
     expect(screen.queryByRole('button', { name: /position(s)? soldée(s)?/ })).not.toBeInTheDocument()
   })
 })
+
+// ------------------------------------------------------------------------- //
+// The reduction an account's panel leads to (#722)
+//
+// It is **not** the *hide the closed ones* switch this page refuses: that one
+// hid part of the table its header summed, silently, leaving two correct
+// figures with nothing on screen to tell them apart. This one names the account
+// it reduces to, offers the way out, and the header goes on summing the lines
+// it sits above — which reduced are that account's lines, and that account's
+// gain.
+// ------------------------------------------------------------------------- //
+
+describe('the reduction to one account', () => {
+  function renderReduced(account: string, positions = sharesPortfolio()) {
+    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(positions))))
+    return renderApp({ url: `/titres?compte=${account}` })
+  }
+
+  it('keeps that account’s lines, closed ones included, and no other', async () => {
+    renderReduced('alpha')
+
+    // `alpha` holds ZZA and has closed ZZD. The fold is not a filter here
+    // either: the closed line stays and the header counts it.
+    await waitFor(() => expect(liveTable()).toBeInTheDocument())
+    expect(within(liveTable()).getByText('Zeta Alpha')).toBeInTheDocument()
+    expect(within(liveTable()).queryByText('Zeta Beta')).not.toBeInTheDocument()
+    expect(within(liveTable()).queryByText('Zeta Gamma')).not.toBeInTheDocument()
+    expect(fold()).toBeInTheDocument()
+  })
+
+  it('sums the lines it sits above, which are that account’s', async () => {
+    renderReduced('alpha')
+
+    // +300,00 latent · +120,00 realised · +35,00 dividends = 455,00, and never
+    // the portfolio's 460,00, which counts an account that is not on screen.
+    // That is the *other correct figure* one axis over.
+    await waitFor(() => expect(head()).toHaveTextContent(/455,00/))
+    expect(screen.queryByText(/460,00/)).not.toBeInTheDocument()
+  })
+
+  it('states itself with the account it names, and offers the way out', async () => {
+    renderReduced('alpha')
+
+    // A table silently shorter than expected is the defect the ledger met one
+    // page over — and worse here, the header over it being a **sum**. The
+    // account is named by its id, which is what the `Compte` column renders.
+    expect(await screen.findByText(/Réduit au compte alpha/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Afficher tous les comptes' })).toHaveAttribute(
+      'href',
+      '/titres',
+    )
+  })
+
+  it('lifts it, and the header comes back to the portfolio’s own figure', async () => {
+    const { user } = renderReduced('alpha')
+    await waitFor(() => expect(head()).toHaveTextContent(/455,00/))
+
+    await user.click(screen.getByRole('link', { name: 'Afficher tous les comptes' }))
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+    expect(screen.queryByText(/Réduit au compte/)).not.toBeInTheDocument()
+  })
+
+  it('does not tell an owner with a full ledger that they own nothing', async () => {
+    renderReduced('delta')
+
+    // *No positions* is a claim about the reader's data; here the cause is a
+    // filter they can lift in one click, and the sentence says so.
+    expect(await screen.findByText('Aucune position sur ce compte')).toBeInTheDocument()
+    expect(screen.queryByText('Aucune position')).not.toBeInTheDocument()
+    // The bar's, and the empty state's own — a reader who has scrolled past the
+    // first must not have to scroll back up to undo what emptied the page.
+    expect(screen.getAllByRole('link', { name: 'Afficher tous les comptes' })).toHaveLength(2)
+  })
+
+  it('says nothing at all when nothing is reduced', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+
+    expect(screen.queryByText(/Réduit au compte/)).not.toBeInTheDocument()
+  })
+})
