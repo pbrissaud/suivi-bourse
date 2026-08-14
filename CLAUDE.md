@@ -838,9 +838,9 @@ knowledge) and **`GET /api/store`** with its `DELETE .../orphans`. The one
 gesture a notice carries inside the app is the **assumed-currency** one, which
 *names the events it was made about*, so it switches to the ledger tab already
 reduced to **every** security it names; the other four are about a file on disk
-or a variable in the container's environment, and their own sentence — the
-server's, because it names *this* installation's paths — already says what to do
-out there.
+or a variable in the container's environment, and their own sentence — which
+names *this* installation's paths, the server observing them and the front's
+catalogue phrasing them since #768 — already says what to do out there.
 
 **That reduction is a filter of its own, and it names itself on screen.** The
 free-text search is single-term (`haystack(event).includes(needle)`), so a

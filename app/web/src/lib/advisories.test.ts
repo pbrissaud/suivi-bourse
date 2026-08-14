@@ -100,9 +100,8 @@ describe('the gesture a notice carries', () => {
   })
 
   it('is nothing for a notice about a file the app cannot touch', () => {
-    // Its own sentence — the server's, because it names this installation's
-    // path — already says what to do out there. A button would be a power the
-    // app does not have.
+    // Its own sentence — which names this installation's path — already says
+    // what to do out there. A button would be a power the app does not have.
     expect(advisoryGesture(advisory({ key: 'legacy_config_file' }))).toBeNull()
     expect(advisoryGesture(advisory({ key: 'unread_environment' }))).toBeNull()
   })

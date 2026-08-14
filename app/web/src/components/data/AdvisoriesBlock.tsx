@@ -16,10 +16,11 @@
  *    when it does not.** The assumed-currency notice names the events it was
  *    made about, so it leads to them, in the ledger, already reduced to what it
  *    names. A `config.yaml` on disk and a variable in the container's
- *    environment are outside the app's reach, and their own sentence — the
- *    server's, because it names *this* installation's paths and variables —
- *    already says what to do about them. Inventing a button there would be
- *    inventing a power the app does not have.
+ *    environment are outside the app's reach, and their own sentence — which
+ *    names *this* installation's paths and variables, the server having
+ *    observed them and the catalogue below phrasing them — already says what to
+ *    do about them. Inventing a button there would be inventing a power the app
+ *    does not have.
  *  - **The sentence is composed here, from `key` and `detail`** (#768,
  *    ADR-0024). This block rendered `advisory.message` verbatim, and those five
  *    sentences are built in English by `advisories.py` — so the whole content of
