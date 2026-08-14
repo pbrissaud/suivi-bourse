@@ -973,6 +973,106 @@ nowhere.**
 `PendingPage` and its one sentence leave with this ticket: it was the last
 placeholder, and *this page is not built yet* has no subject once all four are.
 
+**The bottom of the dashboard: two readings, twelve slices, four states** (issue
+#727, ADR-0018, ADR-0023, ADR-0016). The head landed at #718 and what sat under
+it was the prototype's; what lands here is the chart, the allocation, the movers
+and the page's own states, plus the reconstruction's band. Six things about it
+are decisions:
+
+- **One chart slot, two readings, and the selector is a *reading* selector.**
+  *Montants* draws value against net contributed and **the area is the gain** —
+  the clearest answer to *did I gain because it went up or because I put more in*
+  — while *Performance* draws the time-weighted return. The two are tabs and the
+  range is radios, deliberately: two sibling radio groups read as two settings of
+  one thing, which is the duplication the head closed by losing its own presets.
+  Without a cash ledger `total_value`, `net_contributed` and `twr_index` are all
+  `NULL` (#708), so *Montants* **falls back** to valuation against cost — the
+  area is then the *latent* gain, a different figure and therefore a different
+  sentence — and *Performance* is not offered rather than offered empty.
+- **`3M` dies and `MAX` is offered.** From February to December `YTD` covers `3M`
+  or contains it, and five buttons on the page's only range control is one too
+  many; `MAX` is refused on the accounts page (ADR-0019, a time-weighted index
+  has no bounded amplitude and one account's spike crushes the others) and there
+  is **one** curve here, whose amplitude is its own subject. The series is daily
+  and dense over the calendar and is kept **whole** — the retention ladder is
+  about observed prices — so a range changes the span and never the resolution,
+  and no *aggregated by X* caption is owed. The **x domain is the data's**
+  (Recharts' category axis, and nothing sets a domain: fixing it to the window
+  asked for would put ticks on dates the series says nothing about), and the
+  **y domain is floored at zero** while nothing drawn is negative — the axis
+  graduated `−1 411 €` under a series that has never been negative.
+- **The performance curve is rebased on the visible window and carries no base
+  date.** The head's scalar counts from the series' own origin, which walks
+  backwards while the reconstruction runs (`twr_since` says so on it); a curve
+  read against the first day of the window the reader chose does not move when
+  history appears before it. At `MAX` the two coincide — the window's first day
+  *is* the origin — and `lib/dashboard.test.ts` pins that the curve ends exactly
+  on the head's own figure, which is two announcers agreeing instead of
+  contradicting each other.
+- **The allocation takes twelve slices and the full width.** Eight is measurably
+  wrong: the tail *Autres (4)* was worth **10,1 %**, more than four of the named
+  slices put together — and what decides the *layout* is what that threshold
+  costs at half width (four names out of twelve folded, a block twice the height
+  of the movers beside it, 350 px of nothing under them). The legend is in the
+  slices' own descending order, which is what pairs a row to its slice and what
+  licenses ADR-0023's rank ramp; the tail takes the twelfth stop, the least
+  contrasted, and **counts itself**. **No breakdown by account and none by
+  type** — a second selector beside the chart's is the duplication this page
+  keeps closing. And it **names what it could not place**: a position quoted
+  with no resolved rate has no value in the reporting currency, so summing it
+  would make every other percentage silently wrong — `Allocation.tsx` already
+  excluded it, with the reason in its own comment and **never on screen**.
+- **The movers count what they do not show.** Two columns of five, and a
+  sentence for the rest: measured, `500.PA` — the portfolio's second line, at
+  16,6 % of it — moved `0,00 %`, so it entered neither column and vanished from
+  both. The sentence's denominator is the **held lines**, not the rows the
+  payload carries: a share with no baseline at all is not served, and counting
+  off the payload would drop it from the sentence too. The block names the
+  **reference close** it compares against, which is the second of the page's two
+  permanent time announcers — the first being the page's own *Cours au …* — and
+  it is a different instant from it.
+- **The four states are one decision** (`lib/dashboard.ts`), never a `?.length`
+  per block. *No events* is one sentence and a link to Données and never a third
+  copy of `EntryPair`: this page reads, it is not where one enters. *Events and
+  nothing held* is a **normal** page — `Gain total` figured (realised +
+  dividends − fees), `Plus-value latente —`, `Titres 0,00 €` — and it is the one
+  place in the product where the dash and the zero are read side by side at the
+  scale of the portfolio. That dash is a change in `lib/gain.ts`
+  (`holdsPosition`): the sum over closed lines is exactly `0`, which is
+  arithmetically right and states that holdings which do not exist have gained
+  nothing, where ADR-0016's em dash says *there is nothing to compute*. `Titres`
+  joins the head's statistics for the same criterion, and it is also the one
+  money figure an install with no cash ledger still has. **`/` is the dashboard
+  unconditionally**, zero events included, and **no advisory lands here** — one
+  posted on the dashboard is invisible to whoever lands elsewhere, and the
+  banner was validated in production.
+- **The reconstruction is a band, with a bar and a name.** `shellConditions`
+  grows its second entry: the bar is
+  `(horizon → today) / (first event → today)` and the sentence **names the
+  account holding the global figures back** — the **max** of the horizons, since
+  the global series is written only where every account is (ADR-0018), without
+  which *one slow account delays the whole home page* is a rule nothing on
+  screen states. The two reads it needs are **armed by the first** (`/api/events`
+  for the oldest day the ledger names, `/api/accounts` for the account's
+  *declared* name through `declaredLabel`, #729), so a settled install pays one
+  runtime request as before. The reconstruction is deliberately **not** in
+  `readConditions`' silencing clause: it is not a cause of a failed read, and a
+  store that will not answer is the stronger, more actionable fact — which of
+  the two holds the banner's slot when both are true is #726's own criterion.
+
+One resource joins the HTTP contract and **its server half is in the same
+ticket**: **`GET /api/positions/history`** (`{t, value, invested}`), the series
+`/api/positions` is one instant of. It could not ride on
+`/api/portfolio-totals/history`, which publishes *the account resource's five
+members field for field* so one client shape reads both (#721); and
+`/api/portfolio/history?mode=titres` computes this very body and is **not**
+readable by a v5 page — its discriminant is *are accounts declared*, which is
+not the question, so an install declaring two accounts and holding no cash event
+gets the two empty series back. `/api/portfolio/movers` is read **as it
+stands**, prefix included: its payload is already the v5 shape (no `?mode=`, no
+per-row currency since #702, ADR-0004's carrying applied), and a second route
+serving the identical body would be two resources over one computation.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -2828,7 +2928,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
+│   ├── api.py              # /api blueprint: positions (+ its valuation history, #727) + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -2853,12 +2953,14 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/format.ts       # The eight Intl sites, locale as an argument
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
 ├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
+│                           #       plus the rebuild's bar and the account it names (#727)
 ├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718), and a quote is a number *and* a unit (#774)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
 │                           #       plus the sheet: the breakdown that is absent at one account, the day-markers (#720)
+├── src/lib/dashboard.ts    # Pure: the two readings, the twelve slices, the movers' leftovers, the four states (#727)
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
@@ -2869,7 +2971,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/EmptyState.tsx  # The one empty state
 ├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
 ├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
-├── src/components/dashboard/      # The dashboard's own blocks — Head first (#718)
+├── src/components/dashboard/      # Head (#718) · the one chart slot, the allocation, the movers (#727)
 ├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns · the sheet's shell (#721)
