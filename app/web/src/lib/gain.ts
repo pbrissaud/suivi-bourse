@@ -91,6 +91,13 @@ export function termIsRendered(term: GainTermName, value: number | null): boolea
  * blanked the headline of the whole portfolio, which is the exact failure the
  * four-term computation exists to prevent.
  *
+ * **And it is why #774 changed nothing here.** A held line quoted in a unit
+ * nothing names was flipping the whole portfolio's `Gain total` to *waiting for
+ * a rate* — the same failure a second time, on a rate that was never coming —
+ * and the repair is one term of `absenceCase`, read by this loop through the
+ * one call it already makes. Written out again here it would have been the copy
+ * losing a branch, which is the defect this delegation was created by.
+ *
  * A position carried at its cost contributes **exactly zero** to the latent gain
  * rather than a loss — that is the absence rule's first row, and composing this
  * out of null-tolerant helpers is what made a share whose price was never

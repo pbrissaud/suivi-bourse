@@ -42,6 +42,26 @@ describe('the four absences', () => {
     expect(rendered.unrealised).toEqual({ kind: 'named', message: 'absence.awaitingRate' })
   })
 
+  it('carries a line quoted in no nameable unit, and never leaves it waiting', () => {
+    // The shape the payload actually serves: a number came back, and the column
+    // that says what it is a number *of* is empty (#774). There is no pair, so
+    // no rate is on its way — the absence is permanent, and it joins the first
+    // row of the table rather than founding a fifth one.
+    const unitless = input({ price: { value: 130, currency: null, at: NOW }, converted: null })
+    expect(absenceCase(unitless)).toBe('carriedAtCost')
+    expect(positionRenderings(unitless)).toEqual({
+      price: { kind: 'dash' },
+      valuation: { kind: 'figure' },
+      unrealised: { kind: 'figure' },
+    })
+
+    // And it is *not* the line whose unit is known and whose rate is missing,
+    // which is #706's legitimate wait and must survive this repair intact.
+    const waiting = input({ converted: null })
+    expect(absenceCase(waiting)).toBe('awaitingRate')
+    expect(absenceCase(unitless)).not.toBe(absenceCase(waiting))
+  })
+
   it('has nothing to compute on a sold position', () => {
     const sold = input({ quantity: 0, price: null, converted: null })
     expect(absenceCase(sold)).toBe('nothingToCompute')
