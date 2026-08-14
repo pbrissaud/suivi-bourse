@@ -10,7 +10,9 @@
  * What the sentence counts is **held lines**, not rows of the payload: a share
  * with no baseline at all — its first day — is not in the collection the server
  * serves, and taking the count from what came back would leave it out of the
- * sentence too, which is the same disappearance one step further along.
+ * sentence too, which is the same disappearance one step further along. The
+ * payload is reduced to those same held lines before anything is counted off it
+ * (`moversSplit`), so the two halves of the sentence describe one set.
  *
  * The reference close is named here and nowhere else. It is the **second** of
  * the page's two permanent time announcers — the first is the page's own price
@@ -23,21 +25,22 @@ import type { Mover } from '@/lib/api'
 import { moversSplit } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 
 export interface MoversProps {
   movers: readonly Mover[]
   /** The instant the comparison is made against. `null` — nothing to compare. */
   reference: string | null
-  /** How many lines the portfolio holds — the sentence's own denominator. */
-  held: number
+  /** The portfolio's lines, closed ones included — the block reduces them itself. */
+  rows: readonly ShareRow[]
   currency: string | null
 }
 
-export function Movers({ movers, reference, held, currency }: MoversProps) {
+export function Movers({ movers, reference, rows, currency }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
-  const { risers, fallers, others, unchanged } = moversSplit(movers, held)
+  const { risers, fallers, others, unchanged } = moversSplit(movers, rows)
 
   return (
     <section className="space-y-3">

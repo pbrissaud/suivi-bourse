@@ -33,7 +33,7 @@ import { api } from '@/lib/api'
 import { dashboardState } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { buildShareRows, heldRows } from '@/lib/shares'
+import { buildShareRows } from '@/lib/shares'
 import { oneBand, readConditions } from '@/lib/status'
 
 export default function DashboardPage() {
@@ -56,11 +56,15 @@ export default function DashboardPage() {
   // line is worth (ADR-0004's carrying convention included), so the allocation
   // and the table cannot disagree about the same portfolio. The failure counter
   // is a rendering concern there and has no subject here, so the map is empty.
+  //
+  // Both blocks below take the rows **whole**, closed lines included, and each
+  // reduces them with the same predicate: what is in the portfolio is one
+  // question, and a page whose two blocks answered it apart is what put a sold
+  // line in the movers' own sentence.
   const rows = useMemo(
     () => buildShareRows(positions.data?.positions ?? [], new Map()),
     [positions.data],
   )
-  const held = heldRows(rows)
 
   // The movers are read only once there is a portfolio to compare — and it is a
   // resource of its own rather than a member of the positions, so the shares
@@ -100,7 +104,7 @@ export default function DashboardPage() {
           <Movers
             movers={movers.data?.movers ?? []}
             reference={movers.data?.reference ?? null}
-            held={held.length}
+            rows={rows}
             currency={positions.data?.base_currency ?? null}
           />
         </>

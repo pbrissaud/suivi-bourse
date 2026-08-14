@@ -21,6 +21,7 @@ import {
 } from '@/lib/dashboard'
 import { buildShareRows } from '@/lib/shares'
 import {
+  aClosedPosition,
   aMover,
   aPortfolioHistory,
   aPosition,
@@ -191,6 +192,11 @@ describe('the allocation', () => {
 })
 
 describe('the movers', () => {
+  /** N held lines, named — the portfolio the sentence's denominator counts. */
+  function heldLines(symbols: string[]) {
+    return rowsOf(symbols.map((symbol) => aPosition({ symbol })))
+  }
+
   it('counts what it does not show, and a line that moved by nothing with it', () => {
     // Measured: the portfolio's second line, at 16,6 % of it, moved 0,00 % — so
     // it entered neither column and vanished from both.
@@ -200,7 +206,7 @@ describe('the movers', () => {
         aMover({ symbol: 'B', change_pct: 0 }),
         aMover({ symbol: 'C', change_pct: -0.02 }),
       ],
-      6,
+      heldLines(['A', 'B', 'C', 'D', 'E', 'F']),
     )
 
     expect(split.risers.map((mover) => mover.symbol)).toEqual(['A'])
@@ -211,11 +217,48 @@ describe('the movers', () => {
     expect(split.others).toBe(4)
   })
 
-  it('takes five each way, biggest first', () => {
-    const movers = Array.from({ length: 8 }, (_, index) =>
-      aMover({ symbol: `U${index}`, change_pct: (index + 1) / 100 }),
+  it('leaves a closed line out of the sentence it is not part of', () => {
+    // `/api/positions` serves a sold line on purpose (ADR-0017), `buildShareRows`
+    // folds it with its last frozen quote, and the server compares that quote
+    // against a baseline equal to it — so a position closed years ago comes back
+    // as `change_pct: 0`. Counted, it swelled `unchanged` while `others` was
+    // taken over the held lines alone: the same sentence's two members then
+    // described two different sets, and its qualifier could exceed the set it
+    // qualifies.
+    const rows = rowsOf([
+      aPosition({ symbol: 'ZZA' }),
+      aPosition({ symbol: 'ZZB' }),
+      aClosedPosition({ symbol: 'ZZD', closed_at: '2025-11-04' }),
+      aClosedPosition({ symbol: 'ZZE', closed_at: '2025-11-05' }),
+    ])
+    const split = moversSplit(
+      [
+        aMover({ symbol: 'ZZA', change_pct: 0.05 }),
+        aMover({ symbol: 'ZZB', change_pct: 0 }),
+        // The measured shape: worth nothing, moving by nothing, still served.
+        aMover({ symbol: 'ZZD', change_pct: 0, change: 0, market_value: 0, contribution: 0 }),
+        // And one whose frozen quote still differs from its baseline: a closed
+        // line has no business in a column of the portfolio's movers either.
+        aMover({ symbol: 'ZZE', change_pct: 0.31, market_value: 0, contribution: 0 }),
+      ],
+      rows,
     )
-    const split = moversSplit(movers, 8)
+
+    expect(split.unchanged).toBe(1)
+    expect(split.risers.map((mover) => mover.symbol)).toEqual(['ZZA'])
+    expect(split.fallers).toEqual([])
+    // Two held, one shown: the one that moved by nothing. The two closed lines
+    // are in neither figure, which is what makes the pair one set.
+    expect(split.others).toBe(1)
+    expect(split.unchanged).toBeLessThanOrEqual(split.others)
+  })
+
+  it('takes five each way, biggest first', () => {
+    const symbols = Array.from({ length: 8 }, (_, index) => `U${index}`)
+    const movers = symbols.map((symbol, index) =>
+      aMover({ symbol, change_pct: (index + 1) / 100 }),
+    )
+    const split = moversSplit(movers, heldLines(symbols))
 
     expect(split.risers.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
     expect(split.fallers).toEqual([])

@@ -21,6 +21,7 @@ import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccountsPayload,
   aClosedPosition,
+  aMover,
   aMoversPayload,
   aPosition,
   aPositionsPayload,
@@ -691,6 +692,50 @@ describe('the movers', () => {
     expect(
       screen.getByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
     ).toBeInTheDocument()
+  })
+
+  it('says nothing of a closed line the server serves at 0,00 %', async () => {
+    // `/api/positions` carries a sold line on purpose (ADR-0017) and
+    // `/api/portfolio/movers` compares its frozen quote against a baseline equal
+    // to it, so the payload holds a `change_pct: 0` about a line nobody owns.
+    // Counted, it inflated *dont N n’a pas bougé* — the qualifier of a set it is
+    // not in — while the count of the lines *not shown* was taken over the held
+    // ones alone.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            ...defaultPositions(),
+            aClosedPosition({ account: 'alpha', symbol: 'ZZD', name: 'Zeta Delta', closed_at: '2025-11-04' }),
+          ]),
+        ),
+      ),
+      http.get(ROUTES.movers, () =>
+        HttpResponse.json(
+          aMoversPayload([
+            aMover(),
+            aMover({ symbol: 'ZZB', name: 'Zeta Beta', change: 0, change_pct: 0, contribution: 0 }),
+            aMover({
+              symbol: 'ZZD',
+              name: 'Zeta Delta',
+              change: 0,
+              change_pct: 0,
+              market_value: 0,
+              contribution: 0,
+            }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // Unchanged still, and *one*: the three held lines, of which `ZZB` moved by
+    // nothing and `ZZC` was never quoted. The closed one is in neither figure.
+    expect(
+      await screen.findByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
   })
 
   it('names the close it compares against, and names it once', async () => {

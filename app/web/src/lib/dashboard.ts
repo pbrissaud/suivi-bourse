@@ -27,11 +27,16 @@
  *  - **The movers count what they do not show.** Measured: the portfolio's
  *    second line, at 16,6 % of it, moved 0,00 % — so it entered neither column
  *    and vanished from both. Silence on the second line of a portfolio reads as
- *    *nothing to say*; counting it costs one sentence.
+ *    *nothing to say*; counting it costs one sentence. And **the sentence's two
+ *    members describe one set**: `moversSplit` reduces the payload to the held
+ *    lines with `allocation`'s own predicate before counting either of them, a
+ *    sold line being served on purpose (ADR-0017) and comparing equal to its own
+ *    frozen baseline.
  *
  * The valuation of a position is **not** re-derived here: `lib/shares.ts` owns
  * it, ADR-0004's carrying convention included, so the allocation and the shares
- * page cannot disagree about what a line is worth.
+ * page cannot disagree about what a line is worth. `isClosed` comes from there
+ * for the same reason, and is called by both blocks rather than spelled twice.
  */
 import type {
   Mover,
@@ -43,7 +48,7 @@ import type {
 } from '@/lib/api'
 import { ALLOCATION_SLICES } from '@/lib/alloc'
 import { shifted } from '@/lib/accounts'
-import { marketValue, type ShareRow } from '@/lib/shares'
+import { isClosed, marketValue, type ShareRow } from '@/lib/shares'
 
 // ------------------------------------------------------------------------- //
 // The four states of the page
@@ -271,13 +276,16 @@ export interface Allocation {
  * A **closed** line is not a slice: it is worth exactly zero and a legend of
  * zeros is noise, so the folded section of the shares page is where it lives. A
  * held line worth zero stays — that is a figure about a line the owner holds.
+ * The predicate is `isClosed`, `lib/shares.ts`'s, and `moversSplit` calls the
+ * same one: the two blocks sit under one another on one page and describe one
+ * portfolio, so what is *in* it cannot be two questions.
  */
 export function allocation(rows: readonly ShareRow[]): Allocation {
   const placed: AllocationSlice[] = []
   const unplaced: string[] = []
 
   for (const row of rows) {
-    if (row.quantity === 0) continue
+    if (isClosed(row)) continue
     const value = marketValue(row)
     if (value === null) {
       unplaced.push(row.symbol)
@@ -349,19 +357,34 @@ export interface MoversSplit {
 /**
  * The two columns, and **what is left over**.
  *
- * `held` is the number of lines the portfolio holds, and it is an argument
+ * The rows are the portfolio's, not the payload's, and that is an argument
  * rather than a derivation: a share with no baseline at all — its first day — is
  * not in the collection the server serves, so a count taken from `movers` alone
  * would leave it out of the sentence too, which is the same disappearance one
  * step further along.
+ *
+ * **And the payload is reduced to the held lines first**, with `allocation`'s own
+ * predicate. `/api/positions` serves a sold line deliberately (ADR-0017),
+ * `buildShareRows` folds it with its last frozen quote, and `build_movers`
+ * compares that quote against a baseline equal to it — so a position closed
+ * years ago is served as `change_pct: 0`. Counted, it landed in `unchanged`
+ * while `others` was taken over the held lines alone: two members of one
+ * sentence describing two different sets, the smaller one qualified by a figure
+ * drawn from the larger, which can exceed it. It is also what would put a line
+ * the owner no longer holds in a column of the portfolio's movers, with
+ * `0,00 €` of contribution beside it.
  */
-export function moversSplit(movers: readonly Mover[], held: number): MoversSplit {
+export function moversSplit(movers: readonly Mover[], rows: readonly ShareRow[]): MoversSplit {
+  const held = rows.filter((row) => !isClosed(row))
+  const holds = new Set(held.map((row) => row.symbol))
+  const shown = movers.filter((mover) => holds.has(mover.symbol))
+
   const moved = (mover: Mover) => mover.change_pct ?? 0
-  const risers = movers
+  const risers = shown
     .filter((mover) => mover.change_pct !== null && mover.change_pct > 0)
     .sort((left, right) => moved(right) - moved(left))
     .slice(0, MOVERS_ROWS)
-  const fallers = movers
+  const fallers = shown
     .filter((mover) => mover.change_pct !== null && mover.change_pct < 0)
     .sort((left, right) => moved(left) - moved(right))
     .slice(0, MOVERS_ROWS)
@@ -369,7 +392,7 @@ export function moversSplit(movers: readonly Mover[], held: number): MoversSplit
   return {
     risers,
     fallers,
-    others: Math.max(held - risers.length - fallers.length, 0),
-    unchanged: movers.filter((mover) => mover.change_pct === 0).length,
+    others: Math.max(held.length - risers.length - fallers.length, 0),
+    unchanged: shown.filter((mover) => mover.change_pct === 0).length,
   }
 }
