@@ -38,6 +38,12 @@
  *    the reason is a reason, never a progress bar with a target date, which
  *    stays on the banner.
  *
+ * **And since #722 the account's own panel** (ADR-0018, ADR-0019), which is two
+ * rules and not a component's business: the positions a panel sums are **this
+ * account's, closed lines included**, and its value-against-contributed curve
+ * reads the **whole** series rather than the page's window — the range control
+ * drives the comparison, and an account's own history is not one.
+ *
  * **And since #729 the declaration's own rules** (ADR-0013, ADR-0002), because
  * they are rules about the same rows and a second module would be a second
  * authority on them. Three of them, each already stated by the server somewhere:
@@ -60,7 +66,14 @@
  *    the onboarding form was unusable on precisely the install ADR-0005 wrote it
  *    for.
  */
-import type { Account, AccountsResponse, LedgerEvent, PerfPoint, PortfolioTotals } from '@/lib/api'
+import type {
+  Account,
+  AccountsResponse,
+  LedgerEvent,
+  PerfPoint,
+  PortfolioTotals,
+  Position,
+} from '@/lib/api'
 import type { MessageKey } from '@/lib/i18n'
 import { accountOf } from '@/lib/ledger'
 
@@ -342,6 +355,12 @@ export interface AccountRow {
   xirr: number | null
   /** The rebased scalar over the visible window, never the stored index. */
   performance: number | null
+  /**
+   * ADR-0018's fourth term for this account (#722). **No column of the table
+   * shows it** — the table carries `Gain total` alone — and it exists on the
+   * row because the account's panel is where the four terms are decomposed.
+   */
+  transfer_fees: number | null
 }
 
 export function figure(row: AccountRow, column: FigureColumn): number | null {
@@ -377,6 +396,7 @@ export function buildAccountRows(
     gain_absolu: account.gain_absolu ?? null,
     xirr: account.xirr ?? null,
     performance: performance.get(account.id) ?? null,
+    transfer_fees: account.transfer_fees ?? null,
   }))
 }
 
@@ -408,6 +428,7 @@ export function portfolioRow(
     gain_absolu: totals?.gain_absolu ?? null,
     xirr: totals?.xirr ?? null,
     performance,
+    transfer_fees: totals?.transfer_fees ?? null,
   }
 }
 
@@ -489,6 +510,75 @@ export function figuresAsOf(rows: readonly AccountRow[]): string | null {
       row.as_of !== null && (newest === null || row.as_of > newest) ? row.as_of : newest,
     null,
   )
+}
+
+// ------------------------------------------------------------------------- //
+// The account's own panel (#722) — what the table cannot say
+// ------------------------------------------------------------------------- //
+
+/**
+ * The positions this account holds, closed lines included (ADR-0017).
+ *
+ * The three position terms are summed over **this** set, and a sold line stays
+ * in it: its realised gain and its dividends are the two figures it has left to
+ * say, and dropping them here would produce the other correct figure — the one
+ * the shares page spent a session refusing to show as the owner's gain.
+ */
+export function accountPositions(
+  positions: readonly Position[],
+  account: string,
+): Position[] {
+  return positions.filter((position) => position.account === account)
+}
+
+/**
+ * How many lines the shares page shows for this account — **symbols, not
+ * holdings**, because that page folds `(account, symbol)` into one row
+ * (`lib/shares.ts`). The link announces the count it is about to lead to, so
+ * the two have to count the same thing.
+ */
+export function positionCount(
+  positions: readonly Position[],
+  account: string,
+): number {
+  return new Set(accountPositions(positions, account).map((one) => one.symbol)).size
+}
+
+/** One day of the account's own curve — value against what was paid in. */
+export interface ValuePoint {
+  t: string
+  value: number
+  /** `null` — the day exists and the contribution does not. Never a zero. */
+  contributed: number | null
+}
+
+/**
+ * The value-against-contributed curve, **per account and only here**.
+ *
+ * The comparison chart above draws one rebased index per account and refuses
+ * this shape at N accounts — four curves at two accounts, ten at five, the
+ * pairs overlapping and no surface being anybody's gain (ADR-0019). At one
+ * account the surface between the two lines *is* the gain, which is why the
+ * shape has exactly two homes: the dashboard, and here.
+ *
+ * **The whole series, never the page's window.** The range control drives the
+ * comparison, and this is not one: ADR-0019 says an account's full history is
+ * its own subject and already has this surface for a home. A day with no
+ * `total_value` is a day this account has no value to state — #708 writes it
+ * and `net_contributed` together or not at all — so it is **absent** rather
+ * than drawn at zero.
+ */
+export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
+  const series: ValuePoint[] = []
+  for (const point of points) {
+    if (point.t === null || point.total_value === null) continue
+    series.push({
+      t: point.t,
+      value: point.total_value,
+      contributed: point.net_contributed,
+    })
+  }
+  return series
 }
 
 // ------------------------------------------------------------------------- //

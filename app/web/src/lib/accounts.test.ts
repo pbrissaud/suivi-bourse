@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   accountChoice,
+  accountPositions,
   buildAccountRows,
   declarationRows,
   declaredLabel,
@@ -21,12 +22,14 @@ import {
   firstDay,
   originOf,
   portfolioRow,
+  positionCount,
   rebase,
   RANGES,
   removalOf,
   seriesColour,
   sortRows,
   submittedAccount,
+  valueSeries,
   visibleColumns,
   windowStart,
   type AccountRow,
@@ -43,6 +46,7 @@ import {
   defaultAccounts,
   ledgerEvents,
   noAccountsDeclared,
+  sharesPortfolio,
   theSeededAccount,
 } from '@/test/factories'
 
@@ -262,6 +266,46 @@ describe('a row with no figures names its reason', () => {
       new Map([['one', 0.1]]),
     )
     expect(degradedReason(rows[0], visibleColumns(rows), true)).toBeNull()
+  })
+})
+
+// ------------------------------------------------------------------------- //
+// The account's own panel (#722)
+// ------------------------------------------------------------------------- //
+
+describe('what one account’s panel is about', () => {
+  it('keeps its closed lines in the set the four terms are summed over', () => {
+    // A sold position has a realised gain and dividends, and dropping it here
+    // produces the *other correct figure* — the one the shares page spent a
+    // session refusing to show as the owner's gain (ADR-0017).
+    const held = accountPositions(sharesPortfolio(), 'alpha')
+    expect(held.map((one) => one.symbol)).toEqual(['ZZA', 'ZZD'])
+    expect(held.some((one) => one.quantity === 0)).toBe(true)
+  })
+
+  it('counts symbols, because a row of the page it links to is a symbol', () => {
+    // The link announces the count it is about to lead to, so the two have to
+    // be counting the same thing — and `lib/shares.ts` folds `(account,
+    // symbol)` into one line.
+    expect(positionCount(sharesPortfolio(), 'alpha')).toBe(2)
+    expect(positionCount(sharesPortfolio(), 'gamma')).toBe(1)
+    expect(positionCount(sharesPortfolio(), 'delta')).toBe(0)
+  })
+
+  it('reads the curve off the whole series, not off the visible window', () => {
+    // The range control drives the *comparison*; an account's own history is
+    // not one, and ADR-0019 says this surface is where it lives whole.
+    const points = valueSeries(series('alpha'))
+    expect(points).toHaveLength(series('alpha').length)
+    expect(points[0].t).toBe('2019-10-30')
+    expect(points[0].value).toBe(1800)
+    expect(points[0].contributed).toBe(1380)
+  })
+
+  it('draws nothing where an account has no value to draw against', () => {
+    // #708 writes `total_value` and `net_contributed` together or not at all,
+    // and a line along the floor would say the owner put nothing in.
+    expect(valueSeries(series('gamma'))).toEqual([])
   })
 })
 

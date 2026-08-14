@@ -104,6 +104,12 @@ export const BASE_CURRENCY = 'EUR'
  * accounts added up to the totals would quietly license the arithmetic
  * `build_accounts` refuses to do.
  *
+ * What each row **does** hold is ADR-0018's identity about itself (#722):
+ * `gain_absolu` is the sum of that account's own four terms, and
+ * `net_contributed` is `total_value − gain_absolu`. The account's panel computes
+ * the head from the four rather than reading the fifth, so a fixture where the
+ * two disagreed would put a contradiction on screen and call it a test.
+ *
  * The default is one **created in the app** — `source_id` `null`, therefore
  * editable — because that is the row #729's declaration block can act on; a
  * file-declared one is what a test asks for by name, exactly as the ledger's
@@ -120,8 +126,11 @@ export function anAccount(overrides: Partial<Account> = {}): Account {
     total_value: 1800,
     holdings_value: 1300,
     cash_balance: 500,
-    net_contributed: 1380,
-    gain_absolu: 420,
+    // +300,00 latent · 0,00 realised · +25,00 dividends · −3,00 fees = 322,00,
+    // and 1 800,00 − 322,00 is what is left for the contribution.
+    net_contributed: 1478,
+    gain_absolu: 322,
+    transfer_fees: -3,
     xirr: 0.0512,
     // The stored index — counted from **this account's** first day, and
     // therefore never rendered: it is what `pea 171,5` beside `TR 115,0` was.
@@ -134,6 +143,10 @@ export function anAccount(overrides: Partial<Account> = {}): Account {
  * An account for which no perf cycle has written anything — `as_of` null and
  * every figure with it. **Eight dashes**, which is the other degraded shape and
  * a different sentence from the five-dash one below.
+ *
+ * `transfer_fees` goes with them, and for its own reason (#722): with no day to
+ * bound them by there is no coherent statement to make, so the server answers
+ * `null` rather than a total covering everything.
  */
 export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Account {
   return anAccount({
@@ -145,6 +158,7 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
     gain_absolu: null,
     xirr: null,
     twr_index: null,
+    transfer_fees: null,
     ...overrides,
   })
 }
@@ -290,6 +304,10 @@ export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsRe
  * has — everything came in by import. It is what makes the declaration's
  * read-only half visible on the default screen rather than only in the test that
  * asks for it: what a file declared is corrected in the file, never in the app.
+ *
+ * Their fourth terms are `−3,00`, `−2,00` and `0,00`, which is the global
+ * `−5,00` (#722): the fees a broker takes belong to an account, and the panel
+ * of one must never show the sum of all of them.
  */
 export function defaultAccounts(): Account[] {
   return [
@@ -301,8 +319,10 @@ export function defaultAccounts(): Account[] {
       total_value: 900,
       holdings_value: 400,
       cash_balance: 500,
-      net_contributed: 950,
-      gain_absolu: -50,
+      // 0,00 latent · +50,00 realised · 0,00 dividends · −2,00 fees = 48,00.
+      net_contributed: 852,
+      gain_absolu: 48,
+      transfer_fees: -2,
       xirr: -0.0104,
       twr_index: 115,
     }),
@@ -316,9 +336,11 @@ export function defaultAccounts(): Account[] {
       xirr: null,
       twr_index: null,
       holdings_value: 600,
-      // A zero would have done too, and this is deliberately not one: `0,00 €`
-      // is a figure and wears the colour of text, which is a different test.
-      gain_absolu: 25,
+      // Carried at its cost and never transferred to: its four terms are four
+      // zeros and its gain is `0,00 €` — **a figure**, which wears the colour
+      // of text and not the grey of an absence.
+      gain_absolu: 0,
+      transfer_fees: 0,
     }),
   ]
 }
@@ -346,6 +368,53 @@ export function defaultPositions(): Position[] {
       quantity: 6,
       cost_basis: 600,
       price: null,
+    }),
+  ]
+}
+
+/**
+ * THE ACCOUNT THAT WENT NOWHERE (#722) — the shape the panel exists for.
+ *
+ * Measured on the real portfolio and reproduced with invented values: a gain of
+ * **−0,63 €** over four terms none of which is anywhere near zero.
+ *
+ *   latente  −47,65     5 × 90,47 = 452,35 against a basis of 500,00
+ *   réalisée +60,97
+ *   dividendes 0,00
+ *   frais    −13,95     what the broker took out of the transfers
+ *   ------------------------------------------------------------------
+ *   Gain total  −0,63
+ *
+ * Read in the table's `Gain total` cell alone, that account has done nothing.
+ * The four terms are what say **why**: an unrealised loss and a realised gain
+ * that cancel, and no dividend at all. That is the whole argument for the block,
+ * and it is why the sum is what is rendered rather than `gain_absolu`.
+ */
+export function anAccountGoingNowhere(overrides: Partial<Account> = {}): Account {
+  return anAccount({
+    id: 'nowhere',
+    label: 'Nowhere',
+    type: 'CTO',
+    total_value: 452.35,
+    holdings_value: 452.35,
+    cash_balance: 0,
+    net_contributed: 452.98,
+    gain_absolu: -0.63,
+    transfer_fees: -13.95,
+    ...overrides,
+  })
+}
+
+export function positionsGoingNowhere(): Position[] {
+  return [
+    aPosition({
+      account: 'nowhere',
+      symbol: 'ZZN',
+      name: 'Zeta Nowhere',
+      quantity: 5,
+      cost_basis: 500,
+      realised: 60.97,
+      price: 90.47,
     }),
   ]
 }

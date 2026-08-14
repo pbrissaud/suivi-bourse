@@ -215,6 +215,21 @@ export interface Account {
    * `lib/accounts.ts` from {@link AccountHistoryResponse}.
    */
   twr_index?: number | null
+  /**
+   * ADR-0018's fourth term for **this** account (#722), signed as it enters the
+   * sum — negative, the money having left. It is the one member of this row
+   * that is not a column of `account_metrics`: it belongs to no position, so
+   * the account's panel could not read it off `/api/positions` with the other
+   * three, and the server derives it from `event` bounded by this row's own
+   * day, exactly as `/api/portfolio-totals` derives the global one.
+   *
+   * `null` where no cycle has written this account a day: there is nothing to
+   * bound the fees by, and a term measured over another period does not belong
+   * in a sum with the figures beside it. Zero is a **figure** and means the
+   * broker moved the money for free — the panel then shows three terms and
+   * never learns the fourth exists.
+   */
+  transfer_fees?: number | null
 }
 
 export interface AccountsResponse {
