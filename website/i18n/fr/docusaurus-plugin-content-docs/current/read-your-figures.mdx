@@ -246,6 +246,13 @@ it is missing is a rate. Those lines show their native price and say they are
 [waiting for a rate](#absence), and the value comes back on its own once the rate
 does.
 
+**One case looks like that one and is not**: a security the market answers prices
+for without ever saying which currency they are in. There is no pair to fetch a
+rate for, so nothing is on its way — a number with no unit is not a price — and
+the app carries such a line at its cost like any other it cannot value. It is
+rare, and it is the one shape where a line quoted every day is still valued at
+what you paid for it.
+
 A position valued this way carries no badge of its own. The em dash where its
 price would be is already the whole signal, and after a rebuild the case is
 common enough that a marker on every such line would be noise across the page
