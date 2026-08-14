@@ -1589,9 +1589,15 @@ The application runs independent scheduled jobs on a single APScheduler:
   against a whole night, `marketState` staying the authority on wake as design
   #603 assumes — and reading it here disturbs neither of its other two
   properties, `decide` still fail-opening an unrecognised state onto `REGULAR`
-  and the cached state still being nobody's status pill. The residue named rather
-  than widened away is now a state saying `CLOSED` **through** its own venue's
-  open for more than fifteen minutes. The four exits not taken are argued
+  and the cached state still being nobody's status pill. Two residues are named
+  rather than widened away: a state saying `CLOSED` **through** its own venue's
+  open for more than fifteen minutes, and — the price of dropping the ceiling —
+  a venue publishing a long pre-market (`PREPRE` from 20:00 ET, `PRE` from 04:00,
+  against a 09:30 open) *whose* period Yahoo has also not rolled, which probes
+  once a minute until that open. The repository's one capture cannot show the
+  second (Paris has `pre.start == regular.start`), and the trade is this module's
+  own asymmetry — *a guess too early costs a fetch, too late costs a session* —
+  a bounded run of requests against a session lost every day. The four exits not taken are argued
   in `scheduling.py` where the choice is made: `_approx_next_open` for any past
   value (its ~08:00 is not the venue's open, so the first wake of each day falls
   an hour *before* it, outside any window, on a payload that may still name

@@ -566,9 +566,19 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     #     symbol gave up not *a* session but **every** session for as long as the
     #     lag held (0 writes over 5 and over 14 simulated days at a 20-minute
     #     flip, against 980 and 2 744 for preview/v5).
-    #     The cost is bounded by the state itself: a pre-session state precedes a
-    #     session, so the probing stops when that session opens, where a weekend
-    #     and a holiday say ``CLOSED`` and take the third branch instead.
+    #     The cost is bounded by the state itself — a pre-session state precedes
+    #     a session, so the probing stops when that session opens, a weekend and
+    #     a holiday saying ``CLOSED`` and taking the third branch instead — and
+    #     the bound is a *session away*, not fifteen minutes. **Named rather
+    #     than tuned**: on a venue publishing a long pre-market (``PREPRE`` from
+    #     20:00 ET, ``PRE`` from 04:00, against a 09:30 open) *and* a period
+    #     Yahoo has not rolled, that is one probe a minute until the open. The
+    #     capture the repository holds cannot show it — Paris has
+    #     ``pre.start == regular.start``, so its pre-session state and its open
+    #     coincide — and the trade is deliberate under this module's own
+    #     asymmetry, *a guess too early costs a fetch, too late costs a
+    #     session*: a bounded run of requests against a session lost every day.
+    #     Bounding it by a distance is exactly what the second pass did.
     #   * **a post-session state (``POST``/``POSTPOST``) — the evening, the
     #     night.** The session this payload names is over and the next open is
     #     the same hour, next day. This is the reading of the ticket's own
