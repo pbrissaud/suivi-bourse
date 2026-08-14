@@ -36,32 +36,35 @@ CLOSED_STATES = frozenset({'CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'})
 SHORT_RETRY = 60           # s: re-probe when the next open is unknown
 MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 
-# How long past the **current** period's regular open a still-closed state is
+# How long past the venue's own **opening time of day** a still-closed state is
 # read as *the open has not registered yet* rather than as *the session is over*
-# (issue #769). It is the one thing the captured metadata cannot tell us: after
-# the close and one minute after the open, ``currentTradingPeriod.regular.start``
-# is the same past timestamp, and only the distance to ``now`` separates the two.
+# (issue #769). The metadata cannot tell the two apart on its own: after the
+# close and one minute after the open, ``currentTradingPeriod.regular.start``
+# is the same timestamp, and only its distance to ``now`` separates them.
 #
-# The morning is not a corner case, it is **the** daily path. ``decide`` arms the
-# job *at* ``next_open`` with no lead-in margin and #619 adds ``uniform(0, 30)``,
-# so every single wake lands 0 to 30 s **after** the open — and if ``marketState``
-# has not flipped yet (Yahoo's own lag, an opening auction, a half-day), a rule
-# that only asked *is it past?* would hand the whole day to ``_approx_next_open``,
-# whose ~08:00 local is itself already past by then, i.e. **tomorrow**. Measured
-# on the capture with ``marketState='PRE'``: 82 800 s of sleep, at 0, 15, 60 and
-# 300 s past the open alike — the symbol writes no price for the entire session,
-# in silence, and nothing catches it up (``_reconcile_jobs`` only revives a symbol
-# with **no** job, and #628's sonde only runs on a ``REGULAR`` write).
+# It is measured **against the wall clock, never against the timestamp**, and
+# that is the whole of what makes it safe. Every wake of a closed symbol is armed
+# at that same opening time of day (see ``extract_market_context``), plus #619's
+# ``uniform(0, 30)`` and no lead-in margin — so *every* wake lands 0 to 30 s
+# after it and therefore inside this window, whatever calendar day the payload
+# happens to name. Compared against the timestamp instead, the window covered
+# only the wake armed from a period Yahoo had already rolled: a payload still
+# naming yesterday reads 23 h past, falls out of the window, and the symbol is
+# put back to sleep for a day — every day, for ever, writing nothing. That
+# second failure is the one the first repair of #769 shipped, and it is why the
+# comparison is on the hour and not on the date.
 #
-# So the window is bounded on both sides and the two costs are not symmetric: too
-# tight and a session is lost, too wide and a day that never opens after all is
-# probed once a minute for the width of the window. Fifteen minutes is fifteen
-# probes per symbol in the worst case — against the ~900 a night #769 measured —
-# and it is far below the shortest closure a market has, so an evening never
-# enters it. It is not *the session*: bounding by a nominal 8 h session would pay
-# a half-day (closed at 14:05, probed until 17:00) in exactly the coin this
-# ticket exists to stop spending.
-OPENING_LAG = 15 * 60      # s: past the open and still closed reads as *not yet*
+# The window is bounded on both sides and the two costs are not symmetric: too
+# tight loses a session, too wide probes a day that never opens once a minute for
+# the width of the window. Fifteen minutes is fifteen probes per symbol on a
+# holiday — against the ~900 a night #769 measured — and it is far below the
+# shortest closure a market has, so an evening never enters it. It is not *the
+# session*: bounding by a nominal 8 h session would pay a half-day (closed at
+# 14:05, probed until 17:00) in exactly the coin this ticket exists to stop
+# spending. What it does **not** cover is a ``marketState`` that lags its own
+# venue by more than fifteen minutes; that residue is stated here rather than
+# widened away, the measured lags being 0 to 300 s.
+OPENING_LAG = 15 * 60      # s: past the opening hour and still closed is *not yet*
 
 # How often the perf job recomputes, in full and unconditionally (issue #707,
 # ADR-0011). A constant and not a dial (issue #701): the two tables are a
@@ -139,7 +142,8 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
     **unknown** — which is the whole of what ``SHORT_RETRY`` is for (issue #769).
     *Unknown* is a real daily state and it arrives as ``None``: woken at an open
     that has not registered yet, ``extract_market_context`` says so rather than
-    guessing a date (``OPENING_LAG``).
+    guessing a date (``OPENING_LAG``) — a minute and a re-read, which is exactly
+    what this branch did before #769 and what it goes on doing there.
 
     A non-future ``next_open`` is read as unknown too, and that is now a guard
     rather than a case: ``extract_market_context`` holds the invariant that a
@@ -452,16 +456,18 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     market opens*.
 
     Prefers ``history()`` metadata's ``currentTradingPeriod.regular.start``
-    (design #603 amendment) — but only while it is still ahead of ``now``, see
-    below. Falls back to ``exchangeTimezoneName`` + stdlib ``zoneinfo`` at
-    ~08:00 local on the next day (DST handled by ``zoneinfo``; an approximate
-    open is fine — the freshly-read ``marketState`` is the authority on wake).
-    ``now`` is injected and must be timezone-aware. Returns
-    ``(state, next_open|None)``.
+    (design #603 amendment) — as an instant while it is still ahead of ``now``,
+    as an **opening hour** once it is behind, see below. Falls back to
+    ``exchangeTimezoneName`` + stdlib ``zoneinfo`` at ~08:00 local on the next
+    day **only when that field is absent altogether** (DST handled by
+    ``zoneinfo``; an approximate open is fine — the freshly-read ``marketState``
+    is the authority on wake). ``now`` is injected and must be timezone-aware.
+    Returns ``(state, next_open|None)``.
 
-    **A past open has two meanings, and they are read apart** (issue #769): just
-    past is *the open has not registered yet* and answers ``None``; long past is
-    *this session is over* and answers the approximation. ``OPENING_LAG`` is the
+    **A past open is read for its hour, never for its date** (issue #769): just
+    past the venue's opening time of day is *the open has not registered yet*
+    and answers ``None``; further past it is *this session is over* and answers
+    the **next occurrence of that same opening time**. ``OPENING_LAG`` is the
     line, and the argument for it is written where the constant is.
     """
     info = info or {}
@@ -476,51 +482,76 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     # a night on eleven European lines, not one of which may write, the write
     # gate being shut on a closed market by construction.
     #
-    # So a non-future value never leaves this function, and what replaces it
-    # depends on **how far** past it is, because that field says two different
-    # things at two distances and only ``now`` tells them apart:
+    # So a non-future value never leaves this function. What it is replaced by
+    # is **its own time of day** and never its calendar date: the date is spent,
+    # the hour is the venue's opening hour and it is the one thing this payload
+    # states about tomorrow. Two branches, and the discriminant is the wall
+    # clock:
     #
-    #   * **long past — the evening.** The session is over and this metadata
-    #     names no other; ``_approx_next_open``, the one producer that
-    #     guarantees a strictly future date in its own body, takes over. It was
-    #     never reached here before: the exact field parsed perfectly, it simply
-    #     meant something else, and *the better fallback was masked by a field
-    #     that reads well*.
-    #   * **just past — the morning, every morning.** The job was armed *at*
-    #     this very open (no lead-in margin, plus #619's jitter), so it wakes
-    #     inside this window by construction; a state still closed here means
-    #     the open has not registered yet, not that the day is done. The honest
-    #     answer is that we do **not know** when this market opens — ``None``,
-    #     which is ``SHORT_RETRY``, which is one minute and a re-read. Handing
-    #     the approximation over instead would answer *tomorrow ~08:00* (08:00
-    #     local is already past at a 09:00 open) and cost the whole session, in
-    #     silence: no other mechanism re-arms a symbol that still has a job.
+    #   * **just past that hour — every wake of every closed symbol.** ``decide``
+    #     arms the job *at* the open with no lead-in margin and #619 adds
+    #     ``uniform(0, 30)``, so a wake lands 0 to 30 s after it by
+    #     construction. A state still closed there means the open has not
+    #     registered yet — Yahoo's lag, an opening auction, a half-day — not
+    #     that the day is done. The honest answer is that we do **not know**
+    #     when this market opens: ``None``, i.e. ``SHORT_RETRY``, i.e. one
+    #     minute and a re-read. That is preview/v5's own answer in the ambiguous
+    #     case, kept deliberately: measured, a rule that read *past, therefore
+    #     over* slept 82 800 s there.
+    #   * **further past — the evening, the night, a holiday.** The session this
+    #     payload names is over and the next open is the same hour, next day.
     #
-    # The two exits not taken, with their reasons, at the place where the choice
-    # is made:
+    # Reading the *timestamp* rather than the hour is what the first repair of
+    # #769 did, and it moved the failure instead of closing it: a payload Yahoo
+    # has not rolled yet names yesterday's open, reads 23 h past at 09:00:12,
+    # falls out of the window and puts the symbol to sleep until tomorrow —
+    # every day, writing nothing, with nothing to catch it up (``_reconcile_jobs``
+    # only revives a symbol with **no** job, and #628's sonde only runs on a
+    # ``REGULAR`` write). Anchored on the hour instead, no such fixed point can
+    # form: the target we arm at *is* the hour we then wake just past.
+    #
+    # The three exits not taken, with their reasons, at the place where the
+    # choice is made:
+    #   * **``_approx_next_open`` for any past value** — the shape #769 proposed
+    #     first. Its ~08:00 local is not the venue's open (09:00 in Paris, 09:30
+    #     in New York), so the first wake of each day falls an hour *before* the
+    #     open, outside any lag window, on a payload that may still name
+    #     yesterday. It is kept for the one case where it is the only thing left:
+    #     **no exact field at all**.
+    #   * **``SHORT_RETRY`` for any past value**, which is the letter of the
+    #     prescription this repair follows. It closes the morning and reopens
+    #     the evening: 60 s across the fifteen hours of a closure is not a
+    #     *short* retry, and it is the defect the ticket exists to remove. The
+    #     morning gets it, the evening does not, and the hour is what separates
+    #     them.
     #   * **derive the real next open** from ``post.end`` or the venue's
     #     calendar. More exact, and it rests on fields Yahoo documents nowhere
     #     and does not guarantee — the captured reading carries no ``end`` at
     #     all, so the day one of them is missing the app is back on this line
-    #     with no invariant to state at all.
-    #   * **assume ``SHORT_RETRY``** for every past open and document it. 60 s
-    #     across the fifteen hours of a closure is not a *short* retry; the
-    #     constant carries that name because it answers an open that is
-    #     unknown, not one that is far — which is exactly why the morning gets
-    #     it and the evening does not.
-    # The cost accepted is that the evening loses the exactness the morning
-    # keeps: ~08:00 local instead of the venue's real open. Design #603 already
-    # assumes that, ``marketState`` being re-read on wake and being the
-    # authority — an early guess costs one extra fetch, a late one costs a
-    # session.
+    #     with no invariant to state.
+    #
+    # The cost accepted, and it is the one to write down: during the opening
+    # blur — from the venue's opening hour until ``marketState`` flips, or until
+    # ``OPENING_LAG`` runs out — a closed symbol is probed once a minute. A few
+    # probes a day against a whole night, and ``marketState`` stays the
+    # authority on wake, which design #603 already assumes.
     current_open = _current_regular_open(history_meta)
     if current_open is None:
         return state, _approx_next_open(info, now)
     if current_open > now:
         return state, current_open
-    if (now - current_open).total_seconds() <= OPENING_LAG:
+
+    bounds = _opening_hour_bounds(current_open, info, now)
+    if bounds is None:
+        # No usable exchange timezone: the hour cannot be projected onto any
+        # other day, so the next open is genuinely unknown. ``SHORT_RETRY``,
+        # which is what that sentence means — and the same answer the ~08:00
+        # guess gives here, it needing the very same timezone.
         return state, None
-    return state, _approx_next_open(info, now)
+    previous, following = bounds
+    if (now - previous).total_seconds() <= OPENING_LAG:
+        return state, None
+    return state, following
 
 
 def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
@@ -550,21 +581,62 @@ def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
         return None
 
 
-def _approx_next_open(info: dict, now: datetime) -> Optional[datetime]:
-    """~08:00 local on the next day in the exchange timezone, or None.
-
-    Used when the current period's regular open is unavailable, or **past by
-    more than ``OPENING_LAG``** (issue #769) — i.e. when this metadata's session
-    is over rather than merely slow to register. Returns a UTC datetime, and it
-    is the only producer that carries the strictly-future guarantee in its own
-    body.
-    """
+def _exchange_tz(info: dict):
+    """The venue's ``ZoneInfo``, or None — the one place that parses the name."""
     tz_name = info.get('exchangeTimezoneName')
     if not tz_name or ZoneInfo is None:
         return None
     try:
-        tz = ZoneInfo(tz_name)
+        return ZoneInfo(tz_name)
     except (ZoneInfoNotFoundError, ValueError, KeyError):
+        return None
+
+
+def _opening_hour_bounds(current_open: datetime, info: dict,
+                         now: datetime) -> Optional[Tuple[datetime, datetime]]:
+    """``(previous, following)`` occurrences of the venue's opening hour (#769).
+
+    ``current_open`` is read for its **wall-clock time in the exchange
+    timezone** and never for its date: the date belongs to the period Yahoo
+    calls current, which may be today's, this morning's, or one it has not
+    rolled yet, while the hour is the venue's opening hour on any of them.
+    ``previous`` is the latest occurrence of that hour at or before ``now``,
+    ``following`` the first strictly after it — so ``following`` is at most a
+    day away and a wake armed at it lands inside ``OPENING_LAG`` of the
+    ``previous`` of its own cycle, which is what makes the fixed point that
+    slept a symbol for a day at a time impossible to form.
+
+    Arithmetic is done in local time on purpose: adding a day to an aware
+    datetime keeps the wall clock, so a DST boundary moves the UTC instant by
+    an hour, exactly as the venue's own open does. ``None`` when the exchange
+    timezone is missing or unusable — the hour is then unprojectable.
+    """
+    tz = _exchange_tz(info)
+    if tz is None:
+        return None
+    local_open = current_open.astimezone(tz)
+    local_now = now.astimezone(tz)
+    previous = local_now.replace(
+        hour=local_open.hour, minute=local_open.minute,
+        second=local_open.second, microsecond=0)
+    if previous > local_now:
+        previous -= timedelta(days=1)
+    following = previous + timedelta(days=1)
+    if following <= local_now:          # defensive: a DST day is never < 23 h
+        following += timedelta(days=1)
+    return previous.astimezone(timezone.utc), following.astimezone(timezone.utc)
+
+
+def _approx_next_open(info: dict, now: datetime) -> Optional[datetime]:
+    """~08:00 local on the next day in the exchange timezone, or None.
+
+    Used when the current period's regular open is **unavailable, and only
+    then** (issue #769): a past one is answered by its own hour's next
+    occurrence, which is the venue's rather than this guess's. Returns a UTC
+    datetime, strictly future by its own body.
+    """
+    tz = _exchange_tz(info)
+    if tz is None:
         return None
 
     local_now = now.astimezone(tz)
