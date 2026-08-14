@@ -46,8 +46,13 @@ BNP = "bnp-pa-2026-08-12"
 BNP_REGULAR_START = datetime(2026, 8, 12, 7, 0, tzinfo=UTC)
 BNP_BEFORE_OPEN = datetime(2026, 8, 12, 5, 30, tzinfo=UTC)    # 07:30 local
 BNP_AFTER_CLOSE = datetime(2026, 8, 12, 20, 47, tzinfo=UTC)   # the reading itself
-# ~08:00 local the next day, which is what ``_approx_next_open`` answers and the
-# only producer that guarantees a strictly future date.
+# The **next occurrence of the venue's own opening hour** — 09:00 Paris the day
+# after the reading. Not ``_approx_next_open``'s ~08:00 local (05:00 UTC would be
+# 07:00 local, an hour before Euronext opens): a past ``regular.start`` is read
+# for its hour, and that hour is the exchange's (issue #769).
+BNP_NEXT_OPENING_HOUR = datetime(2026, 8, 13, 7, 0, tzinfo=UTC)
+# What the ~08:00 guess *would* have answered, kept as a value to assert
+# **against** — it must never be the answer while an exact field exists.
 BNP_APPROX_NEXT_OPEN = datetime(2026, 8, 13, 6, 0, tzinfo=UTC)
 
 
@@ -286,17 +291,18 @@ def test_extract_missing_state_is_none():
 
 @pytest.mark.parametrize("now, expected", [
     pytest.param(BNP_BEFORE_OPEN, BNP_REGULAR_START, id="morning"),
-    pytest.param(BNP_AFTER_CLOSE, BNP_APPROX_NEXT_OPEN, id="evening"),
+    pytest.param(BNP_AFTER_CLOSE, BNP_NEXT_OPENING_HOUR, id="evening"),
 ])
 def test_extract_sweeps_both_sides_of_the_captured_open(now, expected):
     """One **real** reading, read at two instants — the sweep that was missing.
 
     ``currentTradingPeriod`` describes the current period and never the next
     one, so the same ``regular.start`` is the next open in the morning and this
-    morning's open in the evening. Before it, the exact value wins over the
-    ~08:00 guess (which would answer the *next* day here, so the two are
-    distinguishable); after it, the exact value is discarded and the guess —
-    the one producer that guarantees a future date — takes over.
+    morning's open in the evening. Before it, the exact value is taken as the
+    instant it is; after it, it is taken for its **hour** — the venue's opening
+    hour, projected onto its next occurrence. The ~08:00 guess answers neither
+    (it would say 07:00 local, an hour before Euronext opens) and is asserted
+    against below: it serves only where there is no exact field at all.
 
     The predecessor of this test pinned ``ts = 1_700_000_000``, i.e.
     2023-11-14, *before* its own ``NOW`` of 2024-01-15, and asserted the
@@ -321,11 +327,11 @@ def test_extract_never_answers_a_next_open_that_has_already_happened(hour):
     from here at any hour.
 
     ``None`` is not a hole in the sweep, it is the other half of the invariant
-    and it has exactly one home: the ``OPENING_LAG`` that follows the open, where
-    the honest answer is *we do not know when this market opens* — one minute's
-    retry, never a night's sleep (asserted end to end below). The hour that lands
-    in it is asserted rather than tolerated, so a lag silently widened to swallow
-    the evening would fail here.
+    and it has exactly one home: the ``OPENING_LAG`` that follows the opening
+    hour, where the honest answer is *we do not know when this market opens* —
+    one minute's retry, never a night's sleep (asserted end to end below). The
+    hour that lands in it is asserted rather than tolerated, so a lag silently
+    widened to swallow the evening would fail here.
     """
     info, meta = _capture(BNP)
     now = datetime(2026, 8, 12, hour, 13, tzinfo=UTC)
@@ -355,8 +361,9 @@ def test_a_closed_evening_sleeps_to_the_next_open():
 
     assert should_write is False
     assert next_delay != SHORT_RETRY
+    assert next_open != BNP_APPROX_NEXT_OPEN   # not the ~08:00 guess: the venue's
     assert next_delay == pytest.approx(
-        (BNP_APPROX_NEXT_OPEN - BNP_AFTER_CLOSE).total_seconds())
+        (BNP_NEXT_OPENING_HOUR - BNP_AFTER_CLOSE).total_seconds())
     assert next_delay > 9 * 3600          # the closure, not a minute
 
 
@@ -379,7 +386,8 @@ def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
     ``currentTradingPeriod``, at the one instant the ticket's own measurement
     never visited. ``next_open`` is ``None`` and not a date, which is the
     invariant's other half — *we do not know when this market opens* is what
-    ``SHORT_RETRY`` answers, and it is true here.
+    ``SHORT_RETRY`` answers, and it is true here. The **upper bound on the
+    delay** is the assertion the two previous passes did not have.
     """
     info, meta = _capture(BNP)
     info = {**info, "marketState": "PRE"}     # the open has not registered yet
@@ -394,24 +402,136 @@ def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
     assert next_delay < 3600                  # a minute, never a session
 
 
+@pytest.mark.parametrize("days_stale", [0, 1, 3, 40])
+def test_the_opening_window_is_read_off_the_hour_and_not_off_the_date(days_stale):
+    """The wake at the open is caught however old the payload's **date** is.
+
+    This is the defect the first repair of #769 shipped and the reason the
+    window moved onto the wall clock. Every wake of a closed symbol is armed at
+    the venue's opening hour, so it lands 0–30 s past it (#619's jitter, no
+    lead-in margin) — but ``currentTradingPeriod`` may still name the session of
+    the day before, or of last month on a symbol Yahoo has gone quiet about.
+    Compared against the *timestamp*, that wake reads 23 h, 3 days or 40 days
+    past, falls out of the window, and the symbol is put back to sleep until
+    tomorrow: **every day, for ever, with no price written at all**. Compared
+    against the hour, the age of the payload is irrelevant, which is what this
+    sweep says.
+    """
+    info, meta = _capture(BNP)
+    info = {**info, "marketState": "PRE"}
+    now = BNP_REGULAR_START + timedelta(days=days_stale, seconds=12)
+
+    state, next_open = extract_market_context(info, meta, now)
+    assert next_open is None                  # inside the window, whatever the date
+
+    _, next_delay, _ = decide(state, False, next_open, now, 0, BASE)
+    assert next_delay == SHORT_RETRY
+    assert next_delay < 3600
+
+
 def test_the_opening_lag_gives_the_day_up_rather_than_probing_it_away():
     """The retry above is bounded, which is what keeps ``SHORT_RETRY`` short.
 
-    Past ``OPENING_LAG`` the market has not opened and this metadata names no
-    other period, so the reading goes back to *the session is over* and the
-    approximation takes over. Fifteen probes per symbol on a day that never
-    opens, against the ~900 a night #769 measured.
+    Past ``OPENING_LAG`` the market has not opened, so the reading goes back to
+    *the session is over* and the next open is the same hour, next day —
+    the venue's own 09:00 and not the ~08:00 guess, which is asserted against
+    here because it is the producer this ticket took off the past-value path.
+    Fifteen probes per symbol on a day that never opens, against the ~900 a
+    night #769 measured.
     """
     info, meta = _capture(BNP)
     info = {**info, "marketState": "PRE"}
     now = BNP_REGULAR_START + timedelta(seconds=scheduling.OPENING_LAG + 1)
 
     state, next_open = extract_market_context(info, meta, now)
-    assert next_open == BNP_APPROX_NEXT_OPEN
+    assert next_open == BNP_NEXT_OPENING_HOUR
+    assert next_open != BNP_APPROX_NEXT_OPEN
 
     _, next_delay, _ = decide(state, False, next_open, now, 0, BASE)
     assert next_delay != SHORT_RETRY
     assert next_delay > 20 * 3600
+
+
+def test_a_never_rolled_trading_period_still_trades_every_session():
+    """Five simulated days on the real capture, ``decide`` and the jitter included.
+
+    The adversarial hypothesis the repository cannot measure: Yahoo never rolls
+    ``currentTradingPeriod``, so the payload names 2026-08-12's open for ever.
+    The first repair of #769 fails here **totally** — 6 probes and zero writes
+    over five days, the symbol sleeping ~24 h from each wake — and the failure is
+    silent: ``_reconcile_jobs`` only revives a symbol with **no** job, and
+    #628's sonde only runs on a ``REGULAR`` write.
+
+    The venue is simulated on its captured hours (07:00–15:30 UTC) with
+    ``marketState`` flipping to ``REGULAR`` five minutes **after** the open —
+    Yahoo's own lag, which is what makes the wake at the open ambiguous in the
+    first place — and #619's jitter is applied at its worst case so that wake is
+    always *past* the open. Two assertions: every session writes, and the closed
+    cycles stay a handful — the second is the ticket's own subject, a 60 s
+    cadence across those closures giving ~4 500.
+    """
+    info_base, meta = _capture(BNP)
+    now = BNP_AFTER_CLOSE                       # the evening of the reading
+    end = BNP_AFTER_CLOSE + timedelta(days=5)
+
+    writes_per_day, closed_probes = {}, 0
+    while now < end:
+        session_open = now.replace(hour=7, minute=0, second=0, microsecond=0)
+        session_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        registered = session_open + timedelta(minutes=5)   # Yahoo's own lag
+        if registered <= now < session_close:
+            market_state = "REGULAR"
+        elif now < registered:
+            market_state = "PRE"
+        else:
+            market_state = "POSTPOST"
+
+        state, next_open = extract_market_context(
+            {**info_base, "marketState": market_state}, meta, now)
+        should_write, next_delay, _ = decide(state, True, next_open, now, 0, BASE)
+        if should_write:
+            writes_per_day[now.date()] = writes_per_day.get(now.date(), 0) + 1
+        else:
+            closed_probes += 1
+        now += timedelta(seconds=next_delay + scheduling.JITTER_SECONDS)
+
+    assert sorted(writes_per_day) == [
+        datetime(2026, 8, d, tzinfo=UTC).date() for d in (13, 14, 15, 16, 17)]
+    assert min(writes_per_day.values()) > 150   # a full session, not one tick
+    assert closed_probes < 100                  # a handful, never a night of them
+
+
+def test_the_opening_hour_crosses_a_dst_boundary_as_a_wall_clock():
+    """The hour repeats, the UTC instant does not — and the venue follows the hour.
+
+    Synthetic rather than captured, deliberately: what is under test is the
+    projection's arithmetic and not the field's meaning, which the capture owns.
+    New York opens 09:30 local; the reading is the evening before the spring
+    transition, so the next open is 09:30 **EDT** — 13:30 UTC — and not the
+    24 hours after 09:30 EST that a UTC addition would give (14:30).
+    """
+    info = {"exchangeTimezoneName": "America/New_York", "marketState": "POSTPOST"}
+    meta = {"currentTradingPeriod": {"regular": {
+        "start": int(datetime(2024, 3, 9, 14, 30, tzinfo=UTC).timestamp())}}}
+    now = datetime(2024, 3, 10, 3, 0, tzinfo=UTC)      # 22:00 EST, 9 March
+
+    _, next_open = extract_market_context(info, meta, now)
+    assert next_open == datetime(2024, 3, 10, 13, 30, tzinfo=UTC)   # 09:30 EDT
+
+
+def test_a_past_open_without_a_usable_timezone_is_unknown_and_not_a_guess():
+    """No timezone, no hour to project: the answer is ``None``, i.e. ``SHORT_RETRY``.
+
+    The ~08:00 guess needs the very same field, so there is nothing it could
+    have answered here either — which is why this branch costs no information.
+    """
+    meta = {"currentTradingPeriod": {"regular": {"start": 1_700_000_000}}}
+    for info in ({"marketState": "CLOSED"},
+                 {"marketState": "CLOSED", "exchangeTimezoneName": "Mars/Olympus"}):
+        state, next_open = extract_market_context(info, meta, NOW)
+        assert next_open is None
+        _, next_delay, _ = decide(state, False, next_open, NOW, 0, BASE)
+        assert next_delay == SHORT_RETRY
 
 
 def test_no_helper_claims_to_read_the_next_open():

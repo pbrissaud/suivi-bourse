@@ -34,16 +34,29 @@ Three things about the file are deliberate:
   it with the defect pinned as the expected answer. Which is why the successor
   test reads **one** capture at **several** instants rather than adding a case
   beside the old one.
-* **`marketState` is the one field a test overrides**, and only for the third
-  instant. `regular.start` past says two different things at two distances, and
-  the distance is the whole discriminant: five hours after the close the session
-  is over, thirty seconds after the open it has merely not registered yet — the
-  state the scheduler is *guaranteed* to meet, since `decide` arms the job at the
-  open with no margin and #619's jitter lands it 0–30 s late. So
+* **`marketState` is the one field a test overrides**, and only for the instants
+  that are not the reading's own. `regular.start` past says two different things
+  at two distances *from its own hour*, and that hour is the whole discriminant:
+  five hours after the close the session is over, thirty seconds after the open
+  it has merely not registered yet — the state the scheduler is *guaranteed* to
+  meet, since `decide` arms the job at the open with no margin and #619's jitter
+  lands it 0–30 s late. So
   `test_a_market_that_has_not_opened_yet_retries_within_the_minute` reads this
   same period with `PRE` in place of `POSTPOST`, which is a substitution of one
   measured value by another measured value of the same field, never an invented
   period.
+* **The distance is measured on the wall clock and never on the date**, and this
+  file is what says why. `pre.start == regular.start == 09:00` local, so nothing
+  here shows Yahoo publishing the coming session *before* it starts — and at
+  22:47 local, `POSTPOST`, five hours after the close, the field still named that
+  same morning. A rule comparing `now` to the *timestamp* therefore reads a
+  payload Yahoo has not rolled as 23 h past at the very moment the job wakes at
+  the open, drops out of `OPENING_LAG` and sleeps the symbol another day —
+  writing nothing, for ever. `test_the_opening_window_is_read_off_the_hour_and_
+  not_off_the_date` sweeps that payload at 0, 1, 3 and 40 days of staleness on
+  this same capture, and
+  `test_a_never_rolled_trading_period_still_trades_every_session` runs five
+  simulated days on it under the hypothesis this file cannot refute.
 * **The dates are in the future of the repository, not of the reader.** The
   reading was taken on the day the ticket was written; the test injects its own
   `now` before that day's open, just after it, and long after its close, so
