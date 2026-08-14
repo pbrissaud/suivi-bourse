@@ -43,7 +43,7 @@ def _row_count(opened) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# The registry: five keys, the text and the predicate in code
+# The registry: five keys, the predicate and the log's text in code
 # --------------------------------------------------------------------------- #
 
 def test_the_registry_is_closed_at_five_keys():
@@ -62,8 +62,14 @@ def test_the_registry_is_closed_at_five_keys():
         advisories.ASSUMED_BASE_CURRENCY]
 
 
-def test_the_table_stores_three_columns_and_the_text_lives_in_code(store):
-    """The message is never written down — so it can be corrected by an upgrade."""
+def test_the_table_stores_three_columns_and_no_text_at_all(store):
+    """No sentence is written down — so an upgrade can correct any of them.
+
+    Any, plural, since #768: the operator's line lives in ``advisories.py`` and
+    the reader's in the front's catalogue. What the table holds is the
+    acknowledgement, which is the one thing neither of them can be recomputed
+    from.
+    """
     columns = {row[0] for row in store.query(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_name = 'advisory'")}
