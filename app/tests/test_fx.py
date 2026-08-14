@@ -17,15 +17,19 @@ quoted in ``GBp``, a position whose rate cannot be had, and the passage from
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 
 import fx
 import main
+import performance
 import quotes
 import runtime_state
 import scheduling
 import settings as settings_module
 import settings_registry
+from events import EventAggregator
+from events.schemas import Event, EventType
 
 
 UTC = timezone.utc
@@ -684,6 +688,37 @@ class _SeriesFetch:
         return dict(self.answers.get(pair, {}))
 
 
+class _Instrument:
+    """A yfinance stand-in whose ``.info`` **reads** are counted (issue #773).
+
+    The unit is the read and not the ticker: the backward pass builds one ticker
+    per chunk, while what #773's criterion bounds is the request for the
+    *instrument's attributes* — one per symbol, once, whatever the number of
+    chunks or cycles. Doubles as the history source so one object stands in for
+    the whole of yfinance, the suite's single faked edge.
+    """
+
+    def __init__(self, info=None, frame=None, raises=None):
+        self._info = {} if info is None else info
+        self._frame = frame
+        self._raises = raises
+        self.history_metadata = None
+        self.reads = 0
+
+    def __call__(self, symbol):
+        return self
+
+    def history(self, *args, **kwargs):
+        return self._frame
+
+    @property
+    def info(self):
+        self.reads += 1
+        if self._raises is not None:
+            raise self._raises
+        return self._info
+
+
 def _unconverted(store, symbol='AAPL', currency='USD', days=(1, 2, 3)):
     """A stored series whose points landed with no conversion — #702's own state.
 
@@ -873,17 +908,22 @@ def test_the_first_conversion_that_lands_resets_the_back_off(
     assert 'AAPL' not in metrics._lateral_retry_at
 
 
-def test_a_symbol_never_quoted_says_so_instead_of_failing_at_it(
+def test_a_symbol_yahoo_names_no_currency_for_says_so_instead_of_failing_at_it(
         store, mocker, monkeypatch):
-    """A quote currency is only ever learnt at a first successful fetch.
+    """``SKIP_NO_QUOTE_CURRENCY`` keeps a subject after #773, and it is this one.
 
-    So a symbol can sit **durably** with no converted point at all, and that is
-    neither a failure nor an unresolvable pair — there is no pair to name yet.
-    The runtime state is what has to be able to say it.
+    The pass now *asks* rather than only naming the absence — but a request that
+    completes and names no currency is a **reply**, exactly as an unresolvable
+    pair is one: neither a failure nor something to conclude a pair from, since
+    there is no pair to name yet. #704's distinction is not overwritten by
+    #773's repair, and the question is put **once**: without that the pass would
+    re-ask on every cycle, for ever, for a symbol Yahoo has nothing to say about.
     """
     metrics = _metrics(store, mocker, base_currency='EUR')
     _unconverted(store, currency=None)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    instrument = _Instrument(info={})
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
     fetch = _SeriesFetch()
     metrics.rates = fx.Rates(lambda pair: None, fetch)
 
@@ -893,6 +933,12 @@ def test_a_symbol_never_quoted_says_so_instead_of_failing_at_it(
     assert record.skipped == runtime_state.SKIP_NO_QUOTE_CURRENCY
     assert record.terminal is None and record.failed is False
     assert fetch.calls == []
+    # Asked once, then never again — and the answer stays the same one.
+    for _ in range(3):
+        assert _lateral(metrics)[1].skipped == \
+            runtime_state.SKIP_NO_QUOTE_CURRENCY
+    assert instrument.reads == 1
+    assert quotes.quote_currency(store, 'AAPL') is None
 
 
 def test_the_pass_walks_one_chunk_a_cycle_from_the_oldest_missing_day(
@@ -1006,3 +1052,186 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
         'AAPL', runtime_state.LATERAL).written == 3
     # And the forward pass did **not** run: there is no live writer to catch up.
     assert metrics.recorder.backfill_of('AAPL', runtime_state.FORWARD) is None
+
+
+# =========================================================================== #
+# The unit of a reconstructed line the scrape never met (issue #773)
+#
+# The population #703 brought into the product without bringing it into the
+# tests: *what the scrape never sees*. Only ``record_quote`` ever wrote
+# ``symbol_quote.currency`` and only the scrape calls it, so a line sold before
+# the install existed collected years of reconstructed prices with no unit for
+# any of them — and ``no_quote_currency`` was the one lateral condition with no
+# exit. Measured on staging: 7 rows of 19, every one of them ``quantity = 0``,
+# and two accounts reading −99,98 % and −29 120,25 %.
+# =========================================================================== #
+
+def _sold_before_the_install(store, mocker, monkeypatch, closes):
+    """The staging state, rebuilt: a line sold before the first boot.
+
+    Its quantity is zero, so ``_held_symbols`` filters it out of the scrape by
+    design (#699) and the cache the rebuild reads is empty for it; its window is
+    in the backfill's set all the same (ADR-0009), so Yahoo is asked for its
+    prices — and answers.
+    """
+    frame = pd.DataFrame(
+        {'Close': list(closes)},
+        index=pd.date_range(start='2024-06-01', periods=len(closes),
+                            freq='D', tz=UTC))
+    instrument = _Instrument(info={'currency': 'USD', 'exchange': 'NMS',
+                                   'quoteType': 'EQUITY'}, frame=frame)
+    metrics = _metrics(store, mocker, shares=[_share(quantity=0)],
+                       base_currency='EUR')
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92}}))
+    return metrics, instrument
+
+
+def test_a_line_sold_before_the_install_learns_its_currency_and_is_converted(
+        store, mocker, monkeypatch):
+    """The whole chain, and the assertion is on the store's own rows.
+
+    Not on the fact that a method was called: what the ticket is about is a
+    column that stayed ``NULL`` for ever on a symbol the app had every price of.
+    The two modules deferring to each other are exercised in their production
+    order — the rebuild writes the chunk unconverted because nothing has met the
+    symbol, and the lateral pass, which is the one that *knows* the unit is
+    missing, asks for it and writes it where :func:`quotes.quote_currency` reads.
+    """
+    metrics, instrument = _sold_before_the_install(
+        store, mocker, monkeypatch, (101.0, 102.0, 103.0))
+
+    # Nothing has met this symbol, which is the premise of the whole ticket.
+    assert metrics._held_symbols() == set()
+    assert metrics._share_info_cache == {}
+
+    metrics._backfill_symbol('AAPL', (date(2024, 6, 1), date(2024, 6, 4)),
+                             held=False)
+
+    assert store.query(
+        'SELECT currency FROM symbol_quote WHERE symbol = ?',
+        ['AAPL']) == [('USD',)]
+    assert _point(store) == [
+        (101.0, pytest.approx(101.0 * 0.90), 0.90),
+        (102.0, pytest.approx(102.0 * 0.91), 0.91),
+        (103.0, pytest.approx(103.0 * 0.92), 0.92),
+    ]
+    assert instrument.reads == 1
+    # And the rebuild's own cache is filled on the way, so the chunks fetched
+    # after this one are converted at write time rather than repaired later.
+    assert metrics._share_info_cache['AAPL']['currency'] == 'USD'
+
+
+def test_the_learnt_currency_is_written_once_and_never_asked_for_again(
+        store, mocker, monkeypatch):
+    """The cost is **bounded and per symbol** — not per chunk, not per cycle.
+
+    That is what settles #773 against asking from the rebuild's own conversion
+    step, whose argument (a second ``.info`` per chunk doubles the rate-limit
+    exposure of the job that already emits the most requests) is about a *chunk*
+    while the need is one fact per symbol. The store is what makes it once: the
+    answer lands in ``symbol_quote``, so the next cycle reads it instead of
+    asking.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store, currency=None)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    instrument = _Instrument(info={'currency': 'USD'})
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
+    metrics.backfill_chunk_days = 1          # so several cycles have work left
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92}}))
+
+    repaired = [_lateral(metrics)[0] for _ in range(4)]
+
+    assert repaired == [2, 1, 0, 0]          # two days, then the third, then done
+    assert instrument.reads == 1
+    assert quotes.quote_currency(store, 'AAPL') == 'USD'
+    assert [converted for _, converted, _ in _point(store)] == [
+        pytest.approx(101.0 * 0.90), pytest.approx(102.0 * 0.91),
+        pytest.approx(103.0 * 0.92)]
+
+
+def test_a_failed_attribute_fetch_backs_off_rather_than_concluding_anything(
+        store, mocker, monkeypatch):
+    """A request that did not complete taught nothing, so nothing is concluded.
+
+    #704's own rule, applied to the second fetch the pass can make: it is a
+    failure and follows #617's back-off, it never arms ``unconvertible`` — no
+    pair was named, let alone refused — and it never lands in the *asked, no
+    answer* memory either, or one flaky minute would silence the symbol for the
+    life of the process.
+    """
+    metrics = _metrics(store, mocker, base_currency='EUR')
+    _unconverted(store, currency=None)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    instrument = _Instrument(raises=RuntimeError('yahoo is down'))
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
+    fetch = _SeriesFetch()
+    metrics.rates = fx.Rates(lambda pair: None, fetch)
+
+    at = datetime.now(UTC)
+    written, record = _lateral(metrics)
+
+    assert written == 0
+    assert record.failed is True and record.failures == 1
+    assert record.terminal is None
+    assert 'AAPL' in record.error
+    assert fetch.calls == []                 # no pair to ask about yet
+    assert (metrics._lateral_retry_at['AAPL'] - at).total_seconds() \
+        == pytest.approx(scheduling.backoff_delay(metrics.regular_interval, 1),
+                         abs=2)
+    # And it is asked again once the back-off has run out, for ever.
+    metrics._lateral_retry_at.clear()
+    _lateral(metrics)
+    assert instrument.reads == 2
+
+
+def test_the_repaired_line_stops_being_valued_at_zero(
+        store, mocker, monkeypatch, declare_ledger):
+    """#773's consequence on the figure, which is why it is a defect and not a
+    gap in a column.
+
+    ``price_at`` reads ``price_converted`` — every figure the perf job computes
+    is money in the reporting currency — so a symbol quoted in a unit nothing
+    could learn was priceless to it on **every day it was held**, counted zero
+    beside a cash ledger that had already paid for it, with the TWR chaining the
+    crater. The repair is the first branch of the criterion: the currency is now
+    known, so the position is valued rather than reclassified.
+    """
+    events = [
+        Event(date(2024, 6, 1), EventType.BUY, 'AAPL', 'Apple',
+              quantity=10, unit_price=100.0),
+        Event(date(2024, 6, 4), EventType.SELL, 'AAPL', 'Apple',
+              quantity=10, unit_price=110.0),
+    ]
+    declare_ledger(store, events)
+    timeline = EventAggregator().replay(events)
+
+    def value_on(day):
+        pairs = sorted(quotes.price_series(store, 'AAPL').items())
+        return performance._holdings_value(
+            timeline, 'default', {'AAPL'},
+            lambda symbol, at: timeline.state_at(pairs, at) if pairs else None,
+            day)
+
+    metrics, _ = _sold_before_the_install(
+        store, mocker, monkeypatch, (101.0, 102.0, 103.0))
+    metrics._backfill_backward(
+        'AAPL', datetime(2024, 6, 1, tzinfo=UTC),
+        datetime(2024, 6, 5, tzinfo=UTC))
+
+    # The state the ticket measured: the prices are all there, natively, and the
+    # position is worth nothing on a day it held ten shares.
+    assert store.query(
+        'SELECT count(*) FROM price_point WHERE price_converted IS NULL')[0] \
+        == (3,)
+    assert value_on(date(2024, 6, 2)) == (0.0, True)
+
+    metrics._backfill_lateral('AAPL')
+
+    assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 102.0 * 0.91), True)

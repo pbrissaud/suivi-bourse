@@ -504,6 +504,47 @@ def test_the_quote_currency_is_read_from_the_store_and_absent_is_a_state(
     assert quotes.quote_currency(declared, 'AAPL') == 'USD'
 
 
+def test_the_attributes_can_be_written_without_claiming_a_price(declared):
+    """The writer #773 gives the lateral pass, and the constraint is #704's.
+
+    That pass is *an ``UPDATE``, never an ``INSERT``*, so it cannot learn a
+    symbol's currency through :func:`quotes.record_quote` — which appends a
+    point. A row inserted to carry a unit would be a market observation nobody
+    made, on a table with no key to refuse it (ADR-0007). So the attributes move
+    alone: the series is untouched and the ``latest`` line stays where the last
+    real observation left it.
+    """
+    quotes.record_history(declared, 'AAPL', [
+        {'timestamp': NOW, 'price': 100.0}])
+
+    quotes.record_attributes(declared, 'AAPL', NOW + timedelta(days=1),
+                             {'currency': 'USD', 'exchange': 'NMS'})
+
+    assert quotes.quote_currency(declared, 'AAPL') == 'USD'
+    row = quotes.read_quote(declared, 'AAPL')
+    assert row['exchange'] == 'NMS'
+    assert row['last_price_native'] == 100.0
+    assert row['last_price_ts'] == NOW
+    assert declared.query(
+        'SELECT count(*) FROM price_point WHERE symbol = ?', ['AAPL']) \
+        == [(1,)]
+
+
+def test_the_attributes_reach_a_symbol_the_scrape_never_fetched(store):
+    """The population that made #773 a defect: a line sold before the install.
+
+    ``symbol_quote`` has no row for it until a writer makes one, and this one
+    does — through the same ``ON CONFLICT`` upsert as the live path, so a symbol
+    the scrape later meets is refreshed rather than duplicated.
+    """
+    store.execute("INSERT INTO symbol (symbol) VALUES ('ALO.PA')")
+
+    quotes.record_attributes(store, 'ALO.PA', NOW, {'currency': 'EUR'})
+
+    assert quotes.quote_currency(store, 'ALO.PA') == 'EUR'
+    assert quotes.read_quote(store, 'ALO.PA')['last_price_native'] is None
+
+
 # --------------------------------------------------------------------------- #
 # The anchors the scheduler reads
 # --------------------------------------------------------------------------- #
