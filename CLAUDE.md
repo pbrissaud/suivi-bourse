@@ -1027,7 +1027,20 @@ are decisions:
   16,6 % of it — moved `0,00 %`, so it entered neither column and vanished from
   both. The sentence's denominator is the **held lines**, not the rows the
   payload carries: a share with no baseline at all is not served, and counting
-  off the payload would drop it from the sentence too. The block names the
+  off the payload would drop it from the sentence too. **And its qualifier is
+  counted over the same set**, which the first version was not:
+  `/api/positions` serves a sold line deliberately (ADR-0017), `buildShareRows`
+  folds it with its last frozen quote, and `build_movers` compares that quote
+  against a baseline equal to it — so a line closed years ago comes back as
+  `change_pct: 0` (measured on the real server: `{'symbol': 'ALO', 'change':
+  0.0, 'market_value': 0.0}`). Counted, it swelled *dont N n'a pas bougé* while
+  the count of lines *not shown* was taken over the held ones alone: two members
+  of one sentence over two sets, the qualifier able to exceed what it qualifies,
+  and a line nobody owns eligible for a column of the portfolio's movers. So
+  `moversSplit` reduces the payload **first**, with `allocation`'s own predicate
+  — `lib/shares.ts`'s `isClosed`, called by both blocks rather than spelled
+  twice, since the two sit under one another on one page and describe one
+  portfolio. The block names the
   **reference close** it compares against, which is the second of the page's two
   permanent time announcers — the first being the page's own *Cours au …* — and
   it is a different instant from it.
