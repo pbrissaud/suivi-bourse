@@ -92,7 +92,8 @@ polled on a short cadence, a symbol whose market is closed sleeps until it reope
 **Backfill**:
 Fetching a symbol's *past* prices. Three independent passes: **backward** (toward the
 start of the holding window), **forward** (recovering a session missed while the app
-was down), and **lateral** (repairing a point whose currency conversion failed).
+was down), and **lateral** (repairing a point whose currency conversion failed — and,
+once per symbol, learning the unit a line the live scrape never polls is quoted in).
 
 **Terminal**:
 Said of a backfill that will never fetch anything more for a symbol — either it

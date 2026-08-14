@@ -2088,6 +2088,65 @@ enumerated the two directions by hand, so the pass was invisible on
 fault to act on, and counting it as *done* would have the banner announce as
 finished the very thing it should be naming.
 
+**And the pass learns the unit it used to only name the absence of** (issue
+#773, ADR-0009, ADR-0002, ADR-0004). Measured on staging: two accounts reading
+**−99,98 %** and **−29 120,25 %**, seven `/api/positions` rows out of nineteen
+with `converted: null` and **all seven `quantity = 0`**, `lateral:
+{'no_quote_currency': 7}` stable over thirty backfill cycles on an install
+otherwise healthy. The chain is two modules deferring to each other, each in
+writing: `_convert_history` read the currency from `_share_info_cache` *"because
+the backfill runs on symbols the scrape has already met"*, and left the case it
+did not cover to *"#704's lateral pass, which is exactly what that pass is
+for"*; the lateral pass stood down on `no_quote_currency` because a quote
+currency *"is only ever learnt at a first successful fetch"*. **The faulty
+premise is dated**: it was true before #703, and ADR-0009 made the backfill's set
+the union over the *whole* timeline while the three paths that can learn a
+currency — `_scrape_symbol`, `capture_exchange_of` and the cache both fill —
+stayed bounded by the **held** lines. So a line sold before the install existed
+got years of reconstructed prices in a unit nothing could ever record, and
+`no_quote_currency` was the one lateral condition with **no exit** (the other two
+have one: an owner's write, and a terminal that says to act). Downstream, the
+symbol was absent from `oldest_priced`, therefore classed `settled`, therefore
+did not bound the horizon, therefore counted **zero** in `_holdings_value` on
+every day it was held while the cash ledger had paid — and the TWR chained the
+crater. Four things about the repair are decisions:
+
+- **The pass asks, because it is the one that knows.** It already owns #617's
+  back-off, the backfill's politeness delay and a last-pass record, and the cost
+  lands on the job whose rhythm is built for it. The two other exits are refused
+  where they stand: asking from the rebuild's own conversion step contradicts
+  `_convert_history`'s argument head on — a second `.info` **per chunk** doubles
+  the rate-limit exposure of the job that already emits the most requests —
+  where the need is one fact **per symbol**; and widening `capture_exchange_of`
+  to the replay's set puts it in `post_fork`, where the whole boot blocks and
+  the time cap is already load-bearing rather than defensive (#701).
+- **The answer goes to `symbol_quote.currency`**, through a writer of its own
+  (`quotes.record_attributes`) rather than through `record_quote`, which appends
+  a `price_point`: the lateral pass is *an `UPDATE`, never an `INSERT`*, and a
+  row inserted to carry a unit would be a market observation nobody made on a
+  table with no key to refuse it (ADR-0007). The store is also what makes the
+  cost **bounded and per symbol**: the next cycle reads the answer instead of
+  asking. What is *not* learnable is bounded by process memory
+  (`_quote_currency_unknown`) — a reply of *Yahoo names no currency* has nothing
+  to write, and a `NULL` column already means *nobody has asked*, so a second
+  meaning on it would collapse the two states at the exact moment
+  `SKIP_NO_QUOTE_CURRENCY` has to tell them apart.
+- **The three lateral answers stay three.** A request that does not complete is
+  a **failure** — #617's back-off, retried for ever, nothing concluded because
+  nothing was learnt — and a request that completes naming no currency is a
+  **reply** that keeps `SKIP_NO_QUOTE_CURRENCY` as its subject and still never
+  arms `unconvertible`: there is no pair yet, so nothing has refused to resolve.
+  #704's distinction is not overwritten by the repair.
+- **`carrying_price`'s domain is untouched, and no fourth absence is invented**
+  (ADR-0021). The *third state* the ticket names — quoted, and the unit of that
+  quote never recorded — **dissolves** rather than joining a convention: it was
+  permanent only because nothing could learn it, and once the currency lands the
+  position is priced and `_holdings_value` stops counting it zero. What is left
+  under it is an ordinary *waiting*, exactly like an unresolved rate, which is
+  the one thing #706 forbids rendering as *carried at cost*. `_share_info_cache`
+  is filled on the way, so the chunks the backward pass fetches **after** the
+  learn are converted at write time and the pass has less to repair each cycle.
+
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
