@@ -558,6 +558,31 @@ def first_quoted_days(store) -> Dict[str, date]:
     positions at cost, which is the one thing ``CONTEXT.md`` § Absence says the
     two states must never do: be rendered alike.
 
+    **And a quote is a number *and* a unit** (issue #773), which is the join on
+    ``symbol_quote.currency``. A symbol whose unit was never recorded carries
+    ``price_native`` values nothing downstream may spend: every money figure the
+    app draws is in the reporting currency, and a number with no unit cannot be
+    converted into one — not by a rate that lands later, not by any cycle of any
+    pass, because there is no pair to name. Left in this mapping such a symbol
+    reads as *waiting for a rate*, which is a **transitory** absence, and #706
+    answers a transitory absence with ``None``; the day then counts **zero** in
+    :func:`performance._holdings_value` beside a cash ledger that has already
+    paid for the shares, which is the crater ADR-0004 exists to fill. Out of it,
+    the position joins the **carrying** convention (ADR-0004) rather than a
+    fourth kind of absence (ADR-0021), and the cost is defined in the right unit
+    already: event amounts are the debit *in the reporting currency* (ADR-0002),
+    so the PMP needs no conversion.
+
+    What makes the reading **permanent** rather than premature is the predicate's
+    *second* term, which stays the caller's: :func:`terminal_symbols`. A symbol
+    still being reconstructed is never handed to :func:`carrying.carrying_price`
+    at all, and one whose backward pass has concluded has been met by the lateral
+    pass — which since #773 **asks** for the unit and writes it here
+    (:func:`record_attributes`) — so a ``currency`` still ``NULL`` under a
+    terminal backfill is Yahoo having been asked and having named none. The
+    empty string is excluded beside ``NULL`` so this reading and
+    :func:`quote_currency`'s stay one reading.
+
     One scalar per symbol is enough because the consumers forward-fill: a day is
     *quoted* from the first observation on, exactly as ``price_at`` carries the
     last close forward (:func:`carrying.was_quoted`). One ``GROUP BY`` for the
@@ -567,8 +592,12 @@ def first_quoted_days(store) -> Dict[str, date]:
     return {
         symbol: value
         for symbol, value in store.query(
-            'SELECT symbol, min(CAST(ts AS DATE)) FROM price_point '
-            ' WHERE price_native IS NOT NULL GROUP BY symbol')
+            'SELECT p.symbol, min(CAST(p.ts AS DATE)) '
+            '  FROM price_point p '
+            '  JOIN symbol_quote q ON q.symbol = p.symbol '
+            " WHERE p.price_native IS NOT NULL AND q.currency IS NOT NULL "
+            "   AND q.currency <> '' "
+            ' GROUP BY p.symbol')
         if value is not None
     }
 

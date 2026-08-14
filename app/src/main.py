@@ -3353,7 +3353,11 @@ class SuiviBourseMetrics:
             # callable reads ``price_converted``, so a symbol whose pair does not
             # resolve is priceless to it while its quote is known. Carrying those
             # would answer a valuation where the app owes *waiting for a rate*
-            # (#706, repaired in the store by #704).
+            # (#706, repaired in the store by #704). Since #773 the read also
+            # asks whether that quote has a **unit**: a stored ``price_native``
+            # with no ``symbol_quote.currency`` is a number no rate can turn into
+            # money, so it is not a quote for a valuation and the position is
+            # carried at its cost instead of counting zero for ever.
             first_quoted = quotes.first_quoted_days(store_handle)
 
             start = min(e.date for e in events)
@@ -3365,7 +3369,13 @@ class SuiviBourseMetrics:
             # here while being perfectly well quoted. That is the second half of
             # ``settled`` below — an absence no cycle of the backward pass will
             # ever repair, as opposed to the reconstruction simply not having
-            # reached that far yet.
+            # reached that far yet. That half now says exactly what this sentence
+            # always claimed (#773): ``first_quoted`` is quoted **in a nameable
+            # unit**, so a symbol whose unit was never recorded is settled by the
+            # *first* half alone — i.e. when and only when its backward pass has
+            # concluded, which is also when it becomes carryable. Blocking until
+            # then is the honest reading: no day of it is written, rather than
+            # written with the position counted at nothing.
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
             settled = set(carried) | {

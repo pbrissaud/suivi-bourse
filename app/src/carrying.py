@@ -54,6 +54,18 @@ Three things about it are decisions rather than details:
   was observed at all. A quote with no rate yields ``None``, which is the same
   absence the pre-#706 app showed and the honest one.
 
+* **And a quote is a number *and* a unit** (issue #773). ``quoted`` is not
+  *"a ``price_native`` is stored"*: a symbol whose quote currency was never
+  recorded carries numbers no rate can ever turn into money, there being no pair
+  to name — so it is **not quoted** for the purpose of a valuation, and it joins
+  the carrying convention rather than staying permanently in the *waiting* one,
+  where every day it was held counted **zero** beside a cash ledger that had
+  paid. The two spellings of the term say so, :func:`is_quoted` on a row and
+  :func:`quotes.first_quoted_days` on a series; what makes the absence permanent
+  rather than premature is the predicate's second term, unchanged. The cost it is
+  then carried at is already in the right unit: event amounts are the debit *in
+  the reporting currency* (ADR-0002).
+
 The case where carrying **diverges** from a valuation, stated once so nobody has
 to rediscover it: a position mixing a purchase and a zero-cost grant *inside* the
 window with no price is carried at its cost, therefore at half of what its shares
@@ -124,9 +136,35 @@ def was_quoted(first_quoted: Optional[date], day: date) -> bool:
     day on counts as quoted, whether or not its conversion landed.
 
     ``None`` means the symbol has never been quoted at all, which is ``False``
-    on every day: that is the ticket's own subject.
+    on every day: that is the ticket's own subject. Since #773 it also covers
+    the symbol quoted **in no nameable unit** — :func:`quotes.first_quoted_days`
+    folds that into the mapping rather than into a second argument, because on a
+    series the unit is a fact about the symbol while the day is the variable.
+    See :func:`is_quoted` for the same rule stated on a row.
     """
     return first_quoted is not None and day >= first_quoted
+
+
+def is_quoted(price_native: Optional[float], currency: Optional[str]) -> bool:
+    """The same term on a **P1 row**: a quote is a number *and* a unit (#773).
+
+    :func:`was_quoted`'s spelling for the reads that hold one observation rather
+    than a series — the shares table and its per-account breakdown. It is the
+    same rule and it is spelled twice for the reason the module docstring gives
+    about ``quoted``: each caller supplies the term from what it has, and a row
+    carries the symbol's currency in a column while a series carries it in the
+    mapping it was built from.
+
+    Two would be one too many if they could disagree, and this is exactly where
+    they must not: the valuation and the shares page read one
+    :func:`carrying_price`, so a row carried at cost in the curve and left at an
+    em dash in the table would be two users of one software seeing two figures
+    for one position. ``price_native`` alone was that disagreement — it says a
+    number was observed and nothing about the unit it is in, so a symbol Yahoo
+    named no currency for read as *waiting for a rate* here while #773 makes it
+    *carried at cost* over there.
+    """
+    return price_native is not None and bool(currency)
 
 
 def holding_bounds(acquired: date, exited: Optional[date],
@@ -201,5 +239,5 @@ def is_terminal(anchor: datetime, target: datetime) -> bool:
     return anchor.date() <= target.date()
 
 
-__all__ = ['carrying_price', 'was_quoted', 'holding_bounds', 'backward_anchor',
-           'is_terminal']
+__all__ = ['carrying_price', 'was_quoted', 'is_quoted', 'holding_bounds',
+           'backward_anchor', 'is_terminal']
