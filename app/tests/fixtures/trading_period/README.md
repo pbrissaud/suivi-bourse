@@ -34,17 +34,18 @@ Three things about the file are deliberate:
   it with the defect pinned as the expected answer. Which is why the successor
   test reads **one** capture at **several** instants rather than adding a case
   beside the old one.
-* **`marketState` is the one field a test overrides**, and only for the instants
-  that are not the reading's own. `regular.start` past says two different things
-  at two distances *from its own hour*, and that hour is the whole discriminant:
-  five hours after the close the session is over, thirty seconds after the open
-  it has merely not registered yet — the state the scheduler is *guaranteed* to
-  meet, since `decide` arms the job at the open with no margin and #619's jitter
-  lands it 0–30 s late. So
-  `test_a_market_that_has_not_opened_yet_retries_within_the_minute` reads this
-  same period with `PRE` in place of `POSTPOST`, which is a substitution of one
-  measured value by another measured value of the same field, never an invented
-  period.
+* **`marketState` is the one field a test overrides**, and it is also **the
+  discriminant itself**. `regular.start` past says two different things —
+  *the session is over* and *the open has not registered yet* — and the field
+  that separates them is the one recorded right beside it: `POSTPOST` names the
+  side *after* a session, `PRE` the side *before* one. That is why the capture
+  is read with `PRE` substituted for the instants that are not the reading's own
+  (`test_a_market_that_has_not_opened_yet_retries_within_the_minute`,
+  `test_a_state_lagging_past_the_window_keeps_its_session`): a substitution of
+  one measured value of the field by another measured value of the same field,
+  never an invented period. `CLOSED` is the third reading — a payload naming
+  neither side, the holiday shape — and it is the only one `OPENING_LAG` still
+  judges.
 * **The distance is measured on the wall clock and never on the date**, and this
   file is what says why. `pre.start == regular.start == 09:00` local, so nothing
   here shows Yahoo publishing the coming session *before* it starts — and at
@@ -54,9 +55,12 @@ Three things about the file are deliberate:
   the open, drops out of `OPENING_LAG` and sleeps the symbol another day —
   writing nothing, for ever. `test_the_opening_window_is_read_off_the_hour_and_
   not_off_the_date` sweeps that payload at 0, 1, 3 and 40 days of staleness on
-  this same capture, and
+  this same capture — **on `CLOSED` as well as on `PRE`**, since the state
+  answers `PRE` by itself and a sweep carrying only that value would never
+  compute the hour it is named after — and
   `test_a_never_rolled_trading_period_still_trades_every_session` runs five
-  simulated days on it under the hypothesis this file cannot refute.
+  simulated days on it under the hypothesis this file cannot refute, at a Yahoo
+  lag of 5 minutes **and of 20**, the second being longer than `OPENING_LAG`.
 * **The dates are in the future of the repository, not of the reader.** The
   reading was taken on the day the ticket was written; the test injects its own
   `now` before that day's open, just after it, and long after its close, so

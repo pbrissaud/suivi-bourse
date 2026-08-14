@@ -318,7 +318,9 @@ def test_extract_sweeps_both_sides_of_the_captured_open(now, expected):
 
 
 @pytest.mark.parametrize("hour", range(0, 24))
-def test_extract_never_answers_a_next_open_that_has_already_happened(hour):
+@pytest.mark.parametrize("market_state", ["POSTPOST", "PRE", "CLOSED"])
+def test_extract_never_answers_a_next_open_that_has_already_happened(
+        hour, market_state):
     """The invariant, swept across the captured day: strictly future, or None.
 
     Stated on the whole day rather than on the two interesting instants, because
@@ -326,21 +328,54 @@ def test_extract_never_answers_a_next_open_that_has_already_happened(hour):
     open it is on — ``decide``'s non-positive-delta branch stops being reachable
     from here at any hour.
 
-    ``None`` is not a hole in the sweep, it is the other half of the invariant
-    and it has exactly one home: the ``OPENING_LAG`` that follows the opening
-    hour, where the honest answer is *we do not know when this market opens* —
-    one minute's retry, never a night's sleep (asserted end to end below). The
-    hour that lands in it is asserted rather than tolerated, so a lag silently
-    widened to swallow the evening would fail here.
+    Swept across the **three** readings a closed payload can carry, since #769's
+    third pass makes ``marketState`` the discriminant: the capture's own
+    ``POSTPOST``, the ``PRE`` of a wake at the open, and the ``CLOSED`` that
+    names neither side. ``None`` is not a hole in the sweep, it is the other half
+    of the invariant, and it now has exactly two homes — a pre-session state
+    (*the open has not registered yet*, at any distance) and the ``OPENING_LAG``
+    that follows the opening hour on the ambiguous reading. Both are asserted
+    rather than tolerated, so a lag silently widened to swallow the evening, or
+    a post-session state answering ``None``, fails here.
     """
     info, meta = _capture(BNP)
+    info = {**info, "marketState": market_state}
     now = datetime(2026, 8, 12, hour, 13, tzinfo=UTC)
     _, next_open = extract_market_context(info, meta, now)
     if next_open is None:
-        past = (now - BNP_REGULAR_START).total_seconds()
-        assert 0 <= past <= scheduling.OPENING_LAG
+        if market_state == "PRE":
+            assert now >= BNP_REGULAR_START     # only ever a *past* open
+        else:
+            past = (now - BNP_REGULAR_START).total_seconds()
+            assert 0 <= past <= scheduling.OPENING_LAG
     else:
         assert next_open > now
+
+
+def test_the_two_sides_and_closed_partition_the_closed_family():
+    """The state families are exhaustive by construction, not by belief (#769).
+
+    Yahoo publishes six ``marketState`` values; five are closed and four of those
+    say which side of a session they name. Asserted on the module because the
+    branching in ``extract_market_context`` reads *before* and *after* and lets
+    everything else fall through to ``OPENING_LAG`` — a sixth closed value added
+    to one set and forgotten in the other would silently take the ambiguous
+    branch, which is the exact shape of the defect this pass removes.
+    """
+    assert scheduling.BEFORE_SESSION_STATES.isdisjoint(
+        scheduling.AFTER_SESSION_STATES)
+    assert (scheduling.BEFORE_SESSION_STATES
+            | scheduling.AFTER_SESSION_STATES
+            | {"CLOSED"}) == scheduling.CLOSED_STATES
+    for state in scheduling.BEFORE_SESSION_STATES:
+        assert scheduling.is_before_session(state)
+        assert not scheduling.is_after_session(state)
+    for state in scheduling.AFTER_SESSION_STATES:
+        assert scheduling.is_after_session(state)
+        assert not scheduling.is_before_session(state)
+    for state in (None, "CLOSED", "REGULAR", "pre", "WHATEVER"):
+        assert not scheduling.is_before_session(state)
+        assert not scheduling.is_after_session(state)
 
 
 def test_a_closed_evening_sleeps_to_the_next_open():
@@ -367,7 +402,7 @@ def test_a_closed_evening_sleeps_to_the_next_open():
     assert next_delay > 9 * 3600          # the closure, not a minute
 
 
-@pytest.mark.parametrize("eps", [0, 15, 30, 60, 300, 899])
+@pytest.mark.parametrize("eps", [0, 15, 30, 60, 300, 899, 1200, 3600])
 def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
     """End to end on the same reading: the morning re-probes, it does not sleep.
 
@@ -388,6 +423,11 @@ def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
     invariant's other half — *we do not know when this market opens* is what
     ``SHORT_RETRY`` answers, and it is true here. The **upper bound on the
     delay** is the assertion the two previous passes did not have.
+
+    The sweep runs past ``OPENING_LAG`` (1 200 s and 3 600 s) since #769's third
+    pass: the state is what says *the open has not registered yet*, so a lag
+    longer than the window is not a session given up. That is the case the
+    measurement below exercises end to end.
     """
     info, meta = _capture(BNP)
     info = {**info, "marketState": "PRE"}     # the open has not registered yet
@@ -403,7 +443,9 @@ def test_a_market_that_has_not_opened_yet_retries_within_the_minute(eps):
 
 
 @pytest.mark.parametrize("days_stale", [0, 1, 3, 40])
-def test_the_opening_window_is_read_off_the_hour_and_not_off_the_date(days_stale):
+@pytest.mark.parametrize("market_state", ["CLOSED", "PRE"])
+def test_the_opening_window_is_read_off_the_hour_and_not_off_the_date(
+        days_stale, market_state):
     """The wake at the open is caught however old the payload's **date** is.
 
     This is the defect the first repair of #769 shipped and the reason the
@@ -416,9 +458,16 @@ def test_the_opening_window_is_read_off_the_hour_and_not_off_the_date(days_stale
     tomorrow: **every day, for ever, with no price written at all**. Compared
     against the hour, the age of the payload is irrelevant, which is what this
     sweep says.
+
+    ``CLOSED`` is in the sweep and is what keeps it exercising the projection
+    it is named after: since #769's third pass ``PRE`` answers ``None`` on the
+    state alone, so a sweep carrying only ``PRE`` would pass without the hour
+    ever being computed — a test attesting a property it no longer touches. The
+    ambiguous reading is the one ``OPENING_LAG`` still judges, and it judges it
+    on the wall clock.
     """
     info, meta = _capture(BNP)
-    info = {**info, "marketState": "PRE"}
+    info = {**info, "marketState": market_state}
     now = BNP_REGULAR_START + timedelta(days=days_stale, seconds=12)
 
     state, next_open = extract_market_context(info, meta, now)
@@ -430,17 +479,19 @@ def test_the_opening_window_is_read_off_the_hour_and_not_off_the_date(days_stale
 
 
 def test_the_opening_lag_gives_the_day_up_rather_than_probing_it_away():
-    """The retry above is bounded, which is what keeps ``SHORT_RETRY`` short.
+    """The ambiguous retry is bounded, which keeps ``SHORT_RETRY`` short.
 
-    Past ``OPENING_LAG`` the market has not opened, so the reading goes back to
-    *the session is over* and the next open is the same hour, next day —
-    the venue's own 09:00 and not the ~08:00 guess, which is asserted against
-    here because it is the producer this ticket took off the past-value path.
-    Fifteen probes per symbol on a day that never opens, against the ~900 a
-    night #769 measured.
+    The reading is ``CLOSED`` — the holiday shape, the one case ``OPENING_LAG``
+    still judges since #769's third pass: the payload names a session and
+    nothing on hand says whether it is the one that just ended or the one that
+    will not start. Past the window the app stops asking and arms the next
+    occurrence of the venue's own opening hour — 09:00 Paris and not the ~08:00
+    guess, asserted against here because it is the producer this ticket took off
+    the past-value path. Fifteen probes per symbol on a day that never opens,
+    against the ~900 a night #769 measured.
     """
     info, meta = _capture(BNP)
-    info = {**info, "marketState": "PRE"}
+    info = {**info, "marketState": "CLOSED"}
     now = BNP_REGULAR_START + timedelta(seconds=scheduling.OPENING_LAG + 1)
 
     state, next_open = extract_market_context(info, meta, now)
@@ -452,7 +503,39 @@ def test_the_opening_lag_gives_the_day_up_rather_than_probing_it_away():
     assert next_delay > 20 * 3600
 
 
-def test_a_never_rolled_trading_period_still_trades_every_session():
+@pytest.mark.parametrize("lag_minutes", [20, 60])
+def test_a_state_lagging_past_the_window_keeps_its_session(lag_minutes):
+    """The defect this pass closes, at the two lags the reviewer measured.
+
+    ``OPENING_LAG`` used to be the **sole** judge of a past ``regular.start``,
+    while ``marketState`` — read at the top of the same function — went unused.
+    A state lagging its own venue by more than fifteen minutes therefore fell out
+    of the window at the wake, was read as *the session is over*, and armed the
+    next occurrence of the opening hour: the symbol slept ~23 h 50 and wrote
+    nothing. The condition is **stable** — a systematic lag, a delayed opening, a
+    half-day — so it reproduced every day and nothing on the live path caught it
+    up: measured by the reviewer at a 20-minute flip, **0 points over 14 days**
+    against 2 183 for preview/v5.
+
+    ``PRE`` says *before the session*, at 20 minutes exactly as at 30 seconds, so
+    the answer is the short retry with no ceiling — and the delay's **upper
+    bound** is asserted, the assertion whose absence is how the defect passed
+    three times.
+    """
+    info, meta = _capture(BNP)
+    info = {**info, "marketState": "PRE"}
+    now = BNP_REGULAR_START + timedelta(minutes=lag_minutes)
+
+    state, next_open = extract_market_context(info, meta, now)
+    assert next_open is None
+
+    _, next_delay, _ = decide(state, False, next_open, now, 0, BASE)
+    assert next_delay == SHORT_RETRY
+    assert next_delay < 3600            # a minute, never a session
+
+
+@pytest.mark.parametrize("lag_minutes", [5, 20])
+def test_a_never_rolled_trading_period_still_trades_every_session(lag_minutes):
     """Five simulated days on the real capture, ``decide`` and the jitter included.
 
     The adversarial hypothesis the repository cannot measure: Yahoo never rolls
@@ -463,12 +546,20 @@ def test_a_never_rolled_trading_period_still_trades_every_session():
     #628's sonde only runs on a ``REGULAR`` write.
 
     The venue is simulated on its captured hours (07:00–15:30 UTC) with
-    ``marketState`` flipping to ``REGULAR`` five minutes **after** the open —
+    ``marketState`` flipping to ``REGULAR`` some minutes **after** the open —
     Yahoo's own lag, which is what makes the wake at the open ambiguous in the
     first place — and #619's jitter is applied at its worst case so that wake is
     always *past* the open. Two assertions: every session writes, and the closed
     cycles stay a handful — the second is the ticket's own subject, a 60 s
     cadence across those closures giving ~4 500.
+
+    **The 20-minute lag is the second pass's own failure, run end to end.** It is
+    longer than ``OPENING_LAG``, so while the window was the sole judge the wake
+    read *the session is over* and armed tomorrow: 0 writes over the whole
+    simulation, every day, in silence. Since the state is what discriminates, the
+    two lags differ only by a handful of probes, which the second assertion
+    bounds. The 5-minute case is the previous pass's measurement and is kept
+    unchanged: 1 010 writes and 21 closed probes.
     """
     info_base, meta = _capture(BNP)
     now = BNP_AFTER_CLOSE                       # the evening of the reading
@@ -478,7 +569,7 @@ def test_a_never_rolled_trading_period_still_trades_every_session():
     while now < end:
         session_open = now.replace(hour=7, minute=0, second=0, microsecond=0)
         session_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        registered = session_open + timedelta(minutes=5)   # Yahoo's own lag
+        registered = session_open + timedelta(minutes=lag_minutes)
         if registered <= now < session_close:
             market_state = "REGULAR"
         elif now < registered:
