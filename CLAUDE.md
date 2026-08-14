@@ -2137,15 +2137,37 @@ crater. Four things about the repair are decisions:
   **reply** that keeps `SKIP_NO_QUOTE_CURRENCY` as its subject and still never
   arms `unconvertible`: there is no pair yet, so nothing has refused to resolve.
   #704's distinction is not overwritten by the repair.
-- **`carrying_price`'s domain is untouched, and no fourth absence is invented**
-  (ADR-0021). The *third state* the ticket names — quoted, and the unit of that
-  quote never recorded — **dissolves** rather than joining a convention: it was
-  permanent only because nothing could learn it, and once the currency lands the
-  position is priced and `_holdings_value` stops counting it zero. What is left
-  under it is an ordinary *waiting*, exactly like an unresolved rate, which is
-  the one thing #706 forbids rendering as *carried at cost*. `_share_info_cache`
-  is filled on the way, so the chunks the backward pass fetches **after** the
-  learn are converted at write time and the pass has less to repair each cycle.
+- **The third state shrinks, and what is left of it joins the carrying
+  convention** (ADR-0004, ADR-0021) — the criterion's two branches, and it takes
+  both. Learning the unit repairs every symbol Yahoo **names** one for: the
+  position is priced and `_holdings_value` stops counting it zero. It leaves
+  intact the population Yahoo answers *cours and no currency at all* for — which
+  criterion 3 requires be kept as a distinct state — and for that one the whole
+  chain still stood: quoted, terminal, never converted, absent from
+  `oldest_priced`, therefore `settled`, therefore not bounding the horizon,
+  therefore **zero** on every day it was held. Measured on a real store at
+  `value_on(2024-06-02) == (0.0, True)` on a line worth ten shares. So it joins
+  one of the two existing conventions rather than becoming a fourth kind of
+  absence, and the argument is one sentence: **a number with no unit is not a
+  cours**. #706 refuses to carry *quoted with no rate* because that absence is
+  **transitory**; here Yahoo has been asked and names none, so there is no pair,
+  no rate coming and nothing to wait for — and the cost is defined in the right
+  unit already, event amounts being the debit in the reporting currency
+  (ADR-0002). The rule is therefore in the `quoted` **term**, never in
+  `carrying_price`, whose domain is untouched: `quotes.first_quoted_days` joins
+  `symbol_quote.currency` on the series paths and `carrying.is_quoted` says the
+  same on a P1 row, so the valuation and the shares page cannot answer
+  differently. **It is derivable from the store, which is what decided the
+  implementation**: the perf job's only inputs are the store and the clock
+  (#707), so `_quote_currency_unknown` — process memory — could not have carried
+  it, and no column is added (the DDL is applied `IF NOT EXISTS` with no
+  migration machinery, the argument that decided `transfer_fees` and
+  `closed_at`). What makes the reading permanent rather than premature is #706's
+  **second** term, unchanged: a symbol whose backward pass has not concluded is
+  never handed to the convention at all — it blocks the horizon instead, so its
+  days are *not written* rather than written at nothing. `_share_info_cache` is
+  filled on the way, so the chunks the backward pass fetches **after** the learn
+  are converted at write time and the pass has less to repair each cycle.
 
 ### Scheduled Jobs
 ```text
@@ -2367,10 +2389,14 @@ ever drew the hole. Five things about it are decisions:
   That state is *waiting*, one of `CONTEXT.md` § Absence's four kinds and never
   rendered like *carried at cost*, and it is durable — the point is written with
   `price_converted NULL` until #704's lateral pass repairs it. So `quoted` is a
-  required argument, and each caller supplies it from what it has: `price_native`
-  on a P1 row, and `carrying.was_quoted` against `quotes.first_quoted_days` —
-  `{symbol: first day quoted at all}`, one `GROUP BY` — on the two series paths,
-  forward-filled exactly as the close beside it is.
+  required argument, and each caller supplies it from what it has:
+  `carrying.is_quoted` on a P1 row, and `carrying.was_quoted` against
+  `quotes.first_quoted_days` — one `GROUP BY` — on the two series paths,
+  forward-filled exactly as the close beside it is. **And a quote is a number
+  *and* a unit** (#773): both spellings ask for `symbol_quote.currency` beside
+  `price_native`, because a close in no nameable unit is one no rate can turn
+  into money — that one is *carried at cost*, and reading it as *waiting* counted
+  it zero for ever.
 - **One implementation, called by the valuation and by the shares page.** Two
   would make two users of the same software see two curves for the same
   portfolio with nothing on screen able to say so — so `performance.
