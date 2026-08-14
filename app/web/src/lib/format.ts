@@ -7,7 +7,8 @@
  *
  * **The format follows the language, not the currency** (ADR-0024). `const
  * LOCALE = 'fr-FR'` is gone: every `Intl` site below takes the locale as its
- * first argument, and the eight of them — six numbers, two dates — read the
+ * first argument, and the nine of them — six numbers, two dates and one list
+ * (#768) — read the
  * reader's current language through `useFormatters()`. ADR-0002's *a currency is
  * a unit, not a locale* is what licenses this rather than what contradicts it:
  * precisely because a currency is a unit, it cannot dictate a decimal
@@ -164,7 +165,27 @@ export function formatDate(
 }
 
 /**
- * The eight sites, bound to the reader's language. A component calls
+ * An enumeration, in the reader's language (#768).
+ *
+ * The ninth `Intl` site, and the first that is not a number or a date. It exists
+ * because a language does not enumerate with a separator: English closes on
+ * *and*, French on *et*, and `', '.join(...)` is neither — it is the separator
+ * of a machine-readable list wearing a sentence's clothes. The notices are what
+ * put three securities and two currencies inside one sentence, and the server's
+ * own `', '.join(...)` stays where it belongs, in the log line and in the
+ * headless payload, English being the language of both (ADR-0024).
+ *
+ * An empty list renders as the em dash the rest of this module uses for absence
+ * — never as an empty gap inside a sentence — though no caller can reach it: an
+ * advisory that names nothing does not stand.
+ */
+export function formatList(locale: string, items: readonly string[]): string {
+  if (items.length === 0) return ABSENT
+  return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(items)
+}
+
+/**
+ * The nine sites, bound to the reader's language. A component calls
  * `formatCurrency(value, currency)` and never learns which locale it got, which
  * is what keeps the language out of every call site.
  */
@@ -187,6 +208,7 @@ export function useFormatters() {
       bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+      list: (items: readonly string[]) => formatList(locale, items),
     }),
     [locale],
   )

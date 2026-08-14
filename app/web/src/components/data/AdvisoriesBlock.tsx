@@ -20,11 +20,18 @@
  *    server's, because it names *this* installation's paths and variables —
  *    already says what to do about them. Inventing a button there would be
  *    inventing a power the app does not have.
+ *  - **The sentence is composed here, from `key` and `detail`** (#768,
+ *    ADR-0024). This block rendered `advisory.message` verbatim, and those five
+ *    sentences are built in English by `advisories.py` — so the whole content of
+ *    a French reader's notices was English, inside a frame whose title, date and
+ *    button were not. `lib/advisories.ts` holds the choice and the two forms it
+ *    was taken against; `message` stays the log line and what a client with no
+ *    interface reads.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
-import { advisoryGesture, shownAdvisories } from '@/lib/advisories'
+import { advisoryGesture, advisoryText, shownAdvisories } from '@/lib/advisories'
 import { api, type Advisory } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -64,12 +71,17 @@ export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockP
       <ul className="space-y-3">
         {shown.map((advisory) => {
           const gesture = advisoryGesture(advisory)
+          // `null` is a key outside the closed list of five, and the server's
+          // own English sentence is then better than an empty notice.
+          const said = advisoryText(advisory, format.list)
           return (
             <li
               key={advisory.key}
               className="space-y-3 rounded-lg border border-attention/40 bg-attention/5 p-4"
             >
-              <p className="text-sm leading-relaxed">{advisory.message}</p>
+              <p className="text-sm leading-relaxed">
+                {said ? t(said.key, said.values) : advisory.message}
+              </p>
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-xs text-muted-foreground">
                   {t('installation.advisory.seen', {
