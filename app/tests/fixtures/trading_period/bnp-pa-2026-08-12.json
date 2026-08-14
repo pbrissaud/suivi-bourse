@@ -1,0 +1,25 @@
+{
+  "info": {
+    "marketState": "POSTPOST",
+    "exchangeTimezoneName": "Europe/Paris"
+  },
+  "history_meta": {
+    "currentTradingPeriod": {
+      "pre": {
+        "timezone": "CEST",
+        "start": 1786518000,
+        "gmtoffset": 7200
+      },
+      "regular": {
+        "timezone": "CEST",
+        "start": 1786518000,
+        "gmtoffset": 7200
+      },
+      "post": {
+        "timezone": "CEST",
+        "start": 1786548600,
+        "gmtoffset": 7200
+      }
+    }
+  }
+}
