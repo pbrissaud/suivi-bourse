@@ -319,7 +319,21 @@ export function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string
 /** A price as observed, in the currency it was quoted in. */
 export interface Quote {
   value: number
-  currency: string
+  /**
+   * The unit the number is in — **and it can be absent** (#774).
+   *
+   * `_build_position` reads it off `symbol_quote.currency`, which only a
+   * *successful `.info` fetch* ever writes, so a symbol Yahoo answers closes for
+   * without naming a currency serves a `price` with no `currency` at all. The
+   * server keeps the number rather than suppressing the whole object — dropping
+   * it would turn *quoted* into *never quoted*, the one distinction this pair of
+   * objects exists to carry — and it is `lib/absence.ts` that reads the pair,
+   * because **a number with no unit is not a price**: no pair to fetch a rate
+   * for, nothing on its way, so the line is carried at its cost (ADR-0004) and
+   * never left *waiting*. Typed `string` it read as always present, and every
+   * client that only tested `price !== null` inherited the wrong absence.
+   */
+  currency: string | null
   at: string
 }
 

@@ -15,6 +15,9 @@
  *   | Nothing to compute — position sold   | `—`      | `0,00`      | `—`         |
  *   | Asked N times, never answered        | *no price* × 3         |             |
  *
+ * There are **four**, and #774 added no fifth: a line quoted in a unit nothing
+ * names joins the first row rather than getting one of its own (see `isQuoted`).
+ *
  * The last two look alike and are not, and that is the whole point of splitting
  * them: a sold position has **no question to ask**, while a line entered under a
  * ticker the market does not know has a question that is legitimate and usually
@@ -52,12 +55,39 @@ export type AbsenceCase =
   | 'noQuote'
   | 'quoted'
 
+/**
+ * **A quote is a number *and* a unit** (#774) — the front's spelling of the
+ * server's `carrying.is_quoted`, and it is spelled twice for the reason that
+ * module gives: each caller supplies the term from what it has.
+ *
+ * `price !== null` alone was the term here, and it says a number was observed
+ * and nothing about the unit it is in. A symbol Yahoo answers closes for while
+ * naming no currency therefore read as *quoted, waiting for a rate* — for ever,
+ * there being no pair to fetch a rate for and so nothing on its way. The server
+ * already carries that line at its cost (#773), so the page was the **only**
+ * place left saying otherwise, and it said it about the same position on the
+ * same screen: *waiting* in the table while the curves valued it at its PMP.
+ *
+ * The absence is **permanent**, which is what lets it join `carriedAtCost`
+ * rather than found a fifth rendering (ADR-0021): #706 refuses to carry *quoted
+ * with no rate* because that absence is transitory and repairs itself (#704),
+ * and here there is nothing to repair. The cost is already in the right unit,
+ * event amounts being the debit in the reporting currency (ADR-0002).
+ */
+export function isQuoted(price: Quote | null): boolean {
+  return price !== null && Boolean(price.currency)
+}
+
 export function absenceCase(input: PositionAbsenceInput): AbsenceCase {
   // A sold position first, and unconditionally: it has no question to ask, so
   // a failure counter left over from the days it was held says nothing about
   // it. Ordering this test last is how *sold* and *broken ticker* collapse.
   if (input.quantity === 0) return 'nothingToCompute'
-  if (input.price !== null) return input.converted === null ? 'awaitingRate' : 'quoted'
+  if (isQuoted(input.price)) return input.converted === null ? 'awaitingRate' : 'quoted'
+  // Not quoted — no number at all, or a number in no nameable unit. The two are
+  // one arithmetic (the cost) and the counter decides how they *read*: a ticker
+  // the app has asked N times reports its count, and a line nothing was ever
+  // asked about is simply carried.
   return input.consecutiveFailures > 0 ? 'noQuote' : 'carriedAtCost'
 }
 
@@ -97,6 +127,13 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       // case common enough that a badge of its own would be noise across the
       // whole page (ADR-0004 held). The latent gain is exactly zero, not a
       // loss: valuing at cost makes the purchase day come out neutral.
+      //
+      // The dash covers the line quoted in no nameable unit too (#774), and
+      // there it is a statement rather than an absence of data: the number
+      // exists and the app cannot say what it is a number *of*. Printing it
+      // under the reporting currency's symbol would assert exactly the unit
+      // nothing named — which is the v4 view's own reading, `price` keeping the
+      // converted value, `None` and all (`portfolio_view._build_share`).
       return { price: DASH, valuation: FIGURE, unrealised: FIGURE }
     case 'awaitingRate':
       // The native price is known and worth showing — it is the quote the
