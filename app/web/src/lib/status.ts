@@ -13,8 +13,8 @@
  * mechanism. The order is **causal, not a ranking**: as long as the app is not
  * answering, nothing downstream has a figure to excuse.
  */
-import type { RuntimeState } from '@/lib/api'
-import type { MessageKey } from '@/lib/i18n'
+import type { RuntimeAccount, RuntimeState } from '@/lib/api'
+import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 
 /**
@@ -39,6 +39,67 @@ export function installationState(input: {
 export interface BannerCondition {
   /** What the reader is told. Its own key, so nothing renders `detail`. */
   message: MessageKey
+  /** What the sentence names — a lagging account, and nothing from a payload. */
+  values?: MessageValues
+  /**
+   * How far a condition that **advances** has got, `0`…`1`. Exactly one has
+   * one, and it is a bar rather than a date: the reconstruction's target is
+   * *the first event*, which the reader recognises, and a target *time* is a
+   * promise the app cannot keep (a mute symbol backs off to 24 h).
+   */
+  progress?: number
+}
+
+/**
+ * How far the reconstruction has got, and **which account is holding it back**
+ * (#727, #708).
+ *
+ * The bar is `(horizon → today) / (first event → today)`, and the two ends are
+ * the two facts the reader has: today, and the oldest day their own ledger
+ * names. The **max** of the horizons is what the bar reports, because the global
+ * series is written only where *every* account is written (ADR-0018) — so
+ * without naming that account the rule *"one slow account delays the whole home
+ * page"* is invisible, and the owner reads the delay as a fault of the whole
+ * portfolio.
+ *
+ * `ratio: null` is *nothing to draw* — no account reports a horizon, or the
+ * ledger's first event is today — and the band then says the reconstruction is
+ * running without pretending to measure it. An account **absent** from the list
+ * is a pass that computed nothing (a perf job that has not run, or one that
+ * raised), which is not a horizon of today: it is no observation at all.
+ */
+export interface RebuildProgress {
+  /** The account whose horizon bounds the global series. `null` — none says. */
+  account: string | null
+  ratio: number | null
+}
+
+function asDay(value: string): number {
+  return Date.parse(`${value.slice(0, 10)}T00:00:00Z`)
+}
+
+export function rebuildProgress(
+  accounts: readonly RuntimeAccount[],
+  firstEvent: string | null,
+  now: Date,
+): RebuildProgress {
+  const horizons = accounts.filter(
+    (account): account is RuntimeAccount & { horizon: string } => account.horizon !== null,
+  )
+  const lagging = horizons.reduce<(RuntimeAccount & { horizon: string }) | null>(
+    (latest, account) => (latest === null || account.horizon > latest.horizon ? account : latest),
+    null,
+  )
+  if (lagging === null || firstEvent === null) {
+    return { account: lagging?.account ?? null, ratio: null }
+  }
+
+  const today = now.getTime()
+  const span = today - asDay(firstEvent)
+  if (!Number.isFinite(span) || span <= 0) return { account: lagging.account, ratio: null }
+  const covered = today - asDay(lagging.horizon)
+  if (!Number.isFinite(covered)) return { account: lagging.account, ratio: null }
+  return { account: lagging.account, ratio: Math.min(Math.max(covered / span, 0), 1) }
 }
 
 /**
@@ -50,13 +111,44 @@ export function oneBand(conditions: readonly BannerCondition[]): BannerCondition
 }
 
 /**
- * The conditions the shell can observe today. The app not answering is the
- * first cause of an empty screen, so it opens the list and everything later
- * queues behind it.
+ * The conditions the shell can observe, **in causal order**. The app not
+ * answering is the first cause of an empty screen, so it opens the list and
+ * everything later queues behind it — including the reconstruction, which has
+ * no figures to excuse while nothing is answering at all.
+ *
+ * The reconstruction is the banner's, and **only** the banner's: it is one of
+ * #709's five keys, and #724 keeps it out of the installation tab's badge for
+ * that reason — dropped from the badge alone it would still be in the block and
+ * make the badge under-count what is on screen, left in both it would put two
+ * announcers on one fact.
  */
-export function shellConditions(input: { error?: unknown }): BannerCondition[] {
-  if (!input.error) return []
-  return [{ message: problemMessageKey(input.error) }]
+export function shellConditions(input: {
+  error?: unknown
+  runtime?: RuntimeState
+  /** The oldest day the ledger names — the bar's denominator, and only that. */
+  firstEvent?: string | null
+  /** How the lagging account is named. The **declaration's** name (#729). */
+  nameAccount?: (account: string) => string
+  now?: Date
+}): BannerCondition[] {
+  if (input.error) return [{ message: problemMessageKey(input.error) }]
+  if (input.runtime?.rebuilding !== true) return []
+
+  const { account, ratio } = rebuildProgress(
+    input.runtime.accounts ?? [],
+    input.firstEvent ?? null,
+    input.now ?? new Date(),
+  )
+  // Named or not, the sentence is not the same one: *which* account is late is
+  // the whole of what makes the rule visible, and inventing a name for an
+  // account nothing reported would be worse than the shorter sentence.
+  return [
+    {
+      message: account === null ? 'banner.rebuilding' : 'banner.rebuilding.account',
+      values: account === null ? undefined : { account: input.nameAccount?.(account) ?? account },
+      ...(ratio === null ? {} : { progress: ratio }),
+    },
+  ]
 }
 
 /**
@@ -78,6 +170,15 @@ export function shellConditions(input: { error?: unknown }): BannerCondition[] {
  * below it, the band at the top of the column already says so, and repeating it
  * here would put **two announcers on one fact**. One band on screen, never two,
  * stays true by construction rather than by inspection.
+ *
+ * **The reconstruction is deliberately not in that clause** (#727). It is a
+ * shell condition and it is *not* a cause of a failed read: a store that will
+ * not answer is a stronger, more specific and more actionable fact than a
+ * rebuild running behind it, so a page keeps its own sentence rather than
+ * standing under a band explaining something else. Which of the two holds the
+ * slot when both are true is the banner's own ordering question, and it is
+ * #726's — *the banner never renders two bands, and its order is causal* is that
+ * ticket's criterion, tested there with two conditions true at once.
  */
 export function readConditions(input: {
   shellError?: unknown

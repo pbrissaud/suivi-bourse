@@ -1098,6 +1098,85 @@ def test_portfolio_totals_history_storage_failure_is_503_problem_json(tmp_path):
     assert response.mimetype == 'application/problem+json'
 
 
+# --------------------------------------------------------------------- #
+# `/api/positions/history` — the chart's fallback reading (#727)
+# --------------------------------------------------------------------- #
+
+def test_positions_history_is_valuation_versus_investment(tmp_path):
+    """The reading the dashboard falls back to, and the two names are the two
+    figures: `invested` is what the positions cost, never money the owner put
+    in — so the area between the curves is the **latent** gain."""
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, events=events, seed=seed)
+    payload = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+
+    assert payload['points'] == [{
+        't': '2024-06-01', 'value': 2000.0, 'invested': 1500.0}]
+    # No `mode`: what this resource answers does not depend on a configuration
+    # the caller cannot see.
+    assert 'mode' not in payload
+
+
+def test_positions_history_answers_the_same_body_on_a_declared_install(tmp_path):
+    """The whole reason it is not `/api/portfolio/history`.
+
+    That route's discriminant is *are accounts declared*, which is not the
+    question: an install declaring two accounts and recording no cash event
+    answers `accounts` there and gets `value`/`contributed` back — two series of
+    `null` since #708's per-field rule, i.e. an empty chart on a full portfolio.
+    """
+    events = (
+        "date,event_type,account,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,pea,AAPL,Apple Inc,10,150.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=events,
+                          seed=seed)
+    payload = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+
+    assert payload['points'] == [{
+        't': '2024-06-01', 'value': 2000.0, 'invested': 1500.0}]
+
+
+def test_positions_history_is_200_and_empty_on_an_install_with_no_price(tmp_path):
+    """`200` + `[]`, never an error: a portfolio nobody has quoted yet has no
+    curve and is perfectly healthy."""
+    response = build_client(tmp_path).get('/api/positions/history')
+
+    assert response.status_code == 200
+    assert response.get_json()['points'] == []
+
+
+def test_positions_history_rejects_an_inverted_window(tmp_path):
+    response = build_client(tmp_path).get(
+        '/api/positions/history?from=2026-08-05&to=2026-08-01')
+
+    assert response.status_code == 400
+    assert response.mimetype == 'application/problem+json'
+
+
+def test_positions_history_storage_failure_is_503_problem_json(tmp_path):
+    response = build_client(
+        tmp_path, break_store=True).get('/api/positions/history')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+
+
 def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
         tmp_path):
     """ADR-0018's identity, **through the API**, on a ledger with a fee (#763).

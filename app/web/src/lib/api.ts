@@ -58,6 +58,24 @@ export const ROUTES = {
   accountHistory: '/api/accounts/:account/history',
   /** The global perf series — the same five members, one level up (#721). */
   portfolioTotalsHistory: '/api/portfolio-totals/history',
+  /**
+   * What the holdings were worth day by day, against what they cost (#727) —
+   * the series `/api/positions` is one instant of, and the **fallback reading**
+   * of the dashboard's one chart.
+   */
+  positionsHistory: '/api/positions/history',
+  /**
+   * What moved since the last session close (#727).
+   *
+   * It keeps its `/portfolio/` prefix, which is the one v4 name a v5 page reads,
+   * and that is a decision rather than an oversight: the payload is **already**
+   * the v5 shape — no `?mode=` discriminator, no per-row currency since #702,
+   * the carrying convention of ADR-0004 applied — so a second route serving the
+   * identical body would be two resources over one computation. What the rule
+   * *"a resource carries the name of the store's table"* forbids is reusing a v4
+   * name for a **different** payload, and this is the same one.
+   */
+  movers: '/api/portfolio/movers',
 } as const
 
 export function eventPath(id: string): string {
@@ -325,6 +343,70 @@ export function accountHistoryPath(account: string, from: string = SERIES_ORIGIN
 
 export function portfolioTotalsHistoryPath(from: string = SERIES_ORIGIN): string {
   return `${ROUTES.portfolioTotalsHistory}?from=${from}`
+}
+
+export function positionsHistoryPath(from: string = SERIES_ORIGIN): string {
+  return `${ROUTES.positionsHistory}?from=${from}`
+}
+
+/**
+ * One day of the valuation curve — **the fallback reading** of the dashboard's
+ * chart (#727).
+ *
+ * The two members are two different figures and their names keep them apart:
+ * `invested` is what the positions **cost**, never money the owner put in, so
+ * the area between the curves is the *latent* gain and the page renames it.
+ * Conflating it with `net_contributed` is the mistake the server refuses to make
+ * by giving them two names.
+ *
+ * `null` on either is a day whose sum could not be taken at all — never a zero,
+ * which would draw a crater the portfolio never had (ADR-0004).
+ */
+export interface ValuationPoint {
+  /** The calendar day — a bare `YYYY-MM-DD`, like every other series. */
+  t: string | null
+  value: number | null
+  invested: number | null
+}
+
+export interface PositionsHistoryResponse {
+  from: string
+  to: string
+  points: ValuationPoint[]
+}
+
+/**
+ * One security's move since the previous session close (#727).
+ *
+ * A share with **no baseline** (its first day) or no current price is simply not
+ * in the collection: it has not failed to move, it has nothing to compare
+ * against, and a zero in a movers list is a claim. It is still in the
+ * allocation, which needs no history — and the block counts what it does not
+ * show rather than letting it disappear.
+ */
+export interface Mover {
+  symbol: string
+  name: string | null
+  price: number | null
+  previous_price: number | null
+  change: number | null
+  /** The ratio, signed. **`0` is a value**: it is what the block must not hide. */
+  change_pct: number | null
+  market_value: number | null
+  /** What the move did in money — `change × quantity`. */
+  contribution: number | null
+}
+
+export interface MoversResponse {
+  /** The cut the rule defines — midnight of the newest observation's own day. */
+  since: string | null
+  /**
+   * The newest price actually found at or before the cut, and it is what the
+   * block names: the cut is a rule, and printing it announced a close that had
+   * not happened yet.
+   */
+  reference: string | null
+  movers: Mover[]
 }
 
 // ------------------------------------------------------------------------- //
@@ -853,6 +935,8 @@ export const api = {
   portfolioTotals: () => get<PortfolioTotalsResponse>(ROUTES.portfolioTotals),
   portfolioTotalsHistory: () =>
     get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
+  positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
+  movers: () => get<MoversResponse>(ROUTES.movers),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
