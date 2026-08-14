@@ -1550,12 +1550,14 @@ The application runs independent scheduled jobs on a single APScheduler:
   tomorrow. So a past `regular.start` answers **the next occurrence of that same
   opening hour** — 09:00 Paris, not `_approx_next_open`'s ~08:00 guess, which is
   an hour before Euronext opens and now serves **only where there is no exact
-  field at all**. Within `OPENING_LAG` (15 min) *after* that hour the answer is
-  `None`, i.e. `SHORT_RETRY`, i.e. one minute and a re-read: **that half is the
-  daily path, not a corner**, `decide` arming the job *at* the open with no
-  lead-in margin and #619 adding `uniform(0, 30)`, so every wake lands 0–30 s
-  after it and a state that has not flipped yet (Yahoo's lag, an opening
-  auction, a half-day) must not be read as *the day is done* — measured at
+  field at all**. **And which of the two things a past value means is asked of
+  `marketState`, not of the clock**: `PRE`/`PREPRE` name the side *before* a
+  session and `POST`/`POSTPOST` the side *after* one, so a pre-session state
+  answers `None`, i.e. `SHORT_RETRY`, i.e. one minute and a re-read — **that
+  half is the daily path, not a corner**, `decide` arming the job *at* the open
+  with no lead-in margin and #619 adding `uniform(0, 30)`, so every wake lands
+  0–30 s after it and a state that has not flipped yet (Yahoo's lag, an opening
+  auction, a half-day) must not be read as *the day is done*, measured at
   82 800 s of sleep, i.e. **no `price_point` for the whole session, in
   silence**, nothing re-arming a symbol that still has a job.
   **That the window is on the wall clock and not on the timestamp is the whole
@@ -1567,29 +1569,49 @@ The application runs independent scheduled jobs on a single APScheduler:
   **preview/v5 1 010 writes and 3 117 closed probes, the first repair 0 writes
   and 6 probes, this one 1 010 writes and 21 probes**. Anchored on the hour no
   such fixed point can form — the target armed *is* the hour then woken just
-  past — and the ambiguous morning is exactly preview/v5's own answer, 60 s. The
-  cost accepted and written down: during the opening blur a closed symbol is
-  probed once a minute, a few probes a day against a whole night, `marketState`
-  staying the authority on wake as design #603 assumes. The residue named rather
-  than widened away is a `marketState` lagging its own venue by more than fifteen
-  minutes; the measured lags are 0–300 s. The three exits not taken are argued
+  past.
+  **`OPENING_LAG` is a net and not the judge, and making it the judge cost every
+  session rather than one.** The third pass reads the state that was already in
+  hand: a pre-session state answers `None` **whatever its distance**, a
+  post-session state arms the next occurrence of the opening hour, and the window
+  keeps exactly one subject — `CLOSED`, absent or unknown, the holiday shape,
+  where the payload names a session and nothing says which. While the wall clock
+  was the sole judge, a `marketState` lagging its venue by more than fifteen
+  minutes fell out of the window at the wake, was read as *the session is over*,
+  and the symbol slept ~23 h 50 — and the condition is **stable** (a systematic
+  lag, a delayed opening, a half-day), so it lost **every** session, every day,
+  for as long as it held. Measured on the capture with the real `decide` and the
+  jitter at a 20-minute flip: **0 writes over 5 days and 0 over 14**, against
+  980 and 2 744 for preview/v5. This pass matches preview/v5 **write for write**
+  at 5, 20 and 60 minutes of lag while cutting the closed probes from 3 117 to
+  21, 3 167 to 71 and 3 300 to 206. The cost accepted and written down: during
+  the opening blur a closed symbol is probed once a minute, a few probes a day
+  against a whole night, `marketState` staying the authority on wake as design
+  #603 assumes — and reading it here disturbs neither of its other two
+  properties, `decide` still fail-opening an unrecognised state onto `REGULAR`
+  and the cached state still being nobody's status pill. The residue named rather
+  than widened away is now a state saying `CLOSED` **through** its own venue's
+  open for more than fifteen minutes. The four exits not taken are argued
   in `scheduling.py` where the choice is made: `_approx_next_open` for any past
   value (its ~08:00 is not the venue's open, so the first wake of each day falls
   an hour *before* it, outside any window, on a payload that may still name
   yesterday — the first repair's own failure); `SHORT_RETRY` for any past value,
   which closes the morning and reopens the evening, 60 s across fifteen hours not
-  being a *short* retry; and deriving the real open from `post.end` or the venue
+  being a *short* retry; `OPENING_LAG` as sole judge, the second repair's own
+  failure above; and deriving the real open from `post.end` or the venue
   calendar, which rests on fields Yahoo does not guarantee (the capture carries
   no `end` at all). The test that let the original defect live
   did **not** miss the case — it pinned it: `ts = 1_700_000_000` is 2023-11-14,
   *before* the test's own `NOW`, and the assertion was that the function
   returned that past date. The successor reads **one real capture at several
   instants** — before the open, thirty seconds after it with the state still
-  `PRE`, the same wake with the payload 1, 3 and 40 days stale, and five hours
-  after the close (`app/tests/fixtures/trading_period/`, the `mountinfo`
-  fixtures' rule applied to a field whose name misleads) — the invariant is
-  swept across the whole captured day, and five simulated days run end to end
-  under the hypothesis the capture cannot refute. A **dead-ticker guard** (issue #617) backs a
+  `PRE`, twenty and sixty minutes after it with the state *still* `PRE`, the same
+  wake with the payload 1, 3 and 40 days stale under `CLOSED` as well as `PRE`,
+  and five hours after the close (`app/tests/fixtures/trading_period/`, the
+  `mountinfo` fixtures' rule applied to a field whose name misleads) — the
+  invariant is swept across the whole captured day **on the three readings a
+  closed payload can carry**, and five simulated days run end to end under the
+  hypothesis the capture cannot refute, at a lag of 5 minutes and of 20. A **dead-ticker guard** (issue #617) backs a
   symbol off when non-closed cycles keep producing no writable price: the first
   3 failures still re-arm at `base_interval`, then the delay grows
   `base_interval × 2^(n−3)` capped at 24h, resetting to 0 on the first
