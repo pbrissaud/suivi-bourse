@@ -2813,9 +2813,12 @@ so it cannot drift.
 
 **`advisory(key, first_seen_at, acknowledged_at)` is a tiny table carrying an
 acknowledgement, and nothing else** — not a journal: no history, no row per
-occurrence, a closed list of keys. `advisories.py` holds **the text and the
-predicate**, the way `settings_registry.py` holds the dials, and the table stores
-only what the code cannot work out again. The sort was made on one question —
+occurrence, a closed list of keys. `advisories.py` holds **the predicate and the
+log's text**, the way `settings_registry.py` holds the dials, and the table stores
+only what the code cannot work out again. It held *the* text until #768, which
+reversed that clause rather than narrowing it: a **reader** is served the front's
+catalogue (below), so there are two texts for two audiences and this one is the
+operator's. The sort was made on one question —
 *can the app recompute this later?* — and four of the five survive it as
 **derivable states**: a `stat` for a v4's `config.yaml` and its `settings.yaml`,
 `main.unread_environment()` for the variables nothing obeys, and
@@ -3049,7 +3052,7 @@ app/src/
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
-├── advisories.py           # The five advisories: text and predicate in code, the table holds the ack (#709)
+├── advisories.py           # The five advisories: predicate and the log's text in code, the table holds the ack (#709)
 ├── settings.py             # The dials' write path: validate the whole body, write what moved (#701)
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)

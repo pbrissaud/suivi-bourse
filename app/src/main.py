@@ -268,10 +268,11 @@ def effective_environment() -> List[Dict]:
 def advisory_context(config_manager, metrics=None) -> advisories.Context:
     """Gather what the advisories' predicates read (issue #709).
 
-    The seam between :mod:`advisories`, which holds the text and the predicates,
-    and the three places their sources actually live: the configuration directory
-    on the manager, the environment inventory here, and the reconstruction's
-    progress in the scheduler's own memory. **One builder**, so the observation a
+    The seam between :mod:`advisories`, which holds the predicates and the log's
+    text — a reader is served the front's catalogue since #768, so *the* text is
+    no longer one text — and the three places their sources actually live: the
+    configuration directory on the manager, the environment inventory here, and
+    the reconstruction's progress in the scheduler's own memory. **One builder**, so the observation a
     job makes and the one a request renders cannot come from two different
     readings of the same three sources.
 
