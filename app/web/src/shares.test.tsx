@@ -266,6 +266,42 @@ describe('the nine columns of the live table', () => {
     // And the header inherits the reason rather than the em dash.
     expect(head()).toHaveTextContent(/en attente du taux/)
   })
+
+  it('carries a line quoted in no nameable unit at its cost, like the curves do', async () => {
+    // The shape the payload serves for a symbol whose closes came back and whose
+    // `.info` named no currency (#774): `price` present, `price.currency`
+    // absent. The server has valued that line at its PMP since #773, so the page
+    // saying *en attente du taux* about it made one position two figures on one
+    // screen — and a rate that was never coming, there being no pair.
+    renderShares([
+      ...defaultPositions(),
+      aPosition({
+        symbol: 'ZZH',
+        name: 'Zeta Theta',
+        quantity: 6,
+        cost_basis: 600,
+        price: 130,
+        currency: null,
+      }),
+    ])
+
+    const row = (await screen.findByRole('button', { name: 'Zeta Theta' })).closest(
+      'tr',
+    ) as HTMLElement
+    // Its cost, and a latent gain of exactly zero — the first row of the absence
+    // table, not a fifth rendering of its own.
+    expect(row).toHaveTextContent(/600,00/)
+    expect(row).toHaveTextContent(/0,00/)
+    expect(row).not.toHaveTextContent(/en attente du taux/)
+    // And no number under a unit nothing named: 130 is not 130 €.
+    expect(row).not.toHaveTextContent(/130,00/)
+    expect(row).toHaveTextContent(/—/)
+
+    // The header stays a figure and does not move: the line contributes exactly
+    // zero, so the three terms are the ones `defaultPositions()` already sums to.
+    expect(head()).toHaveTextContent(/375,00/)
+    expect(head()).not.toHaveTextContent(/en attente du taux/)
+  })
 })
 
 describe('the exception marker and the date', () => {

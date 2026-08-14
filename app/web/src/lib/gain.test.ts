@@ -75,6 +75,21 @@ describe('the four terms and their sum', () => {
     expect(gainTotal(portfolioTerms([waiting], -5)).known).toBe(false)
   })
 
+  it('does not let a **held** line with no nameable unit blank the headline', () => {
+    // The same defect a second time, and the reason it is the same: this loop
+    // asks `absenceCase` rather than holding a copy, so #774's repair — *a quote
+    // is a number and a unit* — reaches the headline through the one call.
+    // Before it, one line quoted in a unit nothing names turned the gain of the
+    // **whole portfolio** into *waiting for a rate*, for a rate that was never
+    // coming: there is no pair to fetch one for.
+    const unitless = aPosition({ symbol: 'ZZG', quantity: 6, cost_basis: 600, price: 130, currency: null })
+    expect(positionTerms([unitless]).unrealised).toEqual(known(0))
+
+    const withOpenLines = positionTerms([...defaultPositions(), unitless])
+    expect(withOpenLines.unrealised).toEqual(known(300))
+    expect(gainTotal(portfolioTerms([...defaultPositions(), unitless], -5)).known).toBe(true)
+  })
+
   it('does not let a **sold** position with no rate blank the headline', () => {
     // `absenceCase` tests `quantity === 0` first and unconditionally, and says
     // why: ordering it last is how *sold* and *broken ticker* collapse. This

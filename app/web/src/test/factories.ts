@@ -37,7 +37,7 @@
  * off the page rather than off a fixture nobody can check.
  *
  * ---------------------------------------------------------------------------
- * THE THREE BLIND SPOTS, WHICH ARE WHY THE FACTORY EXISTS
+ * THE FOUR BLIND SPOTS, WHICH ARE WHY THE FACTORY EXISTS
  *
  *  - **N ≥ 3 accounts.** Nothing in the product was designed against it and the
  *    real portfolio has two; the navigation, the comparison and the totals are
@@ -49,6 +49,13 @@
  *  - **A held position with no price** (`ZZC`). None of the twelve held
  *    positions lacks one. The case becomes ordinary at the first boot of v5,
  *    during the rebuild, and never again.
+ *  - **A held position quoted in no nameable unit** — `aPosition({ currency:
+ *    null })`, #774. It is the fourth because it is the one the *type* hid: the
+ *    payload has always been able to serve a `price` whose `currency` is `null`
+ *    (`portfolio_view._build_position` reads a column only a successful `.info`
+ *    fetch writes), and no fixture could carry it while `Quote.currency` was
+ *    `string`. The seven such lines measured on staging were all closed, which
+ *    is exactly why nothing rendered the divergence.
  *
  * ---------------------------------------------------------------------------
  * AND WHAT IS *NOT* HERE: the real portfolio. Not a symbol, not an amount, not
@@ -167,8 +174,15 @@ export function theSeededAccount(overrides: Partial<Account> = {}): Account {
 export interface PositionOptions extends Partial<Omit<Position, 'price' | 'converted'>> {
   /** The quote, in its own currency. `null` — never observed. */
   price?: number | null
-  /** The quote's currency. Different from the base is the blind spot. */
-  currency?: string
+  /**
+   * The quote's currency. Different from the base is one blind spot; **`null`
+   * is the other** (#774) — the shape `_build_position` serves for a symbol
+   * whose closes came back and whose `.info` named no currency, `price` present
+   * and `price.currency` absent. It is a fourth thing the real portfolio cannot
+   * show, and the one that had the page and the curves valuing one position two
+   * ways on one screen.
+   */
+  currency?: string | null
   /**
    * The rate applied to reach the base currency. `null` with a non-null price
    * is *waiting for the rate*, which is not the same absence as no price.
