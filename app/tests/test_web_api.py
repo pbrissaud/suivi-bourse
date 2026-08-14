@@ -13,6 +13,8 @@ an ``/api`` 404.
 """
 from datetime import date, datetime, timedelta, timezone
 
+import json
+
 import pytest
 
 import advisories
@@ -719,6 +721,51 @@ def test_the_instrument_rides_on_the_holding_and_is_absent_unfetched(tmp_path):
         'dividend_yield': 0.5, 'pe_ratio': None, 'market_cap': 3.0e12,
     }
     assert rows['MSFT']['fundamentals'] is None
+
+
+def test_a_fundamental_json_cannot_spell_never_reaches_the_body(tmp_path):
+    """A ``200`` whose body a browser refuses whole, and how it was found.
+
+    ``store.finite`` was written against the NaN and spelled ``value != value``,
+    which tests for a NaN and not for *a number JSON can carry* — so an infinite
+    ``trailingPE`` walked through the writer, was stored, and came back out in
+    ``fundamentals`` (the member #720 added). ``jsonify`` emits a bare
+    ``Infinity`` token, ``JSON.parse`` refuses the **whole** body, every read of
+    ``/api/positions`` fails in the client, and the four blocks of the dashboard
+    correctly render nothing — a blank app, no console error, no band, because a
+    read that has not landed is not a fact.
+
+    The assertion is deliberately on the **bytes** and with ``parse_constant``
+    armed, because that is the exact shape of the trap: Python's own parser
+    accepts ``Infinity`` and ``NaN`` happily, so a ``curl | python -m json.tool``
+    check — and ``response.get_json()`` beside it — passes on a payload no
+    browser can read. Only a strict reader sees it.
+    """
+    def refuse(token):
+        raise AssertionError(f'JSON cannot spell {token!r}')
+
+    def seed(opened):
+        seed_position(opened, symbol='AAPL', account='pea')
+        seed_quote(opened, symbol='AAPL', price=200.0)
+        # Written **behind** the writer on purpose. `record_quote` filters what
+        # it stores, so going through it would seed a clean row and assert
+        # nothing: the row that broke the app was written when the rule did not
+        # cover the infinity, and a fundamental is only ever refreshed by a
+        # successful fetch — which a sold line never gets (#699). This is that
+        # row, and it is what makes the read guard the subject.
+        opened.execute("UPDATE symbol_quote SET pe_ratio = 'Infinity'::DOUBLE, "
+                       "market_cap = 'NaN'::DOUBLE WHERE symbol = 'AAPL'")
+
+    response = build_client(tmp_path, seed=seed).get('/api/positions')
+    assert response.status_code == 200
+
+    payload = json.loads(response.get_data(as_text=True), parse_constant=refuse)
+    fundamentals = payload['positions'][0]['fundamentals']
+    assert fundamentals['pe_ratio'] is None
+    assert fundamentals['market_cap'] is None
+    # The object still stands: the currency and the exchange were observed, and
+    # an unspellable figure is an absent member, never an absent block.
+    assert fundamentals['currency'] == 'USD'
 
 
 def test_a_sold_line_and_a_never_quoted_one_are_rows_and_never_absences(tmp_path):

@@ -27,6 +27,7 @@ open would leave the same file locked by the parent while the child tried to
 use buffers it no longer owns — and DuckDB refuses a second process precisely
 because that is not survivable.
 """
+import math
 import os
 import threading
 from contextlib import contextmanager
@@ -430,25 +431,38 @@ class Store:
 def finite(value):
     """A number on its way into — or out of — a ``DOUBLE`` column, or ``None``.
 
-    The one place that says **a NaN is not a number**, and it is a boundary rule
-    rather than arithmetic. v4 carried it on both sides of the InfluxDB path
-    (``influx_sql.is_valid_number``) and both sides need it for the same two
-    reasons, which is why it is one function and not two:
+    The one place that says **a number JSON cannot spell is not a number**, and
+    it is a boundary rule rather than arithmetic. v4 carried it on both sides of
+    the InfluxDB path (``influx_sql.is_valid_number``) and both sides need it for
+    the same two reasons, which is why it is one function and not two:
 
     * on the way **in**, yfinance hands back a NaN for a fundamental it does not
       have — a ``trailingPE`` on a fund, a yield on a share that pays none —
       and a NaN stored in a column is a value that compares false against
       itself, so ``WHERE x IS NOT NULL`` says it is there and every arithmetic
       it touches becomes NaN;
-    * on the way **out**, **JSON has no NaN**. ``jsonify`` emits a bare ``NaN``
-      token, which Python's own parser accepts and a browser's ``JSON.parse``
-      refuses outright — so the response is a ``200`` whose body the page cannot
-      read, with nothing in the log to say why.
+    * on the way **out**, **JSON has neither NaN nor infinity**. ``jsonify``
+      emits a bare ``NaN`` or ``Infinity`` token, which Python's own parser
+      accepts and a browser's ``JSON.parse`` refuses outright — so the response
+      is a ``200`` whose body the page cannot read, with nothing in the log to
+      say why.
+
+    **The infinity is not a second case bolted on, it is the same one.** The
+    rule was written against the NaN and spelled ``value != value``, which is a
+    NaN test and not a *is this a number JSON can carry* test — so ``Infinity``
+    walked through both boundaries and reached a browser. Measured on a real
+    install: one Paris-listed share whose earnings round to nothing publishes
+    ``trailingPE`` as ``+inf``, it was stored, and ``/api/positions`` answered a
+    ``200`` whose body ``JSON.parse`` refused whole — every page of the app
+    blank, no console error, no band, because a read that never lands is not a
+    fact and the four blocks correctly rendered nothing. The predicate is
+    therefore :func:`math.isfinite`, which is the sentence the docstring was
+    already making.
 
     ``None`` is the honest answer in both directions: the field was not
     observed, which is what an absent value means everywhere else in the store.
     """
-    if isinstance(value, float) and value != value:
+    if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
 
