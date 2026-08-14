@@ -2155,9 +2155,13 @@ crater. Four things about the repair are decisions:
   unit already, event amounts being the debit in the reporting currency
   (ADR-0002). The rule is therefore in the `quoted` **term**, never in
   `carrying_price`, whose domain is untouched: `quotes.first_quoted_days` joins
-  `symbol_quote.currency` on the series paths and `carrying.is_quoted` says the
-  same on a P1 row, so the valuation and the shares page cannot answer
-  differently. **It is derivable from the store, which is what decided the
+  `symbol_quote.currency` on the series paths, `carrying.is_quoted` says the same
+  on a P1 row and `lib/absence.ts`'s `isQuoted` says it on the payload (#774), so
+  the valuation and the shares page cannot answer differently. **The last of the
+  three arrived a ticket late, and the sentence above was false in the meantime**
+  — see #774 below: this ticket repaired `portfolio_view._build_share`, the v4
+  view served by `/api/shares`, which the v5 front does not read. **It is
+  derivable from the store, which is what decided the
   implementation**: the perf job's only inputs are the store and the clock
   (#707), so `_quote_currency_unknown` — process memory — could not have carried
   it, and no column is added (the DDL is applied `IF NOT EXISTS` with no
@@ -2168,6 +2172,50 @@ crater. Four things about the repair are decisions:
   days are *not written* rather than written at nothing. `_share_info_cache` is
   filled on the way, so the chunks the backward pass fetches **after** the learn
   are converted at write time and the pass has less to repair each cycle.
+
+**And the page that reads it is the other half** (issue #774, ADR-0004,
+ADR-0016, ADR-0021). #773 closed the divergence by invoking *one
+implementation* — and repaired `portfolio_view._build_share` / `_build_account`,
+the **v4** view served by `/api/shares`, which the v5 front does not read.
+`lib/api.ts` names `/api/positions`, the front decides the carrying itself in
+`lib/absence.ts`, and that module still classified on the native price alone. So
+the divergence **changed side of the seam** instead of closing, and both sides
+were then on one screen: the perf series valued a held line with no nameable
+unit at its PMP — the curves, the accounts page, `portfolio_totals.gain_absolu`
+— while the shares table wrote *en attente de conversion*, `marketValue`
+answered `null`, and `gain.ts` flipped the **whole portfolio's** `Gain total`
+into an absence. Four things about the repair:
+
+- **The rule is one term, `isQuoted`, and it is #773's own sentence** — *a
+  number with no unit is not a cours* — spelled where this side of the seam can
+  read it. It cannot be the same function object (`carrying.is_quoted` is
+  Python, in another process), so what travels is the rule and the argument, and
+  `lib/absence.ts` is the single place the front states it.
+- **No fifth form of absence.** The line joins `carriedAtCost`, the first of
+  ADR-0016's four renderings, because the absence is **permanent**: there is no
+  pair, so there is no rate coming and nothing to wait for, and the cost is
+  already in the reporting currency (ADR-0002). A fifth would have been the
+  fourth kind of absence ADR-0021 refuses. The price column keeps its em dash,
+  and there it is a statement rather than missing data — printing the number
+  under the reporting currency's symbol would assert exactly the unit nothing
+  named, which is what `portfolio_view._build_share` already declines to do.
+- **`gain.ts` needed no edit, and that is the property being verified.** It asks
+  `absenceCase` rather than holding a copy of the classification — the rule that
+  landed at #718 after the copy had already lost a branch once (the sold
+  position) — so the repair reaches the headline through the one call it makes.
+  Written out again there it would have lost this branch too.
+- **The legitimate wait is untouched**: a line whose unit is known and whose
+  rate has not resolved is still `awaitingRate`, still shows its native price
+  and still names what is missing. That absence is transitory and #704 repairs
+  it; conflating the two in the other direction would carry at cost a portfolio
+  that is about to be converted.
+
+`Quote.currency` becomes `string | null` with it — the shape
+`_build_position` has always served, typed as always present, which is what let
+every client test `price !== null` and inherit the wrong absence. The factory
+grows a **fourth** blind spot for it (`aPosition({ currency: null })`): the
+seven such lines measured on staging were all closed, which is precisely why no
+fixture and no screen ever showed the divergence.
 
 ### Scheduled Jobs
 ```text
@@ -2396,13 +2444,18 @@ ever drew the hole. Five things about it are decisions:
   *and* a unit** (#773): both spellings ask for `symbol_quote.currency` beside
   `price_native`, because a close in no nameable unit is one no rate can turn
   into money — that one is *carried at cost*, and reading it as *waiting* counted
-  it zero for ever.
+  it zero for ever. There is a **third** spelling and it is on the other side of
+  the seam, `lib/absence.ts`'s `isQuoted` (#774): the v5 pages read
+  `/api/positions` and decide the carrying themselves, so a rule held on the
+  server alone is a rule held on half the product.
 - **One implementation, called by the valuation and by the shares page.** Two
   would make two users of the same software see two curves for the same
   portfolio with nothing on screen able to say so — so `performance.
   _holdings_value`, `portfolio_view.build_shares` / `valuation_series` and the
   `titres` head all hold the same function object, and a test asserts that on
-  the source.
+  the source. **The v5 front is not one of those callers and cannot be** — it is
+  another process reading a payload — so what is shared there is the *term* and
+  not the function, and `lib/absence.ts` is the one place it is spelled (#774).
 - **The price column stays the em dash** — the app does not invent a quote —
   while value and latent gain use the carried price, which is what makes the sum
   of the rows equal the total. **A carried value is not marked at the point**
@@ -2802,7 +2855,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
 ├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
-├── src/lib/absence.ts      # Pure: the four renderings of absence (#718)
+├── src/lib/absence.ts      # Pure: the four renderings of absence (#718), and a quote is a number *and* a unit (#774)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
 │                           #       plus the sheet: the breakdown that is absent at one account, the day-markers (#720)

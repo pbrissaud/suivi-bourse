@@ -236,7 +236,8 @@ _Nothing to compute_ — the latent gain of a position with no quantity. _Waitin
 price exists but its conversion does not yet. _Never fetched_ — every attempt on a
 symbol came back with nothing, which is repairable and says so. And _carried at cost_,
 which is not an absence at all: the price is an em dash while the value is real.
-A quote whose **unit** was never recorded is _carried at cost_ and never _waiting_ (#773):
-a number with no unit is not a price, and no rate is coming for a pair nobody can name.
+A quote whose **unit** was never recorded is _carried at cost_ and never _waiting_ (#773,
+and on the page since #774): a number with no unit is not a price, and no rate is coming
+for a pair nobody can name.
 A zero is none of these. It is a figure, and never wears absence's grey.
 _Avoid_: empty, missing, N/A, null (as an on-screen state)
