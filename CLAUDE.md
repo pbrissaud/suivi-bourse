@@ -864,6 +864,42 @@ per-event would be narrower than the gesture it introduces. Rebuilding an
 address out of `(date, type, symbol, account)` to be exact instead would be
 #662's opaque token over `(file, sheet, row)` under another name.
 
+**And the five notices are read in the reader's language** (issue #768,
+ADR-0024, ADR-0021). `AdvisoriesBlock` rendered `advisory.message` verbatim and
+those five sentences are built in English by `advisories.py`, so the **whole
+content** of the block was English on a French installation — beside a title, a
+date and a button that were not. It is not a regression: the sentences had no
+rendering surface at all before #724, they were only logged, which is also why
+the defect belongs to neither ticket. Three things about the repair are
+decisions:
+
+- **The front composes from `key` and `detail`; `message` stays the log line and
+  the headless payload.** The choice is written in `lib/advisories.ts`, where it
+  is taken, with the two refused beside it: *removing `message`* takes from a
+  client with no interface the one sentence that says what to do (*headless
+  means without an interface, not without HTTP*), and *`Accept-Language`* has no
+  subject, the reader's language being a three-state `localStorage` preference
+  with **no dial in the store** — ADR-0024's own refusal, one resource on. The
+  cost accepted is one sentence written twice, and what defends it is that they
+  are **two texts for two audiences under two contracts**: a logfmt line an
+  operator greps, in one language for ever, against a paragraph a reader reads
+  in theirs. **The log does not change** — #709's *logged once, in English, at
+  the instant the row is created* is untouched.
+- **What crosses the boundary is data, never prose.** `f"{len(variables)}
+  environment variable(s)"` is the approximate pluralisation ICU exists to
+  replace, and `', '.join(...)` is not how a language enumerates — English
+  closes on *and*, French on *et*. So the catalogue carries real ICU plurals
+  (French agreeing its verb where English does not) and `formatList` is the
+  **ninth `Intl` site**, the first that is neither a number nor a date.
+- **Ten keys and not five**: each notice has the sentence it says when this
+  process observed what it names, and the one it says when it did not —
+  `detail: null` being #709's third answer, and the exact parallel of the
+  server falling back to `AdvisorySpec.doc`. A detail present but short of what
+  the sentence interpolates takes the same road: half a sentence is a bug
+  rendered. A key outside the closed list of five falls back to the server's
+  English, which is better than an empty notice in a block that exists to be
+  read.
+
 **The accounts page: a comparison does not outrun the period where it exists**
 (issue #721, ADR-0019, ADR-0016). It was the only one of the four **rendered and
 never judged** — measured on a declared account it reproduced the dashboard's
@@ -3040,7 +3076,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/i18n.tsx        # Language: three states, localStorage, ICU
 ├── src/lib/theme.tsx       # Theme: three states, localStorage, writes the alloc ramp
 ├── src/lib/alloc.ts        # The twelve allocation stops, generated per ground
-├── src/lib/format.ts       # The eight Intl sites, locale as an argument
+├── src/lib/format.ts       # The nine Intl sites, locale as an argument — the ninth enumerates (#768)
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
 ├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
 │                           #       plus the rebuild's bar and the account it names (#727)
@@ -3053,6 +3089,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/dashboard.ts    # Pure: the two readings, the twelve slices, the movers' leftovers, the four states (#727)
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
+│                           #       plus the sentence itself, composed from key + detail (#768)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
 ├── src/lib/accounts.ts     # Pure: the window, the rebasing to 100, the vanishing column, the reason (#721)
 │                           #       plus the declaration: who names a row, where it came from, why it stays (#729)

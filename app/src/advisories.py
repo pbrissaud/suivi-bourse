@@ -166,6 +166,17 @@ class AdvisorySpec:
     and in the log alike — **one text, one place**, because an advisory whose
     log line and whose screen disagree is worse than either alone.
 
+    **Its readers are the log and a client with no interface** (issue #768). The
+    interface composes its own sentence from ``key`` and ``detail``, because the
+    reader's language is a browser preference with no dial in the store
+    (ADR-0024) and this process therefore does not know it. The two texts are
+    kept because they serve two audiences under two contracts — a logfmt line an
+    operator greps, in one language for ever, against a paragraph a reader reads
+    in theirs — and **nothing here follows a reader**: the sentences below are
+    English, the ``', '.join(...)`` and the ``(s)`` are an operator's
+    enumeration and an operator's plural, and the front is served the arrays and
+    the counts they were built from rather than the string.
+
     ``level`` is the log level the arming line is emitted at, and it is per
     advisory rather than uniform: a reconstruction in progress is the app working
     as designed, and a ``WARNING`` for it would teach an operator to filter out
