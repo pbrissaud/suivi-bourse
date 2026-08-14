@@ -27,6 +27,22 @@ except ImportError:  # pragma: no cover - defensive, py<3.9 unsupported anyway
 # (fail-open) so an unparseable state never sleeps a symbol indefinitely.
 CLOSED_STATES = frozenset({'CLOSED', 'POST', 'POSTPOST', 'PRE', 'PREPRE'})
 
+# The same family split by **which side of the session each value names** (issue
+# #769). Yahoo publishes six ``marketState`` values and no more — ``PREPRE``,
+# ``PRE``, ``REGULAR``, ``POST``, ``POSTPOST``, ``CLOSED`` — so five of them are
+# closed and four of those five *say where they stand relative to a session*.
+# ``CLOSED`` is the one that does not, which is why it is in neither set and why
+# the two do not partition ``CLOSED_STATES`` by themselves
+# (``BEFORE_SESSION_STATES | AFTER_SESSION_STATES | {'CLOSED'}`` does, and a test
+# asserts it on the module rather than leaving it to this comment).
+#
+# Membership is **exact**, exactly as ``is_closed``'s is: a spelling this module
+# has never seen is not silently folded into one side, it lands in the ambiguous
+# reading below where the wall clock decides — which is preview/v5's own answer
+# and the fail-safe of the pair.
+BEFORE_SESSION_STATES = frozenset({'PRE', 'PREPRE'})
+AFTER_SESSION_STATES = frozenset({'POST', 'POSTPOST'})
+
 # Hardcoded safety constants (design #607) — not operator dials.
 # ``SHORT_RETRY`` is what a closed cycle does when the next open is **unknown**,
 # and only that (issue #769). It stopped being that for a while: an ordinary
@@ -38,9 +54,18 @@ MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 
 # How long past the venue's own **opening time of day** a still-closed state is
 # read as *the open has not registered yet* rather than as *the session is over*
-# (issue #769). The metadata cannot tell the two apart on its own: after the
-# close and one minute after the open, ``currentTradingPeriod.regular.start``
-# is the same timestamp, and only its distance to ``now`` separates them.
+# (issue #769) — **a net, and no longer the judge**.
+#
+# The judge is ``marketState``, which the same function has already read one
+# screen above and which was going unused. ``PRE``/``PREPRE`` name the side
+# *before* a session and ``POST``/``POSTPOST`` the side *after* one, so where the
+# state speaks, the wall clock is not consulted at all: a pre-session state means
+# the open has not registered yet **whatever its distance**, and a post-session
+# state means the session named by the payload is over. The whole of what this
+# constant still decides is the one reading where the metadata says nothing about
+# its side — ``CLOSED``, absent, ``None``, or a spelling this module does not
+# know. That is the holiday shape: the payload names a session and nothing on
+# hand says whether it is the one that just ended or the one that will not start.
 #
 # It is measured **against the wall clock, never against the timestamp**, and
 # that is the whole of what makes it safe. Every wake of a closed symbol is armed
@@ -55,16 +80,33 @@ MAX_SLEEP = 24 * 60 * 60   # s: hard cap on a single deep-sleep to next open
 # comparison is on the hour and not on the date.
 #
 # The window is bounded on both sides and the two costs are not symmetric: too
-# tight loses a session, too wide probes a day that never opens once a minute for
-# the width of the window. Fifteen minutes is fifteen probes per symbol on a
+# tight gives a session up, too wide probes a day that never opens once a minute
+# for the width of the window. Fifteen minutes is fifteen probes per symbol on a
 # holiday — against the ~900 a night #769 measured — and it is far below the
 # shortest closure a market has, so an evening never enters it. It is not *the
 # session*: bounding by a nominal 8 h session would pay a half-day (closed at
 # 14:05, probed until 17:00) in exactly the coin this ticket exists to stop
-# spending. What it does **not** cover is a ``marketState`` that lags its own
-# venue by more than fifteen minutes; that residue is stated here rather than
-# widened away, the measured lags being 0 to 300 s.
-OPENING_LAG = 15 * 60      # s: past the opening hour and still closed is *not yet*
+# spending.
+#
+# **What it no longer decides is the case that made the width matter**, and that
+# case was under-stated by an order of magnitude while it did. A ``marketState``
+# lagging its own venue by more than the window did not cost *a* session: a
+# systematic lag, a delayed opening and a half-day are all **stable** conditions,
+# so past fifteen minutes the wake fell out of the window, armed the next
+# occurrence of the opening hour, and the symbol gave up **every** session, every
+# day, for as long as the condition held. Measured on the capture with the real
+# ``decide`` and #619's jitter, at a 20-minute flip: **0 writes over 5 days and 0
+# over 14**, against 980 and 2 744 for preview/v5 — and this pass now matches
+# preview/v5 write for write at every lag tried (5, 20 and 60 minutes) while
+# cutting the closed probes from 3 117 to 21, 3 167 to 71 and 3 300 to 206.
+# Nothing on the live path catches the lost session up (``_reconcile_jobs`` only
+# revives a symbol with **no** job, #628's sonde only runs on a ``REGULAR``
+# write). A lagging state still says ``PRE``, so reading the state closes that
+# hole with no width to tune. The
+# residue left is a state that says ``CLOSED`` **through** its own venue's open
+# for more than fifteen minutes — a payload naming neither side while a session
+# runs — and it is stated here rather than widened away.
+OPENING_LAG = 15 * 60      # s: the ambiguous reading only — see above
 
 # How often the perf job recomputes, in full and unconditionally (issue #707,
 # ADR-0011). A constant and not a dial (issue #701): the two tables are a
@@ -109,6 +151,24 @@ RESERVED = 3               # backfill + perf (+ headroom), the non-scrape jobs
 def is_closed(state) -> bool:
     """True only for a recognized closed-family state (fail-open coercion)."""
     return state in CLOSED_STATES
+
+
+def is_before_session(state) -> bool:
+    """True for a state that names the side **before** a session (issue #769).
+
+    Neither of these two is a verdict on the *cadence* — ``is_closed`` owns that
+    and both values are in its set. What they answer is the question
+    ``extract_market_context`` has to settle about a ``regular.start`` that has
+    already happened: *has the open not registered yet*, or *is that session
+    over*. The metadata answers it, and only the leftover ``CLOSED`` reading
+    falls through to ``OPENING_LAG``.
+    """
+    return state in BEFORE_SESSION_STATES
+
+
+def is_after_session(state) -> bool:
+    """True for a state that names the side **after** a session (issue #769)."""
+    return state in AFTER_SESSION_STATES
 
 
 def backoff_delay(base_interval: int, failure_count: int) -> float:
@@ -464,11 +524,14 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     is the authority on wake). ``now`` is injected and must be timezone-aware.
     Returns ``(state, next_open|None)``.
 
-    **A past open is read for its hour, never for its date** (issue #769): just
-    past the venue's opening time of day is *the open has not registered yet*
-    and answers ``None``; further past it is *this session is over* and answers
-    the **next occurrence of that same opening time**. ``OPENING_LAG`` is the
-    line, and the argument for it is written where the constant is.
+    **A past open is read for its hour, never for its date** (issue #769), and
+    **``marketState`` says which of the two things it means**: a pre-session
+    state (``PRE``/``PREPRE``) is *the open has not registered yet* and answers
+    ``None`` whatever the distance; a post-session state (``POST``/``POSTPOST``)
+    is *this session is over* and answers the **next occurrence of that same
+    opening time**. Only a state that names neither side — ``CLOSED``, absent,
+    unknown — is settled by ``OPENING_LAG``, and the argument for that is
+    written where the constant is.
     """
     info = info or {}
     state = info.get('marketState')
@@ -485,21 +548,35 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     # So a non-future value never leaves this function. What it is replaced by
     # is **its own time of day** and never its calendar date: the date is spent,
     # the hour is the venue's opening hour and it is the one thing this payload
-    # states about tomorrow. Two branches, and the discriminant is the wall
-    # clock:
+    # states about tomorrow. Which of the two things a past value *means* is
+    # asked of ``state``, read at the top of this very function and left unused
+    # until #769's third pass — the metadata does say it, and only where it is
+    # silent does the wall clock decide:
     #
-    #   * **just past that hour — every wake of every closed symbol.** ``decide``
-    #     arms the job *at* the open with no lead-in margin and #619 adds
-    #     ``uniform(0, 30)``, so a wake lands 0 to 30 s after it by
-    #     construction. A state still closed there means the open has not
-    #     registered yet — Yahoo's lag, an opening auction, a half-day — not
-    #     that the day is done. The honest answer is that we do **not know**
-    #     when this market opens: ``None``, i.e. ``SHORT_RETRY``, i.e. one
-    #     minute and a re-read. That is preview/v5's own answer in the ambiguous
-    #     case, kept deliberately: measured, a rule that read *past, therefore
-    #     over* slept 82 800 s there.
-    #   * **further past — the evening, the night, a holiday.** The session this
-    #     payload names is over and the next open is the same hour, next day.
+    #   * **a pre-session state (``PRE``/``PREPRE``) — the open has not
+    #     registered yet, whatever the distance.** ``decide`` arms the job *at*
+    #     the open with no lead-in margin and #619 adds ``uniform(0, 30)``, so
+    #     this is the state of every ordinary wake: Yahoo's own lag, an opening
+    #     auction, a half-day. The honest answer is that we do **not know** when
+    #     this market opens: ``None``, i.e. ``SHORT_RETRY``, i.e. one minute and
+    #     a re-read — preview/v5's own answer, kept deliberately, a rule reading
+    #     *past, therefore over* having slept 82 800 s there. **No fifteen-minute
+    #     ceiling**, and that is this pass's whole repair: a state lagging its
+    #     venue past the window used to fall out of it and arm tomorrow, so the
+    #     symbol gave up not *a* session but **every** session for as long as the
+    #     lag held (0 writes over 5 and over 14 simulated days at a 20-minute
+    #     flip, against 980 and 2 744 for preview/v5).
+    #     The cost is bounded by the state itself: a pre-session state precedes a
+    #     session, so the probing stops when that session opens, where a weekend
+    #     and a holiday say ``CLOSED`` and take the third branch instead.
+    #   * **a post-session state (``POST``/``POSTPOST``) — the evening, the
+    #     night.** The session this payload names is over and the next open is
+    #     the same hour, next day. This is the reading of the ticket's own
+    #     capture, taken at 22:47 local on ``POSTPOST``.
+    #   * **anything else — ``CLOSED``, absent, unknown — is genuinely
+    #     ambiguous**, the holiday shape: nothing on hand says which session the
+    #     payload is naming. ``OPENING_LAG`` decides it, on the wall clock, and
+    #     that is all it decides now.
     #
     # Reading the *timestamp* rather than the hour is what the first repair of
     # #769 did, and it moved the failure instead of closing it: a payload Yahoo
@@ -519,11 +596,16 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     #     yesterday. It is kept for the one case where it is the only thing left:
     #     **no exact field at all**.
     #   * **``SHORT_RETRY`` for any past value**, which is the letter of the
-    #     prescription this repair follows. It closes the morning and reopens
-    #     the evening: 60 s across the fifteen hours of a closure is not a
-    #     *short* retry, and it is the defect the ticket exists to remove. The
-    #     morning gets it, the evening does not, and the hour is what separates
-    #     them.
+    #     prescription the previous pass followed. It closes the morning and
+    #     reopens the evening: 60 s across the fifteen hours of a closure is not
+    #     a *short* retry, and it is the defect the ticket exists to remove. The
+    #     morning gets it, the evening does not, and the **state** is what
+    #     separates them.
+    #   * **``OPENING_LAG`` as the sole judge**, which is what the previous pass
+    #     shipped. It reads a lagging ``marketState`` as a finished session past
+    #     fifteen minutes, and the lag is a *stable* condition, so the symbol
+    #     gives up every session for as long as it holds — the whole subject of
+    #     this pass, and the reason the constant keeps only the ambiguous case.
     #   * **derive the real next open** from ``post.end`` or the venue's
     #     calendar. More exact, and it rests on fields Yahoo documents nowhere
     #     and does not guarantee — the captured reading carries no ``end`` at
@@ -531,15 +613,26 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     #     with no invariant to state.
     #
     # The cost accepted, and it is the one to write down: during the opening
-    # blur — from the venue's opening hour until ``marketState`` flips, or until
-    # ``OPENING_LAG`` runs out — a closed symbol is probed once a minute. A few
-    # probes a day against a whole night, and ``marketState`` stays the
-    # authority on wake, which design #603 already assumes.
+    # blur — from the venue's opening hour until ``marketState`` flips — a closed
+    # symbol is probed once a minute. A few probes a day against a whole night,
+    # and ``marketState`` stays the authority on wake, which design #603 already
+    # assumes. Reading it here does not disturb its two other properties:
+    # ``decide`` still **fail-opens** an unrecognised state onto ``REGULAR``
+    # (this function returns ``state`` untouched, and a state that is neither
+    # side simply lands in the ambiguous branch), and the ``marketState``
+    # ``main`` caches on a successful fetch is still nobody's status pill —
+    # ``runtime_view`` is the one that answers that, off the last-pass record.
     current_open = _current_regular_open(history_meta)
     if current_open is None:
         return state, _approx_next_open(info, now)
     if current_open > now:
         return state, current_open
+
+    if is_before_session(state):
+        # The payload's session has not started. Answered before the timezone is
+        # even looked at, deliberately: this reading needs no projection, and it
+        # is therefore also right on a venue whose timezone is unusable.
+        return state, None
 
     bounds = _opening_hour_bounds(current_open, info, now)
     if bounds is None:
@@ -549,6 +642,8 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
         # guess gives here, it needing the very same timezone.
         return state, None
     previous, following = bounds
+    if is_after_session(state):
+        return state, following
     if (now - previous).total_seconds() <= OPENING_LAG:
         return state, None
     return state, following
