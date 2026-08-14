@@ -162,9 +162,33 @@ class AdvisorySpec:
     """One advisory: what makes it stand, and what it says when it does.
 
     ``observe`` answers the three-valued question of the module docstring;
-    ``message`` turns what it named into the sentence a human reads, on the API
-    and in the log alike — **one text, one place**, because an advisory whose
-    log line and whose screen disagree is worse than either alone.
+    ``message`` turns what it named into a sentence, and that sentence has two
+    readers and neither of them is the interface: **the log line, and a client
+    with no interface** (issue #768). One text in one language for that channel,
+    which has no reader preference and is grepped rather than read.
+
+    **Until #768 this said the opposite, and the argument was reversed rather
+    than narrowed.** It read: *``message`` turns what it named into the sentence
+    a human reads, on the API and in the log alike — **one text, one place**,
+    because an advisory whose log line and whose screen disagree is worse than
+    either alone.* Both halves fell together. The interface composes its own
+    sentence from ``key`` and ``detail``, so there are now **two texts in two
+    places**, and the screen is deliberately not this one — reversed on a
+    measurement rather than on taste: the whole content of the *Notices* block
+    was English on a French installation, and the sentences below count with
+    ``(s)`` and enumerate with ``', '.join(...)``, which is an operator's plural
+    and an operator's list. What the old clause was right about is kept — two
+    texts that *disagreed* would still be worse than either alone — and these two
+    do not disagree: they serve two audiences under two contracts, a logfmt line
+    an operator greps in one language for ever against a paragraph a reader reads
+    in theirs, and the front is served the arrays and the counts these sentences
+    were built from rather than the string.
+
+    The reader's language is a browser preference with **no dial in the store**
+    (ADR-0024), so this process does not know it and ``Accept-Language`` has no
+    subject here; the choice and the two forms refused beside it are argued in
+    ``lib/advisories.ts``, where it is taken. **Nothing here follows a reader**:
+    the sentences below are English and stay English.
 
     ``level`` is the log level the arming line is emitted at, and it is per
     advisory rather than uniform: a reconstruction in progress is the app working

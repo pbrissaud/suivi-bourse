@@ -961,6 +961,11 @@ export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse
  * fixture is what let a gesture keeping `symbols[0]` alone pass for correct.
  * Two of the three are in `ledgerEvents()` and one is not, so a reduction can be
  * checked on what it keeps *and* on what it drops.
+ *
+ * **`message` keeps the server's own English, `(s)` and `', '.join(...)`
+ * included** (#768). It is not a leftover: it is what the log line and a client
+ * with no interface read, and a page test asserting the block does *not* show it
+ * needs it to be there to be a test at all.
  */
 export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   return {

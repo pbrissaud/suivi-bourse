@@ -25,6 +25,7 @@
  *    both would put two announcers on one fact.
  */
 import type { Advisory } from '@/lib/api'
+import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 /**
  * The advisory the banner owns. It is excluded from the block **and** from the
@@ -103,3 +104,171 @@ export function advisoryGesture(advisory: Advisory): AdvisoryGesture {
   if (named.length === 0) return null
   return { kind: 'ledger', symbols: named }
 }
+
+/* -------------------------------------------------------------------------- *
+ * The sentence itself (#768, ADR-0024, ADR-0021)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * **The front composes the sentence from `key` and `detail`; the server's
+ * `message` stays what it always was — the log line and the headless payload.**
+ *
+ * That is the first of the three forms #768 put on the table, and the choice is
+ * taken here because here is where it is paid for. The other two are refused
+ * for reasons of their own:
+ *
+ *  - **removing `message` from the payload** is cleaner on paper and takes from
+ *    a client with no interface the one sentence that says what to do — and
+ *    *headless means without an interface, not without HTTP* (ADR-0015). The
+ *    five keys are stable identifiers a client may branch on, but a key is not
+ *    a sentence, and asking every consumer to write five of its own is asking
+ *    each of them to redo this file;
+ *  - **negotiating the language on the server** (`Accept-Language`) has no
+ *    subject: the reader's language is a three-state `localStorage` preference
+ *    with **no dial in the store** (ADR-0024), so the server does not have that
+ *    information and the product decided it never would. It is the same cost
+ *    ADR-0024 already refused to pay for `problem.py`.
+ *
+ * The cost accepted is that one sentence is written twice, which this repository
+ * otherwise refuses. What defends it is that the two are not one sentence in two
+ * places but **two texts for two audiences under two contracts**: a logfmt line
+ * an operator greps, in one language for ever because a log has no reader
+ * preference, against a paragraph a reader reads in theirs. #709 made *logged
+ * once, in English, at the instant the row is created* a property of the
+ * mechanism; nothing here touches it.
+ *
+ * What crosses the boundary is therefore **data, never prose**: an array of
+ * variables rather than `', '.join(...)`, a count rather than a `(s)`. The `(s)`
+ * is exactly the approximate pluralisation ICU exists to replace, and a
+ * separator is not how a language enumerates — English closes on *and*, French
+ * on *et*, and `formatList` (`Intl.ListFormat`) is what says so.
+ */
+
+/** How an enumeration is rendered — injected, so this module stays pure. */
+export type ListFormatter = (items: readonly string[]) => string
+
+/** A catalogue key and what it interpolates. The component calls `t` with it. */
+export interface AdvisoryText {
+  key: MessageKey
+  values?: MessageValues
+}
+
+interface Sentence {
+  /** What the notice says when this process observed what it names. */
+  named: MessageKey
+  /**
+   * What it says otherwise — the parallel of `AdvisorySpec.doc` on the server,
+   * which is what `message` falls back to when `detail` is `null`. It states
+   * what the advisory *is* and claims no specifics it has not read.
+   */
+  unobserved: MessageKey
+  /** `null` when the detail is there and does not carry what the sentence needs. */
+  values: (detail: Record<string, unknown>, list: ListFormatter) => MessageValues | null
+}
+
+/** A member that has to be a non-empty string — a path, a currency code. */
+function text(detail: Record<string, unknown>, member: string): string | null {
+  const value = detail[member]
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/** A member that has to be a finite number — the two halves of a progress. */
+function count(detail: Record<string, unknown>, member: string): number | null {
+  const value = detail[member]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** A member that has to be a non-empty list. Its length is what plurals turn on. */
+function items(detail: Record<string, unknown>, member: string): string[] | null {
+  const value = detail[member]
+  if (!Array.isArray(value) || value.length === 0) return null
+  return value.map((entry) => String(entry))
+}
+
+/**
+ * The five keys and their two sentences each. A closed list (ADR-0021), written
+ * out rather than derived: `MessageKey` is `keyof typeof en`, so a catalogue key
+ * that does not exist — or a French catalogue that drifts from the English one —
+ * is a compile error rather than a notice rendering as its own key.
+ */
+const SENTENCES: Record<string, Sentence> = {
+  legacy_config_file: {
+    named: 'installation.advisory.legacy_config_file',
+    unobserved: 'installation.advisory.legacy_config_file.unobserved',
+    values: (detail) => {
+      const path = text(detail, 'path')
+      return path === null ? null : { path }
+    },
+  },
+  legacy_settings_file: {
+    named: 'installation.advisory.legacy_settings_file',
+    unobserved: 'installation.advisory.legacy_settings_file.unobserved',
+    values: (detail) => {
+      const path = text(detail, 'path')
+      return path === null ? null : { path }
+    },
+  },
+  unread_environment: {
+    named: 'installation.advisory.unread_environment',
+    unobserved: 'installation.advisory.unread_environment.unobserved',
+    values: (detail, list) => {
+      const variables = items(detail, 'variables')
+      return variables === null
+        ? null
+        : { count: variables.length, variables: list(variables) }
+    },
+  },
+  reconstruction_running: {
+    named: 'installation.advisory.reconstruction_running',
+    unobserved: 'installation.advisory.reconstruction_running.unobserved',
+    values: (detail) => {
+      const complete = count(detail, 'complete')
+      const total = count(detail, 'total')
+      return complete === null || total === null ? null : { complete, total }
+    },
+  },
+  assumed_base_currency: {
+    named: 'installation.advisory.assumed_base_currency',
+    unobserved: 'installation.advisory.assumed_base_currency.unobserved',
+    values: (detail, list) => {
+      const base = text(detail, 'base_currency')
+      const events = items(detail, 'events')
+      const symbols = items(detail, 'symbols')
+      const currencies = items(detail, 'currencies')
+      if (base === null || !events || !symbols || !currencies) return null
+      return {
+        base,
+        events: events.length,
+        lines: symbols.length,
+        symbols: list(symbols),
+        currencies: list(currencies),
+      }
+    },
+  },
+}
+
+/**
+ * What the reader is told, in their own language — or `null`.
+ *
+ * `null` has exactly one cause and it is not an absence of translation: a key
+ * outside the closed list of five. The caller then renders the server's
+ * `message`, which is the honest degradation — a sixth advisory shipping before
+ * its catalogue entry says its English sentence rather than nothing at all, and
+ * an empty notice is the one outcome a block that exists to be read cannot
+ * afford.
+ *
+ * A `detail` this process could not observe (`null`, #709's third answer) or one
+ * that does not carry what the sentence interpolates falls back to the notice's
+ * *unobserved* sentence rather than to a paragraph with `undefined` in it — the
+ * same move the server makes when it falls back to `AdvisorySpec.doc`.
+ */
+export function advisoryText(advisory: Advisory, list: ListFormatter): AdvisoryText | null {
+  const sentence = SENTENCES[advisory.key]
+  if (!sentence) return null
+  if (!advisory.detail) return { key: sentence.unobserved }
+  const values = sentence.values(advisory.detail, list)
+  return values === null ? { key: sentence.unobserved } : { key: sentence.named, values }
+}
+
+/** The five keys the catalogues answer for, in the server's declared order. */
+export const ADVISORY_KEYS = Object.keys(SENTENCES)

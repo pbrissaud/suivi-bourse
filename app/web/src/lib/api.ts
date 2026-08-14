@@ -863,15 +863,46 @@ export interface SettingsWriteResponse {
 }
 
 /**
- * One standing advisory (#709, ADR-0021).
+ * One standing advisory (#709, ADR-0021, ADR-0024).
  *
- * `message` is the **server's** sentence, in English, and it is the one place
- * the front renders a string it did not write. That is not a hole in ADR-0024:
- * an advisory names paths, variables and symbols this installation holds, the
- * closed list of five lives in `advisories.py` beside its predicate, and a
- * catalogue key per advisory would be a second authority on what each one says.
- * What the interface writes in the reader's language is everything around it —
- * the block, the gesture, and what to do when there is nothing to press.
+ * **`message` is the server's sentence, in English, and no reader is served it
+ * for a key the catalogues answer.** This docstring used to say the opposite —
+ * that rendering `message` verbatim was not a hole in ADR-0024, and that *a
+ * catalogue key per advisory would be a second authority on what each one
+ * says*. **#768 reversed it**, on a measurement rather than on taste: the whole
+ * content of the *Notices* block was English on a French installation, beside a
+ * title, a date and a button that were not, and the sentences interpolated
+ * their plurals with `(s)` and their enumerations with `', '.join(...)` —
+ * neither of which is how a language counts or lists. The repair **is** the
+ * refused form: ten catalogue keys, two per notice, in `lib/advisories.ts`.
+ *
+ * What `message` is still good for, and why it stays on the payload:
+ *
+ *  - **a client with no interface**, which is the reason it was not simply
+ *    removed — *headless means without an interface, not without HTTP*
+ *    (ADR-0015). A key is a stable identifier, not a sentence, and asking every
+ *    such consumer to write five of its own is asking each of them to redo
+ *    `lib/advisories.ts`;
+ *  - **the log**, whose line `message` is: #709's *logged once, in English, at
+ *    the instant the row is created* is a property of the mechanism and is
+ *    untouched by any of this;
+ *  - **this front's fallback for a key outside the closed list of five** — a
+ *    sixth advisory shipping before its catalogue entry says its English
+ *    sentence rather than nothing at all, and an empty notice is the one
+ *    outcome a block that exists to be read cannot afford. That is the only
+ *    path on which the interface still renders a string it did not write.
+ *
+ * **It is not a second authority, and the split is exactly ADR-0024's.** The
+ * server stays the authority on the **predicate** — whether an advisory stands
+ * at all — and on the **parameters**: `key` is a closed list of five (ADR-0021)
+ * and `detail` is re-derived per read, so the paths, the variables, the symbols
+ * and the counts a sentence names are the server's observations and nothing
+ * else. The catalogue is the authority on the **phrase** those parameters are
+ * poured into, which is what follows the reader (a three-state `localStorage`
+ * preference with **no dial in the store**, so this process could not know it
+ * and `Accept-Language` has no subject here). What crosses this boundary is
+ * therefore **data, never prose**: an array of variables rather than a joined
+ * string, a count rather than a `(s)`.
  */
 export interface Advisory {
   key: string
