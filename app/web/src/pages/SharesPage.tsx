@@ -24,6 +24,17 @@
  *    information rather than as a void.
  *  - **No *hide the closed ones* switch, anywhere.** It is the whole point.
  *
+ * **And one reduction, `?compte=`** (#722), which an account's panel leads to in
+ * place of a positions table of its own. It is not the switch this page refuses:
+ * that one hid a *part of the table the header summed*, silently and with
+ * nothing on screen able to say which of two correct figures was the owner's
+ * gain. This one **states itself with the account it names, offers the way out,
+ * and the header goes on summing the lines it sits above** — reduced, those are
+ * the account's lines, and the total is that account's. It names the account by
+ * its **id**, which is what the `Compte` column of this table already renders:
+ * one naming on one page, rather than a fifth read to fetch a label that would
+ * disagree with the column beside it.
+ *
  * Reads and failures follow the dashboard head's rule and for the same reason:
  * `/api/runtime` answers from process memory and never opens the store (#668),
  * so the shell's banner is silent on the one failure that empties this page.
@@ -31,7 +42,7 @@
  * one band on screen or none.
  */
 import { useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
@@ -52,6 +63,7 @@ export default function SharesPage() {
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const { compte = null } = useSearch({ from: '/titres' })
 
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
@@ -64,10 +76,16 @@ export default function SharesPage() {
     [runtime.data],
   )
 
-  const rows = useMemo(
-    () => buildShareRows(positions.data?.positions ?? [], failures),
-    [positions.data, failures],
-  )
+  // The reduction is applied to the **positions**, before the folding: a row of
+  // this page is a symbol across its accounts (`lib/shares.ts`), so reducing
+  // afterwards would keep a line held on two accounts whole and state the other
+  // account's quantity under a bar naming this one.
+  const reduced = useMemo(() => {
+    const all = positions.data?.positions ?? []
+    return compte === null ? all : all.filter((position) => position.account === compte)
+  }, [positions.data, compte])
+
+  const rows = useMemo(() => buildShareRows(reduced, failures), [reduced, failures])
 
   const failure = oneBand(
     readConditions({ shellError: runtime.error, errors: [positions.error] }),
@@ -89,9 +107,10 @@ export default function SharesPage() {
   // screen; the switch was a setting whose effect was invisible.
   const onScreen = [...shown, ...closed]
   const onScreenSymbols = new Set(onScreen.map((row) => row.symbol))
-  const summed = (positions.data?.positions ?? []).filter((position) =>
-    onScreenSymbols.has(position.symbol),
-  )
+  // Off the **reduced** set, not the payload: a symbol held on two accounts has
+  // a row on each, and summing both under a header naming one account is the
+  // *other correct figure* again, one axis over.
+  const summed = reduced.filter((position) => onScreenSymbols.has(position.symbol))
 
   // The freshest quote the page holds — one instant for the whole table. There
   // is nothing to date when nothing has ever been quoted, and an invented
@@ -130,19 +149,50 @@ export default function SharesPage() {
 
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
+      {/* **The reduction states itself, with the account it names and the way
+          out.** A table silently shorter than expected is the defect #724 met
+          on the ledger, and it is worse here: the header over it is a *sum* of
+          the lines it shows. */}
+      {compte === null ? null : (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <p>{t('shares.reduced', { account: compte })}</p>
+          <Link
+            to="/titres"
+            search={{}}
+            className="text-muted-foreground underline underline-offset-4"
+          >
+            {t('shares.reduced.undo')}
+          </Link>
+        </div>
+      )}
+
       {/* A read that has not landed is not a fact: nothing is claimed while the
           positions are in flight, and above all not the sentence that says the
-          portfolio is empty. */}
+          portfolio is empty. Reduced, *empty* is a different sentence — the
+          portfolio's own emptiness would be a claim about the reader's data
+          made on the strength of a filter they can lift in one click. */}
       {failure || !positions.data ? null : rows.length === 0 ? (
-        <EmptyState
-          title={t('shares.empty.title')}
-          description={t('shares.empty.body')}
-          action={
-            <Link to="/donnees" className="font-medium underline underline-offset-4">
-              {t('shares.empty.link')}
-            </Link>
-          }
-        />
+        compte !== null ? (
+          <EmptyState
+            title={t('shares.reduced.empty.title')}
+            description={t('shares.reduced.empty.body', { account: compte })}
+            action={
+              <Link to="/titres" search={{}} className="font-medium underline underline-offset-4">
+                {t('shares.reduced.undo')}
+              </Link>
+            }
+          />
+        ) : (
+          <EmptyState
+            title={t('shares.empty.title')}
+            description={t('shares.empty.body')}
+            action={
+              <Link to="/donnees" className="font-medium underline underline-offset-4">
+                {t('shares.empty.link')}
+              </Link>
+            }
+          />
+        )
       ) : (
         <>
           {/* The rows it sits above, closed ones included — the argument is the
@@ -159,7 +209,7 @@ export default function SharesPage() {
           has just folded away. */}
       <ShareSheet
         row={rows.find((row) => row.symbol === selected) ?? null}
-        positions={positions.data?.positions ?? []}
+        positions={reduced}
         failures={failures}
         currency={currency}
         onClose={() => setSelected(null)}
