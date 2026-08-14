@@ -512,6 +512,61 @@ def get_portfolio_totals_history():
     })
 
 
+@api_bp.get('/positions/history')
+def get_positions_history():
+    """What the holdings were worth day by day, against what they cost (#727).
+
+    The dashboard draws **one** chart slot with two readings, and this serves the
+    fallback of the first one. *Value against net contributed* has nothing to
+    draw on an install with no cash event: since #708's per-field rule
+    ``total_value`` and ``net_contributed`` are ``NULL`` there, which is every v4
+    arrival (v4 had no cash events at all) and every owner who only ever recorded
+    purchases. The area between the two curves is then the **latent** gain rather
+    than the gain, and the page renames it — the two are not the same figure, so
+    they are not the same words.
+
+    **A resource of its own, named after the store's table** (#745): it is the
+    series ``/api/positions`` is one instant of, and ``portfolio-totals/history``
+    could not have carried it. That one publishes *the account resource's five
+    members, field for field*, so one client shape reads both and the rebasing is
+    written once (#721); a sixth member here would be a member the account level
+    has no equivalent of.
+
+    ``/api/portfolio/history?mode=titres`` computes this very body, and it is
+    **not** what a v5 page may read: its discriminant is
+    :func:`portfolio_view.portfolio_mode`, *are accounts declared*, which is not
+    the question. An install declaring two accounts and holding no cash event
+    answers ``accounts`` there and gets the two empty series back — the exact
+    state this route exists for. It goes on serving its own page until that page
+    is rewritten (#728).
+
+    The reads are that branch's, and each of them is a decision recorded where it
+    was taken: the closes are bounded by the window while the holdings come from
+    the replay, which knows nothing of it, so each symbol's last close **before**
+    the window rides in (``carried_in``) or a position quoted before ``from``
+    counts its whole cost and none of its value; and ADR-0004's two terms —
+    ``carried`` and ``first_quoted`` — are what keep a day with no observed price
+    flat at its cost rather than at zero, which is the crater #706 filled.
+    """
+    try:
+        start, stop = _parse_window(DEFAULT_HISTORY_WINDOW)
+    except ValueError as exc:
+        return bad_request(str(exc))
+
+    reader = _reader()
+    timeline = EventAggregator().replay(_snapshot().events)
+    return jsonify({
+        'from': start.isoformat(),
+        'to': stop.isoformat(),
+        'points': portfolio_view.valuation_series(
+            reader.daily_closes(start, stop), timeline.at,
+            carried_in={row['symbol']: row['price']
+                        for row in reader.prices_at(start)},
+            carried=_carried(),
+            first_quoted=quotes.first_quoted_days(_store())),
+    })
+
+
 @api_bp.get('/prices/<symbol>')
 def get_prices(symbol: str):
     """One symbol's series over a **rung of the retention ladder** (#719, #763).
