@@ -277,6 +277,20 @@ export function DashboardHead() {
             value={f.currency(totalsRow.total_value, currency)}
           />
         )}
+        {/* The securities, beside the value they are part of — and it is the
+            one money statistic an install with **no cash ledger** still has:
+            `holdings_value` is written always (#708), where `total_value` and
+            both returns are `NULL`. It is also what makes *events, and nothing
+            held* an ordinary page rather than an empty one: `0,00 €` is a
+            figure, in the colour of text, read beside the em dash of the latent
+            gain — the one place in the product where the two are side by side
+            at the scale of the portfolio. */}
+        {totalsRow?.holdings_value == null ? null : (
+          <Stat
+            label={t('dashboard.holdings')}
+            value={f.currency(totalsRow.holdings_value, currency)}
+          />
+        )}
         {totalsRow?.net_contributed == null ? null : (
           <Stat
             label={t('dashboard.netContributed')}

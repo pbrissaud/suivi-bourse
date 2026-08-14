@@ -24,7 +24,9 @@ import {
   aConfig,
   aTypedEvent,
   aLedgerPayload,
+  aMoversPayload,
   aPortfolioHistory,
+  aPositionsHistory,
   aPositionsPayload,
   aPriceSeries,
   aRuntime,
@@ -60,6 +62,11 @@ export function defaultHandlers() {
       HttpResponse.json(anAccountHistory(String(params.account))),
     ),
     http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory())),
+    // The dashboard's bottom (#727): the chart's fallback series and the
+    // movers. Both are answered whole — the range control is a filter over a
+    // series kept entire, there being no ladder on a daily one.
+    http.get(ROUTES.positionsHistory, () => HttpResponse.json(aPositionsHistory())),
+    http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload())),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window (ADR-0010): a
     // handler serving one frozen payload would make the presets look like four

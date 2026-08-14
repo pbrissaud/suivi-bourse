@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { AWAITING_RATE, FIGURE } from '@/lib/absence'
+import { AWAITING_RATE, DASH, FIGURE } from '@/lib/absence'
 import {
   gainTotal,
   portfolioTerms,
@@ -33,6 +33,7 @@ describe('the four terms and their sum', () => {
       realised: -599.01,
       dividends: 1108.98,
       transferFees: -13.95,
+      holdsPosition: true,
     }
     expect(gainTotal(terms)).toMatchObject({ known: true })
     expect(termAmount({ ...terms }, 'unrealised')).toBeCloseTo(461.46, 2)
@@ -51,6 +52,7 @@ describe('the four terms and their sum', () => {
       unrealised: known(300),
       realised: 50,
       dividends: 25,
+      holdsPosition: true,
     })
     const total = gainTotal(portfolioTerms(defaultPositions(), -5)) as { value: number }
     expect(total.value).toBeCloseTo(370, 2)
@@ -149,5 +151,24 @@ describe('what the terms are allowed to do on screen', () => {
     const ordinary = portfolioTerms(defaultPositions(), -5)
     expect(termRendering(ordinary, 'unrealised')).toBe(FIGURE)
     expect(termRendering(ordinary, 'realised')).toBe(FIGURE)
+  })
+
+  it('dashes the latent term when nothing is held, and keeps the total a figure', () => {
+    // A portfolio sold out of: the sum over closed lines is exactly `0`, which
+    // is arithmetically right and reads as *your holdings have gained nothing*
+    // about holdings that do not exist (#727). The other three terms are what
+    // that owner still has, so the total stays a figure.
+    const sold = portfolioTerms(
+      [
+        aPosition({ symbol: 'ZZD', quantity: 0, cost_basis: 0, realised: 120, dividends: 10, price: null }),
+        aPosition({ symbol: 'ZZE', quantity: 0, cost_basis: 0, realised: -45, price: null }),
+      ],
+      -5,
+    )
+
+    expect(sold.holdsPosition).toBe(false)
+    expect(termRendering(sold, 'unrealised')).toBe(DASH)
+    expect(termRendering(sold, 'realised')).toBe(FIGURE)
+    expect((gainTotal(sold) as { value: number }).value).toBeCloseTo(80, 2)
   })
 })

@@ -157,8 +157,13 @@ function day(at: Date): string {
  * on a month of 28 days answers the 3rd of the month after, so a `1M` window
  * asked for on a 31st would cover 28 days instead of the month, and `1Y` on a
  * 29 February would start on 1 March.
+ *
+ * Exported for `lib/dashboard.ts`, which offers three of the same presets over
+ * another series (#727). The clamp is the reason it is shared rather than
+ * copied: it is one branch, it fires on four days a month, and a copy that lost
+ * it would be wrong on exactly those days — in a module nobody would re-read.
  */
-function shifted(now: Date, years: number, months: number): string {
+export function shifted(now: Date, years: number, months: number): string {
   const year = now.getUTCFullYear() - years
   const month = now.getUTCMonth() - months
   // Day 0 of the month after is the last day of the month itself.

@@ -44,6 +44,19 @@ export type Unrealised =
 
 export interface GainTerms {
   /**
+   * Does the portfolio hold **anything at all**? (#727)
+   *
+   * It decides one thing and only one: how the latent term *reads* when every
+   * line has been sold. The sum over closed positions is exactly `0`, which is
+   * arithmetically right and reads as a statement — *your holdings have gained
+   * nothing* — about holdings that do not exist. By ADR-0016 that is precisely
+   * what the em dash is for: **there is nothing to compute**. The gain total is
+   * untouched, because zero is what a term with no subject contributes to a
+   * sum: an owner who has sold everything still has a realised gain, dividends
+   * and transfer fees, and that sum is their gain.
+   */
+  holdsPosition: boolean
+  /**
    * Unknown, not zero, when at least one held position is quoted in a currency
    * whose rate has not resolved: its market value in the reporting currency has
    * no value at all. A `?? 0` here is how a portfolio silently reports the gain
@@ -107,10 +120,12 @@ export function positionTerms(positions: readonly Position[]): Omit<GainTerms, '
   let unrealised: Unrealised = { known: true, value: 0 }
   let realised = 0
   let dividends = 0
+  let holdsPosition = false
 
   for (const position of positions) {
     realised += position.realised
     dividends += position.dividends
+    holdsPosition = holdsPosition || position.quantity !== 0
     if (!unrealised.known) continue
 
     // The sum is computed from the positions alone, deliberately (the whole
@@ -139,7 +154,7 @@ export function positionTerms(positions: readonly Position[]): Omit<GainTerms, '
     unrealised = { known: true, value: unrealised.value + marketValue - position.cost_basis }
   }
 
-  return { unrealised, realised, dividends }
+  return { unrealised, realised, dividends, holdsPosition }
 }
 
 export function portfolioTerms(
@@ -178,6 +193,12 @@ export function unrealisedRendering(unrealised: Unrealised): Rendering {
  * `null` — the defect this shape removes.
  */
 export function termRendering(terms: GainTerms, term: GainTermName): Rendering {
+  // Nothing held: the latent term has no subject, and `0,00 €` would state that
+  // holdings which do not exist have gained nothing (#727). The dash says *there
+  // is nothing to compute*, which is the truth — and the total above it stays a
+  // figure, since the other three terms are exactly what a portfolio sold out of
+  // still has.
+  if (term === 'unrealised' && !terms.holdsPosition && terms.unrealised.known) return DASH
   if (term === 'unrealised') return unrealisedRendering(terms.unrealised)
   // The fourth term is *absent*, never zero, on an install whose broker moves
   // money for free — and `termIsRendered` has already dropped it by then. A

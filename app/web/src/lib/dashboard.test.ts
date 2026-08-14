@@ -1,0 +1,244 @@
+/**
+ * The bottom of the dashboard, at the level where its rules are arithmetic
+ * (#727). What is asserted here is what no rendering can show: the coincidence
+ * of two announcers, a percentage that stays wrong if a slice is summed, and a
+ * line that disappears from two columns by moving by nothing.
+ */
+import { describe, expect, it } from 'vitest'
+
+import {
+  DASHBOARD_RANGES,
+  allocation,
+  amountsFromTotals,
+  amountsFromValuation,
+  amountsValues,
+  dashboardState,
+  hasCashLedger,
+  moversSplit,
+  performanceRows,
+  windowFloor,
+  yFloor,
+} from '@/lib/dashboard'
+import { buildShareRows } from '@/lib/shares'
+import {
+  aMover,
+  aPortfolioHistory,
+  aPosition,
+  aPositionsHistory,
+  aPositionsPayload,
+  aTotals,
+  aTotalsPayload,
+  NOW,
+} from '@/test/factories'
+
+const now = new Date(NOW)
+
+function rowsOf(positions: Parameters<typeof buildShareRows>[0]) {
+  return buildShareRows(positions, new Map())
+}
+
+describe('the one range control', () => {
+  it('offers four presets, and `3M` is not one of them', () => {
+    // From February to December `YTD` covers `3M` or contains it, and five
+    // buttons on the page's only range control is one too many.
+    expect([...DASHBOARD_RANGES]).toEqual(['1M', 'YTD', '1Y', 'MAX'])
+  })
+
+  it('reads a window off the calendar, and `MAX` bounds nothing', () => {
+    expect(windowFloor('1M', now)).toBe('2026-02-02')
+    expect(windowFloor('YTD', now)).toBe('2026-01-01')
+    expect(windowFloor('1Y', now)).toBe('2025-03-02')
+    expect(windowFloor('MAX', now)).toBeNull()
+  })
+
+  it('filters the series and never buckets it', () => {
+    // The series is daily and dense over the calendar, and it is kept whole:
+    // the retention ladder is about observed prices, of which five years is
+    // tens of thousands of points. So a range changes the span and nothing
+    // else — there is no *aggregated by X* caption owed here.
+    const points = aPortfolioHistory().points
+    const year = amountsFromTotals(points, windowFloor('1Y', now))
+
+    expect(year.map((row) => row.t)).toEqual([
+      '2025-03-02',
+      '2026-01-01',
+      '2026-02-02',
+      '2026-03-02',
+    ])
+    expect(amountsFromTotals(points, null)).toHaveLength(points.length)
+  })
+})
+
+describe('the value axis', () => {
+  it('is floored at zero when nothing drawn is negative', () => {
+    // The measured defect: a graduation at `−1 411 €` under a series that has
+    // never been negative, which the reader has no way to know is an artefact.
+    expect(yFloor(amountsValues(amountsFromTotals(aPortfolioHistory().points, null)))).toBe(0)
+  })
+
+  it('gives the floor back the moment a real negative appears', () => {
+    // There the floor is information, and forcing zero would clip the curve
+    // out of the plot altogether.
+    expect(yFloor([1200, -40, 900])).toBe('auto')
+    expect(yFloor([null, 0, 12])).toBe(0)
+  })
+})
+
+describe('the performance reading', () => {
+  it('starts at 0 % and, at MAX, ends exactly on the head’s own figure', () => {
+    // The check the ticket asks for: two announcers of one figure agreeing
+    // instead of contradicting each other. At `MAX` the window's first day *is*
+    // the series' origin, where the stored index is 100.
+    const rows = performanceRows(aPortfolioHistory().points, null)
+
+    expect(rows[0].performance).toBe(0)
+    const head = (aTotals().twr_index! - 100) / 100
+    expect(rows[rows.length - 1].performance).toBeCloseTo(head, 10)
+  })
+
+  it('is invariant to the horizon receding, which is why it carries no base date', () => {
+    // The head's scalar moves while the reconstruction reaches further back —
+    // that is what `twr_since` says on it. A curve rebased on the first day of
+    // the *visible* window does not: history appearing before that day changes
+    // nothing inside it, so there is no date to write under the plot.
+    const floor = windowFloor('1Y', now)
+    const whole = performanceRows(aPortfolioHistory().points, floor)
+    const shorter = performanceRows(aPortfolioHistory().points.slice(1), floor)
+
+    expect(shorter).toEqual(whole)
+    expect(whole[0].performance).toBe(0)
+  })
+
+  it('never divides by an index that is not one', () => {
+    // A series may open with days carrying no index at all (#708: `twr_index`
+    // follows `total_value`), and dividing by one of those answers infinity.
+    const points = aPortfolioHistory([
+      { t: '2026-01-01', cash_balance: null, holdings_value: 600, total_value: null, net_contributed: null, twr_index: null },
+      { t: '2026-02-02', cash_balance: 500, holdings_value: 1300, total_value: 1800, net_contributed: 1380, twr_index: 120 },
+      { t: '2026-03-02', cash_balance: 500, holdings_value: 1300, total_value: 1800, net_contributed: 1380, twr_index: 132 },
+    ]).points
+
+    const rows = performanceRows(points, null)
+    expect(rows.map((row) => row.t)).toEqual(['2026-02-02', '2026-03-02'])
+    expect(rows[0].performance).toBe(0)
+    expect(rows[1].performance).toBeCloseTo(0.1, 10)
+  })
+})
+
+describe('the two readings', () => {
+  it('falls back to valuation against cost where there is no cash ledger', () => {
+    // #708's per-field rule: without a `DEPOSIT` anywhere, `total_value`,
+    // `net_contributed` and `twr_index` are all `NULL` — so *value against net
+    // contributed* is two empty curves, and the area of the fallback is the
+    // **latent** gain rather than the gain.
+    expect(hasCashLedger(aTotals())).toBe(true)
+    expect(hasCashLedger(aTotals({ total_value: null, net_contributed: null }))).toBe(false)
+    expect(hasCashLedger(null)).toBe(false)
+
+    const rows = amountsFromValuation(aPositionsHistory().points, null)
+    expect(rows[rows.length - 1]).toEqual({ t: '2026-03-02', value: 2300, contributed: 2000 })
+  })
+})
+
+describe('the allocation', () => {
+  it('names twelve lines and folds the rest into one slice that counts itself', () => {
+    // Eight was the threshold and it is measurably wrong: the tail *Others (4)*
+    // was worth 10,1 %, more than four of the named slices put together.
+    const positions = Array.from({ length: 15 }, (_, index) =>
+      aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, quantity: 1, cost_basis: 1, price: 15 - index }),
+    )
+    const { slices, total } = allocation(rowsOf(positions))
+
+    expect(slices).toHaveLength(12)
+    expect(slices.slice(0, 11).every((slice) => slice.count === 1)).toBe(true)
+    expect(slices[11]).toMatchObject({ symbol: null, count: 4 })
+    // Nothing is lost in the fold: 15 + 14 + … + 1.
+    expect(total).toBe(120)
+    expect(slices.reduce((sum, slice) => sum + slice.share, 0)).toBeCloseTo(1, 10)
+  })
+
+  it('excludes what it could not place **and hands it back to be named**', () => {
+    // The exclusion was already right and its own comment said why — summing a
+    // position with no resolved rate makes every *other* percentage silently
+    // wrong — and it was never said on screen.
+    const { slices, unplaced } = allocation(
+      rowsOf([
+        aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+        aPosition({ symbol: 'ZZB', quantity: 4, cost_basis: 400, price: 125, currency: 'USD', rate: null }),
+      ]),
+    )
+
+    expect(unplaced).toEqual(['ZZB'])
+    expect(slices.map((slice) => slice.symbol)).toEqual(['ZZA'])
+    expect(slices[0].share).toBe(1)
+  })
+
+  it('keeps a line carried at its cost and drops a closed one', () => {
+    // A position nothing has ever quoted is worth what it cost (ADR-0004), so
+    // it is a slice; a sold one is worth exactly zero, and a legend of zeros is
+    // noise — the shares page's folded section is where it lives.
+    const { slices } = allocation(
+      rowsOf([
+        aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+        aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null }),
+        aPosition({ symbol: 'ZZD', quantity: 0, cost_basis: 0, price: null, realised: 120 }),
+      ]),
+    )
+
+    expect(slices.map((slice) => slice.symbol)).toEqual(['ZZA', 'ZZC'])
+    expect(slices[1].value).toBe(600)
+  })
+})
+
+describe('the movers', () => {
+  it('counts what it does not show, and a line that moved by nothing with it', () => {
+    // Measured: the portfolio's second line, at 16,6 % of it, moved 0,00 % — so
+    // it entered neither column and vanished from both.
+    const split = moversSplit(
+      [
+        aMover({ symbol: 'A', change_pct: 0.05 }),
+        aMover({ symbol: 'B', change_pct: 0 }),
+        aMover({ symbol: 'C', change_pct: -0.02 }),
+      ],
+      6,
+    )
+
+    expect(split.risers.map((mover) => mover.symbol)).toEqual(['A'])
+    expect(split.fallers.map((mover) => mover.symbol)).toEqual(['C'])
+    expect(split.unchanged).toBe(1)
+    // Six held, two shown: the unchanged one, and the three lines the server
+    // never served because they have nothing to compare a first day against.
+    expect(split.others).toBe(4)
+  })
+
+  it('takes five each way, biggest first', () => {
+    const movers = Array.from({ length: 8 }, (_, index) =>
+      aMover({ symbol: `U${index}`, change_pct: (index + 1) / 100 }),
+    )
+    const split = moversSplit(movers, 8)
+
+    expect(split.risers.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
+    expect(split.fallers).toEqual([])
+    expect(split.others).toBe(3)
+  })
+})
+
+describe('the four states of the page', () => {
+  it('tells *no events* from *events and nothing held*', () => {
+    // The first is one sentence and a link; the second is an ordinary page
+    // whose blocks each say why they are empty.
+    expect(
+      dashboardState({ failed: false, positions: aPositionsPayload([], null), totals: aTotalsPayload(null, null) }),
+    ).toBe('empty')
+    expect(
+      dashboardState({ failed: false, positions: aPositionsPayload([]), totals: aTotalsPayload() }),
+    ).toBe('portfolio')
+  })
+
+  it('claims nothing while a read has not landed, and yields to a failure', () => {
+    expect(dashboardState({ failed: false, totals: aTotalsPayload() })).toBe('pending')
+    expect(
+      dashboardState({ failed: true, positions: aPositionsPayload(), totals: aTotalsPayload() }),
+    ).toBe('failed')
+  })
+})

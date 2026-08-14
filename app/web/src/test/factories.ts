@@ -76,17 +76,21 @@ import type {
   EventsResponse,
   Fundamentals,
   LedgerEvent,
+  Mover,
+  MoversResponse,
   PerfPoint,
   PortfolioTotals,
   PortfolioTotalsHistoryResponse,
   PortfolioTotalsResponse,
   Position,
+  PositionsHistoryResponse,
   PositionsResponse,
   PriceSeriesResponse,
   Resolution,
   RuntimeState,
   SettingDescription,
   StoreState,
+  ValuationPoint,
 } from '@/lib/api'
 
 /** The instant every fixture is written against. Tests freeze the clock to it. */
@@ -464,9 +468,18 @@ export function anAccountHistory(account: string): AccountHistoryResponse {
  * The global series. Its `perf` over one year is `202,89 / 190 = +6,78 %`, a
  * figure that appears **in the table's `Portefeuille` row and nowhere else** —
  * the portfolio is not drawn, so the strip under the chart never carries it.
+ *
+ * **It opens at its own origin, base 100** (#727), and that first point is not
+ * decoration: the dashboard's *Performance* reading is rebased on the first day
+ * of the visible window, so at `MAX` — where that day *is* the origin — the
+ * curve has to end on `202,89 → +102,89 %`, the head's own scalar to the
+ * hundredth. Two announcers of one figure agreeing is the property; a fixture
+ * whose series began mid-history could not have shown it. Every shorter window
+ * starts in 2025 or later, so nothing #721 measures moves.
  */
 export function aPortfolioHistory(
   points: PerfPoint[] = [
+    aPerfPoint('2019-10-30', 100),
     aPerfPoint('2025-03-02', 190),
     aPerfPoint('2026-01-01', 210),
     aPerfPoint('2026-02-02', 195),
@@ -474,6 +487,88 @@ export function aPortfolioHistory(
   ],
 ): PortfolioTotalsHistoryResponse {
   return { from: '1970-01-01T00:00:00+00:00', to: NOW, points }
+}
+
+/**
+ * THE FALLBACK READING (#727) — valuation against **cost**, which is what the
+ * chart draws on an install with no cash event.
+ *
+ * The two members are two different figures and the names keep them apart:
+ * `invested` is what the positions cost, never money the owner put in, so the
+ * area between the curves is the *latent* gain. The values land on the default
+ * portfolio's own totals — `2 300,00` of securities against `2 000,00` of cost,
+ * i.e. the `+300,00` of unrealised gain the head computes from its four terms.
+ */
+export function aValuationPoint(
+  t: string,
+  value: number | null,
+  invested: number | null,
+): ValuationPoint {
+  return { t, value, invested }
+}
+
+export function aPositionsHistory(
+  points: ValuationPoint[] = [
+    aValuationPoint('2025-03-02', 1800, 2000),
+    aValuationPoint('2026-01-01', 2100, 2000),
+    aValuationPoint('2026-02-02', 2250, 2000),
+    aValuationPoint('2026-03-02', 2300, 2000),
+  ],
+): PositionsHistoryResponse {
+  return { from: '1970-01-01T00:00:00+00:00', to: NOW, points }
+}
+
+/**
+ * THE MOVERS (#727), and the shape the block exists for.
+ *
+ * Three held lines, and **only two of them are in the collection**:
+ *
+ *   ZZA  +2,00 %   a riser
+ *   ZZB   0,00 %   moved by exactly nothing — so it is in neither column, and
+ *                  it is the measured case: on the real portfolio the second
+ *                  line, at 16,6 % of it, disappeared from both
+ *   ZZC     —      never quoted, therefore nothing to compare a first day
+ *                  against, therefore not served at all
+ *
+ * One riser, no faller, and **two** held lines shown nowhere — one of which
+ * moved by nothing. The sentence under the two columns is what says so.
+ */
+export function aMover(overrides: Partial<Mover> = {}): Mover {
+  return {
+    symbol: 'ZZA',
+    name: 'Zeta Alpha',
+    price: 130,
+    previous_price: 127.45,
+    change: 2.55,
+    change_pct: 0.02,
+    market_value: 1300,
+    contribution: 25.5,
+    ...overrides,
+  }
+}
+
+export function aMoversPayload(
+  movers: Mover[] = [
+    aMover(),
+    aMover({
+      symbol: 'ZZB',
+      name: 'Zeta Beta',
+      price: 100,
+      previous_price: 100,
+      change: 0,
+      change_pct: 0,
+      market_value: 400,
+      contribution: 0,
+    }),
+  ],
+): MoversResponse {
+  return {
+    // The cut is a rule and the reference is the close it found: naming the cut
+    // announced a session that had not happened yet.
+    since: '2026-03-02T00:00:00.000Z',
+    reference: '2026-03-01T17:30:00.000Z',
+    movers,
+  }
 }
 
 /**

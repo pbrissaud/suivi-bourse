@@ -20,6 +20,8 @@ import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccountsPayload,
+  aClosedPosition,
+  aMoversPayload,
   aPosition,
   aPositionsPayload,
   aRuntime,
@@ -96,17 +98,18 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(twr).not.toHaveTextContent(/40,69/)
   })
 
-  it('offers no range control at all', async () => {
+  it('leaves the page **one** range control, and it is not the head’s', async () => {
     renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
+    const head = await screen.findByRole('group', { name: 'Gain total' })
 
-    // The delta is fixed to year-to-date. The `1S / 1M / 1A / —` selector was
-    // the second range control on this page, and two sibling controls read as
-    // two settings of the same thing.
-    for (const preset of ['1S', '1M', '1A', 'YTD', 'MAX']) {
-      expect(screen.queryByRole('button', { name: preset })).not.toBeInTheDocument()
-    }
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    // The delta is fixed to year-to-date. The `1S / 1M / 1A / —` selector was a
+    // *second* range control on this page, and two sibling controls read as two
+    // settings of the same thing — so the head carries none and the chart's is
+    // the only one (#718, #727).
+    await waitFor(() => expect(screen.getAllByRole('radiogroup')).toHaveLength(1))
+    expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(within(figure('TWR')).queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
   })
 
   it('never puts a delta on the money-weighted return, which is annualised', async () => {
@@ -545,6 +548,270 @@ describe('a read that has not landed is not a fact', () => {
     // And once it lands, the four-term figure, in one go.
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
     expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+  })
+})
+
+describe('one chart slot, two readings', () => {
+  it('offers a reading selector and one range control, and `3M` is dead', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // A **reading** selector, drawn as tabs: two sibling radio groups would
+    // read as two settings of the same thing, which is the duplication this
+    // page has just closed.
+    const readings = await screen.findByRole('tablist')
+    expect(within(readings).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Montants',
+      'Performance',
+    ])
+
+    const range = screen.getByRole('radiogroup', { name: 'Plage' })
+    expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
+      '1M',
+      'Depuis le 1ᵉʳ janvier',
+      '1A',
+      'MAX',
+    ])
+    expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
+  })
+
+  it('names the area with its subject — and it is the gain', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // The area between value and net contributed *is* the gain, which is the
+    // clearest answer to *did I gain because it went up or because I put more
+    // in*. Naming it is what makes the surface readable at all.
+    expect(
+      await screen.findByText(/L’aire entre les deux courbes est votre gain total/),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to valuation against cost, and it is then the only reading', async () => {
+    // #708's per-field rule: with no cash event `total_value`,
+    // `net_contributed` and `twr_index` are all `NULL`, so *value against net
+    // contributed* is two empty curves. The area is then the **latent** gain —
+    // a different figure, therefore a different sentence — and *Performance* is
+    // not offered rather than offered empty.
+    server.use(
+      totalsOf({ total_value: null, cash_balance: null, net_contributed: null, twr_index: null, ytd: null }),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(
+      await screen.findByText(/L’aire entre les deux courbes est votre plus-value latente/),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Performance' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    // The range control survives the fallback: it is the page's, not a
+    // property of the series it happens to be drawing.
+    expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
+  })
+
+  it('states no base date on the performance reading', async () => {
+    // The curve is rebased on the first day of the visible window, so it does
+    // not move as the reconstruction reaches further back — only the head's
+    // scalar does, and that one carries the date while it is still moving.
+    const { user } = renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    await user.click(await screen.findByRole('tab', { name: 'Performance' }))
+    expect(await screen.findByText(/Base 0 % au premier jour de la plage affichée/)).toBeInTheDocument()
+    expect(screen.queryByText(/L’aire entre les deux courbes/)).not.toBeInTheDocument()
+  })
+})
+
+describe('the allocation', () => {
+  it('names every line in the slices’ own order, with its share', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // 1 300 / 600 / 400 out of 2 300 — and the legend is in the slices' own
+    // descending order, which is what pairs a legend row to its slice and what
+    // licenses the rank ramp of ADR-0023.
+    const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
+    const rows = legend.getAllByRole('listitem').map((row) => row.textContent ?? '')
+    expect(rows.map((row) => row.replace(/\s/g, ''))).toEqual([
+      'ZetaAlpha56,52%',
+      'ZetaGamma26,09%',
+      'ZetaBeta17,39%',
+    ])
+    expect(screen.getByText(/de titres\./)).toHaveTextContent(/2\D?300,00/)
+  })
+
+  it('names what it could not place instead of dropping it in silence', async () => {
+    // Summing a position whose rate has not resolved makes every *other*
+    // percentage silently wrong — the exclusion was already right, and its own
+    // comment said why without ever saying it on screen.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+            aPosition({ symbol: 'ZZB', quantity: 4, cost_basis: 400, price: 125, currency: 'USD', rate: null }),
+          ]),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(await screen.findByText(/ZZB/)).toBeInTheDocument()
+    expect(screen.getByText(/n’est pas dans cette répartition/)).toBeInTheDocument()
+    // And the line it kept is the whole of what it counted.
+    const legend = within(screen.getByRole('list', { name: 'Répartition' }))
+    expect(legend.getAllByRole('listitem')).toHaveLength(1)
+    expect(legend.getByRole('listitem')).toHaveTextContent(/100,00\D?%/)
+  })
+
+  it('adds no second selector beside the chart’s', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // No breakdown by account and none by type: a second control beside the
+    // range is the duplication this page keeps closing.
+    await waitFor(() => expect(screen.getAllByRole('radiogroup')).toHaveLength(1))
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+})
+
+describe('the movers', () => {
+  it('shows two columns and counts what it does not show', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(await screen.findByText('Hausses')).toBeInTheDocument()
+    expect(screen.getByText('Baisses')).toBeInTheDocument()
+    expect(screen.getByText(/Rien n’a baissé/)).toBeInTheDocument()
+
+    // Three lines held, one of them shown: `ZZB` moved by exactly 0,00 % and is
+    // in neither column, `ZZC` has never been quoted and has nothing to compare
+    // a first day against. Silence about them reads as *nothing to say*.
+    expect(
+      screen.getByText(/2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé/),
+    ).toBeInTheDocument()
+  })
+
+  it('names the close it compares against, and names it once', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // The **reference**, never the cut: naming the cut announced a session that
+    // had not happened yet.
+    expect(await screen.findAllByText(/Depuis la clôture du 1 mars 2026/)).toHaveLength(1)
+  })
+})
+
+describe('the time announcers', () => {
+  it('keeps two permanent ones and no more', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // The page's own mention of when its prices were read, and the movers'
+    // reference close — a *different* instant, and the subject of that block.
+    expect(await screen.findByText(/Cours au 2 mars 2026/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Depuis la clôture/)).toHaveLength(1)
+    // The two transitory ones are absent here: the reconstruction is over, so
+    // the base date is not news and the banner says nothing.
+    expect(screen.queryByText(/30 oct\. 2019/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+describe('no advisory lands here', () => {
+  it('says nothing of a standing notice, which the installation tab counts', async () => {
+    // A notice posted on the dashboard is invisible to whoever lands on another
+    // page, and it would compete with the banner — which was validated in
+    // production. The badge on the data page is the counterpart (#724).
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(screen.queryByText(/Your amounts were read as EUR/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('the four states of the page', () => {
+  it('gives a portfolio with no events one sentence and a link, and nothing else', async () => {
+    server.use(
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload([], null))),
+      http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null, null))),
+    )
+    renderApp()
+
+    expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Aller à Données' })).toBeInTheDocument()
+    // Not a third copy of the pair of entries (#723's, which the first-run
+    // modal is the second of): this page reads, it is not where one enters.
+    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
+    expect(screen.queryByText('Mouvements')).not.toBeInTheDocument()
+    // And the route is the dashboard unconditionally: a bookmark valid
+    // yesterday is valid at zero events too.
+    expect(screen.getByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
+  })
+
+  it('gives a portfolio that has sold everything an ordinary page', async () => {
+    // The one place in the product where the em dash and the zero are read side
+    // by side at the scale of the portfolio: `Plus-value latente —` because
+    // nothing is held, `Titres 0,00 €` because that is a figure.
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload([
+            aClosedPosition({ symbol: 'ZZD', realised: 120, dividends: 10, closed_at: '2025-11-04' }),
+            aClosedPosition({ symbol: 'ZZE', realised: -45, closed_at: '2026-01-15' }),
+          ]),
+        ),
+      ),
+      totalsOf({ holdings_value: 0 }),
+      http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload([]))),
+    )
+    renderApp()
+
+    //   realised +120,00 − 45,00 · dividends +10,00 · fees −5,00 = +80,00
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/80,00/)
+    expect(figure('Plus-value latente')).toHaveTextContent('—')
+    expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
+    expect(figure('Titres')).toHaveTextContent(/0,00/)
+
+    // And both blocks say **why** they are empty rather than being absent.
+    expect(await screen.findByText('Aucune position détenue')).toBeInTheDocument()
+    expect(screen.getByText('Rien à comparer')).toBeInTheDocument()
+  })
+})
+
+describe('the reconstruction, in the banner and only there', () => {
+  it('carries a bar and names the account holding the global figures back', async () => {
+    // The global series is written only where **every** account is (ADR-0018),
+    // so without the name *one slow account delays the whole home page* is a
+    // rule nothing on screen states — and the owner reads the delay as a fault
+    // of the portfolio as a whole.
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({
+            rebuilding: true,
+            accounts: [
+              { account: 'alpha', horizon: '2026-01-01' },
+              { account: 'beta', horizon: '2025-06-01' },
+              { account: 'gamma', horizon: '2024-01-01' },
+            ],
+          }),
+        ),
+      ),
+    )
+    renderApp()
+
+    const band = await screen.findByRole('status')
+    expect(band).toHaveTextContent(/Alpha est le compte le plus en retard/)
+    // (2026-03-02 → 2026-01-01) over (2026-03-02 → 2025-12-24), the oldest day
+    // the ledger names: 60 days of 68.
+    expect(await screen.findByRole('progressbar')).toHaveAccessibleName(
+      /88\D?% de la période couverte/,
+    )
   })
 })
 
