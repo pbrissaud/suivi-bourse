@@ -25,6 +25,16 @@
  *  - **the value-against-contributed curve**, the only surface in the product
  *    where it exists per account (ADR-0019: the comparison refuses it at N).
  *
+ * **Nothing is composed before `/api/positions` has answered**, which is
+ * `DashboardHead`'s rule and was held here for the *failure* branch alone: a
+ * `503` said so, and a request still in flight had its three position terms
+ * summed over an empty array and rendered as `0,00 €` beside a fourth term the
+ * account row already carried. Opened cold — arriving straight on `/comptes`,
+ * where nothing has read the positions yet — the panel therefore announced a
+ * `Gain total` **its own row contradicted**, then exchanged it for another
+ * number. Three zeros are not an explanation of a total, so the block and the
+ * link that counts the same rows both wait.
+ *
  * **The total is computed from its four terms and never read** (ADR-0018). The
  * row this panel opened from renders `gain_absolu`, which is the same number
  * written down elsewhere; computing here is what makes the four terms an
@@ -100,12 +110,18 @@ function figure(rendering: Rendering, format: () => string, t: Translate) {
 export interface AccountSheetProps {
   row: AccountRow | null
   /**
-   * The whole payload's rows. The three position terms are summed over the
-   * ones this account holds, closed lines included (ADR-0017) — folding is
-   * `lib/accounts.ts`'s, so the panel and the link cannot disagree about what
-   * they are counting.
+   * The whole payload's rows, or **`null` while the read has not landed** —
+   * which is not the same shape as *the payload is empty*, and the difference
+   * is the block above. `?? []` here summed three terms over nothing and
+   * printed them as zeros beside a fourth read off the account row, so a panel
+   * opened cold announced `Gain total −3,00 €` — a figure the row it came from
+   * contradicted — and then swapped it for another number.
+   *
+   * The three position terms are summed over the ones this account holds,
+   * closed lines included (ADR-0017) — folding is `lib/accounts.ts`'s, so the
+   * panel and the link cannot disagree about what they are counting.
    */
-  positions: readonly Position[]
+  positions: readonly Position[] | null
   /** The account's own perf series, whole — the page has already read it. */
   points: readonly PerfPoint[]
   currency: string | null
@@ -129,11 +145,18 @@ export function AccountSheet({
     return <Sheet open={false} onOpenChange={() => onClose()} />
   }
 
-  const held = accountPositions(positions, row.id)
-  const terms = portfolioTerms(held, row.transfer_fees)
-  const total = gainTotal(terms)
+  // **A read that has not landed is not a fact** — `DashboardHead`'s own rule,
+  // which this file already held for the *error* branch and not for this one.
+  // Three of the four terms come off `/api/positions`, so composing them before
+  // it answers writes three zeros and a real fourth term, i.e. a head that
+  // contradicts the very cell the panel was opened from. The two objects that
+  // read the positions therefore wait together: the block, and the link whose
+  // count is drawn from the same rows.
+  const held = positions === null ? null : accountPositions(positions, row.id)
+  const terms = held === null ? null : portfolioTerms(held, row.transfer_fees)
+  const total = terms === null ? null : gainTotal(terms)
   const curve = valueSeries(points)
-  const lines = positionCount(positions, row.id)
+  const lines = positions === null ? 0 : positionCount(positions, row.id)
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -150,7 +173,7 @@ export function AccountSheet({
               be a figure invented out of a request that did not answer. */}
           {positionsError ? (
             <Band>{t(problemMessageKey(positionsError))}</Band>
-          ) : (
+          ) : terms === null || total === null ? null : (
             <Stat
               size="head"
               label={t('accounts.column.gainTotal')}
@@ -217,7 +240,9 @@ export function AccountSheet({
           {/* The link, and not a table: the page it leads to has just fixed its
               nine columns, and its own header sums the lines it sits above. At
               zero positions there is nothing to lead to, so there is no link —
-              a reduction onto an empty page is a dead end with a count on it. */}
+              a reduction onto an empty page is a dead end with a count on it.
+              A read that has not landed counts zero for the same reason the
+              block above renders nothing: it is not yet a count. */}
           {lines === 0 ? null : (
             <div className="border-t pt-6">
               <Link

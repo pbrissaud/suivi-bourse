@@ -980,7 +980,7 @@ statistics — `Valeur totale`, `Titres`, `Liquidités`, `Versé net`, `TRI`, `p
 — every one of them already read one line higher in the row the panel was opened
 from, so a panel repeating them is a second announcer of six figures at once;
 and the **positions table**, which duplicated a page whose nine columns had just
-been fixed (#719). Five things about what is left are decisions:
+been fixed (#719). Six things about what is left are decisions:
 
 - **`Gain total` dominating its four terms is the point of the surface.**
   `−0,62 €` over `−47,65 · +60,97 · 0,00 · −13,95`: one *sees* that the account
@@ -992,6 +992,24 @@ been fixed (#719). Five things about what is left are decisions:
   `gain_absolu` (ADR-0018), which is the same number written down elsewhere —
   and which the row behind the panel renders, so the two are an identity rather
   than a decomposition somebody has to trust.
+- **And nothing is composed before `/api/positions` has answered** — the
+  dashboard head's rule (*a read that has not landed is not a fact*), which this
+  panel held for the **failure** branch alone. A `503` was named; a request
+  still in flight had its three position terms summed over `?? []` and rendered
+  as `0,00 €` beside a fourth term the account row already carried, so a panel
+  opened cold announced `Gain total −3,00 €` — **contradicting the very cell it
+  was opened from** — and then exchanged it for `+322,00 €` under the reader's
+  eyes. Three zeros explain no total, which is the criterion itself. It is
+  **integral on a cold open** (arriving on `/comptes`, or reloading it) and
+  invisible from `/titres`, where the `['positions']` cache is already warm —
+  and the six tests of the panel all `waitFor`ed the expected total, which is
+  exactly how none of them saw it. The block and the **link** wait at the same
+  door, the count being drawn from the same rows; the curve does not, being
+  another read. What is **left standing and flagged rather than repaired**: the
+  panel computes the total from the four terms while the row behind it renders
+  `gain_absolu`, so on a real store the two figures on one screen can differ —
+  which is ADR-0018's own arrangement, and whether the panel should say so is
+  the owner's arbitration.
 - **The fourth term is the account's own, and it needed a server half.** Three
   of the four come off `/api/positions`; the fees a broker takes out of a
   transfer belong to no position, and `−5,00` on the portfolio is the sum of

@@ -237,7 +237,11 @@ export default function AccountsPage() {
           curve costs no request of its own. */}
       <AccountSheet
         row={rows.find((row) => row.id === opened) ?? null}
-        positions={positions.data?.positions ?? []}
+        // `?? null` and never `?? []`: the panel's block is composed from these
+        // rows, and an empty array is a *payload*, not a request in flight —
+        // read as one it summed three terms over nothing (#722's own rule,
+        // held for the failure branch alone).
+        positions={positions.data?.positions ?? null}
         points={points[declared.findIndex((account) => account.id === opened)] ?? []}
         currency={currency}
         positionsError={positions.error}

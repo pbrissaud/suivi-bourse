@@ -174,6 +174,51 @@ describe('the four terms explain the total', () => {
     expect(await within(panel).findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
     expect(within(panel).queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
+
+  it('writes none of the four while the positions have not answered', async () => {
+    // The same rule as the branch above, on the state the file did **not**
+    // hold it for: a request in flight. `?? []` summed the three position
+    // terms over nothing and rendered them as `0,00 €` beside a real fourth
+    // term read off the account row, so a panel opened cold announced
+    // `Gain total −3,00 €` — contradicting the very cell it was opened from —
+    // and then swapped it for `+322,00 €`.
+    //
+    // It is **integral on a cold open** and invisible from `/titres`, where the
+    // `['positions']` cache is already warm: arriving straight on `/comptes` is
+    // the ordinary case, and it is the one this test mounts.
+    //
+    // There is no `waitFor` on a total here, deliberately — that is the shape
+    // the six tests above share, and it is why not one of them saw this.
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
+      // Never settles: the read is in flight for the whole of the test.
+      http.get(ROUTES.positions, () => new Promise<never>(() => {})),
+    )
+    const { user } = renderApp({ url: '/comptes' })
+    const panel = await openPanel(user, 'Alpha')
+
+    // The panel is open and its other reads *have* landed — the curve is drawn
+    // from `/api/accounts/alpha/history`, which answers. So what follows is an
+    // absence under a rendered panel, not a panel that has not rendered yet.
+    expect(
+      await within(panel).findByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+    ).toBeInTheDocument()
+
+    expect(within(panel).queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+    for (const term of [
+      'Plus-value latente',
+      'Plus-value réalisée',
+      'Dividendes reçus',
+      'Frais de versement',
+    ]) {
+      expect(within(panel).queryByRole('group', { name: term })).not.toBeInTheDocument()
+    }
+    // Nothing failed, so nothing is named either: the band belongs to the read
+    // that answered a problem, and a request still in flight has said nothing.
+    expect(within(panel).queryByRole('status')).not.toBeInTheDocument()
+    // The link counts the same rows, so it waits at the same door.
+    expect(within(panel).queryByRole('link', { name: /position/ })).not.toBeInTheDocument()
+  })
 })
 
 describe('the fifth bubble', () => {
