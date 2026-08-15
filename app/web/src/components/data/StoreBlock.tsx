@@ -53,6 +53,15 @@ export function StoreBlock({ runtimeStore, store }: StoreBlockProps) {
   })
 
   const persistence = runtimeStore?.persistence ?? 'unknown'
+  // **An optional read, so the `?? []` survives** (ADR-0026): the orphan list is
+  // absent at zero, so a read in flight removes a block rather than falsifying
+  // one — and the two facts above it ride on `/api/runtime`, which is the whole
+  // point of the split (#668).
+  //
+  // What is **not** repaired here and is named rather than repaired: the last
+  // ledger write reads *« jamais »* while `/api/store` is in flight, which is a
+  // statement about the reader's own data made on silence. It is a sentence and
+  // not an emptiness primitive, so the in-flight net does not see it either.
   const orphans = store?.orphans ?? []
 
   return (

@@ -71,6 +71,12 @@ export default function SharesPage() {
   // The counter of fruitless readings is what separates *asked and got nothing*
   // from *not asked yet*, and it lives on the app's own state — never in the
   // data payload (rule four of the map, the only one proved in production).
+  //
+  // **An optional read, so the `?? []` survives** (ADR-0026): with no counter a
+  // row is *carried at its cost* instead of *N readings, no price* — a line
+  // removed from a cell, never a false one — and the table must not be
+  // withheld for it, `/api/runtime` being the read that answers when the store
+  // does not.
   const failures = useMemo(
     () => new Map((runtime.data?.symbols ?? []).map((s) => [s.symbol, s.consecutive_failures])),
     [runtime.data],
