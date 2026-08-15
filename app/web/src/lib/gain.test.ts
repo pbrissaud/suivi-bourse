@@ -13,16 +13,18 @@ import {
   gainTotal,
   portfolioTerms,
   positionTerms,
+  securityTerms,
+  sumRendering,
   termAmount,
   termCarriesSign,
   termIsRendered,
   termRendering,
-  type Unrealised,
+  type Sum,
 } from '@/lib/gain'
 import { aPosition, defaultPositions } from '@/test/factories'
 
 /** A known sum, spelled once so the arithmetic below stays readable. */
-const known = (value: number): Unrealised => ({ known: true, value })
+const known = (value: number): Sum => ({ known: true, value })
 
 describe('the four terms and their sum', () => {
   it('sums to the gain, the fourth term included', () => {
@@ -38,10 +40,37 @@ describe('the four terms and their sum', () => {
     expect(gainTotal(terms)).toMatchObject({ known: true })
     expect(termAmount({ ...terms }, 'unrealised')).toBeCloseTo(461.46, 2)
     expect((gainTotal(terms) as { value: number }).value).toBeCloseTo(957.48, 2)
-    // And without the fourth term the sum is the 971,43 that used to disagree
-    // with `gain_absolu` by 13,95, with nothing on the page able to say why.
-    const three = gainTotal({ ...terms, transferFees: null }) as { value: number }
-    expect(three.value).toBeCloseTo(971.43, 2)
+  })
+
+  it('refuses to render a four-term total from three (#775)', () => {
+    // `transfer_fees: null` is the server saying *there is nothing to bound the
+    // fees by* (#722), and counted as zero it produced exactly the 971,43 that
+    // disagrees with `gain_absolu` by 13,95 — a total amputated of a term, with
+    // nothing on the page able to say so. It is an absence now, and it is the
+    // em dash: *there is nothing to compute* (ADR-0016), never a fifth form.
+    const terms = {
+      unrealised: known(461.46),
+      realised: -599.01,
+      dividends: 1108.98,
+      transferFees: null,
+      holdsPosition: true,
+    }
+    expect(gainTotal(terms)).toEqual({ known: false, because: 'unboundedFees' })
+    expect(sumRendering(gainTotal(terms))).toBe(DASH)
+    // And the term itself renders, as a dash: a headline that goes out with no
+    // visible cause under it is worse than the wrong number it replaces.
+    expect(termIsRendered('transferFees', termAmount(terms, 'transferFees'))).toBe(true)
+    expect(termRendering(terms, 'transferFees')).toBe(DASH)
+  })
+
+  it('sums three terms where the fourth has no subject at all', () => {
+    // A security is not a place money is transferred to (ADR-0017), so the
+    // shares page's header can never carry that term — which is `0` and not
+    // `null`: the sum of three **is** the gain it announces, and the term is
+    // dropped rather than printed as `0,00 €`.
+    const terms = securityTerms(defaultPositions())
+    expect(termIsRendered('transferFees', termAmount(terms, 'transferFees'))).toBe(false)
+    expect((gainTotal(terms) as { value: number }).value).toBeCloseTo(375, 2)
   })
 
   it('reads the three position terms off the positions', () => {
@@ -130,9 +159,10 @@ describe('what the terms are allowed to do on screen', () => {
 
   it('renders the fourth term only when it is not zero', () => {
     // An install whose transfers are free reads three terms and never learns
-    // the fourth exists.
+    // the fourth exists. **`null` is the other meaning and it does render**
+    // (#775): the total above it is a dash for that very reason.
     expect(termIsRendered('transferFees', 0)).toBe(false)
-    expect(termIsRendered('transferFees', null)).toBe(false)
+    expect(termIsRendered('transferFees', null)).toBe(true)
     expect(termIsRendered('transferFees', -13.95)).toBe(true)
     // The other three are figures even at zero — a zero is a figure.
     expect(termIsRendered('dividends', 0)).toBe(true)
@@ -147,6 +177,9 @@ describe('what the terms are allowed to do on screen', () => {
     const waiting = portfolioTerms([aPosition({ price: 125, currency: 'USD', rate: null })], -5)
     expect(termRendering(waiting, 'unrealised')).toBe(AWAITING_RATE)
     expect(termAmount(waiting, 'unrealised')).toBeNull()
+    // The two reasons a sum can be unknown read apart: this one is repaired by
+    // the app itself (#704), so it is named where the other wears the dash.
+    expect(sumRendering(gainTotal(waiting))).toBe(AWAITING_RATE)
 
     const ordinary = portfolioTerms(defaultPositions(), -5)
     expect(termRendering(ordinary, 'unrealised')).toBe(FIGURE)

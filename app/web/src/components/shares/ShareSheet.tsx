@@ -62,11 +62,11 @@ import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
 import {
   gainTotal,
-  portfolioTerms,
+  securityTerms,
+  sumRendering,
   termAmount,
   termCarriesSign,
   termRendering,
-  unrealisedRendering,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
@@ -164,7 +164,10 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
   }
 
   const held = positions.filter((position) => position.symbol === row.symbol)
-  const terms = portfolioTerms(held, null)
+  // `securityTerms` and not `portfolioTerms(held, null)`: a security is not a
+  // place money is transferred to, so the fourth term has no subject here —
+  // where `null` says *there is no day to bound existing fees by* (#775).
+  const terms = securityTerms(held)
   const total = gainTotal(terms)
   const renderings = positionRenderings(row)
   const value = marketValue(row)
@@ -185,7 +188,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             size="head"
             label={t('shares.gainTotal')}
             value={figure(
-              unrealisedRendering(total),
+              sumRendering(total),
               () => f.currency(total.known ? total.value : null, currency),
               t,
             )}
@@ -281,6 +284,13 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               symbol={row.symbol}
               window={window}
               onWindowChange={setWindow}
+              // **An optional read, so the `?? []` survives** (ADR-0026): with
+              // no ledger the chart draws no marker rail — *a band with nothing
+              // in it does not exist* — which removes a line rather than
+              // falsifying one, and the price series under it is this block's
+              // own subject. The list below waits for the same read and is
+              // guarded on `ledger.data`, because there *empty* would read as
+              // *this security has no event*.
               events={ledger.data ?? []}
               selectedDay={selectedDay}
               onSelectDay={(day) => {

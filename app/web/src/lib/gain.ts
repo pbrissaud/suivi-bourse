@@ -37,10 +37,17 @@ export type GainTermName = (typeof GAIN_TERMS)[number]
  * an em dash — which by this product's own rule (ADR-0016) says *there is
  * nothing to compute* about a rate that simply has not resolved yet. Carrying
  * the reason is what lets the head name it, and it costs one discriminant.
+ *
+ * It was called `Unrealised` while there was one reason (#718); there are two
+ * since #775, and neither of them is about the latent term alone. The two are
+ * rendered differently and that is the whole of why they are two: a rate on its
+ * way is **named**, and a fourth term nothing can bound wears the em dash —
+ * *there is nothing to compute* — which is one of ADR-0016's four and not a
+ * fifth (ADR-0021).
  */
-export type Unrealised =
+export type Sum =
   | { known: true; value: number }
-  | { known: false; because: 'awaitingRate' }
+  | { known: false; because: 'awaitingRate' | 'unboundedFees' }
 
 export interface GainTerms {
   /**
@@ -62,7 +69,7 @@ export interface GainTerms {
    * no value at all. A `?? 0` here is how a portfolio silently reports the gain
    * of the part of itself it could convert.
    */
-  unrealised: Unrealised
+  unrealised: Sum
   realised: number
   dividends: number
   /**
@@ -70,9 +77,16 @@ export interface GainTerms {
    * it as a cost and subtracting it at the call site is one sign flip too many
    * for a figure whose entire point is that the four terms add up.
    *
-   * `null` is *no ledger figures at all*, which for this term is the same
-   * screen as zero: an install whose broker moves money for free reads three
-   * terms and never learns the fourth exists.
+   * `0` is a **figure**: the broker moved the money for free, and the term is
+   * then not rendered at all rather than printed as `0,00 €`.
+   *
+   * `null` is *there is no day to bound the fees by* — the server's own
+   * sentence, `transfer_fees` being bounded by the row's own day so that
+   * ADR-0018's identity holds between figures measured at the same instant
+   * (#722). It counted as zero here until #775, which made a **four-term total
+   * render from three**, amputated of a term, with nothing on screen saying so.
+   * The two meanings were one value; they are two states now, and only the
+   * first is worth zero.
    */
   transferFees: number | null
 }
@@ -86,10 +100,17 @@ export function termCarriesSign(term: GainTermName): boolean {
   return term === 'unrealised' || term === 'realised'
 }
 
-/** The fourth term renders **only when it is not zero** — and never as `0,00 €`. */
+/**
+ * The fourth term renders **only when it is not zero** — and never as `0,00 €`.
+ *
+ * `null` **does** render, as an em dash (#775): the total above it is a dash
+ * for exactly this reason, and a dashed total whose cause is not on the screen
+ * under it is a figure that has gone out with no explanation. The masking at
+ * zero is untouched — that one is the other meaning, and it is real.
+ */
 export function termIsRendered(term: GainTermName, value: number | null): boolean {
   if (term !== 'transferFees') return true
-  return value !== null && value !== 0
+  return value !== 0
 }
 
 /**
@@ -117,7 +138,7 @@ export function termIsRendered(term: GainTermName, value: number | null): boolea
  * observed report a total loss.
  */
 export function positionTerms(positions: readonly Position[]): Omit<GainTerms, 'transferFees'> {
-  let unrealised: Unrealised = { known: true, value: 0 }
+  let unrealised: Sum = { known: true, value: 0 }
   let realised = 0
   let dividends = 0
   let holdsPosition = false
@@ -165,26 +186,54 @@ export function portfolioTerms(
 }
 
 /**
+ * The three terms a **security** carries, and nothing else (ADR-0017).
+ *
+ * The fourth is `0` here and never `null`, and the distinction is the point:
+ * on this surface the term has **no subject** — the fee a broker takes out of a
+ * transfer belongs to no security, so a header summing its rows can never show
+ * it — where `null` says *there is no day to bound fees that do exist by*. The
+ * two were one value until #775, and the shares page's own headline went dark
+ * the moment `gainTotal` started reading `null` as the second.
+ *
+ * Zero is therefore exact rather than convenient: the sum of three terms **is**
+ * the gain this page announces, and `termIsRendered` drops the term itself, so
+ * nothing on screen claims a broker moved money for free.
+ */
+export function securityTerms(positions: readonly Position[]): GainTerms {
+  return { ...positionTerms(positions), transferFees: 0 }
+}
+
+/**
  * The definition, and the only place the head's headline comes from.
  *
- * `transferFees` absent counts as zero — an install with free transfers has
- * three terms and its three-term sum *is* the gain. `unrealised` absent does
- * not: the sum is then genuinely unknown, **and it inherits its reason**, so the
- * headline names what is missing instead of wearing the dash that would claim
- * there is nothing to compute.
+ * **Neither absence is counted as zero.** `unrealised` unknown is a held
+ * position whose rate has not resolved, and the sum inherits its reason so the
+ * headline names what is missing. `transferFees` `null` is *nothing to bound
+ * the fees by*, and until #775 it was read as a broker moving money for free —
+ * so a **four-term total was rendered from three**, amputated of a term, with
+ * nothing on screen saying so. A total missing a term is not that total
+ * (ADR-0018), so it is an absence, and it is the em dash: *there is nothing to
+ * compute*, which is one of ADR-0016's four and not a fifth.
  */
-export function gainTotal(terms: GainTerms): Unrealised {
+export function gainTotal(terms: GainTerms): Sum {
   if (!terms.unrealised.known) return terms.unrealised
+  if (terms.transferFees === null) return { known: false, because: 'unboundedFees' }
   return {
     known: true,
-    value:
-      terms.unrealised.value + terms.realised + terms.dividends + (terms.transferFees ?? 0),
+    value: terms.unrealised.value + terms.realised + terms.dividends + terms.transferFees,
   }
 }
 
-/** How a sum reads — `absence.ts`'s own constants, so the key lives in one file. */
-export function unrealisedRendering(unrealised: Unrealised): Rendering {
-  return unrealised.known ? FIGURE : AWAITING_RATE
+/**
+ * How a sum reads — `absence.ts`'s own constants, so the key lives in one file.
+ *
+ * Two reasons, two renderings, and **no fifth form of absence**: a rate on its
+ * way is *named* (the app repairs it by itself, #704), while a term nothing can
+ * bound takes the em dash of *there is nothing to compute*.
+ */
+export function sumRendering(sum: Sum): Rendering {
+  if (sum.known) return FIGURE
+  return sum.because === 'awaitingRate' ? AWAITING_RATE : DASH
 }
 
 /**
@@ -199,7 +248,7 @@ export function termRendering(terms: GainTerms, term: GainTermName): Rendering {
   // figure, since the other three terms are exactly what a portfolio sold out of
   // still has.
   if (term === 'unrealised' && !terms.holdsPosition && terms.unrealised.known) return DASH
-  if (term === 'unrealised') return unrealisedRendering(terms.unrealised)
+  if (term === 'unrealised') return sumRendering(terms.unrealised)
   // The fourth term is *absent*, never zero, on an install whose broker moves
   // money for free — and `termIsRendered` has already dropped it by then. A
   // dash is right for anything else that reaches here with no figure.

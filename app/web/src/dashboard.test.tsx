@@ -312,9 +312,16 @@ describe('the statistics shrink instead of filling with dashes', () => {
     server.use(http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null))))
     renderApp()
 
-    // The head keeps its subject: three terms are read off the positions, which
-    // are not under the constraint that empties `portfolio_totals`.
-    expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/375,00/)
+    // The three position terms keep their subject — they are read off the
+    // positions, which are not under the constraint that empties
+    // `portfolio_totals` — but **their sum is not the gain** (#775): with no
+    // row at all there is nothing to bound the fourth term by, and a four-term
+    // total rendered from three is not that total (ADR-0018). It wears the em
+    // dash, and the sentence at the foot of the block says why.
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent('—')
+    expect(head).not.toHaveTextContent(/375,00/)
+    expect(screen.getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(/300,00/)
 
     for (const absent of ['Valeur totale', 'Versé net', 'TRI', 'TWR']) {
       expect(screen.queryByRole('group', { name: absent })).not.toBeInTheDocument()

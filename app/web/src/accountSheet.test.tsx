@@ -26,6 +26,7 @@ import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccountGoingNowhere,
   anAccountsPayload,
+  anAccountWithoutSeries,
   aPositionsPayload,
   defaultAccounts,
   defaultPositions,
@@ -218,6 +219,35 @@ describe('the four terms explain the total', () => {
     expect(within(panel).queryByRole('status')).not.toBeInTheDocument()
     // The link counts the same rows, so it waits at the same door.
     expect(within(panel).queryByRole('link', { name: /position/ })).not.toBeInTheDocument()
+  })
+
+  it('refuses a four-term total rendered from three (#775)', async () => {
+    // `transfer_fees: null` is the server's own sentence — *no day to bound the
+    // fees by*, so no coherent statement to make (#722) — and `gainTotal` read
+    // it as *the broker moved the money for free*. The panel therefore masked
+    // the fourth term and announced a `Gain total` amputated of it, with
+    // nothing on screen saying which of the four was missing.
+    //
+    // A total missing a term is not that total (ADR-0018), so it is an absence:
+    // the em dash, *there is nothing to compute*, which is one of ADR-0016's
+    // four and never a fifth. **And the term renders, as a dash** — a headline
+    // that goes out with no visible cause under it is worse than the wrong
+    // number it replaces.
+    const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
+    const panel = await openPanel(user, 'Alpha')
+
+    const head = await waitFor(() => {
+      const group = panelHead(panel)
+      expect(within(group).getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+        /300,00/,
+      )
+      return group
+    })
+    expect(within(head).getByRole('group', { name: /Frais/ })).toHaveTextContent('—')
+    // The head itself: the three terms it does hold sum to `+325,00`, and that
+    // figure is exactly what must **not** be written under the name of a total
+    // whose fourth term nobody could state.
+    expect(head).not.toHaveTextContent(/325,00/)
   })
 })
 
