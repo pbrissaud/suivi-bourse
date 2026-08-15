@@ -48,6 +48,10 @@ export default function DataPage() {
   // Read here as well as inside the tab: the badge is on the trigger, which is
   // visible while the other tab is. One query key, so it is one request.
   const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
+  // **An optional read, so the `?? []` survives** (ADR-0026): a badge at zero is
+  // *not rendered at all*, so a read in flight takes an ornament off a tab
+  // rather than making a claim — and the two tabs must be reachable while it
+  // is in flight.
   const badge = unacknowledgedCount(advisories.data ?? [])
 
   return (

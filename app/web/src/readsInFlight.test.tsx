@@ -1,0 +1,261 @@
+/**
+ * **A read in flight is not an absence** (#775, ADR-0026), attested once for
+ * the whole front rather than block by block.
+ *
+ * The rule was stated at #718 and restated six times in six spellings, each
+ * with the same sentence recopied in a comment beside it — and four blocks
+ * written in between missed it. The cause is mechanical: nothing made it true
+ * by construction, and **no test exercised it**, every block test doing
+ * `waitFor` on the value it expects and therefore stepping straight over the
+ * one state this file is about.
+ *
+ * Three things about the shape are decisions:
+ *
+ *  - **It is driven by the routes, not by the blocks.** For each surface the
+ *    routes it actually requests are recorded off the MSW lifecycle, then
+ *    replayed one at a time with that single read left unresolved. A fifth
+ *    block reading a route already served is covered the day it is written, by
+ *    nobody's discipline — which is the whole point, the four occurrences this
+ *    ticket closes having been written by four authors who each held the rule
+ *    in the block next door.
+ *  - **It fails when a route of `lib/api.ts`'s own table is visited by no
+ *    surface.** Without that half, a request armed under a condition that is
+ *    false by default (`enabled:`) leaves the net in silence — which is exactly
+ *    what `/api/portfolio/movers` and `/api/positions/history` are, and the
+ *    first of the two is occurrence 1.
+ *  - **What it observes is the emptiness primitives**, `EmptyState` and
+ *    `EntryPair`, marked by a `data-empty` attribute rather than by a role: an
+ *    empty state is a state and not a change to announce, and the banner
+ *    already owns `status` on the page. Totals and counting sentences stay in
+ *    the block's own test — they are too bound to the block's meaning to be
+ *    read from outside — so #722's fourth term and the account panel's curve
+ *    are asserted in `accountSheet.test.tsx`, where their figures are.
+ *
+ * The comparison is against a **baseline**: whatever the surface says when
+ * every read has landed. An empty state that is already true of the fixture is
+ * not this ticket's subject; one that appears *because* a read has not answered
+ * is.
+ */
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { HttpResponse, http } from 'msw'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+
+import { READ_ROUTES, ROUTES } from '@/lib/api'
+import { aTotals, aTotalsPayload } from '@/test/factories'
+import { renderApp } from '@/test/render'
+import { server } from '@/test/server'
+
+// ------------------------------------------------------------------------- //
+// Reading the wire
+// ------------------------------------------------------------------------- //
+
+/** A route pattern (`/api/prices/:symbol`) as a matcher on a pathname. */
+function matcherFor(route: string): RegExp {
+  const escaped = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/:[A-Za-z_]+/g, '[^/]+')}$`)
+}
+
+const MATCHERS = READ_ROUTES.map((route) => [route, matcherFor(route)] as const)
+
+/** Which declared route this request is one of, or `null` for a write. */
+function routeOf(url: string): string | null {
+  const { pathname } = new URL(url)
+  return MATCHERS.find(([, matcher]) => matcher.test(pathname))?.[0] ?? null
+}
+
+/**
+ * The wire's own clock. `Date` is frozen by the harness (every dated figure in
+ * this product is a function of it), so quiescence is measured on
+ * `performance.now()`, which is not.
+ */
+let lastActivity = 0
+
+/** Wait until nothing has crossed the wire for a moment — landed or hanging. */
+async function quiet() {
+  await waitFor(() => expect(performance.now() - lastActivity).toBeGreaterThan(60), {
+    timeout: 5_000,
+    interval: 20,
+  })
+}
+
+/** What the surface currently says is **empty**, by the text it says it with. */
+function emptyMarkers(): string[] {
+  return Array.from(document.querySelectorAll('[data-empty]'))
+    .map((node) => (node.textContent ?? '').trim())
+    .sort()
+}
+
+// ------------------------------------------------------------------------- //
+// The surfaces, and what a reader does on them
+// ------------------------------------------------------------------------- //
+
+type View = ReturnType<typeof renderApp>
+
+interface Surface {
+  name: string
+  url: string
+  /** The page's own title, which every surface renders whatever it has read. */
+  heading: string
+  /** Payloads this surface needs to reach the state under test. */
+  handlers?: () => void
+  /** What the reader does once the page is up — a panel, a tab, a sheet. */
+  open?: (view: View) => Promise<unknown>
+}
+
+/**
+ * Six surfaces for four pages: two of them are a reader's gesture away — the
+ * two sheets — and two more are a state of the dashboard, whose chart reads
+ * **one** of two series and picks by the same discriminant that decides its
+ * reading. Without the second the valuation series is armed under a condition
+ * false by default and never enters the net.
+ */
+const SURFACES: readonly Surface[] = [
+  { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
+  {
+    name: 'le tableau de bord sans grand livre de liquidités',
+    url: '/',
+    heading: 'Tableau de bord',
+    handlers: () =>
+      server.use(
+        http.get(ROUTES.portfolioTotals, () =>
+          HttpResponse.json(
+            aTotalsPayload(
+              aTotals({
+                total_value: null,
+                cash_balance: null,
+                net_contributed: null,
+                twr_index: null,
+                xirr: null,
+              }),
+            ),
+          ),
+        ),
+      ),
+  },
+  {
+    name: 'les titres, une fiche ouverte',
+    url: '/titres',
+    heading: 'Titres',
+    open: async ({ user }) => {
+      const title = await screen.findByRole('button', { name: 'Zeta Alpha' })
+      await user.click(title)
+      return screen.findByRole('dialog')
+    },
+  },
+  {
+    name: 'les comptes, un volet ouvert',
+    url: '/comptes',
+    heading: 'Comptes',
+    open: async ({ user }) => {
+      const table = await screen.findByRole('table')
+      const row = within(table)
+        .getAllByRole('row')
+        .find((candidate) => (candidate.textContent ?? '').includes('Alpha'))!
+      await user.click(within(row).getAllByRole('cell')[0])
+      return screen.findByRole('dialog')
+    },
+  },
+  { name: 'les données · le grand livre', url: '/donnees', heading: 'Données' },
+  {
+    name: 'les données · l’installation',
+    url: '/donnees',
+    heading: 'Données',
+    open: async ({ user }) => {
+      await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+      return screen.findByRole('heading', { name: 'Le magasin' })
+    },
+  },
+]
+
+// ------------------------------------------------------------------------- //
+// The net
+// ------------------------------------------------------------------------- //
+
+/** Every route any surface was seen to read — the coverage half of the rule. */
+const visited = new Set<string>()
+/** What the pass currently running has read, in the order it asked for it. */
+let recording = new Set<string>()
+
+/** The handlers this surface needs, and nothing left over from the last pass. */
+function stage(surface: Surface): void {
+  server.resetHandlers()
+  surface.handlers?.()
+}
+
+beforeAll(() => {
+  server.events.on('request:start', ({ request }) => {
+    lastActivity = performance.now()
+    const route = routeOf(request.url)
+    if (route === null) return
+    visited.add(route)
+    recording.add(route)
+  })
+  server.events.on('request:end', () => {
+    lastActivity = performance.now()
+  })
+})
+
+beforeEach(() => {
+  lastActivity = performance.now()
+})
+
+afterEach(() => {
+  cleanup()
+})
+
+describe('a read that has not landed is never rendered as an absence', () => {
+  for (const surface of SURFACES) {
+    it(
+      `${surface.name} says nothing about what it has not read`,
+      async () => {
+        // 1. What this surface reads, and what it says when everything answers.
+        stage(surface)
+        recording = new Set()
+        const view = renderApp({ url: surface.url })
+        await screen.findByRole('heading', { level: 1, name: surface.heading })
+        await surface.open?.(view)
+        await quiet()
+
+        const baseline = emptyMarkers()
+        const requested = Array.from(recording)
+        cleanup()
+
+        // 2. The same surface, one read at a time left in flight for ever.
+        for (const route of requested) {
+          stage(surface)
+          server.use(http.get(route, () => new Promise<never>(() => {})))
+          const replay = renderApp({ url: surface.url })
+          await screen
+            .findByRole('heading', { level: 1, name: surface.heading })
+            .catch(() => null)
+          // The gesture may not be available at all — a table that has not
+          // rendered has no row to click — and that is an ordinary outcome
+          // here: what is asserted is an absence either way.
+          await surface.open?.(replay).catch(() => null)
+          await quiet()
+
+          const appeared = emptyMarkers().filter((marker) => !baseline.includes(marker))
+          expect(
+            appeared,
+            `${surface.name} declares something empty while ${route} is in flight`,
+          ).toEqual([])
+          cleanup()
+        }
+
+        // Every surface reads something, or the loop above asserted nothing.
+        expect(requested.length).toBeGreaterThan(0)
+      },
+      60_000,
+    )
+  }
+
+  it('leaves no declared route unvisited', () => {
+    // The other half of the rule: a route armed under a condition false by
+    // default (`enabled:`) would otherwise never be exercised, and it is
+    // precisely those two — the movers and the valuation series — that carried
+    // this ticket's first occurrence. `READ_ROUTES` is computed from `ROUTES`
+    // rather than written down here, so a route added tomorrow joins the net
+    // without a line of this file moving.
+    expect(READ_ROUTES.filter((route) => !visited.has(route))).toEqual([])
+  })
+})

@@ -41,11 +41,11 @@ import { ABSENT, useFormatters } from '@/lib/format'
 import type { Rendering } from '@/lib/absence'
 import {
   gainTotal,
-  portfolioTerms,
+  securityTerms,
+  sumRendering,
   termAmount,
   termCarriesSign,
   termRendering,
-  unrealisedRendering,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
@@ -104,8 +104,12 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
-  // The same function the dashboard's head calls, minus its fourth term.
-  const terms = portfolioTerms(positions, null)
+  // The same arithmetic the dashboard's head runs, on a surface where the
+  // fourth term has **no subject** — which is `securityTerms` and not
+  // `portfolioTerms(positions, null)`: since #775 that `null` says *there is no
+  // day to bound the fees by*, and read here it would put an em dash over a
+  // table whose rows do add up.
+  const terms = securityTerms(positions)
   const total = gainTotal(terms)
   const valuation = valuationTotal(rows)
 
@@ -115,7 +119,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
         size="head"
         label={t('shares.gainTotal')}
         value={figure(
-          unrealisedRendering(total),
+          sumRendering(total),
           () => f.currency(total.known ? total.value : null, currency),
           t,
         )}
@@ -170,7 +174,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
         <Stat
           label={t('shares.value')}
           value={figure(
-            unrealisedRendering(valuation),
+            sumRendering(valuation),
             () => f.currency(valuation.known ? valuation.value : null, currency),
             t,
           )}

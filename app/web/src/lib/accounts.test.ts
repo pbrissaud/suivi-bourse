@@ -20,6 +20,7 @@ import {
   DEFAULT_RANGE,
   DIMMED_OPACITY,
   firstDay,
+  isPending,
   originOf,
   portfolioRow,
   positionCount,
@@ -27,6 +28,7 @@ import {
   RANGES,
   removalOf,
   seriesColour,
+  settledSeries,
   sortRows,
   submittedAccount,
   valueSeries,
@@ -211,6 +213,35 @@ describe('the table', () => {
     expect(dropped).toContain('holdings_value')
   })
 
+  it('keeps the column whose read is in flight, and empties its cells (#775)', () => {
+    // *Absent for every account* is a statement about the reader's data, and it
+    // cannot be made about a request nobody has answered — dropped and put
+    // back, the table would gain a column under the reader's eyes.
+    const pending = buildAccountRows(defaultAccounts(), null)
+    expect(visibleColumns(pending)).toContain('performance')
+    expect(pending.every((row) => isPending(row, 'performance'))).toBe(true)
+    // And it is the **only** column that can be in that state: one figure of
+    // the row is read off N series, the seven others come with the row.
+    expect(pending.every((row) => !isPending(row, 'gain_absolu'))).toBe(true)
+
+    // An empty map is not that state: it is what an install whose perf cache
+    // says nothing over the window answers, and there the column goes.
+    const answered = buildAccountRows(defaultAccounts(), new Map())
+    expect(visibleColumns(answered)).not.toContain('performance')
+  })
+
+  it('waits for the N series together, the comparison being the object (#775)', () => {
+    // An account landing after the others moves `windowStart`, so every curve
+    // is rebased on another day and the whole plot is redrawn under the
+    // reader's eyes — the figure swap #718 forbade on the dashboard's head.
+    const landed = anAccountHistory('alpha').points
+    expect(settledSeries([landed, null])).toBeNull()
+    expect(settledSeries([landed, []])).toEqual([landed, []])
+    // No account at all is not *in flight*: it is a declaration with nothing
+    // in it, and the page's own empty state owns that one.
+    expect(settledSeries([])).toEqual([])
+  })
+
   it('reads the portfolio row rather than summing the accounts', () => {
     // The accounts cannot be summed at all here: `gamma` has no cash ledger, so
     // `total_value` is not a number on that line (#708). The consolidated
@@ -218,6 +249,7 @@ describe('the table', () => {
     const portfolio = portfolioRow(
       { day: '2026-03-02', total_value: 2800, xirr: 0.0322 } as never,
       0.0678,
+      false,
     )
     expect(portfolio.total_value).toBe(2800)
     expect(rows.reduce((sum, row) => sum + (row.total_value ?? 0), 0)).not.toBe(2800)
@@ -255,6 +287,17 @@ describe('a row with no figures names its reason', () => {
   it('says nothing about a row whose figures are all on screen', () => {
     const [alpha] = buildAccountRows([anAccount()], new Map([['alpha', 0.1433]]))
     expect(reasonOf(alpha, true)).toBeNull()
+  })
+
+  it('says nothing about a column whose read is in flight (#775)', () => {
+    // A visible column with no figure drops **every** row into *« sans grand
+    // livre de liquidités »* — a false sentence written on every line at once,
+    // for as long as the N series take to answer. The pending cell is not a
+    // missing figure and `degradedReason` has to know it.
+    const rows = buildAccountRows(defaultAccounts(), null)
+    expect(rows.every((row) => row.performancePending)).toBe(true)
+    const [alpha] = rows
+    expect(degradedReason(alpha, visibleColumns(rows), true)).toBeNull()
   })
 
   it('says nothing about a column the page has dropped', () => {

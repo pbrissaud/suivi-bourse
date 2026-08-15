@@ -55,6 +55,10 @@ export function Banner() {
       runtime: runtime.data,
       firstEvent,
       nameAccount: (id) => {
+        // **An optional read, so the `?? []` survives** (ADR-0026): not finding
+        // the declaration removes a *name* from the sentence and falls back to
+        // the id — it falsifies nothing, and withholding the band over it would
+        // hide the condition the reader is waiting on.
         const declared = (accounts.data?.accounts ?? []).find((account) => account.id === id)
         return (declared ? declaredLabel(declared) : null) ?? t('accounts.default.label')
       },

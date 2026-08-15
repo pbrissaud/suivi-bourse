@@ -78,6 +78,34 @@ export const ROUTES = {
   movers: '/api/portfolio/movers',
 } as const
 
+export type RouteName = keyof typeof ROUTES
+
+/**
+ * The routes no page ever **reads** — every one of them is a gesture.
+ *
+ * The split exists for one consumer, the in-flight test (ADR-0026): it draws
+ * its net from `ROUTES` rather than from a list of its own, so a fifth block
+ * reading an already-served route is covered the day it is written, and a route
+ * declared here that no page visits fails it. A gesture has no in-flight state
+ * to hold a page hostage to — nothing is rendered on the strength of a `PUT`
+ * that has not returned — so it is subtracted here rather than excused there.
+ *
+ * `accounts` and `events` are **not** in it: both are read and written, and the
+ * read is what the net is about.
+ */
+export const WRITE_ONLY_ROUTES = [
+  'settings',
+  'event',
+  'account',
+  'advisoryAcknowledgement',
+  'storeOrphans',
+] as const satisfies readonly RouteName[]
+
+/** Every route a page reads — the net, computed and never written down twice. */
+export const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
+  .filter((name) => !(WRITE_ONLY_ROUTES as readonly string[]).includes(name))
+  .map((name) => ROUTES[name])
+
 export function eventPath(id: string): string {
   return `/api/events/${encodeURIComponent(id)}`
 }

@@ -74,11 +74,11 @@ import {
   GAIN_TERMS,
   gainTotal,
   portfolioTerms,
+  sumRendering,
   termAmount,
   termCarriesSign,
   termIsRendered,
   termRendering,
-  unrealisedRendering,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
@@ -122,8 +122,20 @@ export interface AccountSheetProps {
    * panel and the link cannot disagree about what they are counting.
    */
   positions: readonly Position[] | null
-  /** The account's own perf series, whole — the page has already read it. */
-  points: readonly PerfPoint[]
+  /**
+   * The account's own perf series, whole — the page has already read it — or
+   * **`null` while that read is in flight** (ADR-0026).
+   *
+   * `[]` and *not answered yet* were one value, and the curve's own rule turned
+   * the second into the first: *a block with nothing in it does not exist*,
+   * whose sentence here is *an account with no cash ledger has no value to
+   * trace against a contribution*. `account_series` reads ~2 500 days per
+   * account, so the window is narrow and real.
+   *
+   * It waits for **its own** read and not for the N the comparison above is one
+   * object of: a panel is about one account.
+   */
+  points: readonly PerfPoint[] | null
   currency: string | null
   /** The positions read failed: the block says so rather than summing nothing. */
   positionsError: unknown
@@ -155,7 +167,7 @@ export function AccountSheet({
   const held = positions === null ? null : accountPositions(positions, row.id)
   const terms = held === null ? null : portfolioTerms(held, row.transfer_fees)
   const total = terms === null ? null : gainTotal(terms)
-  const curve = valueSeries(points)
+  const curve = points === null ? null : valueSeries(points)
   const lines = positions === null ? 0 : positionCount(positions, row.id)
 
   return (
@@ -178,7 +190,7 @@ export function AccountSheet({
               size="head"
               label={t('accounts.column.gainTotal')}
               value={figure(
-                unrealisedRendering(total),
+                sumRendering(total),
                 () => f.currency(total.known ? total.value : null, currency),
                 t,
               )}
@@ -230,8 +242,10 @@ export function AccountSheet({
 
           {/* A block with nothing in it does not exist (#724's rule): an account
               with no cash ledger has no value to draw against a contribution,
-              and its row has already named that reason one line higher. */}
-          {curve.length === 0 ? null : (
+              and its row has already named that reason one line higher. That
+              rule is about a series that **answered** empty — a read still in
+              flight is `null` and says nothing at all (ADR-0026). */}
+          {curve === null || curve.length === 0 ? null : (
             <div className="border-t pt-6">
               <AccountCurve points={curve} currency={currency} />
             </div>

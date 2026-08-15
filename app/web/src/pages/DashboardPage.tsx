@@ -102,7 +102,11 @@ export default function DashboardPage() {
           <PortfolioChart />
           <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
           <Movers
-            movers={movers.data?.movers ?? []}
+            // `?? null` and never `?? []`: this read is armed only once the
+            // page reaches `portfolio`, so there is a real window in which an
+            // empty array would state *« Rien à comparer »* about movements
+            // nobody has answered for (ADR-0026).
+            movers={movers.data?.movers ?? null}
             reference={movers.data?.reference ?? null}
             rows={rows}
             currency={positions.data?.base_currency ?? null}

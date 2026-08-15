@@ -288,14 +288,18 @@ cell, and `absence.awaitingRate` stays in one file.
 The head itself **computes `Gain total` from its four terms and never reads
 `portfolio_totals.gain_absolu`**, which is the same number written down
 elsewhere; three of the four terms come off `/api/positions`, so a global row
-that cannot be written no longer blanks the headline. The fourth term — the fees
-a broker takes out of a transfer — **renders only when it is not zero**, colour
-goes only to the two terms that can change sign, the statistics **shrink**
-instead of filling with dashes, and there are **four icons in the block, not
-nine**. The year-to-date is **two figures that never share a line**: the euro
-under the head, the percentage inside the TWR statistic (measured `+40,69 €`
-against `−1,25 %`, opposite signs over the same period and both correct). The
-`1S / 1M / 1A / —` selector does not exist.
+that cannot be written no longer blanks *those three*. **It does blank the
+headline, and that half is reversed by #775**: the fourth term is bounded by the
+row's own day, so with no row there is nothing to bound it by, and a four-term
+total rendered from three is not that total (ADR-0018) — the head wears the em
+dash there and the sentence at the foot of the block says why. The fourth term —
+the fees a broker takes out of a transfer — **renders only when it is not
+zero**, colour goes only to the two terms that can change sign, the statistics
+**shrink** instead of filling with dashes, and there are **four icons in the
+block, not nine**. The year-to-date is **two figures that never share a line**:
+the euro under the head, the percentage inside the TWR statistic (measured
+`+40,69 €` against `−1,25 %`, opposite signs over the same period and both
+correct). The `1S / 1M / 1A / —` selector does not exist.
 
 Being two figures is also why **both** of them carry the rebuild's sentence.
 They are kept apart on purpose, so a reader looking at one never sees the
@@ -1198,6 +1202,68 @@ gets the two empty series back. `/api/portfolio/movers` is read **as it
 stands**, prefix included: its payload is already the v5 shape (no `?mode=`, no
 per-row currency since #702, ADR-0004's carrying applied), and a second route
 serving the identical body would be two resources over one computation.
+
+**A read in flight is not an absence, and the rule stops being prose** (issue
+#775, ADR-0026). *A read that has not landed is not a fact* was stated at #718
+and **restated six times in six spellings** — `!positions.data || !totals.data`,
+`settled`, `positions === null`, `!accounts.data`, `!events.data` — each with the
+sentence recopied in a comment beside it, and **four blocks written in between
+missed it**. The cause is mechanical: nothing made it true by construction, and
+no test exercised it, every block test doing `waitFor` on the value it expects.
+Four things about the repair are decisions:
+
+- **No primitive.** The six sites that hold the rule are six *correct* sites,
+  not six competing conventions, and a component wrapping them would be the
+  seventh spelling — the disease one level up. What lands instead is a **rule of
+  props**: a block never receives an array that can mean *in flight*, the page
+  passes `?? null` and never `?? []`, and where the flattening is already
+  upstream the honesty goes upstream with it (`AccountsPage`'s
+  `(readonly PerfPoint[] | null)[]`). The shape is `readonly X[] | null`, which
+  `tsc` does **not** close — `?? []` satisfies it — and that is assumed: what
+  closes the class is the test, not the compiler.
+- **The test is driven by the routes, not by the blocks** (`readsInFlight.
+  test.tsx`). For each of **six surfaces** — the four pages, two of them with a
+  sheet open, plus the dashboard in its no-cash-ledger state — the routes it
+  actually requests are recorded off the MSW lifecycle, then replayed one at a
+  time with that single read hanging for ever, asserting an **absence**. A fifth
+  block reading an already-served route is covered the day it is written. It
+  also **fails when a route of `ROUTES` is visited by no surface**, without
+  which a request armed under a condition false by default (`enabled:`) leaves
+  the net in silence — which is exactly what `/api/portfolio/movers` and
+  `/api/positions/history` are. `lib/api.ts` carries the split
+  (`WRITE_ONLY_ROUTES`, five gestures; `READ_ROUTES` computed from it), so the
+  net is never a second list. What it observes is `EmptyState` and `EntryPair`,
+  marked by a `data-empty` **attribute** and not a role — an empty state is a
+  state, not a change to announce, and the banner already owns `status`.
+- **A block waiting on a needed read renders nothing at all, title included.**
+  No frame, no placeholder: a frame with an empty body *is* a hand-written
+  skeleton and this product has none. **N reads are waited for together when the
+  object *is* the comparison** — an account arriving late moves the window every
+  curve is rebased on — so the accounts chart and the table's `perf` column wait
+  for all of them (`settledSeries`), while the panel's own curve waits only for
+  its own. That column **neither disappears nor fills with dashes**: its cells
+  render nothing, and `visibleColumns` *and* `degradedReason` both learn the
+  state (`isPending`), without which a visible column with no figure dropped
+  every row into *« sans grand livre de liquidités »* — a false sentence on
+  every line at once.
+- **The four occurrences and the `null` that meant two things.** The movers
+  block, the account panel's value-against-contributed curve, the panel's fourth
+  term, and `AccountsChart` — the fourth found in session, and the sixth
+  spelling with it. In `gain.ts`, `transfer_fees` is `0` when a broker moves
+  money for free and `null` when there is **no day to bound it by** (#722);
+  counted as zero, the second rendered a four-term total from three, amputated
+  and with nothing on screen saying so. `Unrealised` becomes **`Sum`**, its
+  reason `'awaitingRate' | 'unboundedFees'`, and `sumRendering` gives the second
+  the **em dash** — one of ADR-0016's four, never a fifth (ADR-0021). The shares
+  surfaces call **`securityTerms`** instead, whose fourth term is `0` because it
+  has *no subject* there (ADR-0017), which is a third thing again and had been
+  spelled `portfolioTerms(positions, null)`. The consequence assumed: on
+  `totals: null` with positions the dashboard's headline goes out — a total
+  amputated of a term is not that total (ADR-0018). **The optional/needed
+  distinction of #718 is kept**: `?? []` survives where a read absent removes a
+  line (the banner's account name, the shares page's failure counters, the
+  installation badge, the chart's marker rail), and it is *there* that the
+  comment goes — never on the repaired sites, which after repair all look alike.
 
 ### Documentation Website (in `website/` directory)
 
@@ -3087,6 +3153,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718), and a quote is a number *and* a unit (#774)
 ├── src/lib/gain.ts         # Pure: ADR-0018's four terms and their sum (#718)
+│                           #       plus `Sum` and its two reasons — the fourth term nothing can bound (#775)
 ├── src/lib/shares.ts       # Pure: a row is a symbol, the carried value, the two orderings (#719)
 │                           #       plus the sheet: the breakdown that is absent at one account, the day-markers (#720)
 ├── src/lib/dashboard.ts    # Pure: the two readings, the twelve slices, the movers' leftovers, the four states (#727)
@@ -3106,6 +3173,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns (#721) · the panel: four terms, the value/contributed curve, the link (#722)
+├── src/readsInFlight.test.tsx  # The net: every surface × every route it reads, one left hanging (#775)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 

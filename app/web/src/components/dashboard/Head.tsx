@@ -58,11 +58,11 @@ import {
   GAIN_TERMS,
   gainTotal,
   portfolioTerms,
+  sumRendering,
   termAmount,
   termCarriesSign,
   termIsRendered,
   termRendering,
-  unrealisedRendering,
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
@@ -214,11 +214,16 @@ export function DashboardHead() {
       <Stat
         size="head"
         label={t('dashboard.gainTotal')}
-        // Unknown here has exactly one cause — a held position whose rate has
-        // not resolved — and it is **named**. A bare dash would say *there is
-        // nothing to compute* about the one absence the app repairs by itself.
+        // Unknown here has **two** causes since #775 and they read apart: a
+        // held position whose rate has not resolved is *named*, because the app
+        // repairs it by itself, while a fourth term nothing can bound wears the
+        // em dash — a total amputated of a term is not that total (ADR-0018),
+        // and *there is nothing to compute* is the truth about it. That second
+        // one is also what `totals: null` now produces on a portfolio that has
+        // positions: the headline goes out, and the sentence at the foot of the
+        // block says why.
         value={figure(
-          unrealisedRendering(total),
+          sumRendering(total),
           () => f.currency(total.known ? total.value : null, currency),
           t,
         )}

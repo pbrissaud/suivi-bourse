@@ -39,7 +39,7 @@
  */
 import { absenceCase, type AbsenceCase, type PositionAbsenceInput } from '@/lib/absence'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
-import { type Unrealised } from '@/lib/gain'
+import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
 
 /** One line of the page — one symbol, whatever the number of accounts on it. */
@@ -245,7 +245,7 @@ export function closedRows(rows: readonly ShareRow[]): ShareRow[] {
  * does not, so a caller holding only the null writes an em dash and says *there
  * is nothing to compute* about a rate the app fetches by itself.
  */
-export function valuationTotal(rows: readonly ShareRow[]): Unrealised {
+export function valuationTotal(rows: readonly ShareRow[]): Sum {
   let total = 0
   for (const row of rows) {
     const value = marketValue(row)

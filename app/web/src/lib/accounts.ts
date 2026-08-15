@@ -193,12 +193,43 @@ export function firstDay(points: readonly PerfPoint[]): string | null {
 }
 
 /**
+ * The N series, or `null` while **any one of them** is still in flight
+ * (ADR-0026).
+ *
+ * *Tout ou rien par objet*: the comparison **is** the object here, and an
+ * account landing after the others moves `windowStart` — so every curve is
+ * rebased on another day and the whole plot is redrawn under the reader's eyes,
+ * which is the figure-swap #718 forbade on the dashboard's head. The account
+ * panel's own curve is not under this rule: it is about one account and waits
+ * only for its own read.
+ *
+ * The shape is `readonly PerfPoint[] | null` per read and the page passes
+ * `?? null`, never `?? []` — an empty array is a **payload** (an account whose
+ * perf cache says nothing over this window) and reading a request in flight as
+ * one is what made the comparison render *« rien à comparer »* about series
+ * nobody had answered for yet.
+ */
+export function settledSeries(
+  series: readonly (readonly PerfPoint[] | null)[],
+): readonly (readonly PerfPoint[])[] | null {
+  const landed: (readonly PerfPoint[])[] = []
+  for (const one of series) {
+    if (one === null) return null
+    landed.push(one)
+  }
+  return landed
+}
+
+/**
  * Where the visible window starts.
  *
  * `SINCE_OPENING` is the **youngest** opening — a `max`, not a `min`: a window
  * reaching back before an account existed is the unbounded one under another
  * name, and it is the one this page refuses. `null` is *nothing to compare*,
  * which is what an install whose perf cache is empty looks like.
+ *
+ * It takes the **landed** series (see {@link settledSeries}): the day the window
+ * starts on is a fact about every account at once.
  */
 export function windowStart(
   range: Range,
@@ -361,6 +392,18 @@ export interface AccountRow {
   /** The rebased scalar over the visible window, never the stored index. */
   performance: number | null
   /**
+   * The series this scalar comes from **has not landed** (ADR-0026) — which is
+   * not `performance === null`, a figure the window genuinely does not hold
+   * (#708: `twr_index` follows `total_value`).
+   *
+   * The two are told apart by two pure functions rather than by the table:
+   * {@link visibleColumns} keeps the column, so it does not appear at the
+   * instant the reads answer, and {@link degradedReason} ignores it, without
+   * which a visible column with no figure drops every row into *« sans grand
+   * livre de liquidités »* — a false sentence written on every line at once.
+   */
+  performancePending: boolean
+  /**
    * ADR-0018's fourth term for this account (#722). **No column of the table
    * shows it** — the table carries `Gain total` alone — and it exists on the
    * row because the account's panel is where the four terms are decomposed.
@@ -373,6 +416,17 @@ export function figure(row: AccountRow, column: FigureColumn): number | null {
 }
 
 /**
+ * Whether this cell has nothing to say **yet** — one column can be in that
+ * state, and it is the one whose figure is read off N series (ADR-0026).
+ *
+ * A cell in flight renders **nothing at all**: not a dash, which by ADR-0016
+ * says *there is nothing to compute* about a figure nothing is yet known about.
+ */
+export function isPending(row: AccountRow, column: FigureColumn): boolean {
+  return column === 'performance' && row.performancePending
+}
+
+/**
  * The rows, in **declaration order** — the order the resource answers in.
  *
  * Not sorted by value and above all not by `perf`: sorting by the one column
@@ -382,7 +436,12 @@ export function figure(row: AccountRow, column: FigureColumn): number | null {
  */
 export function buildAccountRows(
   accounts: readonly Account[],
-  performance: ReadonlyMap<string, number | null>,
+  /**
+   * The rebased scalars, or **`null` while the N series reads have not all
+   * landed** (ADR-0026). A map with nothing in it is not that state: it is what
+   * an install whose perf cache says nothing over the window answers.
+   */
+  performance: ReadonlyMap<string, number | null> | null,
 ): AccountRow[] {
   return accounts.map((account) => ({
     id: account.id,
@@ -400,7 +459,8 @@ export function buildAccountRows(
     net_contributed: account.net_contributed ?? null,
     gain_absolu: account.gain_absolu ?? null,
     xirr: account.xirr ?? null,
-    performance: performance.get(account.id) ?? null,
+    performance: performance?.get(account.id) ?? null,
+    performancePending: performance === null,
     transfer_fees: account.transfer_fees ?? null,
   }))
 }
@@ -420,6 +480,8 @@ export function buildAccountRows(
 export function portfolioRow(
   totals: PortfolioTotals | null,
   performance: number | null,
+  /** Its own series read has not landed (ADR-0026) — never *there is none*. */
+  performancePending: boolean,
 ): AccountRow {
   return {
     id: PORTFOLIO_KEY,
@@ -433,6 +495,7 @@ export function portfolioRow(
     gain_absolu: totals?.gain_absolu ?? null,
     xirr: totals?.xirr ?? null,
     performance,
+    performancePending,
     transfer_fees: totals?.transfer_fees ?? null,
   }
 }
@@ -445,9 +508,16 @@ export function portfolioRow(
  * row is a read of another table, and letting it keep a column alive would
  * print a line of dashes above one figure. The rule is a rule about the
  * comparison.
+ *
+ * **A column whose read is in flight stays** (ADR-0026): *absent for every
+ * account* is a statement about the reader's data, and it cannot be made about
+ * a request nobody has answered. Dropped and put back, the table would gain a
+ * column under the reader's eyes the instant the N series land.
  */
 export function visibleColumns(rows: readonly AccountRow[]): FigureColumn[] {
-  return FIGURE_COLUMNS.filter((column) => rows.some((row) => figure(row, column) !== null))
+  return FIGURE_COLUMNS.filter((column) =>
+    rows.some((row) => figure(row, column) !== null || isPending(row, column)),
+  )
 }
 
 /**
@@ -472,8 +542,14 @@ export function degradedReason(
   rebuilding: boolean | null | undefined,
 ): DegradedReason | null {
   // Nothing missing among what is on screen: a column the page has dropped is
-  // not an absence the reader can see, so it is not one to explain.
-  if (visible.every((column) => figure(row, column) !== null)) return null
+  // not an absence the reader can see, so it is not one to explain. **Nor is a
+  // cell whose read is in flight** (ADR-0026) — counted as missing, the `perf`
+  // column alone dropped every row of a healthy install into *« sans grand
+  // livre de liquidités »*, a false sentence on every line, for as long as the
+  // N series took to answer.
+  if (visible.every((column) => isPending(row, column) || figure(row, column) !== null)) {
+    return null
+  }
   if (row.as_of === null) return rebuilding === false ? 'empty' : 'rebuilding'
   return 'withoutCashLedger'
 }
