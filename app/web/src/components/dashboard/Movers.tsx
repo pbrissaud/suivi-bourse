@@ -29,7 +29,19 @@ import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 
 export interface MoversProps {
-  movers: readonly Mover[]
+  /**
+   * What the server compared, or **`null` while `/api/portfolio/movers` is in
+   * flight** (ADR-0026).
+   *
+   * The request is armed only once the page has reached its `portfolio` state,
+   * so there is a real window between the table appearing and this answering —
+   * and over it `?? []` put the `EmptyState` *« Rien à comparer »* **and** the
+   * sentence *« N autres lignes n'apparaissent pas ici, dont aucune n'a bougé de
+   * rien »* on screen together, two statements about a portfolio whose
+   * movements had not been read. Its sibling block of the same ticket does the
+   * opposite and does it on purpose.
+   */
+  movers: readonly Mover[] | null
   /** The instant the comparison is made against. `null` — nothing to compare. */
   reference: string | null
   /** The portfolio's lines, closed ones included — the block reduces them itself. */
@@ -40,6 +52,12 @@ export interface MoversProps {
 export function Movers({ movers, reference, rows, currency }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
+
+  // **Nothing at all, title included** (ADR-0026): a frame with an empty body
+  // is a hand-written skeleton, and this product has none. The block appears by
+  // a jolt rather than fading in, and that cost is accepted.
+  if (movers === null) return null
+
   const { risers, fallers, others, unchanged } = moversSplit(movers, rows)
 
   return (

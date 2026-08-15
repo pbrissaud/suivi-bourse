@@ -45,8 +45,16 @@ import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 export interface AccountsChartProps {
-  /** The drawn curves, already rebased — the portfolio is deliberately not one. */
-  series: readonly RebasedSeries[]
+  /**
+   * The drawn curves, already rebased — the portfolio is deliberately not one —
+   * or **`null` while the N reads are in flight** (ADR-0026).
+   *
+   * `readonly RebasedSeries[]` alone let an empty array stand for two things,
+   * and the block rendered *« rien à comparer »* on both: a perf cache with
+   * nothing in it, which is a fact, and a page whose `useQueries` had not
+   * answered yet, which is not. *Empty* is a claim about the reader's data.
+   */
+  series: readonly RebasedSeries[] | null
   /** What each curve is called, by key. */
   labels: ReadonlyMap<string, string>
   range: Range
@@ -64,6 +72,12 @@ export function AccountsChart({
 }: AccountsChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
+
+  // **Nothing at all, title included** (ADR-0026). A frame with an empty body
+  // is a skeleton written by hand and this product has none; if one is ever
+  // owed it arrives once, in the shell, never per block.
+  if (series === null) return null
+
   const drawn = series.filter((one) => one.points.length > 0)
   const rows = chartRows(drawn)
 

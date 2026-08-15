@@ -45,6 +45,7 @@ import {
   degradedReason,
   figure,
   isDefaultAccount,
+  isPending,
   MONEY_COLUMNS,
   type AccountRow,
   type FigureColumn,
@@ -278,6 +279,10 @@ export function AccountsTable({
 /**
  * One figure. The two rates are percentages and the five others are money, and
  * a zero wears the colour of text rather than the grey of absence (`lib/sign`).
+ *
+ * **A cell whose read is in flight renders nothing** (ADR-0026) — not a dash,
+ * which by ADR-0016 says *there is nothing to compute*. The column keeps its
+ * place, so the table does not gain one under the reader's eyes.
  */
 function Cell({
   row,
@@ -289,6 +294,7 @@ function Cell({
   currency: string | null
 }) {
   const f = useFormatters()
+  if (isPending(row, column)) return <TableCell className="text-right tabular" />
   const value = figure(row, column)
   const money = (MONEY_COLUMNS as readonly string[]).includes(column)
   // Colour goes to the figures that can turn — the gain and the two rates. A

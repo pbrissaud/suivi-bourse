@@ -52,6 +52,7 @@ import {
   PORTFOLIO_KEY,
   rebase,
   seriesColour,
+  settledSeries,
   sortRows,
   visibleColumns,
   windowStart,
@@ -59,7 +60,7 @@ import {
   type Range,
   type Sort,
 } from '@/lib/accounts'
-import { api } from '@/lib/api'
+import { api, type PerfPoint } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { oneBand, readConditions } from '@/lib/status'
@@ -119,8 +120,18 @@ export default function AccountsPage() {
     }),
   )
 
-  const points = histories.map((one) => one.data?.points ?? [])
-  const from = windowStart(range, new Date(), points)
+  // `?? null` and never `?? []`: an empty series is a **payload** — an account
+  // whose perf cache says nothing — and a request in flight is not one
+  // (ADR-0026). The honesty is upstream of the prop because the flattening is:
+  // the array is built here, so this is where the two states have to survive.
+  const points: (readonly PerfPoint[] | null)[] = histories.map((one) => one.data?.points ?? null)
+  // **The N are waited for together**, because the comparison *is* the object:
+  // an account landing after the others moves the day every curve is rebased
+  // on, so the whole plot and the `perf` column are redrawn under the reader's
+  // eyes. `null` here is *not yet*, and it reaches the chart and the table as
+  // such rather than as *there is nothing to compare*.
+  const landed = settledSeries(points)
+  const from = landed === null ? null : windowStart(range, new Date(), landed)
 
   // `useQueries` hands back a new array on every render, so the rebasing is
   // memoised against what actually moved: when each read landed, which accounts
@@ -131,18 +142,23 @@ export default function AccountsPage() {
     .join('|')} ${from}`
   const rebased = useMemo(
     () =>
-      from === null
+      from === null || landed === null
         ? []
-        : declared.map((account, index) => rebase(account.id, points[index] ?? [], from)),
+        : declared.map((account, index) => rebase(account.id, landed[index] ?? [], from)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stamp],
   )
 
+  // The global series is one read of its own, and it is in flight until it
+  // answers: `?? []` rebased the `Portefeuille` row against nothing and printed
+  // an em dash where the store holds a figure.
   const portfolioSeries =
-    from === null ? null : rebase(PORTFOLIO_KEY, portfolioHistory.data?.points ?? [], from)
+    from === null || !portfolioHistory.data
+      ? null
+      : rebase(PORTFOLIO_KEY, portfolioHistory.data.points, from)
 
   const performance = new Map(rebased.map((one) => [one.key, one.performance]))
-  const rows = buildAccountRows(declared, performance)
+  const rows = buildAccountRows(declared, landed === null ? null : performance)
   const visible = visibleColumns(rows)
   const currency = totals.data?.base_currency ?? null
 
@@ -165,8 +181,22 @@ export default function AccountsPage() {
   // above it, with a rule drawn between a line and itself. The page itself
   // survives — it leaves the **navigation**, never the route, so a bookmark
   // that was valid yesterday does not cost a 404 (`AppSidebar`).
+  //
+  // `totals.data?.totals ?? null` collapsed two states: *the read has not
+  // landed* and *the perf cache holds no global row*. The second is a fact and
+  // renders eight dashes; the first is not, and the row is simply not composed
+  // until it is one (ADR-0026).
   const portfolio =
-    rows.length > 1 ? portfolioRow(totals.data?.totals ?? null, portfolioSeries?.performance ?? null) : null
+    rows.length > 1 && totals.data
+      ? portfolioRow(
+          totals.data.totals,
+          portfolioSeries?.performance ?? null,
+          // A **read** in flight, never a window with nothing in it: at
+          // `SINCE_OPENING` on an empty perf cache `from` is `null` too, and
+          // that one is a fact about the reader's data.
+          landed === null || !portfolioHistory.data,
+        )
+      : null
 
   const asOf = figuresAsOf(portfolio === null ? rows : [...rows, portfolio])
 
@@ -199,7 +229,11 @@ export default function AccountsPage() {
       ) : (
         <>
           <AccountsChart
-            series={rebased}
+            // `null` and never `[]`: the block draws nothing at all — title
+            // included — while the N reads are in flight, where an empty array
+            // made it announce *« rien à comparer »* about series nobody had
+            // answered for yet (ADR-0026).
+            series={landed === null ? null : rebased}
             labels={labels}
             range={range}
             onRangeChange={setRange}
@@ -242,7 +276,12 @@ export default function AccountsPage() {
         // read as one it summed three terms over nothing (#722's own rule,
         // held for the failure branch alone).
         positions={positions.data?.positions ?? null}
-        points={points[declared.findIndex((account) => account.id === opened)] ?? []}
+        // The panel is about **one** account, so its curve waits only for its
+        // own read — not for the N the comparison above is one object of. `[]`
+        // here drew no curve at all under *a block with nothing in it does not
+        // exist*, whose sentence is *an account with no cash ledger has no
+        // value to trace*: an absence read as a fact (ADR-0026).
+        points={points[declared.findIndex((account) => account.id === opened)] ?? null}
         currency={currency}
         positionsError={positions.error}
         onClose={() => setOpened(null)}
