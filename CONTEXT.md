@@ -250,3 +250,13 @@ and on the page since #774): a number with no unit is not a price, and no rate i
 for a pair nobody can name.
 A zero is none of these. It is a figure, and never wears absence's grey.
 _Avoid_: empty, missing, N/A, null (as an on-screen state)
+
+**Landed read**:
+A read whose answer has arrived. Until it has, the app says nothing about its subject:
+a read in flight is **none of the four absences** — those describe a figure with no
+value, this one a figure nothing is yet known about — and a block waiting on one renders
+nothing at all, title included. *Empty* is a claim about the reader's own data and is
+never made on a request still in flight. The distinction is by **read**, not by block: a
+block's *needed* reads are waited for together, while an *optional* one absent removes a
+line rather than falsifying one.
+_Avoid_: loading, pending, spinner, skeleton, empty (for a read in flight)
