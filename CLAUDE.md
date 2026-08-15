@@ -288,14 +288,18 @@ cell, and `absence.awaitingRate` stays in one file.
 The head itself **computes `Gain total` from its four terms and never reads
 `portfolio_totals.gain_absolu`**, which is the same number written down
 elsewhere; three of the four terms come off `/api/positions`, so a global row
-that cannot be written no longer blanks the headline. The fourth term — the fees
-a broker takes out of a transfer — **renders only when it is not zero**, colour
-goes only to the two terms that can change sign, the statistics **shrink**
-instead of filling with dashes, and there are **four icons in the block, not
-nine**. The year-to-date is **two figures that never share a line**: the euro
-under the head, the percentage inside the TWR statistic (measured `+40,69 €`
-against `−1,25 %`, opposite signs over the same period and both correct). The
-`1S / 1M / 1A / —` selector does not exist.
+that cannot be written no longer blanks *those three*. **It does blank the
+headline, and that half is reversed by #775**: the fourth term is bounded by the
+row's own day, so with no row there is nothing to bound it by, and a four-term
+total rendered from three is not that total (ADR-0018) — the head wears the em
+dash there and the sentence at the foot of the block says why. The fourth term —
+the fees a broker takes out of a transfer — **renders only when it is not
+zero**, colour goes only to the two terms that can change sign, the statistics
+**shrink** instead of filling with dashes, and there are **four icons in the
+block, not nine**. The year-to-date is **two figures that never share a line**:
+the euro under the head, the percentage inside the TWR statistic (measured
+`+40,69 €` against `−1,25 %`, opposite signs over the same period and both
+correct). The `1S / 1M / 1A / —` selector does not exist.
 
 Being two figures is also why **both** of them carry the rebuild's sentence.
 They are kept apart on purpose, so a reader looking at one never sees the
