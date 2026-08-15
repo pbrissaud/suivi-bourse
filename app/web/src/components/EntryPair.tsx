@@ -26,6 +26,13 @@
  * That is why it lives beside `Stat`, `EmptyState` and `Band` rather than under
  * `components/data/`: a second design of it is exactly what the criterion
  * forbids.
+ *
+ * It carries `data-empty` for the reason `EmptyState` does (ADR-0026): where it
+ * stands **today** it is what a page shows when the reader has recorded
+ * nothing, which is a claim about their own data and never one to make on a
+ * read in flight. **A reservation for #726**: the first-run modal mounts this
+ * same component without stating any emptiness, so the marker has to move to
+ * the mount there rather than travel with the component.
  */
 import type { ReactNode } from 'react'
 
@@ -45,7 +52,7 @@ export interface EntryPairProps {
 
 export function EntryPair({ entries }: EntryPairProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div data-empty className="grid gap-4 sm:grid-cols-2">
       {entries.map((entry) => (
         <section
           key={entry.title}
