@@ -1265,6 +1265,59 @@ Four things about the repair are decisions:
   installation badge, the chart's marker rail), and it is *there* that the
   comment goes — never on the repaired sites, which after repair all look alike.
 
+**And the one occurrence neither support holds is closed on the source** (issue
+#778, ADR-0026). #775 left two appuis and three of its four occurrences are held
+by the second; the fourth is held by **neither**, so rewriting one `?? null` back
+to `?? []` at `AccountsPage.tsx:284` reintroduces it with every gate green. The
+two reasons compose and neither is an oversight: **`tsc` does not close the
+shape** — `?? []` produces a `PerfPoint[]`, which satisfies
+`readonly PerfPoint[] | null`, and that is ADR-0026's own arbitration — and **the
+net cannot see this one**, *in flight* and *landed and empty* being identical on
+screen (a block waiting renders nothing, and *a block with nothing in it does not
+exist*, #724), so no `data-empty` is emitted in either state and no assertion
+about what a reader perceives separates them. What lands is the third exit, an
+assertion **at the level of the source**, which the Python half has a precedent
+for (`test_positions.py` asserts on the source that one module is the only writer
+of its two tables) and the front had none of. Four things about it are decisions:
+
+- **It reads types, not text.** `inFlightShape.test.ts` builds the app's own
+  program from `tsconfig.app.json` and asks the checker what each slot was
+  **declared** to hold. A regex over `?? []` would be blind to `?? EMPTY` and to
+  a plain array handed over — `series={rebased}` is the same defect and no
+  fallback at all — and it would fire on the five optional `?? []` that survive
+  #775, which is the criterion the other way round.
+- **The family is `readonly X[] | null` and nothing else in the union.** A union
+  carrying anything besides arrays and nothing-ness — `ClassValue`, say — is not
+  a read that may be in flight, and judging it would turn this gate into a
+  general-purpose nullability lint. Measured: the whole front is clean under the
+  rule, and breaking the four props of the family plus the page's annotated local
+  produces five offenders naming their slot.
+- **Three doors, and no fourth.** A prop, and — *where the flattening happens
+  upstream of the prop, the honesty goes upstream with it* — a declared local and
+  an **argument**. The occurrence the ticket names has all three: `const points:
+  (readonly PerfPoint[] | null)[]` accepts a `PerfPoint[][]` without `tsc`
+  moving, so the page can flatten one line above the prop; and `settledSeries`
+  takes the N reads as `readonly (readonly PerfPoint[] | null)[]`, so it can
+  flatten on the way **into** the function that decides the state. A **property
+  assignment is deliberately not judged**: `Filters.symbols` wears the same shape
+  and its `null` means *no reduction* rather than *not read yet*, and a rule that
+  cannot tell those apart asserts something it does not know.
+- **The two other exits are refused rather than left unsaid.** A **visible marker**
+  on the landed-and-empty curve would separate the two states for the net, at the
+  cost of a rendering ADR-0026 and #724 both refuse — reopening it is an ADR
+  amendment, not a repair. A **type that closes at the compiler**
+  (`Read<T> = { landed: true; value: T } | { landed: false }`) was the option
+  discarded at the first turn of #775's grilling, and it puts two idioms on one
+  page for one rule, which is the second idiom that ticket exists not to gain.
+
+The gate has a **coverage half**, for the reason `readsInFlight.test.tsx` has
+one: with a `tsconfig` it failed to read or `@/` unresolved, every declared type
+comes back `any` and the offenders assertion passes on a front that has lost the
+shape entirely. It is asserted **per door** and not in total — the prop door
+alone holds four slots, so a total stays green while a branch that stopped
+matching kills the other two in silence, which is the very failure the half
+exists against.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -3174,6 +3227,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns (#721) · the panel: four terms, the value/contributed curve, the link (#722)
 ├── src/readsInFlight.test.tsx  # The net: every surface × every route it reads, one left hanging (#775)
+├── src/inFlightShape.test.ts   # The source: a `readonly X[] | null` slot is never handed a value that cannot be null (#778)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```
 
