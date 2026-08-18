@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.2.3](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.2...v4.2.3) (2026-08-18)
+
+
+### Bug Fixes
+
+* **compose:** declare the config mount with the long volume syntax ([#647](https://github.com/pbrissaud/suivi-bourse/issues/647)) ([bdd5c7c](https://github.com/pbrissaud/suivi-bourse/commit/bdd5c7cad84c7f54af6530841f76d17de4990185)), closes [#646](https://github.com/pbrissaud/suivi-bourse/issues/646)
+
+
+### Dependencies
+
+* **app:** update dependency yfinance to v1.6.0 ([#770](https://github.com/pbrissaud/suivi-bourse/issues/770)) ([2a6c9ee](https://github.com/pbrissaud/suivi-bourse/commit/2a6c9eec7efa0dfa870f59d81ce21bc033ba96b5))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.2 ([#682](https://github.com/pbrissaud/suivi-bourse/issues/682)) ([6639be2](https://github.com/pbrissaud/suivi-bourse/commit/6639be2f588380e1b388e129e3b89ae9bd4d6e77))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.3 ([#693](https://github.com/pbrissaud/suivi-bourse/issues/693)) ([809e2ea](https://github.com/pbrissaud/suivi-bourse/commit/809e2ea796b7f5ba83d1a90d730219aad1712128))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.4 ([#772](https://github.com/pbrissaud/suivi-bourse/issues/772)) ([90e2749](https://github.com/pbrissaud/suivi-bourse/commit/90e27495e93a5f4aaeda9f6b93b188c0c5dc6646))
+* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.5 ([#776](https://github.com/pbrissaud/suivi-bourse/issues/776)) ([5523e1a](https://github.com/pbrissaud/suivi-bourse/commit/5523e1aa17d76688c077f06860e54e8989669ee0))
+* **docker-compose:** update grafana/grafana docker tag to v13.1.3 ([#689](https://github.com/pbrissaud/suivi-bourse/issues/689)) ([2a1d719](https://github.com/pbrissaud/suivi-bourse/commit/2a1d7191c593dfb5e5cc44d715373c9eaa9258c7))
+* **docker-compose:** update grafana/grafana docker tag to v13.2.0 ([#780](https://github.com/pbrissaud/suivi-bourse/issues/780)) ([3568f92](https://github.com/pbrissaud/suivi-bourse/commit/3568f92ddea75707bd5e160d419ab1670f6219ce))
+* **website:** update pnpm to v11.21.0 ([#747](https://github.com/pbrissaud/suivi-bourse/issues/747)) ([da64aa5](https://github.com/pbrissaud/suivi-bourse/commit/da64aa5e49b05b9e26283d9f4ee44ed3649f3036))
+* **website:** update pnpm to v11.22.0 ([#779](https://github.com/pbrissaud/suivi-bourse/issues/779)) ([65a95c7](https://github.com/pbrissaud/suivi-bourse/commit/65a95c72ab31b1120e333352e3272a3bf061878f))
+
 ## [4.2.2](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.1...v4.2.2) (2026-08-04)
 
 
