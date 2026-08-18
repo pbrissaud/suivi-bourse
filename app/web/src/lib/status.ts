@@ -7,11 +7,13 @@
  *  - the **banner** says why *what you are looking at* is wrong or empty, and
  *    shows **one** band or none — never two.
  *
- * Both are deliberately thin here. The banner's real condition list — the
- * missing base currency, the rebuild in progress — arrives with the first-run
- * ticket, and it arrives as *more entries in an ordered list*, not as a second
- * mechanism. The order is **causal, not a ranking**: as long as the app is not
- * answering, nothing downstream has a figure to excuse.
+ * The banner's list is now complete and it is **an ordered list, not a second
+ * mechanism**. The order is **causal, not a ranking**, and each step is the
+ * cause of the one under it: as long as the app is not answering, nothing
+ * downstream has a figure to excuse; as long as the reporting currency is
+ * unanswered nothing is converted and nothing is computed, so the
+ * reconstruction has no figure to excuse either — answering frees the slot
+ * (#726).
  */
 import type { RuntimeAccount, RuntimeState } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
@@ -35,6 +37,17 @@ export function installationState(input: {
   return input.runtime.scheduler_running ? 'ok' : 'attention'
 }
 
+/**
+ * Where a band's own gesture leads. **A link, never an acknowledgement**
+ * (ADR-0021, #726): the banner shows conditions the reader can make *stop*, and
+ * what makes them stop is a field, not a button that says *seen*.
+ */
+export interface BannerGesture {
+  to: string
+  hash?: string
+  label: MessageKey
+}
+
 /** One live condition of the content column. */
 export interface BannerCondition {
   /** What the reader is told. Its own key, so nothing renders `detail`. */
@@ -48,6 +61,8 @@ export interface BannerCondition {
    * promise the app cannot keep (a mute symbol backs off to 24 h).
    */
   progress?: number
+  /** What the reader does about it, when there is something to do. */
+  gesture?: BannerGesture
 }
 
 /**
@@ -124,6 +139,13 @@ export function oneBand(conditions: readonly BannerCondition[]): BannerCondition
  */
 export function shellConditions(input: {
   error?: unknown
+  /**
+   * Whether the reporting currency is unanswered, `undefined` while nothing
+   * has been observed about it. A band raised on a silence is a claim about the
+   * reader's installation made before anybody looked (ADR-0026), so only a
+   * positive observation puts this one in the list.
+   */
+  currencyUnanswered?: boolean
   runtime?: RuntimeState
   /** The oldest day the ledger names — the bar's denominator, and only that. */
   firstEvent?: string | null
@@ -132,6 +154,22 @@ export function shellConditions(input: {
   now?: Date
 }): BannerCondition[] {
   if (input.error) return [{ message: problemMessageKey(input.error) }]
+
+  // Second, and above the reconstruction on the ticket's own argument: with no
+  // reporting currency nothing is converted and the perf job writes nothing at
+  // all (#702), so a rebuild running underneath has no figure to excuse yet.
+  // It is an **encart with a gesture**, never an acknowledgeable notice —
+  // acknowledging *I have no currency* means nothing, which is why it is not
+  // one of the acknowledgement table's five keys (ADR-0021).
+  if (input.currencyUnanswered === true) {
+    return [
+      {
+        message: 'banner.currency',
+        gesture: { to: '/donnees', hash: 'installation', label: 'banner.currency.gesture' },
+      },
+    ]
+  }
+
   if (input.runtime?.rebuilding !== true) return []
 
   const { account, ratio } = rebuildProgress(

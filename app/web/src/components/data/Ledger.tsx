@@ -118,6 +118,7 @@ export function Ledger({ focus }: LedgerProps = {}) {
           above all not *you have recorded nothing* — while it is in flight. */}
       {ledgerFailure || !events.data ? null : all.length === 0 ? (
         <EntryPair
+          empty
           entries={[
             {
               title: t('data.empty.file.title'),

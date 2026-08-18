@@ -15,6 +15,7 @@
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
   "sheet.close": "Fermer",
+  "dialog.close": "Fermer",
 
   "lang.auto": "Automatique",
   "lang.fr": "Français",
@@ -105,6 +106,27 @@
   "banner.rebuilding": "L’historique de votre portefeuille est en cours de reconstruction.",
   "banner.rebuilding.account": "L’historique de votre portefeuille est en cours de reconstruction. {account} est le compte le plus en retard, et les chiffres consolidés l’attendent.",
   "banner.rebuilding.progress": "{percent, number, percent} de la période couverte",
+  "banner.currency": "Aucune devise de report n’a encore été choisie : rien n’est converti et aucune performance n’est calculée. Vos cours continuent d’être relevés et enregistrés dans leur propre devise.",
+  "banner.currency.gesture": "La choisir",
+
+  "currency.unanswered": "Pas encore choisie",
+  "currency.offList": "{code} — enregistrée hors de cette liste",
+  "currency.suggested": "Pré-remplie depuis votre navigateur : il nomme un pays, pas un portefeuille.",
+  "currency.mutable": "Vous pouvez encore la changer : votre grand livre est vide.",
+  "currency.fixed": "Elle est désormais fixée : votre grand livre porte des événements, et la changer réinterpréterait leurs montants au lieu de les convertir.",
+
+  "firstRun.title": "Bienvenue — une question, et une seule",
+  "firstRun.what.ledger": "Vous tenez un grand livre d’événements datés : ce que vous avez acheté, quand, et à quel prix.",
+  "firstRun.what.quotes": "L’application va chercher les cours toute seule et calcule le reste à partir de vos événements.",
+  "firstRun.what.currency": "Tout est rapporté dans une seule devise, et c’est celle-là que vous choisissez maintenant.",
+  "firstRun.ephemeral": "Ce conteneur ne garde rien : le magasin est dans sa propre couche inscriptible et disparaît à sa prochaine recréation. C’est très bien pour essayer l’application — montez un volume pour la conserver.",
+  "firstRun.save": "Enregistrer",
+  "firstRun.refused": "L’application a refusé cette valeur et n’a rien écrit.",
+  "firstRun.entry.file.body": "Déposez un .csv ou un .xlsx de vos événements dans {path}. L’application le lit toute seule, quel que soit son nom. Ce dossier est un montage optionnel : sans lui il n’y a rien à y déposer, et l’autre entrée reste ouverte.",
+
+  "receipt.currency.saved": "Devise de report enregistrée : {currency}.",
+  "receipt.import.done": "{file} importé : {count, plural, one {# événement} other {# événements}}.",
+  "receipt.import.refused": "{file} a été refusé, et rien n’en a été enregistré.",
 
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",

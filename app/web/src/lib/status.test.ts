@@ -39,6 +39,56 @@ describe('the banner shows one band or none', () => {
   })
 })
 
+describe('the causal order of the shell’s three conditions (#726)', () => {
+  const rebuilding = aRuntime({ rebuilding: true, accounts: [] })
+
+  it('puts the app not answering first: nothing under it has a figure to excuse', () => {
+    expect(
+      oneBand(
+        shellConditions({
+          error: new TypeError('Failed to fetch'),
+          currencyUnanswered: true,
+          runtime: rebuilding,
+        }),
+      ),
+    ).toEqual({ message: 'problem.unreachable' })
+  })
+
+  it('renders one band with both conditions true, and it is the currency', () => {
+    // With no reporting currency nothing is converted and the perf job writes
+    // nothing at all, so a reconstruction running underneath has no figure to
+    // excuse yet. Two bands here would be the wall the ticket exists against.
+    // The property is *what reaches the slot*, not how long the list is:
+    // `oneBand` is the cap, and asserting the length would fail on an ordered
+    // list built whole — which is the same behaviour on screen.
+    const conditions = shellConditions({ currencyUnanswered: true, runtime: rebuilding })
+    expect(oneBand(conditions)).toEqual({
+      message: 'banner.currency',
+      gesture: { to: '/donnees', hash: 'installation', label: 'banner.currency.gesture' },
+    })
+  })
+
+  it('frees the slot the moment the question is answered', () => {
+    expect(oneBand(shellConditions({ currencyUnanswered: false, runtime: rebuilding }))).toEqual({
+      message: 'banner.rebuilding',
+    })
+  })
+
+  it('keeps its gesture, because the reader can make this condition stop', () => {
+    // A link to its own field, and never an acknowledgement: acknowledging
+    // *I have no currency* means nothing, which is why it is not one of the
+    // acknowledgement table's five keys (ADR-0021).
+    const band = oneBand(shellConditions({ currencyUnanswered: true }))
+    expect(band?.gesture?.to).toBe('/donnees')
+  })
+
+  it('raises no band on a silence', () => {
+    // `undefined` is *nothing has been observed about it* — a claim about the
+    // reader's installation made before anybody looked (ADR-0026).
+    expect(shellConditions({ currencyUnanswered: undefined })).toEqual([])
+  })
+})
+
 describe('a page names its own failed read, and the shell cannot do it for it', () => {
   const unreadable = new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })
 

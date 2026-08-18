@@ -15,6 +15,7 @@
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "The sections of the app, in a drawer.",
   "sheet.close": "Close",
+  "dialog.close": "Close",
 
   "lang.auto": "Automatic",
   "lang.fr": "Français",
@@ -105,6 +106,27 @@
   "banner.rebuilding": "The history of your portfolio is being rebuilt.",
   "banner.rebuilding.account": "The history of your portfolio is being rebuilt. {account} is the account furthest behind, and the consolidated figures wait for it.",
   "banner.rebuilding.progress": "{percent, number, percent} of the period covered",
+  "banner.currency": "No reporting currency has been chosen yet, so nothing is converted and no performance is computed. Your quotes are still being fetched and recorded in their own currency.",
+  "banner.currency.gesture": "Choose it",
+
+  "currency.unanswered": "Not chosen yet",
+  "currency.offList": "{code} — recorded outside this list",
+  "currency.suggested": "Filled in from your browser: it names a country, not a portfolio.",
+  "currency.mutable": "You can still change this: your ledger is empty.",
+  "currency.fixed": "This is fixed now: your ledger has events recorded in it, and changing it would reinterpret their amounts rather than convert them.",
+
+  "firstRun.title": "Welcome — one question, and one only",
+  "firstRun.what.ledger": "You keep a ledger of dated events: what you bought, when, and at what price.",
+  "firstRun.what.quotes": "The app fetches the quotes by itself and computes the rest from your events.",
+  "firstRun.what.currency": "Everything is reported in a single currency, and that one is yours to choose now.",
+  "firstRun.ephemeral": "This container keeps nothing: the store sits in its own writable layer and disappears the next time it is recreated. That is a fine way to try the app out — mount a volume to keep it.",
+  "firstRun.save": "Save",
+  "firstRun.refused": "The app refused this value and wrote nothing.",
+  "firstRun.entry.file.body": "Put a .csv or an .xlsx of your events into {path}. The app reads it by itself, whatever it is called. That folder is an optional mount: without it there is nothing to drop, and the other way in stays open.",
+
+  "receipt.currency.saved": "Reporting currency saved: {currency}.",
+  "receipt.import.done": "{file} imported: {count, plural, one {# event} other {# events}}.",
+  "receipt.import.refused": "{file} was refused, and nothing from it was recorded.",
 
   "shares.gainTotal": "Total P&L",
   "shares.gainTotal.explain": "The gain of every line of this table, closed positions included — their realised gain and their dividends stay in this figure long after the position itself is gone, and leaving them out would show you a second figure, just as correct, that is not your gain. It is the sum of the three columns below, which is what makes it checkable by eye. One term cannot appear here: the fees your broker takes out of a transfer belong to no security.",

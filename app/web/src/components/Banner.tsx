@@ -7,9 +7,12 @@
  *
  * What it says is a **condition the reader can make stop**, in causal order; a
  * fact they can only acknowledge belongs to the installation tab's notices
- * instead. Two are observable today: the app not answering, which is the first
- * cause of an empty screen, and the **reconstruction** (#727), which is the one
- * condition that ends by itself and the only one carrying a progress bar.
+ * instead — which is the line ADR-0021 draws and #726 finally wrote down.
+ * Three are observable: the app not answering, which is the first cause of an
+ * empty screen; the **reporting currency unanswered** (#726), which is not an
+ * acknowledgeable notice and keeps its gesture, a link to its own field; and the
+ * **reconstruction** (#727), which is the one condition that ends by itself and
+ * the only one carrying a progress bar.
  *
  * The bar is `(horizon → today) / (first event → today)` and the sentence
  * **names the account that is late**, because the global series is written only
@@ -26,16 +29,21 @@
  * (#729) so that two surfaces cannot name one thing two ways.
  */
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 
 import { Band } from '@/components/Band'
 import { declaredLabel } from '@/lib/accounts'
 import { api } from '@/lib/api'
+import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { oneBand, shellConditions } from '@/lib/status'
 
 export function Banner() {
   const { t } = useI18n()
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The same read the first-run modal composes its predicate from — one query
+  // key, so it is one request, and **no new API state** for either surface.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const rebuilding = runtime.data?.rebuilding === true
   const events = useQuery({ queryKey: ['events'], queryFn: api.events, enabled: rebuilding })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled: rebuilding })
@@ -52,6 +60,7 @@ export function Banner() {
   const band = oneBand(
     shellConditions({
       error: runtime.error,
+      currencyUnanswered: currencyUnanswered(config.data?.settings),
       runtime: runtime.data,
       firstEvent,
       nameAccount: (id) => {
@@ -74,6 +83,15 @@ export function Banner() {
     <Band className="rounded-none border-x-0 border-t-0">
       <div className="space-y-2">
         <p>{t(band.message, band.values)}</p>
+        {band.gesture ? (
+          <Link
+            to={band.gesture.to}
+            hash={band.gesture.hash}
+            className="text-sm font-medium underline underline-offset-4"
+          >
+            {t(band.gesture.label)}
+          </Link>
+        ) : null}
         {percent === null ? null : (
           // A native `<progress>`, so the figure is announced rather than
           // drawn: the bar is the rendering and the percentage is the fact.

@@ -10,6 +10,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 
+import { Toaster } from '@/components/ui/sonner'
 import { I18nProvider } from '@/lib/i18n'
 import { ThemeProvider } from '@/lib/theme'
 import type { createAppRouter } from '@/router'
@@ -29,6 +30,9 @@ export function App({
             through the provider like any other hook. */}
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
+          {/* The receipt surface (#726). One mount for the app: a receipt
+              acknowledges a gesture, and a gesture can be made from any page. */}
+          <Toaster />
         </QueryClientProvider>
       </I18nProvider>
     </ThemeProvider>

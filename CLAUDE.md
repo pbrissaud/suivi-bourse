@@ -1365,6 +1365,128 @@ repair are decisions:
   nobody had made — with the em dash beside it on a path that exists. Same rule,
   same shape: the row does not exist until that read lands.
 
+
+**The first run is a predicate, not a moment** (issue #726, ADR-0021, ADR-0005,
+ADR-0015, ADR-0002). Everything a first launch could once have asked has been
+deleted or answered elsewhere — the mode died (#711), the accounts seed
+themselves (ADR-0013), the store's location is *observed* rather than demanded
+(#741), the drop folder may legitimately not exist (ADR-0015), and the display
+format follows the reader's language (ADR-0024). What is left is **the reporting
+currency**, the one dial with no default and therefore the only one whose
+absence means *nobody has ever answered here*. Three independent steps on three
+predicates were refused for one reason: they reopen the onboarding screen, the
+explanation of the product included, on somebody who has used the app for six
+months and has just revoked their imports. Six things about it are decisions:
+
+- **The modal is mounted by the shell, never by a route.** `lib/firstRun.ts`
+  holds the predicate; it is as true on `/titres` as on `/`, and `/` stays the
+  dashboard unconditionally. It **closes without a button** — the cross,
+  `Escape` and the click outside *are* the *later*, and a `Plus tard` beside
+  `Enregistrer` gives the escape hatch the same visual weight as the answer.
+  Closing leaves an app that **works**: the scrape runs and stores the quote in
+  the security's own currency, the ledger is writable, and what waits is the
+  conversion — which the band then says. The memory of the closing is
+  **browser-side alone** (`localStorage`, the theme and the language's own
+  mechanism): the predicate stays entirely derived server-side, so a wiped volume
+  re-arms it and a second browser sees it again.
+- **Three sentences on what the app *is*, and no rule of calculation.**
+  Explaining the *PRU* there is exactly what ADR-0016 gives the convention bubble
+  for — a rule is read beside the figure it governs, never in a modal read once
+  before any figure exists. The **ephemeral-store warning is in it**, because it
+  is the only surface *every* trial user meets: the installation tab is two
+  clicks down and the boot lines are at a terminal nobody watching a browser is
+  reading. It does not leave the tab either, which is the ceiling's own rule —
+  what does not fit the banner's single slot descends to the panel, **and the
+  panel is not a new object**, it is the tab #724 built.
+- **The last step is the ledger's own pair of entrances**, `EntryPair` mounted as
+  it is, at equal weight and with no primary action. `data-empty` moves to the
+  **mount**: the ledger's pair states *you have recorded nothing*, the modal's
+  states nothing at all — it offers two doors before anything has been read, and
+  a marker travelling with the component would have made ADR-0026's net read a
+  claim nobody made. The drop-folder entry is **named rather than observed**:
+  whether the bind is mounted is published nowhere and this ticket adds **no API
+  state**, so the entry keeps its place and says an absent `/import` is an
+  ordinary state, instead of disappearing — which reads as a breakage, and on a
+  bare `docker run` there is literally nothing to import.
+- **The currency's list is closed** (`lib/currencies.ts`), bounded by what the
+  rate source quotes. Free text accepts `XYZ`, whose pair never resolves, and the
+  breakdown that follows is total — nothing converted, so the perf job writes
+  nothing at all (#702) — and, but for #704's `unconvertible` terminal, mute; the
+  full ISO 4217 has the same defect one notch out (`XPF`, `SLE`, `MRU` are codes
+  a validator accepts and Yahoo does not quote). It is the **field** that is
+  closed: the server stays the authority on the *shape*
+  (`settings_registry.validate`), which is what keeps the one non-interactive
+  path to answering whole (ADR-0015), and the list does not travel over HTTP.
+  **The browser's locale pre-fills a suggestion, never a default** — a suggestion
+  poses nothing and reduces the answer to one click; the reservation is on the
+  screen and in the module, because no heuristic removes it: a locale gives the
+  currency of a **country**, not of a portfolio; the note is dropped the moment
+  the reader overrides the suggestion, since it is about a value the browser
+  named. A locale naming a currency the list does not carry suggests
+  **nothing**, rather than opening the field on a value it would refuse. And
+  **what is closed is what the field offers, not what it can show**: two roads
+  reach the dial without passing here — a headless `curl` and #710's import
+  column — so a stored code the list does not carry gets an option of its own
+  and is named as being outside the list, a controlled `select` with no matching
+  option otherwise falling back to the empty one and stating the question
+  *unanswered* over a store that holds the answer.
+- **The screen says how long the answer stays changeable where the answer is
+  given**, and it says the rule's **two clauses** — through `CurrencyField`,
+  **one field and two mounts**, the modal and the installation tab, for the
+  reason `EntryPair` is one component. Free while the ledger is empty and fixed
+  from the first recorded event (ADR-0002) is only the second clause;
+  `_refuse_a_reinterpretation` returns on *never answered* one line **before** it
+  counts the events, precisely so an install can answer late — and written with
+  the ledger alone the sentence was false for the modal's whole population, a v4
+  arrival whose files carry no `base_currency` column booting with hundreds of
+  events and an unanswered dial, told by the one surface that exists to ask the
+  question that it was already too late, over a form whose save then worked.
+- **The banner's list is complete and the order is causal, not a ranking.**
+  Three conditions: the app not answering, which is the first cause of an empty
+  screen; the **reporting currency unanswered**, which is an *encart with a
+  gesture* — a link to its own field — and never an acknowledgeable notice, since
+  acknowledging *je n'ai pas de devise* means nothing (the acknowledgement table
+  holds **five** keys, and `test_advisories.py` pins it); and the
+  **reconstruction** (#727). The currency sits **above** the reconstruction on
+  its own argument: with no currency nothing is converted and nothing is
+  computed, so a rebuild running underneath has no figure to excuse — answering
+  frees the slot. It is **tested with both conditions true at once**, in
+  `lib/status.test.ts` and on the surface, because *one band or none* was
+  validated in production on a `503`, something that happens and passes, while
+  these two stand until somebody acts and stack into a wall. **And the gesture is
+  followed rather than inspected**: `#installation` was a hash nothing on
+  `/donnees` read, so both links pointing at it — the band's and, since #724,
+  the status dot's, which is a trial user's only hold on *this container keeps
+  nothing* once the modal is closed — landed on the ledger tab. `DataPage` reads
+  it now; a test asserting an `href` alone passes on a dead link, and did.
+- **The gesture receipt enters the product** (`sonner`, `lib/receipts.ts`), and
+  it acknowledges a **gesture** and only a gesture. It **never replaces the
+  banner**: these conditions do not resolve, they persist, and a toast at
+  `duration: Infinity` is a band that covers the page. It is **never the trace of
+  an import** either — the drop folder is watched at all times (#697), so an
+  import can start with no click, no promise and no browser open, and the trace
+  is the import list with its `Importé le` column. Three receipts, a closed list:
+  *devise enregistrée*, wired on both mounts of the field, and the two import
+  ones, whose call sites are **#728's** — the in-app import gesture does not
+  exist yet, and inventing a second spelling of them later is what the list is
+  written for.
+
+Two things the ticket asks for are **already true and stay as they are**, and
+the arbitration is written here rather than left for the next reader to redo.
+The band *« Configuration refusée — l'ancienne est toujours active »* has no
+occurrence left anywhere outside `versioned_docs/`: it supposed the files were
+the truth, and it lost its subject at #711. And **the round trip is #710's**,
+with one departure from this ticket's wording kept on #710's own argument: the
+column is **`base_currency`** and not `currency`, a broker export routinely
+carrying a `currency` column meaning the *security's quote* currency, and there
+are two currency levels and not three (ADR-0002). Its disagreement rule is one
+rule and not two — the dial's own mutability, free while the ledger is empty and
+fixed from the first event — so an empty-ledger disagreement **adopts** instead
+of refusing and offering the adoption in one click. That click would need the
+in-app import surface, which is #728's; refusing there today would leave a reader
+with a refusal and nothing to answer it with, and would break the headless round
+trip #710 exists for.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -3249,6 +3371,10 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/problem.ts      # problem.type → catalogue key. `detail` is never rendered
 ├── src/lib/status.ts       # The dot's state, and who says a band — shell then page (#718)
 │                           #       plus the rebuild's bar and the account it names (#727)
+│                           #       plus the three conditions in causal order, and the one with a gesture (#726)
+├── src/lib/currencies.ts   # Pure: the closed list, and the suggestion a locale may make (#726)
+├── src/lib/firstRun.ts     # Pure: the one predicate, its mutability rule, the browser's memory (#726)
+├── src/lib/receipts.ts     # Pure: the three receipts, and what a receipt is never the trace of (#726)
 ├── src/lib/docs.ts         # The one door outside: page, version, locale, ten anchors (#718)
 ├── src/lib/sign.ts         # The colour of a figure — and zero is not absence (#718)
 ├── src/lib/absence.ts      # Pure: the four renderings of absence (#718), and a quote is a number *and* a unit (#774)
@@ -3268,7 +3394,9 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state
 ├── src/components/Band.tsx        # The one band — the shell's, and a page's own read (#718)
-├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723)
+├── src/components/EntryPair.tsx   # The two ways in, equal weight — shared with the first run (#723, #726)
+├── src/components/FirstRun.tsx    # The one question, on a predicate and never on a route (#726)
+├── src/components/CurrencyField.tsx # The closed list — one field, two mounts (#726)
 ├── src/components/dashboard/      # Head (#718) · the one chart slot, the allocation, the movers (#727)
 ├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)

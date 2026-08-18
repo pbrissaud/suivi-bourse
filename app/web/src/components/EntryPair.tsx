@@ -27,12 +27,13 @@
  * `components/data/`: a second design of it is exactly what the criterion
  * forbids.
  *
- * It carries `data-empty` for the reason `EmptyState` does (ADR-0026): where it
- * stands **today** it is what a page shows when the reader has recorded
- * nothing, which is a claim about their own data and never one to make on a
- * read in flight. **A reservation for #726**: the first-run modal mounts this
- * same component without stating any emptiness, so the marker has to move to
- * the mount there rather than travel with the component.
+ * `data-empty` is the reason `EmptyState` carries one (ADR-0026) — *this reader
+ * has recorded nothing* is a claim about their own data, and never one to make
+ * on a read in flight — and it is **the mount's, not the component's** (#726).
+ * The first-run modal mounts this same pair while stating no emptiness at all:
+ * it offers two doors before anything has been read. So the marker is a prop
+ * the ledger sets and the modal does not, rather than a property travelling
+ * with the component into a surface where it would be false.
  */
 import type { ReactNode } from 'react'
 
@@ -48,11 +49,16 @@ export interface Entry {
 export interface EntryPairProps {
   /** Two, and the type says so: a pair with one entry is not this component. */
   entries: readonly [Entry, Entry]
+  /**
+   * Whether this mount *is* a statement of emptiness. The ledger's is; the
+   * first-run modal's is not, and the marker the net reads must not say it is.
+   */
+  empty?: boolean
 }
 
-export function EntryPair({ entries }: EntryPairProps) {
+export function EntryPair({ entries, empty }: EntryPairProps) {
   return (
-    <div data-empty className="grid gap-4 sm:grid-cols-2">
+    <div data-empty={empty ? '' : undefined} className="grid gap-4 sm:grid-cols-2">
       {entries.map((entry) => (
         <section
           key={entry.title}

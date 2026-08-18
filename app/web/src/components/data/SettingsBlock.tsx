@@ -32,8 +32,10 @@
  *    the number in the formula.
  */
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
+import { CurrencyField } from '@/components/CurrencyField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -43,7 +45,9 @@ import {
   type SettingDescription,
   type SettingsWriteResponse,
 } from '@/lib/api'
+import { currencyMutable, currencyUnanswered, CURRENCY_KEY } from '@/lib/firstRun'
 import { useI18n, type MessageKey } from '@/lib/i18n'
+import { receiptMessage } from '@/lib/receipts'
 import {
   cadenceReach,
   changedValues,
@@ -52,6 +56,13 @@ import {
   settingFieldId,
   type CadenceReach,
 } from '@/lib/installation'
+
+/**
+ * The dial the first-run modal asks about, and the one the closed list is for.
+ * Named from `lib/firstRun.ts` rather than spelled again: the modal and this
+ * form are two mounts of one field (#726).
+ */
+const CURRENCY = CURRENCY_KEY
 
 /**
  * One sentence per dial, in the reader's language. The **list** is the
@@ -95,12 +106,34 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
     setDraft(draftFrom(config.settings))
   }, [config.settings])
 
+  // The ledger, for one sentence and one only: how long the reporting currency
+  // stays changeable, said **where it is chosen** (#726). A read that has not
+  // landed writes neither half (ADR-0026).
+  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+  // Both clauses of the dial's rule: a dial nobody has ever answered has
+  // interpreted nothing, so it stays free whatever the ledger holds.
+  const unanswered = currencyUnanswered(config.settings)
+  const mutable = currencyMutable({
+    events: events.data,
+    answered: unanswered === undefined ? undefined : !unanswered,
+  })
+
   const save = useMutation({
     mutationFn: () => api.saveSettings(changedValues(config.settings, draft)),
     onSuccess: (answer) => {
       setReceipt(answer)
+      // The one dial with a receipt of its own: it is the app's single
+      // question, and answering it is retroactive over every stored quote
+      // (#704). The other five are described by the sentence under the form.
+      if (answer.changed.includes(CURRENCY)) {
+        const currency = String(draft[CURRENCY] ?? '')
+        const { message, values } = receiptMessage({ kind: 'currency.saved', currency })
+        toast.success(t(message, values))
+      }
       client.invalidateQueries({ queryKey: ['config'] })
       client.invalidateQueries({ queryKey: ['runtime'] })
+      client.invalidateQueries({ queryKey: ['positions'] })
+      client.invalidateQueries({ queryKey: ['portfolio-totals'] })
     },
   })
 
@@ -129,6 +162,7 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
               setting={setting}
               value={draft[setting.key] ?? ''}
               reach={reach}
+              mutable={mutable}
               onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
             />
           ))}
@@ -166,11 +200,14 @@ function Dial({
   setting,
   value,
   reach,
+  mutable,
   onChange,
 }: {
   setting: SettingDescription
   value: string
   reach: CadenceReach | null
+  /** Whether the ledger is still empty — the currency's own rule, and only its. */
+  mutable: boolean | undefined
   onChange: (value: string) => void
 }) {
   const { t } = useI18n()
@@ -187,17 +224,25 @@ function Dial({
       <label htmlFor={id} className="text-sm text-muted-foreground">
         {label ? t(label) : setting.key}
       </label>
-      <Input
-        id={id}
-        // The type comes from the registry, so a dial added there renders with
-        // its own bounds without a line changing here.
-        type={setting.type === 'integer' ? 'number' : 'text'}
-        inputMode={setting.type === 'integer' ? 'numeric' : undefined}
-        min={setting.minimum ?? undefined}
-        max={setting.maximum ?? undefined}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {/* The currency is the one dial whose *values* are a closed list, and the
+          registry says so with its own type — so the field follows the registry
+          here as everywhere else, and it is the same component the first-run
+          modal mounts (#726). */}
+      {setting.type === 'currency' ? (
+        <CurrencyField id={id} value={value} onChange={onChange} mutable={mutable} />
+      ) : (
+        <Input
+          id={id}
+          // The type comes from the registry, so a dial added there renders with
+          // its own bounds without a line changing here.
+          type={setting.type === 'integer' ? 'number' : 'text'}
+          inputMode={setting.type === 'integer' ? 'numeric' : undefined}
+          min={setting.minimum ?? undefined}
+          max={setting.maximum ?? undefined}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       <p className="text-xs text-muted-foreground">{hint ? t(hint) : setting.doc}</p>
       {retroactive && reach ? (
         <p className="text-xs text-muted-foreground">

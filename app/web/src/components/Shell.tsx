@@ -15,6 +15,7 @@ import { Outlet } from '@tanstack/react-router'
 import { AppSidebar } from '@/components/AppSidebar'
 import { Banner } from '@/components/Banner'
 import { ContentHeader } from '@/components/ContentHeader'
+import { FirstRun } from '@/components/FirstRun'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 
 export function Shell() {
@@ -31,6 +32,9 @@ export function Shell() {
         <div className="mx-auto w-full max-w-7xl p-6">
           <Outlet />
         </div>
+        {/* Mounted by the shell and not by a route: *first run* is a predicate,
+            not a place, and it is as true on `/titres` as on `/` (#726). */}
+        <FirstRun />
       </SidebarInset>
     </SidebarProvider>
   )

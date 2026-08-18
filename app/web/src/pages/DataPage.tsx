@@ -24,8 +24,9 @@
  *    tab — so the switch and the ledger's reduction are decided here, where both
  *    halves are in scope.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useLocation } from '@tanstack/react-router'
 
 import { Installation } from '@/components/data/Installation'
 import { Ledger } from '@/components/data/Ledger'
@@ -39,7 +40,26 @@ const INSTALLATION = 'installation'
 
 export default function DataPage() {
   const { t } = useI18n()
-  const [tab, setTab] = useState(LEDGER)
+  // **The hash names the tab**, which is what makes the two links that point at
+  // it arrive somewhere (#726): the status dot — the only hold a trial user has
+  // on *this container keeps nothing* once the modal is closed — and the
+  // currency band's own gesture, whose whole reason to exist is to reach the
+  // field. Both said `#installation` and both landed on the ledger, because
+  // nothing here read it. A tab is not a route, so this is a hash and not a
+  // path; and it is *read*, never written, so opening the other tab by hand
+  // leaves the URL alone rather than pushing a history entry per click.
+  const hash = useLocation({ select: (location) => location.hash })
+  const [tab, setTab] = useState(hash === INSTALLATION ? INSTALLATION : LEDGER)
+
+  // Read again on every change, not only at the mount: a reader already on
+  // `/donnees` who clicks the status dot moves the hash without remounting the
+  // page, and the initial state would never see it. What this deliberately does
+  // **not** do is re-select the tab when the hash has not moved — following the
+  // same link a second time after switching tab by hand leaves the reader where
+  // they put themselves, which is the lesser of the two surprises.
+  useEffect(() => {
+    if (hash === INSTALLATION) setTab(INSTALLATION)
+  }, [hash])
   // A fresh object per gesture, so asking twice for the same securities reduces
   // the ledger twice — the reader may well have cleared the reduction between
   // the two.
