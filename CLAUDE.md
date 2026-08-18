@@ -1318,6 +1318,53 @@ alone holds four slots, so a total stays green while a branch that stopped
 matching kills the other two in silence, which is the very failure the half
 exists against.
 
+**And the sentence the net could not see closes the same class on the other
+side** (issue #777, ADR-0026, ADR-0016). #775 found this one while laying its
+own net, named it in a comment inside `StoreBlock.tsx` and left it: on the
+installation tab the **last write of the ledger** read *« Rien n'a encore été
+importé »* for as long as `GET /api/store` was in flight — a claim about the
+reader's own data, made on a silence, and **invisible to the net**, which
+observes the emptiness primitives and nothing else. It is neither an
+`EmptyState` nor a `?? []`; it is a sentence chosen from the absence of a value,
+which is a form neither the type nor the test could see. Three things about the
+repair are decisions:
+
+- **The line waits, never the block.** ADR-0026's rule as written — *a block
+  that waits renders nothing at all, title included* — would have taken the
+  **path and the persistence** with it, and those are precisely what #724 put
+  there off `/api/runtime`, which opens nothing, so that they stay on screen
+  when the store cannot answer: *« où sont passées mes données ? »* is asked at
+  that exact moment. So the rule is applied **one notch lower**, on the rows a
+  read owns, exactly as #775 applied it to the accounts table's `perf` cells —
+  which render nothing rather than a dash. The two rows `/api/store` feeds do
+  not exist until it has landed, **failure included**: the block cannot tell the
+  two apart and has nothing to say in either. There is **one** state where the
+  block waits whole, and it is *neither* read having landed — a title over an
+  empty frame being the hand-written skeleton this product has none of. And it
+  is not only the sentence: the size wore an **em dash**, i.e. ADR-0016's *there
+  is nothing to compute* about a file that has a size. No fifth form of absence
+  is created, because nothing rendered is not a rendering.
+- **The net is widened, and the widening is an amendment.** It now observes
+  every rendered phrase **carrying a word**, beside the `data-empty` primitives.
+  What makes that tractable rather than noisy is ADR-0026's own first
+  consequence: a block that waits renders nothing, so what is on screen in
+  flight is a **subset** of what is on screen once every read has landed, and a
+  phrase that appears *only* in flight is by construction said on a silence. **A
+  bare figure is excluded**, and the exclusion is measured rather than
+  defensive: the reporting currency rides on `/api/portfolio-totals`, so that
+  one read hanging renders every amount on the ledger and in the account panel
+  as `1 300,00` where it landed as `1 300,00 €` — a unit that follows another
+  read (#773's rule), which is another ticket's subject and not a statement
+  composed out of an absence. A sentence carries words; that is the whole of the
+  filter. The block keeps a test of its own beside it, on the same unresolved
+  handler, so the rule is held twice rather than by a comment.
+- **The widening found the sibling in the block it was written for**, and it is
+  repaired here rather than named: the same block wrote *« Impossible d'observer
+  d'ici si ce chemin survit au conteneur »* while `/api/runtime` was in flight —
+  one of the three answers the kernel gives (#741), stated as an observation
+  nobody had made — with the em dash beside it on a path that exists. Same rule,
+  same shape: the row does not exist until that read lands.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -3227,6 +3274,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns (#721) · the panel: four terms, the value/contributed curve, the link (#722)
 ├── src/readsInFlight.test.tsx  # The net: every surface × every route it reads, one left hanging (#775)
+│                           #       — and since #777 it reads the phrases, not only the emptiness markers
 ├── src/inFlightShape.test.ts   # The source: a `readonly X[] | null` slot is never handed a value that cannot be null (#778)
 └── src/test/               # setup · MSW server · payload factory · renderApp
 ```

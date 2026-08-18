@@ -23,13 +23,17 @@
  *    false by default (`enabled:`) leaves the net in silence — which is exactly
  *    what `/api/portfolio/movers` and `/api/positions/history` are, and the
  *    first of the two is occurrence 1.
- *  - **What it observes is the emptiness primitives**, `EmptyState` and
+ *  - **What it observes is the emptiness primitives** — `EmptyState` and
  *    `EntryPair`, marked by a `data-empty` attribute rather than by a role: an
  *    empty state is a state and not a change to announce, and the banner
- *    already owns `status` on the page. Totals and counting sentences stay in
- *    the block's own test — they are too bound to the block's meaning to be
- *    read from outside — so #722's fourth term and the account panel's curve
- *    are asserted in `accountSheet.test.tsx`, where their figures are.
+ *    already owns `status` on the page — **and, since #777, every phrase
+ *    carrying a word**, which is an amendment to ADR-0026 rather than a detail
+ *    of this file: a sentence composed out of the absence of a value is a claim
+ *    about the reader's own data that no marker could carry. Bare figures stay
+ *    out (see {@link phrases}), and totals and counting sentences stay in the
+ *    block's own test — they are too bound to the block's meaning to be read
+ *    from outside — so #722's fourth term and the account panel's curve are
+ *    asserted in `accountSheet.test.tsx`, where their figures are.
  *
  * The comparison is against a **baseline**: whatever the surface says when
  * every read has landed. An empty state that is already true of the fixture is
@@ -76,6 +80,38 @@ async function quiet() {
     timeout: 5_000,
     interval: 20,
   })
+}
+
+/**
+ * **Every phrase the surface renders that carries a word** (#777).
+ *
+ * This is the amendment, and it is one: the net observed the emptiness
+ * primitives and nothing else, and *« Rien n’a encore été importé »* is neither
+ * — it is a sentence, chosen from the absence of a value, asserting something
+ * about the reader's own ledger. Nothing in `data-empty` could ever see it.
+ *
+ * What makes the wider reading tractable is a property the product already
+ * has: **a block that waits renders nothing at all**, so what is on screen
+ * while a read hangs is a *subset* of what is on screen once it lands. A
+ * phrase that appears **only** in flight is therefore, by construction, said on
+ * a silence.
+ *
+ * **A bare figure is deliberately not one of them**, and the exclusion is
+ * measured rather than defensive: `/api/portfolio-totals` carries the reporting
+ * currency, so with that one read hanging every amount on the ledger and in the
+ * account panel renders as `1 300,00` where it landed as `1 300,00 €` — a unit
+ * that follows another read, which is #773's rule and another ticket's
+ * subject, not a statement composed out of an absence. A sentence carries
+ * words; that is the whole of the filter.
+ */
+function phrases(): string[] {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  const seen = new Set<string>()
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = (node.textContent ?? '').trim()
+    if (text && /\p{L}/u.test(text)) seen.add(text)
+  }
+  return Array.from(seen).sort()
 }
 
 /** What the surface currently says is **empty**, by the text it says it with. */
@@ -217,6 +253,7 @@ describe('a read that has not landed is never rendered as an absence', () => {
         await quiet()
 
         const baseline = emptyMarkers()
+        const said = phrases()
         const requested = Array.from(recording)
         cleanup()
 
@@ -238,6 +275,11 @@ describe('a read that has not landed is never rendered as an absence', () => {
           expect(
             appeared,
             `${surface.name} declares something empty while ${route} is in flight`,
+          ).toEqual([])
+          const invented = phrases().filter((phrase) => !said.includes(phrase))
+          expect(
+            invented,
+            `${surface.name} says something it has not read while ${route} is in flight`,
           ).toEqual([])
           cleanup()
         }

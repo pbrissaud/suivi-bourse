@@ -258,5 +258,9 @@ value, this one a figure nothing is yet known about — and a block waiting on o
 nothing at all, title included. *Empty* is a claim about the reader's own data and is
 never made on a request still in flight. The distinction is by **read**, not by block: a
 block's *needed* reads are waited for together, while an *optional* one absent removes a
-line rather than falsifying one.
+line rather than falsifying one — and where a block's rows come from two reads, the rule
+holds a **row** at a time (#777), so what one read knows is on screen whatever became of
+the other. *Empty* covers a **sentence** as much as a primitive: *« Rien n'a encore été
+importé »* said on a silence is the same claim as an empty state, which is why the net
+reads the phrases and not only the markers.
 _Avoid_: loading, pending, spinner, skeleton, empty (for a read in flight)

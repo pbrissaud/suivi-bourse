@@ -20,7 +20,10 @@
  * `lib/status.ts` keeps the causal order, so it is still one band or none.
  *
  * The store block is the exception that proves it: its two facts about the file
- * ride on the runtime, so they stay on screen through exactly that failure.
+ * ride on the runtime, so they stay on screen through exactly that failure —
+ * and through that read being merely **in flight**, which is why the block
+ * waits a row at a time rather than whole (#777, ADR-0026). Both reads reach it
+ * as `?? null`, the shape a read that has not landed crosses a prop as.
  */
 import { useQuery } from '@tanstack/react-query'
 
@@ -67,7 +70,7 @@ export function Installation({ onShowInLedger }: InstallationProps) {
           would let a reader type into a dial whose bounds had not arrived. */}
       {config.data ? <SettingsBlock config={config.data} runtime={runtime.data} /> : null}
 
-      <StoreBlock runtimeStore={runtime.data?.store} store={store.data} />
+      <StoreBlock runtimeStore={runtime.data?.store ?? null} store={store.data ?? null} />
     </div>
   )
 }

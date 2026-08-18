@@ -505,6 +505,42 @@ describe('the store', () => {
       expect(screen.queryByRole('button', { name: 'Purger ces historiques' })).not.toBeInTheDocument(),
     )
   })
+
+  it('keeps the em dash for a process that named no store', async () => {
+    // The read **landed** and there is nothing to compute (ADR-0016) — the one
+    // state the `??` #777 gated out of the row was legitimately carrying, and
+    // the phrase net cannot see it: an em dash carries no word.
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(aRuntime({ store: { persistence: 'unknown', path: null } })),
+      ),
+    )
+    await openInstallation()
+    await screen.findByRole('heading', { name: 'Le magasin' })
+
+    const store = block('Le magasin')
+    expect(store).toHaveTextContent('Où il se trouve')
+    expect(within(store).getByText('—')).toBeInTheDocument()
+  })
+
+  it('says nothing about the ledger while its own read is in flight', async () => {
+    // ADR-0026, #777: *« Rien n’a encore été importé »* is a statement about the
+    // reader's own data, and a hanging read has told the app nothing.
+    server.use(http.get(ROUTES.store, () => new Promise<never>(() => {})))
+    await openInstallation()
+    await screen.findByRole('heading', { name: 'Le magasin' })
+
+    const store = block('Le magasin')
+    // The two facts that ride on `/api/runtime` are why the block does not wait
+    // as a whole (#668, #724): they are on screen in flight as in failure.
+    expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
+    expect(store).toHaveTextContent(/sur un montage qui survit au conteneur/)
+    // What the store itself was to say does not exist yet — the block's own
+    // rule applied one notch lower, never a dash and never a sentence.
+    expect(store).not.toHaveTextContent('Rien n’a encore été importé')
+    expect(store).not.toHaveTextContent('Dernière écriture du grand livre')
+    expect(store).not.toHaveTextContent('Taille sur le disque')
+  })
 })
 
 describe('the tab’s own reads', () => {

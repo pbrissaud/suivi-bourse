@@ -52,10 +52,20 @@ spelling — the exact disease, one level up.
   would separate the two states for the net at the cost of a rendering this ADR and #724 both
   refuse, and a **type that closes at the compiler** (`Read<T>`) puts two idioms on one page
   for one rule — the second idiom this decision exists not to gain.
-- **What it observes is the emptiness primitives**, marked by an attribute rather than a
-  role: an empty state is a state, not a change to announce, and the banner already owns
-  `status` on the page. Totals and counting sentences stay in the block's own test — they
-  are too bound to the block's meaning to be seen from outside.
+- **What it observes is the emptiness primitives — and, since #777, every phrase carrying a
+  word.** The primitives are marked by an attribute rather than a role: an empty state is a
+  state, not a change to announce, and the banner already owns `status` on the page. The
+  widening is an amendment and not a detail: a sentence composed out of the absence of a
+  value — *« Rien n’a encore été importé »*, said while `GET /api/store` was still in flight
+  — is a claim about the reader's own data that no `data-empty` could ever carry, and the
+  first consequence above is what makes the wider reading tractable rather than noisy: a
+  block that waits renders nothing, so what is on screen in flight is a **subset** of what
+  is on screen once every read has landed, and a phrase that appears *only* in flight is by
+  construction said on a silence. **A bare figure is excluded**, and the exclusion is
+  measured: the reporting currency rides on `/api/portfolio-totals`, so that one read
+  hanging renders every amount without its unit — a unit that follows another read, which is
+  another rule and another ticket. Totals and counting sentences therefore still stay in the
+  block's own test, being too bound to the block's meaning to be judged from outside.
 - **The distinction between a *needed* and an *optional* read (#718) is kept, and it is the
   reason a sweep is not a rewrite.** An optional read absent removes a line; it must never
   start withholding a block. So `?? []` survives where the read is optional — and it is
@@ -76,6 +86,7 @@ spelling — the exact disease, one level up.
   total above it wear the em dash, which is what *there is nothing to compute* is for.
 
 [Full argument: #775](https://github.com/pbrissaud/suivi-bourse/issues/775) ·
+[the sentence the net could not see, and the widening that lets it: #777](https://github.com/pbrissaud/suivi-bourse/issues/777) ·
 [the member the net cannot see, held on the source: #778](https://github.com/pbrissaud/suivi-bourse/issues/778) ·
 [the four absences it is not one of: ADR-0016](./0016-conventions-are-explained-on-the-figure.md) ·
 [no fourth kind of absence: ADR-0021](./0021-the-app-asks-one-question.md) ·
