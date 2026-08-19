@@ -122,10 +122,11 @@ describe('the columns of the ledger', () => {
 
     // The file's name and its line. Never a path, never its presence on disk —
     // the drop folder is an optional bind, so *not found* would be a permanent
-    // false defect — and the link to the import block is #728's.
+    // false defect. Since #728 the label leads to its source; what it must never
+    // carry is the gesture, which lives once where its subject is.
     expect(within(ledger()).getAllByText('zeta-events_2.csv · l. 118')).toHaveLength(1)
     expect(within(ledger()).queryAllByRole('link')).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: /oublier/i })).not.toBeInTheDocument()
+    expect(within(ledger()).queryByRole('button', { name: /oublier/i })).not.toBeInTheDocument()
   })
 
   it('sorts by date descending and paginates nothing', async () => {
@@ -187,11 +188,18 @@ describe('the editor, and where it does not appear', () => {
   it('never appears on an install that has only ever imported', async () => {
     // The real portfolio exactly: 285 imported rows, 0 typed. The read-only
     // rule needs no column to state itself — a row carrying a provenance came
-    // from a file, and there is nothing on it to press.
+    // from a file, and its own name is not pressable.
     renderData(importedOnly())
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    expect(within(ledger()).queryAllByRole('button')).toHaveLength(0)
+    // The one thing a row of that install carries is its provenance (#728),
+    // which leads to its source and edits nothing.
+    const pressable = within(ledger()).getAllByRole('button')
+    expect(pressable.map((button) => button.textContent)).toEqual([
+      'zeta-events_2.csv · l. 118',
+      'zeta-events_2.csv · l. 96',
+      'zeta-events_2.csv · l. 71',
+    ])
   })
 
   it('opens on a row that carries no provenance, prefilled and shaped for its type', async () => {

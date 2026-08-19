@@ -29,6 +29,7 @@ import {
   aPositionsHistory,
   aPositionsPayload,
   aPriceSeries,
+  anImportsPayload,
   aRuntime,
   aStore,
   aTotalsPayload,
@@ -88,6 +89,16 @@ export function defaultHandlers() {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: String(params.id), ...draft }))
     }),
+
+    // The sources, and the one gesture that reaches an imported row (#728).
+    // The revocation answers what it removed, which is what the store knows —
+    // the front counts *before*, off the ledger it has already read, and the two
+    // are deliberately two: the box has to say what will happen, and the server
+    // says what did.
+    http.get(ROUTES.imports, () => HttpResponse.json(anImportsPayload())),
+    http.delete(ROUTES.importSource, ({ params }) =>
+      HttpResponse.json({ id: Number(params.id), events_removed: 3 }),
+    ),
 
     // The installation tab (#724). The default install has one notice standing,
     // a store on a mount and no orphan — the ephemeral store and the orphan

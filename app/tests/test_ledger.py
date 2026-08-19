@@ -253,6 +253,38 @@ def test_an_unchanged_file_is_not_re_imported(store, tmp_path):
     assert after.imported_at == before.imported_at
 
 
+def test_a_file_dropped_again_unchanged_says_so(store, tmp_path, mocker):
+    """« Même fichier redéposé, rien n'a bougé » — a message, never a column (#728).
+
+    The fingerprint is what notices it, and **nobody reads a hexadecimal**: what
+    an identical fingerprint is worth is one sentence at the instant of the
+    import, which is why the import list has no column for the hash and this
+    line exists instead. It is said beside the two lines that already report a
+    file — imported, refused — rather than in the caller, because the comparison
+    that produces it is made here.
+
+    The channel is the log because an import needs no interface at all: the drop
+    folder is watched at all times (#697), so a file can land with no click and
+    no browser open. And a sync fires on a filesystem event rather than on a
+    timer, so this is said when something was dropped rather than every cycle.
+    """
+    drop = tmp_path / "drop"
+    drop.mkdir()
+    (drop / "2024.csv").write_text(ONE_BUY, encoding="utf-8")
+
+    first = mocker.patch.object(ledger.logger, "info")
+    ledger.sync_drop_folder(store, drop)
+    # Imported is not unchanged: the first pass has nothing of the sort to say.
+    assert [c for c in first.call_args_list if "unchanged" in c.args[0].lower()] == []
+
+    again = mocker.patch.object(ledger.logger, "info")
+    ledger.sync_drop_folder(store, drop)
+
+    (message,) = again.call_args_list
+    assert "2024.csv" in message.args[0]
+    assert "unchanged" in message.args[0].lower()
+
+
 def test_non_event_files_are_ignored(store, tmp_path):
     """Only ``.csv``/``.xlsx`` are event files; the rest of the folder is not."""
     drop = tmp_path / "drop"

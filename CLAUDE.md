@@ -1366,6 +1366,108 @@ repair are decisions:
   same shape: the row does not exist until that read lands.
 
 
+**The import is the unit of revocation, and the export is total or nothing**
+(issue #728, ADR-0020, ADR-0015, ADR-0005). What replaces #662's per-row repair
+apparatus is not another per-row gesture: it is **the source**. The block lands
+under the first tab, beside the ledger and the declaration, and the three read
+one ledger between them — the count a refusal is made of and the count a
+revocation announces are that same table grouped two ways.
+
+**A decision was taken against the grilling, and it refutes itself once
+rendered**: *« Oublier l'import »* is not offered from a line. Three consecutive
+rows carried three identical red *« Oublier cet import (214) »* buttons, and
+**somebody deletes 214 events believing they are removing one**. It is the
+padlock's rule seen from the other end — what a row carries is information,
+never the mass action attached to it — so the provenance becomes a **link** to
+its source and the one forget button lives where its subject is. `data.test.tsx`
+pins that the ledger holds no forget button and that the only pressable thing on
+an imported row is its own provenance.
+
+Six things about it are decisions:
+
+- **The file's presence on disk is never shown**, and neither is the
+  fingerprint. The store is the truth and the drop folder is an optional
+  read-only bind, so *introuvable* would be a permanent false defect on every
+  install without one; and nobody reads a hexadecimal, so what the identical
+  fingerprint is worth is **a message at the instant of the import** — one line
+  in `ledger._sync_event_file`, beside the two that already report a file, said
+  where the comparison is made and not in the caller. The channel is the log
+  because an import needs no interface at all (#697), and a sync fires on a
+  filesystem event rather than on a timer, so it is said when something was
+  dropped rather than on a cycle nobody caused.
+- **The box counts before, not after** — *« Retire 214 événements, 8 symboles et
+  1 compte de la répartition »* — and every one of the three is a **difference
+  against what survives**, never the size of the source: a security two files
+  name does not leave the allocation, and an accounts source lays down no event
+  at all, so counted off the ledger alone its box would answer *nothing happens*
+  about a gesture that removes a declared row.
+- **It never says *réversible*.** Re-importing is possible; the bind is
+  optional, so the app **does not know** whether the reader still has the file.
+  *« Ré-importable si vous avez encore le fichier »* is the sentence that is
+  true, and *« annulable »* is discarded for that reason alone.
+- **It says that forgetting a source of *events* makes an account removable
+  without touching it** — the one consequence a reader cannot foresee, and the
+  ticket's own example is an account a **second** file declares whose events all
+  come from this one. `lib/imports.ts` reads it through `accounts.removalOf`
+  rather than through a count of its own, so *what blocks a removal* is one rule
+  and not two, and the predicate is *the events stop naming it* rather than *it
+  becomes deletable in one click*: the narrower reading would say nothing about
+  the exact case the criterion was written on.
+- **The refusal is named in place of the gesture**, #729's rule unchanged: an
+  accounts import is refused in cascade while an event names one of its accounts
+  (`409`), a control the app knows will be refused teaches nothing by being
+  there, and the count is the exact thing the owner has to act on. The list is
+  ordered **by kind then by name**, accounts sources first, which is the order
+  `event.account` referencing `account(id)` imposes on an import and not a
+  rendering choice.
+- **The verdict rests on the declaration, so the list waits for it** — and it
+  waits **by the rows a read owns**, not whole (#777's notch): the list and the
+  accounts file are withheld with `/api/accounts`, the events file rests on the
+  ledger this tab has already read and renders. Read as *nothing is declared*, a
+  source whose accounts an event holds offered the gesture the server answers a
+  `409` to, and its box stated *« Retire 0 compte déclaré »* — both said on a
+  silence, and **no net can catch it**: the same words are on screen once the
+  read lands. And the refusal, when it does come, is rendered **inside the box**:
+  the box stays open on a failure and Radix marks everything behind the overlay
+  `aria-hidden`, so a band in the section is a sentence nobody can read while the
+  only thing on screen is the box that produced it.
+- **The seeded row is not a subject of any of this**, and the exclusion is
+  `accounts._retire`'s own, by name: `default` is never removed and never
+  refused, a file that declared it hands it back to the seed instead. Without
+  the clause a file that took it over is permanently unforgettable from here —
+  and on an install that declares nothing *every* event names it, a blank
+  account resolving to `default` — while the box announces it as leaving the
+  allocation, which is a statement about the one row that stays. It is
+  `removalOf`'s own first branch, and `lib/imports.ts` has to make the same test
+  rather than inherit it.
+- **The export is total or nothing**, and it is **two files** (#710): a file is
+  an accounts source *or* an event source according to its header, so exporting
+  the events alone would restore a multi-account install into a refusal. That is
+  not an option offered to the reader, it is what the format is — and the
+  accounts file appears only where something is **declared**, the seeded row
+  being no declaration (ADR-0013) and the file it would produce a header with no
+  rows under it, which v4's loader refuses the whole directory over. There is no
+  export of the current reduction, which is the tempting feature: the
+  justification of the export is the round trip, a partial file is not one, and
+  it makes re-importing look like a restore.
+
+**Two of the ticket's words are not honoured, and both arbitrations are written
+down rather than left for the next reader to redo.** *Un fichier* is refused by
+#710's own decision, above. And **the dated name is refused by spec #695 § 6**:
+a re-import identifies a source by its **file name**, so two exports of one
+install — the later a superset of the earlier — are droppable side by side under
+dated names and every event they share is recorded twice, in silence; under one
+name the second replaces the first on the reader's disk, which is the
+protection. Giving the date back would need a rule on the *import* side that no
+criterion asks for, so the criterion is refused rather than half-met, and the
+file's own date is on the import list in `Importé le`, which is where a reader
+looks for it. The argument is in `web/api.py` beside `EXPORT_FILENAMES`.
+
+**There is no in-app import gesture here**, and #726's two import receipts
+therefore still have no call site: no criterion of this ticket names an upload
+and the server has no route for one. *Import* in the block's name is the list of
+sources, which is the half a revocation acts on.
+
 **The first run is a predicate, not a moment** (issue #726, ADR-0021, ADR-0005,
 ADR-0015, ADR-0002). Everything a first launch could once have asked has been
 deleted or answered elsewhere — the mode died (#711), the accounts seed
@@ -3384,6 +3486,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 │                           #       plus the sheet: the breakdown that is absent at one account, the day-markers (#720)
 ├── src/lib/dashboard.ts    # Pure: the two readings, the twelve slices, the movers' leftovers, the four states (#727)
 ├── src/lib/ledger.ts       # Pure: the fields of a type, the identity, the reduction, the two parses (#723)
+├── src/lib/imports.ts      # Pure: the order, what a revocation removes counted before it, the refusal it names (#728)
 ├── src/lib/advisories.ts   # Pure: what the block shows, what the badge counts, what a notice leads to (#724)
 │                           #       plus the sentence itself, composed from key + detail (#768)
 ├── src/lib/installation.ts # Pure: the cadence's reach, and only what moved is sent (#724)
@@ -3399,7 +3502,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/components/CurrencyField.tsx # The closed list — one field, two mounts (#726)
 ├── src/components/dashboard/      # Head (#718) · the one chart slot, the allocation, the movers (#727)
 ├── src/components/shares/         # Head · table · the fold · the chart (#719) · the sheet, its event list and the selection that links the two (#720)
-├── src/components/data/           # Tab 1: the ledger, the create form (#723) and the accounts' declaration (#729) · Tab 2: notices, settings, the store (#724)
+├── src/components/data/           # Tab 1: the ledger, the create form (#723), the accounts' declaration (#729) and Import et export (#728) · Tab 2: notices, settings, the store (#724)
 ├── src/components/accounts/       # The rebased chart · the eight columns (#721) · the panel: four terms, the value/contributed curve, the link (#722)
 ├── src/readsInFlight.test.tsx  # The net: every surface × every route it reads, one left hanging (#775)
 │                           #       — and since #777 it reads the phrases, not only the emptiness markers

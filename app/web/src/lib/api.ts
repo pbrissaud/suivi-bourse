@@ -42,6 +42,24 @@ export const ROUTES = {
   events: '/api/events',
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
+  /**
+   * The sources, which are the **unit of revocation** (#728, ADR-0020).
+   *
+   * A provenance is worth exactly two things: a displayable label, and this.
+   * It is never an address to write at — that was #662's opaque token over
+   * `(file, sheet, row)`, and it died with the file being the truth.
+   */
+  imports: '/api/imports',
+  /** One of them, forgotten whole. A **pattern**, like {@link ROUTES.prices}. */
+  importSource: '/api/imports/:id',
+  /**
+   * The ledger back out, in the format it came in by (#710) — **two files**,
+   * because a file is an accounts source *or* an event source according to its
+   * header and never both. Exporting the events alone would restore a
+   * multi-account install into a refusal.
+   */
+  exportEvents: '/api/export/events.csv',
+  exportAccounts: '/api/export/accounts.csv',
   /** What this install is configured with: the dials and the boot variables. */
   config: '/api/config',
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
@@ -99,6 +117,14 @@ export const WRITE_ONLY_ROUTES = [
   'account',
   'advisoryAcknowledgement',
   'storeOrphans',
+  'importSource',
+  // The two exports are in here for a reason of *who fetches them*, not of what
+  // they do: the client never reads them at all — the **browser** does, from an
+  // `href`, and hands the bytes to the reader's own *Save as*. Nothing on any
+  // page is rendered on the strength of them, which is exactly the property
+  // this list names.
+  'exportEvents',
+  'exportAccounts',
 ] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */
@@ -112,6 +138,10 @@ export function eventPath(id: string): string {
 
 export function accountPath(id: string): string {
   return `/api/accounts/${encodeURIComponent(id)}`
+}
+
+export function importPath(id: number): string {
+  return `/api/imports/${encodeURIComponent(String(id))}`
 }
 
 export function advisoryAcknowledgementPath(key: string): string {
@@ -975,6 +1005,51 @@ export interface PurgeResult {
   points_removed: number
 }
 
+// ------------------------------------------------------------------------- //
+// The imports — the unit of revocation (#728, ADR-0020, ADR-0015)
+// ------------------------------------------------------------------------- //
+
+/**
+ * Which of the two a source is, read off its **header** and never off its name:
+ * no filename has a special meaning in v5. It is also the ordering the list
+ * renders in — accounts first — because `event.account` references `account(id)`
+ * and that is the order the foreign key imposes on an import, not a taste.
+ */
+export const IMPORT_KINDS = ['accounts', 'events'] as const
+
+export type ImportKind = (typeof IMPORT_KINDS)[number]
+
+export interface ImportRecord {
+  id: number
+  /**
+   * The file's **name**, never a path — and never its presence on disk either.
+   * The drop folder is an optional read-only bind (ADR-0015), so *file not
+   * found* would be a permanent false defect on every install without one, and
+   * the store is the truth in any case.
+   */
+  filename: string
+  kind: ImportKind
+  imported_at: string | null
+  /**
+   * The content hash the store keeps to notice a re-drop. **Never a column**
+   * (#728): nobody reads a hexadecimal, and what it has to say — *the same file
+   * was dropped again, nothing moved* — is a message at the instant of the
+   * import, which is where the server says it.
+   */
+  fingerprint: string
+  /** How many events it laid down. `0` on an accounts source, which lays none. */
+  events: number
+}
+
+/** A bare collection, as served: `200` + `[]` on an install that has imported nothing. */
+export type ImportsResponse = ImportRecord[]
+
+/** What the revocation answers: the source, and the rows that went with it. */
+export interface ForgottenImport {
+  id: number
+  events_removed: number
+}
+
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
   // The declaration's three gestures (#698, served since that ticket; read by a
@@ -1005,6 +1080,11 @@ export const api = {
   advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
   acknowledgeAdvisory: (key: string) =>
     send<Advisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+  imports: () => get<ImportsResponse>(ROUTES.imports),
+  // The **only** gesture that reaches an imported row, and the only one there
+  // will be: read-only forbids editing line 42 of `broker.csv`, it does not
+  // forbid revoking the file.
+  forgetImport: (id: number) => remove<ForgottenImport>(importPath(id)),
   store: () => get<StoreState>(ROUTES.store),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
 }

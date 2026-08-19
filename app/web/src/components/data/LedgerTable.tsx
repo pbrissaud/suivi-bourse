@@ -30,11 +30,15 @@
  * **The provenance is a label, never an address** — the file's *name* and its
  * line, never a path, and never its presence on disk: the drop folder is an
  * optional read-only bind (ADR-0015), so *file not found* would be a permanent
- * false defect on every install without one. The link it will carry to its
- * source, and the single *forget this import* button that lives there, arrive
- * with #728 — never on a row, where three consecutive lines showed three
- * identical red *Oublier cet import (214)* buttons and somebody deletes 214
- * events believing they are removing one.
+ * false defect on every install without one.
+ *
+ * Since #728 it is also a **link**, and that is the whole of what it is worth
+ * besides the label: it names the **unit of revocation**, and it leads to the
+ * one place that unit can be acted on. What it does *not* carry is the gesture
+ * itself — three consecutive lines showed three identical red *Oublier cet
+ * import (214)* buttons and somebody deletes 214 events believing they are
+ * removing one. A row carries information; the mass action attached to it lives
+ * where its subject is, once.
  *
  * **Zero explanation icons.** The page's two live on the create form, where the
  * sentence can still change a behaviour (#684 D7).
@@ -67,9 +71,16 @@ export interface LedgerTableProps {
   currency: string | null
   /** Opens the panel on a row. Offered for editable rows only. */
   onEdit: (event: LedgerEvent) => void
+  /**
+   * Marks this row's source in *Import et export*, where the one forget is —
+   * and **`null` while that list has not landed**: a label that leads to a
+   * block which is not on screen is a promise the page cannot keep, so it stays
+   * the plain label it has always been.
+   */
+  onShowImport: ((id: number) => void) | null
 }
 
-export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
+export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -121,7 +132,7 @@ export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
 
               <TableCell>{accountOf(event)}</TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                <Provenance event={event} />
+                <Provenance event={event} onShowImport={onShowImport} />
               </TableCell>
             </TableRow>
           )
@@ -172,23 +183,43 @@ function Identity({
  * typed in the app, which is precisely the fact the padlock column was trying to
  * carry 285 times.
  */
-function Provenance({ event }: { event: LedgerEvent }) {
+function Provenance({
+  event,
+  onShowImport,
+}: {
+  event: LedgerEvent
+  onShowImport: ((id: number) => void) | null
+}) {
   const { t } = useI18n()
-  if (event.source_id === null) return <>{t('data.provenance.app')}</>
+  const source = event.source_id
+  if (source === null) return <>{t('data.provenance.app')}</>
+  if (onShowImport === null) return <>{label(event, t)}</>
 
+  // Its accessible name is the label itself: a second one would be a second
+  // rendering of the provenance, and the two would drift.
+  return (
+    <button
+      type="button"
+      className="text-left underline-offset-4 hover:underline"
+      title={t('data.imports.show')}
+      onClick={() => onShowImport(source)}
+    >
+      {label(event, t)}
+    </button>
+  )
+}
+
+/** The label, composed in the reader's language, the store's own as a fallback. */
+function label(event: LedgerEvent, t: ReturnType<typeof useI18n>['t']): string {
   const file = event.source_filename
-  if (!file) return <>{event.provenance}</>
-  if (event.source_row === null) return <>{t('data.provenance.file', { file })}</>
+  if (!file) return event.provenance ?? ''
+  if (event.source_row === null) return t('data.provenance.file', { file })
   if (event.source_sheet) {
-    return (
-      <>
-        {t('data.provenance.sheet', {
-          file,
-          sheet: event.source_sheet,
-          line: event.source_row,
-        })}
-      </>
-    )
+    return t('data.provenance.sheet', {
+      file,
+      sheet: event.source_sheet,
+      line: event.source_row,
+    })
   }
-  return <>{t('data.provenance.line', { file, line: event.source_row })}</>
+  return t('data.provenance.line', { file, line: event.source_row })
 }

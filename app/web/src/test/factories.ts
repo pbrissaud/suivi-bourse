@@ -75,6 +75,8 @@ import type {
   EnvironmentVariable,
   EventsResponse,
   Fundamentals,
+  ImportRecord,
+  ImportsResponse,
   LedgerEvent,
   Mover,
   MoversResponse,
@@ -169,7 +171,12 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
 
 /** Declared by a file: read-only, revoked with its import and never edited. */
 export function aFileAccount(overrides: Partial<Account> = {}): Account {
-  return anAccount({ source_id: 1, editable: false, ...overrides })
+  // Source **2**, and the number is a fact about the fixture rather than a
+  // placeholder: the ledger's imported rows carry source 1, which is the events
+  // file, and a file is an accounts source *or* an event source according to its
+  // header and never both. One id for the two would make the import list's own
+  // subject — *what does forgetting this source take with it* — unanswerable.
+  return anAccount({ source_id: 2, editable: false, ...overrides })
 }
 
 /**
@@ -850,6 +857,49 @@ export function importedOnly(): LedgerEvent[] {
 
 export function aLedgerPayload(events: LedgerEvent[] = ledgerEvents()): EventsResponse {
   return events
+}
+
+/**
+ * THE IMPORTS — the sources the ledger above came from (#728).
+ *
+ * Two of them, and the pair is the shape the block exists for: an **events**
+ * source carrying the three imported rows, and an **accounts** source carrying
+ * the declaration `beta`. That second one is what makes the coupling visible —
+ * an accounts import cannot be forgotten while an event names one of its
+ * accounts, and forgetting an *events* source is what frees it.
+ *
+ * The `fingerprint` is here because the payload carries one; **no fixture reads
+ * it**, and that is the criterion: nobody reads a hexadecimal, so it is never a
+ * column.
+ */
+export function anImport(overrides: Partial<ImportRecord> = {}): ImportRecord {
+  return {
+    id: 1,
+    filename: 'zeta-events_2.csv',
+    kind: 'events',
+    imported_at: '2026-03-01T09:12:00.000Z',
+    fingerprint: '9f2b7c1d4e6a8b0c',
+    events: 3,
+    ...overrides,
+  }
+}
+
+export function anImportsPayload(imports: ImportRecord[] = defaultImports()): ImportsResponse {
+  return imports
+}
+
+export function defaultImports(): ImportRecord[] {
+  return [
+    anImport(),
+    anImport({
+      id: 2,
+      filename: 'zeta-accounts.csv',
+      kind: 'accounts',
+      imported_at: '2026-02-28T18:04:00.000Z',
+      fingerprint: '1a3c5e7f9b2d4f60',
+      events: 0,
+    }),
+  ]
 }
 
 export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {

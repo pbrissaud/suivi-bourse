@@ -1238,6 +1238,16 @@ def _number_member(body: dict, name: str) -> Optional[float]:
 #: names, because a re-import identifies a source by its **file name** (spec
 #: #695 § 6): a name carrying a date would make every export a new source, and
 #: restoring twice would double the ledger instead of replacing it.
+#:
+#: **Issue #728 asks for the date and does not get it**, and the arbitration is
+#: written here rather than left for the next reader to redo. The two exports of
+#: one install describe one ledger, the later a superset of the earlier; under
+#: dated names both are droppable side by side and every event they share is
+#: recorded twice, in silence. Under one name the second simply replaces the
+#: first on the reader's own disk, which is the protection. Giving the date back
+#: would need a rule on the *import* side that no criterion asks for, so the
+#: criterion is refused rather than half-met — and the file's own date is on the
+#: import list, in `Importé le`, which is where a reader looks for it.
 EXPORT_FILENAMES = {
     'events': 'suivi-bourse-events.csv',
     'accounts': 'suivi-bourse-accounts.csv',

@@ -10,9 +10,11 @@
  * successor: the unit of the gesture is the **import** (#728), not the line.
  *
  * What this half owes is the journal itself, its reduction, the create form that
- * is the onboarding, and — since #729 — the **declaration of the accounts**,
- * which is the same thing said about another table: what the user declared. The
- * import block and the export are #728, and they land under this same tab.
+ * is the onboarding, the **declaration of the accounts** (#729) — the same thing
+ * said about another table — and, since #728, **Import et export**: the sources
+ * as the unit of revocation, and the way back out. The three blocks read one
+ * ledger between them: the count a refusal is made of, and the count a
+ * revocation announces, are that same table grouped two ways.
  *
  * Reads and failures follow the rule the shares page keeps: `/api/runtime`
  * answers from process memory and never opens the store (#668), so the shell's
@@ -28,6 +30,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { AccountsBlock } from '@/components/data/AccountsBlock'
 import { EventForm } from '@/components/data/EventForm'
+import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
 import { LedgerTable } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
@@ -76,8 +79,17 @@ export function Ledger({ focus }: LedgerProps = {}) {
   // `undefined` is *the panel is shut*; `null` is *open on a new event*; a row is
   // *open on that row*. Three states, because "shut" and "creating" are two.
   const [editing, setEditing] = useState<LedgerEvent | null | undefined>(undefined)
+  // The source a provenance cell asked to see. A fresh object per gesture, the
+  // `focus` prop's own rule: following two rows of the same file in a row has to
+  // mark it twice, and the reader may have scrolled away in between.
+  const [highlighted, setHighlighted] = useState<{ id: number } | undefined>(undefined)
 
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+  // The sources. A **needed** read of the block below and of nothing else: with
+  // it in flight that block renders nothing at all, which is ADR-0026's rule and
+  // not a local decision — *you have imported nothing* is a claim about the
+  // reader's own data.
+  const imports = useQuery({ queryKey: ['imports'], queryFn: api.imports })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The reporting currency is an **optional** read here: the ledger is a
@@ -152,7 +164,23 @@ export function Ledger({ focus }: LedgerProps = {}) {
           {shown.length === 0 ? (
             <EmptyState title={t('data.filter.none.title')} description={t('data.filter.none.body')} />
           ) : (
-            <LedgerTable events={shown} currency={currency} onEdit={setEditing} />
+            <LedgerTable
+              events={shown}
+              currency={currency}
+              onEdit={setEditing}
+              // Offered only once the list it leads to is on screen: a label
+              // that marked a block nobody can see would be a click that does
+              // nothing, and it is the same rule one notch down as the block
+              // rendering nothing while its own read is in flight.
+              onShowImport={
+                imports.data
+                  ? (id) => {
+                      setHighlighted({ id })
+                      document.getElementById(`import-${id}`)?.scrollIntoView({ block: 'center' })
+                    }
+                  : null
+              }
+            />
           )}
         </>
       )}
@@ -169,6 +197,19 @@ export function Ledger({ focus }: LedgerProps = {}) {
           and it is withheld until that read has landed, which is what keeps
           *not arrived yet* from rendering as *nothing names this account*. */}
       {failure || !events.data ? null : <AccountsBlock accounts={accounts.data} events={all} />}
+
+      {/* Beside the two others and at every N, the empty ledger included: an
+          install that has imported an accounts file and no event has a source
+          to forget, and one that has only ever typed has something to export.
+          What it renders on nothing at all is nothing. */}
+      {failure || !events.data ? null : (
+        <ImportsBlock
+          imports={imports.data ?? null}
+          events={all}
+          accounts={accounts.data ?? null}
+          highlight={highlighted}
+        />
+      )}
 
       <EventForm
         open={editing !== undefined}

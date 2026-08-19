@@ -489,6 +489,14 @@ def _sync_event_file(store, path: Path, now: Optional[datetime], *,
         return SyncOutcome(path.name, REFUSED, error="cannot read the file")
 
     if not force and _fingerprint_in_store(store, path.name) == digest:
+        # **The identical fingerprint is a message, never a column** (#728).
+        # Nobody reads a hexadecimal, so what the hash is worth to a reader is
+        # this one sentence at the instant of the import — said beside the two
+        # lines that already report a file, because the comparison that produces
+        # it is made right here. The drop folder is watched at all times (#697)
+        # and a sync fires on a filesystem event rather than on a timer, so it is
+        # said when something was dropped and not on a cycle nobody caused.
+        logger.info(f"Unchanged {path.name}: the same file, nothing moved")
         return SyncOutcome(path.name, UNCHANGED)
 
     try:
@@ -510,6 +518,7 @@ def _sync_accounts_file(store, path: Path,
                            error="cannot read the file")
 
     if _fingerprint_in_store(store, path.name) == digest:
+        logger.info(f"Unchanged {path.name}: the same file, nothing moved")
         return SyncOutcome(path.name, UNCHANGED, kind=KIND_ACCOUNTS)
 
     try:
