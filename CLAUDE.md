@@ -1589,6 +1589,84 @@ in-app import surface, which is #728's; refusing there today would leave a reade
 with a refusal and nothing to answer it with, and would break the headless round
 trip #710 exists for.
 
+**Réaffecter, jamais refuser** (issue #725, ADR-0013, ADR-0006). The path
+exists and it fabricates a line nobody declared: running a month with nothing
+declared puts the whole ledger under the `default` row the schema seeds — #698's
+rule doing exactly what it says — and declaring two accounts then makes that row
+**indéracinable**, since an event names it. The accounts page treats it **at the
+render** (`Non affecté`, distinguished, carrying a link) because prevention
+arrives too late for whoever is already in the state; prevention is this ticket,
+and the refusal is the trap dismantled elsewhere under another name — it locks
+the owner out of the one action that repairs their state. Two tempting models
+are refused and each for a reason that holds: a **correspondence layer**
+`default → pea` beside the events is a second truth about the account an event
+names (ADR-0006), and a **re-import with a mapping table** assumes the owner
+still has the file, which #728 has just established cannot be assumed. What
+lands is a **named and bounded exception**, `reassignment.py`, and six things
+about it are decisions:
+
+- **The exception is bounded by its own `WHERE`, never by a flag.** The one
+  statement the module writes is `UPDATE event SET account = ? WHERE account =
+  'default'`: no id crosses the wire, no row is addressed, and nothing here can
+  reach an event naming a declared account — which is the whole of *jamais
+  ensuite*, said by a predicate rather than promised. It **closes by running**:
+  afterwards no event carries `default`, so a second call moves nothing.
+- **And `default` is not always the row nobody declared**, which is the half
+  that keeps the sentence above true. Its owner may rename it — the N = 1
+  gesture #729 built the declaration block for, on the install with a page and
+  no file — retype it, or let a file take it over (#698); from that instant its
+  events name the account their owner named. `accounts.default_is_declared`
+  empties the population there, so the `WHERE` is never reached. Without it the
+  exception reached a declared account by the back door: one **pre-ticked** click
+  on a second declaration moved a whole ledger off the one line somebody had put
+  their own name on, with nothing to undo it by — the source files' contents have
+  not moved, so a re-scan reports them unchanged, and a blank column is refused
+  by then anyway. The comparison is `as_declared`'s and not a second one (there
+  is no *renamed* column to add, ADR-0001), and `lib/absence.ts`'s `isQuoted` is
+  the precedent for the front spelling the same rule on its own side of the seam
+  (`isSeededOnly`, which `originOf` now calls rather than restating).
+- **The window's opening is the target's own existence.** A target that is
+  neither the seeded row nor an unknown id **is** a declaration, so *the first
+  account has been declared* needs no second predicate — and before that instant
+  there is nothing to reassign onto, a blank column still legitimately meaning
+  `default`. That is why the resource is `POST /api/accounts/<id>/reassignment`
+  and not one on the ledger.
+- **It is a module of its own, for the reason `entries.py` is one.** `event` is
+  written by the import path and by the app, and each keeps its rule true *by
+  inspection* — the import has no row-level write, `entries` writes only
+  `source_id NULL` rows. A third writer housed in either would quietly falsify
+  the sentence its host is asserted on. The read-only rule is not weakened: it
+  puts the repair in the file because the file is *wrong*, and here the file was
+  **right under the rule in force when it was imported**. **A change of rule is
+  not paid for by editing 285 lines.**
+- **Two roads reach one instant, so the offer has two renderings and one rule**
+  (`lib/accounts.ts`'s `reassignmentOf`). Nothing declared yet: the gesture
+  rides **inside** the declaration, one box **checked by default**, one request —
+  there is no list to choose from there, and the account being created is the
+  only answer the question can have. Something declared and rows still under the
+  seeded row: the offer **stands on its own**, with the declared accounts as its
+  targets, because that state is reachable with **no gesture in this app at
+  all** — an accounts file declares as much as the form does (#698), and the
+  event file beside it is then refused for the blank column it was right to
+  carry. Unchecking the box, or shutting the panel, declares the account all the
+  same.
+- **The link owes the reader the gesture, not the page.** `Non affecté`'s link
+  carries `#reassignment`, `DataPage` reads it — the `#installation` precedent
+  (#726), where a hash nothing read landed both its links on the wrong tab — and
+  the block scrolls to the standing offer or opens the panel that carries it,
+  according to which of the two renderings is on screen. It is a **one-shot**,
+  spent where it is acted on: the hash is read and never written, and Radix
+  unmounts the inactive tab, so a signal derived from it straight came back true
+  on every switch back and reopened a panel the reader had answered by closing.
+  It is spent on `firstDeclaration`/`standing` and never on `none`, which is the
+  accounts read still in flight as often as it is nothing to move.
+- **The state is fabricated, and that is an obligation.** The real portfolio's
+  285 events all name an account, so `default` is nowhere in it and the whole of
+  this is unobservable there: `tests/test_reassignment.py` builds it from a file
+  with a blank column, and `unassignedLedger()` is its front counterpart. A
+  fixture drawn from the real portfolio would have attested a screen no install
+  in this state can show.
+
 ### Documentation Website (in `website/` directory)
 
 Dependencies are managed with pnpm. The docs are versioned and **every version
@@ -3439,6 +3517,7 @@ app/src/
 ├── store.py                # The DuckDB store: connection, DDL of the twelve tables, seed (#696)
 ├── ledger.py               # The import: import_source/symbol/event, provenance, revocation (#697)
 ├── entries.py              # The typed row's three gestures — source_id NULL only (#764)
+├── reassignment.py         # The named, bounded exception: the unassigned events, moved once (#725)
 ├── accounts.py             # The account table: the accounts file, the declaration, the refusals (#698)
 ├── positions.py            # The replay's two tables — position/account_state, one writer (#699)
 ├── settings_registry.py    # Pure: the one list of dials — key, type, default, bounds, effect (#696/#701)
@@ -3447,7 +3526,7 @@ app/src/
 ├── static/                 # Built SPA (git-ignored; Vite's outDir, COPY'd in the image)
 ├── web/                    # Flask package (disposable half, per #655)
 │   ├── __init__.py         # create_app() + the post_fork / worker_exit hook bodies + SPA catch-all
-│   ├── api.py              # /api blueprint: positions (+ its valuation history, #727) + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729, and the account's own fourth term, #722 — and declare, #698) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
+│   ├── api.py              # /api blueprint: positions (+ its valuation history, #727) + portfolio-totals and its history (#763, #721), shares, prices, portfolio, accounts (read — the seeded row included, #729, and the account's own fourth term, #722 — declare, #698, and reassign what nobody assigned, #725) and one account's history, events (read + the typed row's three writes, #764), export (#710), imports, advisories (#709), store + orphan purge (#724), config, runtime
 │   ├── problem.py          # RFC 9457 application/problem+json responses (#659)
 │   └── health.py           # /health blueprint — touches the store (#696)
 └── events/                 # Events module
@@ -3493,6 +3572,7 @@ app/web/                    # Front-end workspace — Vite + React 19 + TS, Tail
 ├── src/lib/accounts.ts     # Pure: the window, the rebasing to 100, the vanishing column, the reason (#721)
 │                           #       plus the declaration: who names a row, where it came from, why it stays (#729)
 │                           #       plus the panel: whose positions it sums, and the curve read whole (#722)
+│                           #       plus the reassignment: one condition, two renderings, no mapping layer (#725)
 ├── src/components/Explain.tsx     # The convention bubble: click, scroll-closes, versioned link
 ├── src/components/Stat.tsx        # The one figure+label pair, explanation slot included
 ├── src/components/EmptyState.tsx  # The one empty state

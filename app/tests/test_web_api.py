@@ -18,6 +18,7 @@ import json
 import pytest
 
 import advisories
+import ledger
 import main
 import perf_series
 import quotes
@@ -1824,6 +1825,134 @@ def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
     payload = client.get('/api/events?symbol=AAPL').get_json()
 
     assert [row['symbol'] for row in payload] == ['AAPL']
+
+
+# --------------------------------------------------------------------- #
+# The reassignment (issue #725, ADR-0013, ADR-0006)
+#
+# **The state is fabricated here and cannot be reached on the real portfolio**,
+# whose 285 events all name an account — so `default` is nowhere in it. The
+# ticket makes the fixture an obligation rather than a convenience: what it
+# guards is an install that ran a month before declaring anything, whose whole
+# history sits under the seeded row and whose owner is then locked out of the one
+# action that repairs it.
+# --------------------------------------------------------------------- #
+
+#: Three events with a **blank** `account` column — legal at the instant they
+#: were imported, and stored under `default` by the rule then in force (#698).
+UNASSIGNED_EVENTS = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase\n"
+    "2024-02-01,BUY,MSFT,Microsoft,5,380.00,2.50,,Initial purchase\n"
+    "2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,2.40,Q1 2024 dividend\n"
+)
+
+
+def _accounts_named_by_events(opened):
+    return sorted(row[0] for row in opened.query('SELECT account FROM event'))
+
+
+def test_declaring_the_first_account_reassigns_in_the_same_gesture(tmp_path):
+    """One request, and the ledger names the account when it answers."""
+    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
+    assert _accounts_named_by_events(opened) == ['default'] * 3
+
+    created = client.post('/api/accounts',
+                          json={'id': 'pea', 'type': 'PEA', 'reassign': True})
+
+    assert created.status_code == 201
+    assert _accounts_named_by_events(opened) == ['pea'] * 3
+    # And the page reads it: the snapshot the routes serve from was republished
+    # by the same request, not by a timer.
+    assert [row['account'] for row in client.get('/api/events').get_json()] == [
+        'pea'] * 3
+
+
+def test_the_declaration_is_never_refused_because_events_are_unassigned(tmp_path):
+    """Refusing is the trap: it locks the owner out of the only repair there is.
+
+    The flag is *offered*, never required — a body that omits it declares the
+    account all the same, and leaves the rows exactly where they were.
+    """
+    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
+
+    created = client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
+
+    assert created.status_code == 201
+    assert _accounts_named_by_events(opened) == ['default'] * 3
+    # And the offer stands afterwards: the window is the state, not the request.
+    moved = client.post('/api/accounts/pea/reassignment')
+    assert moved.get_json() == {'account': 'pea', 'reassigned': 3}
+
+
+def test_the_reassignment_is_reachable_when_a_file_declared(tmp_path):
+    """The other road, and the same instant (issue #698).
+
+    An accounts source declares as much as the form does; the event file beside
+    it is then refused for the blank column it was right to carry, and its rows
+    stay under `default` with no gesture in the app able to reach them. This
+    route is that gesture, and nothing in it names the road taken.
+    """
+    def declare_by_file(opened):
+        # The watcher's own gesture, and the ordering #698 guarantees: the
+        # accounts source is imported, the event file beside it is re-read
+        # under the new rule and **refused** for the blank column it was right
+        # to carry, so its rows stay exactly where they were.
+        (tmp_path / 'events' / 'accounts.csv').write_text(
+            "id,type,label\npea,PEA,PEA Bourso\n", encoding='utf-8')
+        ledger.sync_drop_folder(opened, tmp_path / 'events')
+
+    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS,
+                                            seed=declare_by_file)
+    assert _accounts_named_by_events(opened) == ['default'] * 3
+
+    moved = client.post('/api/accounts/pea/reassignment')
+
+    assert moved.status_code == 200
+    assert moved.get_json()['reassigned'] == 3
+    assert _accounts_named_by_events(opened) == ['pea'] * 3
+    assert client.get('/api/accounts').get_json()['declared'] is True
+
+
+def test_after_that_instant_an_imported_row_is_not_writable(tmp_path):
+    """*Jamais ensuite*, and it is said three ways at once.
+
+    A second reassignment moves nothing — the population is the column's own
+    value, so there is no row left for it to reach — the row-level `PATCH` still
+    refuses an imported row by name, and no request can name the event to move.
+    """
+    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
+    client.post('/api/accounts',
+                json={'id': 'pea', 'type': 'PEA', 'reassign': True})
+    client.post('/api/accounts', json={'id': 'cto', 'type': 'CTO'})
+
+    again = client.post('/api/accounts/cto/reassignment')
+    assert again.get_json() == {'account': 'cto', 'reassigned': 0}
+    assert _accounts_named_by_events(opened) == ['pea'] * 3
+
+    imported = [row for row in client.get('/api/events').get_json()
+                if row['source_id'] is not None]
+    refused = client.patch(f"/api/events/{imported[0]['id']}",
+                           json={'date': '2024-01-15', 'event_type': 'BUY',
+                                 'symbol': 'AAPL', 'quantity': 10,
+                                 'unit_price': 150.0, 'account': 'cto'})
+    assert refused.status_code == 409
+
+
+def test_the_seeded_row_is_not_a_target_of_the_reassignment(tmp_path):
+    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
+    client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
+
+    refused = client.post('/api/accounts/default/reassignment')
+
+    assert refused.status_code == 409
+    assert _accounts_named_by_events(opened) == ['default'] * 3
+
+
+def test_an_undeclared_target_is_a_404(tmp_path):
+    client = build_client(tmp_path, events=UNASSIGNED_EVENTS)
+
+    assert client.post('/api/accounts/nope/reassignment').status_code == 404
 
 
 # --------------------------------------------------------------------- #

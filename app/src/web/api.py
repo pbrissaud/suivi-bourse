@@ -33,6 +33,7 @@ import ledger
 import main
 import portfolio_view
 import quotes
+import reassignment
 import runtime_state
 import runtime_view
 import settings as settings_module
@@ -778,6 +779,23 @@ def create_account():
     The replay follows the write, in this process: declaring an account changes
     what an event file is allowed to say, so the caller must see the effect of
     their own gesture without waiting for anything.
+
+    **And the reassignment rides in the same gesture** (issue #725). ``reassign``
+    asks, in the same request, for every event still naming the seeded row to be
+    moved onto the account being declared — which is the exact instant a blank
+    ``account`` column stops meaning ``default`` and starts meaning an error, and
+    the only one at which those rows may be rewritten (:mod:`reassignment`).
+    Two properties are the ticket's:
+
+    * **the declaration is never refused because events are unassigned.** The
+      refusal is the trap dismantled elsewhere under another name — it locks the
+      owner out of the one action that repairs their state — so the flag is
+      *offered*, never *required*, and its absence declares the account all the
+      same;
+    * **the two writes are one transaction.** A declaration committed without
+      the reassignment asked for in the same click is a half gesture, and the
+      owner would then be looking at a declared account beside a ledger that
+      still ignores it — which is the very screen the flag exists to prevent.
     """
     body = _json_object()
     if body is None:
@@ -790,15 +808,60 @@ def create_account():
         # it back (:meth:`main.ConfigurationManager.writing`), and it is not
         # reentrant, so the replay cannot happen inside the block.
         with runtime.config_manager.writing() as opened:
-            account = accounts_module.create_account(
-                opened, body.get('id'), body.get('type'), body.get('label'))
+            with opened.transaction():
+                account = accounts_module.create_account(
+                    opened, body.get('id'), body.get('type'), body.get('label'))
+                if _flag(body.get('reassign')):
+                    reassignment.reassign_unassigned(opened, account.id)
     except accounts_module.DuplicateAccount as exc:
         return conflict(str(exc))
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
+    except AggregationError as exc:
+        return conflict(str(exc))
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account)), 201
+
+
+@api_bp.post('/accounts/<account_id>/reassignment')
+def reassign_unassigned_events(account_id: str):
+    """Move every event naming the seeded row onto a declared account (#725).
+
+    The **standing** half of the gesture ``POST /api/accounts`` carries inline,
+    and it exists because the instant it serves is reachable without any gesture
+    in the app at all: an accounts *file* dropped into the folder declares just
+    as much (issue #698), and the event file beside it is then refused for the
+    blank column it was right to carry — leaving its rows under ``default`` with
+    nothing on any page able to move them. One resource, two roads to it.
+
+    It is a **collection gesture and not a row one**, and that is what keeps it
+    inside the read-only rule rather than beside it: no event id crosses the
+    wire, the population is the column's own value, and :mod:`reassignment`'s
+    single ``UPDATE`` cannot reach a row naming a declared account. The mapping
+    table a client might send instead is refused by ADR-0006 — it would be a
+    second truth about the account an event names.
+
+    ``404`` on an id nothing declares, ``409`` on the seeded row (it is the row
+    every install is given, not a declaration) and on a ledger that would not
+    replay. ``200`` with the count on everything else, **zero included**: a
+    gesture that has nothing left to move is not an error, it is the window
+    already spent.
+    """
+    runtime = current_runtime()
+    try:
+        with runtime.config_manager.writing() as opened:
+            with opened.transaction():
+                moved = reassignment.reassign_unassigned(opened, account_id)
+    except accounts_module.UnknownAccount as exc:
+        return not_found(str(exc))
+    except reassignment.NotReassignable as exc:
+        return conflict(str(exc))
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify({'account': account_id, 'reassigned': moved})
 
 
 @api_bp.patch('/accounts/<account_id>')
@@ -1790,6 +1853,17 @@ def _json_object() -> Optional[dict]:
     """
     body = request.get_json(silent=True)
     return body if isinstance(body, dict) else None
+
+
+def _flag(value) -> bool:
+    """One optional boolean out of a JSON body, and never a truthiness test.
+
+    ``true`` is the only thing that asks — a string, a number or an object does
+    not, and reading them as one would make a client's typo perform a write it
+    never requested. The absent member is what a client that has never heard of
+    the flag sends, and it must mean *no* rather than *whatever the default is*.
+    """
+    return value is True
 
 
 def _portfolio_mode() -> Tuple[str, Optional[Any]]:

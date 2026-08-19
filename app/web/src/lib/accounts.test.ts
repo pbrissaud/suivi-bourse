@@ -24,6 +24,7 @@ import {
   originOf,
   portfolioRow,
   positionCount,
+  reassignmentOf,
   rebase,
   RANGES,
   removalOf,
@@ -49,6 +50,7 @@ import {
   ledgerEvents,
   noAccountsDeclared,
   sharesPortfolio,
+  unassignedLedger,
   theSeededAccount,
 } from '@/test/factories'
 
@@ -483,5 +485,71 @@ describe('what the create form may offer as an account (#764’s deferral)', () 
     expect(submittedAccount(accountChoice(anAccountsPayload(), false), ' ')).toEqual({
       error: 'data.form.required',
     })
+  })
+})
+
+describe('réaffecter, jamais refuser (#725)', () => {
+  it('rides inside the first declaration, where there is no target to name', () => {
+    // Nothing declared: the gesture has no list to choose from, so it is the
+    // declaration itself that carries it — one request, one gesture.
+    expect(reassignmentOf(noAccountsDeclared(), unassignedLedger())).toEqual({
+      kind: 'firstDeclaration',
+      count: 3,
+    })
+  })
+
+  it('stands on its own once something is declared, which a file can do', () => {
+    // The state reachable with **no gesture in this app at all**: an accounts
+    // file declares as much as the form does, and the event file beside it is
+    // refused for the blank column it was right to carry.
+    const declared = anAccountsPayload(
+      [theSeededAccount(), anAccount({ id: 'pea', label: 'PEA' })],
+      true,
+    )
+    const offer = reassignmentOf(declared, unassignedLedger())
+
+    expect(offer.kind).toBe('standing')
+    expect(offer.kind === 'standing' && offer.count).toBe(3)
+    // The seeded row is in the payload — an event names it — and is the one
+    // account that cannot be a target: it is what those events already say.
+    expect(offer.kind === 'standing' && offer.targets.map((row) => row.id)).toEqual(['pea'])
+  })
+
+  it('is absent on the real portfolio, whose events all name an account', () => {
+    // The criterion the other way round: `ledgerEvents()` is the fixture drawn
+    // from the real one, and there is no `default` anywhere in it — so nothing
+    // is offered, and the constraint is unobservable there.
+    expect(reassignmentOf(anAccountsPayload(), ledgerEvents())).toEqual({ kind: 'none' })
+  })
+
+  it('leaves alone the row its owner has named', () => {
+    // The N = 1 gesture #729 built the declaration block for: renaming the
+    // seeded row is how an install with a page and no file declares its one
+    // account. Its events then name the account their owner named, and offering
+    // to move them off it — pre-ticked, on a second declaration — would take a
+    // whole ledger off the one line they had put a name on.
+    const named = anAccountsPayload([theSeededAccount({ label: 'Mon PEA' })], false)
+    expect(reassignmentOf(named, unassignedLedger())).toEqual({ kind: 'none' })
+
+    // The other seeded column says as much, and a file that took the row over
+    // says it a third way (#698).
+    const retyped = anAccountsPayload([theSeededAccount({ type: 'PEA' })], false)
+    expect(reassignmentOf(retyped, unassignedLedger())).toEqual({ kind: 'none' })
+    const taken = anAccountsPayload(
+      [theSeededAccount({ source_id: 2, editable: false }), anAccount({ id: 'pea' })],
+      true,
+    )
+    expect(reassignmentOf(taken, unassignedLedger())).toEqual({ kind: 'none' })
+  })
+
+  it('claims nothing while the read has not landed', () => {
+    expect(reassignmentOf(undefined, unassignedLedger())).toEqual({ kind: 'none' })
+  })
+
+  it('offers nothing once the window is spent', () => {
+    const declared = anAccountsPayload([anAccount({ id: 'pea', label: 'PEA' })], true)
+    const reassigned = unassignedLedger().map((event) => ({ ...event, account: 'pea' }))
+
+    expect(reassignmentOf(declared, reassigned)).toEqual({ kind: 'none' })
   })
 })

@@ -30,6 +30,18 @@ export const ROUTES = {
   accounts: '/api/accounts',
   /** One declared account. A **pattern**, like {@link ROUTES.prices} (#729). */
   account: '/api/accounts/:id',
+  /**
+   * The events nobody assigned, moved onto one declared account (#725).
+   *
+   * A **collection** gesture and never a row one: no event id crosses the wire,
+   * the population is the `account` column's own value, and the mapping table a
+   * client might send instead is refused by ADR-0006 — it would be a second
+   * truth about the account an event names. It is a resource of the account
+   * rather than of the ledger because the target is what bounds the exception:
+   * an account that is neither the seeded row nor unknown *is* the first
+   * declaration, which is the one instant those rows may be rewritten at.
+   */
+  accountReassignment: '/api/accounts/:id/reassignment',
   positions: '/api/positions',
   portfolioTotals: '/api/portfolio-totals',
   /**
@@ -115,6 +127,7 @@ export const WRITE_ONLY_ROUTES = [
   'settings',
   'event',
   'account',
+  'accountReassignment',
   'advisoryAcknowledgement',
   'storeOrphans',
   'importSource',
@@ -138,6 +151,10 @@ export function eventPath(id: string): string {
 
 export function accountPath(id: string): string {
   return `/api/accounts/${encodeURIComponent(id)}`
+}
+
+export function accountReassignmentPath(id: string): string {
+  return `${accountPath(id)}/reassignment`
 }
 
 export function importPath(id: number): string {
@@ -339,6 +356,13 @@ export interface AccountDraft {
   id?: string
   type: string
   label: string
+  /**
+   * Move the events still naming the seeded row onto this account, in the same
+   * request (#725). Sent on a **declaration** only, where the offer is checked
+   * by default; omitted is what a client that never heard of it sends, and the
+   * declaration is never refused for want of it.
+   */
+  reassign?: boolean
 }
 
 /**
@@ -1060,6 +1084,12 @@ export const api = {
   updateAccount: (id: string, draft: AccountDraft) =>
     send<Account>(accountPath(id), 'PATCH', draft),
   removeAccount: (id: string) => remove<{ id: string; removed: boolean }>(accountPath(id)),
+  reassignEvents: (id: string) =>
+    send<{ account: string; reassigned: number }>(
+      accountReassignmentPath(id),
+      'POST',
+      {},
+    ),
   events: () => get<EventsResponse>(ROUTES.events),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),

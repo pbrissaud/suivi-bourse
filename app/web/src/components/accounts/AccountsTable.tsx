@@ -245,10 +245,14 @@ export function AccountsTable({
                   <span className="block text-xs text-attention">{t(REASON_LABELS[reason])}</span>
                 )}
                 {/* The one line the promise *your declared accounts* does not
-                    cover, and the only one carrying a way to repair it. */}
+                    cover, and the only one carrying a way to repair it. The
+                    **hash** is what makes that repair reachable (#725): the link
+                    owes its reader the gesture and not the page, and without one
+                    it landed on the ledger and left them to find it. */}
                 {isDefaultAccount(row.id) ? (
                   <Link
                     to="/donnees"
+                    hash="reassignment"
                     onClick={(event) => event.stopPropagation()}
                     className="block text-xs underline underline-offset-4"
                   >

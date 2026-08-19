@@ -814,6 +814,39 @@ export function ledgerEvents(): LedgerEvent[] {
 }
 
 /**
+ * THE STATE THE REAL PORTFOLIO CANNOT SHOW (#725) — **the fabricated fixture**.
+ *
+ * Its 285 events all name an account, so `default` is nowhere in it and the
+ * whole of the reassignment is unobservable there. The ticket makes fabricating
+ * the case an obligation rather than a convenience, because what it guards is an
+ * install that ran a month before declaring anything: the blank `account` column
+ * meant `default` at the instant those rows were imported (#698), the seeded row
+ * then carries the entire history, and the accounts page shows a line its owner
+ * never created — undeletable the moment an event names it.
+ *
+ * Every row here is **imported**, which is the population the exception is
+ * about: the file was right under the rule in force when it was dropped, and the
+ * application is what changed the rule underneath it.
+ */
+export function unassignedLedger(): LedgerEvent[] {
+  return [
+    anEvent({ date: '2026-02-10', account: 'default' }),
+    anEvent({ date: '2026-01-12', account: 'default', source_row: 96 }),
+    anEvent({
+      date: '2026-01-05',
+      account: 'default',
+      event_type: 'DEPOSIT',
+      symbol: null,
+      name: null,
+      quantity: null,
+      unit_price: null,
+      amount: 500,
+      source_row: 71,
+    }),
+  ]
+}
+
+/**
  * THE SHARE SHEET'S LEDGER (#720) — the collision, at its smallest.
  *
  * `aPriceSeries` spans 2026-02-28 → 2026-03-02, and these events are placed

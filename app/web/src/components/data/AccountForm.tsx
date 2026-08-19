@@ -20,6 +20,14 @@
  *    name, so renaming it would be an edit of every imported row that names it,
  *    and imported rows are read-only. The panel says so where the field would
  *    be, rather than showing a control the server would refuse.
+ *  - **The first declaration carries the reassignment** (#725). It is one box,
+ *    checked by default, and it is here rather than beside the panel because
+ *    *dans le même geste* is the criterion: at that instant there is no list of
+ *    accounts to assign to, the one being declared is the only possible answer,
+ *    and the request that declares is the request that moves. Unchecking it —
+ *    or shutting the panel — declares the account all the same: the declaration
+ *    is **never** refused because events are unassigned, which is the trap this
+ *    ticket is named after.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -53,19 +61,37 @@ export interface AccountFormProps {
   open: boolean
   /** The row being edited — `null` is a declaration. */
   account: Account | null
+  /**
+   * How many events still name the seeded row, when this panel is the **first**
+   * declaration this install has ever made (#725). `null` everywhere else — on
+   * an edit, and on a declaration made where something is already declared, the
+   * offer stands in the block instead and has a target to choose.
+   *
+   * It rides on the declaration rather than beside it because *in the same
+   * gesture* is the criterion: at this instant there is no list to pick from,
+   * and the account the reader is in the middle of creating is the only answer
+   * the question can have.
+   */
+  unassigned: number | null
   onClose: () => void
 }
 
-export function AccountForm({ open, account, onClose }: AccountFormProps) {
+export function AccountForm({ open, account, unassigned, onClose }: AccountFormProps) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
 
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({})
+  // **Checked by default**, which is the ticket's own word. What it proposes is
+  // the repair of a state the app created, so the reader unchecks it rather than
+  // having to discover it — and unchecking it declares the account all the same:
+  // the declaration is *never* refused because events are unassigned.
+  const [reassign, setReassign] = useState(true)
 
   useEffect(() => {
     if (!open) return
     setErrors({})
+    setReassign(true)
     setDraft(
       account === null
         ? EMPTY
@@ -99,6 +125,10 @@ export function AccountForm({ open, account, onClose }: AccountFormProps) {
     setErrors((previous) => ({ ...previous, [field]: undefined }))
   }
 
+  // The offer exists on a declaration alone, and only where there is something
+  // to move: a box proposing to reassign nothing is a question with no subject.
+  const offered = account === null && unassigned !== null && unassigned > 0
+
   function submit() {
     const found: Partial<Record<FieldName, MessageKey>> = {}
     const id = draft.id.trim()
@@ -121,7 +151,18 @@ export function AccountForm({ open, account, onClose }: AccountFormProps) {
     // keeps what is there, so clearing the field cannot rewrite the row's name
     // to its own identifier behind the reader's back.
     const label = draft.label.trim()
-    write.mutate(account === null ? { id, type, label: label || id } : { type, label })
+    write.mutate(
+      account === null
+        ? {
+            id,
+            type,
+            label: label || id,
+            // Sent only where the box was shown **and** left ticked: `reassign`
+            // is a request, and a client that never asks must never perform one.
+            ...(offered && reassign ? { reassign: true } : {}),
+          }
+        : { type, label },
+    )
   }
 
   return (
@@ -200,6 +241,23 @@ export function AccountForm({ open, account, onClose }: AccountFormProps) {
               />
             )}
           </Field>
+
+          {offered ? (
+            <div className="space-y-1 rounded-md border border-border p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={reassign}
+                  onChange={(changed) => setReassign(changed.target.checked)}
+                />
+                <span>{t('data.accounts.form.reassign', { count: unassigned })}</span>
+              </label>
+              <p className="max-w-prose text-xs text-muted-foreground">
+                {t('data.accounts.form.reassign.hint')}
+              </p>
+            </div>
+          ) : null}
 
           {write.error ? <Band>{t(problemMessageKey(write.error))}</Band> : null}
 

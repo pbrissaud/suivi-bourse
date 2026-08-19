@@ -339,6 +339,41 @@ def accounts_are_declared(store) -> bool:
     return bool(rows and rows[0][0])
 
 
+def default_is_declared(store) -> bool:
+    """Has anybody declared the row every install is given? (issue #725)
+
+    The companion of :func:`accounts_are_declared`, and it is a different
+    question: that one counts rows *beside* ``default``, this one asks whether
+    ``default`` itself has stopped being what the schema seeded. Three roads
+    reach that, and each of them is a declaration —
+
+    * its owner **renamed** it, which is how an install with a page and no file
+      declares its one account (the gesture #729 built the block for at N = 1);
+    * its owner **retyped** it, the same clause on the other seeded column;
+    * a **file** took it over (#698), which makes it a file's row like any other.
+
+    It exists for the reassignment alone. *Events naming ``default``* and
+    *events nobody assigned* are the same set only while nobody has declared
+    that row, and reading them as one afterwards would take a whole ledger off
+    the one line its owner had themselves put a name on.
+
+    The comparison is :func:`as_declared`'s, not a second one: there is no
+    *renamed* column to add to a row every install already has (ADR-0001 leaves
+    no migration machinery), so what says *nobody declared this* is that it
+    still says what the seed said. The other edge follows from the same
+    sentence: an owner who names their account exactly what the seed named it
+    is naming it, and this answers ``False`` — which costs them the offer and
+    never a row.
+    """
+    row = next((a for a in read_accounts(store) if a.id == DEFAULT_ACCOUNT), None)
+    if row is None:
+        return False
+    if row.source_id is not None:
+        return True
+    declared = as_declared(row)
+    return declared.label is not None or declared.type is not None
+
+
 def declared_portfolio(store) -> Optional[Portfolio]:
     """The declaration the app runs on, or ``None`` when nothing was declared.
 
@@ -661,7 +696,8 @@ __all__ = [
     'AccountRow', 'AccountSourceError', 'AccountInUse', 'UnknownAccount',
     'DuplicateAccount', 'ReadOnlyAccount',
     'is_accounts_file', 'header_of', 'load_account_rows',
-    'read_accounts', 'account_ids', 'accounts_are_declared', 'declared_portfolio',
+    'read_accounts', 'account_ids', 'accounts_are_declared',
+    'default_is_declared', 'declared_portfolio',
     'is_named_by_events', 'source_account_ids',
     'apply_source', 'forget_source',
     'create_account', 'update_account', 'delete_account',

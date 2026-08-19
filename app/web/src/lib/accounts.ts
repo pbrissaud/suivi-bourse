@@ -680,7 +680,31 @@ export function originOf(account: Account): Origin {
   // any other — which the branch above has already answered. What is left here
   // is the row as the schema wrote it, and a name the owner gave it is what says
   // they have taken it over themselves.
-  return isDefaultAccount(account.id) && declaredLabel(account) === null ? 'seed' : 'app'
+  return isSeededOnly(account) ? 'seed' : 'app'
+}
+
+/**
+ * Is this the row **nobody declared** — the seed, still saying what it said?
+ *
+ * The same rule the server states on the other side of the seam
+ * (`accounts.default_is_declared`), read off the three fields the payload
+ * carries it in: `as_declared` nulls the two seeded columns exactly when they
+ * still hold the seed's own words, and `source_id` says a file took the row
+ * over. It cannot be the same function object — that one is Python, in another
+ * process — so what travels is the rule, and this is the one place the front
+ * spells it (`lib/absence.ts`'s `isQuoted` is the precedent, #774).
+ *
+ * Both seeded columns, not the label alone: an owner who retyped the row has
+ * declared it as much as one who renamed it, and #725's whole correctness rests
+ * on *has anybody declared this* rather than on *does it have a name*.
+ */
+export function isSeededOnly(account: Account): boolean {
+  return (
+    isDefaultAccount(account.id) &&
+    (account.source_id ?? null) === null &&
+    declaredLabel(account) === null &&
+    declaredType(account) === null
+  )
 }
 
 /**
@@ -748,6 +772,73 @@ function countByAccount(events: readonly LedgerEvent[]): Map<string, number> {
     counts.set(id, (counts.get(id) ?? 0) + 1)
   }
   return counts
+}
+
+// ------------------------------------------------------------------------- //
+// The reassignment — réaffecter, jamais refuser (#725, ADR-0013, ADR-0006)
+// ------------------------------------------------------------------------- //
+
+/**
+ * What the declaration owes the events nobody assigned: **two renderings of one
+ * condition**, and the absence of both where the condition does not hold.
+ *
+ * The condition is the one the server bounds its exception by: events still
+ * naming the seeded row, at an instant where a blank `account` column has
+ * stopped meaning `default` and started meaning an error. What splits the
+ * rendering in two is *which side of that instant the reader is on* —
+ *
+ *  - **`firstDeclaration`** — nothing is declared yet, so the gesture has no
+ *    target to name: it rides **inside** the declaration itself, as a box
+ *    checked by default, and the same request does both. Offering a target
+ *    picker here would be asking the reader to choose between an empty list and
+ *    the account they are in the middle of creating.
+ *  - **`standing`** — something is declared and rows are still under the seeded
+ *    row. That state is reachable with **no gesture in this app at all**: an
+ *    accounts file dropped into the folder declares as much as the form does
+ *    (#698), and the event file beside it is then refused for the blank column
+ *    it was right to carry. So the offer stands on its own, with the declared
+ *    accounts as its targets.
+ *
+ * **No correspondence layer** is built here, and that is the criterion rather
+ * than an omission: a `default → pea` map beside the events would be a second
+ * truth about the account an event names (ADR-0006). What crosses the wire is
+ * one target id, and the population is the column's own value.
+ *
+ * `none` covers *the read has not landed* as well as *there is nothing to move*,
+ * which is safe **because the block above renders nothing at all** while the
+ * accounts read is in flight (ADR-0026) — this function is never asked the
+ * question on a silence.
+ */
+export type Reassignment =
+  | { kind: 'none' }
+  | { kind: 'firstDeclaration'; count: number }
+  | { kind: 'standing'; count: number; targets: readonly Account[] }
+
+export function reassignmentOf(
+  payload: AccountsResponse | undefined,
+  events: readonly LedgerEvent[],
+): Reassignment {
+  if (payload === undefined) return { kind: 'none' }
+
+  // **Naming `default` is not the whole predicate.** The seeded row can *become*
+  // a declaration — renamed, retyped, or taken over by a file (#698, #729) — and
+  // its events then name the account their owner named. Counted here, the block
+  // would have said *« ils ne nomment aucun de vos comptes »* about the one line
+  // the reader had themselves put a name on, and offered to move it off.
+  const seed = payload.accounts.find((account) => isDefaultAccount(account.id))
+  if (seed !== undefined && !isSeededOnly(seed)) return { kind: 'none' }
+
+  const count = events.filter((event) => isDefaultAccount(accountOf(event))).length
+  if (count === 0) return { kind: 'none' }
+
+  if (!payload.declared) return { kind: 'firstDeclaration', count }
+
+  // The seeded row is in the payload whenever an event names it — which here it
+  // always does — and it is the one account that cannot be a target: reassigning
+  // `default` onto `default` is a gesture with no subject, and the server
+  // refuses it by name.
+  const targets = payload.accounts.filter((account) => !isDefaultAccount(account.id))
+  return targets.length === 0 ? { kind: 'none' } : { kind: 'standing', count, targets }
 }
 
 // ------------------------------------------------------------------------- //

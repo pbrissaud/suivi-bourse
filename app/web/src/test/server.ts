@@ -53,6 +53,12 @@ export function defaultHandlers() {
     http.delete(ROUTES.account, ({ params }) =>
       HttpResponse.json({ id: String(params.id), removed: true }),
     ),
+    // The standing half of the reassignment (#725). The count it answers with
+    // is the server's, and the block that asked reads the ledger again rather
+    // than this number — one truth about how many events name what.
+    http.post(ROUTES.accountReassignment, ({ params }) =>
+      HttpResponse.json({ account: String(params.id), reassigned: 0 }),
+    ),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload())),
     http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload())),
     // The two perf series, of one shape at two levels (#721). They answer the

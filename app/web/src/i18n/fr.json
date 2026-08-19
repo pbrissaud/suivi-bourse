@@ -297,6 +297,13 @@
   "data.accounts.remove.namedByEvents": "{count, plural, one {# événement nomme ce compte} other {# événements nomment ce compte}}",
   "data.accounts.remove.fromFile": "Un fichier importé le déclare : oubliez cet import pour le supprimer.",
 
+  "data.accounts.reassign.title": "Des événements affectés à aucun compte",
+  "data.accounts.reassign.body": "{count, plural, one {# événement a été enregistré avant toute déclaration : il ne nomme donc aucun de vos comptes.} other {# événements ont été enregistrés avant toute déclaration : ils ne nomment donc aucun de vos comptes.}} Affectez-les à l’un de vos comptes. Vos fichiers restent tels quels : la colonne était juste au moment de l’import, et c’est l’application qui a changé la règle sous eux.",
+  "data.accounts.reassign.target": "Les affecter à",
+  "data.accounts.reassign.choose": "Choisir un compte",
+  "data.accounts.reassign.submit": "Affecter ces événements",
+  "data.accounts.form.reassign": "{count, plural, one {Lui affecter le # événement qui ne nomme aucun compte} other {Lui affecter les # événements qui ne nomment aucun compte}}",
+  "data.accounts.form.reassign.hint": "Ils ont été enregistrés avant toute déclaration : ils portent donc le compte que toute installation possède. C’est le moment de les déplacer — ensuite, un événement importé nomme son compte définitivement.",
   "data.accounts.form.create.title": "Un nouveau compte",
   "data.accounts.form.edit.title": "Ce compte",
   "data.accounts.form.description": "Un compte est l’endroit où vos événements sont enregistrés, et c’est à vous de le nommer. Il n’a pas de devise propre : tous les chiffres de cette application sont rendus dans une seule devise.",

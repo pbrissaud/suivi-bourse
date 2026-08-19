@@ -37,6 +37,14 @@ import { useI18n } from '@/lib/i18n'
 
 const LEDGER = 'ledger'
 const INSTALLATION = 'installation'
+/**
+ * The third hash, and it names a **gesture** rather than a tab (#725): the
+ * accounts page's `Non affecté` row owes its reader the reassignment itself,
+ * not the page it happens to live on. It selects the ledger tab explicitly —
+ * which is where the declaration block is — rather than relying on that being
+ * the default, so following the link while the other tab is selected lands.
+ */
+const REASSIGNMENT = 'reassignment'
 
 export default function DataPage() {
   const { t } = useI18n()
@@ -59,6 +67,17 @@ export default function DataPage() {
   // they put themselves, which is the lesser of the two surprises.
   useEffect(() => {
     if (hash === INSTALLATION) setTab(INSTALLATION)
+    if (hash === REASSIGNMENT) setTab(LEDGER)
+  }, [hash])
+  // **The hash is followed once, and the signal is spent where it is acted on.**
+  // The hash itself is never cleared — it is read, never written (above) — and
+  // Radix unmounts the inactive tab, so a signal derived from it straight would
+  // come back true on every remount: shut the declaration panel, look at
+  // *L'installation*, come back, and it is open again. A reader who has closed
+  // something has answered it.
+  const [reassignment, setReassignment] = useState(hash === REASSIGNMENT)
+  useEffect(() => {
+    if (hash === REASSIGNMENT) setReassignment(true)
   }, [hash])
   // A fresh object per gesture, so asking twice for the same securities reduces
   // the ledger twice — the reader may well have cleared the reduction between
@@ -96,7 +115,11 @@ export default function DataPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value={LEDGER}>
-          <Ledger focus={focus} />
+          <Ledger
+            focus={focus}
+            reassignment={reassignment}
+            onReassignmentShown={() => setReassignment(false)}
+          />
         </TabsContent>
         <TabsContent value={INSTALLATION}>
           <Installation

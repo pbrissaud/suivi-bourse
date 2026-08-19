@@ -37,8 +37,18 @@
  *    declaration is the only place `default` can be renamed or replaced, and the
  *    only place a first account can be declared without writing a file. Removing
  *    it at N = 1 locked in precisely the owner the reassignment exists to free.
+ *  - **And the reassignment is that owner's way out** (#725). Running a month
+ *    before declaring anything puts the whole ledger under the seeded row — the
+ *    rule of #698 doing exactly what it says — and the seeded row then becomes
+ *    undeletable the moment an event names it. *Réaffecter, jamais refuser*: the
+ *    offer rides **inside** the first declaration, and stands on its own
+ *    afterwards, because the same instant is reachable with no gesture in this
+ *    app at all (an accounts file declares as much as the form does). No
+ *    correspondence layer is built anywhere: what crosses the wire is one target
+ *    id, a `default → pea` map beside the events being a second truth about the
+ *    account an event names (ADR-0006).
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
@@ -60,6 +70,7 @@ import {
   DEFAULT_ACCOUNT_TYPE,
   isDefaultAccount,
   originOf,
+  reassignmentOf,
   type DeclarationRow,
   type Origin,
 } from '@/lib/accounts'
@@ -80,9 +91,23 @@ export interface AccountsBlockProps {
   accounts: AccountsResponse | undefined
   /** The ledger, already read by this tab: the count a refusal is made of. */
   events: readonly LedgerEvent[]
+  /**
+   * The reader arrived by the link the accounts page's `Non affecté` row
+   * carries (#725). That link owes them **the gesture**, not the page — so the
+   * offer is scrolled to where it stands on its own, and the declaration panel
+   * is opened where the gesture *is* the first declaration.
+   */
+  focusReassignment?: boolean
+  /** Spends that signal, once the offer has actually been reached. */
+  onReassignmentShown?: () => void
 }
 
-export function AccountsBlock({ accounts, events }: AccountsBlockProps) {
+export function AccountsBlock({
+  accounts,
+  events,
+  focusReassignment,
+  onReassignmentShown,
+}: AccountsBlockProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const queryClient = useQueryClient()
@@ -94,8 +119,43 @@ export function AccountsBlock({ accounts, events }: AccountsBlockProps) {
     mutationFn: (id: string) => api.removeAccount(id),
     onSuccess: () => void queryClient.invalidateQueries(),
   })
+  const reassign = useMutation({
+    mutationFn: (id: string) => api.reassignEvents(id),
+    // The whole cache, like every write here: what account an event names moves
+    // every page's grouping, not just this table's count.
+    onSuccess: () => void queryClient.invalidateQueries(),
+  })
 
   const rows = declarationRows(accounts, events)
+  const offer = reassignmentOf(accounts, events)
+  // A select of one entry is a question whose answer is already known — the rule
+  // `accountChoice` states for the event form, applied to the one control here.
+  const only = offer.kind === 'standing' && offer.targets.length === 1
+    ? offer.targets[0].id
+    : ''
+  const [target, setTarget] = useState('')
+  const chosen = target || only
+
+  useEffect(() => {
+    if (!focusReassignment) return
+    // The two renderings of one condition, and the link lands on whichever is on
+    // screen: the standing offer is scrolled to, and where the gesture *is* the
+    // first declaration the panel that carries it opens.
+    if (offer.kind === 'firstDeclaration') setEditing(null)
+    if (offer.kind === 'standing') {
+      document.getElementById('reassignment')?.scrollIntoView({ block: 'center' })
+    }
+    // Spent where it was acted on, and **only** there: `none` is the accounts
+    // read still in flight as often as it is nothing to move, and spending it
+    // then would drop a reader on the page they were sent past.
+    if (offer.kind !== 'none') onReassignmentShown?.()
+    // `offer.kind` is a dependency and has to be: the accounts read has usually
+    // **not landed** at the mount, so the offer is `none` then and an effect
+    // keyed on the signal alone would fire before there was anything to land
+    // on. `editing` is deliberately not one — the panel is opened, never
+    // reopened under a reader who has just shut it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusReassignment, offer.kind])
   // **Empty means the read has not landed, and nothing else.** `/api/accounts`
   // never serves an empty list — ADR-0013 gives every install one account, and
   // the resource publishes the seeded row while nothing else is declared — so
@@ -126,6 +186,53 @@ export function AccountsBlock({ accounts, events }: AccountsBlockProps) {
       {/* A refusal the reader could not foresee — the declaration moved under
           them between the render and the click. One band, in place. */}
       {remove.error ? <Band>{t(problemMessageKey(remove.error))}</Band> : null}
+
+      {offer.kind === 'standing' ? (
+        <section
+          id="reassignment"
+          aria-labelledby="data-reassignment"
+          className="space-y-3 rounded-md border border-border p-4"
+        >
+          <h3 id="data-reassignment" className="text-sm font-medium">
+            {t('data.accounts.reassign.title')}
+          </h3>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {t('data.accounts.reassign.body', { count: offer.count })}
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <label htmlFor="reassign-target" className="text-sm font-medium">
+                {t('data.accounts.reassign.target')}
+              </label>
+              <select
+                id="reassign-target"
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                value={chosen}
+                onChange={(changed) => setTarget(changed.target.value)}
+              >
+                {/* Absent where there is one account: the empty entry is what
+                    makes a choice a choice, and there is none to make. */}
+                {offer.targets.length === 1 ? null : (
+                  <option value="">{t('data.accounts.reassign.choose')}</option>
+                )}
+                {offer.targets.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {declaredLabel(account) ?? account.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              type="button"
+              disabled={chosen === '' || reassign.isPending}
+              onClick={() => reassign.mutate(chosen)}
+            >
+              {t('data.accounts.reassign.submit')}
+            </Button>
+          </div>
+          {reassign.error ? <Band>{t(problemMessageKey(reassign.error))}</Band> : null}
+        </section>
+      ) : null}
 
       <Table>
         <caption className="sr-only">{t('data.accounts.title')}</caption>
@@ -175,6 +282,7 @@ export function AccountsBlock({ accounts, events }: AccountsBlockProps) {
       <AccountForm
         open={editing !== undefined}
         account={editing ?? null}
+        unassigned={offer.kind === 'firstDeclaration' ? offer.count : null}
         onClose={() => setEditing(undefined)}
       />
     </section>

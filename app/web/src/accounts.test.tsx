@@ -323,9 +323,11 @@ describe('the degraded rows', () => {
     // catalogue rather than from the payload (#745).
     expect(screen.getByRole('button', { name: 'Non affecté' })).toBeInTheDocument()
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
+    // **The gesture, not the page** (#725): a link with no hash landed on the
+    // ledger and left the reader to find the reassignment for themselves.
     expect(
       screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
-    ).toHaveAttribute('href', '/donnees')
+    ).toHaveAttribute('href', '/donnees#reassignment')
   })
 
   it('wears the name its owner gave it, once they have given one', async () => {
@@ -343,7 +345,7 @@ describe('the degraded rows', () => {
     // Still the unassigned line, by its id: only the name moved.
     expect(
       screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
-    ).toHaveAttribute('href', '/donnees')
+    ).toHaveAttribute('href', '/donnees#reassignment')
   })
 
   it('reads the unassigned line’s name in the reader’s language', async () => {
