@@ -172,7 +172,18 @@ Three rules govern what a file does, and the third is the one that surprises:
 
 Where a row came from is kept and shown — *line 14 of `2024.csv`* — so you can
 find the source of a figure. It is provenance for reading, never an address the
-app writes back to.
+app writes back to. In the app it is also a **link**: it takes you to that file
+under **Data → Import and export**, which is where the single *forget this
+import* button lives. There is deliberately no such button on a row — the
+subject of the gesture is the file, and one repeated on 214 lines reads as a
+gesture on the line you are looking at.
+
+Before it happens, the confirmation counts what will go: *removes 214 events, 8
+securities and 1 account from your allocation*. It also says the thing you
+cannot foresee — forgetting a source of **events** can make an account
+removable without touching it, because an account is undeletable while an event
+names it. And it never says *reversible*: re-importing works, but the drop
+folder is optional and the app cannot tell whether you still have the file.
 
 :::note Coming from a single-account version 4
 Your event files import **without a single edit**. That is the one continuity
@@ -187,10 +198,20 @@ Your portfolio can leave the way it came in. **The export format is the import
 format**, so the round trip is round by construction: what comes out is a file
 this same app reads, with no conversion and no special path.
 
+In the app, the two files are under **Data → Import and export**. Headless, they
+are two requests:
+
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
 curl -O http://localhost:8080/api/export/accounts.csv
 ```
+
+The export is **total or nothing** — there is nothing to choose, and filtering
+the ledger on screen does not narrow what comes out. A partial file is not a
+round trip while looking exactly like one. The accounts file is offered only
+once you have declared something: on an install that has not, it would be a
+header row with no rows under it, and a version 4 install refuses a whole
+directory over one.
 
 Two files, because that is the format — a file is an accounts source or an
 event source according to its header, never both. Drop them into the drop folder
