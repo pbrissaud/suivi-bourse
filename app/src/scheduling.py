@@ -263,6 +263,80 @@ def decide(state, price_present: bool, next_open: Optional[datetime],
 # and the perf, and re-deriving any of them "as a query" would rebuild it.
 
 
+# --------------------------------------------------------------------------- #
+# Yahoo's hourly ceiling — the one boundary, read twice (issues #705, #783)
+# --------------------------------------------------------------------------- #
+
+#: How far back Yahoo still sells bars **below the day**, in days of age. An API
+#: ceiling and not an arbitration: it is neither a dial (ADR-0014) nor derived
+#: from :mod:`retention`'s walls, which were drawn *from* it — the two sit a day
+#: apart (the hourly rung runs to 730) so that a reconstructed past and an
+#: ageing present implement one function of age instead of two policies meeting
+#: at the present.
+#:
+#: It is a constant here rather than a literal at the fetch because **two**
+#: decisions read it: which interval to ask a window in, and where to cut a
+#: window that straddles it. Spelled twice they would eventually differ, and the
+#: cut would land on the wrong side of the interval it exists to obtain.
+HOURLY_CEILING_DAYS = 729
+
+#: The two intervals a history request is ever made in. Yahoo's own names.
+HOURLY = '1h'
+DAILY = '1d'
+
+
+def history_interval(start: datetime, now: datetime) -> str:
+    """The finest interval Yahoo still sells for a window starting at ``start``.
+
+    Read off the window's **oldest** day, because that is what the request is
+    refused on: an interval is asked once for the whole range, and Yahoo answers
+    nothing at all to an hourly request that reaches past the ceiling.
+
+    ``.days`` truncates, so the boundary is generous by up to a day on the
+    hourly side — a start of ``729 days and 3 hours`` still buys hourly bars,
+    which is inside Yahoo's own 730-day limit and therefore not a request it
+    refuses.
+    """
+    return HOURLY if (now - start).days <= HOURLY_CEILING_DAYS else DAILY
+
+
+def clip_to_hourly_ceiling(start: datetime, end: datetime,
+                           now: datetime) -> datetime:
+    """``start``, bounded at the ceiling when ``[start, end]`` straddles it (#783).
+
+    The interval is chosen once for the whole window, from its oldest day, so a
+    window with one foot either side of the ceiling is bought entirely in daily
+    bars — and on a rebuild anchored on today, the backward pass's **second**
+    chunk is exactly that window, missing the ceiling by a single day. Cutting
+    the chunk there makes it ``[ceiling, end]``, which is hourly, and leaves the
+    remainder to the next cycle, which starts from the ceiling and is daily.
+
+    Costs no request — the pass fetches one chunk per cycle either way — and one
+    more cycle for the symbol. **Raises ``start`` and never lowers it**, so the
+    anchor the caller persists from it still moves backwards only (issue #703).
+
+    **A window that is already hourly is never cut**, and the test for that is
+    :func:`history_interval`'s own — not a second reading of the ceiling. The two
+    spellings sit up to a day apart (``.days`` truncates, an instant does not),
+    and on that day the cut would defer to the next cycle a band the request was
+    about to buy hourly in one piece — where the next cycle, starting from the
+    ceiling, buys it daily. The repair would be paying itself in the very thing
+    it exists to obtain.
+
+    The cut is declined when it would leave **less than a day** above the
+    ceiling: the caller skips a sub-day window, so cutting there would stall the
+    symbol for as long as it takes the ceiling to age past ``end`` — a whole day
+    of cycles bought for at most a day of hourly bars, on a band the ceiling is
+    about to close anyway.
+    """
+    if history_interval(start, now) == HOURLY:
+        return start
+    ceiling = now - timedelta(days=HOURLY_CEILING_DAYS)
+    if ceiling < end and (end - ceiling) >= timedelta(days=1):
+        return ceiling
+    return start
+
+
 def forward_backfill_window(
     newest: Optional[datetime], now: datetime, chunk_days: int
 ) -> Optional[Tuple[datetime, datetime]]:
@@ -288,6 +362,20 @@ def forward_backfill_window(
     Otherwise returns ``(newest, end)`` where ``end = min(newest + chunk_days,
     now)`` — chunked identically to the backward pass so a long gap is filled one
     ``chunk_days`` window per cycle, advancing forward as ``newest`` catches up.
+
+    **And cut on the hourly ceiling, exactly as the backward pass is** (issue
+    #783). The interval is read off the window's oldest day, so a window
+    straddling the ceiling buys ADR-0010's hourly band in daily bars — and this
+    pass straddles it whenever the gap it is closing is wider than two years: an
+    install rallied after a long stop, or a line bought back after years out of
+    the portfolio, whose backward pass is terminal and which nothing else fills.
+    Here it is ``end`` that comes down to the ceiling and never ``start`` that
+    goes up, the two passes walking opposite ways; the remainder is what the next
+    cycle asks for, from the ceiling, by the hour.
+
+    The cut window is never sub-day, so it cannot trip the guard above on the
+    next cycle: it is made only when ``newest`` is on the **daily** side, which
+    puts it a full day below the ceiling at least.
     """
     if newest is None:
         return None
@@ -296,6 +384,9 @@ def forward_backfill_window(
     if (now - newest).days < 1:
         return None
     end = min(newest + timedelta(days=chunk_days), now)
+    ceiling = now - timedelta(days=HOURLY_CEILING_DAYS)
+    if history_interval(newest, now) == DAILY and ceiling < end:
+        end = ceiling
     return newest, end
 
 

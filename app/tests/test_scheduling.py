@@ -17,7 +17,9 @@ import scheduling
 from scheduling import (
     decide, extract_market_context, compute_pool_size,
     forward_backfill_window, price_freshness_step, SondeState,
-    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP, STALENESS_HORIZON)
+    clip_to_hourly_ceiling, history_interval,
+    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP, STALENESS_HORIZON,
+    HOURLY, DAILY, HOURLY_CEILING_DAYS)
 
 
 UTC = timezone.utc
@@ -877,13 +879,52 @@ def test_forward_window_sub_day_gap_is_noop_during_live_trading():
 
 
 def test_forward_window_multi_chunk_long_gap_advances_one_chunk():
-    # An 800-day gap with a 365-day chunk: only the first chunk this cycle, end
+    # A 600-day gap with a 365-day chunk: only the first chunk this cycle, end
     # capped at newest + chunk_days (< now), advancing forward next cycles.
-    newest = NOW - timedelta(days=800)
+    # Under the hourly ceiling, so the chunk is what caps the window here and
+    # not the cut — which is the subject of its own tests above (#783).
+    newest = NOW - timedelta(days=600)
     start, end = forward_backfill_window(newest, NOW, chunk_days=365)
     assert start == newest
     assert end == newest + timedelta(days=365)
     assert end < NOW
+
+
+def test_a_forward_window_that_straddles_the_ceiling_is_cut_on_it():
+    # The forward pass reads its interval off the window's oldest day exactly as
+    # the backward one does, so a gap wider than two years — an install rallied
+    # after a long stop, a line bought back after years out of the portfolio —
+    # buys ADR-0010's hourly band in daily bars, and past the ceiling there is
+    # nowhere left to buy it again (#783).
+    newest = NOW - timedelta(days=1000)
+
+    start, end = forward_backfill_window(newest, NOW, chunk_days=365)
+
+    assert start == newest
+    assert end == NOW - timedelta(days=HOURLY_CEILING_DAYS)
+    assert history_interval(start, NOW) == DAILY   # this half is not sold hourly
+
+
+def test_the_forward_pass_resumes_at_the_ceiling_and_buys_the_hour():
+    # The cut's other half, one cycle later: the window starts where the last
+    # one stopped, and it is hourly. No extra request — one chunk per cycle
+    # either way — and one more cycle for the symbol.
+    ceiling = NOW - timedelta(days=HOURLY_CEILING_DAYS)
+
+    start, end = forward_backfill_window(ceiling, NOW, chunk_days=365)
+
+    assert (start, end) == (ceiling, ceiling + timedelta(days=365))
+    assert history_interval(start, NOW) == HOURLY
+
+
+def test_a_forward_window_wholly_beyond_the_ceiling_is_left_alone():
+    # Nothing straddles: the whole window is past the ceiling, where daily is
+    # all Yahoo sells, and cutting it would only shorten it for nothing.
+    newest = NOW - timedelta(days=1500)
+
+    start, end = forward_backfill_window(newest, NOW, chunk_days=365)
+
+    assert (start, end) == (newest, newest + timedelta(days=365))
 
 
 def test_forward_window_none_newest_returns_none():
@@ -905,6 +946,74 @@ def test_forward_window_clock_skew_returns_none():
     # backwards window.
     newest = NOW + timedelta(days=1)
     assert forward_backfill_window(newest, NOW, chunk_days=365) is None
+
+
+# ---------------------------------------------------------------------------
+# Yahoo's hourly ceiling — the interval asked, and where a chunk is cut (#783)
+# ---------------------------------------------------------------------------
+
+def test_the_interval_is_read_off_the_windows_oldest_day():
+    # An interval is asked once for the whole range and Yahoo refuses an hourly
+    # request that reaches past the ceiling — so the oldest day decides, and a
+    # window's newest one never buys it a finer bar than its start allows.
+    ceiling = NOW - timedelta(days=HOURLY_CEILING_DAYS)
+    assert history_interval(NOW, NOW) == HOURLY
+    assert history_interval(ceiling, NOW) == HOURLY
+    assert history_interval(ceiling - timedelta(days=1), NOW) == DAILY
+
+
+def test_a_chunk_that_straddles_the_ceiling_is_cut_on_it():
+    # The bug of #783, in one line: the default chunk on an anchor that starts
+    # at today runs [today − 730, today − 365] and misses the ceiling by a day,
+    # so ADR-0010's whole hourly band came back in daily bars.
+    start, end = NOW - timedelta(days=730), NOW - timedelta(days=365)
+
+    cut = clip_to_hourly_ceiling(start, end, NOW)
+
+    assert cut == NOW - timedelta(days=HOURLY_CEILING_DAYS)
+    assert history_interval(cut, NOW) == HOURLY
+
+
+def test_a_chunk_on_one_side_of_the_ceiling_is_left_alone():
+    # Neither side is a straddle: the raw year is already hourly, and a window
+    # entirely beyond the ceiling has nowhere finer to be bought.
+    under = (NOW - timedelta(days=365), NOW)
+    beyond = (NOW - timedelta(days=1095), NOW - timedelta(days=730))
+
+    for start, end in (under, beyond):
+        assert clip_to_hourly_ceiling(start, end, NOW) == start
+
+
+def test_a_window_the_request_would_buy_hourly_whole_is_never_cut():
+    # The two readings of the ceiling sit up to a day apart — ``.days``
+    # truncates, an instant does not — and on that day a cut would defer to the
+    # next cycle a band this request was about to buy hourly in one piece. The
+    # next cycle starts from the ceiling and buys it daily, so the repair would
+    # pay itself in the very thing it exists to obtain.
+    start = NOW - timedelta(days=HOURLY_CEILING_DAYS, hours=12)
+    assert history_interval(start, NOW) == HOURLY
+
+    assert clip_to_hourly_ceiling(start, NOW - timedelta(days=364), NOW) == start
+
+
+def test_the_cut_is_declined_when_it_would_leave_less_than_a_day():
+    # The caller skips a sub-day window, so cutting here would stall the symbol
+    # until the ceiling ages past ``end`` — a day of cycles bought for at most a
+    # day of hourly bars, on a band the ceiling is about to close anyway.
+    ceiling = NOW - timedelta(days=HOURLY_CEILING_DAYS)
+    start, end = NOW - timedelta(days=1090), ceiling + timedelta(hours=6)
+
+    assert clip_to_hourly_ceiling(start, end, NOW) == start
+
+
+def test_the_cut_raises_the_start_and_never_lowers_it():
+    # What keeps the anchor the caller persists from it moving backwards only
+    # (#703): a cut that lowered ``start`` would have the pass claim a window it
+    # never asked for, and the history under it would go mute for good.
+    for age in range(0, 1200, 37):
+        start = NOW - timedelta(days=age)
+        end = NOW - timedelta(days=max(age - 365, 0))
+        assert clip_to_hourly_ceiling(start, end, NOW) >= start
 
 
 # ---------------------------------------------------------------------------

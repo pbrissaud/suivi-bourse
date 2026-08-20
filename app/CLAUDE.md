@@ -204,7 +204,8 @@ src/
 ├── boot_env.py         # pure: the six boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
-├── scheduling.py       # pure: cadence, market context, back-off, pool sizing
+├── scheduling.py       # pure: cadence, market context, back-off, pool sizing,
+│                       #       the fetch windows and Yahoo's hourly ceiling
 ├── performance.py      # pure: XIRR/TWR, the sliding horizon, the per-field rule
 ├── carrying.py         # pure: the carrying price, the holding window, the backward anchor
 ├── retention.py        # pure: the three rungs, the two walls

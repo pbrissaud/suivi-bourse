@@ -1317,19 +1317,26 @@ class SuiviBourseMetrics:
             try:
                 ticker = yf.Ticker(symbol)
                 # **An API ceiling, not an arbitration** (issue #705, ADR-0010).
-                # Yahoo sells nothing below the hour past 729 days, so the
-                # rebuild asks for the finest bars that still exist rather than
-                # for the finest the ladder would allow — which is why this
-                # number is not a dial and not derived from
-                # :mod:`retention`'s walls either. The two sit a day apart (the
-                # hourly rung runs to 730) and that is the whole point: the
-                # ladder was drawn *from* this ceiling, so a reconstructed past
-                # and an ageing present implement one function of age instead of
-                # two policies meeting at the present. It is also the sentence
-                # behind *fine resolution is only ever obtained by having been
-                # there*: past this line there is nowhere to buy it back.
-                days_ago = (datetime.now(timezone.utc) - start).days
-                interval = '1h' if days_ago <= 729 else '1d'
+                # Yahoo sells nothing below the hour past
+                # ``scheduling.HOURLY_CEILING_DAYS``, so the rebuild asks for the
+                # finest bars that still exist rather than for the finest the
+                # ladder would allow — which is why that number is not a dial and
+                # not derived from :mod:`retention`'s walls either. The two sit a
+                # day apart (the hourly rung runs to 730) and that is the whole
+                # point: the ladder was drawn *from* this ceiling, so a
+                # reconstructed past and an ageing present implement one function
+                # of age instead of two policies meeting at the present. It is
+                # also the sentence behind *fine resolution is only ever obtained
+                # by having been there*: past this line there is nowhere to buy
+                # it back.
+                #
+                # The choice is made **once for the whole window**, off its
+                # oldest day, because that is what Yahoo refuses a request on —
+                # which is why the backward pass cuts a chunk that straddles the
+                # ceiling rather than letting one interval answer for both sides
+                # of it (issue #783).
+                interval = scheduling.history_interval(
+                    start, datetime.now(timezone.utc))
                 history = ticker.history(start=start, end=end, interval=interval)
 
                 if history.empty:
@@ -2534,13 +2541,13 @@ class SuiviBourseMetrics:
         if self._backfill_complete.get(symbol) == target:
             app_logger.debug(f"Backfill already complete for {symbol}")
         else:
-            written += self._backfill_backward(symbol, target, ceiling)
+            written += self._backfill_backward(symbol, target, ceiling, now)
 
         # Forward pass — independent of the backward-completion watermark, but
         # not of the holding: there is no live writer to catch up with once the
         # position is sold out.
         if held:
-            written += self._backfill_forward(symbol)
+            written += self._backfill_forward(symbol, now)
 
         # Lateral pass — independent of both, and of the holding too (issue
         # #704). It repairs the conversion of points that already exist, so it
@@ -2689,7 +2696,8 @@ class SuiviBourseMetrics:
             point['rate'] = rate
 
     def _backfill_backward(self, symbol: str, target: datetime,
-                           ceiling: datetime) -> int:
+                           ceiling: datetime,
+                           now: Optional[datetime] = None) -> int:
         """Backward pass: extend the series toward the first acquisition, one chunk
         (``backfill_chunk_days``) per cycle. Returns points written this cycle.
 
@@ -2697,6 +2705,12 @@ class SuiviBourseMetrics:
         granted share is held from the day it lands — and ``ceiling`` the top of
         the holding window. Between them the pass walks backwards one chunk at a
         time from :meth:`_backward_anchor`.
+
+        ``now`` is the **cycle's**, and it is not the ceiling: a sold position's
+        ceiling is the day after its last sale, while Yahoo's hourly ceiling is
+        measured from today whatever the position did (issue #783). Defaulted to
+        a read of the product's clock so a caller that has none — a test, never
+        the job — still gets the read it replaces.
 
         Every exit publishes a last-pass record (issue #668). That is the whole
         answer to #656's driving question: this method used to log a warning and
@@ -2716,6 +2730,8 @@ class SuiviBourseMetrics:
                 direction=runtime_state.BACKWARD,
                 at=datetime.now(timezone.utc),
                 target=target, ceiling=ceiling, **fields))
+
+        now = now or datetime.now(timezone.utc)
 
         # The oldest stored point — reported, not decided upon: it is what the
         # progress bar is drawn from, while the resume point is the anchor below.
@@ -2742,6 +2758,27 @@ class SuiviBourseMetrics:
         # Don't go before the first acquisition
         if start_date < target:
             start_date = target
+
+        # **Cut the chunk on Yahoo's hourly ceiling** (issue #783). The interval
+        # is chosen from the window's oldest day, so a chunk with one foot either
+        # side of the ceiling is bought entirely in daily bars — and the default
+        # chunk on an anchor that starts at today straddles it by a single day,
+        # which is how ADR-0010's whole hourly band came back daily. Cutting here
+        # costs no request (one chunk per cycle either way) and one more cycle
+        # for the symbol; the remainder is what the next cycle asks for, from the
+        # ceiling, in daily bars.
+        #
+        # It only ever raises ``start_date``, which is what keeps the anchor
+        # persisted below moving backwards only (issue #703) and keeps this
+        # branch out of the terminal's way: a cut window **starts** strictly after
+        # the target, so it can neither reach it nor conclude the pass early.
+        #
+        # **And it repairs nothing already stored.** The ladder is a ceiling and
+        # never a floor (ADR-0010): a day that landed daily stays daily, and past
+        # the ceiling the hour is not sold any more — so this is worth exactly
+        # the reconstructions still to come.
+        start_date = scheduling.clip_to_hourly_ceiling(
+            start_date, end_date, now)
 
         # Skip if window is less than 1 day (avoids useless requests outside market hours)
         if (end_date - start_date).days < 1:
@@ -2838,7 +2875,8 @@ class SuiviBourseMetrics:
             app_logger.error(
                 f"Failed to persist the backfill anchor for {symbol}: {e}")
 
-    def _backfill_forward(self, symbol: str) -> int:
+    def _backfill_forward(self, symbol: str,
+                          now: Optional[datetime] = None) -> int:
         """Forward pass: recover a session missed while the app was down by
         fetching ``[newest, now]`` (issue #627).
 
@@ -2849,7 +2887,15 @@ class SuiviBourseMetrics:
         (newest ≈ now → sub-day window → skip), so the live ``REGULAR`` writer
         stays the sole writer of the present with no duplicate at the seam.
         Returns points written this cycle.
+
+        ``now`` is the **cycle's**, like the backward pass's (issue #783). It
+        used to be a second read of the clock taken here, which was harmless
+        while the window only ever ended at the present and stopped being so the
+        moment that window is cut on an age: two symbols of one cycle would then
+        be cut against two ceilings, and neither against the one the cycle says
+        it is running at.
         """
+        now = now or datetime.now(timezone.utc)
         newest = quotes.newest_ts(self.config_manager.store, symbol)
 
         def publish(**fields) -> None:
@@ -2860,7 +2906,7 @@ class SuiviBourseMetrics:
                 newest=newest, **fields))
 
         window = scheduling.forward_backfill_window(
-            newest, datetime.now(timezone.utc), self.backfill_chunk_days)
+            newest, now, self.backfill_chunk_days)
         if window is None:
             # The two no-ops the pure window sizing returns, told apart because
             # they mean opposite things: an empty series is waiting on the

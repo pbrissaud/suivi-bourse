@@ -626,3 +626,174 @@ def test_the_rebuild_asks_for_the_finest_bars_the_api_still_sells(store, mocker)
                                    today - timedelta(days=700))
 
     assert asked == ['1h', '1d']
+
+
+def _the_api_ceiling_is_respected(asked, now):
+    """What Yahoo sells, asserted on the requests themselves (#705, #783).
+
+    Two halves and they are the ticket's own: **nothing under the ceiling is
+    asked in daily bars** — a daily request may not reach into the band Yahoo
+    would still have sold by the hour, since past the ceiling that band can never
+    be bought again — and **nothing beyond it is asked in hourly ones**, which is
+    a request Yahoo answers with nothing at all.
+
+    The second half is stated in days rather than against the instant: the fetch
+    truncates the age to whole days, so a window starting 729 days and a few
+    hours ago is still inside Yahoo's own 730-day limit and is legitimately
+    bought by the hour.
+    """
+    ceiling = now - timedelta(days=729)
+    for start, end, interval in asked:
+        if interval == '1d':
+            assert end <= ceiling, (start, end, interval)
+        else:
+            assert (now - start).days <= 729, (start, end, interval)
+
+
+def test_a_rebuild_started_today_buys_the_one_to_two_year_band_by_the_hour(
+        store, mocker):
+    """The chunk is cut on the ceiling, so no window straddles it (issue #783).
+
+    The interval is chosen once for the whole chunk, from its **oldest** day, and
+    the backward pass walks a year at a time from its anchor — so a rebuild
+    anchored on today asks ``[today − 730 j, today − 365 j]`` on its second
+    cycle, which misses the ceiling by a single day and buys ADR-0010's whole
+    hourly band in daily bars. Cutting the chunk on the ceiling costs no extra
+    request and one more cycle for the symbol, on a pass that already does one
+    chunk per cycle.
+
+    The assertion is on the **window actually asked of yfinance**, not on the
+    number of points a fake returned: what is wrong here is the request, and a
+    fake that answers hourly rows to a daily request would hide it.
+    """
+    asked = []
+
+    class _Ticker:
+        def history(self, **kwargs):
+            asked.append((kwargs['start'], kwargs['end'], kwargs['interval']))
+            return pd.DataFrame()
+
+    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    # The ceiling is measured against Yahoo's *today*, so the whole fixture is
+    # dated from the same clock the call site reads — UTC, stated, like every
+    # other read in the tree (#781). The literal ``NOW`` would put the ledger a
+    # day either side of the ceiling on any day but the one this was written.
+    today = datetime.now(UTC)
+    acquired = Event((today - timedelta(days=900)).date(), EventType.BUY,
+                     'AAPL', 'Apple Inc', quantity=10, unit_price=100.0)
+    # The declaration the anchor's foreign key asks for — the configuration
+    # path's own row, which the market writers never create.
+    store.execute('INSERT INTO symbol (symbol) VALUES (?)', ['AAPL'])
+    metrics = _metrics(store, shares=[_HELD], events=[acquired])
+
+    for _ in range(3):
+        metrics.backfill(now=today)
+
+    # Three cycles, three requests — the repair is not paid for in requests.
+    assert [((today - start).days, (today - end).days, interval)
+            for start, end, interval in asked] == [
+        (365, 0, '1h'),      # the raw year
+        (729, 365, '1h'),    # the hourly band, cut on the ceiling
+        (900, 729, '1d'),    # beyond it, where the hour is not sold
+    ]
+
+
+def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
+    """The cut buys the hourly band; it does not buy a finer bar past the ceiling.
+
+    The whole rebuild of a five-year line, one window at a time: every request
+    that reaches under the ceiling is hourly, every request beyond it is daily,
+    and **no window straddles** — which is the property the interval-per-chunk
+    choice needs in order to be honest at all. What Yahoo sells is unchanged by
+    #783 and is not what that ticket discusses.
+
+    And the pass still ends where it ended: an install that has reconstructed
+    stays reconstructed, and the cut does not set the cycle asking again for a
+    window it had concluded (issue #703).
+    """
+    asked = []
+
+    class _Ticker:
+        def history(self, **kwargs):
+            asked.append((kwargs['start'], kwargs['end'], kwargs['interval']))
+            return pd.DataFrame()
+
+    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    today = datetime.now(UTC)
+    acquired = Event((today - timedelta(days=1800)).date(), EventType.BUY,
+                     'AAPL', 'Apple Inc', quantity=10, unit_price=100.0)
+    store.execute('INSERT INTO symbol (symbol) VALUES (?)', ['AAPL'])
+    metrics = _metrics(store, shares=[_HELD], events=[acquired])
+
+    for _ in range(5):
+        metrics.backfill(now=today)
+
+    _the_api_ceiling_is_respected(asked, today)
+
+    # The windows **tile**: each one resumes exactly where the previous stopped,
+    # so the cut moved the anchor onto ground it had really asked for and no day
+    # of the history went mute (#703). A cut that advanced the anchor past its
+    # own request would show up here as a hole, and nowhere else — Yahoo is
+    # never asked twice for a window the pass has concluded.
+    # Compared as **days**, because the anchor is a calendar day and not an
+    # instant (spec #695 § 3): what resumes the next cycle is the date of the
+    # window this one asked for.
+    for (_, end, _), (previous_start, _, _) in zip(asked[1:], asked):
+        assert end.date() == previous_start.date()
+
+    # Terminal, and it stays terminal: two more cycles ask Yahoo nothing.
+    assert metrics._backfill_complete['AAPL'].date() == acquired.date
+    concluded = len(asked)
+    metrics.backfill(now=today)
+    metrics.backfill(now=today)
+    assert len(asked) == concluded
+
+
+def test_a_gap_wider_than_two_years_is_closed_on_both_sides_of_the_ceiling(
+        store, mocker):
+    """The forward pass is cut on the ceiling too (issue #783).
+
+    A line sold three years ago and bought back today: the backward pass is
+    terminal — the store already reaches the first acquisition — so the forward
+    pass is the **only** filler of the gap, and its second chunk straddles the
+    ceiling by a day exactly as the backward pass's did. An install rallied after
+    a stop longer than two years lands in the same place.
+
+    Asserted on the requests, and the property is the ticket's: nothing under the
+    ceiling is asked in daily bars, nothing beyond it in hourly ones.
+    """
+    asked = []
+
+    class _Ticker:
+        def history(self, **kwargs):
+            asked.append((kwargs['start'], kwargs['end'], kwargs['interval']))
+            # The last bar of the window asked for — the forward pass carries no
+            # anchor, so a fake that answered nothing would have it re-ask the
+            # same window for ever and the test would never reach the band.
+            last = kwargs['end'] - timedelta(minutes=1)
+            return pd.DataFrame({'Close': [100.0]},
+                                index=pd.DatetimeIndex([last]))
+
+    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    today = datetime.now(UTC)
+    events = [
+        Event((today - timedelta(days=1100)).date(), EventType.BUY, 'AAPL',
+              'Apple Inc', quantity=10, unit_price=100.0),
+        Event((today - timedelta(days=1095)).date(), EventType.SELL, 'AAPL',
+              'Apple Inc', quantity=10, unit_price=110.0),
+        Event(today.date(), EventType.BUY, 'AAPL', 'Apple Inc',
+              quantity=10, unit_price=120.0),
+    ]
+    # The series the install already holds: it reaches the first acquisition, so
+    # the backward pass concludes on its first cycle and the gap is the forward
+    # pass's alone.
+    _seed(store, 'AAPL', [_at(1100, 15, 0), _at(1095, 15, 0)])
+    metrics = _metrics(store, shares=[_HELD], events=events)
+
+    for _ in range(3):
+        metrics.backfill(now=today)
+
+    assert asked, "the forward pass never ran"
+    _the_api_ceiling_is_respected(asked, today)
+    # And the band it exists for was really asked by the hour.
+    assert any(interval == '1h' for _, _, interval in asked)

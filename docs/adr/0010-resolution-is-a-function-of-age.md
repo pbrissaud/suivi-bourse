@@ -23,6 +23,21 @@ years, 34 MB and 584 ms for the daily pass instead of 500 MB and 6 673 ms.
 - **Fine resolution can only be obtained by having been there.** Yahoo sells nothing
   below hourly past 60 days, which makes sampling *at write time* the only
   irreversible decision available — and therefore the one that was refused.
+- **A reconstruction buys the hourly band only if it asks for it on the right side of
+  the ceiling.** The interval is chosen once per fetched chunk, off its oldest day,
+  so a chunk straddling Yahoo's 729-day ceiling is bought entirely in daily bars —
+  which is what the default chunk on an anchor starting at today did, missing the
+  ceiling by a single day and returning the whole 1–2 year band daily (#783). Both
+  fetching passes therefore **cut a straddling window on the ceiling** — the
+  backward one by raising its start, the forward one by lowering its end, the two
+  walking opposite ways — for no extra request and one more cycle for the symbol.
+  The forward pass needs it whenever the gap it closes is wider than two years: an
+  install rallied after a long stop, or a line bought back after years out of the
+  portfolio, whose backward pass is terminal and which nothing else fills. **The
+  repair is worth only the reconstructions still to come**: the ladder is a ceiling
+  and never a floor, so it fabricates nothing, and past 729 days the hour is no
+  longer sold — what an install has already reconstructed daily stays daily, for
+  good.
 - The API announces the **effective** resolution served, so a sparse chart does not
   read as an outage. The rung boundary itself is not marked on screen: it produces no
   wrong figure, only fewer points.
