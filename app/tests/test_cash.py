@@ -723,8 +723,22 @@ def test_no_base_currency_writes_no_performance_at_all(
     assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] > 0
 
 
-def test_account_metrics_perf_fields_only_on_latest_point(
+def test_the_gain_is_written_on_every_day_and_the_rate_only_on_the_last(
         store, declare_ledger, mocker):
+    """Which of the seven are a series and which are one figure (issue #782).
+
+    ``gain_absolu`` **was** on the latest point alone, like ``xirr``, and that
+    is what made the year-to-date gain structurally ``null``: it is read as the
+    movement of this column between the base day and the latest, and the base
+    day is by construction never the latest. It has none of ``xirr``'s excuse —
+    it is ``total_value − contributions``, both known on every day the series
+    carries — so it is written on every day, and only ``xirr`` still lands on
+    one.
+
+    Here: 1 000,00 deposited and ten shares bought at 100,00 the same day, so
+    the first day has gained nothing at all — a **zero**, which is a figure, and
+    not the ``NULL`` the old writer laid down.
+    """
     events = [
         Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
         Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
@@ -732,20 +746,27 @@ def test_account_metrics_perf_fields_only_on_latest_point(
     ]
     portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
     _seed_price(store, "AAPL", date(2024, 1, 1), 100.0)
-    _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
+    _seed_price(store, "AAPL", date(2025, 1, 1), 110.0)
 
     m = _metrics(store, declare_ledger, events, portfolio)
-    _fixed_today(mocker, 2024, 1, 2)
+    # A year, so the annualised rate has a horizon to be defined over: on one
+    # day it comes back ``None`` for its own reason and the row below would then
+    # attest nothing.
+    _fixed_today(mocker, 2025, 1, 1)
 
     m.update_account_metrics()
 
     rows = store.query(
-        "SELECT day, twr_index, gain_absolu FROM account_metrics ORDER BY day")
-    # twr_index present on every point; gain_absolu only on the latest.
+        "SELECT day, twr_index, gain_absolu, xirr FROM account_metrics "
+        "ORDER BY day")
     assert all(row[1] is not None for row in rows)
-    assert rows[0][2] is None
+    assert rows[0][2] == pytest.approx(0.0)      # 10*100 - 1000
     assert rows[-1][2] == pytest.approx(100.0)   # 10*110 - 1000
     assert rows[-1][1] == pytest.approx(110.0)
+    # The one figure that is genuinely not a series: annualised over the whole
+    # history against a single terminal value.
+    assert rows[0][3] is None
+    assert rows[-1][3] is not None
 
 
 # --------------------------------------------------------------------------- #

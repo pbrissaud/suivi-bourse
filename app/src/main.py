@@ -3144,7 +3144,20 @@ class SuiviBourseMetrics:
     def _value_kwargs(dp, last: bool, perf) -> dict:
         """Shared value + perf fields for a metric point built from a DailyPerf.
 
-        twr_index is per-day; xirr / gain_absolu land only on the latest point.
+        ``twr_index`` and ``gain_absolu`` are per-day; ``xirr`` alone lands on
+        the latest point.
+
+        **``gain_absolu`` used to land there too, and that was the defect**
+        (issue #782). It is ``total_value − contributions`` and both terms are
+        known on every day the series carries, so the restriction bought
+        nothing — while ``portfolio_view._ytd`` counts the movement of this
+        field between the year's base day and the latest one, and the base day
+        is by construction never the latest. The year-to-date gain was
+        therefore ``null`` on every real install, on a figure entirely
+        computable from two columns written daily. ``xirr`` keeps the
+        restriction because it does not have that shape: it is annualised over
+        the whole history against one terminal value, so it genuinely has one
+        value and not a series of them.
 
         **The per-field rule is applied here, once** (issue #708): a field the
         entity may not publish is written as ``None`` — therefore as ``NULL``,
@@ -3161,7 +3174,7 @@ class SuiviBourseMetrics:
             net_contributed=dp.net_contributed,
             twr_index=dp.twr_index,
             xirr=perf.xirr if last else None,
-            gain_absolu=perf.gain_absolu if last else None,
+            gain_absolu=dp.gain_absolu,
         )
         return {name: (value if name in writable else None)
                 for name, value in values.items()}
@@ -3271,7 +3284,7 @@ class SuiviBourseMetrics:
         needs somewhere to land.
 
         Money-weighted performance (xirr / gain_absolu / twr_index) comes from
-        ``performance.py``; xirr / gain_absolu land only on the latest point.
+        ``performance.py``; ``xirr`` alone lands only on the latest point (#782).
         """
         # **Nothing at all until the reporting currency is answered** (issue
         # #702, ADR-0002). Not zeros, not ``NULL``s, not a partial series: every

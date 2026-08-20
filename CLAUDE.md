@@ -2677,6 +2677,48 @@ either one alone produces a wrong figure rather than a missing one:
   member inside a present object*, and `DashboardHead` read both through `?.`
   alone, which collapses them. `ytd: null` still means, and only means, *the
   series does not reach the base*.
+  **And that spelling was right about a column nobody had made true** (issue
+  #782). `gain_absolu` was computed once, at the terminal day, and written on
+  the **last point of the series alone** — like `xirr` — while the base the
+  year-to-date counts from is by construction never the last point, and
+  `perf_series._upsert` reassigns every non-key column each cycle, so yesterday's
+  value was set back to `NULL` today rather than accumulating. `ytd.gain` was
+  therefore structurally `null` on every real install since #763 — measured on
+  staging, `Gain total 942,07 €` with a bare em dash under it while the TWR
+  statistic beside it carried `−0,79 % depuis le 1ᵉʳ janvier` — the front
+  rendering exactly what #708's rule prescribes for an absent member of a
+  present object. **What is repaired is the write, not the reading**: the field
+  becomes **per day**, which is what `ALWAYS_WRITTEN`, ADR-0018 and the table
+  below all already said it was. Nothing had to be invented — `total_value` and
+  the contributions are known on every day the series carries — and the
+  contribution term becomes cumulative **to that day**
+  rather than the whole ledger's, which is the same total read at a day and
+  incidentally stops a row dated next year (#766) from being subtracted from
+  every day before it. The refused repair is the one that touches no writer:
+  recomposing the year-to-date from `(total_value − net_contributed)` at each
+  end **loses the half of its own argument that is load-bearing**, those two
+  columns being the `NULL` pair on an install with no cash ledger — so the v4
+  arrival two sentences up would have its year-to-date taken back for good. The
+  question that departs the two is *must the year-to-date exist without a cash
+  ledger?*, and only the second answers yes. The cost accepted is that the
+  column changes meaning, and it is bounded by the two tables being a **cache**
+  (ADR-0011): the series is upserted whole every cycle, so a store written by an
+  earlier version repairs itself on the first tick and there is nothing to
+  migrate. `xirr` keeps the restriction and has the excuse the gain never had —
+  annualised over the whole history against one terminal value, it genuinely has
+  one value and not a series of them. **And the missing link was nameable**: no
+  test ran the real perf job over a ledger crossing a 1 January before reading
+  `/api/portfolio-totals`. The four year-to-date tests **seeded**
+  `portfolio_totals` with `gain_absolu` on both rows, under a comment stating
+  the premise backwards, and so attested a screen no install could show — the
+  class the repository already writes down elsewhere (*a fixture drawn from the
+  real portfolio would have attested a screen no install in this state can
+  show*, #725). They stay seeded, because what they are about is the **bound** —
+  which day is the base — and the seed is now what the job really writes. What
+  holds the route to the job is **two** new tests seeding no row of that table
+  at all: one on a ledger with a cash ledger, one without, the second being the
+  population the choice was made for and the one the refused repair would have
+  left with nothing.
 - **A gauge whose field is absent is not published**, and it is a *retract*:
   a field that stops being writable has its series removed. The seven
   `sb_portfolio_*` are built **outside the registry** and join it on their first
@@ -3797,7 +3839,7 @@ is therefore a **write mechanism** and not only a constraint.
 | `net_contributed` | Σ deposits − Σ withdrawals (fees excluded). `NULL` without a cash event |
 | `xirr` | money-weighted return (annualized); latest point only, `NULL` without an external flow |
 | `twr_index` | time-weighted return, base 100 (per day). `NULL` without a cash event — it follows `total_value` |
-| `gain_absolu` | absolute gain (`value − contributions`); latest point only, **always written** (ADR-0018) |
+| `gain_absolu` | absolute gain (`value − contributions`); **per day** since #782, and **always written** (ADR-0018) — the contribution term is cumulative *to that day*, never the whole ledger's |
 
 `account_type` has **no column**: it was an InfluxDB tag, and a page reads it
 from the declaration (ADR-0013), which is what the account *is* rather than what

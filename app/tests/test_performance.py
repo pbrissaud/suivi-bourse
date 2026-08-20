@@ -88,6 +88,65 @@ def test_daily_valuation_and_twr_base_100():
 
     # gain_absolu = terminal 1100 - contributed 1000 = 100.
     assert perf.gain_absolu == pytest.approx(100.0)
+    # And the same figure on the day it describes: since #782 the gain is a
+    # series, and the entity's own is read off its last day rather than computed
+    # a second time.
+    assert d1.gain_absolu == pytest.approx(100.0)
+    assert d0.gain_absolu == pytest.approx(0.0)
+
+
+def test_a_deposit_is_subtracted_from_the_day_it_lands_and_never_before():
+    """The gain is a **series**, so its contribution term is one too (#782).
+
+    Written with the ledger's whole contribution at each day — the shape the
+    figure had while it was computed once, at the terminal day — money paid in
+    next month would be subtracted from this month's gain: here day one would
+    read `−500,00 €` on a portfolio that has gained nothing and lost nothing.
+    That is the arithmetic the year-to-date reads the movement of, so a wrong
+    contribution term there is a wrong figure on the head rather than a missing
+    one.
+
+    Nothing moves until the price does: three days at 100,00 with 500,00
+    deposited on the third and left in cash, then the quote at 110,00.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2024, 1, 3), EventType.DEPOSIT, amount=500.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0,
+                                   date(2024, 1, 3): 110.0}})
+
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at,
+                           start=date(2024, 1, 1), today=date(2024, 1, 3))
+
+    gains = [dp.gain_absolu for dp in perf.daily]
+    assert gains == pytest.approx([0.0, 0.0, 100.0])
+
+
+def test_a_contribution_made_before_the_horizon_is_still_a_contribution():
+    """``start`` is the account's horizon (#708), not the ledger's first day.
+
+    The deposit here is dated two months **before** the first day the series may
+    carry, so a contribution term counted over the range alone would read zero
+    and the account would publish the whole of its holdings as gain — 1 100,00
+    where it has made 100,00. The running sum folds everything dated at or
+    before the day it is asked about, whether or not that day is in the range.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 3, 1): 110.0}})
+
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at,
+                           start=date(2024, 3, 1), today=date(2024, 3, 1))
+
+    assert perf.daily[0].gain_absolu == pytest.approx(100.0)
 
 
 def test_xirr_computed_over_realistic_horizon():

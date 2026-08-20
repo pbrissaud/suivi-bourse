@@ -65,6 +65,19 @@ PriceAt = Callable[[str, date], Optional[float]]
 #: ``net_contributed = 0``, so ``gain_absolu = holdings − invested`` is **exact**.
 #: What genuinely has no meaning without an external flow is ``xirr`` — there is
 #: nothing to weight — and the guard had travelled with it by accident.
+#:
+#: **And *written* means on every day since #782**, which is what this name
+#: always claimed. It was computed once, at the terminal day, and laid down on
+#: the last point of the series alone — like ``xirr``, which is annualised over
+#: the whole history and genuinely has one value. ``gain_absolu`` has no such
+#: excuse: it is ``total_value − contributions`` and both terms are known on
+#: every day the series carries. The cost of the old spelling was not a missing
+#: column but a **figure nobody could ever read**: ``portfolio_view._ytd``
+#: counts the movement of this field between the base day and the latest, the
+#: base day is by construction never the last point, so the year-to-date gain
+#: was ``null`` on every real install — and ``perf_series._upsert`` reassigns
+#: every non-key column each cycle, so yesterday's value was set back to
+#: ``NULL`` today rather than accumulating.
 ALWAYS_WRITTEN = ('holdings_value', 'gain_absolu')
 
 #: Written only where the account has at least one cash event
@@ -335,13 +348,21 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
 
 @dataclass
 class DailyPerf:
-    """One day of an entity's (account or global) valuation and TWR."""
+    """One day of an entity's (account or global) valuation, gain and TWR.
+
+    ``gain_absolu`` is a **per-day** figure since #782 — ``total_value`` minus
+    everything contributed on or before this day. It is not optional and it
+    carries no ``None``: it is one of :data:`ALWAYS_WRITTEN`, and what the
+    per-field rule may withhold is withheld at the *write*, once, in
+    ``main._value_kwargs``.
+    """
     date: date
     cash_balance: float
     holdings_value: float
     total_value: float
     net_contributed: float
     external_flow: float          # F_D: net external inflow value on this day
+    gain_absolu: float = 0.0
     twr_index: Optional[float] = None
 
 
@@ -357,7 +378,6 @@ class Performance:
     """
     daily: List[DailyPerf] = field(default_factory=list)
     xirr: Optional[float] = None
-    gain_absolu: Optional[float] = None
     #: The two conditions of the per-field rule (issue #708), carried on the
     #: result rather than re-derived by the writer: they are answers about the
     #: *flows this computation ran on*, and a caller re-asking them of the ledger
@@ -365,6 +385,27 @@ class Performance:
     #: :func:`writable_fields`.
     has_cash_ledger: bool = False
     has_external_flow: bool = False
+
+    @property
+    def gain_absolu(self) -> Optional[float]:
+        """This entity's absolute gain: the **last day of its own series**.
+
+        A property and not a field since #782, which is the whole of what keeps
+        the figure one arithmetic. ``gain_absolu`` used to be computed here,
+        from the ledger's whole contribution against the terminal value, and
+        separately written on the last point of the series alone — two
+        spellings of one number, which is how it came to differ from the series
+        beneath it by every flow dated past ``today`` (#766). Read rather than
+        assigned, a caller quoting the entity's gain and a caller reading the
+        last row it wrote cannot disagree, and there is no setter to reopen the
+        question.
+
+        ``None`` on an empty series, exactly as ``xirr`` is: nothing was
+        computed, so there is nothing to state. ``xirr`` stays a field because
+        it is genuinely not a series — annualised over the whole history
+        against one terminal value.
+        """
+        return self.daily[-1].gain_absolu if self.daily else None
 
 
 def xirr(cashflows: List[Tuple[date, float]],
@@ -529,10 +570,37 @@ def _xirr_cashflows(cash_flows, grant_flows,
     return cfs
 
 
-def _base_contributed(cash_flows, grant_flows) -> float:
-    """Total external contribution (deposits - withdrawals + declared grants)."""
-    cash = sum(amount for _, amount in cash_flows)
-    return cash + sum(value for _, value in grant_flows)
+def _running_contribution(flow_by_date: Mapping[date, float]):
+    """A callable answering *everything contributed on or before this day*.
+
+    It replaces ``_base_contributed``, which summed the whole ledger's deposits,
+    withdrawals and declared grants and was read **once**, at the terminal day
+    (#782). There is one decomposition of that total by date and it already
+    existed — ``flow_by_date``, which the TWR reads for its own ``F_D`` — so the
+    per-day contribution and the per-day external flow cannot state a cash
+    movement differently.
+
+    It is a **running** sum and it must be called on a non-decreasing sequence
+    of days, which is what the daily loop hands it. Two properties come from
+    that rather than from arithmetic: flows dated before the first day of the
+    series — an account whose horizon starts after its own opening deposit
+    (#708) — are folded into that first day rather than lost, and a flow dated
+    **after** the last day is never counted, which is the one place this parts
+    company with the old spelling. A row dated next year is not a contribution
+    the portfolio has received (#766), and summing the whole ledger counted it
+    from the first day of the series.
+    """
+    days = sorted(flow_by_date)
+    index, total = 0, 0.0
+
+    def contributed(day: date) -> float:
+        nonlocal index, total
+        while index < len(days) and days[index] <= day:
+            total += flow_by_date[days[index]]
+            index += 1
+        return total
+
+    return contributed
 
 
 def _daily_range(start: date, today: date):
@@ -572,6 +640,7 @@ def compute_account(timeline: Timeline, account: Account, symbols,
     acc = account.id
     cash_flows, grant_flows = _account_flows(timeline, acc)
     flow_by_date = _external_flow_by_date(cash_flows, grant_flows)
+    contributed_by = _running_contribution(flow_by_date)
 
     daily: List[DailyPerf] = []
     started = False
@@ -579,6 +648,11 @@ def compute_account(timeline: Timeline, account: Account, symbols,
         cash = timeline.cash_at(acc, day)
         holdings, has_position = _holdings_value(
             timeline, acc, symbols, price_at, day, carried, first_quoted)
+        # Advanced on **every** day of the range, including the ones skipped
+        # below: a deposit made before the account's first valued day is still a
+        # contribution, and reading the running sum only where a point is
+        # produced would leave it behind.
+        contributed = contributed_by(day)
 
         if not started and cash is None and not has_position:
             continue  # skip days before the account has any activity
@@ -586,13 +660,15 @@ def compute_account(timeline: Timeline, account: Account, symbols,
 
         cash_balance = cash.cash_balance if cash else 0.0
         net_contributed = cash.net_contributed if cash else 0.0
+        total_value = cash_balance + holdings
         daily.append(DailyPerf(
             date=day,
             cash_balance=cash_balance,
             holdings_value=holdings,
-            total_value=cash_balance + holdings,
+            total_value=total_value,
             net_contributed=net_contributed,
             external_flow=flow_by_date.get(day, 0.0),
+            gain_absolu=total_value - contributed,
         ))
 
     _fill_twr(daily)
@@ -608,13 +684,11 @@ def compute_account(timeline: Timeline, account: Account, symbols,
     )
     if daily:
         terminal = daily[-1].total_value
-        # ``gain_absolu`` **always** (ADR-0018): with no external flow at all,
-        # ``_base_contributed`` is zero and the figure is ``holdings − invested``
-        # — exact, and the one thing an owner who never recorded a deposit can
-        # still be told. ``xirr`` keeps the condition, because an internal rate
-        # of return with no flow to weight is not a degraded figure, it is not a
-        # figure.
-        perf.gain_absolu = terminal - _base_contributed(cash_flows, grant_flows)
+        # ``gain_absolu`` is not assigned here and there is nothing missing
+        # (#782): it is a property over ``daily[-1]``, written on every day of
+        # the series by the loop above. ``xirr`` keeps its condition, because an
+        # internal rate of return with no flow to weight is not a degraded
+        # figure, it is not a figure.
         if perf.has_external_flow:
             perf.xirr = xirr(
                 _xirr_cashflows(cash_flows, grant_flows, terminal, today))
@@ -670,6 +744,13 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
             agg.total_value += dp.total_value
             agg.net_contributed += dp.net_contributed
             agg.external_flow += dp.external_flow
+            # The gain is **summed like the value it is made of** (#782), not
+            # recomputed from the whole portfolio's flows: the accounts entering
+            # this sum on a given day are the accounts whose ``total_value`` is
+            # in it, and subtracting a contribution made to an account the day
+            # does not carry — one whose series is capped in the past (#765) —
+            # would state a gain against a value nobody added.
+            agg.gain_absolu += dp.gain_absolu
 
     daily = [by_date[d] for d in sorted(by_date)]
     _fill_twr(daily)
@@ -696,7 +777,6 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
     )
     if daily:
         terminal = daily[-1].total_value
-        total.gain_absolu = terminal - _base_contributed(all_cash, all_grant)
         if total.has_external_flow:
             total.xirr = xirr(
                 _xirr_cashflows(all_cash, all_grant, terminal, today))

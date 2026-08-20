@@ -651,6 +651,43 @@ def _ytd(latest: Dict[str, Any],
     that as *the history is not rebuilt that far back* under a portfolio whose
     history is complete.
 
+    **And that argument is what settled #782, in the other module.** This
+    reading was correct and answered ``null`` on every real install all the
+    same, because the column it counts the movement of was written on the
+    **last point of the series alone** — and the base day, the last day at or
+    before 31 December of the previous year, is by construction never the last
+    point. The two repairs available did not say the same thing:
+
+    * recompose here, ``(total_value − net_contributed)`` at each end, which
+      touches one pure function and no writer — and **loses exactly the half of
+      this docstring's argument that is load-bearing**. Those two columns are
+      the ``NULL`` pair on an install with no cash ledger, so the v4 arrival
+      above would get its year-to-date taken back, permanently, for the one
+      population #708 repaired it for. It is also not quite the same
+      subtraction: the contribution ``gain_absolu`` is measured against counts
+      a **valued grant** at the price its own event declares (#699), which the
+      ``net_contributed`` column does not, so the identity the paragraph above
+      states is a shorthand and this repair would have inherited its error;
+    * make ``gain_absolu`` a per-day field, which is what its own name in
+      ``performance.ALWAYS_WRITTEN`` and ADR-0018 both already claimed it was.
+      The figure is ``total_value − contributions`` and both terms are known on
+      every day the series carries, so nothing had to be invented — only
+      written down where it was already computable.
+
+    The second was taken, and the question that decided it is the plain one:
+    *must the year-to-date exist without a cash ledger?* Only the second gives
+    it. Its cost is that the column changes meaning — it was *latest point
+    only*, like ``xirr``, and a reader taking its nullity for *this is not the
+    last row* would be wrong — and that cost is bounded by the two tables being
+    a **cache** (ADR-0011): the whole series is upserted every cycle, so a store
+    written by an earlier version repairs itself on the first tick and there is
+    nothing to migrate.
+
+    What did **not** change is when this pair is absent: ``ytd`` is ``null``
+    if and only if the series does not reach the base, and ``gain`` inside a
+    present pair no longer has a second way to be ``null``. No fifth form of
+    absence joins the four (ADR-0016, ADR-0021).
+
     ``twr`` stays a ratio of two base-100 indices, which is what makes it
     period-relative without any rebasing: ``index / index_base − 1``. It has no
     such repair and needs none: ``twr_index`` follows ``total_value``, so on

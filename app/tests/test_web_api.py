@@ -954,9 +954,17 @@ def test_the_year_to_date_pins_a_positive_gain_against_a_negative_twr(tmp_path):
     """
     def seed(opened):
         # The close of the previous exercise — the base the delta counts from.
-        # `gain_absolu` is `total_value − net_contributed` on every row the perf
-        # job writes, so a seed that left the default standing would describe a
-        # row the job cannot produce.
+        # `gain_absolu` is the value minus everything contributed — here
+        # `total_value − net_contributed`, these rows carrying no valued grant
+        # — **on every row the perf job writes**, and since #782 that last
+        # clause is true. The field used to land on the last point of the
+        # series alone, so this seed described precisely the row the job could
+        # not produce and these four tests attested a screen no install could
+        # show. What holds the route to the job is the test named for that
+        # crossing below, which seeds no `portfolio_totals` row at all; these
+        # stay seeded because what they are about is the **bound** — which day
+        # is the base — and a ledger long enough to place one is a slow way to
+        # ask that question.
         seed_totals(opened, day=date(2025, 12, 31), total_value=10000.00,
                     net_contributed=5000.00, gain_absolu=5000.00,
                     twr_index=160.00)
@@ -1297,6 +1305,137 @@ def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
     # *a cash movement* have to keep true between them.
     assert (latent + realised + dividends + totals['transfer_fees']
             == pytest.approx(totals['gain_absolu'], abs=5e-3))
+
+
+def _fixed_today(mocker, y, mo, d):
+    """The perf job's clock, fixed — `main` reads UTC and so does this (#781).
+
+    The job's series runs to *today*, so a test asserting a year-to-date over it
+    would otherwise change meaning on 1 January: the base day it counts from is
+    read off the calendar, not off the ledger.
+
+    It is `test_cash.py`'s helper, copied rather than hoisted, and that is an
+    arbitration rather than an oversight: hoisting it means a fixture, therefore
+    a signature edit on twenty-four tests, two of which take `mocker` for
+    something else — a change of its own, in a ticket about a column. There is
+    no rule to drift here, only a stub with one line in it.
+    """
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(y, mo, d, 12, 0, tzinfo=tz)
+    mocker.patch("main.datetime", _FixedDatetime)
+
+
+def test_the_year_to_date_gain_is_a_figure_when_the_real_job_crosses_a_new_year(
+        tmp_path, mocker):
+    """The criterion of #782, and the seam nothing in this suite stood on.
+
+    Every other year-to-date test here **seeds** `portfolio_totals`, and a seed
+    can lay down a row the job does not produce — which is exactly what happened:
+    `gain_absolu` was written on the last point of the series alone, the base row
+    is by construction never the last point, and `ytd.gain` was therefore `null`
+    on every real install since #763. A seeded row hid it for four tests.
+
+    So nothing is seeded here but the prices and the dial: the ledger is a file,
+    the cache is written by the **real** job, and the year-to-date is read off the
+    route. On this ledger — deposit 1 000,00 on 2 June 2025, ten shares at 80,00
+    the next day, the line quoted 92,00 in November and 96,50 in February:
+
+        base 2025-12-31   1 000 cash-in · 200 cash + 920 holdings → gain +120,00
+        latest 2026-03-02 1 000 cash-in · 200 cash + 965 holdings → gain +165,00
+                                                    year-to-date  →       +45,00
+
+    The euro figure is the movement of the gain and the percentage the ratio of
+    the two indices, over one period and with nothing contributed in between —
+    so the two agree here, where #718's measured pair disagreed in sign.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2025-06-02,DEPOSIT,,,,,,1000.00,pea\n"
+        "2025-06-03,BUY,AAPL,Apple Inc,10,80.00,,,pea\n"
+    )
+
+    def seed(opened):
+        for day, price in ((date(2025, 6, 3), 80.00),
+                           (date(2025, 11, 3), 92.00),
+                           (date(2026, 2, 2), 96.50)):
+            seed_quote(opened, price=price, currency='EUR', converted=price,
+                       rate=1.0,
+                       at=datetime(day.year, day.month, day.day, 17, 0,
+                                   tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=events,
+                          seed=seed)
+
+    _fixed_today(mocker, 2026, 3, 2)
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+
+    assert totals['day'] == '2026-03-02'
+    assert totals['gain_absolu'] == pytest.approx(165.00, abs=5e-3)
+    assert totals['ytd']['gain'] == pytest.approx(45.00, abs=5e-3)
+    # And the percentage over the same period, from the two base-100 indices:
+    # 1 165 / 1 120 − 1, no flow having landed between the two days.
+    assert totals['ytd']['twr'] == pytest.approx(1165 / 1120 - 1, abs=1e-9)
+
+
+def test_the_year_to_date_gain_crosses_the_year_without_a_cash_ledger_too(
+        tmp_path, mocker):
+    """The population the choice was made for, through the real job (#782, #708).
+
+    A ledger of purchases alone — the ordinary v4 arrival, v4 having no cash
+    events — so `total_value`, `net_contributed` and `twr_index` are `NULL` by
+    the per-field rule and only `holdings_value` and `gain_absolu` are written.
+    That is exactly what departs the two repairs this ticket had to choose
+    between: recomposing the year-to-date from `(total_value −
+    net_contributed)` touches no writer and gives this install **nothing**,
+    permanently. Making the gain a per-day field gives it the euro figure and
+    keeps the percentage honestly absent.
+
+    Same three quotes as above and the same two days, the cash ledger removed:
+    the gain is `holdings − invested`, `−800 + 920` at the base and `−800 + 965`
+    at the latest, so the year-to-date is the same `+45,00 €`.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,account\n"
+        "2025-06-03,BUY,AAPL,Apple Inc,10,80.00,pea\n"
+    )
+
+    def seed(opened):
+        for day, price in ((date(2025, 6, 3), 80.00),
+                           (date(2025, 11, 3), 92.00),
+                           (date(2026, 2, 2), 96.50)):
+            seed_quote(opened, price=price, currency='EUR', converted=price,
+                       rate=1.0,
+                       at=datetime(day.year, day.month, day.day, 17, 0,
+                                   tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=events,
+                          seed=seed)
+
+    _fixed_today(mocker, 2026, 3, 2)
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+
+    assert totals['total_value'] is None
+    assert totals['net_contributed'] is None
+    assert totals['gain_absolu'] == pytest.approx(165.00, abs=5e-3)
+    assert totals['ytd']['gain'] == pytest.approx(45.00, abs=5e-3)
+    # And the percentage stays absent: `twr_index` follows `total_value`, so
+    # *there is nothing to compute* is the truth here (ADR-0016) and no fifth
+    # kind of absence is invented to say it.
+    assert totals['ytd']['twr'] is None
 
 
 # --------------------------------------------------------------------- #
