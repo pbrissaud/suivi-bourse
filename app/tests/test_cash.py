@@ -1077,3 +1077,88 @@ def test_prometheus_update_account_sets_gauges():
     assert reg.get_sample_value("sb_account_net_contributed", {"account": "PEA"}) == 800.0
     assert reg.get_sample_value("sb_account_info", {
         "account": "PEA", "account_type": "PEA"}) == 1.0
+
+
+# --------------------------------------------------------------------------- #
+# A date that has not arrived (issue #766)
+# --------------------------------------------------------------------------- #
+
+def test_an_event_dated_in_the_future_does_not_bound_the_series(
+        store, declare_ledger, mocker):
+    """The trouvaille #766 was asked to settle, on the real store.
+
+    Nothing refuses an event dated next year, and #766 declines to add the
+    refusal: ``events/validator.py`` judges the whole *stored* ledger on every
+    build, in the gunicorn master, so the rule would be retroactive and would
+    stop the boot of every install already carrying such a row — in an app its
+    owner then cannot reach to repair it (#699's argument for the ``GRANT``
+    unit_price). What is settled instead is the window:
+    :meth:`events.schemas.Timeline.holding_window` answers ``None`` for a
+    position that has held nothing yet, so the future row constrains no day
+    rather than producing a last day before its first for
+    :func:`performance.account_horizon` to recognise downstream.
+
+    Four years of figures on a priced line, plus a purchase dated three years
+    out. The series is whole, and it stops at today rather than at the day the
+    event names — **as it already did**, and saying so is the point: the guard
+    in ``account_horizon`` caught the degenerate window, so the horizon answered
+    this correctly before the settlement and answers it correctly after. That is
+    what keeps #708's crater and #765's repair out of reach of this change. The
+    case where the store-level figures do move is the buy-back below.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    events = [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2027, 5, 3), EventType.BUY, "LATER", "Later", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ]
+    m = _metrics(store, declare_ledger, events,
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert horizons["PEA"] is None
+    assert _pea_days(store) == (date(2020, 1, 1), date(2024, 1, 10))
+
+
+def test_a_future_buy_back_no_longer_holds_a_sold_line_at_today(
+        store, declare_ledger, mocker):
+    """The half of #766's trouvaille that was costing days, on the real store.
+
+    ``SOLD`` was bought in 2020, sold in 2021 and is bought again on a date three
+    years out; it is quoted nowhere, which is every symbol's state for the first
+    minutes of a reconstruction. Before the settlement the window ran to *today*
+    — the scan read the future acquisition as a position standing — so the block
+    reached the ceiling, the cap (#765) walked the right edge back past it, and
+    the account was left with **one day** of figures out of four years, on days
+    it held no share of that line at all.
+
+    Settled at the window, the block is where it belongs: wholly in the past,
+    bounding on its left edge, and the series runs from the day after the exit
+    through today. The residue #766 decides to keep is those pre-2020 days, and
+    here the ledger opens on the purchase so there are none to lose.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    events = [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "SOLD", "Sold", quantity=5,
+              unit_price=50.0, account="PEA"),
+        Event(date(2021, 6, 1), EventType.SELL, "SOLD", "Sold", quantity=5,
+              unit_price=60.0, account="PEA"),
+        Event(date(2027, 9, 9), EventType.BUY, "SOLD", "Sold", quantity=4,
+              unit_price=70.0, account="PEA"),
+    ]
+    m = _metrics(store, declare_ledger, events,
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    m.update_account_metrics()
+
+    assert _pea_days(store) == (date(2021, 6, 2), date(2024, 1, 10))

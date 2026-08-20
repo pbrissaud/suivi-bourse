@@ -100,7 +100,8 @@ def writable_fields(has_cash_ledger: bool,
 
 
 # --------------------------------------------------------------------------- #
-# The sliding horizon (issue #708, spec #695 § 11) — and its cap (issue #765)
+# The sliding horizon (issue #708, spec #695 § 11) — its cap (issue #765), and
+# the question of whether it may be more than one interval (issue #766: no)
 # --------------------------------------------------------------------------- #
 
 class Horizon(NamedTuple):
@@ -120,6 +121,12 @@ class Horizon(NamedTuple):
 
     ``first`` is ``None`` when nothing bounds the series on the left, ``last``
     when nothing caps it on the right — the caller's own ceiling then stands.
+
+    **Two ends, and never more than two** (issue #766). The question #765 raised
+    and left open — *may a horizon be more than one interval?* — is answered here
+    by the shape: it is a pair, not a list of runs. The argument is in
+    :func:`account_horizon`, and it is the TWR's, which chains over consecutive
+    elements of a list rather than over consecutive calendar days.
     """
     first: Optional[date]
     last: Optional[date]
@@ -149,7 +156,7 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
     three purchases on 2020-09-28, ``twr_index`` 0,057, the head reading
     **−100,00 %** on a portfolio worth eleven thousand euros).
 
-    Seven things about it are decisions:
+    Eight things about it are decisions:
 
     * **It is bounded by each symbol's holding window.** Taken literally as *"the
       most recent of the oldest available prices"*, a line sold in 2022 whose
@@ -164,14 +171,19 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
       unpriced]`` never covers a day the line was not held.
       ``unpriced < acquired`` is #708's ``oldest ≤ acquired`` **or the window is
       degenerate**, and the second half is a real difference rather than a
-      re-spelling: :meth:`events.schemas.Timeline.holding_window` answers
+      re-spelling: :meth:`events.schemas.Timeline.holding_window` used to answer
       ``acquired, (today if holding else emptied)`` with **no clamp**, and
       ``events/validator.py`` forbids no event dated in the future — so a single
-      row dated next year gives a last day *before* its first. #708 did not skip
+      row dated next year gave a last day *before* its first. #708 did not skip
       it, built a block ending before it began, and put the left bound past every
       real day: the cycle wrote nothing and the prune emptied the table. Answering
       *nothing constrains this account* is the truth about a window holding no
-      day. What this line is still **not** is the repair of #765 — on a held
+      day. **Since #766 no caller produces that shape** — the window answers
+      ``None`` for a position that has held nothing yet, so the truth is told
+      where the window is built instead of recognised here — and the guard stays
+      all the same: this is a pure function over two mappings, and the property
+      is its own rather than the one caller's. What this line is still **not** is
+      the repair of #765 — on a held
       symbol quoted nowhere the window is ordinary and the branch is not taken;
       the cap below is what treats that one. What it buys there is that the block
       is built before it is judged, which is what the cap needs to walk over.
@@ -181,22 +193,49 @@ def account_horizon(windows: Mapping[str, Tuple[date, date]],
       so the dashboard keeps its history, its last point is a day old, and the
       next cycle catches up. The right edge walks left past every block covering
       it, repeatedly, since stepping over one block can land inside another.
-    * **The days left of a block that does *not* reach the ceiling go with it,
-      and that is the price of one contiguous run.** Such a block bounds the
-      series on its left edge, so the days before that symbol's own acquisition
-      fall too — not because the block covers them, it does not, but because a
-      horizon is a single interval and the run that survives is the one holding
-      today. A line acquired 2020-03-02, sold 2022-05-04 and quoted nowhere pins
-      a ledger opened in 2019 at 2022-05-05, 2019 included. #765's second
-      acceptance criterion asks for those days and **this function does not give
-      them**: the two ways to give them are refused by the same argument as the
-      per-day mask below — keeping the *left* run instead abandons today's
-      figures, which is the whole of the sliding horizon, and keeping both makes
-      the series two runs with a hole between them, which breaks the TWR's
-      chaining and contradicts the calendar density. The residue is therefore
-      named here rather than declared repaired, and it is transitory by the same
-      mechanism as the rest: the symbol leaves the blocking population as soon as
-      its backward pass reaches its acquisition, or concludes (``settled``).
+    * **A horizon is one interval, and that is now a decision rather than a
+      shape** (issue #766). #765 left the question open: a block sitting *wholly
+      in the past* cuts the timeline into two runs of computable days, and only
+      the one holding today survives — so the days before that symbol's own
+      acquisition fall with it, not because the block covers them, it does not,
+      but because there is one interval to render. A line acquired 2020-03-02,
+      sold 2022-05-04 and quoted nowhere pins a ledger opened in 2019 at
+      2022-05-05, 2019 included. **The answer is no, and the TWR is what
+      settles it.** :func:`_fill_twr` chains ``twr × (V − F) / V_prev`` over
+      consecutive **elements of the list**, never over consecutive calendar days,
+      so a series with a hole chains the day after the gap against the day before
+      it: an external flow landing inside the gap is never divided out and the
+      owner's own deposit is reported as performance — measured in
+      ``test_a_horizon_is_one_interval_and_the_twr_is_what_decides_it``, +10 %
+      of real return read as +120 %, on a column in which nothing says the days
+      are missing. That is #708's refusal of the per-day mask, restated on
+      #766's exact input, and the two ways round it go with it: re-anchoring at
+      the gap makes ``twr_index`` two incomparable series in one column, which
+      ADR-0019's rebasing then draws as a discontinuity, and keeping the *left*
+      run instead abandons today's figures, which is the whole of the sliding
+      horizon. Answering *yes* would also have had to reopen #708's calendar
+      density, split the prune's ``spans`` per account, give ``main`` a ``max``
+      over two runs and publish a member on ``/api/runtime`` for a front to tell
+      *capped* from *up to date* — three propagations bought for a figure that
+      would be wrong.
+    * **And the residue is measured rather than assumed** (issue #766). On the
+      real staging ledger — 285 events, 19 symbols, 2 accounts, 2019-10-30 →
+      2026-08-20 — **fully reconstructed no account carries a blocking window at
+      all**: ``/api/runtime`` answers ``horizon: null`` for the three of them and
+      the residue costs zero days. During a reconstruction seven of the nineteen
+      symbols carry a wholly-past window and **both** accounts carry one, and
+      their marginal cost is still **0 days at every cycle** — 907/907 for CTO
+      and 2 487/2 487 for PEA, whether the past blocks are counted or dropped.
+      The reason is structural: a sold line's backward pass starts from **its own
+      exit** (:func:`carrying.holding_bounds`), not from today, so it is
+      reconstructed past its acquisition at least as fast as a line of the same
+      age still held, and while any held line is still walking left that held
+      line bounds the series further left than the sold one can. The shape where
+      the residue does cost days is therefore nameable rather than common: a line
+      held for years and sold long ago, beside holdings all bought recently. It
+      is transitory there too, by the same mechanism as every other block — the
+      symbol leaves the blocking population as soon as its backward pass reaches
+      its acquisition, or concludes (``settled``).
     * **When no run survives, the reading falls back to the left bound.** The
       blocks then cover the ledger from its first day to the ceiling — the
       ordinary shape of a fresh install whose first purchase has no price yet —

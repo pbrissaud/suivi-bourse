@@ -2480,13 +2480,16 @@ either one alone produces a wrong figure rather than a missing one:
   lower end is a statement about **the block**, `unpriced < acquired` being
   #708's `oldest ≤ acquired` **or a degenerate window** — `holding_window` puts
   no clamp on its two ends and the validator forbids no future-dated event, so a
-  single row dated next year answers a last day before its first, which #708 did
-  not skip and which emptied the table; on a held symbol quoted nowhere the
+  single row dated next year answered a last day before its first, which #708 did
+  not skip and which emptied the table — and which no caller produces since #766,
+  the window itself now answering `None` for a position that has held nothing; on a held symbol quoted nowhere the
   window is ordinary, the branch is not taken, and what treats that symbol is
   the cap; **a block
   that reaches the ceiling caps the series instead of bounding it** (#765, below);
   **the days left of a block that does *not* reach the ceiling go with it**, the
-  residue #765 leaves standing and names rather than repairs — a line acquired
+  residue #765 leaves standing and names rather than repairs, and #766 then
+  measures at **zero marginal days on the real ledger** and keeps with its
+  argument — a line acquired
   2020-03-02, exited 2022-05-04 and quoted nowhere pins a ledger opened in 2019
   at 2022-05-05, 2019 included, on days it held nothing of that line, because a
   horizon is **one interval** and the run that survives is the one holding today;
@@ -2556,6 +2559,83 @@ either one alone produces a wrong figure rather than a missing one:
   `test_the_days_left_of_a_past_block_are_lost_with_it`). Whether a horizon may
   ever be **more than one interval** is the open question, carried by #766, and
   it is #708's calendar-density decision to reopen, not this ticket's.
+- **The answer is no, and the TWR is what settles it** (issue #766, ADR-0011,
+  ADR-0018). #765's open question — *may a horizon be more than one interval?* —
+  is decided rather than left, and the deciding constraint is the one #708 named
+  when it refused the per-day mask, restated on #766's exact input:
+  `performance._fill_twr` chains `twr × (V − F) / V_prev` over consecutive
+  **elements of the list**, never over consecutive calendar days. Hand it two
+  runs with a hole and the day after the gap is chained against the day before
+  it, so an external flow landing inside the gap is never divided out and the
+  owner's own deposit is reported as performance — measured at **+10 % of real
+  return read as +120 %**, on a column where nothing says the days are missing.
+  The two ways round it go with it: re-anchoring at the gap makes `twr_index`
+  two incomparable series in one column, which ADR-0019's rebasing on the
+  visible window then draws as a discontinuity, and keeping the *left* run
+  abandons today's figures, which is the whole of the sliding horizon. The three
+  propagations a *yes* would have owed together — the prune's per-account
+  `spans`, `main`'s `max`/`min` over two runs, and a member on `/api/runtime` so
+  a front can tell *capped* from *up to date* — are therefore not built, and
+  #708's calendar density is **not** reopened.
+  **And the residue was measured before the decision was taken**, on the real
+  staging ledger (285 events, 19 symbols, 2 accounts, 2019-10-30 → 2026-08-20):
+  **fully reconstructed, no account carries a blocking window at all** —
+  `/api/runtime` answers `horizon: null` for the three of them, so the residue
+  costs zero days. During a reconstruction seven of the nineteen symbols carry a
+  wholly-past window and **both** accounts carry one, and their marginal cost is
+  still **0 days at every cycle**: 907/907 days for CTO and 2 487/2 487 for PEA,
+  whether the past blocks are counted or dropped. The reason is structural
+  rather than lucky — a sold line's backward pass starts from **its own exit**
+  (`carrying.holding_bounds`) and not from today, so it is reconstructed past
+  its acquisition at least as fast as a line of the same age still held, and
+  while any held line is still walking left that held line bounds the series
+  further left than the sold one can. The shape where the residue does cost days
+  is named rather than common: a line held for years and sold long ago, beside
+  holdings all bought recently. It is a known state with an argument, not an
+  oversight, and it is transitory there too.
+- **A date that has not arrived is settled at the window, never downstream**
+  (issue #766). Nothing refuses an event dated next year, and the refusal is
+  **weighed and declined** rather than forgotten: `events/validator.py` judges
+  the *whole stored ledger* on every build, in the gunicorn master, so a rule
+  added there is retroactive — every install already carrying such a row would
+  stop booting, in an app its owner then cannot reach to repair it, and an
+  imported row has no row-level edit anyway (#764 refuses one by name; the
+  repair is forgetting the whole import). That is #699's argument for the
+  `GRANT` unit_price, and a date has the same shape. So it is
+  `Timeline.holding_window` that stops lying: it answers **`None`** for a
+  position that has held nothing yet — the same answer as the dividend-only row
+  and deliberately **not for the same reason**, since there no day of the ledger
+  carries a quantity and the absence is permanent, while here a day does carry
+  one and the absence expires on its own the morning that date arrives. `None`
+  is *not yet* and never *never*, and folding it into `settled` would carry at
+  cost a line the account does not hold. It replaces `acquired, today` with
+  `today < acquired`, a last day before its first left for `account_horizon`'s
+  empty-block guard to recognise. **A catch downstream is not an answer**, and a
+  clamp to `(acquired, acquired)` is the third exit, refused because it asserts a
+  day of holding that has not happened.
+  **What is settled is the window, and not every reading of the timeline** —
+  written down as an arbitration rather than left to a later reader. `current()`
+  and `current_cash()` answer *the last snapshot whatever its date*, so the same
+  future row is a held position to them while `holding_window`, `at(today)` and
+  `cash_at(today)` all say nothing is held: `positions.write_state` lays down a
+  `position` row, `/api/positions` serves the line and the dashboard sums its
+  latent gain, `_held_symbols` arms a live scrape job and the position gauges
+  publish it — while `account_metrics.holdings_value`, reading `position_at(day)`,
+  excludes it. It is **not a regression** (that reading predates #766 and the
+  horizon answered this case correctly before and after), and widening the clamp
+  to `current` is refused **here** because it is another question — *is a purchase
+  recorded for next month a position?* — with a legitimate *yes*, whose *no*
+  would silently stop polling and stop publishing a line its owner deliberately
+  recorded. #766 asks that the date stop being caught downstream, not what a
+  planned trade is; the divergence is pinned by
+  `test_a_future_row_is_still_a_position_to_current_and_that_is_named`. The guard stays all the same, as a belt:
+  `account_horizon` is a pure function over two mappings and the property is its
+  own, not its one caller's. Settling it also closed a defect nobody had looked
+  for — a **future buy-back** on a sold line made the scan read the position as
+  standing, so the window ran to *today*, the block of an unpriced symbol
+  reached the ceiling, and #765's cap walked the series back past years the
+  account held none of it (`test_a_future_buy_back_no_longer_holds_a_sold_line_
+  at_today`, on the store).
 - **The rule is by field, never by account.** The opt-in guard read
   `declared_portfolio`, whose `None` means *nothing declared beyond the seed* —
   and ADR-0013 seeds a `default` row at the creation of the schema and never

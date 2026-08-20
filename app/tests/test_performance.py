@@ -398,10 +398,10 @@ def test_the_empty_block_guard_is_708s_plus_the_degenerate_window():
     coded it as ``oldest ≤ acquired``; the block form spells it
     ``unpriced < acquired``. The two are **not** the same guard, and the earlier
     claim that they were rested on a false premise:
-    :meth:`events.schemas.Timeline.holding_window` returns
+    :meth:`events.schemas.Timeline.holding_window` used to return
     ``acquired, (today if holding else emptied)`` with **no clamp**, so an
     acquisition dated in the future — which ``events/validator.py`` forbids
-    nowhere — answers a last day *before* its first.
+    nowhere — answered a last day *before* its first.
 
     The exact relation is asserted below: the block form is #708's guard **or**
     the window is degenerate. That extra case is not a widening to regret, it is
@@ -410,6 +410,13 @@ def test_the_empty_block_guard_is_708s_plus_the_degenerate_window():
     left bound landed past every real day, so the cycle wrote nothing and the
     prune emptied the table. The block form answers "nothing constrains this
     account" instead, which is the truth about a window holding no day at all.
+
+    **Since #766 no caller produces that shape**: ``holding_window`` answers
+    ``None`` for a window holding no day, so the truth is told where the window
+    is built rather than recognised here. The guard stays all the same, and not
+    out of sentiment — this is a pure function over two mappings, and the
+    property below is a property of *it*, not of the one caller that happens to
+    feed it today. What changed is that the degenerate case is now a belt.
 
     What the guard is still **not** is the repair of #765: on a held symbol
     quoted nowhere the window is ordinary, the branch is not taken, and what
@@ -425,8 +432,8 @@ def test_the_empty_block_guard_is_708s_plus_the_degenerate_window():
     # what keeps the history is the cap moving the right edge left.
     assert _horizon(windows, {}) == (None, BOUGHT - timedelta(days=1))
     # A window that holds no day at all — the acquisition dated after the last
-    # day held. `holding_window` produces it without a clamp and the validator
-    # allows the event, so it is reachable from a file somebody drops.
+    # day held. `holding_window` answered it before #766 and answers `None` now,
+    # so this is the pure rule standing on its own, not a caught caller.
     day = timedelta(days=1)
     degenerate = {"NEW": (BOUGHT, BOUGHT - 30 * day)}
     assert _horizon(degenerate, {}) == (None, None)
@@ -527,6 +534,103 @@ def test_the_days_left_of_a_past_block_are_lost_with_it():
                     {"SOLD": date(2020, 3, 2)}) == (None, None)
     assert _horizon({"SOLD": (date(2020, 3, 2), date(2022, 5, 4))},
                     {}, settled={"SOLD"}) == (None, None)
+
+
+def test_a_horizon_is_one_interval_and_the_twr_is_what_decides_it():
+    """#766's question, answered **no**, and answered on the source.
+
+    *May a horizon be more than one interval?* A block sitting wholly in the past
+    cuts the timeline into two runs of computable days, and only the one holding
+    today survives. Keeping both is the shape the ticket asks about, and what
+    forbids it is not taste: :func:`performance._fill_twr` chains
+    ``twr = twr × (V − F) / V_prev`` over **consecutive elements of the list**,
+    not over consecutive calendar days. Hand it a series with a hole and the day
+    after the hole is chained against the day before it, so the whole gap's move
+    lands in a single day's return — silently, on the one figure the horizon
+    exists to protect.
+
+    That is #708's refusal of the per-day mask, restated on the exact input #766
+    proposes, and nothing in #765 or here dissolves it. The two ways out are
+    refused with it: re-anchoring at the gap makes ``twr_index`` two incomparable
+    series in one column, which the accounts page then rebases on a visible
+    window (ADR-0019) and draws as a discontinuity; and keeping the *left* run
+    instead abandons today's figures, which is the whole of the sliding horizon.
+
+    The assertion below is the defect itself, and it is a **wrong** figure and
+    not merely a compressed one: with an external flow landing inside the gap,
+    the dense chain divides that flow out on its own day while the holed chain
+    never sees it and reads the owner's deposit as performance. Ten percent of
+    gain becomes a hundred and twenty, on a series that looks perfectly ordinary.
+    """
+    def _series(values):
+        return [performance.DailyPerf(
+            date=day, cash_balance=0.0, holdings_value=value,
+            total_value=value, net_contributed=0.0, external_flow=flow)
+            for day, value, flow in values]
+
+    days = [LEDGER_START + timedelta(days=i) for i in range(5)]
+    # A 100 € deposit on day 2, and 10 % of real gain over the five days.
+    moves = [(days[0], 100.0, 0.0), (days[1], 100.0, 0.0),
+             (days[2], 200.0, 100.0), (days[3], 200.0, 0.0),
+             (days[4], 220.0, 0.0)]
+    dense = _series(moves)
+    holed = _series([moves[0], moves[4]])   # the block swallowed days 1 to 3
+
+    performance._fill_twr(dense)
+    performance._fill_twr(holed)
+
+    # Dense: the deposit is divided out on its own day, so the index is the
+    # portfolio's return and nothing else.
+    assert round(dense[-1].twr_index, 6) == 110.0
+    # Holed: the flow day is not in the list, so it is never subtracted and the
+    # owner's own money is reported as performance.
+    assert round(holed[-1].twr_index, 6) == 220.0
+    # And nothing in the column says so — which is what makes it undetectable.
+    assert holed[0].twr_index == dense[0].twr_index
+
+
+def test_a_past_block_costs_days_only_when_it_outlives_the_oldest_holding():
+    """What the decision costs, measured before it was taken (#766, criterion 2).
+
+    Measured on the real staging ledger (285 events, 19 symbols, 2 accounts,
+    2019-10-30 → 2026-08-20): **fully reconstructed, no account carries a
+    blocking window at all** — ``/api/runtime`` answers ``horizon: null`` for the
+    three of them and the residue costs zero days. During a reconstruction seven
+    of the nineteen symbols carry a wholly-past window and **both** accounts
+    carry one, yet their marginal cost is **0 days at every cycle of the rebuild**
+    — CTO 907/907 and PEA 2 487/2 487 days written whether the past blocks are
+    counted or dropped.
+
+    The reason is structural rather than lucky, and it is what this test pins. A
+    sold line's backward pass starts from **its own exit**, not from today
+    (:func:`carrying.holding_bounds`), so it is reconstructed past its
+    acquisition at least as fast as a line of the same age still held — and while
+    any held line is still walking left, that held line bounds the horizon
+    further left than the sold one can. The sold line bounds only once **its own
+    holding window is longer than the oldest current holding's age**, which is
+    the shape named rather than measured: a line held for years and sold long
+    ago, beside holdings all bought recently.
+    """
+    sold = (date(2019, 6, 1), date(2020, 6, 1))       # a year, ending long ago
+    long_held = (date(2019, 6, 1), TODAY)             # same age, still held
+
+    # The reconstruction's real state: the sold line is quoted nowhere yet, so
+    # it blocks its whole window — and that window ends in 2020, far left of
+    # where the held line of the same age still blocks. The held line bounds.
+    assert _horizon({"SOLD": sold, "HELD": long_held},
+                    {"HELD": date(2025, 8, 12)}) == (date(2025, 8, 12), None)
+    # Drop the sold line and the bound does not move by one day: its marginal
+    # cost is zero, which is what the real ledger measures at every cycle.
+    assert _horizon({"HELD": long_held},
+                    {"HELD": date(2025, 8, 12)}) == (date(2025, 8, 12), None)
+
+    # The shape where it does cost, and the whole of the residue: the sold line
+    # outlives the oldest current holding, so it alone bounds the series and the
+    # days before its acquisition go with it.
+    recent = (date(2026, 1, 1), TODAY)
+    assert _horizon({"SOLD": sold, "HELD": recent},
+                    {"HELD": date(2026, 1, 1)}) == (date(2020, 6, 2), None)
+    assert _horizon({"HELD": recent}, {"HELD": date(2026, 1, 1)}) == (None, None)
 
 
 def test_the_horizon_is_bounded_by_each_symbols_holding_window():

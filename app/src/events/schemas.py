@@ -385,6 +385,64 @@ class Timeline:
         That is the same simplification the backfill window makes, and it is the
         conservative one here — the flat years are counted as held rather than
         skipped.
+
+        **An acquisition dated after ``today`` has held nothing yet** (issue
+        #766), so it answers ``None`` — the same answer as the dividend-only row
+        above, and deliberately **not for the same reason**. There, no day of the
+        ledger carries a quantity and the absence is permanent. Here a day does
+        carry one, 2027-05-03; it is simply not a day this window is about, and
+        the absence expires on its own the morning that date arrives. The two
+        must not be read as one: ``None`` here is *not yet*, never *never*, and
+        folding it into ``settled`` — the population whose priceless days are
+        carried at cost (ADR-0004) — would value at its own cost a line the
+        account does not hold.
+
+        Nothing refuses such an event and #766 declines to add the refusal:
+        ``events/validator.py`` judges the **whole stored ledger** on every
+        build, in the gunicorn master, so a rule there is retroactive — every
+        install already carrying such a row would stop booting, in an app its
+        owner then cannot reach to repair it, and an imported row has no
+        row-level edit anyway (#764). That is #699's argument for the ``GRANT``
+        unit_price, and a date has the same shape. So this window is where the
+        truth is told instead — **this window, and not every reading of the
+        timeline**, which is the next paragraph and an arbitration rather than an
+        omission.
+
+        :meth:`current` and :meth:`current_cash` answer *the last snapshot,
+        whatever its date*, so the same future row is a held position to them
+        while it is none here — measured: ``current()`` reports five shares and
+        ``current_cash()`` a balance already debited, where ``at(today)``,
+        ``cash_at(today)`` and this method all say nothing is held. What that
+        costs is visible and is written down rather than repaired:
+        ``positions.write_state`` lays down a ``position`` row, so
+        ``/api/positions`` serves the line and the dashboard sums its latent gain,
+        ``main._held_symbols`` arms a live scrape job and the position gauges
+        publish it — while ``account_metrics.holdings_value``, which reads
+        ``position_at(day)``, excludes it. It is **not a regression**: that
+        reading predates #766 and is untouched by it, and the horizon answered
+        this case correctly before and after (``account_horizon``'s empty-block
+        guard caught the degenerate window). Widening the clamp to ``current``
+        is refused **here** because it is a different question — *is a purchase
+        you have recorded for next month a position?* — with a legitimate *yes*,
+        and because answering *no* would silently stop polling and stop
+        publishing a line its owner deliberately recorded. #766 asks that the
+        date be settled rather than caught downstream; it does not ask what a
+        planned trade is, and inventing that rule on the way past is how a
+        ticket decides a product question nobody put to it.
+
+        Written without the clamp it answered ``acquired, today`` with
+        ``today < acquired`` — a last day before its first, which is not a window
+        but the *absence* of one, left for :func:`performance.account_horizon` to
+        recognise in its empty-block guard. A catch downstream is not an answer.
+        Clamping to ``(acquired, acquired)`` is the third exit and is refused: it
+        asserts a day of holding that has not happened.
+
+        The backfill's own window — :func:`main.holding_windows`, whose unit is
+        the symbol — needs no second rule and gets none: a target dated after the
+        ceiling is a target the anchor has already passed, so the backward pass
+        concludes without fetching and the symbol reads as terminal, i.e.
+        ``settled``, i.e. blocking nothing. The two windows agree by arithmetic
+        rather than by a rule written twice.
         """
         snaps = self.snapshots.get((account, symbol))
         if not snaps:
@@ -393,6 +451,8 @@ class Timeline:
         emptied: Optional[date] = None
         holding = False
         for day, state in snaps:
+            if day > today:
+                break
             if state.quantity:
                 if acquired is None:
                     acquired = day

@@ -281,3 +281,109 @@ def test_a_dividend_only_row_never_carried_a_quantity():
               amount=12.0, account="PEA"),
     ])
     assert tl.holding_window("PEA", "AAPL", TODAY) is None
+
+
+def test_an_acquisition_dated_in_the_future_has_held_nothing_yet():
+    """Issue #766, and the same answer as the dividend-only row above.
+
+    Nothing refuses an event dated next year — ``events/validator.py`` weighs
+    that refusal and declines it, because it judges the *whole stored ledger* on
+    every build and a rule added there would stop the boot of every install
+    already carrying such a row. So the window is what has to be truthful, and
+    the truthful answer is that **as of ``today`` no day was held**: the position
+    carries a quantity on no day between the ledger's first and this one.
+
+    Written the other way — ``acquired, (today if holding else emptied)`` with no
+    clamp — it answered ``(2027-05-03, 2026-08-12)``, a last day *before* its
+    first. That is not a window, and every consumer had to recognise it
+    downstream: :func:`performance.account_horizon` caught it in its empty-block
+    guard, which is a catch and not an answer. #766 declines to leave it there.
+
+    A clamp to ``(acquired, acquired)`` is the third exit and is refused: it
+    asserts a day of holding that has not happened.
+    """
+    tl = _replayed([
+        Event(date(2027, 5, 3), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "AAPL", TODAY) is None
+
+
+def test_a_future_acquisition_after_a_real_one_does_not_move_the_window():
+    """The clamp is on the window's **end**, never on the days already held.
+
+    A line bought in 2024 and bought again on a date that has not arrived is
+    held from 2024 through today — the future row adds nothing, and above all
+    takes nothing away.
+    """
+    tl = _replayed([
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2027, 5, 3), EventType.BUY, "AAPL", "Apple", quantity=5,
+              unit_price=120.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "AAPL", TODAY) == (date(2024, 1, 15), TODAY)
+
+
+def test_a_future_buy_back_does_not_make_a_sold_line_look_held():
+    """The clamp's own defect, found by settling #766 rather than by looking.
+
+    A line bought in 2020, sold in 2022, and bought again on a date that has not
+    arrived: the scan ran to the end of the snapshots, saw the future
+    acquisition standing, and answered ``(2020-03-02, today)`` — *held through
+    today*, on a position the account has not owned for four years. What that
+    costs is the horizon: the block of a symbol with no price ran to today
+    instead of stopping at the exit, so it reached the ceiling, and the cap
+    (#765) walked the series back past four years the account held none of it.
+    """
+    tl = _replayed([
+        Event(date(2020, 3, 2), EventType.BUY, "ALO", "Alstom", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2022, 5, 4), EventType.SELL, "ALO", "Alstom", quantity=10,
+              unit_price=120.0, account="PEA"),
+        Event(date(2027, 9, 9), EventType.BUY, "ALO", "Alstom", quantity=4,
+              unit_price=130.0, account="PEA"),
+    ])
+    assert tl.holding_window("PEA", "ALO", TODAY) == (date(2020, 3, 2),
+                                                      date(2022, 5, 4))
+
+
+def test_a_future_row_is_still_a_position_to_current_and_that_is_named():
+    """The half of the future date #766 settles **on purpose** and does not move.
+
+    ``holding_window``, ``at`` and ``cash_at`` are date-bounded and all three say
+    nothing is held; :meth:`Timeline.current` and :meth:`Timeline.current_cash`
+    answer *the last snapshot whatever its date* and both read the future row as
+    now. The divergence is asserted here so it is a known state with an argument
+    rather than something a later reader discovers on a screen.
+
+    What it costs is real and bounded: ``positions.write_state`` lays down a
+    ``position`` row from ``current()``, so ``/api/positions`` serves the line and
+    the dashboard sums its latent gain, ``main._held_symbols`` arms a live scrape
+    job, and the position gauges publish it — while ``account_metrics``, which
+    values through ``position_at(day)``, excludes it. It is **not a regression**:
+    that reading predates #766, and the perf horizon answered this case correctly
+    before the settlement as well as after.
+
+    It is left standing because widening the clamp to ``current`` answers a
+    different question — *is a purchase recorded for next month a position?* —
+    which has a legitimate *yes*, and answering *no* in passing would silently
+    stop polling a line its owner deliberately recorded. #766 asks that the date
+    stop being caught downstream, not what a planned trade is.
+    """
+    tl = _replayed([
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2027, 5, 3), EventType.BUY, "LATER", "Later", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ])
+
+    # Date-bounded, and unanimous: nothing is held today.
+    assert tl.holding_window("PEA", "LATER", TODAY) is None
+    assert tl.at(TODAY) == []
+    assert tl.cash_at("PEA", TODAY).cash_balance == 10_000.0
+
+    # "The last snapshot, whatever its date" — and the two figures it moves.
+    assert [(p['symbol'], p['quantity']) for p in tl.current()] == [
+        ("LATER", 5.0)]
+    assert tl.current_cash()["PEA"].cash_balance == 9_750.0

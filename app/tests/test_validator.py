@@ -416,3 +416,31 @@ def test_validate_or_raise_message_includes_count_and_each_message(validator):
     # Every individual error message is present in the raised text.
     for e in errors:
         assert e in message
+
+
+# ---------------------------------------------------------------------------
+# The date is not tested against today (issue #766)
+# ---------------------------------------------------------------------------
+
+def test_an_event_dated_in_the_future_is_not_refused_here(validator):
+    """The question #766 asks, answered where it is *not* answered.
+
+    A row dated next year is legal, and the refusal was weighed and declined
+    rather than forgotten. This validator judges the **whole stored ledger** on
+    every build, not only a file somebody has just dropped, and that build runs
+    in the gunicorn master under ``preload_app`` — so a rule added here is
+    **retroactive**: every install already carrying such a row would stop
+    booting, in an app the owner then cannot reach to repair it, and an imported
+    row has no row-level edit anyway (#764 refuses one by name; the repair is
+    forgetting the whole import). That is #699's argument for the ``GRANT``
+    unit_price, and the date has the same shape.
+
+    What is settled instead is the one place the date produced a *wrong window* —
+    :meth:`events.schemas.Timeline.holding_window`, which now answers ``None``
+    rather than a window whose last day precedes its first.
+    """
+    future = Event(date(2027, 5, 3), EventType.BUY, "AAPL", "Apple Inc",
+                   quantity=10, unit_price=150.0)
+
+    assert validator.validate([future]) == (True, [])
+    assert validator.issues([future]) == []
