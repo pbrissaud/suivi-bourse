@@ -40,7 +40,11 @@ with the DDL applied and the seed in place. Assertions go on the store's
 contents or on the API's JSON, never on the fact that a method was called; the
 `mock_influx` fixture was the counter-example and left with `influxdb_writer.py`
 at #700; `shares_validator` went with `schema.yaml`. **There is one faked edge
-left in the whole suite, and it is yfinance.**
+left in the whole suite, and it is yfinance.** And **there is one clock, and it
+is the product's** — every read of it is UTC-qualified, and
+`test_suite_conventions.py` holds that on the source over `src/` and `tests/`
+alike, because CI runs in UTC and can never see a local read by behaviour
+(#781).
 
 ### Web UI (in `app/web/` directory)
 

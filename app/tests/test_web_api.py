@@ -553,16 +553,23 @@ def test_a_malformed_instant_is_rejected_in_every_mode(tmp_path):
 
 def test_the_history_of_a_declared_install_is_value_versus_contributed(tmp_path):
     """#652 déc. 7: the area between the two curves *is* the Gain. The chart has
-    no equivalent at global level in the Grafana baseline."""
+    no equivalent at global level in the Grafana baseline.
+
+    The day is fixed and the window explicit (#781): seeded from the machine's
+    own zone, the row was dated *tomorrow* from the route's point of view
+    between local and UTC midnight, fell outside the default window, and the
+    series came back empty. The default window is covered by
+    `test_the_history_defaults_to_a_year_because_the_series_is_daily`, which
+    seeds nothing; it was only ever the means of reaching the row here."""
     client = build_client(
-        tmp_path, seed=lambda opened: seed_totals(opened, day=date.today()),
+        tmp_path, seed=seed_totals,
         accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
-    payload = client.get('/api/portfolio/history').get_json()
+    payload = client.get(
+        '/api/portfolio/history?from=2026-08-01&to=2026-08-31').get_json()
 
     assert payload['mode'] == 'accounts'
     assert payload['points'] == [{
-        't': date.today().isoformat(), 'value': 12500.0,
-        'contributed': 10000.0}]
+        't': '2026-08-05', 'value': 12500.0, 'contributed': 10000.0}]
 
 
 def test_the_degraded_history_is_valuation_versus_investment(tmp_path):
