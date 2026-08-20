@@ -2417,6 +2417,10 @@ The application runs independent scheduled jobs on a single APScheduler:
   ever behind #617's back-off; a pair that does not resolve arms the
   `unconvertible` terminal), and an unanswered reporting currency arms neither.
   See below.
+  **The ladder** (issue #705, ADR-0010): before the three passes, one statement
+  ages the **whole table** onto the three rungs — see below. It is a step of
+  this job and never a fifth one, because it writes `price_point`, which is the
+  past this job already owns.
   **The rhythm does not change and there is no accelerated mode**: `backfill_delay`
   is a courtesy to Yahoo at the exact moment the app emits more requests than at
   any other time of its life, and a code path that runs once per installation is
@@ -3037,17 +3041,129 @@ grows a **fourth** blind spot for it (`aPosition({ currency: null })`): the
 seven such lines measured on staging were all closed, which is precisely why no
 fixture and no screen ever showed the divergence.
 
+**The resolution of a point is a function of its age** (issue #705, ADR-0010).
+Three rungs — **as written** under a year, **hourly** from one year to two,
+**daily** beyond — and the collapse happens **in place**, as a step of the
+backfill, because the purge writes `price_point` and that is the past this job
+already owns. `retention.py` is the pure half (the rungs, the two walls, and the
+arithmetic that reads a window against them, `now` injected);
+`quotes.collapse_to_ladder` is the one statement that applies them. The third
+rung costs 0,8 Mo and its interest is not its price: it makes **one rule instead
+of two**. The reconstruction already asks Yahoo for `1h` under 729 days and `1d`
+beyond — an **API ceiling, not an arbitration** — so the ladder extends the same
+function of age to the present as it ages, and a fresh install and a mature one
+**converge** instead of being declared similar. Seven things about it are
+decisions:
+
+- **It is a `DELETE` and nothing else**, which is the whole of *the ladder is a
+  ceiling, never a floor*: it designates rows and removes them, so a gap filled
+  at nine months of age arrives hourly and **stays** hourly — nothing here
+  interpolates it up to the live cadence, and no later pass does either. Its
+  counterpart is the sentence the subject turns on: **fine resolution is only
+  ever obtained by having been there**. Yahoo sells nothing below the hour past
+  60 days, which makes sampling *at write time* the only irreversible decision
+  available — and therefore the only one that was refused.
+- **The wall is an age bound and never a counter.** The left-hand side of the
+  predicate is open, so everything older than a wall is that wall's business
+  however long ago it was written: an install switched back on after six months
+  of downtime catches its six months up **in one statement**, where *one day per
+  cycle* would have needed a hundred and eighty cycles and a watermark to
+  remember where it had got to. *One day of wall per cycle* is what the steady
+  state costs, not what the operation is bounded by.
+- **The survivor of a collapsed bucket is its last point — its last *usable*
+  one where the bucket is mixed**, and the qualifier is the whole of the rule.
+  The criterion is *a survivor chosen otherwise would make the value jump as the
+  wall goes by*, and the store's readers do not all mean the same thing by *the
+  price then*: `quotes.price_series` and `daily_closes` rank the day's
+  **converted** rows (they filter the rest out before ranking), `chart_series`
+  ranks by instant alone. One survivor cannot satisfy both in a bucket holding a
+  converted point and a later unconverted one, and it is settled towards the
+  money — because the flat reading **deletes the only usable value in the
+  bucket**: measured, a day carrying `10:00 converted` and `17:00 NULL`
+  disappears from `price_series` entirely, so the perf job carries the previous
+  day onto it, `oldest_priced` moves, the account's horizon moves and the prune
+  drops days. That is the #708/#765 crater class, from a `DELETE` nothing
+  undoes — at best #704 refills the survivor later at the *historical daily*
+  rate, a different number from the spot rate that was stored. Ranked
+  converted-first the two money readers are preserved **to the value**; what
+  changes is `chart_series`, which renders that bucket as a price where it
+  rendered a gap — a true observation appearing, not a figure moving. It does
+  not retract #763's rule either: that one is about not letting one resolved
+  rate stand for a whole hour of unresolved ones **still stored**, and after the
+  collapse there is nothing left to stand for. A bucket with **no** converted
+  point keeps its last point all the same — that is still a row #704 repairs in
+  place, and dropping it would be the ladder deciding a conversion will never
+  land.
+- **Idempotent by construction**, which is what lets it ride a job that fires
+  every sixty seconds: on an already-collapsed bucket exactly one row stands, so
+  it *is* that bucket's last one and `rn > 1` designates nobody. There is no
+  watermark to keep and therefore nothing to get wrong at a restart. A test runs
+  it twice and asserts an identical table.
+- **One statement over the whole table, and not one per symbol.** `price_point`
+  carries no index of any kind (ADR-0007), so `WHERE symbol = ?` is a full scan
+  and N symbols would be N scans of the same rows; partitioning by
+  `(symbol, bucket)` pays for one. It is also the reading that covers the rows
+  spec #695 § 10 most insists on **keeping** — those of a symbol no event names
+  any more, which the backfill's own loop never visits, since it walks the
+  holding windows the ledger produces. Aged from inside that loop, the finest
+  series in the store would have been the one nobody can see. `rowid` is what
+  addresses a row, the table having no key to do it with, and it is read and
+  used inside **one** statement — the only scope over which DuckDB promises it
+  means anything.
+- **One clock for the whole cycle**, injected. `backfill(now=None)` reads it
+  once and hands it to the ladder *and* to each symbol's holding ceiling: it is
+  #658's rule about the snapshot applied to the other input every pass reads,
+  since read one at a time those two answers can straddle midnight on a cycle
+  that runs minutes at thirty symbols. The `latest` row is **left exactly as
+  found**, and where the bucket was mixed the ladder may remove the point it
+  names — which is not a dangling reference, `symbol_quote`'s `last_*` being a
+  *copy of an observation* that nothing joins to the series.
+- **Aucun réglage.** Neither the walls nor the rungs enter `settings_registry`:
+  an install whose retention differs is an install whose pages do not mean the
+  same thing, and the resolution the API announces would then describe a policy
+  no reader of that page can see. The pass is logged at **DEBUG** for the same
+  family of reason — in steady state it ages the one or two points that crossed
+  a wall in the last sixty seconds, all through the session hours of the day a
+  year ago, and said at INFO it would be the loudest line in the log while
+  saying nothing.
+
+**And the announced resolution stops being a literal.** `chart_window`'s table
+carried `(span, bucket, resolution)`; it carries `(span, bucket)` now and
+*computes* the third as `coarsest(rung_of_bucket(bucket), rung_over(span))` out
+of `retention`'s own names. Both terms are pure and neither costs a query, so
+the field cannot drift from the policy it describes — where a third literal
+would have gone on describing the version before a wall moved, which is worse
+than a wrong number because it reads as an answer. The four windows still
+announce `raw / hour / hour / day`, and **the wall itself is not marked**: it
+produces no wrong figure, only fewer points. A bucket that falls **between** two
+rungs (`6 hours`, which `bucket_for_window` may still pick for the older
+per-share route) is a **refusal** rather than a rounding: a resolution has three
+names, and answering the nearer of two would be a claim nobody could check.
+
+**And it is cheap enough to ride a sixty-second job.** Measured on a synthetic
+store of the shape a twenty-year install has — 19 symbols, 1,32 M points, a raw
+year at 120 s, an hourly band and eighteen daily years — a steady cycle is
+**43 ms** and designates the 114 points that crossed a wall that day; a
+six-month catch-up (820 800 dense points aged past the first wall while nothing
+was running) is **790 020 rows removed in 66 ms**, in the one statement.
+
+**The purge returns no disk, and that is not the disappointment it looks like.**
+126 Mo before and after deleting 79 % of the rows, where the same content built
+fresh occupies 26 — the store reuses its blocks. What it buys is that everything
+becomes **constant in the age of the install** rather than growing with it: at
+twenty years, 34 Mo and 584 ms for the daily pass against 500 Mo and 6 673 ms.
+
 ### Scheduled Jobs
 ```text
 ┌──────────────────────────┐  ┌───────────────────┐  ┌──────────────────┐  ┌────────────────────┐
 │  SCRAPE  (per symbol,    │  │  INGESTION        │  │    BACKFILL      │  │   PERFORMANCE      │
 │  self-rescheduling)      │  │  (NOT a job)      │  │  (backfill_      │  │  (PERF_TICK,       │
 │                          │  │                   │  │   interval dial) │  │   ungated)         │
-│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Backward pass  │  │ • Replay the       │
-│ • marketState → cadence  │  │   watcher, or a   │  │ • Forward pass   │  │   Timeline         │
-│ • REGULAR: poll & write  │  │   write — never   │  │ • Lateral pass   │  │ • Full recompute   │
-│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Chunk 1 yr/req │  │ • Upsert + prune   │
-│                          │  │                   │  │ • Rate limit 10s │  │                    │
+│ • yfinance.Ticker()      │  │ • boot, or the    │  │ • Ladder collapse│  │ • Replay the       │
+│ • marketState → cadence  │  │   watcher, or a   │  │ • Backward pass  │  │   Timeline         │
+│ • REGULAR: poll & write  │  │   write — never   │  │ • Forward pass   │  │ • Full recompute   │
+│ • Closed: sleep to open  │  │   a timer (#697)  │  │ • Lateral pass   │  │ • Upsert + prune   │
+│                          │  │                   │  │ • Chunk 1 yr/req │  │                    │
 └──────────────────────────┘  └───────────────────┘  └──────────────────┘  └────────────────────┘
          │                            │                       │                       │
          └────────────────────────────┴───────────┬───────────┴───────────────────────┘
@@ -3633,6 +3749,7 @@ app/src/
 ├── quotes.py               # The market's two tables: symbol_quote + price_point, one `latest` rule (#700), and the lateral repair — an UPDATE, never an INSERT (#704)
 ├── fx.py                   # Pure: the reporting currency, GBp, one TTL cache per pair (#702), and the three answers a window fetch carries back (#704)
 ├── carrying.py             # Pure: the carrying price, the holding window, the backward anchor (#706)
+├── retention.py            # Pure: the three rungs, the two walls — an age bound and never a counter (#705)
 ├── performance.py          # Pure: XIRR/TWR, the sliding horizon and the per-field rule (#563, #708)
 ├── perf_series.py          # The perf job's two tables: account_metrics + portfolio_totals, block upsert + bounded prune (#700, #707)
 ├── store_reads.py          # PortfolioReader — the UI read primitives; errors propagate (#659, #700)

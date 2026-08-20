@@ -1316,7 +1316,18 @@ class SuiviBourseMetrics:
         for attempt in range(max_retries):
             try:
                 ticker = yf.Ticker(symbol)
-                # Use hourly interval for data within 730 days, daily for older
+                # **An API ceiling, not an arbitration** (issue #705, ADR-0010).
+                # Yahoo sells nothing below the hour past 729 days, so the
+                # rebuild asks for the finest bars that still exist rather than
+                # for the finest the ladder would allow — which is why this
+                # number is not a dial and not derived from
+                # :mod:`retention`'s walls either. The two sit a day apart (the
+                # hourly rung runs to 730) and that is the whole point: the
+                # ladder was drawn *from* this ceiling, so a reconstructed past
+                # and an ageing present implement one function of age instead of
+                # two policies meeting at the present. It is also the sentence
+                # behind *fine resolution is only ever obtained by having been
+                # there*: past this line there is nowhere to buy it back.
                 days_ago = (datetime.now(timezone.utc) - start).days
                 interval = '1h' if days_ago <= 729 else '1d'
                 history = ticker.history(start=start, end=end, interval=interval)
@@ -2348,13 +2359,28 @@ class SuiviBourseMetrics:
             "price already stored")
         return True
 
-    def backfill(self):
+    def backfill(self, now: Optional[datetime] = None):
         """
         Backfill historical price data, one series per **symbol**, in both
         directions. This runs as its own scheduled job, progressively filling
         gaps.
 
-        For each symbol, delegates to ``_backfill_symbol`` which runs three
+        **One clock for the whole cycle**, injected the way :mod:`scheduling`
+        and :mod:`carrying` take theirs (issue #705). It is #658's rule about
+        the snapshot applied to the other input every pass reads: the ladder's
+        two walls and each symbol's holding ceiling are answers to *when is it*,
+        and read one at a time they can straddle midnight — a symbol banded
+        against one day and the next symbol against the following one, on a job
+        whose cycle is minutes long at thirty symbols. APScheduler calls it with
+        no argument, so the default is the read it replaces; a test passes the
+        instant it seeded against.
+
+        The cycle opens with the **retention ladder** — one statement over the
+        whole table, ageing every point onto its rung (issue #705, ADR-0010) —
+        and it is a step of this job rather than a fifth one because it writes
+        ``price_point``, which is the past this job already owns.
+
+        Then, for each symbol, delegates to ``_backfill_symbol`` which runs three
         independent passes (issues #626, #704):
           * Backward: extend the series toward the first **acquisition**, one
             ``backfill_chunk_days`` chunk per cycle, until ``_backfill_complete``
@@ -2393,8 +2419,23 @@ class SuiviBourseMetrics:
         # at a time let a mid-cycle reload pair this cycle's shares with the
         # next cycle's events, and — through the old invalidate-then-load pair —
         # with no events at all, which quietly neutralised the backward pass.
+        now = now or datetime.now(timezone.utc)
         snapshot = self.config_manager.current()
         windows = snapshot.backfill_windows()
+
+        # The retention ladder, and it runs **before** the window check rather
+        # than inside the loop below (issue #705, ADR-0010). Two reasons, and
+        # neither is tidiness. Its subject is the *table* and not this cycle's
+        # holdings: the rows spec #695 § 10 most insists on keeping — those of a
+        # symbol no event names any more — are exactly the ones the loop never
+        # visits, and a ladder that skipped them would leave the finest series
+        # in the store the one nobody can see. And ``price_point`` carries no
+        # index (ADR-0007), so ``WHERE symbol = ?`` is a full scan: one
+        # statement partitioned by symbol pays for one scan where N calls pay
+        # for N. It belongs to the backfill and never to a fifth job because it
+        # **writes ``price_point``**, which is the past this job already owns.
+        self._collapse_to_ladder(now)
+
         if not windows:
             app_logger.debug("Nothing was ever held, skipping backfill")
             return
@@ -2421,7 +2462,7 @@ class SuiviBourseMetrics:
 
         for symbol in sorted(windows):
             written, repaired = self._backfill_symbol(
-                symbol, windows[symbol], symbol in held)
+                symbol, windows[symbol], symbol in held, now)
             backfilled_count += written
             repaired_count += repaired
 
@@ -2447,7 +2488,7 @@ class SuiviBourseMetrics:
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
-                         held: bool) -> Tuple[int, int]:
+                         held: bool, now: datetime) -> Tuple[int, int]:
         """Backfill one symbol over its own holding window (issue #626, #703, #704).
 
         The **backward** pass extends the series toward the first acquisition and
@@ -2480,9 +2521,11 @@ class SuiviBourseMetrics:
         acquired, exited = window
         # One definition of the window's two instants, shared with the
         # terminality read (issue #706): the pass that fills the history and the
-        # question "is this history finished" must not measure two windows.
-        target, ceiling = carrying.holding_bounds(
-            acquired, exited, datetime.now(timezone.utc))
+        # question "is this history finished" must not measure two windows. And
+        # ``now`` is the **cycle's**, not a second read of the clock (#705): two
+        # symbols banded either side of midnight is one ledger described at two
+        # dates.
+        target, ceiling = carrying.holding_bounds(acquired, exited, now)
 
         written = 0
         # Backward pass — skip once complete to avoid refetching the same window
@@ -2752,6 +2795,34 @@ class SuiviBourseMetrics:
         publish(anchor=end_date, oldest=oldest_timestamp, window=(start_date, end_date),
                 written=written)
         return written
+
+    def _collapse_to_ladder(self, now: datetime) -> int:
+        """Age the stored series onto the ladder, guarded like every other write.
+
+        The impure half of ADR-0010: the rungs and the walls are
+        :mod:`retention`'s, the statement is :func:`quotes.collapse_to_ladder`'s,
+        and what is decided here is only *when* and *how loudly*.
+
+        **A store that refuses this must not abort the cycle.** Nothing depends
+        on it: the ladder removes points and never writes one, so a failed pass
+        costs a series that stays finer than it should until the next cycle —
+        which is sixty seconds away and will designate exactly the same rows,
+        the operation carrying no watermark.
+
+        **And it is logged at DEBUG, not INFO.** In steady state a cycle ages
+        the handful of points that crossed a wall in the last sixty seconds —
+        during the session hours of the day a year ago, that is one or two
+        points, every cycle, all day. Said at INFO it would be the loudest line
+        in the log and would say nothing: the wall produces no wrong figure and
+        no news, only fewer points, which is the same reason it is not marked on
+        screen either.
+        """
+        try:
+            with self.config_manager.writing() as opened:
+                return quotes.collapse_to_ladder(opened, now)
+        except Exception as e:
+            app_logger.error(f"Failed to age the stored series: {e}")
+            return 0
 
     def _record_window_tried(self, symbol: str, oldest: date) -> None:
         """Persist the backward pass's anchor, guarded like every other write.

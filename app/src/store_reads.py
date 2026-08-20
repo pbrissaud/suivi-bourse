@@ -37,6 +37,7 @@ than moving it:
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+import retention
 import store
 
 #: What P1 hands back per ``(account, symbol)``. The position's own columns, the
@@ -598,14 +599,18 @@ def bucket_for_window(span_days: float) -> Optional[str]:
 #: see, which is the property that makes a range control worth having.
 CHART_WINDOWS = ('1M', '1Y', '2Y', 'MAX')
 
-#: What each window is served as: ``(span in days, bucket, resolution)``, with a
-#: ``None`` span meaning *the whole series* and a ``None`` bucket meaning *as
-#: written*.
+#: What each window is served as: ``(span in days, bucket)``, with a ``None``
+#: span meaning *the whole series* and a ``None`` bucket meaning *as written*.
 #:
-#: **The resolution is the coarsest of the bucket applied and the rung
-#: traversed** (#705's own rule), which is what lets it be announced once and
-#: never recomputed by the reader: the chart's *aggregated by X* caption reads
-#: this field instead of stating a second bucketing of its own.
+#: The **resolution is not in the table**, and that is the point: it is the
+#: coarsest of the bucket applied and the rung traversed (#705's own rule), so
+#: it is *computed* from the pair by :func:`chart_window` out of
+#: :mod:`retention`'s own names. Written down as a third literal it would have
+#: been a copy of the ladder kept in step by hand — and the day a wall moved,
+#: the field would have gone on describing the policy of the version before it,
+#: which is worse than a wrong number because it reads as an answer. The
+#: computation costs no query: both terms are pure functions of this table's own
+#: two members.
 #:
 #: Two of the four are worth the ink. ``1M`` is served **as written**, and it is
 #: the only window where the finest rung is reachable at all — a month of
@@ -617,10 +622,10 @@ CHART_WINDOWS = ('1M', '1Y', '2Y', 'MAX')
 #: stored point would put a second query behind a field whose whole job is to
 #: describe the answer that came back.
 _CHART_LADDER = {
-    '1M': (31, None, 'raw'),
-    '1Y': (365, '1 hour', 'hour'),
-    '2Y': (730, '1 hour', 'hour'),
-    'MAX': (None, '1 day', 'day'),
+    '1M': (31, None),
+    '1Y': (365, '1 hour'),
+    '2Y': (730, '1 hour'),
+    'MAX': (None, '1 day'),
 }
 
 
@@ -633,12 +638,21 @@ def chart_window(window: Optional[str]) -> tuple:
     for a reason that is not purism: the resolution served would then describe a
     window the caller did not ask for, and the caption under the chart would be
     right about a curve nobody requested.
+
+    The third member is **derived** rather than stored (issue #705): the
+    coarsest of the bucket this reader applies and the rung the window reaches
+    back into. Both terms are pure and neither costs a query, so the field
+    cannot drift from the retention policy it describes — which is the one thing
+    a chart's caption must not do.
     """
     if window not in _CHART_LADDER:
         raise ValueError(
             f"Unknown window {window!r}: expected one of "
             f"{', '.join(CHART_WINDOWS)}")
-    return _CHART_LADDER[window]
+    span_days, bucket = _CHART_LADDER[window]
+    return (span_days, bucket,
+            retention.coarsest(retention.rung_of_bucket(bucket),
+                               retention.rung_over(span_days)))
 
 
 def _window(column: str, start: Optional[datetime],

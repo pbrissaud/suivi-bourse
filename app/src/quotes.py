@@ -59,6 +59,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from logfmt_logger import getLogger
 
 import carrying
+import retention
 from store import finite
 
 logger = getLogger("quotes")
@@ -321,6 +322,151 @@ def record_history(store, symbol: str, points: Sequence[Mapping]) -> int:
 
     logger.debug(f"Wrote {len(rows)} historical price(s) for {symbol}")
     return len(rows)
+
+
+# --------------------------------------------------------------------------- #
+# The retention ladder — a DELETE, and never anything else (issue #705)
+# --------------------------------------------------------------------------- #
+
+def collapse_to_ladder(store, now: datetime) -> int:
+    """Age the whole series onto the ladder, in place. Returns rows removed.
+
+    ADR-0010's write half: under a year a point is kept **as it was written**,
+    from one year to two only the last point of each hour survives, and beyond
+    two years only the last point of each day. :mod:`retention` holds the rungs
+    and the two walls; this is the statement that applies them.
+
+    Seven things about it are decisions rather than details.
+
+    **It is a ``DELETE`` and nothing else.** The ladder is a ceiling, never a
+    floor: it designates rows and removes them, so a gap filled at nine months
+    of age arrives hourly and *stays* hourly — nothing here interpolates it up
+    to the live cadence, and no later pass will either. That is also the whole
+    of why it is safe to run every cycle on a series it does not own the
+    writing of.
+
+    **The survivor of a bucket is its last point — its last *usable* one where
+    the bucket is mixed**, and that qualifier is the whole of the rule. The
+    criterion behind it is *a survivor chosen otherwise would make the value
+    jump as the wall goes by*, and this store's three daily-ish readers do not
+    all mean the same thing by *the price then*: :func:`price_series` and
+    :meth:`store_reads.PortfolioReader.daily_closes` rank the day's
+    **converted** rows (an unconverted one is not money and they filter it out
+    before ranking), while :meth:`store_reads.PortfolioReader.chart_series`
+    ranks by instant alone. One survivor cannot satisfy both in a bucket that
+    holds a converted point *and* a later unconverted one, so the disagreement
+    is settled — and settled towards the money.
+
+    Keeping the last point flat would **delete the only usable value in the
+    bucket**: measured on a store, a day carrying ``10:00 converted`` and
+    ``17:00 NULL`` disappears from :func:`price_series` entirely, so the perf
+    job carries the previous day's price onto it, and — since ``oldest_priced``
+    is derived from those same pairs — a symbol's earliest converted day moving
+    forward widens its block in :func:`performance.account_horizon`, moves the
+    account's bound and has the prune drop days. That is the #708/#765 crater
+    class, from a ``DELETE`` that cannot be undone: at best #704's lateral pass
+    later refills the survivor at the *historical daily* rate, which is a
+    different number from the spot rate that was stored.
+
+    Ranked converted-first, ``price_series`` and ``daily_closes`` are preserved
+    **to the value**: the day's last converted point is the last converted point
+    of its own bucket, so it is exactly the row that survives. What changes is
+    ``chart_series``, which renders that bucket as a price where it rendered a
+    gap — a true observation appearing, not a figure moving, which is the
+    direction the criterion is indifferent to. It does not retract #763's rule
+    either: *that* rule is about not letting one resolved rate stand for a whole
+    hour of unresolved ones **that are still stored**, and after the collapse
+    there is nothing left to stand for. The two rank differently because they
+    answer two questions — *what is stored right now* against *which single
+    observation is worth keeping*.
+
+    A bucket with **no** converted point at all keeps its last point, native
+    price and all: that is still a row #704's lateral pass repairs in place, and
+    throwing it away would be the ladder deciding a conversion will never land.
+
+    **Idempotent by construction.** On an already-collapsed bucket exactly one
+    row stands, so it is that bucket's last one and ``rn > 1`` designates
+    nothing. There is no watermark to keep, and running the pass twice in a row
+    leaves an identical table — which is what lets it be a step of a job that
+    fires every sixty seconds.
+
+    **One statement over the whole table, not one per symbol.** ``price_point``
+    carries no index of any kind (ADR-0007), so ``WHERE symbol = ?`` is a full
+    scan: N symbols would be N scans of the same rows. Partitioning by
+    ``(symbol, bucket)`` pays for one. And it is the reading that covers the
+    rows spec #695 § 10 most insists on keeping — those of a symbol **no event
+    names any more**, which the backfill's own loop never visits, because it
+    walks the holding windows the ledger produces.
+
+    **The ``latest`` row may name a point this removes, and that is not a
+    dangling reference.** ``symbol_quote``'s ``last_*`` columns are a **copy of
+    an observation**, not a key into the series — nothing joins them to
+    ``price_point`` — so what they go on saying is *the newest observation ever
+    made*, which stays true. It can only happen where the newest point of a
+    symbol is itself past a wall (a line quoted nowhere for over a year) **and**
+    unconverted while an earlier point of its bucket is not; in that state
+    ``last_price_converted`` was already ``NULL`` beside a series that had a
+    converted price for the same hour, so the collapse leaves the inconsistency
+    exactly as it found it rather than creating one. Protecting the row instead
+    would leave one bucket per symbol permanently uncollapsed, to defend a
+    figure no reader recomputes from the series.
+
+    **And it is cheap enough to ride a sixty-second job**, which is what
+    *idempotent by construction* and *one statement* are worth together — the
+    two are only a design if the pass they license is free. Measured on a synthetic store of the shape
+    a twenty-year install has — 19 symbols, 1,32 M points, a raw year at 120 s,
+    an hourly band and eighteen daily years: **43 ms** for a steady cycle, which
+    designates the 114 points that crossed a wall that day. A six-month
+    catch-up — 820 800 dense points that aged past the first wall while nothing
+    was running — is **790 020 rows removed in 66 ms**, in the one statement.
+
+    **``rowid`` is what addresses a row**, since the table has no key to do it
+    with. It is read and used inside one statement, which is the only scope over
+    which DuckDB promises it means anything — and the count comes back off that
+    same statement rather than from a second scan, which the surrounding
+    transaction is what makes safe: it holds the store's lock from ``BEGIN`` to
+    ``COMMIT``, so no other thread can put a second pending result on the
+    connection between the ``execute`` and its ``fetchone``.
+    """
+    hourly_wall, daily_wall = retention.walls(now)
+    # The two bands, each as its own ``(bucket, bound, parameters)``. The daily
+    # bucket is ``CAST(ts AS DATE)`` and not ``time_bucket(INTERVAL '1 day',
+    # ts)``: the two name the same UTC day, and the first is the spelling
+    # :func:`price_series` and the perf job's own read already mean by *the price
+    # of that day*, so the survivor left behind is by construction the point
+    # those reads were already taking. The bounds match :func:`retention.walls`'
+    # own edges — ``<=`` on the hourly side of the second wall, ``<`` on the
+    # daily one — so the bands are disjoint and no point is designated twice.
+    bands = (
+        ("time_bucket(INTERVAL '1 hour', ts)", 'ts <= ? AND ts >= ?',
+         [hourly_wall, daily_wall]),
+        ('CAST(ts AS DATE)', 'ts < ?', [daily_wall]),
+    )
+
+    #: The survivor, in one ``ORDER BY``: a **converted** point before an
+    #: unconverted one, then the latest instant, then the last row to have
+    #: landed on it — two points can truncate to the same second, and
+    #: ``_advance_latest`` keeps the last of them for the same reason.
+    survivor = ('(price_converted IS NOT NULL) DESC, ts DESC, rowid DESC')
+
+    removed = 0
+    with store.transaction():
+        for bucket, bound, parameters in bands:
+            result = store.execute(
+                'DELETE FROM price_point WHERE rowid IN ('
+                '  SELECT rowid FROM ('
+                '    SELECT rowid, ROW_NUMBER() OVER ('
+                f'             PARTITION BY symbol, {bucket}'
+                f'              ORDER BY {survivor}) AS rn'
+                '      FROM price_point'
+                f'     WHERE {bound}'
+                '  ) WHERE rn > 1)',
+                parameters)
+            removed += int(result.fetchone()[0])
+
+    if removed:
+        logger.debug(f"Aged {removed} price point(s) onto the retention ladder")
+    return removed
 
 
 # --------------------------------------------------------------------------- #
@@ -763,6 +909,7 @@ def _utc(value):
 __all__ = [
     'QUOTE_ATTRIBUTES', 'truncate',
     'record_quote', 'record_attributes', 'record_history',
+    'collapse_to_ladder',
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
     'first_quoted_days',
