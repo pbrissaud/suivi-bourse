@@ -137,6 +137,16 @@ A few rules follow, and each of them exists to keep a mistake a refusal:
   behind as a residue you can neither read nor delete.
 * What came from a file is **read-only** in the app; what you create in the app
   is editable. Where a row came from is always visible.
+* **The one exception is the account column, at the moment you declare your
+  first account.** Events imported before that point carry `default`, and they
+  were right to: the column meant `default` under the rule then in force, and it
+  is the app that changed the rule underneath them. So declaring your first
+  account offers, in the same gesture, to move those events onto it — ticked by
+  default, and never a condition of the declaration. The same offer stands on
+  the *Données* page for as long as any event still carries `default`, which is
+  what you get when the declaration arrives by a file rather than by the form.
+  Afterwards an imported event names its account for good. Your files are not
+  rewritten; nothing is asked of them.
 
 Version 4's `settings.yaml` is **named and never read**. Its `accounts:` block
 mixed deployment settings with user data, which is exactly the seam v5 separates;
