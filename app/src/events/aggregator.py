@@ -287,5 +287,17 @@ class EventAggregator:
         Folding it into a composite made a sold position report a *positive
         latent gain* on shares it no longer held — the quieter half of the same
         −932 € lie.
+
+        **The figure is net of the fee**, because the cash it moved is. A gross
+        term beside a net cash balance puts the fee inside ``gain_absolu`` and
+        inside none of ADR-0018's four terms — the head *computes* the total
+        from the four, so the two headline figures disagree by exactly the
+        withholding on the line. ADR-0018's fourth term cannot carry it: it is
+        named for what a broker takes from a **transfer**, and ``store_reads``
+        sums it over ``DEPOSIT``/``WITHDRAWAL`` alone. So the fee is absorbed
+        where its counterpart already goes, exactly as an acquisition fee is
+        absorbed into the cost basis and a disposal fee into the proceeds
+        (ADR-0003) — the common case being a withholding tax entered as the
+        ``fee`` of the dividend line.
         """
-        state.received_dividend += event.amount
+        state.received_dividend += event.amount - (event.fee or 0.0)

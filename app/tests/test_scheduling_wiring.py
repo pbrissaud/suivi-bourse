@@ -1340,3 +1340,30 @@ def test_capture_exchange_of_times_out_to_solo_market(
         assert result == {"SLOW": None}
     finally:
         release.set()                    # let the worker thread exit cleanly
+
+
+def test_scrape_symbol_rearms_after_an_unexpected_failure(
+        store, mocker, monkeypatch):
+    """An unforeseen exception must not take the symbol out of the rotation.
+
+    The job is a one-shot ``date`` trigger: APScheduler drops it from the store
+    as it dispatches it, so the re-arm at the end of the pass is the only thing
+    that puts the symbol back. ``_fetch_ticker_data`` catches three exception
+    types; anything else — a transport error, a shape yfinance changed — used to
+    end the self-reschedule chain for the life of the process, and only an
+    ``ingest()`` reconcile could revive it.
+    """
+    m = _metrics([_share()], store, mocker)
+    mocker.patch.object(m, "_fetch_ticker_data",
+                        side_effect=KeyError("marketState"))
+
+    m._scrape_symbol("AAPL", now=NOW)
+
+    assert _prices(store) == []
+    # Re-armed at the ordinary cadence: `decide` never got to narrow it.
+    assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
+    # And the pass says what happened rather than leaving the reader in front of
+    # a record that still describes the cycle before it.
+    record = m.recorder.scrape_of("AAPL")
+    assert record.verdict == runtime_state.SCRAPE_NO_PRICE
+    assert record.error == "KeyError: 'marketState'"

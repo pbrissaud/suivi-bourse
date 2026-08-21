@@ -32,7 +32,6 @@ def _info(**overrides):
         'dividendYield': 0.5,
         'peRatio': 30.0,
         'marketCap': 3_000_000_000.0,
-        'volume': 123456,
     }
     info.update(overrides)
     return info
@@ -63,7 +62,7 @@ def test_all_expected_gauges_are_registered(exporter):
     for name in (
         'sb_share_price', 'sb_cost_basis', 'sb_owned_quantity',
         'sb_received_dividend', 'sb_realized_gain', 'sb_share_info',
-        'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap', 'sb_volume',
+        'sb_dividend_yield', 'sb_pe_ratio', 'sb_market_cap',
         'sb_price_staleness',
     ):
         assert f'# HELP {name} ' in text
@@ -329,7 +328,6 @@ def test_update_quote_sets_the_market_gauges(exporter):
     assert _val(exporter, 'sb_fx_rate') == 0.92
     assert _val(exporter, 'sb_pe_ratio') == 30.0
     assert _val(exporter, 'sb_market_cap') == 3_000_000_000.0
-    assert _val(exporter, 'sb_volume') == 123456
     # And touches nothing the replay owns.
     assert _val(exporter, 'sb_owned_quantity') is None
     assert _val(exporter, 'sb_realized_gain') is None
@@ -351,9 +349,16 @@ def test_the_converted_price_is_absent_while_the_currency_is_unanswered(exporter
     assert _val(exporter, 'sb_fx_rate') is None
 
 
-def test_dividend_yield_is_scaled_to_percentage(exporter):
-    exporter.update_quote(_share(), 150.0, _info(dividendYield=0.5))
-    assert _val(exporter, 'sb_dividend_yield') == 50.0
+def test_the_dividend_yield_is_published_as_yfinance_hands_it_over(exporter):
+    """No scaling: `dividendYield` is already a percentage.
+
+    yfinance answers 5.32 for a 5,32 % yield — the *ratio* is a different key,
+    `trailingAnnualDividendYield`. Both write paths scaled it by 100 anyway, so
+    `/metrics` and the API agreed on a figure a hundred times too large: a real
+    portfolio published `sb_dividend_yield 532` for a 5,32 % yield.
+    """
+    exporter.update_quote(_share(), 150.0, _info(dividendYield=5.32))
+    assert _val(exporter, 'sb_dividend_yield') == pytest.approx(5.32)
 
 
 def test_share_info_gauge_carries_tag_labels(exporter):
@@ -407,7 +412,6 @@ def test_forget_quotes_removes_every_market_series_of_the_symbol(exporter):
     assert _val(exporter, 'sb_dividend_yield') is None
     assert _val(exporter, 'sb_pe_ratio') is None
     assert _val(exporter, 'sb_market_cap') is None
-    assert _val(exporter, 'sb_volume') is None
     assert _val(exporter, 'sb_price_staleness') is None
     assert exporter.registry.get_sample_value('sb_share_info', AAPL_INFO) is None
 
@@ -509,11 +513,10 @@ def test_the_store_gauge_is_absent_while_the_mount_is_unobservable(exporter):
 def test_none_optional_fields_are_not_set(exporter):
     exporter.update_quote(
         _share(), 150.0,
-        _info(dividendYield=None, peRatio=None, marketCap=None, volume=None))
+        _info(dividendYield=None, peRatio=None, marketCap=None))
     assert _val(exporter, 'sb_dividend_yield') is None
     assert _val(exporter, 'sb_pe_ratio') is None
     assert _val(exporter, 'sb_market_cap') is None
-    assert _val(exporter, 'sb_volume') is None
     # The price is still present.
     assert _val(exporter, 'sb_share_price_native') == 150.0
 

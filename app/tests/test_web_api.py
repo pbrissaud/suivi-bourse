@@ -1307,6 +1307,59 @@ def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
             == pytest.approx(totals['gain_absolu'], abs=5e-3))
 
 
+def test_the_identity_holds_when_the_dividend_itself_carries_a_fee(tmp_path):
+    """The same identity, on the line the fourth term cannot reach.
+
+    ADR-0018's fourth term is named for what a broker takes from a **transfer**,
+    and `store_reads.transfer_fees` sums it over `DEPOSIT`/`WITHDRAWAL` alone —
+    so a fee on a `DIVIDEND` row belongs to no term, while `_apply_share_cash`
+    still takes it out of cash. It therefore landed inside `gain_absolu` and
+    inside none of the four, and the head — which *computes* the total from the
+    four — disagreed with `portfolio_totals` by exactly the withholding. The
+    ledger below is the one above with a 4,00 withholding on the dividend, the
+    commonest way this arrives: a PFU deducted at source, typed into `fee`.
+
+        latente +118,20 · réalisée +36,80 · dividendes +8,00 · frais −2,25
+                                                          = gain_absolu 160,75
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2024-01-10,DEPOSIT,,,,,1.50,1000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,80.00,3.00,,pea\n"
+        "2024-03-01,DIVIDEND,AAPL,Apple Inc,,,4.00,12.00,pea\n"
+        "2024-04-01,SELL,AAPL,Apple Inc,4,90.00,2.00,,pea\n"
+        "2024-06-01,WITHDRAWAL,,,,,0.75,200.00,pea\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, price=100.0, currency='EUR', converted=100.0,
+                   rate=1.0, at=datetime(2024, 6, 5, 17, 0, tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=events, seed=seed)
+
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+
+    positions = client.get('/api/positions').get_json()['positions']
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+
+    latent = sum(row['quantity'] * row['converted']['value'] - row['cost_basis']
+                 for row in positions)
+    realised = sum(row['realised'] for row in positions)
+    dividends = sum(row['dividends'] for row in positions)
+
+    # The dividend is **net**: 12,00 received, 4,00 withheld.
+    assert dividends == pytest.approx(8.00, abs=5e-3)
+    assert totals['transfer_fees'] == pytest.approx(-2.25, abs=5e-3)
+    assert totals['gain_absolu'] == pytest.approx(160.75, abs=5e-3)
+    assert (latent + realised + dividends + totals['transfer_fees']
+            == pytest.approx(totals['gain_absolu'], abs=5e-3))
+
+
 def _fixed_today(mocker, y, mo, d):
     """The perf job's clock, fixed — `main` reads UTC and so does this (#781).
 

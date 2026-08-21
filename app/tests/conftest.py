@@ -241,11 +241,15 @@ def fake_ticker():
             "currency": "USD",
             "exchange": "NMS",
             "quoteType": "EQUITY",
-            "dividendYield": 0.0052,
+            # yfinance hands the yield over as a **percentage**: 0.52 is a
+            # 0,52 % yield, not 52 %. The ratio is spelled
+            # `trailingAnnualDividendYield` and is a different key. The fake
+            # said 0.0052 and the product scaled it by 100, so the suite
+            # attested a simulation of yfinance rather than yfinance.
+            "dividendYield": 0.52,
             "trailingPE": 28.5,
             "forwardPE": 26.0,
             "marketCap": 3_000_000_000_000,
-            "volume": 50_000_000,
         }
         if market_state is not None:
             default_info["marketState"] = market_state

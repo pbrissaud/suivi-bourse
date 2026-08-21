@@ -249,12 +249,10 @@ def test_fetch_ticker_data_success_and_mapping(store,
     assert info["currency"] == "USD"
     assert info["exchange"] == "NMS"
     assert info["quoteType"] == "EQUITY"
-    assert info["dividendYield"] == pytest.approx(0.0052)
+    assert info["dividendYield"] == pytest.approx(0.52)
     # peRatio maps to trailingPE when present
     assert info["peRatio"] == 28.5
     assert info["marketCap"] == 3_000_000_000_000
-    # hourly volume = last Volume row (rows=3 default -> 1_000_000 + 1000*2)
-    assert info["volume"] == 1_002_000
     # info is cached for backfill reuse
     assert metrics._share_info_cache["AAPL"] == info
 
@@ -396,7 +394,7 @@ def test_a_scrape_writes_one_price_point_and_refreshes_the_quote_row(
     assert quote["currency"] == "USD"
     assert quote["exchange"] == "NMS"
     assert quote["quote_type"] == "EQUITY"
-    # dividendYield 0.0052 -> dividend_yield 0.52
+    # Stored as handed over: yfinance already says 0.52 for a 0,52 % yield.
     assert quote["dividend_yield"] == pytest.approx(0.52)
     assert quote["pe_ratio"] == 28.5
     assert quote["market_cap"] == 3_000_000_000_000

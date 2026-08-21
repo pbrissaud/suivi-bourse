@@ -162,7 +162,7 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     assert aapl_quote["currency"] == "USD"
     assert aapl_quote["exchange"] == "NMS"
     assert aapl_quote["quote_type"] == "EQUITY"
-    assert aapl_quote["dividend_yield"] == pytest.approx(0.52)  # 0.0052 * 100
+    assert aapl_quote["dividend_yield"] == pytest.approx(0.52)  # as handed over
     assert aapl_quote["last_price_native"] == pytest.approx(190.0)
     # The three price columns move together (#702): the `latest` row never
     # carries a native price beside a converted one from an earlier point.

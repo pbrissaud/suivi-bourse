@@ -200,6 +200,33 @@ def test_dividend_increases_only_received_dividend(aggregator):
     assert share["realized_gain"] == 0.0
 
 
+def test_a_dividend_fee_is_absorbed_into_the_dividend(aggregator):
+    """The fee comes off the named term, because it comes off the cash.
+
+    A gross ``received_dividend`` beside a net cash balance puts the fee inside
+    ``gain_absolu`` and inside none of ADR-0018's four terms — and the head
+    *computes* the total from the four, so the two headline figures disagreed by
+    exactly the withholding on the line. The fourth term cannot carry it: it is
+    named for what a broker takes from a **transfer**, and ``store_reads`` sums
+    it over ``DEPOSIT``/``WITHDRAWAL`` alone. So it is absorbed where its
+    counterpart already goes, exactly as ADR-0003 absorbs an acquisition fee
+    into the basis. The common case is a withholding tax typed into ``fee``.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=10, unit_price=150.0, fee=2.5),
+        Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
+              amount=20.0, fee=3.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["received_dividend"] == pytest.approx(17.0)
+    # And nothing else moved: the fee is not an acquisition cost.
+    assert share["cost_basis"] == pytest.approx(1502.5)
+    assert share["realized_gain"] == 0.0
+
+
 # ---------------------------------------------------------------------------
 # aggregate(): SELL — a subtraction, and a realized gain
 # ---------------------------------------------------------------------------

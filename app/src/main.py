@@ -1254,12 +1254,6 @@ class SuiviBourseMetrics:
                     app_logger.warning(f"No non-NaN close price for {symbol}, skipping")
                     return None, None
                 last_quote = valid_close.iloc[-1]
-                # Get hourly volume instead of daily volume
-                ticker_history_hourly = ticker.history(period='1d', interval='1h')
-                if not ticker_history_hourly.empty and 'Volume' in ticker_history_hourly.columns:
-                    last_volume = ticker_history_hourly.tail(1)['Volume'].iloc[0]
-                else:
-                    last_volume = None
                 ticker_info = ticker.info
                 info = {
                     'currency': ticker_info.get('currency', 'undefined'),
@@ -1268,7 +1262,6 @@ class SuiviBourseMetrics:
                     'dividendYield': ticker_info.get('dividendYield'),
                     'peRatio': ticker_info.get('trailingPE') or ticker_info.get('forwardPE'),
                     'marketCap': ticker_info.get('marketCap'),
-                    'volume': int(last_volume) if pd.notna(last_volume) else None,
                     # Market-context fields feed the per-symbol scheduler
                     # (scheduling.extract_market_context). They ride on `info`
                     # so _fetch_ticker_data keeps its (last_quote, info) shape;
@@ -1514,12 +1507,14 @@ class SuiviBourseMetrics:
         of them was a comb of ``NULL`` down the price series that nothing ever
         read as one.
         """
-        yield_pct = info.get('dividendYield')
         return {
             'currency': info.get('currency'),
             'exchange': info.get('exchange'),
             'quote_type': info.get('quoteType'),
-            'dividend_yield': yield_pct * 100 if yield_pct is not None else None,
+            # Stored as the percentage yfinance hands over — `dividendYield` is
+            # already 5.32 for a 5,32 % yield, the ratio being spelled
+            # `trailingAnnualDividendYield`. Scaling it here stored 532.
+            'dividend_yield': info.get('dividendYield'),
             'pe_ratio': info.get('peRatio'),
             'market_cap': info.get('marketCap'),
         }
@@ -2001,116 +1996,146 @@ class SuiviBourseMetrics:
         """
         injected_now = now is not None
         now = now or datetime.now(timezone.utc)
-        last_quote, info = self._fetch_ticker_data(symbol)
-        price_present = last_quote is not None and info is not None
+        # A pass that raises must not take the symbol out of the rotation.
+        # The job is a one-shot ``date`` trigger: APScheduler drops it from the
+        # store as it dispatches, so the re-arm below is the *only* thing that
+        # puts the symbol back, and a body that raises before reaching it ends
+        # the self-reschedule chain for the life of the process. Only three
+        # exception types are caught inside the fetch; anything else — a
+        # transport error, a shape yfinance changed — used to be terminal.
+        # The delay therefore starts at the ordinary cadence and ``decide``
+        # narrows it only if it got to run.
+        next_delay = self.regular_interval
+        try:
+            last_quote, info = self._fetch_ticker_data(symbol)
+            price_present = last_quote is not None and info is not None
 
-        # The conversion, computed **once** for this pass (issue #702) and used
-        # by both the gauges and the write: two calls would be two rates for one
-        # observation the moment a TTL expired between them, and the row would
-        # then say a price was produced by a rate it was not.
-        converted, rate = self._convert(last_quote, (info or {}).get('currency'))
+            # The conversion, computed **once** for this pass (issue #702) and used
+            # by both the gauges and the write: two calls would be two rates for one
+            # observation the moment a TTL expired between them, and the row would
+            # then say a price was produced by a rate it was not.
+            converted, rate = self._convert(last_quote, (info or {}).get('currency'))
 
-        # The holdings this symbol has, which since #700 decide **whether** to
-        # write and no longer **how many times**: the price series carries no
-        # account, so a symbol held in three accounts is one point. What the
-        # list is still needed for is the Prometheus gauges, whose series
-        # identity does carry the account, and the "is anyone still holding
-        # this" question the write gate asks (issue #699).
-        holdings = [s for s in self.shares
-                    if s.get('symbol') == symbol and s.get('quantity')]
+            # The holdings this symbol has, which since #700 decide **whether** to
+            # write and no longer **how many times**: the price series carries no
+            # account, so a symbol held in three accounts is one point. What the
+            # list is still needed for is the Prometheus gauges, whose series
+            # identity does carry the account, and the "is anyone still holding
+            # this" question the write gate asks (issue #699).
+            holdings = [s for s in self.shares
+                        if s.get('symbol') == symbol and s.get('quantity')]
 
-        # Prometheus sb_share_* gauges stay on the fetch-success gate (#609),
-        # never the write/REGULAR gate.
-        if price_present:
-            for share in holdings:
-                self._update_share_prometheus(
-                    share, last_quote, info, converted, rate)
+            # Prometheus sb_share_* gauges stay on the fetch-success gate (#609),
+            # never the write/REGULAR gate.
+            if price_present:
+                for share in holdings:
+                    self._update_share_prometheus(
+                        share, last_quote, info, converted, rate)
 
-        if info is not None:
-            state, next_open = scheduling.extract_market_context(
-                info, info.get('_history_meta'), now)
-        else:
-            # Fetch failed outright: no state to read, fail-open as REGULAR so a
-            # transient failure keeps the job polling rather than sleeping it.
-            state, next_open = None, None
-
-        with self._failure_counts_lock:
-            should_write, next_delay, new_failure_count = scheduling.decide(
-                state, price_present, next_open, now,
-                self._failure_counts.get(symbol, 0), self.regular_interval)
-            # Persist the backoff counter only while the symbol is still held. A
-            # concurrent ingest() reconcile may have removed it (and popped its
-            # entry) between this cycle's fetch and here; the held-recheck under
-            # the shared lock stops this write from resurrecting a departed
-            # symbol's counter after cleanup (issue #617 race). Both branches run
-            # under the lock so the reconcile pop can't interleave mid-decision.
-            if symbol in self._held_symbols():
-                self._failure_counts[symbol] = new_failure_count
+            if info is not None:
+                state, next_open = scheduling.extract_market_context(
+                    info, info.get('_history_meta'), now)
             else:
-                self._failure_counts.pop(symbol, None)
+                # Fetch failed outright: no state to read, fail-open as REGULAR so a
+                # transient failure keeps the job polling rather than sleeping it.
+                state, next_open = None, None
 
-        stale = False
-        if should_write:
-            # Price-freshness liveness sonde (issue #628): read the stored price
-            # *before* this cycle's write refreshes it, so a silently stale writer
-            # is caught. Purely diagnostic — never gates the write below.
-            stale = self._check_price_freshness(symbol, holdings, last_quote, now)
+            with self._failure_counts_lock:
+                should_write, next_delay, new_failure_count = scheduling.decide(
+                    state, price_present, next_open, now,
+                    self._failure_counts.get(symbol, 0), self.regular_interval)
+                # Persist the backoff counter only while the symbol is still held. A
+                # concurrent ingest() reconcile may have removed it (and popped its
+                # entry) between this cycle's fetch and here; the held-recheck under
+                # the shared lock stops this write from resurrecting a departed
+                # symbol's counter after cleanup (issue #617 race). Both branches run
+                # under the lock so the reconcile pop can't interleave mid-decision.
+                if symbol in self._held_symbols():
+                    self._failure_counts[symbol] = new_failure_count
+                else:
+                    self._failure_counts.pop(symbol, None)
 
-            # One write, and only while something is held: a symbol whose last
-            # holding was sold between this cycle's fetch and here has nothing
-            # to record, and nothing wrong with it either.
-            wrote_live_data = bool(holdings) and self._write_quote(
-                symbol, last_quote, info, now, converted, rate)
-            # Nothing is signalled to the perf job from here any more (issue
-            # #707). A REGULAR write used to raise a global live-write bool the
-            # gate read; the recompute is unconditional now, so the price this
-            # cycle wrote is simply read by the next one out of the store.
-        else:
-            wrote_live_data = False
-            app_logger.debug(
-                f"Skipping write for {symbol} (state={state}, "
-                f"price_present={price_present})")
+            stale = False
+            if should_write:
+                # Price-freshness liveness sonde (issue #628): read the stored price
+                # *before* this cycle's write refreshes it, so a silently stale writer
+                # is caught. Purely diagnostic — never gates the write below.
+                stale = self._check_price_freshness(symbol, holdings, last_quote, now)
 
-        # The last-pass record (issue #668, design #656 déc. 1). Published here,
-        # once, out of values this pass already holds — `decide` handed back the
-        # verdict, the delay and the counter in one call, so the three are
-        # coherent with each other in a way no reader could reconstruct.
-        #
-        # Neither `state` nor the coercion is read from `_share_info_cache`
-        # (traps 2 and 3): `decide` fail-opens an unrecognised state to REGULAR
-        # while the cache keeps yfinance's raw string, and the cache is written
-        # only on a *successful* fetch — so a failing symbol's cache entry
-        # reports the market state from before its failure, which is the very
-        # case a pill exists to show. `state` here is what this cycle read, and
-        # `closed` is what the scheduler acted on.
-        self.recorder.record_scrape(runtime_state.ScrapeRecord(
-            symbol=symbol,
-            at=now,
-            market_state=state,
-            closed=scheduling.is_closed(state),
-            price_present=price_present,
-            verdict=self._scrape_verdict(
-                should_write, state, wrote_live_data, bool(holdings)),
-            failure_count=new_failure_count,
-            next_delay=next_delay,
-            wrote=wrote_live_data,
-            stale=stale,
-            error=(
-                f"No point persisted for {symbol}: the store refused the write"
-                if should_write and not wrote_live_data and holdings else None),
-        ))
+                # One write, and only while something is held: a symbol whose last
+                # holding was sold between this cycle's fetch and here has nothing
+                # to record, and nothing wrong with it either.
+                wrote_live_data = bool(holdings) and self._write_quote(
+                    symbol, last_quote, info, now, converted, rate)
+                # Nothing is signalled to the perf job from here any more (issue
+                # #707). A REGULAR write used to raise a global live-write bool the
+                # gate read; the recompute is unconditional now, so the price this
+                # cycle wrote is simply read by the next one out of the store.
+            else:
+                wrote_live_data = False
+                app_logger.debug(
+                    f"Skipping write for {symbol} (state={state}, "
+                    f"price_present={price_present})")
 
-        # Re-arm only if still held — the in-flight guard against a job that was
-        # removed mid-cycle re-adding itself after reconcile's remove_job.
-        if self.scheduler is not None and symbol in self._held_symbols():
-            # Schedule from a fresh wall-clock, not the decision `now` captured
-            # before the fetch: _fetch_ticker_data can sleep on rate-limit
-            # retries, which for a small next_delay would otherwise put run_date
-            # in the past and let APScheduler drop the job, breaking the
-            # self-reschedule chain. Tests inject `now` to keep run_date
-            # deterministic; production recomputes it here.
-            arm_now = now if injected_now else datetime.now(timezone.utc)
-            self._arm_symbol(symbol, next_delay, arm_now)
+            # The last-pass record (issue #668, design #656 déc. 1). Published here,
+            # once, out of values this pass already holds — `decide` handed back the
+            # verdict, the delay and the counter in one call, so the three are
+            # coherent with each other in a way no reader could reconstruct.
+            #
+            # Neither `state` nor the coercion is read from `_share_info_cache`
+            # (traps 2 and 3): `decide` fail-opens an unrecognised state to REGULAR
+            # while the cache keeps yfinance's raw string, and the cache is written
+            # only on a *successful* fetch — so a failing symbol's cache entry
+            # reports the market state from before its failure, which is the very
+            # case a pill exists to show. `state` here is what this cycle read, and
+            # `closed` is what the scheduler acted on.
+            self.recorder.record_scrape(runtime_state.ScrapeRecord(
+                symbol=symbol,
+                at=now,
+                market_state=state,
+                closed=scheduling.is_closed(state),
+                price_present=price_present,
+                verdict=self._scrape_verdict(
+                    should_write, state, wrote_live_data, bool(holdings)),
+                failure_count=new_failure_count,
+                next_delay=next_delay,
+                wrote=wrote_live_data,
+                stale=stale,
+                error=(
+                    f"No point persisted for {symbol}: the store refused the write"
+                    if should_write and not wrote_live_data and holdings else None),
+            ))
+        except Exception as exc:
+            # Recorded rather than only logged: a symbol that stops answering
+            # is exactly what ``/api/runtime`` exists to show, and a pass that
+            # left no record reads there as one still in flight.
+            app_logger.error(
+                f"Scrape pass for {symbol} failed", exc_info=True)
+            self.recorder.record_scrape(runtime_state.ScrapeRecord(
+                symbol=symbol,
+                at=now,
+                market_state=None,
+                closed=False,
+                price_present=False,
+                verdict=runtime_state.SCRAPE_NO_PRICE,
+                failure_count=self._failure_counts.get(symbol, 0),
+                next_delay=next_delay,
+                wrote=False,
+                stale=False,
+                error=f"{type(exc).__name__}: {exc}",
+            ))
+        finally:
+            # Re-arm only if still held — the in-flight guard against a job that was
+            # removed mid-cycle re-adding itself after reconcile's remove_job.
+            if self.scheduler is not None and symbol in self._held_symbols():
+                # Schedule from a fresh wall-clock, not the decision `now` captured
+                # before the fetch: _fetch_ticker_data can sleep on rate-limit
+                # retries, which for a small next_delay would otherwise put run_date
+                # in the past and let APScheduler drop the job, breaking the
+                # self-reschedule chain. Tests inject `now` to keep run_date
+                # deterministic; production recomputes it here.
+                arm_now = now if injected_now else datetime.now(timezone.utc)
+                self._arm_symbol(symbol, next_delay, arm_now)
 
     def recompute_perf(self) -> None:
         """Rebuild the perf cache, in full, every cycle (issue #707, ADR-0011).

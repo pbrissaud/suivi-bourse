@@ -130,11 +130,6 @@ class PrometheusExporter:
         self.market_cap = Gauge(
             "sb_market_cap", "Market capitalization of the share", COMMON_LABELS,
             registry=self.registry)
-        # Not present in the original Prometheus export; exposed here as a bonus
-        # now that volume is collected.
-        self.volume = Gauge(
-            "sb_volume", "Trading volume of the share", COMMON_LABELS,
-            registry=self.registry)
         # Price-freshness liveness sonde (issue #628). 1 when the stored price is
         # silently stale (frozen past the horizon while the live quote moves), 0
         # when fresh — a gauge so it auto-clears when the writer recovers.
@@ -168,7 +163,6 @@ class PrometheusExporter:
             (self.dividend_yield, COMMON_LABELS),
             (self.pe_ratio, COMMON_LABELS),
             (self.market_cap, COMMON_LABELS),
-            (self.volume, COMMON_LABELS),
             (self.price_staleness, COMMON_LABELS),
         )
 
@@ -383,14 +377,16 @@ class PrometheusExporter:
             info['currency'], info['exchange'], info['quoteType']).set(1)
 
         if info.get('dividendYield') is not None:
-            # Match the stored quote: the yield is a percentage.
-            self.dividend_yield.labels(*labels).set(info['dividendYield'] * 100)
+            # Match the stored quote: the yield is a percentage — and yfinance
+            # already hands it over as one (`dividendYield` is 5.32 for a 5,32 %
+            # yield; the *ratio* is `trailingAnnualDividendYield`). Scaling it
+            # here published 532 % and the store held the same figure, so the
+            # gauge and the API agreed on a number a hundred times too large.
+            self.dividend_yield.labels(*labels).set(info['dividendYield'])
         if info.get('peRatio') is not None:
             self.pe_ratio.labels(*labels).set(info['peRatio'])
         if info.get('marketCap') is not None:
             self.market_cap.labels(*labels).set(info['marketCap'])
-        if info.get('volume') is not None:
-            self.volume.labels(*labels).set(info['volume'])
 
     def forget_quotes(self, symbol: str) -> None:
         """Remove every market series of a symbol whose scrape job has departed.
