@@ -11,8 +11,8 @@ So the rules here are thin on purpose. What the routes *do* own:
 * **Shape.** RESTful, resource by resource, because resources deduplicate
   across pages: #652 déc. 8 serves the shares table *and* the dashboard's
   allocation + movers from one query, and a page-shaped endpoint would have
-  re-split what that decision unified. ``/api/shares`` with two consumers and
-  one client cache is the HTTP expression of it.
+  re-split what that decision unified. ``/api/positions`` with two consumers
+  and one client cache is the HTTP expression of it.
 * **Windows on series sub-resources only.** #652 déc. 1 made stats absolute;
   the window drives charts alone, so it appears on ``/prices`` and nowhere else.
 * **Symbols as identity.** Trap 9 / déc. 3 — a share's name is display only,
@@ -43,7 +43,7 @@ import store as store_module
 from events import EventAggregator, Event, EventType
 from events import export as events_export
 from events.aggregator import AggregationError
-from store_reads import PortfolioReader, bucket_for_window, chart_window
+from store_reads import PortfolioReader, chart_window
 from web.problem import (
     bad_request,
     conflict,
@@ -163,210 +163,32 @@ def _on_error(exc: Exception):
 
 
 # --------------------------------------------------------------------- #
-# Shares
+# Portfolio — what moved since the last session close (issue #660)
+#
+# What is left of #660's section. ``/api/shares``, ``/api/shares/<symbol>``,
+# ``/api/shares/<symbol>/prices``, ``/api/portfolio`` and
+# ``/api/portfolio/history`` were kept "until the pages that consume them are
+# rewritten"; the pages are rewritten, and the v5 pair below is what they read.
+# Two of the five were the same arithmetic as a v5 route reached by another
+# path — ``/api/portfolio/history?mode=titres`` was ``/api/positions/history``
+# argument for argument — which is one figure with two chances of drifting.
 # --------------------------------------------------------------------- #
-
-@api_bp.get('/shares')
-def list_shares():
-    """The shares table — one row per share, aggregated across accounts.
-
-    P1 generalised: **one** query for the whole portfolio (#652 déc. 8), folded
-    by the pure module. Empty portfolio is ``200`` + ``[]``, never a 404.
-
-    A position whose symbol has no observed price and no more coming keeps its
-    ``price`` at ``null`` — the app does not invent a quote — while its
-    ``market_value`` and ``plus_value_latente`` are computed from its own cost
-    (issue #706). That is what makes the rows of this table add up to the head
-    the dashboard publishes, which reads the same rule through the perf series.
-    *No observed price* is ``price_native`` being absent: a row carrying a native
-    quote and no converted one is **waiting for a rate**, and it keeps its
-    ``market_value`` at ``null`` — a different absence, never rendered alike.
-    """
-    rows = _reader().positions()
-    shares = portfolio_view.build_shares(rows, _carried())
-    return jsonify([share.to_dict() for share in shares])
-
-
-@api_bp.get('/shares/<symbol>')
-def get_share(symbol: str):
-    """One share's detail sheet: the aggregate plus its per-account breakdown."""
-    rows = _reader().positions(symbol)
-    share = portfolio_view.build_share(rows, symbol, _carried())
-    if share is None:
-        return not_found(f"No stored data for symbol {symbol!r}")
-    return jsonify(share.to_dict())
-
-
-@api_bp.get('/shares/<symbol>/prices')
-def get_share_prices(symbol: str):
-    """The price series behind the chart, over ``?from=``/``?to=``.
-
-    The one place a window exists. Wide windows are served downsampled — see
-    :func:`store_reads.bucket_for_window`; the response says which bucket it
-    used so the chart is never silently lying about its resolution.
-
-    Gaps are returned as gaps (#606): a weekend is missing rows, not zeros, and
-    whether to bridge them is the chart's call — ``connectNulls`` is a
-    per-series prop, and #650's trap 5 records that the two Grafana dashboards
-    deliberately disagree about it.
-    """
-    try:
-        start, stop = _parse_window()
-    except ValueError as exc:
-        return bad_request(str(exc))
-
-    reader = _reader()
-    bucket = bucket_for_window((stop - start).total_seconds() / 86400)
-    if bucket is None:
-        rows = reader.raw_series(symbol, start, stop)
-    else:
-        rows = reader.bucketed_series(symbol, bucket, start, stop)
-
-    return jsonify({
-        'symbol': symbol,
-        'from': start.isoformat(),
-        'to': stop.isoformat(),
-        'bucket': bucket,
-        'points': [
-            {'t': _iso(row.get('t')), 'price': row.get('price')} for row in rows
-        ],
-    })
-
-
-# --------------------------------------------------------------------- #
-# Portfolio — the consolidated dashboard (issue #660)
-# --------------------------------------------------------------------- #
-
-@api_bp.get('/portfolio')
-def get_portfolio():
-    """The dashboard head, as a **discriminated union** (#655 déc. 8).
-
-    ``mode`` is decided from the configuration — whether accounts are declared —
-    never from whether the series has rows, so "you have not declared accounts"
-    and "the perf job has not run yet" stay two different screens. Each mode
-    carries its own fields; #652 déc. 6's **Gain** and **plus-value latente**
-    therefore never share a key.
-
-    **Two modes since #702, not three.** The multi-currency one is deleted with
-    ``Account.currency``: an account has no currency, so accounts cannot
-    disagree about one, and a mode published but unreachable is something a
-    front eventually handles for nothing.
-
-    ``?since=`` is the relative delta of #652 déc. 2 — a UI preference applied to
-    the head, explicitly *decoupled* from the chart's zoom, which is why it is a
-    baseline **instant** here rather than a window. Windows still live on series
-    sub-resources only (déc. 1).
-    """
-    # Parsed before the mode is even looked at, and deliberately so: doing it
-    # inside the `accounts` branch made a malformed instant a 400 there and a
-    # silent no-op in the other two, so the same request answered differently
-    # depending on a configuration the caller cannot see. A request is malformed
-    # or it is not.
-    try:
-        since = _parse_instant(request.args.get('since'))
-    except ValueError as exc:
-        return bad_request(str(exc))
-
-    mode, _ = _portfolio_mode()
-    # The **reporting** currency, and the only one a head has (issue #702,
-    # ADR-0002). ``None`` while the question is unanswered, and that ``None`` is
-    # how the API states the condition: it is the field the page labels every
-    # figure with, so an absent one is exactly "these figures have no unit yet".
-    # Nothing new is published for it — the two predicates a banner needs were
-    # already on the wire (``/api/config``'s dials, ``/api/runtime``'s pass
-    # records), and a fourth kind of absence would make every page depend on one
-    # preamble (ADR-0021).
-    currency = _base_currency()
-
-    reader = _reader()
-    if mode == portfolio_view.MODE_TITRES:
-        shares = portfolio_view.build_shares(reader.positions(), _carried())
-        return jsonify(portfolio_view.build_titres_head(shares, currency))
-
-    baseline_value = None
-    if since is not None:
-        baseline_value = reader.total_value_at(since)
-
-    return jsonify(portfolio_view.build_totals_head(
-        reader.latest_totals(), currency, since, baseline_value))
-
-
-@api_bp.get('/portfolio/history')
-def get_portfolio_history():
-    """The main chart: total value vs net contributed (#652 déc. 7).
-
-    The area between the two curves *is* the Gain — the headline figure made
-    visible over time, answering "did I gain because it went up or because I put
-    more in", which a value curve alone cannot. It has no equivalent at global
-    level in the Grafana baseline, which shows this shape per account only.
-
-    Discriminated like the head, and the field names carry the distinction:
-    ``contributed`` in ``accounts`` mode is money the investor put in, while
-    ``invested`` in ``titres`` mode is the cost of the positions. Two different
-    curves telling two different stories; giving them one name is how they would
-    end up conflated.
-
-    No ``currency`` in the payload — the head owns it, and since #702 there is
-    exactly one to own: the reporting currency, the same in both modes.
-    """
-    mode, _ = _portfolio_mode()
-    try:
-        start, stop = _parse_window(DEFAULT_HISTORY_WINDOW)
-    except ValueError as exc:
-        return bad_request(str(exc))
-
-    payload = {'mode': mode, 'from': start.isoformat(), 'to': stop.isoformat()}
-
-    reader = _reader()
-    if mode == portfolio_view.MODE_TITRES:
-        # The curve is a **join** since #700: the day's closes come from the
-        # price series, the day's holdings from the replay. They used to be the
-        # same row — every price point carried the position fields — which is
-        # precisely the sharing this ticket ends. The replay is the same one the
-        # perf job runs each cycle (spec #695 § 11), on a ledger of a few hundred
-        # rows, and it is what gives the curve a holding on days no market
-        # opened.
-        timeline = EventAggregator().replay(_snapshot().events)
-        # The prices are bounded by the window and the holdings are not, so the
-        # curve is handed each symbol's last close *before* it: otherwise a
-        # position whose last quote predates ``from`` counts its cost and none
-        # of its value, and the chart reports a loss of everything it is worth.
-        return jsonify({**payload, 'points': portfolio_view.valuation_series(
-            reader.daily_closes(start, stop), timeline.at,
-            carried_in={row['symbol']: row['price']
-                        for row in reader.prices_at(start)},
-            carried=_carried(),
-            # The carrying predicate's first term, and it needs its own read
-            # here: ``daily_closes`` is the **converted** series, so a day
-            # missing from it is either a day nobody quoted or a day whose rate
-            # never landed — and only the first is carried (#706).
-            first_quoted=quotes.first_quoted_days(_store()))})
-
-    return jsonify({**payload, 'points': [
-        {
-            't': _iso(row.get('day')),
-            'value': row.get('total_value'),
-            'contributed': row.get('net_contributed'),
-        }
-        for row in reader.totals_series(start, stop)
-    ]})
-
 
 @api_bp.get('/portfolio/movers')
 def get_portfolio_movers():
     """What moved since the last session close (#652 déc. 8).
 
     Two queries, and the second is the point: the current side is P1 — the very
-    query ``/api/shares`` runs, so the front holds it in one cache — and the
+    query ``/api/positions`` runs, so the front holds it in one cache — and the
     baseline is one ``values_at`` giving every symbol's last price at or before
     the previous close. Running P1 again here rather than bolting a
-    ``previous_price`` onto ``/api/shares`` keeps the extra read off the shares
-    page, which does not want it, and keeps the "since the last close" rule and
-    its arithmetic in one tested place instead of half in TypeScript.
+    ``previous_price`` onto ``/api/positions`` keeps the extra read off the
+    shares page, which does not want it, and keeps the "since the last close"
+    rule and its arithmetic in one tested place instead of half in TypeScript.
 
     No ``currency`` on a row since #702: every amount here is in the reporting
     currency, so it is one fact about the block and the head is where it is
-    published — the same rule ``/api/portfolio/history`` follows.
+    published — the same rule every series resource follows.
     """
     reader = _reader()
     rows = reader.positions()
@@ -408,8 +230,6 @@ def get_portfolio_movers():
 # pass for the old one, which is what ADR-0008 avoids everywhere else: renaming
 # costs nothing when nothing migrates.
 #
-# The v4 routes above stay until the pages that consume them are rewritten;
-# removing them here would cut what works.
 # --------------------------------------------------------------------- #
 
 @api_bp.get('/positions')
@@ -495,12 +315,11 @@ def get_portfolio_totals_history():
 
     It is a **resource of its own** rather than a member of the row above, and
     named after the store's table rather than after the page (#745). The obvious
-    alternative — ``/api/portfolio/history``, which already serves this table —
-    is a v4 route discriminated by a ``?mode=`` this version is dismantling, and
-    it publishes ``value``/``contributed`` for a chart rather than the perf
-    members. It goes on serving until the page reading it is rewritten, which is
-    the arrangement ``/api/prices/<symbol>`` and ``/api/shares/<symbol>/prices``
-    already stand in (#719).
+    alternative was ``/api/portfolio/history``, which served this table already
+    — but it was a v4 route discriminated by a ``?mode=``, publishing
+    ``value``/``contributed`` for a chart rather than the perf members. It went
+    on serving until the page reading it was rewritten, and it left with the
+    other four when that finished.
 
     **The five members are the account resource's, field for field**, so one
     client shape reads both and the rebasing is written once. No ``currency``
@@ -548,21 +367,13 @@ def get_positions_history():
     written once (#721); a sixth member here would be a member the account level
     has no equivalent of.
 
-    ``/api/portfolio/history?mode=titres`` computes this very body, and it is
-    **not** what a v5 page may read: its discriminant is
-    :func:`portfolio_view.portfolio_mode`, *are accounts declared*, which is not
-    the question. An install declaring two accounts and holding no cash event
-    answers ``accounts`` there and gets the two empty series back — the exact
-    state this route exists for. It goes on serving its own page until that page
-    is rewritten (#728).
-
-    The reads are that branch's, and each of them is a decision recorded where it
-    was taken: the closes are bounded by the window while the holdings come from
-    the replay, which knows nothing of it, so each symbol's last close **before**
-    the window rides in (``carried_in``) or a position quoted before ``from``
-    counts its whole cost and none of its value; and ADR-0004's two terms —
-    ``carried`` and ``first_quoted`` — are what keep a day with no observed price
-    flat at its cost rather than at zero, which is the crater #706 filled.
+    Each of the reads is a decision recorded where it was taken: the closes are
+    bounded by the window while the holdings come from the replay, which knows
+    nothing of it, so each symbol's last close **before** the window rides in
+    (``carried_in``) or a position quoted before ``from`` counts its whole cost
+    and none of its value; and ADR-0004's two terms — ``carried`` and
+    ``first_quoted`` — are what keep a day with no observed price flat at its
+    cost rather than at zero, which is the crater #706 filled.
     """
     try:
         start, stop = _parse_window(DEFAULT_HISTORY_WINDOW)
@@ -588,10 +399,10 @@ def get_prices(symbol: str):
     """One symbol's series over a **rung of the retention ladder** (#719, #763).
 
     A **new** resource and not a rename of ``/api/shares/<symbol>/prices``: that
-    one takes ``?from=``/``?to=`` and announces a ``bucket``, this one takes a
-    window from a closed set and announces a ``resolution``. The two cohabit
-    until the page that consumes the older one is rewritten — removing it here
-    would cut what works.
+    one took ``?from=``/``?to=`` and announced a ``bucket``, this one takes a
+    window from a closed set and announces a ``resolution``. The two cohabited
+    until the page consuming the older one was rewritten, and it left with the
+    other four v4 routes then.
 
     Three properties, and each is a criterion rather than a convenience:
 
@@ -653,7 +464,8 @@ def list_accounts():
     #655's REST rule doing what it was adopted for: there is one accounts
     resource with two consumers — the shares filter reads ``id``/``label``, the
     accounts table reads the rest — and one cache entry between them, exactly as
-    ``/api/shares`` serves the table and the dashboard's allocation. Splitting
+    ``/api/positions`` serves the shares table and the dashboard's allocation.
+    Splitting
     the declaration from its figures would be the page-shaped endpoint that
     decision rejected, under another name.
 
@@ -748,10 +560,10 @@ def get_account_history(account_id: str):
     declared and empty (``200`` + ``[]``), while an id nobody declared does not
     exist. Collapsing the two would answer a typo with an empty chart.
 
-    No ``currency`` in the payload — the head owns it, per the same rule
-    ``/api/portfolio/history`` follows. Since #702 the collection owns none
-    either: an account has no currency, there is one reporting currency for the
-    whole install, and ``/api/portfolio`` is where it is said.
+    No ``currency`` in the payload — the head owns it, per the rule every
+    series resource here follows. Since #702 the collection owns none either: an
+    account has no currency, there is one reporting currency for the whole
+    install, and ``/api/portfolio-totals`` is where it is said.
     """
     accounts = _snapshot().accounts
     if accounts is not None:
@@ -998,7 +810,7 @@ def list_events():
       writer of the** ``event`` **table replays synchronously in this process**
       (:func:`main.replay_after_write`, and ``ingest()`` on a file landing).
     * *the resource reads the store* — it would gain a ``503`` the way
-      ``/api/shares`` has one, and that ``503`` would take the shares page's
+      ``/api/positions`` has one, and that ``503`` would take the shares page's
       chart markers down with it for a fault they read no ledger about. It would
       also serve rows the aggregator has not run on whenever a build raised,
       i.e. show a ledger the app is not computing anything from.
@@ -1501,8 +1313,8 @@ def get_runtime():
     scraper process (#651) is what makes it readable.
 
     **This route touches no store**, and that is decision 6 rather than an
-    optimisation. #659 reserved a ``status`` slot on ``/api/shares`` for the
-    pills; ``/api/shares`` is a query, and this blueprint answers ``503`` when a
+    optimisation. #659 reserved a ``status`` slot on the shares resource for the
+    pills; that resource is a query, and this blueprint answers ``503`` when a
     query fails — so a pill riding there would **disappear exactly when it is the
     only thing able to explain the empty table**. #655's error contract turned
     against itself one storey up, and worse than the original, because the
@@ -1737,9 +1549,9 @@ def get_config():
     """What this installation is configured with.
 
     ``shares`` is the published snapshot's aggregate — what the event ledger
-    *declares*, as opposed to ``/api/shares``, which is what has been *observed*
-    of it. Two different questions, and this is the one that can be answered
-    with no database at all.
+    *declares*, as opposed to ``/api/positions``, which is what has been
+    *observed* of it. Two different questions, and this is the one that can be
+    answered with no database at all.
 
     ``mode``, ``editable`` and ``read_only_reason`` left with #711: there is one
     loading path, so there is no mode to report, and the config directory has no
@@ -1888,19 +1700,6 @@ def _flag(value) -> bool:
     the flag sends, and it must mean *no* rather than *whatever the default is*.
     """
     return value is True
-
-
-def _portfolio_mode() -> Tuple[str, Optional[Any]]:
-    """Which dashboard head this install gets, plus the declaration behind it.
-
-    A read of the published snapshot (#658) — no store query. That is deliberate:
-    deciding the mode from the *data* would make an install whose first perf
-    cycle has not run yet indistinguishable from one that never declared
-    accounts, which is exactly the collapse #655 déc. 8's discriminator exists
-    to prevent.
-    """
-    accounts = _snapshot().accounts
-    return portfolio_view.portfolio_mode(accounts is not None), accounts
 
 
 def _base_currency() -> Optional[str]:

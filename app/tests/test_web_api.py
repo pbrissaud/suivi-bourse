@@ -245,377 +245,6 @@ ACCOUNTS_EVENTS = (
 
 
 # --------------------------------------------------------------------- #
-# The three states of absence
-# --------------------------------------------------------------------- #
-
-def test_empty_portfolio_is_200_and_an_empty_list(tmp_path):
-    """A fresh install owns nothing. That is not a 404 and not an error."""
-    response = build_client(tmp_path).get('/api/shares')
-
-    assert response.status_code == 200
-    assert response.get_json() == []
-
-
-def test_a_storage_failure_is_503_problem_json(tmp_path):
-    """The distinctly *non*-empty answer — the whole point of the sibling module."""
-    client = build_client(tmp_path, break_store=True)
-    response = client.get('/api/shares')
-
-    assert response.status_code == 503
-    assert response.mimetype == 'application/problem+json'
-    body = response.get_json()
-    assert body['type'] == '/problems/storage-unavailable'
-    assert 'position' in body['detail']
-
-
-def test_absent_fields_stay_null_in_the_payload(tmp_path):
-    """Trap 3: a missing fundamental is a normal state, never a zero."""
-    def seed(opened):
-        seed_position(opened)
-        seed_quote(opened, pe_ratio=None)
-
-    response = build_client(tmp_path, seed=seed).get('/api/shares')
-
-    assert response.get_json()[0]['pe_ratio'] is None
-
-
-# --------------------------------------------------------------------- #
-# Shares
-# --------------------------------------------------------------------- #
-
-def test_shares_aggregates_across_accounts_and_keeps_the_breakdown(tmp_path):
-    def seed(opened):
-        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0)
-        seed_position(opened, account='cto', quantity=5.0, cost_basis=900.0)
-        seed_quote(opened)
-
-    payload = build_client(tmp_path, seed=seed).get('/api/shares').get_json()
-
-    assert len(payload) == 1
-    assert payload[0]['symbol'] == 'AAPL'
-    assert payload[0]['quantity'] == 15.0
-    assert payload[0]['unit_cost'] == pytest.approx(160.0)  # (1500+900)/15
-    assert {a['account'] for a in payload[0]['accounts']} == {'pea', 'cto'}
-
-
-def test_a_share_with_no_quote_and_a_finished_rebuild_is_carried_at_its_cost(
-        tmp_path):
-    """Issue #706 through the wire, both terms of it.
-
-    The ledger names one purchase and the backward pass has reached it, so the
-    convention applies: the price column stays ``null`` — the app does not
-    invent a quote — while the value and the latent gain are computed from what
-    the position cost. Nothing else on the payload says so; the em dash is the
-    signal (ADR-0004).
-    """
-    def seed(opened):
-        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
-        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 15))
-
-    payload = build_client(
-        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
-        seed=seed).get('/api/shares').get_json()
-
-    assert payload[0]['price'] is None
-    assert payload[0]['market_value'] == pytest.approx(1502.5)
-    assert payload[0]['plus_value_latente'] == pytest.approx(0.0)
-
-
-def test_a_share_whose_rebuild_is_still_running_keeps_its_em_dash(tmp_path):
-    """The predicate's second term, on the same route.
-
-    Nothing is tried yet, so the history may still be coming: value and latent
-    stay absent rather than flat-at-cost, which is the four-year-long
-    misreading ADR-0004 exists to prevent.
-    """
-    def seed(opened):
-        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
-
-    payload = build_client(
-        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
-        seed=seed).get('/api/shares').get_json()
-
-    assert payload[0]['price'] is None
-    assert payload[0]['market_value'] is None
-    assert payload[0]['plus_value_latente'] is None
-
-
-def test_a_share_waiting_for_a_rate_is_not_carried_at_its_cost(tmp_path):
-    """The predicate's **first** term, on the wire (issue #706).
-
-    The quote is known and its conversion is not — a base currency not answered
-    yet, or a pair that does not resolve — and the backward pass has finished. A
-    first term reading *the converted price is absent* would carry this row at
-    its cost, answering a valuation where the app owes *waiting for a rate*
-    (``CONTEXT.md`` § Absence; ``read-your-figures.mdx``'s absence table). The
-    native price rides the payload so the page can say which of the two it is.
-    """
-    def seed(opened):
-        seed_position(opened, account='pea', quantity=10.0, cost_basis=1502.5)
-        seed_quote(opened, price=187.5, converted=None, rate=None)
-        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 15))
-
-    payload = build_client(
-        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS,
-        seed=seed).get('/api/shares').get_json()
-
-    assert payload[0]['price'] is None
-    assert payload[0]['price_native'] == pytest.approx(187.5)
-    assert payload[0]['market_value'] is None
-    assert payload[0]['plus_value_latente'] is None
-
-
-def test_an_unknown_symbol_is_404_problem_json(tmp_path):
-    client = build_client(tmp_path)
-    response = client.get('/api/shares/NOPE')
-
-    assert response.status_code == 404
-    assert response.mimetype == 'application/problem+json'
-
-
-def test_prices_rejects_an_inverted_window(tmp_path):
-    client = build_client(tmp_path)
-    response = client.get('/api/shares/AAPL/prices?from=2024-06-01&to=2024-01-01')
-
-    assert response.status_code == 400
-    assert response.get_json()['type'] == '/problems/bad-request'
-
-
-def test_prices_rejects_an_unparseable_instant(tmp_path):
-    response = build_client(tmp_path).get('/api/shares/AAPL/prices?from=yesterday')
-
-    assert response.status_code == 400
-
-
-def test_prices_reports_the_bucket_it_used(tmp_path):
-    """A chart that silently downsamples is a chart that lies about its
-    resolution, so the choice is part of the payload."""
-    client = build_client(
-        tmp_path,
-        seed=lambda opened: seed_quote(
-            opened, price=200.0,
-            at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)))
-
-    narrow = client.get(
-        '/api/shares/AAPL/prices?from=2024-06-01&to=2024-06-05').get_json()
-    wide = client.get(
-        '/api/shares/AAPL/prices?from=2020-06-01&to=2024-06-05').get_json()
-
-    assert narrow['bucket'] is None
-    assert wide['bucket'] == '1 day'
-    assert narrow['points'][0]['t'] == '2024-06-01T12:00:00+00:00'
-
-
-# --------------------------------------------------------------------- #
-# Portfolio — the dashboard head as a discriminated union (issue #660)
-# --------------------------------------------------------------------- #
-
-def test_the_head_of_a_default_install_speaks_plus_value_latente(tmp_path):
-    """No declared accounts is what every default install runs, so this is the
-    *designed* mode and not a degraded one. Its head has no `gain_absolu` key at
-    all — #652 déc. 6's two terms cannot be conflated if they never coexist."""
-    def seed(opened):
-        seed_position(opened, account='default', quantity=10.0,
-                      cost_basis=1502.5)
-        seed_quote(opened)
-
-    payload = build_client(tmp_path, seed=seed).get('/api/portfolio').get_json()
-
-    assert payload['mode'] == 'titres'
-    assert payload['plus_value_latente'] == pytest.approx(497.5)  # 2000−1502,5
-    assert 'gain_absolu' not in payload
-
-
-def test_the_head_states_the_reporting_currency_and_its_absence(tmp_path):
-    """How the API says *"nothing here has a unit yet"* (#702, ADR-0021).
-
-    Nothing new is published for it and no route changes: the head's `currency`
-    is the field every figure on the page is labelled with, so an absent one is
-    the condition itself, and the dial is already on `/api/config` for the
-    banner to read. A fourth kind of absence would make every page depend on one
-    preamble, and a landing route that varies with the data is the one thing a
-    bookmark cannot survive.
-    """
-    def seed(opened):
-        seed_position(opened, account='default')
-        seed_quote(opened)
-
-    client = build_client(tmp_path, seed=seed)
-
-    assert client.get('/api/portfolio').get_json()['currency'] is None
-    dial = _dials(client)['base_currency']
-    assert dial['value'] is None and dial['default'] is None
-    assert dial['stored'] is False
-
-    assert client.put('/api/settings',
-                      json={'base_currency': 'eur'}).status_code == 200
-
-    assert client.get('/api/portfolio').get_json()['currency'] == 'EUR'
-    assert _dials(client)['base_currency']['stored'] is True
-
-
-def test_the_head_of_a_declared_install_speaks_gain(tmp_path):
-    client = build_client(tmp_path, seed=seed_totals,
-                          accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
-    payload = client.get('/api/portfolio').get_json()
-
-    assert payload['mode'] == 'accounts'
-    assert payload['gain_absolu'] == 2500.0
-    assert payload['net_contributed'] == 10000.0
-    assert payload['xirr'] == 0.12
-    assert 'plus_value_latente' not in payload
-    # `currency` is null and stays so until the reporting currency lands
-    # (#702): a declaration has three columns since #698, and none is a
-    # currency — a per-account one was never the right home for it (ADR-0002).
-    assert payload['currency'] is None
-
-
-def test_declared_accounts_whose_perf_job_has_not_run_stay_in_accounts_mode(tmp_path):
-    """The collapse #655 déc. 8 refuses: "you have not declared accounts" and
-    "the computation has not happened yet" must not be one screen. The mode is
-    read from the configuration, so it survives an empty series."""
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    payload = client.get('/api/portfolio').get_json()
-
-    assert payload['mode'] == 'accounts'
-    assert payload['total_value'] is None
-    assert payload['as_of'] is None
-
-
-def test_two_declared_accounts_share_one_head_because_a_file_declares_no_currency(tmp_path):
-    """The multi-currency head loses its trigger here, and that is #698's doing.
-
-    A declaration is three columns — ``id``, ``type``, ``label`` — so there is
-    nowhere left for a per-account currency to be written, and
-    ``portfolio_mode`` therefore sees one currency (``None``) whatever the user
-    declares. ``MODE_MULTI_CURRENCY`` is not reachable through the API from
-    here on; it stays covered as a pure function in ``test_portfolio_view`` and
-    dies with ``Account.currency`` when the reporting currency lands (#702,
-    ADR-0002), which is the real answer to a mixed portfolio.
-    """
-    accounts = (
-        "id,type,label\n"
-        "pea,PEA,PEA\n"
-        "cto,CTO,CTO\n"
-    )
-    events = (
-        "date,event_type,symbol,name,quantity,unit_price,account\n"
-        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
-        "2024-01-16,BUY,MSFT,Microsoft,5,380.00,cto\n"
-    )
-    client, _ = build_client_and_store(
-        tmp_path, accounts=accounts, events=events)
-    payload = client.get('/api/portfolio').get_json()
-
-    assert payload['mode'] == 'accounts'
-    assert payload['currency'] is None
-
-
-def test_the_relative_delta_reads_the_last_point_before_the_instant(tmp_path):
-    """#652 déc. 2's UI preference, and the reason it is a baseline *instant*
-    rather than a window: it is deliberately decoupled from the chart's zoom."""
-    def seed(opened):
-        seed_totals(opened, day=date(2026, 6, 1), total_value=10000.0)
-        seed_totals(opened, day=date(2026, 8, 5), total_value=12500.0)
-
-    client = build_client(tmp_path, seed=seed, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    payload = client.get('/api/portfolio?since=2026-07-05T00:00:00Z').get_json()
-
-    # "The last point at or **before** the instant": the exact day never exists,
-    # the series carrying one point a day.
-    assert payload['baseline']['since'] == '2026-07-05T00:00:00+00:00'
-    assert payload['baseline']['total_value'] == 10000.0
-    assert payload['baseline']['change'] == 2500.0
-
-
-def test_the_head_rejects_an_unparseable_baseline_instant(tmp_path):
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    response = client.get('/api/portfolio?since=last-tuesday')
-
-    assert response.status_code == 400
-    assert response.get_json()['type'] == '/problems/bad-request'
-
-
-def test_a_malformed_instant_is_rejected_in_every_mode(tmp_path):
-    """Found while re-reading the route. Parsing inside the `accounts` branch
-    made the same request a 400 there and a silent no-op in `titres` — the
-    answer depending on a configuration the caller cannot see."""
-    response = build_client(tmp_path).get('/api/portfolio?since=last-tuesday')
-
-    assert response.status_code == 400
-
-
-# --------------------------------------------------------------------- #
-# The main chart
-# --------------------------------------------------------------------- #
-
-def test_the_history_of_a_declared_install_is_value_versus_contributed(tmp_path):
-    """#652 déc. 7: the area between the two curves *is* the Gain. The chart has
-    no equivalent at global level in the Grafana baseline.
-
-    The day is fixed and the window explicit (#781): seeded from the machine's
-    own zone, the row was dated *tomorrow* from the route's point of view
-    between local and UTC midnight, fell outside the default window, and the
-    series came back empty. The default window is covered by
-    `test_the_history_defaults_to_a_year_because_the_series_is_daily`, which
-    seeds nothing; it was only ever the means of reaching the row here."""
-    client = build_client(
-        tmp_path, seed=seed_totals,
-        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
-    payload = client.get(
-        '/api/portfolio/history?from=2026-08-01&to=2026-08-31').get_json()
-
-    assert payload['mode'] == 'accounts'
-    assert payload['points'] == [{
-        't': '2026-08-05', 'value': 12500.0, 'contributed': 10000.0}]
-
-
-def test_the_degraded_history_is_valuation_versus_investment(tmp_path):
-    """The fallback of déc. 7, and the field names keep the two charts apart:
-    `contributed` is money the investor put in, `invested` is what the positions
-    cost. One name for both is how they would end up conflated."""
-    events = (
-        "date,event_type,symbol,name,quantity,unit_price,fee\n"
-        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
-    )
-
-    def seed(opened):
-        seed_quote(opened, price=200.0,
-                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, events=events, seed=seed)
-    payload = client.get(
-        '/api/portfolio/history?from=2024-01-01&to=2024-12-31').get_json()
-
-    assert payload['mode'] == 'titres'
-    # The **join** #700 made explicit: the close comes from the price series,
-    # the holding from the replay. They used to be the same row.
-    assert payload['points'] == [{
-        't': '2024-06-01', 'value': 2000.0, 'invested': 1500.0}]
-
-
-def test_the_history_rejects_an_inverted_window(tmp_path):
-    response = build_client(tmp_path).get(
-        '/api/portfolio/history?from=2026-06-01&to=2026-01-01')
-
-    assert response.status_code == 400
-
-
-def test_the_history_defaults_to_a_year_because_the_series_is_daily(tmp_path):
-    """One point per calendar day: the short presets that are natural on the
-    shares page hold a single point here."""
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    body = client.get('/api/portfolio/history').get_json()
-
-    span = datetime.fromisoformat(body['to']) - datetime.fromisoformat(body['from'])
-    assert span.days == 365
-
-
-# --------------------------------------------------------------------- #
 # Movers
 # --------------------------------------------------------------------- #
 
@@ -1191,11 +820,11 @@ def test_positions_history_is_valuation_versus_investment(tmp_path):
 
 
 def test_positions_history_answers_the_same_body_on_a_declared_install(tmp_path):
-    """The whole reason it is not `/api/portfolio/history`.
+    """The whole reason it did not stay `/api/portfolio/history`.
 
-    That route's discriminant is *are accounts declared*, which is not the
+    That route's discriminant was *are accounts declared*, which is not the
     question: an install declaring two accounts and recording no cash event
-    answers `accounts` there and gets `value`/`contributed` back — two series of
+    answered `accounts` there and got `value`/`contributed` back — two series of
     `null` since #708's per-field rule, i.e. an empty chart on a full portfolio.
     """
     events = (
@@ -1495,10 +1124,10 @@ def test_the_year_to_date_gain_crosses_the_year_without_a_cash_ledger_too(
 # --------------------------------------------------------------------- #
 # The chart's own resource — a rung, and the resolution it served (#719, #763)
 #
-# New, and not a rename of `/api/shares/<symbol>/prices`: that one takes
-# `?from=`/`?to=` and announces a `bucket`, this one takes a rung of the
-# retention ladder and announces a `resolution`. Both are tested, because both
-# have to go on serving.
+# New, and not a rename of the v4 series route it outlived: that one took
+# `?from=`/`?to=` and announced a `bucket`, this one takes a rung of the
+# retention ladder and announces a `resolution`. They served side by side until
+# the page reading the older one was rewritten.
 # --------------------------------------------------------------------- #
 
 def _hour_anchor() -> datetime:
@@ -1585,11 +1214,6 @@ def test_a_point_whose_conversion_never_landed_is_null_and_never_absent(tmp_path
         tmp_path, seed=seed).get('/api/prices/AAPL?window=1M').get_json()
 
     assert [point['price'] for point in payload['points']] == [None, 95.0]
-    # The older route drops it, and stays as it is: the page reading it has not
-    # been rewritten, and changing what it serves is not this ticket's business.
-    old = build_client(tmp_path, seed=seed).get(
-        '/api/shares/AAPL/prices').get_json()
-    assert [point['price'] for point in old['points']] == [95.0]
 
 
 def test_an_unknown_window_is_refused_rather_than_defaulted(tmp_path):
@@ -1992,6 +1616,45 @@ def test_a_fault_of_ours_is_a_500_and_not_a_storage_failure(tmp_path, mocker):
     assert response.status_code == 500
     assert response.mimetype == 'application/problem+json'
     assert response.get_json()['type'] == '/problems/internal-error'
+
+
+def test_a_bare_date_bounds_the_window_in_utc_and_keeps_its_first_day(tmp_path):
+    """`?from=2024-06-01` is midnight **UTC**, and the day itself is in.
+
+    Two traps in one assertion, and the route reaches both. `_parse_instant`
+    reads a bare date and must stamp it UTC rather than leave it naive for the
+    server's own zone to interpret — the front sends bare dates. And the bound
+    then lands on a `DATE` column, where `app/CLAUDE.md` names the second trap:
+    *a bound on a `DATE` column is cast, or DuckDB widens it to midnight and the
+    first day of every window is dropped*.
+
+    It was covered on `/api/shares/<symbol>/prices`, which left with the v4
+    routes; `_parse_instant` did not leave with them — it still bounds this
+    route, `/api/positions/history` and `/api/portfolio-totals/history`.
+    """
+    def seed(opened):
+        seed_account_metrics(opened, day=date(2024, 6, 1), total_value=100.0)
+        seed_account_metrics(opened, day=date(2024, 6, 2), total_value=110.0)
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS, seed=seed)
+    payload = client.get(
+        '/api/accounts/pea/history?from=2024-06-01&to=2024-06-03').get_json()
+
+    # The first day of the window is **in**. An hour either way is a
+    # server-local reading of the bare date.
+    assert [point['t'] for point in payload['points']] == ['2024-06-01', '2024-06-02']
+
+    # And the second trap, which only an instant *inside* the day can spring: a
+    # window always arrives as an instant — the route's own default is
+    # `now − 365 days`, which is never midnight — while the series is keyed by
+    # day. Compared raw, DuckDB widens the `DATE` to midnight and
+    # `day >= 2024-06-01T14:23Z` drops 2024-06-01, so the curve silently starts
+    # a day after the window it prints in its own `from`.
+    inside = client.get(
+        '/api/accounts/pea/history?from=2024-06-01T14:23:00Z&to=2024-06-03').get_json()
+
+    assert [point['t'] for point in inside['points']] == ['2024-06-01', '2024-06-02']
 
 
 def test_account_history_rejects_an_inverted_window(tmp_path):
@@ -2685,46 +2348,6 @@ def test_the_spa_is_served_for_an_unknown_client_route(tmp_path, monkeypatch):
     assert b'id=root' in response.data
 
 
-def test_the_window_bounds_the_series_it_says_it_does(tmp_path):
-    """The whole ``utc_z`` / ``escape_literal`` apparatus left with #700.
-
-    v4 formatted a bound into the SQL string because InfluxDB 3's client took
-    one, and getting it wrong was a class of defect on its own: ``isoformat()``
-    alone yields ``+00:00Z`` for an aware datetime, which InfluxDB rejected
-    outright. DuckDB **binds**, so the trap has no expression left and what is
-    worth asserting is the only thing a reader cares about — the window keeps
-    what it says and drops the rest.
-    """
-    def seed(opened):
-        for day in (14, 15, 17):
-            seed_quote(opened, price=100.0 + day,
-                       at=datetime(2024, 1, day, 12, 0, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    body = client.get(
-        '/api/shares/AAPL/prices'
-        '?from=2024-01-15T09:30:00Z&to=2024-01-16T17:00:00Z').get_json()
-
-    assert [point['t'] for point in body['points']] == [
-        '2024-01-15T12:00:00+00:00']
-
-
-def test_a_naive_instant_is_read_as_utc_not_local_time(tmp_path):
-    """A bare date from the front must not shift by the server's timezone."""
-    def seed(opened):
-        seed_quote(opened, price=100.0,
-                   at=datetime(2024, 1, 15, 0, 0, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    body = client.get(
-        '/api/shares/AAPL/prices?from=2024-01-15&to=2024-01-16').get_json()
-
-    # Midnight UTC exactly: an hour either way is a server-local reading, and it
-    # would drop this point on any machine east of Greenwich.
-    assert [point['t'] for point in body['points']] == [
-        '2024-01-15T00:00:00+00:00']
-
-
 # --------------------------------------------------------------------------- #
 # The configuration resource
 # --------------------------------------------------------------------------- #
@@ -2812,9 +2435,9 @@ def test_the_file_era_routes_are_gone_rather_than_refusing(tmp_path):
 def test_the_runtime_resource_answers_200_with_the_store_unreadable(tmp_path):
     """#656 decision 6, and the reason #659's `status` slot was retired.
 
-    `/api/shares` is a query and this blueprint answers 503 when one fails, so a
-    pill riding on that payload would **disappear exactly when it is the only
-    thing able to explain the empty table** — #655's error contract turned
+    `/api/positions` is a query and this blueprint answers 503 when one fails,
+    so a pill riding on that payload would **disappear exactly when it is the
+    only thing able to explain the empty table** — #655's error contract turned
     against itself one storey up, and worse than the original, because the
     diagnostic dies with what it diagnoses.
     """
@@ -2823,7 +2446,7 @@ def test_the_runtime_resource_answers_200_with_the_store_unreadable(tmp_path):
         accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     # The table is dead...
-    assert client.get('/api/shares').status_code == 503
+    assert client.get('/api/positions').status_code == 503
     # ...and the thing that explains why is not.
     response = client.get('/api/runtime')
 
@@ -2907,7 +2530,7 @@ def test_the_mount_observation_survives_an_unreadable_store(tmp_path):
         accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     web_module.current_runtime().store_persistence = 'ephemeral'
 
-    assert client.get('/api/shares').status_code == 503
+    assert client.get('/api/positions').status_code == 503
     assert client.get('/api/runtime').get_json()['store']['persistence'] \
         == 'ephemeral'
 
@@ -3186,17 +2809,6 @@ def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
     assert body['symbols'][0]['next_run_state'] == 'unavailable'
 
 
-def test_the_shares_payload_no_longer_carries_the_retired_status_slot(tmp_path):
-    """#659 reserved it; #656 decision 6 retired it rather than filling it."""
-    def seed(opened):
-        seed_position(opened)
-        seed_quote(opened)
-
-    body = build_client(tmp_path, seed=seed).get('/api/shares').get_json()
-
-    assert 'status' not in body[0]
-
-
 def _dials(client):
     """The dials `/api/config` publishes, by key.
 
@@ -3267,6 +2879,28 @@ def test_the_config_route_names_what_is_set_and_no_longer_read(
 # --------------------------------------------------------------------- #
 # PUT /api/settings — the only writer of a dial (issue #701)
 # --------------------------------------------------------------------- #
+
+def test_the_reporting_currency_is_a_dial_and_its_absence_is_a_state(tmp_path):
+    """How the API says *"nothing here has a unit yet"* (#702, ADR-0021).
+
+    Nothing new is published for it and no route changes: the reporting currency
+    is what every figure on a page is labelled with, so an absent one is the
+    condition itself, and the dial is already on `/api/config` for the banner to
+    read. A fourth kind of absence would make every page depend on one preamble,
+    and a landing route that varies with the data is the one thing a bookmark
+    cannot survive.
+    """
+    client = build_client(tmp_path)
+
+    dial = _dials(client)['base_currency']
+    assert dial['value'] is None and dial['default'] is None
+    assert dial['stored'] is False
+
+    assert client.put('/api/settings',
+                      json={'base_currency': 'eur'}).status_code == 200
+
+    assert _dials(client)['base_currency']['stored'] is True
+
 
 def test_a_dial_is_written_and_read_back_in_the_same_request(tmp_path):
     """Reachable with one ``curl``: headless means without an interface, not

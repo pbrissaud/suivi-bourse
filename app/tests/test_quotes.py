@@ -682,15 +682,13 @@ def test_an_empty_store_answers_an_empty_collection_and_never_raises(store):
     reader = store_reads.PortfolioReader(store)
 
     assert reader.positions() == []
-    assert reader.raw_series('AAPL') == []
-    assert reader.bucketed_series('AAPL', '1 day') == []
+    assert reader.chart_series('AAPL') == []
     assert reader.daily_closes() == []
     assert reader.prices_at(NOW) == []
     assert reader.latest_totals() is None
     assert reader.totals_series() == []
     assert reader.latest_account_metrics() == []
     assert reader.account_series('default') == []
-    assert reader.total_value_at(NOW) is None
 
 
 def test_a_wide_read_crosses_arrow_and_a_narrow_one_does_not(declared, mocker):
@@ -707,7 +705,7 @@ def test_a_wide_read_crosses_arrow_and_a_narrow_one_does_not(declared, mocker):
     arrow = mocker.spy(declared, 'arrow')
     rows = mocker.spy(declared, 'query')
 
-    reader.raw_series('AAPL')
+    reader.chart_series('AAPL')
     reader.daily_closes()
 
     assert arrow.call_count == 2
@@ -722,7 +720,7 @@ def test_a_bucket_width_is_whitelisted_never_interpolated(declared):
     reader = store_reads.PortfolioReader(declared)
 
     with pytest.raises(ValueError):
-        reader.bucketed_series('AAPL', "1 day'); DROP TABLE price_point; --")
+        reader.chart_series('AAPL', "1 day'); DROP TABLE price_point; --")
 
 
 def test_a_window_on_a_daily_series_keeps_the_day_it_starts_on(store):

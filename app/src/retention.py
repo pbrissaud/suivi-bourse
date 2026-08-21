@@ -121,9 +121,9 @@ def rung_of_bucket(interval: Optional[str]) -> str:
     Total on the three widths the chart's ladder picks from, and a refusal
     everywhere else — deliberately. A resolution has **three** names, so a
     bucket between two rungs (``6 hours``, say, which
-    :func:`store_reads.bucket_for_window` may still pick for the older
-    per-share route) has no honest name to be announced under, and answering
-    the nearer of the two would be a rounding nobody could see.
+    :data:`store_reads.ALLOWED_INTERVALS` still admits) has no honest name to be
+    announced under, and answering the nearer of the two would be a rounding
+    nobody could see.
     """
     if interval is None:
         return RAW

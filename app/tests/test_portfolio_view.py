@@ -19,16 +19,10 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from portfolio_view import (
-    MODE_ACCOUNTS,
-    MODE_TITRES,
     baseline_reference,
     build_accounts,
     build_movers,
-    build_share,
     build_shares,
-    build_titres_head,
-    build_totals_head,
-    portfolio_mode,
     session_baseline_instant,
     unit_cost,
     valuation_series,
@@ -75,10 +69,10 @@ def test_unit_cost_is_quantity_weighted_not_averaged():
     wrong on screen. Storing the basis as an *amount* is what makes the weighted
     mean fall out of one division instead of being rebuilt.
     """
-    share = build_share([
+    share, = build_shares([
         row(account='pea', quantity=1.0, cost_basis=100.0),
         row(account='cto', quantity=9.0, cost_basis=1800.0),
-    ], 'AAPL')
+    ])
 
     assert share.unit_cost == 190.0
 
@@ -86,7 +80,7 @@ def test_unit_cost_is_quantity_weighted_not_averaged():
 def test_a_sold_position_has_no_unit_cost_rather_than_a_zero_one():
     """ADR-0003. Quantity zero, basis zero — the phantom −932 € has no
     expression left, and the unit price is honestly undefined."""
-    share = build_share([row(quantity=0.0, cost_basis=0.0)], 'AAPL')
+    share, = build_shares([row(quantity=0.0, cost_basis=0.0)])
 
     assert share.unit_cost is None
     assert unit_cost(0.0, 0.0) is None
@@ -102,7 +96,7 @@ def test_quantities_sum_across_accounts_and_the_breakdown_survives():
         row(account='pea', quantity=10.0, cost_basis=1500.0),
         row(account='cto', quantity=5.0, cost_basis=900.0),
     ]
-    share = build_share(rows, 'AAPL')
+    share, = build_shares(rows)
 
     assert share.quantity == 15.0
     assert share.cost_basis == 2400.0
@@ -118,7 +112,7 @@ def test_instrument_fields_are_never_summed_across_accounts():
         row(account='pea', market_cap=3.0e12, pe_ratio=30.0, dividend_yield=0.5),
         row(account='cto', market_cap=3.0e12, pe_ratio=30.0, dividend_yield=0.5),
     ]
-    share = build_share(rows, 'AAPL')
+    share, = build_shares(rows)
 
     assert share.market_cap == 3.0e12
     assert share.pe_ratio == 30.0
@@ -133,7 +127,7 @@ def test_the_price_is_one_observation_whatever_the_accounts_say():
         row(account='pea', name='Apple'),
         row(account='cto', name='Apple Inc.'),
     ]
-    share = build_share(rows, 'AAPL')
+    share, = build_shares(rows)
 
     assert share.symbol == 'AAPL'
     assert share.price == 200.0
@@ -147,7 +141,7 @@ def test_latent_gain_is_market_value_minus_cost_basis_and_nothing_else():
     would count it twice and rebuild the composite that produced −932 €."""
     rows = [row(quantity=10.0, price=200.0, cost_basis=1502.5,
                 received_dividend=8.0)]
-    share = build_share(rows, 'AAPL')
+    share, = build_shares(rows)
 
     assert share.market_value == 2000.0
     assert share.cost_basis == 1502.5
@@ -159,8 +153,9 @@ def test_latent_gain_is_market_value_minus_cost_basis_and_nothing_else():
 def test_a_sold_position_reports_zero_invested_by_construction():
     """#672's headline defect. Quantity 0 → basis 0 → nothing invested and a
     latent gain of exactly nothing, rather than minus everything ever paid."""
-    share = build_share([row(quantity=0.0, cost_basis=0.0, realized_gain=-335.89,
-                             received_dividend=20.0)], 'AAPL')
+    share, = build_shares([row(quantity=0.0, cost_basis=0.0,
+                               realized_gain=-335.89,
+                               received_dividend=20.0)])
 
     assert share.cost_basis == 0.0
     assert share.market_value == 0.0
@@ -169,7 +164,7 @@ def test_a_sold_position_reports_zero_invested_by_construction():
 
 
 def test_percentage_is_none_rather_than_a_division_by_zero():
-    share = build_share([row(quantity=0.0, cost_basis=0.0)], 'AAPL')
+    share, = build_shares([row(quantity=0.0, cost_basis=0.0)])
 
     assert share.plus_value_pct is None
     assert share.unit_cost is None
@@ -183,7 +178,7 @@ def test_absent_price_leaves_derived_figures_absent_not_zero():
     of everything invested: the app announcing a total loss because it had never
     seen a quote.
     """
-    share = build_share([row(price=None, price_time=None)], 'AAPL')
+    share, = build_shares([row(price=None, price_time=None)])
 
     assert share.price is None
     assert share.market_value is None
@@ -215,176 +210,19 @@ def test_an_empty_portfolio_is_an_empty_list():
     assert build_shares([]) == []
 
 
-def test_build_share_returns_none_for_an_unknown_symbol():
-    assert build_share([row()], 'NOPE') is None
-
-
 def test_to_dict_emits_iso_timestamps_and_keeps_nulls():
-    share = build_share([row(pe_ratio=None)], 'AAPL')
+    share, = build_shares([row(pe_ratio=None)])
     payload = share.to_dict()
 
     assert payload['price_time'] == '2024-06-01T00:00:00+00:00'
     assert payload['pe_ratio'] is None
     # #659 reserved a `status` slot here for the pills; #656 decision 6 retired
     # it rather than filling it, and the assertion is inverted rather than
-    # deleted because the *absence* is the decision. `/api/shares` answers 503
-    # when the store fails, so a pill riding on this payload would disappear
+    # deleted because the *absence* is the decision. The shares resource answers
+    # 503 when the store fails, so a pill riding on this payload would disappear
     # exactly when it is the only thing able to explain the empty table. The
     # pills live on `/api/runtime`, which reads no store at all.
     assert 'status' not in payload
-
-
-# ===================================================================== #
-# The consolidated dashboard (issue #660)
-#
-# #660's testing criterion names the degraded-mode selection explicitly, and
-# it earns it: the mode decides which of #652 déc. 6's two incompatible terms
-# the head is even allowed to speak.
-# ===================================================================== #
-
-def test_no_declared_accounts_is_the_titres_mode():
-    """The default install. A designed mode, not a missing configuration."""
-    assert portfolio_mode(False) == MODE_TITRES
-
-
-def test_declared_accounts_are_the_accounts_mode():
-    assert portfolio_mode(True) == MODE_ACCOUNTS
-
-
-def test_there_are_two_modes_and_the_currency_decides_neither():
-    """The multi-currency mode is deleted with `Account.currency` (#702).
-
-    Not made unreachable — deleted. An account has no currency, so accounts
-    cannot disagree about one, and the whole third branch of the API, the page
-    and this file was defending a state the model can no longer be in.
-    """
-    import portfolio_view
-
-    assert not hasattr(portfolio_view, 'MODE_MULTI_CURRENCY')
-    assert not hasattr(portfolio_view, 'build_multi_currency_head')
-
-
-def test_the_mode_is_read_from_the_configuration_not_from_the_data():
-    """Declared accounts with an empty series stay in `accounts` mode.
-
-    The two states #655 déc. 8 refuses to collapse: "no declared accounts" is a
-    mode, "the perf job has not run yet" is that mode with nothing in it. Here
-    the head is all nulls and still says `accounts`.
-    """
-    head = build_totals_head(None, 'EUR')
-
-    assert head['mode'] == MODE_ACCOUNTS
-    assert head['as_of'] is None
-    assert head['gain_absolu'] is None
-    assert head['total_value'] is None
-
-
-def test_the_accounts_head_carries_gain_in_euros_and_two_rates():
-    """#652 déc. 5: `gain_absolu` € is the headline, xirr and twr_index answer
-    two different questions beside it. Grafana's fourth, wrong percentage is
-    deleted rather than ported, so there is no field for it to land in."""
-    head = build_totals_head({
-        'day': date(2026, 8, 5),
-        'total_value': 12500.0,
-        'cash_balance': 500.0,
-        'holdings_value': 12000.0,
-        'net_contributed': 10000.0,
-        'gain_absolu': 2500.0,
-        'xirr': 0.12,
-        'twr_index': 124.0,
-    }, 'EUR')
-
-    assert head['gain_absolu'] == 2500.0
-    assert head['net_contributed'] == 10000.0
-    assert head['xirr'] == 0.12
-    assert head['currency'] == 'EUR'
-    # A **day**, not an instant: the two kinds of time never mix, and this
-    # series is stamped with the calendar day it describes (#700).
-    assert head['as_of'] == '2026-08-05'
-    assert 'plus_value_latente' not in head
-
-
-def test_a_rate_that_was_never_computable_is_simply_absent():
-    """xirr needs an external flow; a portfolio with none has no annualized
-    rate. In the store the column exists and reads `NULL`, which is why naming
-    it in a SELECT is safe again — `None`, never zero."""
-    head = build_totals_head({'total_value': 100.0}, 'EUR')
-
-    assert head['xirr'] is None
-    assert head['gain_absolu'] is None
-
-
-def test_the_relative_delta_is_absent_unless_a_baseline_was_asked_for():
-    assert build_totals_head({'total_value': 100.0}, 'EUR')['baseline'] is None
-
-
-def test_the_relative_delta_compares_against_the_baseline_instant():
-    since = datetime(2026, 7, 5, tzinfo=timezone.utc)
-    head = build_totals_head({'total_value': 11000.0}, 'EUR', since, 10000.0)
-
-    assert head['baseline'] == {
-        'since': '2026-07-05T00:00:00+00:00',
-        'total_value': 10000.0,
-        'change': 1000.0,
-        'change_pct': 0.1,
-    }
-
-
-def test_a_baseline_before_the_portfolio_existed_is_absent_not_a_total_gain():
-    """Nothing stored that early means the portfolio did not exist, and calling
-    that a gain of its entire value is trap 3 in its most flattering form."""
-    since = datetime(2019, 1, 1, tzinfo=timezone.utc)
-    baseline = build_totals_head({'total_value': 11000.0}, 'EUR', since)['baseline']
-
-    assert baseline['total_value'] is None
-    assert baseline['change'] is None
-    assert baseline['change_pct'] is None
-
-
-def test_the_titres_head_speaks_plus_value_latente_and_never_gain():
-    """The two terms of #652 déc. 6 must not share a field. This head has no
-    `gain_absolu` to read, so conflating them is impossible rather than unlikely."""
-    shares = build_shares([
-        row(symbol='AAPL', quantity=10.0, price=200.0, cost_basis=1500.0,
-            received_dividend=8.0),
-        row(symbol='MSFT', name='Microsoft', quantity=5.0,
-            price=400.0, cost_basis=1900.0, received_dividend=0.0),
-    ])
-    head = build_titres_head(shares)
-
-    assert head['mode'] == MODE_TITRES
-    assert head['holdings_value'] == 4000.0        # 2000 + 2000
-    assert head['cost_basis'] == 3400.0            # 1500 + 1900
-    assert head['plus_value_latente'] == 600.0     # 4000 − 3400
-    # The other two named figures ride beside it rather than inside it.
-    assert head['received_dividend'] == 8.0
-    assert head['realized_gain'] == 0.0
-    assert 'gain_absolu' not in head
-    assert head['baseline'] is None
-
-
-def test_the_titres_head_states_the_reporting_currency_not_the_quote_one():
-    """#702: the head's unit is the reporting currency, whatever the shares quote in.
-
-    Deriving it from the securities is the three-level model showing through —
-    two accounts in EUR holding only USD-quoted lines produced a head labelled
-    `USD` over figures whose cost basis was in euros. Unanswered, it is `None`,
-    and that `None` is what the page says the condition with.
-    """
-    shares = build_shares([
-        row(symbol='AAPL', currency='USD'),
-        row(symbol='AIR.PA', name='Airbus', currency='EUR'),
-    ])
-    assert build_titres_head(shares, 'EUR')['currency'] == 'EUR'
-    assert build_titres_head(shares)['currency'] is None
-
-
-def test_an_empty_titres_portfolio_is_all_absent_rather_than_zero():
-    head = build_titres_head([])
-
-    assert head['holdings_value'] is None
-    assert head['plus_value_latente'] is None
-    assert head['as_of'] is None
 
 
 # --------------------------------------------------------------------- #

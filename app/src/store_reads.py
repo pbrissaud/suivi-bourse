@@ -152,78 +152,22 @@ class PortfolioReader:
     # The price series behind the chart
     # ------------------------------------------------------------------ #
 
-    def raw_series(self, symbol: str, start: Optional[datetime] = None,
-                   stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Every stored price of a symbol in ``[start, stop]``, oldest first.
-
-        Queried by symbol alone, which is no longer a rule to remember: there is
-        no account column to forget. Gaps are **returned as gaps** — a
-        non-trading day is by design (#606) and whether to bridge it is the
-        chart's call, not the API's.
-
-        The **converted** price, like every other money figure the pages draw
-        (issue #702). A point whose conversion has not landed is a gap of the
-        same kind as a weekend, and the chart treats it the same way.
-        """
-        clauses, parameters = _window('ts', start, stop)
-        return self._series(
-            'SELECT ts, price_converted FROM price_point '
-            f' WHERE symbol = ? AND price_converted IS NOT NULL{clauses}'
-            ' ORDER BY ts',
-            [symbol] + parameters, ('t', 'price'))
-
-    def bucketed_series(self, symbol: str, interval: str,
-                        start: Optional[datetime] = None,
-                        stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """The same series, downsampled to the last price of each bucket.
-
-        It survives the move for **one** reason and it is a new one: the
-        browser. Five years of a symbol is still tens of thousands of points
-        after the retention ladder (#705), which is fifty times what a chart
-        carries — so the threshold is a budget of pixels, no longer a cost of
-        materialisation.
-
-        ``interval`` reaches SQL as a literal and is therefore **whitelisted**,
-        never escaped: :func:`bucket_for_window` is its only caller and picks
-        from a closed set.
-
-        Takes the **last** price of each bucket, the same survivor rule
-        :func:`quotes.price_series` and the ladder use, so the three agree
-        wherever they overlap. An empty bucket produces no row: the gap survives
-        downsampling.
-        """
-        if interval not in ALLOWED_INTERVALS:
-            raise ValueError(f"Unsupported bucket interval: {interval!r}")
-
-        clauses, parameters = _window('ts', start, stop)
-        return self._series(
-            "SELECT bucket, price_converted FROM ("
-            f"  SELECT time_bucket(INTERVAL '{interval}', ts) AS bucket,"
-            "         price_converted,"
-            "         ROW_NUMBER() OVER ("
-            f"             PARTITION BY time_bucket(INTERVAL '{interval}', ts)"
-            "             ORDER BY ts DESC) AS rn"
-            "    FROM price_point"
-            f"   WHERE symbol = ? AND price_converted IS NOT NULL{clauses}"
-            ") WHERE rn = 1 ORDER BY bucket",
-            [symbol] + parameters, ('t', 'price'))
-
     def chart_series(self, symbol: str, interval: Optional[str] = None,
                      start: Optional[datetime] = None,
                      stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """One symbol's series for ``GET /api/prices/<symbol>`` (issue #763).
 
-        It is a **third** reader beside :meth:`raw_series` and
-        :meth:`bucketed_series` rather than an argument on either, for one
-        difference that is the whole contract of the new resource: a point whose
-        conversion never resolved is served as ``price: null`` and **never as a
-        missing point**. The two older readers drop it — right for a chart that
-        treats it like a weekend, wrong here, where *the app has not been able to
-        convert this quote* and *no session that day* are two different things
-        and only one of them is repaired by #704's lateral pass.
+        It was a **third** reader beside a raw one and a bucketed one, and it
+        is what is left of the three, for the difference that made it a third
+        rather than an argument on either — the whole contract of this resource:
+        a point whose conversion never resolved is served as ``price: null`` and
+        **never as a missing point**. The two it outlived dropped it — right for
+        a chart that treats it like a weekend, wrong here, where *the app has not
+        been able to convert this quote* and *no session that day* are two
+        different things and only one of them is repaired by #704's lateral pass.
 
         ``interval`` is ``None`` for *as written* and otherwise one of
-        :data:`ALLOWED_INTERVALS`, whitelisted for the same reason as above: it
+        :data:`ALLOWED_INTERVALS`, **whitelisted rather than escaped**: it
         reaches SQL as a literal, so it must never come from a request.
         :func:`chart_window` is its only caller and picks from a closed set.
 
@@ -342,8 +286,8 @@ class PortfolioReader:
         """The newest ``portfolio_totals`` point at or **before** ``day``.
 
         The year-to-date's **base row** (issue #763), and the "≤" is the whole
-        of it — the same rule :meth:`prices_at` and :meth:`total_value_at`
-        follow, applied to a bound that is a *calendar* one.
+        of it — the same rule :meth:`prices_at` follows, applied to a bound
+        that is a *calendar* one.
 
         The bound its one caller passes is **31 December of the previous year**,
         and that choice is the ticket's: *year to date* measures the move since
@@ -477,24 +421,6 @@ class PortfolioReader:
         return {account: (-total if total else 0.0)
                 for account, total in gathered.items()}
 
-    def total_value_at(self, moment: datetime) -> Optional[float]:
-        """The global total value on the last day at or **before** ``moment``.
-
-        The head's relative delta (#652 déc. 2). Same "≤" rule as
-        :meth:`prices_at` and for a sharper reason: the series carries one point
-        a *day*, so a query for the value *at* an instant answers nothing
-        whenever the instant is not midnight.
-
-        ``None`` when nothing was written that early — absence, not zero. A
-        portfolio that did not exist yet has no value, and rendering that as
-        ``0`` would put a spectacular fake gain on screen.
-        """
-        rows = self._store.query(
-            'SELECT total_value FROM portfolio_totals '
-            ' WHERE total_value IS NOT NULL AND day <= CAST(? AS DATE) '
-            ' ORDER BY day DESC LIMIT 1', [moment])
-        return rows[0][0] if rows else None
-
     def totals_series(self, start: Optional[datetime] = None,
                       stop: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """The global perf series over ``[start, stop]``, oldest day first.
@@ -568,28 +494,10 @@ class PortfolioReader:
         return [dict(zip(names, values)) for values in zip(*columns)]
 
 
-#: The bucket widths :func:`bucket_for_window` may choose. A closed set on
-#: purpose: the value reaches SQL as a literal, so it must never come from a
-#: request.
+#: The bucket widths :meth:`PortfolioReader.chart_series` may be asked for. A
+#: closed set on purpose: the value reaches SQL as a literal, so it must never
+#: come from a request.
 ALLOWED_INTERVALS = ('5 minutes', '30 minutes', '1 hour', '6 hours', '1 day')
-
-
-def bucket_for_window(span_days: float) -> Optional[str]:
-    """Pick a bucket width for a window, or ``None`` to serve it raw.
-
-    Pure, so the choice is testable without a database. The thresholds aim at
-    one to three thousand points on the wire — enough that a line is faithful,
-    few enough that it stays interactive.
-    """
-    if span_days <= 7:
-        return None
-    if span_days <= 31:
-        return '30 minutes'
-    if span_days <= 120:
-        return '1 hour'
-    if span_days <= 400:
-        return '6 hours'
-    return '1 day'
 
 
 #: The four windows ``GET /api/prices/<symbol>`` takes, and they are the **rungs
@@ -614,13 +522,13 @@ CHART_WINDOWS = ('1M', '1Y', '2Y', 'MAX')
 #:
 #: Two of the four are worth the ink. ``1M`` is served **as written**, and it is
 #: the only window where the finest rung is reachable at all — a month of
-#: ``REGULAR`` polling is a few thousand points, the order the older
-#: :func:`bucket_for_window` aimed at, so paying for it here buys the one thing
-#: the shortest window exists to show. ``MAX`` announces ``day`` on an install
-#: three months old too, and that is honest rather than approximate: it says
-#: what was **served**, and daily is what was served. Sizing it from the oldest
-#: stored point would put a second query behind a field whose whole job is to
-#: describe the answer that came back.
+#: ``REGULAR`` polling is a few thousand points — enough that a line is
+#: faithful, few enough that it stays interactive — so paying for it here buys
+#: the one thing the shortest window exists to show. ``MAX`` announces ``day``
+#: on an install three months old too, and that is honest rather than
+#: approximate: it says what was **served**, and daily is what was served.
+#: Sizing it from the oldest stored point would put a second query behind a
+#: field whose whole job is to describe the answer that came back.
 _CHART_LADDER = {
     '1M': (31, None),
     '1Y': (365, '1 hour'),
@@ -732,7 +640,7 @@ def _stamp_value(value: Any) -> Any:
 
 
 __all__ = [
-    'PortfolioReader', 'bucket_for_window', 'ALLOWED_INTERVALS',
+    'PortfolioReader', 'ALLOWED_INTERVALS',
     'chart_window', 'CHART_WINDOWS',
     'P1_COLUMNS', 'PERF_COLUMNS',
 ]

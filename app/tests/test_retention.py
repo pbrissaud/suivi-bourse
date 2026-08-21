@@ -156,9 +156,9 @@ def test_the_resolution_follows_the_ladder_rather_than_a_literal(monkeypatch):
 def test_a_bucket_between_two_rungs_has_no_honest_name_to_be_announced_under():
     """A resolution has three names, and rounding to the nearer is invisible.
 
-    ``bucket_for_window`` may still pick ``6 hours`` for the older per-share
-    route, which announces no resolution at all. Answering ``hour`` or ``day``
-    for it here would be a claim about the series nobody could check.
+    ``ALLOWED_INTERVALS`` still admits ``6 hours``, which sits between the
+    hour and the day. Answering ``hour`` or ``day`` for it here would be a claim
+    about the series nobody could check.
     """
     with pytest.raises(ValueError):
         retention.rung_of_bucket('6 hours')

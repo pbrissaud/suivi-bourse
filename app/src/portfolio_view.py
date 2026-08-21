@@ -142,8 +142,8 @@ class SharePosition:
     accounts: Sequence[AccountPosition]
     # #659 reserved a `status` slot here for #656's live scheduler state. #656
     # decision 6 **retired it rather than filling it**, and the reason is this
-    # module's own error contract read one storey up: `/api/shares` is a query,
-    # so the blueprint answers 503 when it fails — and a pill riding on this
+    # module's own error contract read one storey up: the shares resource is a
+    # query, so the blueprint answers 503 when it fails — and a pill riding on this
     # payload would vanish exactly when it is the only thing able to explain the
     # empty table. The pills live on `GET /api/runtime`, which reads no store.
 
@@ -192,13 +192,6 @@ def build_shares(rows: Sequence[Dict[str, Any]],
 
     return [_build_share(symbol, group, symbol in carried)
             for symbol, group in sorted(by_symbol.items())]
-
-
-def build_share(rows: Sequence[Dict[str, Any]], symbol: str,
-                carried: Collection[str] = ()) -> Optional[SharePosition]:
-    """The single-share form, for the detail sheet. ``None`` when unknown."""
-    group = [row for row in rows if row.get('symbol') == symbol]
-    return _build_share(symbol, group, symbol in carried) if group else None
 
 
 def _build_share(symbol: str, group: List[Dict[str, Any]],
@@ -273,140 +266,11 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
 
 
 # --------------------------------------------------------------------- #
-# The consolidated dashboard (issue #660, content #652 déc. 5–8)
-#
-# Everything below answers one page, and the shape of the answer is a
-# **discriminated union** rather than one object with every field optional
-# (#655 déc. 8). The three builders return plain dicts on purpose: a single
-# dataclass carrying `gain_absolu` *and* `plus_value_latente`, each null in the
-# other's mode, is precisely the "infer the mode from which fields are null"
-# the discriminator exists to forbid — and it would put #652 déc. 6's two terms,
-# which must never be conflated, in one namespace.
-# --------------------------------------------------------------------- #
-
-#: Declared accounts: the global perf series exists and the head is **Gain** —
-#: total value − net contributed.
-MODE_ACCOUNTS = 'accounts'
-
-#: No declared accounts: the head falls back to **plus-value latente**,
-#: computable from the positions and their quotes alone. This is what a default
-#: install runs, so it is a designed mode, not a failure.
-MODE_TITRES = 'titres'
-
-# ``MODE_MULTI_CURRENCY`` and ``build_multi_currency_head`` are **gone** (issue
-# #702, ADR-0002), and deleted rather than left unreachable. There are two levels
-# of currency and not three — the reporting currency and the security's quote
-# currency — so "declared accounts that do not share a currency" is a sentence
-# with no referent: an account has no currency to disagree about. The third mode
-# was a whole branch of the API, of the page and of the tests defending a state
-# the model can no longer be in, and a mode that is published but cannot occur is
-# something a front will eventually handle for nothing.
-
-
-def portfolio_mode(declared: bool) -> str:
-    """Which head this portfolio gets. Pure — the page's first decision.
-
-    Decided from the **configuration**, never from whether the series happens to
-    have rows: that is what keeps "no declared accounts" and "the perf job has
-    not run yet" from rendering the same screen.
-
-    One question since #702, where it used to be two. It took a list of account
-    currencies because a third mode turned on their disagreeing; with the
-    per-account currency deleted, what is left is the only thing the decision
-    ever really rested on — is there a declaration.
-    """
-    return MODE_ACCOUNTS if declared else MODE_TITRES
-
-
-def build_totals_head(
-    row: Optional[Dict[str, Any]],
-    currency: Optional[str],
-    baseline_since: Optional[datetime] = None,
-    baseline_value: Optional[float] = None,
-) -> Dict[str, Any]:
-    """The ``accounts`` head: one ``portfolio_totals`` row, made into a page.
-
-    ``gain_absolu`` in euros is the headline (#652 déc. 5 — the eye looks for
-    euros, not a rate), with net contributed under it and ``xirr`` /
-    ``twr_index`` as two rates answering two different questions.
-
-    ``row`` is ``None`` when the series has no point yet — declared accounts
-    whose first perf cycle has not run. Every figure is then ``null`` and
-    ``as_of`` says so; the mode still says ``accounts``, because the mode is a
-    property of the configuration and emptiness a property of the data.
-    """
-    row = row or {}
-    total = row.get('total_value')
-    return {
-        'mode': MODE_ACCOUNTS,
-        'currency': currency,
-        'as_of': _iso(row.get('day')),
-        'total_value': total,
-        'cash_balance': row.get('cash_balance'),
-        'holdings_value': row.get('holdings_value'),
-        'net_contributed': row.get('net_contributed'),
-        'gain_absolu': row.get('gain_absolu'),
-        'xirr': row.get('xirr'),
-        'twr_index': row.get('twr_index'),
-        'baseline': _baseline(total, baseline_value, baseline_since),
-    }
-
-
-def build_titres_head(shares: Sequence[SharePosition],
-                      currency: Optional[str] = None) -> Dict[str, Any]:
-    """The degraded head: the three named figures, from the positions alone.
-
-    Not an error state — it is what every install without a declared account
-    shows, which is the default one. And ``plus_value_latente`` is deliberately
-    *not* called Gain: Gain is total value − net contributed and needs declared
-    accounts and events. #652 déc. 6 exists to keep the two apart, so they never
-    share a field name here either.
-
-    The realized gain and the dividends ride beside it rather than inside it,
-    which is the whole of #672's correction: one composite figure became three
-    named ones, each with its own domain, and adding them here would rebuild the
-    composite under a new name.
-
-    ``baseline`` is ``null`` and stays so. A relative delta would need each
-    position's *quantity* at the baseline instant as well as its price, and
-    valuing today's holdings at an old price would announce a move that is
-    partly a purchase.
-
-    ``currency`` is the **reporting** currency and arrives as an argument (issue
-    #702). It used to be derived from the shares' own quote currencies, which was
-    the three-level model showing through: two accounts in EUR holding only
-    USD-quoted securities produced a head labelled ``USD`` over figures whose
-    cost basis was in euros. It is ``None`` while the question is unanswered, and
-    that ``None`` is what the page says the condition with.
-    """
-    holdings = _sum_values(share.market_value for share in shares)
-    cost_basis = _sum_values(share.cost_basis for share in shares)
-    dividends = _sum_values(share.received_dividend for share in shares)
-    realized = _sum_values(share.realized_gain for share in shares)
-    plus_value = _latent(holdings, cost_basis)
-
-    times = [share.price_time for share in shares
-             if isinstance(share.price_time, datetime)]
-    return {
-        'mode': MODE_TITRES,
-        'currency': currency,
-        'as_of': _iso(max(times)) if times else None,
-        'holdings_value': holdings,
-        'cost_basis': cost_basis,
-        'received_dividend': dividends,
-        'realized_gain': realized,
-        'plus_value_latente': plus_value,
-        'plus_value_pct': _ratio(plus_value, cost_basis),
-        'baseline': None,
-    }
-
-
-# --------------------------------------------------------------------- #
 # The v5 contract: the hot read, and the global perf cache (#745, issue #763)
 #
 # Two builders, and neither aggregates anything. That is the difference with
-# everything above: the v4 pages asked the server for a *page* — a head, a
-# folded shares table, a movers block — while the v5 front asks for the
+# the folded shares table above: the v4 pages asked the server for a *page* — a
+# head, a shares table, a movers block — while the v5 front asks for the
 # **store's own nouns** and does the folding itself (`lib/gain.ts` computes the
 # four terms, `lib/absence.ts` classifies the three absences). So what is left
 # for a pure module here is naming and shape, plus the one arithmetic no client
@@ -418,10 +282,10 @@ def build_positions(rows: Sequence[Dict[str, Any]],
                     base_currency: Optional[str]) -> List[Dict[str, Any]]:
     """P1's rows as ``GET /api/positions`` publishes them (#745).
 
-    **One row per ``(account, symbol)``, folded nowhere.** ``/api/shares``
-    aggregates because a *table of shares* is what it serves; this resource is
+    **One row per ``(account, symbol)``, folded nowhere.** Its v4 predecessor
+    aggregated, because a *table of shares* was what it served; this resource is
     named after the ``position`` table and hands back what that table holds, the
-    per-account detail included — the head sums it, the shares page will fold it,
+    per-account detail included — the head sums it, the shares page folds it,
     and both read one query and one client cache.
 
     A **sold** position (``quantity`` 0) travels like any other: it stays in the
@@ -552,11 +416,11 @@ def build_price_series(symbol: str, rows: Sequence[Dict[str, Any]],
     bucketing of its own.
 
     ``price`` is in the **reporting currency** and ``null`` means *quoted, and
-    the rate never resolved* — never a missing point. That is the difference
-    between this resource and ``/api/shares/<symbol>/prices``, which drops the
-    point: here the gap of a weekend (no row at all) and the gap of a conversion
-    (a row with no price) are two different pieces of news, and only the second
-    one repairs itself.
+    the rate never resolved* — never a missing point. That is what parted it
+    from the v4 series reader it replaced, which dropped the point: here the gap
+    of a weekend (no row at all) and the gap of a conversion (a row with no
+    price) are two different pieces of news, and only the second one repairs
+    itself.
     """
     return {
         'symbol': symbol,
@@ -953,8 +817,8 @@ class Mover:
     No ``currency`` on the row since #702. Every amount here — the price, the
     change, the contribution — is in the **reporting** currency, so it is one
     fact about the whole block rather than a column repeated identically down it.
-    The share's own quote currency is on ``/api/shares``, beside the native price
-    it labels.
+    The share's own quote currency is on ``/api/positions``, beside the native
+    price it labels.
     """
 
     symbol: str
@@ -1062,29 +926,6 @@ def build_movers(
     movers.sort(key=lambda mover: (mover.change_pct is None,
                                    -(mover.change_pct or 0.0)))
     return movers
-
-
-def _baseline(
-    current: Optional[float],
-    previous: Optional[float],
-    since: Optional[datetime],
-) -> Optional[Dict[str, Any]]:
-    """The head's relative delta — #652 déc. 2's UI preference, made a payload.
-
-    ``None`` when the caller asked for no baseline. When it asked and there is
-    nothing stored that early, ``previous`` is ``null`` and so are the deltas:
-    the portfolio did not exist yet, and calling that a gain of its entire value
-    is the shape of mistake this whole ticket removes.
-    """
-    if since is None:
-        return None
-    change = _difference(current, previous)
-    return {
-        'since': _iso(since),
-        'total_value': previous,
-        'change': change,
-        'change_pct': _ratio(change, previous),
-    }
 
 
 def _build_account(row: Dict[str, Any], carry: bool = False) -> AccountPosition:
@@ -1203,9 +1044,7 @@ def _iso(value) -> Optional[str]:
 
 __all__ = [
     'AccountPosition', 'AccountSummary', 'SharePosition', 'Mover',
-    'build_shares', 'build_share', 'build_accounts', 'unit_cost',
-    'MODE_ACCOUNTS', 'MODE_TITRES', 'portfolio_mode',
-    'build_totals_head', 'build_titres_head',
+    'build_shares', 'build_accounts', 'unit_cost',
     'build_positions', 'build_portfolio_totals', 'ytd_base_day',
     'build_price_series',
     'valuation_series', 'session_baseline_instant', 'baseline_reference',
