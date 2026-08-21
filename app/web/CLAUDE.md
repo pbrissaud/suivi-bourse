@@ -1,5 +1,11 @@
 # app/web/ — the front
 
+> **ADR-0028 to 0031 are decided and not yet built.** Where this file cites one of
+> them — the accounts page, the data page's three tabs, the paginated ledger, the
+> preset — it describes the destination, and the code has not been there yet. That
+> is the one place `docs/adr/README.md`'s rule for `preview/v5` is suspended, and it
+> ends when the tickets from that design session merge.
+
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
 TanStack Table was a dependency of the prototype and no file ever imported it.
@@ -57,6 +63,13 @@ Two nets hold a rule nothing made true by construction:
   read **renders nothing at all, title included** — no hand-written skeleton. The
   page passes `?? null` and never `?? []`; `?? []` survives only where an absent
   read *removes a line* instead of falsifying one.
+- **Paginated, only the first flight is silent** (ADR-0031). The ledger's first page
+  in flight renders nothing, headers included; *load more* and the count describe a
+  table that has landed and may therefore speak. No spinner in either case, and
+  *end of the ledger* is never said before the last row has arrived. The three
+  sections of ⌘K that read — shares, accounts, events — are **optional**: an absent
+  one removes its section instead of holding the palette, and the palette reads on
+  **open**, never on mount.
 - **Four renderings of absence and no fifth** (`lib/absence.ts`, ADR-0021). The em
   dash says *there is nothing to compute*; anything merely missing is **named**.
   Zero is not absence (`lib/sign.ts`).
@@ -73,13 +86,18 @@ Two nets hold a rule nothing made true by construction:
 - **One band on screen or none.** `lib/status.ts` holds the causal order between
   the shell's band (what is true of the installation) and a page's own (a read of
   its own that failed).
-- **The theme and the language are the reader's two preferences, one mechanism**
-  (ADR-0024): three states each (`light|dark|auto`, `fr|en|auto`), two
+- **The theme, the language and the table density are the reader's three
+  preferences, one mechanism** (ADR-0024 decided the first two): three states each
+  for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density
+  (`comfortable|compact` — there is no `auto` for a density), three
   `localStorage` keys of identical shape, **no dial in the store**. Numbers and
-  dates follow the **language**, not the currency.
-- **`index.css` has exactly three blocks** (ADR-0023): the tweakcn `Vercel`
-  primitives (**never hand-edited**, regenerated with
-  `pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/vercel.json`), the
+  dates follow the **language**, not the currency. ADR-0024 says *two* because
+  density came later; a record is dated, and it is this line that carries the
+  count.
+- **`index.css` has exactly three blocks** (ADR-0023, whose preset ADR-0029
+  replaces): the tweakcn primitives (**never hand-edited**, regenerated with
+  `pnpm dlx shadcn@latest add <url>` — `…/themes/vercel.json` until the midnight
+  preset is chosen or published, and **never a pasted JSON**), the
   domain layer (only what the preset cannot say), and an `@theme inline` bridge.
 - **`lib/api.ts` is the only module that knows a URL**, and the paths it exports
   are what the test handlers fake.
@@ -110,9 +128,10 @@ src/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
 │   ├── dashboard/  # the head, the one chart slot, the allocation, the movers
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
-│   ├── data/       # tab 1: ledger, create form, accounts, import and export
-│   │               # tab 2: notices, settings, the store
-│   └── accounts/   # the rebased chart, the eight columns, an account's panel
+│   ├── data/       # tab 1: ledger, create form, drop zone, import and export
+│   │               # tab 2: notices  ·  tab 3: settings, the store
+│   │               # (accounts moved to accounts/ — ADR-0028)
+│   └── accounts/   # the rail of weights, one account's detail, its form
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
 
@@ -120,15 +139,27 @@ src/
 
 - **Dashboard** (`/`) — the head computes `Gain total` from its four terms and
   never reads `gain_absolu`; under it, one chart slot with two readings (*Amounts*
-  / *Performance*), the allocation in twelve slices, and the movers. It is the
+  / *Performance*), the allocation in twelve slices, the movers, and the **accounts
+  card** — which since ADR-0028 is where accounts are compared, and therefore holds
+  ADR-0019's rule: one range for every figure on it, sparkline included. The head's
+  two period figures sit with the total, never among its four terms. It is the
   dashboard **unconditionally**, zero events included.
-- **Shares** (`/titres`) — nine columns, the header sums its lines, so the closed
-  positions **fold** rather than being filtered (the fold is not a filter, and the
-  header does not move when the section opens). One sheet per share, where a
+- **Shares** (`/titres`) — ten columns since the weight bar, the header sums its
+  lines, so the closed positions **fold** rather than being filtered (the fold is
+  not a filter, and the header does not move when the section opens). Grouping by
+  account puts each
+  subtotal in the **group header**, never in a footer row: a total and its terms
+  never share a row, one level down. One sheet per share, where a
   selection links the chart to the event list.
-- **Accounts** (`/comptes`) — a comparison does not outrun the period where it
-  exists (ADR-0019): one range control drives the chart **and** the `perf` column,
-  and `MAX` is not offered. Pointing previews, clicking opens.
-- **Data** (`/donnees`) — two tabs: *The ledger* (what the owner declared: events,
-  accounts, imports and export) and *The installation* (what the installation
-  *is*: notices, settings, the store).
+- **Accounts** (`/comptes`) — master-detail (ADR-0028): a sticky rail of weights and
+  names, one account's detail beside it. It is also where an account is declared,
+  renamed and removed — the reassignment rides with the **declaration** (#725,
+  offered and never required), and the removal's three refusals live in the edit
+  dialog. The cross-account comparison is the dashboard's accounts card now, and
+  ADR-0019's rule travels with it: **one range for every figure drawn on that
+  card**, `MAX` still not offered.
+- **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table, and above
+  it one band holding the drop zone, the export menu and the imported files with
+  their revocation), *The notices* — **always mounted**, saying so when there is
+  nothing, because the status dot must have one destination — and *The
+  installation* (settings, the store and its orphans).
