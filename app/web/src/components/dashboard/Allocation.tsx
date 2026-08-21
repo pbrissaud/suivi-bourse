@@ -126,7 +126,10 @@ export function Allocation({ rows, currency }: AllocationProps) {
         <p className="text-sm text-attention">
           {t('dashboard.allocation.unplaced', {
             count: unplaced.length,
-            symbols: unplaced.join(', '),
+            // `f.list` and not `join(', ')`: this is a sentence, and a
+            // language does not enumerate with a separator (#768). English
+            // closes on *and*, French on *et*.
+            symbols: f.list(unplaced),
           })}
         </p>
       )}

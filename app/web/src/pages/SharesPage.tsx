@@ -134,8 +134,20 @@ export default function SharesPage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           {pricedAt === null ? null : <p>{t('shares.pricedAt', { date: f.dateTime(pricedAt) })}</p>}
           {/* At zero it is a sentence, not a control: there is nothing to filter
-              to, and the absence is the information. */}
-          {anomalies.length === 0 ? (
+              to, and the absence is the information.
+
+              **And the sentence waits for both reads** (ADR-0026, the fourth
+              occurrence after #775, #777 and #778). *Aucun titre en anomalie* is
+              a claim, and three chains used to make it on a silence: positions
+              in flight leaves `rows` empty, so the count is zero before
+              anything is known; runtime in flight leaves every counter at zero,
+              so `absenceCase` answers *carried at cost* where it owes *no
+              quote* and three mute symbols read as none; and runtime in **error**
+              hands `readConditions` a `shellError`, which short-circuits to no
+              band at all — so the page said nothing was wrong on the strength
+              of a read that failed. The counter is the one part of this header
+              that asserts something, so it is the one part that waits. */}
+          {!positions.data || !runtime.isSuccess ? null : anomalies.length === 0 ? (
             <p>{t('shares.anomaly.count', { count: 0 })}</p>
           ) : (
             <button

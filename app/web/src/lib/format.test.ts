@@ -57,9 +57,14 @@ describe('the format follows the language, not the currency', () => {
     expect(formatPercent(EN, 0.1234)).toBe('+12.34%')
     expect(formatPercent(FR, 0)).toBe('0,00 %')
 
-    // Percent *points*, which are not a ratio and must not be multiplied again.
-    expect(formatPercentPoints(FR, 3.5)).toBe('3,50 %')
-    expect(formatPercentPoints(EN, 3.5)).toBe('3.50 %')
+    // Percent *points*, which are not a ratio and must not be multiplied again
+    // — and which wear the **same** percent sign as the ratio above, because
+    // both come from `Intl`. This one used to close on a template literal's
+    // `' %'`, so it applied the French typographic space to English too and the
+    // dashboard showed `+12.34%` beside `12.34 %`. The separator is now the
+    // locale's own: a no-break space in French, nothing at all in English.
+    expect(formatPercentPoints(FR, 3.5)).toBe('3,50\u00a0%')
+    expect(formatPercentPoints(EN, 3.5)).toBe('3.50%')
 
     expect(formatCompact(FR, 2_400_000_000, 'EUR')).toBe('2,4 Md €')
     // `bn` and not `B`: en-GB's own abbreviation, which is the point — the
@@ -105,12 +110,16 @@ describe('absence is not zero', () => {
 
 describe('a size on disk (#724)', () => {
   it('steps in binary and follows the language for the number', () => {
-    // Only the number crosses `Intl` — its own unit list has no mebibyte — so
-    // this is not a ninth site, it composes the number one the way the signed
-    // currency composes the currency one.
-    expect(formatBytes(FR, 26 * 1024 * 1024)).toBe('26,0 MB')
+    // The **division** is ours, because file managers step in binary and name
+    // in decimal; the **unit** is `Intl`'s, because it is a word the reader
+    // reads. It used to be a hard-coded `['B', 'kB', 'MB', …]` inside a module
+    // whose header promises the reader's language, so a French reader was shown
+    // `26,0 MB` under a block whose own comment writes `126,0 Mo`. `Intl` knows
+    // all five names — the claim that its list stopped at `gigabyte` was wrong.
+    // The separator is the locale's: a narrow no-break space in French.
+    expect(formatBytes(FR, 26 * 1024 * 1024)).toBe('26,0\u202fMo')
     expect(formatBytes(EN, 26 * 1024 * 1024)).toBe('26.0 MB')
-    expect(formatBytes(FR, 512)).toBe('512 B')
+    expect(formatBytes(FR, 512)).toBe('512\u202fo')
   })
 
   it('renders an em dash on a store that has never been written', () => {

@@ -106,7 +106,7 @@ export function Ledger({ focus, reassignment, onReassignmentShown }: LedgerProps
   // than guessing one (`formatCurrency`). It is not on the events resource —
   // that collection is served as a bare array — so it comes off the one resource
   // that already carries it and costs a single row.
-  const totals = useQuery({ queryKey: ['portfolioTotals'], queryFn: api.portfolioTotals })
+  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
 
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])

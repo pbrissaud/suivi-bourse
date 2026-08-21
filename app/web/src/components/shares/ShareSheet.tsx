@@ -159,8 +159,13 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
     setScrollRequest(0)
   }, [symbol])
 
+  // Nothing to render, and nothing to hand a handler to: `Sheet` is Radix's
+  // Dialog `Root`, so with no `SheetTrigger` and no `SheetContent` under it
+  // nothing is mounted and no gesture — Escape, the overlay, a trigger — can
+  // ever reach `onOpenChange`. The closed Root was an empty element carrying a
+  // callback that could not fire.
   if (row === null) {
-    return <Sheet open={false} onOpenChange={() => onClose()} />
+    return null
   }
 
   const held = positions.filter((position) => position.symbol === row.symbol)

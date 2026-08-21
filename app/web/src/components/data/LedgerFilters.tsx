@@ -28,6 +28,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EVENT_TYPES, type LedgerEventType } from '@/lib/api'
+import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { LedgerFilters as Filters } from '@/lib/ledger'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
@@ -46,6 +47,7 @@ export interface LedgerFiltersProps {
 
 export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFiltersProps) {
   const { t } = useI18n()
+  const f = useFormatters()
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -118,7 +120,9 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
           <p className="text-sm text-muted-foreground">
             {t('data.filter.symbols', {
               count: filters.symbols.length,
-              symbols: filters.symbols.join(', '),
+              // A sentence, so the enumeration is the language's (#768) and
+              // not a machine-readable list wearing a sentence's clothes.
+              symbols: f.list(filters.symbols),
             })}
           </p>
           <Button

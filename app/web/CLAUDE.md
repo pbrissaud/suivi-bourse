@@ -1,6 +1,8 @@
 # app/web/ — the front
 
-Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Table & Query, Recharts.
+Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
+The tables are written by hand on the `components/ui/table.tsx` primitives:
+TanStack Table was a dependency of the prototype and no file ever imported it.
 Builds into `app/src/static/`, which Flask serves. It lives under `app/` because
 the Docker build context is `./app` — it is **not** a pnpm workspace with
 `website/`.

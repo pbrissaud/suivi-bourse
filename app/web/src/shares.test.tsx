@@ -362,6 +362,37 @@ describe('the exception marker and the date', () => {
     expect(screen.queryByRole('button', { name: /en anomalie/ })).not.toBeInTheDocument()
   })
 
+  it('says nothing about anomalies while either read is still in flight', async () => {
+    // ADR-0026's fourth occurrence, and the one the net cannot see: the phrase
+    // is in the baseline — the default fixture reports no failing symbol — so
+    // *appeared because a read did not answer* and *true of the fixture* are
+    // the same string here.
+    //
+    // Two reads compose the count and each of them breaks it on its own.
+    // Without the positions there are no rows, so nought is nought before
+    // anything is known. Without `/api/runtime` every counter reads zero, so a
+    // symbol that has failed three times is classified *carried at cost*
+    // instead of *no quote* and drops out of the count — the page then states
+    // that nothing is wrong precisely when it cannot know.
+    server.use(http.get(ROUTES.runtime, () => new Promise(() => {})))
+    renderShares()
+
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+    expect(screen.queryByText('Aucun titre en anomalie')).not.toBeInTheDocument()
+  })
+
+  it('says nothing about anomalies when the runtime read failed', async () => {
+    // The same claim by the other road, and the quieter one: a `shellError`
+    // short-circuits `readConditions` to no band at all — the shell owns that
+    // band — so the page had nothing to show for the failure *and* went on
+    // saying nothing was wrong.
+    server.use(http.get(ROUTES.runtime, () => HttpResponse.error()))
+    renderShares()
+
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+    expect(screen.queryByText('Aucun titre en anomalie')).not.toBeInTheDocument()
+  })
+
   it('dates the prices once, at the level of the page', async () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/460,00/))

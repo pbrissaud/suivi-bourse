@@ -89,12 +89,24 @@ export function formatPercent(locale: string, value: number | null | undefined):
 }
 
 /**
- * A yield already expressed in percent points (the writer multiplies by 100),
- * so it is *not* a ratio and must not go through `formatPercent`.
+ * A figure already expressed in percent points — a dividend yield as yfinance
+ * hands it over (5.32 for 5,32 %), an allocation share the caller has scaled.
+ * It is *not* a ratio, which is why it does not go through `formatPercent`;
+ * that one is a **change** and carries a sign, and a share of a pie never does.
+ *
+ * The suffix comes from `Intl` like every other one in this module. It used to
+ * be a template literal closing on `' %'`, which is the French typographic
+ * space applied to English as well: the dashboard showed `+12.34%` from
+ * `formatPercent` next to `12.34 %` from this one, two spellings of a
+ * percentage on one screen.
  */
 export function formatPercentPoints(locale: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return ABSENT
-  return `${formatNumber(locale, value, 2)} %`
+  return new Intl.NumberFormat(locale, {
+    style: 'percent',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value / 100)
 }
 
 /** Market cap: billions, not fifteen digits. */
@@ -111,13 +123,17 @@ export function formatCompact(
   }).format(value)
 }
 
+//: The decimal names of the binary steps, as `Intl` spells them. Binary steps
+//: and decimal names is what every file manager the reader has ever opened
+//: shows, so the **division** is ours; the **name** is not, and it used to be:
+//: the array read `['B', 'kB', 'MB', …]` inside a module whose header promises
+//: the reader's language, so a French reader was shown `126,0 MB` where the
+//: block above it writes `126,0 Mo`. `Intl` knows all five — the claim that its
+//: unit list stopped at `gigabyte` was simply wrong.
+const BYTE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
+
 /**
  * A size on disk, in the reader's language (#724).
- *
- * Binary steps and decimal names, which is what every file manager the reader
- * has ever opened shows them: `Intl`'s own `unit` list stops at `gigabyte` and
- * has no mebibyte, so the division is ours and only the *number* crosses
- * `Intl` — which is the point, since that is the half that follows the language.
  *
  * `null` is a store that has never been written, and it renders as the em dash
  * every other absence does rather than as `0 o` — a zero here would read as *the
@@ -125,14 +141,19 @@ export function formatCompact(
  */
 export function formatBytes(locale: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return ABSENT
-  const units = ['B', 'kB', 'MB', 'GB', 'TB']
   let size = value
   let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
+  while (size >= 1024 && unit < BYTE_UNITS.length - 1) {
     size /= 1024
     unit += 1
   }
-  return `${formatNumber(locale, size, unit === 0 ? 0 : 1)} ${units[unit]}`
+  return new Intl.NumberFormat(locale, {
+    style: 'unit',
+    unit: BYTE_UNITS[unit],
+    unitDisplay: 'short',
+    maximumFractionDigits: unit === 0 ? 0 : 1,
+    minimumFractionDigits: unit === 0 ? 0 : 1,
+  }).format(size)
 }
 
 export function formatDateTime(locale: string, value: string | null | undefined): string {

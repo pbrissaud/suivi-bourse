@@ -36,6 +36,7 @@ import {
   DIMMED_OPACITY,
   RANGES,
   seriesColour,
+  seriesKey,
   type Range,
   type RebasedSeries,
 } from '@/lib/accounts'
@@ -130,7 +131,7 @@ export function AccountsChart({
                   <Line
                     key={one.key}
                     type="monotone"
-                    dataKey={one.key}
+                    dataKey={seriesKey(one.key)}
                     name={labels.get(one.key) ?? one.key}
                     stroke={seriesColour(index)}
                     strokeOpacity={selected === null || selected === one.key ? 1 : DIMMED_OPACITY}

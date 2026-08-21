@@ -16,7 +16,6 @@ import {
   FIELDS,
   filterEvents,
   identityOf,
-  isCashEvent,
   isEditable,
   NO_FILTERS,
   parseDay,
@@ -27,8 +26,8 @@ describe('the fields of a type', () => {
   it('gives a transfer no security at all, and a grant an optional price', () => {
     // A `DEPOSIT` does not have a *missing* symbol: it raises no such question,
     // which is why the form drops the field rather than blanking it.
-    expect(isCashEvent('DEPOSIT')).toBe(true)
-    expect(isCashEvent('BUY')).toBe(false)
+    expect(FIELDS.DEPOSIT.security).toBe(false)
+    expect(FIELDS.BUY.security).toBe(true)
     expect(FIELDS.DEPOSIT).toEqual({
       security: false,
       quantity: false,

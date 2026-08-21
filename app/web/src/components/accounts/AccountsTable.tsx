@@ -41,7 +41,9 @@ import {
 } from '@/components/ui/table'
 import {
   declaredLabel,
+  declaredType,
   DEFAULT_ACCOUNT_LABEL,
+  DEFAULT_ACCOUNT_TYPE,
   degradedReason,
   figure,
   isDefaultAccount,
@@ -140,7 +142,23 @@ export function AccountsTable({
           {visible.map((column) => {
             const explain = COLUMN_EXPLAIN[column]
             return (
-              <TableHead key={column} className="text-right">
+              // **`aria-sort` and not the glyph alone.** The direction lived
+              // only in the ` ↑` / ` ↓` inside the button, whose accessible
+              // name is *overridden* by the `aria-label` below — so a screen
+              // reader heard *Trier par Valeur totale* and never learned that
+              // the column **is** sorted, or which way. It is the one state of
+              // this table a sighted reader gets for free.
+              <TableHead
+                key={column}
+                className="text-right"
+                aria-sort={
+                  sort?.column === column
+                    ? sort.direction === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'
+                }
+              >
                 <span className="inline-flex items-center justify-end gap-1.5">
                   <button
                     type="button"
@@ -236,8 +254,16 @@ export function AccountsTable({
                     {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
                   </button>
                 </span>
+                {/* The declaration first, exactly as the label above it — the
+                    seeded row is **retypable** (#729's block writes it, and
+                    `isSeededOnly` counts a retyping as a declaration), so
+                    testing the id first read the catalogue's *Autre* over a type
+                    the owner had chosen, while `/donnees` showed the choice.
+                    Two pages naming one thing two ways is the very thing the
+                    comment above says one function exists to prevent. */}
                 <span className="block text-xs text-muted-foreground">
-                  {isDefaultAccount(row.id) ? t('accounts.default.type') : row.type ?? row.id}
+                  {declaredType(row) ??
+                    (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)}
                 </span>
                 {/* The reason a row has no figures — a **reason**, never a
                     progress with a target date, which stays on the banner. */}

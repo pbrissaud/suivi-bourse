@@ -51,11 +51,6 @@ export const FIELDS: Record<LedgerEventType, FieldSet> = {
   WITHDRAWAL: { security: false, quantity: false, unitPrice: 'none', fee: true, amount: true },
 }
 
-/** A cash movement names no security — not a missing one, none. */
-export function isCashEvent(type: LedgerEventType): boolean {
-  return !FIELDS[type].security
-}
-
 /**
  * The identity column, for both families at once: the ticker in first rank and
  * the label in second when both exist, the label alone on a transfer.

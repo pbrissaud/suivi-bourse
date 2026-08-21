@@ -192,8 +192,9 @@ describe('the notices', () => {
     expect(cells.filter((text) => text.includes('ZZC'))).toHaveLength(1)
     // And the reduction is *stated*, with all three names, and can be undone —
     // a ledger silently shorter than the reader expects is the same defect one
-    // step further on.
-    expect(screen.getByText(/Réduit à 3 titres : ZZA, ZZB, ZZC/)).toBeInTheDocument()
+    // step further on. The names are enumerated in the reader's language (#768),
+    // not joined on a comma: this is a sentence, and French closes it on *et*.
+    expect(screen.getByText(/Réduit à 3 titres : ZZA, ZZB et ZZC/)).toBeInTheDocument()
 
     // The cash movement names no security, so a reduction to securities drops
     // it; clearing brings it back, which is what makes the reduction reversible
@@ -427,7 +428,8 @@ describe('the store', () => {
     const store = block('Le magasin')
     expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
     expect(store).toHaveTextContent(/sur un montage qui survit au conteneur/)
-    expect(store).toHaveTextContent('26,0 MB')
+    // French units, from `Intl` — the header of this very file writes them.
+    expect(store).toHaveTextContent(/26,0\s*Mo/)
     // The last **write of the ledger**, never the last observed price — that
     // second one is liveness and belongs to the banner.
     expect(store).toHaveTextContent('Dernière écriture du grand livre')

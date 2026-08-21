@@ -125,8 +125,6 @@
   "firstRun.entry.file.body": "Put a .csv or an .xlsx of your events into {path}. The app reads it by itself, whatever it is called. That folder is an optional mount: without it there is nothing to drop, and the other way in stays open.",
 
   "receipt.currency.saved": "Reporting currency saved: {currency}.",
-  "receipt.import.done": "{file} imported: {count, plural, one {# event} other {# events}}.",
-  "receipt.import.refused": "{file} was refused, and nothing from it was recorded.",
 
   "shares.gainTotal": "Total P&L",
   "shares.gainTotal.explain": "The gain of every line of this table, closed positions included — their realised gain and their dividends stay in this figure long after the position itself is gone, and leaving them out would show you a second figure, just as correct, that is not your gain. It is the sum of the three columns below, which is what makes it checkable by eye. One term cannot appear here: the fees your broker takes out of a transfer belong to no security.",

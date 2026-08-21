@@ -125,8 +125,6 @@
   "firstRun.entry.file.body": "Déposez un .csv ou un .xlsx de vos événements dans {path}. L’application le lit toute seule, quel que soit son nom. Ce dossier est un montage optionnel : sans lui il n’y a rien à y déposer, et l’autre entrée reste ouverte.",
 
   "receipt.currency.saved": "Devise de report enregistrée : {currency}.",
-  "receipt.import.done": "{file} importé : {count, plural, one {# événement} other {# événements}}.",
-  "receipt.import.refused": "{file} a été refusé, et rien n’en a été enregistré.",
 
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",

@@ -205,6 +205,24 @@ describe('the table', () => {
     await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
     expect(rows()[0]).toContain('Beta')
   })
+
+  it('says which column is sorted, and which way, without the glyph', async () => {
+    // The direction lived only in the ` ↑` / ` ↓` inside the button — whose
+    // accessible name the `aria-label` overrides — so the one state of this
+    // table a sighted reader gets for free was announced to nobody. The helper
+    // above strips those arrows before comparing, which is why no test saw it.
+    const { user } = renderAccounts()
+    await settled()
+
+    const header = () =>
+      screen.getByRole('button', { name: 'Trier par Valeur totale' }).closest('th')!
+
+    expect(header()).toHaveAttribute('aria-sort', 'none')
+    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
+    expect(header()).toHaveAttribute('aria-sort', 'descending')
+    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
+    expect(header()).toHaveAttribute('aria-sort', 'ascending')
+  })
 })
 
 describe('the two gestures', () => {

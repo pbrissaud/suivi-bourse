@@ -61,14 +61,6 @@ export function cadenceReach(runtime: RuntimeState | undefined): CadenceReach | 
  */
 export const RETROACTIVE_DIAL = 'regular_interval'
 
-/**
- * The one dial that is a **question** rather than a setting (ADR-0002,
- * ADR-0021): no default, and fixed from the first recorded event. It is the
- * target of the *reporting currency* gesture, which is why the field carries an
- * id at all.
- */
-export const CURRENCY_DIAL = 'base_currency'
-
 /** The form's field id for a dial. One spelling, so a label and a link agree. */
 export function settingFieldId(key: string): string {
   return `setting-${key}`

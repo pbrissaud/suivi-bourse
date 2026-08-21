@@ -311,6 +311,19 @@ export function rebase(key: string, points: readonly PerfPoint[], from: string):
 export const PORTFOLIO_KEY = '__portfolio__'
 
 /**
+ * A curve's member in a chart row. **Namespaced**, because the other member of
+ * the row is the day under the bare key `t` and a curve's own key is an
+ * *account id* — a string the owner writes in the `id` column of their accounts
+ * file. An account called `t` overwrote the day with a base-100 index, so the
+ * axis read indices and the sort compared numbers as strings. Reserving a name
+ * (the way `PORTFOLIO_KEY` does) would only move the collision; prefixing every
+ * curve puts the two namespaces out of each other's reach for good.
+ */
+export function seriesKey(key: string): string {
+  return `s:${key}`
+}
+
+/**
  * The drawn curves, merged into the rows a chart takes: one row per day, one
  * member per curve. A day a curve has no point for is **absent from that row**
  * rather than zero — a curve that had not started yet must not be drawn along
@@ -321,7 +334,7 @@ export function chartRows(series: readonly RebasedSeries[]): Record<string, numb
   for (const one of series) {
     for (const point of one.points) {
       const row = days.get(point.t) ?? { t: point.t }
-      row[one.key] = point.index
+      row[seriesKey(one.key)] = point.index
       days.set(point.t, row)
     }
   }
