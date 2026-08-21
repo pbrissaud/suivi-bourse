@@ -1,9 +1,11 @@
 /**
- * The theme, as one of the reader's **two** preferences (ADR-0024).
+ * The theme, as one of the reader's **three** preferences (ADR-0024, which
+ * decided two; the table density joined them at #789).
  *
  * Three states — `light | dark | auto`, absence meaning `auto` — stored in the
  * browser and never in the store. The language wears the same shape in
- * `lib/i18n.tsx`, and that is the point: two reader preferences, one mechanism.
+ * `lib/i18n.tsx` and the density in `lib/density.tsx`, and that is the point:
+ * the reader's preferences, one mechanism.
  * The store stays purely about the engine (ADR-0014) and the app still asks
  * exactly **one** question at first run (ADR-0021).
  *

@@ -63,6 +63,7 @@ import {
 import { api, type PerfPoint } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { usePageHeading } from '@/lib/pageHeading'
 import { oneBand, readConditions } from '@/lib/status'
 
 export default function AccountsPage() {
@@ -200,16 +201,15 @@ export default function AccountsPage() {
 
   const asOf = figuresAsOf(portfolio === null ? rows : [...rows, portfolio])
 
+  usePageHeading(
+    t('page.accounts'),
+    asOf === null ? null : t('accounts.asOf', { date: f.date(asOf) }),
+  )
+
   return (
     <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('page.accounts')}</h1>
+      <header>
         <p className="max-w-prose text-sm text-muted-foreground">{t('accounts.subtitle')}</p>
-        {asOf === null ? null : (
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.asOf', { date: f.date(asOf) })}
-          </p>
-        )}
       </header>
 
       {failure ? <Band>{t(failure.message)}</Band> : null}

@@ -1,24 +1,31 @@
 /**
  * The content header bar — an **object of the product**, not a mount for a
- * trigger (ADR-0022). It is on all four pages and carries exactly four things:
- * the collapse trigger on the left; the status dot, the language and the theme
- * on the right.
+ * trigger (ADR-0022). It is on all four pages and carries the page's own name
+ * on the left, beside the collapse trigger; the status dot and the reader's
+ * three preferences on the right.
  *
  * It exists because it is the one surface that survives the **three** sidebar
  * states: shadcn hides `SidebarMenuBadge` in icon mode, and the drawer takes the
  * whole navigation with it — so anything mounted in the column disappears twice.
+ * That is also why the page's `<h1>` came up here (#789): a bar that carried
+ * four controls and no name left the reader deducing which page they were on
+ * from the navigation, which is exactly what the drawer takes away.
  */
-import { Languages, MonitorCog, Moon, Sun } from 'lucide-react'
+import { Languages, MonitorCog, Moon, Rows3, Sun } from 'lucide-react'
 
 import { PreferenceMenu } from '@/components/PreferenceMenu'
 import { StatusDot } from '@/components/StatusDot'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { useDensityControl, type DensityChoice } from '@/lib/density'
 import { useI18n, type LanguageChoice } from '@/lib/i18n'
+import { usePageHeadingValue } from '@/lib/pageHeading'
 import { useTheme, type ThemeChoice } from '@/lib/theme'
 
 export function ContentHeader() {
   const { t, choice: language, setChoice: setLanguage } = useI18n()
   const { choice: theme, ground, setChoice: setTheme } = useTheme()
+  const { choice: density, setChoice: setDensity } = useDensityControl()
+  const { title, subtitle } = usePageHeadingValue()
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
@@ -27,8 +34,37 @@ export function ContentHeader() {
           over at this one call site, which left the rail and the drawer speaking
           English (#713). */}
       <SidebarTrigger />
+      {/* An empty `<h1>` is worse than none, so the pair is drawn only once the
+          page has declared it — one render, and never a blank heading.
+
+          **Neither half is dropped by a breakpoint.** The subtitle is the
+          instant the page's figures are of, and that mention exists to stop a
+          reader reading them as *now* — a phone is where a stale figure is most
+          likely to be read, not where the safeguard can be spared. So both
+          truncate and neither hides: narrow degrades the sentence, it does not
+          remove it. */}
+      <div className="flex min-w-0 items-baseline gap-3">
+        {title === '' ? null : (
+          <h1 className="truncate text-sm font-semibold tracking-tight">{title}</h1>
+        )}
+        {subtitle === null ? null : (
+          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+        )}
+      </div>
       <div className="ml-auto flex items-center gap-1">
         <StatusDot />
+        <PreferenceMenu<DensityChoice>
+          label={t('header.density')}
+          value={density}
+          onChange={setDensity}
+          icon={<Rows3 />}
+          // Two options and no third: nothing anywhere answers *how tight do
+          // you like a table*, so an `auto` would consult nothing.
+          options={[
+            { value: 'comfortable', label: t('density.comfortable') },
+            { value: 'compact', label: t('density.compact') },
+          ]}
+        />
         <PreferenceMenu<LanguageChoice>
           label={t('header.language')}
           value={language}

@@ -10,10 +10,15 @@
   "header.toggleSidebar": "Show or hide the navigation",
   "header.language": "Language",
   "header.theme": "Theme",
+  "header.density": "Table density",
+  "density.comfortable": "Comfortable",
+  "density.compact": "Compact",
 
   "sidebar.rail": "Collapse or expand the navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "The sections of the app, in a drawer.",
+  "sidebar.status.title": "{state, select, ok {System operational} attention {Scheduler stopped} unreachable {App not answering} other {}}",
+  "sidebar.status.body": "{state, select, ok {Quotes are read and history is rebuilt on their cadence.} attention {Nothing is being read and nothing is being rebuilt until it starts again.} unreachable {Nothing has answered, so nothing on screen is fresh.} other {}}",
   "sheet.close": "Close",
   "dialog.close": "Close",
 

@@ -118,6 +118,8 @@ src/
 ├── lib/
 │   ├── api.ts                # the only module that knows a URL
 │   ├── i18n.tsx theme.tsx    # language and theme: three states, localStorage
+│   ├── density.tsx           # the third preference: two states, same key shape
+│   ├── pageHeading.tsx       # what the header's `<h1>` says, declared by the page
 │   ├── alloc.ts format.ts    # the twelve allocation stops · the nine Intl sites
 │   ├── problem.ts status.ts  # problem.type → key · the dot's state, who says a band
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
@@ -131,6 +133,8 @@ src/
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts
 ├── components/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
+│   ├── Shell · ContentHeader (the title, the dot, the three preferences)
+│   ├── AppSidebar (the navigation, and the status card that develops the dot)
 │   ├── dashboard/  # the head, the one chart slot, the allocation, the movers
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export

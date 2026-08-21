@@ -35,6 +35,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
 import { oneBand, readConditions } from '@/lib/status'
+import { usePageHeading } from '@/lib/pageHeading'
 
 export default function DashboardPage() {
   const { t } = useI18n()
@@ -84,17 +85,19 @@ export default function DashboardPage() {
     null,
   )
 
+  // The name of the page and the instant its figures are of, both said in the
+  // header (#789). The date waits for the read the way it always did: while
+  // nothing has been quoted there is no instant, and an invented *now* is the
+  // reading the mention exists to prevent.
+  usePageHeading(
+    t('page.dashboard'),
+    pricedAt === null || state !== 'portfolio'
+      ? null
+      : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
+  )
+
   return (
     <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('page.dashboard')}</h1>
-        {pricedAt === null || state !== 'portfolio' ? null : (
-          <p className="text-sm text-muted-foreground">
-            {t('dashboard.pricedAt', { date: f.dateTime(pricedAt) })}
-          </p>
-        )}
-      </header>
-
       <DashboardHead />
 
       {state !== 'portfolio' ? null : (

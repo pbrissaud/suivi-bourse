@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { unacknowledgedCount } from '@/lib/advisories'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { usePageHeading } from '@/lib/pageHeading'
 
 const LEDGER = 'ledger'
 const INSTALLATION = 'installation'
@@ -93,12 +94,10 @@ export default function DataPage() {
   // is in flight.
   const badge = unacknowledgedCount(advisories.data ?? [])
 
+  usePageHeading(t('page.data'))
+
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('page.data')}</h1>
-      </header>
-
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value={LEDGER}>{t('data.tab.ledger')}</TabsTrigger>

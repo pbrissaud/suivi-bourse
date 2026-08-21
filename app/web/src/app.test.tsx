@@ -125,7 +125,7 @@ describe('a single account', () => {
   })
 })
 
-describe('the two reader preferences', () => {
+describe('the reader preferences', () => {
   it('render the whole app in either language', async () => {
     const { user } = renderApp()
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
@@ -221,13 +221,15 @@ describe('when the app is not answering', () => {
 })
 
 describe('the content header', () => {
-  it('carries its four objects, on every page', async () => {
+  it('carries its six objects, on every page', async () => {
     const { user } = renderApp()
     await screen.findByRole('heading', { name: 'Tableau de bord' })
 
     const objects = () => [
       screen.queryByRole('button', { name: 'Afficher ou masquer la navigation' }),
+      screen.queryByRole('heading', { level: 1 }),
       screen.queryByRole('link', { name: /installation/i }),
+      screen.queryByRole('button', { name: 'Densité des tableaux' }),
       screen.queryByRole('button', { name: 'Langue' }),
       screen.queryByRole('button', { name: 'Thème' }),
     ]

@@ -1,6 +1,7 @@
 /**
- * Where the reader's two preferences live (ADR-0024) — and the two ways a
- * browser can refuse to keep them.
+ * Where the reader's three preferences live — the theme and the language from
+ * ADR-0024, the density since #789 — and the two ways a browser can refuse to
+ * keep them.
  *
  * Web Storage is not guaranteed: a privacy mode can make `localStorage` throw on
  * access or on write, and an embedding without it simply has none. Neither is

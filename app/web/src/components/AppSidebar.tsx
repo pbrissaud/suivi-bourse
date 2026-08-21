@@ -22,15 +22,20 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
+import { STATE_TONE } from '@/components/StatusDot'
 import { api } from '@/lib/api'
 import { useT, type MessageKey } from '@/lib/i18n'
+import { installationState } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 interface Entry {
   to: '/' | '/titres' | '/comptes' | '/donnees'
@@ -91,7 +96,47 @@ export function AppSidebar() {
           </nav>
         </SidebarGroup>
       </SidebarContent>
+      <StatusCard />
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+/**
+ * The **development** of the status dot, never its home (ADR-0022, #789).
+ *
+ * The dot is a colour and a link; this says the same fact in words, where there
+ * is room for words. Which is exactly why it is not the dot's home: it is
+ * absent in the two sidebar states that cannot hold it — the icon rail, where
+ * shadcn hides anything with a label, and the drawer, which takes the whole
+ * navigation behind a gesture — and the reader must not lose the state of their
+ * installation by folding a menu.
+ *
+ * It is **absent while the read is in flight** as well (ADR-0026). `unknown` is
+ * a real state of the dot, because a grey dot claims nothing; a sentence cannot
+ * be grey, and *the installation state is unknown* written out in the sidebar
+ * is a claim about the reader's install made before anybody looked.
+ */
+function StatusCard() {
+  const t = useT()
+  const { state: sidebar, isMobile } = useSidebar()
+  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  const state = installationState({ runtime: runtime.data, error: runtime.error })
+
+  if (isMobile || sidebar === 'collapsed' || state === 'unknown') return null
+
+  return (
+    <SidebarFooter>
+      <div className="flex items-start gap-2.5 rounded-lg border bg-sidebar-accent/40 p-3">
+        <span
+          aria-hidden
+          className={cn('mt-1.5 size-2 shrink-0 rounded-full', STATE_TONE[state])}
+        />
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium">{t('sidebar.status.title', { state })}</p>
+          <p className="text-xs text-muted-foreground">{t('sidebar.status.body', { state })}</p>
+        </div>
+      </div>
+    </SidebarFooter>
   )
 }

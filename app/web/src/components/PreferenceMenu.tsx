@@ -1,6 +1,8 @@
 /**
- * One control for the reader's two preferences (ADR-0024: *two reader
- * preferences, one mechanism*). Three states, absence meaning `auto`, and the
+ * One control for the reader's three preferences (ADR-0024: *reader
+ * preferences, one mechanism* — it decided the first two, the density joined
+ * them at #789 and `app/web/CLAUDE.md` carries the count). Three
+ * states for the theme and the language, **two** for the density, and the
  * current one marked — so a reader can tell *I chose light* from *it is light
  * because my system is*.
  *

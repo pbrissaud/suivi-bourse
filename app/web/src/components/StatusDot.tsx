@@ -15,10 +15,15 @@ import { useQuery } from '@tanstack/react-query'
 
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
-import { installationState } from '@/lib/status'
+import { installationState, type InstallationState } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
-const TONE: Record<string, string> = {
+/**
+ * The four states, in colour. Exported because the sidebar's status card is the
+ * **development** of this dot (#789) and a second copy of the mapping is a
+ * second opinion on what *attention* looks like.
+ */
+export const STATE_TONE: Record<InstallationState, string> = {
   unknown: 'bg-muted-foreground',
   ok: 'bg-gain',
   attention: 'bg-attention',
@@ -37,7 +42,7 @@ export function StatusDot() {
       className="flex size-7 items-center justify-center rounded-md hover:bg-accent"
       aria-label={`${t('status.link')} — ${t('status.dot', { state })}`}
     >
-      <span aria-hidden className={cn('size-2 rounded-full', TONE[state])} />
+      <span aria-hidden className={cn('size-2 rounded-full', STATE_TONE[state])} />
     </Link>
   )
 }

@@ -10,10 +10,15 @@
   "header.toggleSidebar": "Afficher ou masquer la navigation",
   "header.language": "Langue",
   "header.theme": "Thème",
+  "header.density": "Densité des tableaux",
+  "density.comfortable": "Confortable",
+  "density.compact": "Compact",
 
   "sidebar.rail": "Replier ou déplier la navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
+  "sidebar.status.title": "{state, select, ok {Système opérationnel} attention {Ordonnanceur arrêté} unreachable {Application injoignable} other {}}",
+  "sidebar.status.body": "{state, select, ok {Les cours sont relevés et l’historique reconstruit à leur cadence.} attention {Plus rien n’est relevé ni reconstruit tant qu’il n’a pas redémarré.} unreachable {Rien n’a répondu, donc rien à l’écran n’est frais.} other {}}",
   "sheet.close": "Fermer",
   "dialog.close": "Fermer",
 

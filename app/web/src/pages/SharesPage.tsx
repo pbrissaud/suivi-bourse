@@ -54,6 +54,7 @@ import { ShareSheet } from '@/components/shares/ShareSheet'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { usePageHeading } from '@/lib/pageHeading'
 import { buildShareRows, closedRows, heldRows, isAnomalous } from '@/lib/shares'
 import { oneBand, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -127,12 +128,19 @@ export default function SharesPage() {
     null,
   )
 
+  usePageHeading(
+    t('page.shares'),
+    pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
+  )
+
   return (
     <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('page.shares')}</h1>
+      {/* The page's name and the instant its figures are of are the header
+          bar's now (#789), which leaves this line with the one thing it ever
+          asserted — and a line asserting nothing does not exist, so it waits
+          for the two reads rather than drawing an empty row above the table. */}
+      {!positions.data || !runtime.isSuccess ? null : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {pricedAt === null ? null : <p>{t('shares.pricedAt', { date: f.dateTime(pricedAt) })}</p>}
           {/* At zero it is a sentence, not a control: there is nothing to filter
               to, and the absence is the information.
 
@@ -147,7 +155,7 @@ export default function SharesPage() {
               band at all — so the page said nothing was wrong on the strength
               of a read that failed. The counter is the one part of this header
               that asserts something, so it is the one part that waits. */}
-          {!positions.data || !runtime.isSuccess ? null : anomalies.length === 0 ? (
+          {anomalies.length === 0 ? (
             <p>{t('shares.anomaly.count', { count: 0 })}</p>
           ) : (
             <button
@@ -163,7 +171,7 @@ export default function SharesPage() {
             </button>
           )}
         </div>
-      </header>
+      )}
 
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
