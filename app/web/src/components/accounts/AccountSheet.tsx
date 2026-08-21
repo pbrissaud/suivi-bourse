@@ -63,7 +63,7 @@ import { renderFigure } from '@/lib/absence'
 import {
   accountPositions,
   declaredLabel,
-  positionCount,
+  distinctSymbols,
   valueSeries,
   DEFAULT_ACCOUNT_LABEL,
   type AccountRow,
@@ -158,7 +158,10 @@ export function AccountSheet({
   const terms = held === null ? null : portfolioTerms(held, row.transfer_fees)
   const total = terms === null ? null : gainTotal(terms)
   const curve = points === null ? null : valueSeries(points)
-  const lines = positions === null ? 0 : positionCount(positions, row.id)
+  // Counted off `held` and not off the whole payload: the count used to take
+  // `positions` and re-filter them by the same predicate `held` was built
+  // with, so two lines swept the table twice for one answer.
+  const lines = held === null ? 0 : distinctSymbols(held)
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>

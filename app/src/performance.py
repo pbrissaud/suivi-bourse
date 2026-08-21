@@ -782,8 +782,16 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
         # ``cash_balance = −invested`` is inside the sum: a global ``total_value``
         # holding it is the very figure the per-field rule exists to remove, at
         # the level of the whole portfolio.
-        has_cash_ledger=all(perf.has_cash_ledger
-                            for perf in per_account.values() if perf.daily),
+        # ``any(...) and all(...)`` rather than ``all(...)`` alone: over an
+        # empty selection ``all`` answers **True**, so a portfolio where no
+        # account produced a single day declared itself *with a cash ledger* on
+        # the strength of nothing. No point is written in that state, so it
+        # costs nothing today — and it is exactly the shape of default that the
+        # per-field rule exists to refuse, waiting for the first caller to read
+        # the flag without looking at ``daily`` first.
+        has_cash_ledger=any(perf.daily for perf in per_account.values()) and all(
+            perf.has_cash_ledger
+            for perf in per_account.values() if perf.daily),
         has_external_flow=bool(all_cash or all_grant),
     )
     if daily:

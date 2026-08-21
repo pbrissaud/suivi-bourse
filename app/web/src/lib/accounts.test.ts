@@ -23,7 +23,7 @@ import {
   isPending,
   originOf,
   portfolioRow,
-  positionCount,
+  distinctSymbols,
   reassignmentOf,
   rebase,
   RANGES,
@@ -332,9 +332,9 @@ describe('what one account’s panel is about', () => {
     // The link announces the count it is about to lead to, so the two have to
     // be counting the same thing — and `lib/shares.ts` folds `(account,
     // symbol)` into one line.
-    expect(positionCount(sharesPortfolio(), 'alpha')).toBe(2)
-    expect(positionCount(sharesPortfolio(), 'gamma')).toBe(1)
-    expect(positionCount(sharesPortfolio(), 'delta')).toBe(0)
+    expect(distinctSymbols(accountPositions(sharesPortfolio(), 'alpha'))).toBe(2)
+    expect(distinctSymbols(accountPositions(sharesPortfolio(), 'gamma'))).toBe(1)
+    expect(distinctSymbols(accountPositions(sharesPortfolio(), 'delta'))).toBe(0)
   })
 
   it('reads the curve off the whole series, not off the visible window', () => {

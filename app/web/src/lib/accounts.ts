@@ -631,11 +631,8 @@ export function accountPositions(
  * (`lib/shares.ts`). The link announces the count it is about to lead to, so
  * the two have to count the same thing.
  */
-export function positionCount(
-  positions: readonly Position[],
-  account: string,
-): number {
-  return new Set(accountPositions(positions, account).map((one) => one.symbol)).size
+export function distinctSymbols(positions: readonly Position[]): number {
+  return new Set(positions.map((one) => one.symbol)).size
 }
 
 /** One day of the account's own curve — value against what was paid in. */

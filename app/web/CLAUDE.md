@@ -15,6 +15,13 @@ pnpm build   # → app/src/static/ (git-ignored)
 pnpm dev     # Vite :5173, proxying /api → localhost:8080 (SB_API_URL to change it)
 ```
 
+**`lint` is the type-checker and nothing else** — there is no ESLint here. Two
+`// eslint-disable-next-line react-hooks/exhaustive-deps` survive from the
+prototype (`AccountsPage`, `AccountsBlock`); they document a deliberate
+dependency and **enforce nothing**, so a hook's dependency array is held by
+review alone. Both sit on a `useMemo` keyed by a hand-built stamp, and the
+stamp is the thing to read when touching either.
+
 The *why* of each screen is in `docs/adr/` (0016 through 0026), then in
 `docs/v5-decisions.md`.
 

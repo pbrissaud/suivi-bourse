@@ -69,3 +69,49 @@ def test_the_tree_reads_one_clock_and_it_is_the_products():
                       if _LOCAL_CLOCK.search(path.read_text())]
 
     assert offenders == []
+
+
+#: The modules the root `CLAUDE.md` lists under *the rules that are expensive to
+#: break*: **no store, no yfinance, `now` injected**. What that costs is
+#: measurable at the import, which is the one form of it a test can hold.
+_PURE = ('scheduling', 'performance', 'carrying', 'retention', 'fx',
+         'boot_env', 'mounts')
+
+#: The edges a pure module must not reach — the store, the market, and the two
+#: file readers. `watchdog` is on the list because it is what the violation
+#: actually was: `events/__init__.py` imported the drop-folder watcher at module
+#: level, so `from events.schemas import Timeline` — which is how `performance`
+#: gets the domain's vocabulary — pulled it in, and `import performance` failed
+#: with `ModuleNotFoundError: watchdog` outside the full venv.
+_HEAVY = ('duckdb', 'yfinance', 'pandas', 'openpyxl', 'watchdog')
+
+
+def test_the_pure_modules_are_pure_at_the_import():
+    """The rule stated in `CLAUDE.md`, checked rather than promised.
+
+    `carrying.py` re-spells a constant rather than importing it, and says why in
+    a comment: *importing it pulls pandas and openpyxl into a pure view module*.
+    A rule a contributor works around by hand in one module and breaks in the
+    one next door is a rule nothing holds — and the neighbour was `performance`,
+    which reached all four edges through a package `__init__`.
+
+    Run in a **subprocess**: `sys.modules` is process-wide and the suite has
+    already imported everything by the time this file runs, so asking the
+    current interpreter would answer about pytest rather than about the module.
+    """
+    import subprocess
+    import sys
+
+    program = (
+        'import sys; sys.path.insert(0, %r)\n'
+        'import importlib\n'
+        'for name in %r: importlib.import_module(name)\n'
+        'print(",".join(sorted(m for m in sys.modules '
+        '                      if m.split(".")[0] in %r)))\n'
+    ) % (str(_APP / 'src'), _PURE, _HEAVY)
+
+    result = subprocess.run([sys.executable, '-c', program],
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == '', result.stdout
