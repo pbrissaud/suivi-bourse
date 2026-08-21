@@ -154,44 +154,23 @@ _EXCHANGE_CAPTURE_WORKERS = 8
 _EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 
 
-def env_str(name: str) -> Optional[str]:
-    """Read an env var from the process, treating blank as unset.
-
-    The rule lives in :func:`boot_env.text`, which takes the mapping; these
-    three are the process-wide spellings of it, for the handful of callers that
-    have no mapping to hand (``gunicorn.conf.py``, chiefly, which runs before
-    the application is imported).
-    """
-    return boot_env.text(os.environ, name)
-
-
-def env_int(name: str, default: int) -> int:
-    """Read an int env var, tolerating blanks and failing with a clear message."""
-    return boot_env.integer(os.environ, name, default)
-
-
-def env_flag(name: str, default: bool) -> bool:
-    """Read a boolean env var, tolerating blanks."""
-    return boot_env.flag(os.environ, name, default)
-
-
 # --------------------------------------------------------------------- #
 # The environment: what the process must know before it can open the store
 # --------------------------------------------------------------------- #
 
-#: Every environment variable **this application reads**, with its own default —
-#: the list ``/api/config`` publishes. Six names, and there is no seventh: the
-#: whole of the reasoning is in :mod:`boot_env`, which is also where the pure
-#: reading of them lives (#740). The alias survives because the inventory is
-#: what the API resource is written against.
-ENVIRONMENT_INVENTORY = boot_env.INVENTORY
+# Every environment variable **this application reads**, with its own default,
+# is :data:`boot_env.INVENTORY` — six names, and there is no seventh. The whole
+# of the reasoning is in :mod:`boot_env`, which is also where the pure reading
+# of them lives (#740). This module used to re-export it under a second name,
+# "because the inventory is what the API resource is written against" — the API
+# resource calls the two functions below, and never touched the alias.
 
 
 def unread_environment() -> List[str]:
     """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read.
 
     **Computed, never hard-coded** — the difference between what is present and
-    what :data:`ENVIRONMENT_INVENTORY` names, minus the four the app has never
+    what :data:`boot_env.INVENTORY` names, minus the four the app has never
     read. A written list of retired names is a third writer of the same
     inventory and the one nobody re-reads at release time; this one cannot
     drift, because the day a variable is added to the inventory it leaves this
@@ -627,7 +606,6 @@ class ConfigurationManager:
         self._events_source: Optional[str] = str(
             import_dir if import_dir else self.config_dir / 'events')
         self._watcher: Optional[EventWatcher] = None
-        self._reload_callback: Optional[callable] = None
         self._store = opened_store
 
         # The published snapshot, and the mutex that serialises publishers.
@@ -1049,8 +1027,6 @@ class ConfigurationManager:
                 f"there will not be imported")
             return
 
-        self._reload_callback = reload_callback
-
         def on_change():
             app_logger.info("Event files changed, triggering reload...")
             try:
@@ -1087,13 +1063,18 @@ class SuiviBourseMetrics:
         # transaction whole, and a second handle here would be a second answer to
         # "which generation of the ledger is this job looking at".
 
-        # Prometheus exporter (legacy /metrics endpoint, on by default for
-        # backward compatibility). The HTTP server is started separately.
+        # The ``sb_*`` registry — a first-class product and not a legacy half
+        # (ADR-0012). It is **handed in**: ``build_runtime`` constructs it in the
+        # master and ``start_runtime`` passes it, and it passes ``None`` in
+        # exactly the state where ``SB_PROMETHEUS_ENABLED`` is false. A
+        # fallback that re-read the environment here could therefore never
+        # construct one in production — the two conditions coincide — while
+        # making this class a second reader of ``os.environ``, which
+        # :mod:`boot_env` claims to be the only one of. It also said "the HTTP
+        # server is started separately", which stopped being true at #651: the
+        # exporter's own ``ThreadingHTTPServer`` is gone and ``/metrics`` is a
+        # mount on the Flask app.
         self.prometheus = prometheus_exporter
-        if self.prometheus is None and env_flag(
-                boot_env.PROMETHEUS_ENABLED,
-                boot_env.DEFAULT_PROMETHEUS_ENABLED):
-            self.prometheus = PrometheusExporter()
 
         # The dials (issue #701, ADR-0014). Constructed at the **code's** values
         # and overwritten by the store in ``start_runtime``, which is the only
@@ -1196,19 +1177,19 @@ class SuiviBourseMetrics:
         # about the *past* is worth remembering, and the last coupling between
         # the backfill and the perf goes with the memory of it.
 
-        # Price-freshness liveness sonde state (issue #628). Per-(symbol, account)
-        # memory so staleness is measured over *consecutive* REGULAR polling, not
-        # the raw wall-clock age of the stored point (which can't tell a stuck
-        # writer from a normal overnight/weekend close). Each (symbol, account) is
-        # touched only by its own single scrape job (one job per symbol,
-        # max_instances=1), but the dict is guarded for parity with the other
-        # cross-thread scrape state.
+        # Price-freshness liveness sonde state (issue #628). **Per symbol since
+        # #700**, which took the account off the price series: staleness is
+        # measured over *consecutive* REGULAR polling rather than the raw
+        # wall-clock age of the stored point, which cannot tell a stuck writer
+        # from a normal overnight close. Each symbol is touched only by its own
+        # single scrape job (one job per symbol, max_instances=1), but the dict
+        # is guarded for parity with the other cross-thread scrape state.
         self._sonde_lock = threading.Lock()
-        self._sonde_state: Dict[Tuple[str, str], scheduling.SondeState] = {}
+        self._sonde_state: Dict[str, scheduling.SondeState] = {}
 
         # The last-pass records (issue #668, design #656). Injected from the
         # Runtime so the web handlers reach the *same* recorder the jobs write
-        # to — it is built master-side, like the ConfigWriter and for the same
+        # to — it is built master-side, like the ConfigurationManager and for the same
         # reason. Defaulted here so a unit test that builds this class directly
         # still has somewhere to publish, and so no call site below has to check
         # for None.
@@ -3571,8 +3552,20 @@ class SuiviBourseMetrics:
             # meaning by #765: *the first day this account's figures may be
             # written*. The cap stays here — it is a property of the days this
             # cycle produced, which the rows themselves already state.
+            #
+            # **Bounded to the accounts the ledger names**, so this list and
+            # ``/api/accounts`` cannot disagree about which accounts exist.
+            # ``read_accounts`` hands back every row of the table, seed
+            # included, and ADR-0013 writes ``default`` at creation and never
+            # removes it: on an install that has declared its own accounts, the
+            # seed is a row nothing names, so ``/api/accounts`` drops it while
+            # this list carried it with a horizon of its own. Two resources
+            # answering *which accounts are there* two ways, on the resource
+            # whose job is to explain the other.
+            named = {event.account for event in events if event.account}
             horizons = {account_id: span.first
-                        for account_id, span in writable.items()}
+                        for account_id, span in writable.items()
+                        if account_id in named}
 
             def _from(account_id: str) -> date:
                 """Where this account's series begins: its horizon, never before
@@ -3716,14 +3709,6 @@ class SuiviBourseMetrics:
     # publish a rejected configuration outright. There is nothing left for it to
     # do: ``ConfigurationManager.reload(force=True)`` is the publisher, and this
     # class reads what it publishes.
-
-    def run(self):
-        """
-        Run the full metrics collection process (ingest + scrape).
-        Used for initial startup and backward compatibility.
-        """
-        self.ingest()
-        self.scrape()
 
     def close(self):
         """Release what this object owns — which since #700 is nothing.

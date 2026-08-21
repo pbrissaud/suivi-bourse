@@ -318,7 +318,7 @@ class PerfRecord:
 class RuntimeRecorder:
     """The one place the four jobs publish to, and the only new state #668 adds.
 
-    Created **master-side**, beside ``ConfigWriter`` and for the same reason: it
+    Created **master-side**, beside ``ConfigurationManager`` and for the same reason: it
     is a mutex and three references, and a ``threading.Lock`` crosses ``fork()``
     unharmed because the master is single-threaded at that instant. Building it
     there rather than in ``start_runtime`` is what lets ``GET /api/runtime``

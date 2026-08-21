@@ -62,6 +62,17 @@ def test_a_blank_value_counts_as_unset_for_every_one_of_the_six(name):
     assert boot_env.read({name: '   '}) == boot_env.read({})
 
 
+def test_a_flag_honours_both_spellings_and_keeps_the_default_on_a_blank():
+    """The three wrappers `main` held over these functions are gone (they had
+    no caller in the end), and this is the one assertion that came with them
+    rather than being a second copy of one already here."""
+    for raw in ('true', 'TRUE', '1', 'yes', 'on'):
+        assert boot_env.flag({'SB_TEST_FLAG': raw}, 'SB_TEST_FLAG', False) is True
+    for raw in ('false', '0', 'no', 'off'):
+        assert boot_env.flag({'SB_TEST_FLAG': raw}, 'SB_TEST_FLAG', True) is False
+    assert boot_env.flag({'SB_TEST_FLAG': ''}, 'SB_TEST_FLAG', True) is True
+
+
 def test_a_value_that_is_not_an_integer_names_the_variable_it_came_from():
     with pytest.raises(ValueError, match='SB_WEB_PORT'):
         boot_env.read({'SB_WEB_PORT': 'eight thousand'})

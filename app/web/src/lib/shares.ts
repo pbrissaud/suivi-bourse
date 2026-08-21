@@ -379,7 +379,7 @@ export function eventMarkers(
   if (points.length < 2) return []
   const stops: Stop[] = []
   for (const [index, point] of points.entries()) {
-    const at = Date.parse(point.ts)
+    const at = Date.parse(point.t)
     if (Number.isFinite(at)) stops.push({ index, at })
   }
   if (stops.length < 2) return []

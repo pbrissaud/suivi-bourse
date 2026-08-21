@@ -513,7 +513,12 @@ def list_accounts():
     # catalogue with no copy of a server-owned string.
     declaration = [accounts_module.as_declared(row) for row in declaration]
     reader = _reader()
-    rows = reader.latest_account_metrics() if declaration else []
+    # No guard on an empty declaration: there is no such state since #729.
+    # ``accounts.accounts`` is non-empty by construction, and the fallback is
+    # the seeded ``default`` row, which ADR-0013 writes at creation and never
+    # removes — so the branch that skipped the query described an install that
+    # cannot exist.
+    rows = reader.latest_account_metrics()
     # Bounded per account by the day its own row describes: the days differ the
     # moment one account's series is capped in the past (#765), and ADR-0018's
     # identity only holds between terms measured at the same instant. An account
@@ -1596,6 +1601,26 @@ def get_config():
         'unread_environment': main.unread_environment(),
         'shares': _snapshot().shares,
     })
+
+
+@api_bp.get('/settings')
+def get_settings():
+    """The dials, on the resource that writes them.
+
+    *Headless means without an interface, not without HTTP* — the sentence the
+    route below is built on — and a client that could ``PUT`` a dial had no way
+    to ``GET`` one. Worse than absent: the SPA catch-all accepts the ``GET`` and
+    wins the routing before Werkzeug can answer ``405``, so a ``curl`` was told
+    ``No such API endpoint: /api/settings`` about an endpoint that exists.
+
+    The same list ``put_settings`` answers with, out of the same function, so a
+    reader and a writer cannot describe a dial two ways. It duplicates
+    ``/api/config``'s ``settings`` member on purpose: that resource answers *what
+    is this installation configured with* and carries the environment beside the
+    dials, while this one is the dials as a resource of their own — and #745's
+    rule is that a resource carries the name of what it holds.
+    """
+    return jsonify({'settings': settings_module.describe(_store())})
 
 
 @api_bp.put('/settings')

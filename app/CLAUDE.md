@@ -20,8 +20,14 @@ split in two by the `fork()`:
 - **`worker_exit`** — `main.shutdown_runtime()`, closing the store last.
 
 `workers = 1` is a property of the design, not a tuning default: N workers would
-be N schedulers. Concurrency comes from `threads`. One master, **two sockets**:
-`SB_WEB_PORT` serves the app, `SB_METRICS_PORT` serves `/metrics`.
+be N schedulers. Concurrency comes from `threads`. One master, **two sockets, one
+application**: `gunicorn.conf.py` appends `SB_METRICS_PORT` to `bind`, which
+takes a list — so `/metrics` answers on `SB_WEB_PORT` too, and the whole API,
+writes included (`POST /api/events`, `PUT /api/settings`, `DELETE
+/api/store/orphans`), answers on `SB_METRICS_PORT` too. Neither port is a
+filtered view of the other, and "publish only the metrics port" hides nothing:
+whoever reaches a socket reaches the whole app. The second socket is bound only
+when `/metrics` is on and the two ports differ.
 
 ## The store
 
@@ -111,9 +117,9 @@ it can open the store (ADR-0014). `boot_env.py` says them once.
 |---|---|---|
 | `SB_STORE_DIR` | `/data` | Directory holding `suivi-bourse.duckdb` |
 | `SB_IMPORT_DIR` | `/import` | The drop folder — optional |
-| `SB_WEB_PORT` | `8080` | API + `/health` (the probe touches the store) |
-| `SB_PROMETHEUS_ENABLED` | `true` | Mounts `/metrics`; `false` leaves the socket unbound |
-| `SB_METRICS_PORT` | `8081` | The `/metrics` socket |
+| `SB_WEB_PORT` | `8080` | First socket the one app is bound to (API, `/health`, and `/metrics` too) |
+| `SB_PROMETHEUS_ENABLED` | `true` | Mounts `/metrics`; `false` leaves the second socket unbound |
+| `SB_METRICS_PORT` | `8081` | Second socket the **same** app is bound to — it serves the API as well |
 | `LOG_LEVEL` | `INFO` | Logging level (here, since the likeliest failure is the store) |
 
 They are **directories, never files**; the defaults describe the container;
@@ -232,8 +238,27 @@ The v5 seam is **a real store in `tmp_path` with a faked yfinance**: a genuine
 DuckDB *file* (never `:memory:` — DuckDB refuses a second process, and persistence
 is part of what is asserted), with the DDL applied and the seed in place.
 
-Assertions go on the store's contents or on the API's JSON, never on the fact that
-a method was called. **There is one faked edge left in the whole suite, and it is
-yfinance.** And **there is one clock, and it is the product's**: every read of it
+Assertions about **behaviour** go on the store's contents or on the API's JSON,
+never on the fact that a method was called. **There is one faked *external* edge
+left in the whole suite, and it is yfinance** — nothing else the app talks to is
+replaced by a double for the sake of being replaced.
+
+**Internal spies exist, and their subject is the negative.** What the app decided
+*not* to do writes no row and returns no payload, so there is nothing else to
+assert on: 77 call-shaped assertions live in nine files, and they are overwhelmingly
+`assert_not_called` and `call_count`. Where they are:
+
+| File | What is doubled, and what it proves |
+|---|---|
+| `test_scheduling_wiring.py` (36) | `MagicMock(spec=BackgroundScheduler)` and the exporter — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
+| `test_watcher.py` (13) | the watchdog observer — scheduled once, started once, **not** re-triggered |
+| `test_metrics.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
+| `test_web_boot.py` (5) | the runtime classes — **not constructed** before the fork, shut down once after it |
+| `test_quotes.py` (4), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
+
+The rule is therefore *"a spy is the last resort, and it is for an absence"*, not
+*"there are no spies"*. If a row or a payload can answer the question, it answers it.
+
+And **there is one clock, and it is the product's**: every read of it
 is UTC-qualified, and `test_suite_conventions.py` holds that on the source over
 `src/` and `tests/` alike, because CI runs in UTC.

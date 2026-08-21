@@ -427,6 +427,29 @@ def test_a_share_with_no_baseline_is_left_out_rather_than_shown_flat():
     assert [m.symbol for m in movers] == ['AAPL']
 
 
+def test_a_sold_position_is_left_out_rather_than_shown_flat():
+    """The same rule as the one above, on the population that slipped past it.
+
+    A position at zero quantity is no longer polled, so its stored quote is
+    frozen at the day it stopped being one — it therefore *equals* its own
+    baseline, the `change is None` guard lets it through, and it lands in the
+    list at exactly zero. Seven of them on the real portfolio, on a block whose
+    entire subject is movement. The page filtered them out again on its side, so
+    nothing showed; the rule was written on the server and applied on the
+    client, and a second consumer saw all seven.
+    """
+    shares = build_shares([
+        row(symbol='AAPL', price=110.0, quantity=10.0),
+        row(symbol='GONE', name='Sold long ago', price=50.0, quantity=0.0),
+    ])
+    movers = build_movers(shares, [
+        {'symbol': 'AAPL', 'price': 100.0},
+        {'symbol': 'GONE', 'price': 50.0},
+    ])
+
+    assert [m.symbol for m in movers] == ['AAPL']
+
+
 def test_a_share_whose_price_was_never_observed_is_left_out_too():
     shares = build_shares([row(symbol='AAPL', price=None)])
     movers = build_movers(shares, [{'symbol': 'AAPL', 'price': 100.0}])

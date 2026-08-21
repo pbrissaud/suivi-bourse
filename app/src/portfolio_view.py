@@ -396,7 +396,14 @@ def _build_fundamentals(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         'pe_ratio': row.get('pe_ratio'),
         'market_cap': row.get('market_cap'),
     }
-    if all(value is None for value in values.values()):
+    # **The unit does not make the block exist.** ``currency`` is the one member
+    # here that a symbol can carry with nothing else known about it: since #773
+    # the lateral pass asks for the unit alone, and it writes it alone. Counted
+    # in the emptiness test, it produced exactly the object #724 refuses — a
+    # present block with five em dashes in it — for a symbol the fetch has
+    # otherwise never reached. What decides is whether an *attribute* was ever
+    # observed; the unit is published beside them and does not vote.
+    if all(value is None for key, value in values.items() if key != 'currency'):
         return None
     return values
 
@@ -426,7 +433,12 @@ def build_price_series(symbol: str, rows: Sequence[Dict[str, Any]],
         'symbol': symbol,
         'base_currency': base_currency,
         'resolution': resolution,
-        'points': [{'ts': _iso(row.get('ts')), 'price': row.get('price')}
+        # ``t`` and not ``ts``: every other series this API serves — the perf
+        # points, the valuation points, an account's own curve — names its
+        # instant ``t``, and a new resource that spells it a second way is one
+        # vocabulary with two words for one thing, which is the thing #745's
+        # naming rule exists to stop.
+        'points': [{'t': _iso(row.get('ts')), 'price': row.get('price')}
                    for row in rows],
     }
 
@@ -899,6 +911,14 @@ def build_movers(
     rather than shown at zero: it has not failed to move, it has nothing to
     compare against, and a zero in a movers list is a claim. It still appears in
     the allocation block, which needs no history.
+
+    **And a sold position is left out on the same rule**, which the sentence
+    above always meant and the code did not say: its quote is frozen at the day
+    it stopped being polled, so it equals its own baseline and the ``change is
+    None`` guard lets it straight through — seven rows at exactly zero on the
+    real portfolio, on a block whose whole subject is movement. The page filtered
+    them again on its side, so nothing showed; a second consumer — a ``curl``, a
+    headless dashboard — saw all seven.
     """
     baseline = {
         row.get('symbol'): row.get('price') for row in baseline_rows
@@ -907,6 +927,8 @@ def build_movers(
 
     movers = []
     for share in shares:
+        if not share.quantity:
+            continue
         previous = baseline.get(share.symbol)
         change = _difference(share.price, previous)
         if change is None:

@@ -2877,8 +2877,34 @@ def test_the_config_route_names_what_is_set_and_no_longer_read(
 
 
 # --------------------------------------------------------------------- #
-# PUT /api/settings — the only writer of a dial (issue #701)
+# GET/PUT /api/settings — the dials, and their only writer (issue #701)
 # --------------------------------------------------------------------- #
+
+def test_the_dials_are_readable_on_the_resource_that_writes_them(tmp_path):
+    """*Headless means without an interface, not without HTTP.*
+
+    A client that could `PUT` a dial had no way to `GET` one, and the answer it
+    got was worse than a bare 404: the SPA catch-all accepts any verb and wins
+    the routing before Werkzeug can raise, so `curl` was told
+    `No such API endpoint: /api/settings` about an endpoint that exists. The
+    list is the one `put_settings` answers with, out of `settings.describe`, so
+    the reader and the writer cannot describe a dial two ways.
+    """
+    client = build_client(tmp_path)
+
+    payload = client.get('/api/settings')
+    assert payload.status_code == 200
+
+    read = {row['key']: row for row in payload.get_json()['settings']}
+    # The registry is the list, and there is no seventh key (ADR-0014).
+    assert set(read) == {spec.key for spec in settings_registry.SETTINGS}
+    assert read['regular_interval']['default'] == 120
+
+    # And it is the same list the writer answers with, field for field.
+    written = client.put('/api/settings', json={'regular_interval': 300})
+    assert written.status_code == 200
+    assert written.get_json()['settings'] == client.get('/api/settings').get_json()['settings']
+
 
 def test_the_reporting_currency_is_a_dial_and_its_absence_is_a_state(tmp_path):
     """How the API says *"nothing here has a unit yet"* (#702, ADR-0021).

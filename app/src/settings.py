@@ -30,7 +30,7 @@ module's** rule for that dial, `_refuse_a_reinterpretation`'s, rather than a
 second one of its own.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import settings_registry
 
@@ -40,9 +40,11 @@ class Change:
     """One dial that moved: what it was worth, and what it is worth now.
 
     ``before`` is the *effective* value — the row if there was one, the code's
-    default otherwise — because that is what the app was actually running on,
-    and it is what :mod:`main` needs to decide which jobs the change reaches
-    (``regular_interval``'s old value is what says which symbols were polling).
+    default otherwise — because that is what the app was actually running on.
+    It is published for the log line and for the tests, and for nothing else:
+    :func:`main.apply_settings` reads ``key`` and ``after`` alone, and
+    ``rearm_regular_scrapes`` sorts the symbols with ``scheduling.rearm_split``
+    off the recorded ``closed`` states rather than off an old cadence.
     """
 
     key: str
@@ -158,12 +160,4 @@ def _refuse_a_reinterpretation(store, current, pending) -> None:
             f"it. Forget those imports first.")
 
 
-def change_for(changes: Tuple[Change, ...], key: str) -> Optional[Change]:
-    """The change to ``key`` in ``changes``, or ``None`` — a tuple is short."""
-    for change in changes:
-        if change.key == key:
-            return change
-    return None
-
-
-__all__ = ['Change', 'read_all', 'describe', 'save', 'change_for']
+__all__ = ['Change', 'read_all', 'describe', 'save']

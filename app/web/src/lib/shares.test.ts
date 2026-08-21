@@ -236,8 +236,8 @@ describe('the chart’s event markers', () => {
       [anEvent({ date: '2026-02-28' })],
       'ZZA',
       [
-        { ts: '2026-02-28T17:30:00.000Z', price: 126 },
-        { ts: '2026-03-02T12:00:00.000Z', price: 130 },
+        { t: '2026-02-28T17:30:00.000Z', price: 126 },
+        { t: '2026-03-02T12:00:00.000Z', price: 130 },
       ],
     )
     expect(markers.map((marker) => [marker.day, marker.offset])).toEqual([['2026-02-28', 0]])
@@ -251,9 +251,9 @@ describe('the chart’s event markers', () => {
     // series, the live scrape writes a point every 120 s in session while the
     // reconstruction writes one per hour or per day.
     const points = [
-      { ts: '2026-02-01T17:30:00.000Z', price: 100 },
-      { ts: '2026-03-01T17:30:00.000Z', price: 110 },
-      { ts: '2026-03-01T17:32:00.000Z', price: 111 },
+      { t: '2026-02-01T17:30:00.000Z', price: 100 },
+      { t: '2026-03-01T17:30:00.000Z', price: 110 },
+      { t: '2026-03-01T17:32:00.000Z', price: 111 },
     ]
     const markers = eventMarkers([anEvent({ date: '2026-03-01' })], 'ZZA', points)
     // Its point is the second of three, so the marker is at mid-plot. Read as a
@@ -267,9 +267,9 @@ describe('the chart’s event markers', () => {
     // A Saturday carries no session; the marker of an event dated there belongs
     // on the close that framed it, not on an edge of the plot.
     const points = [
-      { ts: '2026-03-02T17:30:00.000Z', price: 100 },
-      { ts: '2026-03-06T17:30:00.000Z', price: 110 },
-      { ts: '2026-03-20T17:30:00.000Z', price: 120 },
+      { t: '2026-03-02T17:30:00.000Z', price: 100 },
+      { t: '2026-03-06T17:30:00.000Z', price: 110 },
+      { t: '2026-03-20T17:30:00.000Z', price: 120 },
     ]
     const markers = eventMarkers([anEvent({ date: '2026-03-07' })], 'ZZA', points)
     expect(markers.map((marker) => marker.offset)).toEqual([0.5])

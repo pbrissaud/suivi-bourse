@@ -435,7 +435,10 @@ def test_the_global_is_written_from_the_max_of_the_horizons(
 
     horizons = m.update_account_metrics()
 
-    assert horizons == {'PEA': date(2024, 1, 3), 'CTO': None, 'default': None}
+    # No `default`: the seeded row is a row nothing names here, and
+    # `/api/accounts` drops it on exactly that test. The two resources answer
+    # *which accounts are there* out of one rule now.
+    assert horizons == {'PEA': date(2024, 1, 3), 'CTO': None}
     # PEA's series starts at its horizon, CTO's at its first day…
     assert store.query(
         "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"

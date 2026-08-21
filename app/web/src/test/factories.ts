@@ -711,9 +711,9 @@ export function aPriceSeries(
     base_currency: BASE_CURRENCY,
     resolution: resolutionFor(window),
     points: [
-      { ts: '2026-02-28T17:30:00.000Z', price: 126 },
-      { ts: '2026-03-01T17:30:00.000Z', price: 128 },
-      { ts: NOW, price: 130 },
+      { t: '2026-02-28T17:30:00.000Z', price: 126 },
+      { t: '2026-03-01T17:30:00.000Z', price: 128 },
+      { t: NOW, price: 130 },
     ],
     ...rest,
   }

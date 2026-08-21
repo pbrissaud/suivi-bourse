@@ -657,7 +657,8 @@ export interface PortfolioTotalsResponse {
 export type Resolution = 'raw' | 'hour' | 'day'
 
 export interface SeriesPoint {
-  ts: string
+  /** `t` like every other series this API serves, and not a second word. */
+  t: string
   /** In the reporting currency. `null` — quoted, and the rate never resolved. */
   price: number | null
 }

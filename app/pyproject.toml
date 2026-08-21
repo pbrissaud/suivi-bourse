@@ -18,7 +18,9 @@ dependencies = [
     "pyarrow>=17.0.0",
 
     "logfmt-logger==0.1.2",
-    "prometheus-client==0.26.0",  # legacy /metrics endpoint (backward compatibility)
+    "prometheus-client==0.26.0",  # the sb_* registry behind /metrics — a first-class
+                                  # product, not a legacy half (ADR-0012): it is what
+                                  # makes the app usable with no interface at all
     "urllib3==2.7.0",
     "yfinance==1.5.2",
     "pandas>=2.0.0",       # NaN-safe volume handling in main.py (also required by yfinance)

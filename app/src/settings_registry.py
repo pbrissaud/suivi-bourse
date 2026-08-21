@@ -62,9 +62,8 @@ REPAIR_CONVERSIONS = 'repair_conversions'
 #: What a value *is*, for the form and for the error message. The table stores
 #: strings either way; this says what the string has to be parseable as.
 INTEGER = 'integer'
-STRING = 'string'
 
-#: An ISO-4217 alphabetic code. Its own kind rather than a ``STRING`` with a
+#: An ISO-4217 alphabetic code. Its own kind rather than a free string with a
 #: comment, because the form has to render a currency field and the write path
 #: has to refuse ``EURO`` — and a second list of "which string dials are really
 #: currencies" is the fourth list ADR-0014 exists against.
@@ -243,7 +242,11 @@ def validate(key: str, value: Any):
     elif spec.kind == CURRENCY:
         parsed = _validate_currency(spec, value)
     else:
-        parsed = str(value).strip()
+        # Not a fallback: a kind with no validator is a defect of **this**
+        # registry, and answering it by stripping the string would let a dial
+        # through unvalidated. There was a ``STRING`` kind here that no spec
+        # ever used, which is what made this branch look like a default.
+        raise InvalidSetting(key, f"{key} has no validator for kind {spec.kind!r}")
 
     return parsed
 
@@ -310,7 +313,7 @@ def stored_form(key: str, value: Any) -> str:
 
 __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
-    'INTEGER', 'STRING', 'CURRENCY',
+    'INTEGER', 'CURRENCY',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
     'spec_for', 'seeded_defaults', 'default_for', 'defaults', 'resolve',
     'validate', 'stored_form',

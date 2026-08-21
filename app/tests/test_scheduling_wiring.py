@@ -984,47 +984,6 @@ def test_a_name_the_app_never_read_gets_no_instruction(monkeypatch, mocker):
 
 
 # ---------------------------------------------------------------------------
-# env_str / env_int / env_flag — blank means unset (compose substitution)
-# ---------------------------------------------------------------------------
-
-def test_env_str_treats_blank_as_unset(monkeypatch):
-    """Whitespace-only reads as None; a real value comes back stripped."""
-    monkeypatch.setenv("SB_TEST_VAR", "   ")
-    assert main.env_str("SB_TEST_VAR") is None
-    monkeypatch.setenv("SB_TEST_VAR", " value ")
-    assert main.env_str("SB_TEST_VAR") == "value"
-    monkeypatch.delenv("SB_TEST_VAR")
-    assert main.env_str("SB_TEST_VAR") is None
-
-
-def test_env_int_falls_back_on_blank(monkeypatch):
-    """A blank int var yields the default; a set one is parsed."""
-    monkeypatch.setenv("SB_TEST_INT", "")
-    assert main.env_int("SB_TEST_INT", 42) == 42
-    monkeypatch.setenv("SB_TEST_INT", "7")
-    assert main.env_int("SB_TEST_INT", 42) == 7
-
-
-def test_env_int_raises_a_named_error_on_garbage(monkeypatch):
-    """A non-numeric value names the variable, so the log says what to fix."""
-    monkeypatch.setenv("SB_TEST_INT", "abc")
-    with pytest.raises(ValueError, match="SB_TEST_INT"):
-        main.env_int("SB_TEST_INT", 42)
-
-
-def test_env_flag_parses_common_spellings(monkeypatch):
-    """Both truthy and falsy spellings are honoured; blank keeps the default."""
-    for raw in ("true", "TRUE", "1", "yes", "on"):
-        monkeypatch.setenv("SB_TEST_FLAG", raw)
-        assert main.env_flag("SB_TEST_FLAG", False) is True
-    for raw in ("false", "0", "no", "off"):
-        monkeypatch.setenv("SB_TEST_FLAG", raw)
-        assert main.env_flag("SB_TEST_FLAG", True) is False
-    monkeypatch.setenv("SB_TEST_FLAG", "")
-    assert main.env_flag("SB_TEST_FLAG", True) is True
-
-
-# ---------------------------------------------------------------------------
 # Anti-herd jitter + misfire/max_instances on the per-symbol jobs (issue #619)
 # ---------------------------------------------------------------------------
 

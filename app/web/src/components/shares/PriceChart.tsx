@@ -128,7 +128,7 @@ export function PriceChart({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={series.data.points}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="ts" tickFormatter={(value: string) => f.date(value)} minTickGap={32} />
+                <XAxis dataKey="t" tickFormatter={(value: string) => f.date(value)} minTickGap={32} />
                 <YAxis
                   // On the data, never on the window asked for — fixing the
                   // domain to the request repeats on one axis the mistake the
