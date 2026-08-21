@@ -4,7 +4,9 @@ Since #699 the gauges have **two feeders and two lives**: the replay publishes
 what the events say about a position, the scrape publishes what the market says
 about its price — and only the second half leaves when a symbol's job departs.
 """
+import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 from prometheus_client import CollectorRegistry, generate_latest
@@ -600,3 +602,95 @@ def test_scrape_publishes_the_price_and_ingest_the_position(
     assert store.query(
         "SELECT price_native, price_converted, fx_rate FROM price_point "
         "WHERE symbol = 'AAPL'") == [(150.0, 150.0, 1.0)]
+
+
+# --- the documented contract ------------------------------------------------
+
+_GAUGES_PAGE = (Path(__file__).resolve().parents[2]
+                / 'website' / 'docs' / 'headless-gauges.mdx')
+
+#: A row of one of the page's **labelled** gauge tables: a backticked `sb_*`
+#: name, then a cell that is *nothing but* a list of backticked label names (or
+#: `_(none)_`). The second condition is what keeps the `sb_account_*` table out:
+#: its second column answers *published when* in prose, and prose containing a
+#: backtick is not a label list. A row it cannot read is a row this test says
+#: nothing about, which is the honest failure mode — the assertions below then
+#: catch a gauge that has left the table altogether.
+_ROW = re.compile(
+    r'^\| `(sb_\w+)` \| (_\(none\)_|`\w+`(?:, `\w+`)*|the same three[^|]*) \|', re.M)
+_LABEL = re.compile(r'`(\w+)`')
+
+
+def _documented_labels():
+    """`{gauge: {labels}}` as the page's own table states them."""
+    documented = {}
+    for name, cell in _ROW.findall(_GAUGES_PAGE.read_text(encoding='utf-8')):
+        if '_(none)_' in cell:
+            documented[name] = set()
+            continue
+        labels = set(_LABEL.findall(cell))
+        # `sb_share_info`'s row says "the same three, plus …" rather than
+        # repeating them, which is how the page reads and how it should stay.
+        if cell.startswith('the same three'):
+            labels |= {'share_name', 'share_symbol', 'account'}
+        documented[name] = labels
+    return documented
+
+
+def test_the_documented_labels_are_the_published_ones(exporter):
+    """#762's criterion, and the reason it was a ticket rather than a typo.
+
+    The page and the exporter described two different label sets, and the
+    divergence survived three tickets: the documentation gave `share_symbol`
+    alone on every price gauge, under a sentence explaining that a market price
+    belongs to no account, while the code published `share_name`,
+    `share_symbol` and `account` on all of them — deliberately, since #700, so a
+    headless dashboard can join a price to a per-account position.
+
+    **A headless install is driven by the documentation alone**, so one of the
+    two had to become the other and then be held. The decision was to keep the
+    three labels and correct the page; this is the holding. It reads the page's
+    own table rather than a copy of it, which is what makes the table the source
+    it claims to be.
+    """
+    # Populated first, and through the **public** writers: a fresh registry
+    # emits no sample at all, so a test reading `collect()` off one would pass
+    # over an empty mapping and attest nothing. What is compared is therefore
+    # what a scraper would actually receive.
+    exporter.update_quote(_share(), 150.0, _info(), 138.0, 0.92)
+    exporter.update_position(_share())
+    exporter.update_price_staleness(_share(), True)
+    exporter.update_store_persistence(False)
+    exporter.update_account(AccountMetricPoint(
+        account='PEA', account_type='PEA', day=date(2024, 1, 1),
+        holdings_value=220.0, gain_absolu=20.0, cash_balance=10.0,
+        net_contributed=200.0, total_value=230.0, twr_index=110.0, xirr=0.1))
+    exporter.update_portfolio(PortfolioTotalPoint(
+        day=date(2024, 1, 1), holdings_value=220.0, gain_absolu=20.0,
+        cash_balance=10.0, net_contributed=200.0, total_value=230.0,
+        twr_index=110.0, xirr=0.1))
+
+    documented = _documented_labels()
+    published = {
+        metric.name: set(sample.labels)
+        for metric in exporter.registry.collect()
+        for sample in metric.samples
+    }
+
+    assert documented, "no gauge row parsed out of the page"
+    assert len(published) > 15, f"only {len(published)} gauges published"
+
+    # Both directions, over the population the page gives a **Labels column**
+    # for — the market and position families, and the install's own gauge. The
+    # `sb_account_*` / `sb_portfolio_*` tables answer a different question
+    # (*published when*) and state their one label in the prose above them,
+    # which no parser should pretend to read.
+    for name, labels in sorted(documented.items()):
+        assert name in published, f"{name} is documented and not published"
+        assert labels == published[name], (
+            f"{name}: the page says {sorted(labels)}, "
+            f"the exporter publishes {sorted(published[name])}")
+
+    for name, labels in sorted(published.items()):
+        if 'share_symbol' in labels:
+            assert name in documented, f"{name} is published and undocumented"
