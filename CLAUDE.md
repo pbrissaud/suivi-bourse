@@ -19,7 +19,7 @@ embedded DuckDB store** (ADR-0001).
 |---|---|
 | `app/` | The Python application (Flask + APScheduler + DuckDB) — `app/CLAUDE.md` |
 | `app/web/` | The v5 front (Vite + React 19 + TS) — `app/web/CLAUDE.md` |
-| `website/` | The versioned, bilingual Docusaurus site — `website/CLAUDE.md` |
+| `website/` | The versioned Docusaurus site, bilingual by construction — `website/CLAUDE.md` |
 | `CONTEXT.md` | The domain glossary: the v5 vocabulary |
 | `docs/adr/` | The 26 structural decisions |
 | `docs/v5-decisions.md` | The ticket-by-ticket narrative of the rewrite (archive) |
@@ -65,6 +65,10 @@ cd website && pnpm install
 pnpm start   # dev server (beware: the /docs redirect only exists in the build)
 pnpm build   # every locale, fails on a broken link
 ```
+
+Bilingual **by construction**: `locales` is `['en', 'fr']` and `/fr/` is published, but
+`i18n/` holds `en/` alone — French lands through the first Crowdin import, and until
+then `/fr/` serves the English source. Nothing under `i18n/fr/` is ever written by hand.
 
 ### The container
 
@@ -116,10 +120,15 @@ the app usable with no interface at all.
   injected.
 - **There is one clock, and it is the product's**, and every read of it is
   UTC-qualified — `test_suite_conventions.py` holds that on the source.
-- **One faked edge in the whole Python suite, and it is yfinance**; one on the
-  front, and it is HTTP (MSW). Assertions go on the store's contents, on the
-  API's JSON or on the accessible rendering — never on the fact that a method was
-  called.
+- **One faked *external* edge in the whole Python suite, and it is yfinance**; one
+  on the front, and it is HTTP (MSW). The store is real, in `tmp_path`. Assertions
+  about **behaviour** go on the store's contents, on the API's JSON or on the
+  accessible rendering, never on the fact that a method was called. Internal
+  doubles exist all the same, and for one thing only: **what the app decided not
+  to do**, which leaves no trace to read. A job that was not armed, a query that
+  was not run, a pass that ran once — those are asserted on the call, in
+  `test_scheduling_wiring.py` (the APScheduler and exporter spies) and eight
+  other files. Reach for one only when there is no row and no payload to look at.
 - **A read in flight is not an absence** (ADR-0026): a block that waits renders
   nothing at all, title included.
 

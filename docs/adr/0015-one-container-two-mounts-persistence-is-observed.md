@@ -26,7 +26,9 @@ typing a position is the onboarding.
   subject once the store is in-process — and the `HEALTHCHECK` moves into the image, where
   it applies to plain `docker run` and to PaaS alike.
 - The two paths are **directories, each with its own boot variable**, which takes
-  ADR-0014's inventory from four to five. Its principle was the boot test, never a count.
+  ADR-0014's inventory to **six** — `SB_STORE_DIR`, `SB_IMPORT_DIR`, `SB_WEB_PORT`,
+  `SB_METRICS_PORT`, `SB_PROMETHEUS_ENABLED`, `LOG_LEVEL`, as `boot_env.py` enumerates
+  them. Its principle was the boot test, never a count.
   The defaults are chosen for the container; the Docker-less deployment overrides them —
   the reverse of v4, where compose always set every variable.
 - The image is renamed `ghcr.io/pbrissaud/suivi-bourse`, with no compatibility alias:

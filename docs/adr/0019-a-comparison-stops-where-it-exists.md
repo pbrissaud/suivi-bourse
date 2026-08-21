@@ -41,9 +41,12 @@ account's ancient volatility sets the scale for every other.
 - **The scalar strip carries one figure per drawn curve.** The portfolio is not drawn —
   its own curve is the dashboard's — so its performance lives only in the table's
   `Portefeuille` row.
-- **`Portefeuille`, never `Total`.** Six of its eight columns are sums; `TRI` and `perf`
-  are not, and they are not em dashes either — the app holds both at portfolio level.
-  Naming the row for its subject makes it true across all eight at once. On the
+- **`Portefeuille`, never `Total`.** The table is eight columns: the account, then five
+  money figures and two rates. **Five of the row's eight cells are sums** — `MONEY_COLUMNS`
+  in `lib/accounts.ts` — while `TRI` and `perf` are not, two rates not adding, and they
+  are not em dashes either, the app holding both at portfolio level. The eighth cell is
+  the row's own name, and naming it for its subject makes the line true across all seven
+  figures at once. On the
   unbounded window it read `+102,72 %` above both accounts; bounding the window happens
   to retire that case, and the naming is kept because at three accounts it returns.
 

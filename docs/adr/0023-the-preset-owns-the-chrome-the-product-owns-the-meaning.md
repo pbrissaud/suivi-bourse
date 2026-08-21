@@ -1,8 +1,8 @@
 # The preset owns the chrome, the product owns the meaning
 
-The theme was never decided. `components.json` has carried `"style": "radix-nova"` since the
-prototype, with a long hand-written layer piled on top of it in `index.css` and nothing saying
-which wins or how the preset half gets updated. It is the map's one charting blind spot: the
+The theme was never decided. `components.json` **carried** `"style": "radix-nova"` from the
+prototype until #713 set it to `"new-york"`, with a long hand-written layer piled on top of it
+in `index.css` and nothing saying which wins or how the preset half gets updated. It is the map's one charting blind spot: the
 navigation ticket excluded it, the four page tickets assumed it, and the fog was empty.
 
 v5 takes tweakcn's **Vercel** preset, installed from its registry rather than pasted:

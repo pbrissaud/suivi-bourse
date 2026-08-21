@@ -1,6 +1,7 @@
 # website/ — the documentation site
 
-Docusaurus, dependencies managed with pnpm, bilingual through Crowdin.
+Docusaurus, dependencies managed with pnpm, bilingual through Crowdin — **by
+construction, French pending the first import**.
 
 ```bash
 pnpm install
@@ -36,15 +37,21 @@ version frozen at the **major** (a 5.1 install still reads `/docs/v5`).
 > development concludes the opposite of the truth. Verify it on
 > `build/docs/index.html`.
 
-The anchors in `docs/read-your-figures.mdx` are **a contract with the front**: ten
+The anchors in `docs/read-your-figures.mdx` are **a contract with the front**: eleven
 anchors hand-written on every heading, because a *derived* anchor moves with a
 reworded title — the front sees nothing, the site still builds, and every bubble
-lands at the top of the page.
+lands at the top of the page. The authoritative list is `DOCS_ANCHORS` in
+`app/web/src/lib/docs.ts`; the count is descriptive and grows with the figures that
+earn a bubble — `net-contributed` is the one that arrived that way.
 
 ## Bilingual through Crowdin (ADR-0024)
 
 `i18n.locales` is `['en', 'fr']` with English the **source**, so `pnpm build`
-builds both and `/fr/` is published.
+builds both and `/fr/` is published. **`i18n/` holds `en/` alone today**, and that is
+the expected state until the first Crowdin import: Docusaurus falls back to the source
+for an untranslated string, so `/fr/` serves English in the meantime and the build is
+green. Nothing under `i18n/fr/` is written by hand — it is Crowdin's output, landing
+here through an import.
 
 `crowdin.yml` sits at the **repository root** and covers the whole product in
 **one project**: the site *and* `app/web/src/i18n/en.json`. A translation memory
@@ -86,7 +93,14 @@ the English text settles, never during.
 
 ## Frozen corpora
 
-`versioned_docs/` is not rewritten. The v3 page `deployment/standalone.mdx` links
-four Grafana dashboards by absolute GitHub URL on `blob/master`: Docusaurus checks
-nothing, the build stays green, and those links become `404` the day v5 reaches
-`master`. That is written down rather than repaired.
+`versioned_docs/` is not rewritten, and it links to GitHub by absolute URL —
+Docusaurus checks nothing there, so the build stays green whatever those links point
+at. **The Grafana dashboards are already safe**: v3's `deployment/standalone.mdx` names
+its four on `blob/v3.8.5` and v4's names its two on `blob/v4.2.2`, tags rather than a
+branch, so v5 reaching `master` moves nothing under them.
+
+What is still pinned to `blob/master` in the frozen corpora is `CONTRIBUTING.md`, the
+licence and the changelog — files that exist on every branch and are *meant* to be read
+at their newest. Nothing there needs repairing either; the rule to keep is the one the
+dashboards illustrate: **an absolute link to a file the rewrite deletes is written
+against a tag, never against `master`.**

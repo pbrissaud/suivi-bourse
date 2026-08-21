@@ -38,5 +38,13 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0025](./0025-every-version-has-an-address.md) | Every version has an address, and the newest is not an exception |
 | [0026](./0026-a-read-in-flight-is-not-an-absence.md) | A read in flight is not an absence |
 
-> These records describe **v5**, which is being designed on `preview/v5`. Where they
-> contradict the code on `master`, the code is v4 and the record is the destination.
+> These records describe **v5**, and which side wins an argument depends on the branch.
+>
+> On **`master`** the code is still v4: a record that contradicts it is describing the
+> destination, and nothing there is a defect.
+>
+> On **`preview/v5`** the tickets are merged. The code *is* v5, so a record that
+> contradicts it is no longer a plan — it is a **documentation defect**, and it is the
+> ADR that must be amended, never the code that must be bent back to it. Amend it by
+> writing why the decision changed, not only what it changed to: a record whose reason
+> is missing is a record the next reader will re-litigate.

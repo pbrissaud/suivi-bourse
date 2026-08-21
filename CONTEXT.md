@@ -67,7 +67,9 @@ The single currency every figure in the app is reported in. It has no default �
 it is answered, prices are still fetched but nothing is converted and no return is
 computed. Immutable once **set**: the answer can be given late, it just cannot be
 taken back.
-_Avoid_: reporting currency, account currency, home currency
+_Avoid_: reporting currency (as an on-screen label), account currency, home currency —
+*reporting currency* is the source's own name for the same thing, in twenty modules under
+`app/src/`, and nothing here asks for that to be renamed.
 
 **Quote currency**:
 The currency a security is priced in by the market. Converted to the base currency
@@ -135,10 +137,12 @@ What a sale returned above the cost basis it consumed. A property of a position,
 of a price.
 
 **Total gain**:
-Latent gain plus realized gain plus dividends. The three are the *breakdown* of it and
-never terms added to it — the sale's proceeds are already in the cash balance. Always
-shown as a total dominating its three terms, because three figures aligned without
-their total is what invites adding them to something else.
+Latent gain plus realized gain plus dividends plus the fees taken from your transfers
+(ADR-0018). The four are the *breakdown* of it and never terms added to it — the sale's
+proceeds are already in the cash balance. Always shown as a total dominating its terms,
+because figures aligned without their total is what invites adding them to something
+else. The fourth term renders only when it is non-zero, so an install whose broker
+charges nothing for a transfer reads three and never learns the fourth exists.
 _Avoid_: gain absolu (as an on-screen label), plus-value (for the composite)
 
 **TWR**:

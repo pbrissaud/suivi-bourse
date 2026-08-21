@@ -8,9 +8,6 @@ const darkTheme = themes.dracula;
 const organizationName = 'pbrissaud';
 const projectName = 'suivi-bourse';
 
-// The **documentation** Crowdin project, and it is not the front's (ADR-0024).
-// Two projects rather than one: the two corpora have different formats (ICU
-// JSON against Markdown) and different rhythms — the front's catalogues move
 // One project for the whole product, not one per surface (ADR-0024, amended by
 // #739): a translation memory is per-project by default, so splitting them
 // would let the interface and the page that explains it name the same figure

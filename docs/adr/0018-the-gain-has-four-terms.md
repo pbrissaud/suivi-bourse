@@ -2,8 +2,9 @@
 
 ADR-0017 states the identity `Σ latent + Σ realized + Σ dividends == gain_absolu` and calls
 it exact. It is exact only on a portfolio whose transfers are free. Six `DEPOSIT` rows in
-the dev's real files — *Apple Pay Top up* — carry a `fee`, and `aggregator.py:146-152`
-takes it out of cash while `net_contributed` records the gross amount. The fee therefore
+the dev's real files — *Apple Pay Top up* — carry a `fee`, and
+`events/aggregator.py`'s `_process_cash_event` takes it out of cash while
+`net_contributed` records the gross amount. The fee therefore
 lands inside `gain_absolu` and inside **none** of the three position terms:
 
 ```

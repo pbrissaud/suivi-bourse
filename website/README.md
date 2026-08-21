@@ -30,9 +30,12 @@ French. The segment is frozen at the **major**: a 5.1 install still reads
 
 The site ships in English and French. **English is the source**, not one of two
 translations (ADR-0024): the corpus is written in English, [Crowdin][crowdin]
-reads it, French comes back. The documentation project is **not** the front's —
-Markdown against ICU JSON, a release's rhythm against a component's — and its
-configuration is `crowdin.yml`, here, beside the site it describes.
+reads it, French comes back. There is **one** project for the whole product, the
+site and the interface's catalogue alike (ADR-0024, amended by #739) — a
+translation memory is per-project, so two projects would let the app and the page
+that explains it name the same figure two ways. Its configuration is therefore
+`crowdin.yml` at the **repository root**, not here: it is the only place that can
+name both halves.
 
 What enters the pipeline is the **current** corpus (`docs/`) and the theme
 catalogues. `versioned_docs/` never does: `version-3.x/` is a product two
@@ -116,7 +119,7 @@ page once its English text has settled, never while it is being written. That
 is why translation starts at v5 rather than before it — translating the v4
 corpus would have translated the 16 255 words the rewrite deletes.
 
-[crowdin]: https://crowdin.com/project/suivi-bourse-docs
+[crowdin]: https://crowdin.com/project/suivi-bourse
 [cli]: https://crowdin.github.io/crowdin-cli/
 
 ### Installation

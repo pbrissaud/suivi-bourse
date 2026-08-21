@@ -30,11 +30,15 @@ function HomepageHeader() {
           </Link>
         </div>
         {/*
-          screenshot.png is a slot, and it currently holds a neutral wireframe
-          of the app's shell rather than a capture: the v5 interface does not
-          exist yet to be photographed. What it must never hold again is the
-          v3-era Grafana dashboard that was here — the first image of the
-          project cannot be a tool that has left it.
+          screenshot.png is a slot, and it still holds a neutral wireframe of
+          the app's shell rather than a capture. That is no longer for want of a
+          subject: the four v5 pages exist (dashboard, shares, accounts, data).
+          What is missing is the capture itself — a screenshot is taken from a
+          running install with a real portfolio in it, which is a gesture nobody
+          has made yet, not a page nobody has built. Replace the file, keep the
+          alt text honest, and this comment goes with it. What the slot must
+          never hold again is the v3-era Grafana dashboard that was here — the
+          first image of the project cannot be a tool that has left it.
         */}
         <div className={clsx('row', styles.paddingTop)}>
         <img src={ScreenshotPictureUrl} alt="Placeholder for a capture of the SuiviBourse interface" />

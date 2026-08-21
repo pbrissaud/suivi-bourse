@@ -57,15 +57,33 @@ showed does not survive the drawer.
   visibly not `GRANT`; in English a literal rendering makes all six labels equal to
   their own enum values, and ADR-0020's *labels that explain their effect rather than
   six codes* survives only as capitalisation. So: `Free shares`, `Cash in`, `Cash out`.
-- **`Avg. cost` is not a decision.** ADR-0017 chose `PRU` over `PMP` because PMP names
-  the rule and the ADR-0016 bubble now says the rule. English has one term with a long
-  form, not two terms — the bubble takes the long form and the column takes `Avg. cost`,
-  with nothing arbitrated.
-- **Six French identifiers are renamed**, and this is not translation. Two of them —
+- **`Avg. cost` is not a decision.** [ADR-0003](./0003-weighted-average-cost-no-closed-flag.md)
+  is what arbitrates the French pair, and it chose **PMP** — weighted average cost, the
+  rule the ADR-0016 bubble now states in full. (This record first credited ADR-0017,
+  which contains neither term.) English has one term with a long form, not two terms —
+  the bubble takes the long form and the column takes `Avg. cost`, with nothing
+  arbitrated.
+- **The French identifiers are *not* renamed — this decision is withdrawn.** It read
+  *six French identifiers are renamed*, on the argument that ADR-0008 makes v5 a fresh
+  install so a rename costs nothing exactly once. That argument is about **cost at the
+  moment of the change**, and it answers the wrong question: two of the six —
   `sb_account_gain_absolu` and `sb_portfolio_gain_absolu` — are the contract of an
-  install that never opens the UI (ADR-0012), and renaming a live gauge breaks alert
-  rules silently. ADR-0008 makes v5 a fresh install, so the rename costs nothing
-  exactly once; no later i18n work will look at them.
+  install that never opens the UI, and [ADR-0012](./0012-first-party-ui-replaces-grafana-prometheus-stays.md)
+  makes that contract *the* thing keeping the app usable with no interface at all. A
+  gauge name is not a label: it is the identifier a dashboard, a recording rule and an
+  alert are written against, and renaming one breaks all three silently, for ever after
+  — every operator, at every upgrade, not once. What the rename buys is naming
+  consistency inside a catalogue nobody scraping the app ever reads. That is not a
+  price the headless contract pays.
+
+  **What is true of the six today**, checked rather than assumed: the two gauges carry
+  their French names in `prometheus_exporter.py` and keep them; `gain_absolu` is a live
+  JSON member, published on the accounts and portfolio payloads and read under that
+  name by the front; and `plus_value_latente` / `plus_value_pct` have already left the
+  wire with the v4 routes that carried them — they survive only as field names on two
+  dataclasses in `portfolio_view.py`, which no route serialises any more. So there is
+  no rename left to do and none to undo. The rule this leaves is the general one:
+  **a `sb_*` gauge name is a published contract, and i18n has no jurisdiction over it.**
 - **The documentation becomes bilingual through Crowdin, scoped to the v5 corpus.**
   `versioned_docs/version-3.x/` never enters `crowdin.yml`, and translation starts only
   after the v5 docs are written — translating the current 16 255 words translates what

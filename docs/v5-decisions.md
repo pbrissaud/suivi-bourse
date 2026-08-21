@@ -1,7 +1,7 @@
 # v5 — the decision log (archive)
 
 This file is the former `CLAUDE.md`, frozen on 2026-08-20. It holds the
-ticket-by-ticket narrative of the v5 rewrite (#651 → #782): what was decided,
+ticket-by-ticket narrative of the v5 rewrite (#651 → #783): what was decided,
 what was refused and why, with the measurements that settled it.
 
 **It is no longer loaded into a session's context.** Read it on demand, when you
