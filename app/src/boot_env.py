@@ -176,6 +176,12 @@ PREFIXES = ('SB_', 'INFLUXDB_')
 #: into the notice, which is the one place spec #730 § 3 forbids them.
 NEVER_READ: frozenset = frozenset({
     'SB_VERSION', 'SB_CONFIG_DIR', 'SB_UID', 'SB_GID',
+    # v4's ``.env.example`` line 42, a port published by compose and read by
+    # the daemon. It carries the prefix, so without it here the notice tells a
+    # v4 install that ``INFLUXDB_PORT`` is *a setting this application has
+    # stopped reading* — which is the one sentence the paragraph above forbids
+    # about a name the application has never read.
+    'INFLUXDB_PORT',
 })
 
 #: Deleted outright, with **no successor**. This one has to be written down:

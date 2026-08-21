@@ -23,6 +23,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
+import duckdb
 from flask import Blueprint, Response, jsonify, request
 from logfmt_logger import getLogger
 
@@ -46,6 +47,7 @@ from store_reads import PortfolioReader, bucket_for_window, chart_window
 from web.problem import (
     bad_request,
     conflict,
+    internal_error,
     not_found,
     storage_unavailable,
     unprocessable,
@@ -142,9 +144,22 @@ def _on_error(exc: Exception):
     rescued by inspecting an exception: a table the store declares but nothing
     has written answers ``200`` + ``[]``, an unwritten column reads as ``NULL``,
     and only a genuine fault reaches this handler.
+
+    **A fault of the store, and a fault of ours, are two answers.** This handler
+    used to give every exception ``503`` and the type
+    ``/problems/storage-unavailable``, so a ``TypeError`` in ``portfolio_view``
+    told the client the database was unreachable — and the front branches on
+    ``problem.type`` and nothing else (#745), so it drew the *store unreachable*
+    screen for a bug of ours. The distinction is the whole reason ``503`` is
+    ``503``: the condition is transient by nature and the retry policy should
+    treat it as such, where a ``500`` invites a bug report. ``internal_error``
+    existed, was exported, and had no caller: dead code that documented a
+    distinction the code did not make.
     """
     logger.error(f"API error on {request.path}: {exc}", exc_info=True)
-    return storage_unavailable(str(exc))
+    if isinstance(exc, (store_module.StoreUnavailable, duckdb.Error)):
+        return storage_unavailable(str(exc))
+    return internal_error(str(exc))
 
 
 # --------------------------------------------------------------------- #

@@ -279,8 +279,15 @@ class PrometheusExporter:
 
     @staticmethod
     def _share_labels(share: dict) -> tuple:
-        """The three-label series identity of one position."""
-        return (share['name'], share['symbol'],
+        """The three-label series identity of one position.
+
+        ``name`` falls back to the symbol because ``position.name`` is nullable
+        — an event typed in the app without one, or a CSV cell left empty — and
+        ``prometheus_client`` calls ``str()`` on every label value: a null name
+        published the four characters ``None`` as the series identity. The
+        symbol is the one identity a position cannot be without.
+        """
+        return (share.get('name') or share['symbol'], share['symbol'],
                 share.get('account', DEFAULT_ACCOUNT))
 
     def update_position(self, share: dict) -> None:

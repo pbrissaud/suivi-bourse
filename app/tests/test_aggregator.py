@@ -227,6 +227,41 @@ def test_a_dividend_fee_is_absorbed_into_the_dividend(aggregator):
     assert share["realized_gain"] == 0.0
 
 
+def test_a_grant_fee_is_debited_and_absorbed_into_the_basis(aggregator):
+    """A grant is cash-neutral in its award, never in its fee.
+
+    The validator accepts a `fee` on a `GRANT` row — unlike `symbol` on a cash
+    event, which it refuses — the loader parses it, and it reached neither the
+    cash, nor the basis, nor any of ADR-0018's four terms: the money simply did
+    not exist anywhere in the product. It is an acquisition cost like a `BUY`'s,
+    so ADR-0003 absorbs it into the basis, and the cash pays for it. That pairing
+    is what keeps the identity closed — the cash falls by the fee and so does the
+    latent gain — where crediting the basis alone would have moved one side only.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.DEPOSIT, amount=1000.0),
+        Event(date(2024, 2, 1), EventType.GRANT, "AAPL", "Apple Inc",
+              quantity=5, unit_price=10.0, fee=7.50),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["quantity"] == 5
+    assert share["cost_basis"] == pytest.approx(57.50)
+
+
+def test_a_grant_with_no_fee_stays_exactly_cash_neutral(aggregator):
+    """The award itself moves no cash — the dilution case is unchanged."""
+    events = [
+        Event(date(2024, 2, 1), EventType.GRANT, "AAPL", "Apple Inc",
+              quantity=5, unit_price=10.0),
+    ]
+
+    share = aggregator.aggregate(events)[0]
+
+    assert share["cost_basis"] == pytest.approx(50.0)
+
+
 # ---------------------------------------------------------------------------
 # aggregate(): SELL — a subtraction, and a realized gain
 # ---------------------------------------------------------------------------

@@ -62,6 +62,13 @@ logger = getLogger("fx")
 #: ``GBp``.
 SUBUNITS: Dict[str, Tuple[str, float]] = {
     'GBp': ('GBP', 100.0),
+    # Tel-Aviv quotes in agorot and Johannesburg in cents, spelled by yfinance
+    # exactly like this. Left out, ``normalise`` answers the subunit unchanged,
+    # ``pair_symbol`` builds ``ILAEUR=X`` — a ticker that does not exist — and
+    # the pass arms ``unconvertible`` on a line that converts perfectly well
+    # through ``ILS``. Same factor of a hundred as London's, two places more.
+    'ILA': ('ILS', 100.0),
+    'ZAc': ('ZAR', 100.0),
 }
 
 #: How long a live rate is reused. Long enough that a whole market-open wave
@@ -171,6 +178,16 @@ class Rates:
         #: absent from a fetched window (a weekend) is forward-filled instead of
         #: re-fetched on every point of that weekend.
         self._windows: Dict[str, List[Tuple[date, date]]] = {}
+        #: pair -> when a window fetch last **failed**, so an outage costs one
+        #: request rather than one per point. Only a *successful* fetch records
+        #: a window above, so after a failed prefetch every point of the chunk
+        #: fell through ``_covers`` and asked for an eleven-day window of its
+        #: own: up to 365 extra requests to Yahoo, on the job that already emits
+        #: more of them than the rest of the application, and while it is
+        #: already failing. TTL'd rather than remembered for good — a failure is
+        #: transitory by nature, and the same TTL the live half uses is the one
+        #: rhythm this class has.
+        self._failed_at: Dict[str, float] = {}
 
     # ------------------------------------------------------------------ #
     # The one entry point
@@ -316,6 +333,17 @@ class Rates:
         applied on that Sunday *is* Friday's. Bounded by what has actually been
         fetched, so a day before anything known triggers a fetch instead of
         silently borrowing a rate from the wrong side of a gap.
+
+        And bounded **on the right as well**, at the same
+        :data:`_DAILY_LOOKBACK_DAYS` the window is opened over. The fill used to
+        walk the pair's whole history, every window confounded: when the window
+        this day needs failed to fetch, the ``bisect`` happily answered with a
+        rate from another year. That rate is then written down —
+        ``main._convert_history`` puts it on the point and ``quotes.record_history``
+        persists it — and nothing ever judges it again, since the lateral pass
+        only looks at ``price_converted IS NULL``. A 2026 quote converted at a
+        2020 rate is definitive and invisible. A missing conversion is
+        repairable; a wrong one is not, so past the bound the answer is ``None``.
         """
         if not self._covers(pair, day):
             self._ensure_window(
@@ -326,7 +354,12 @@ class Rates:
             return None
         days = sorted(known)
         index = bisect.bisect_right(days, day)
-        return known[days[index - 1]] if index else None
+        if not index:
+            return None
+        nearest = days[index - 1]
+        if (day - nearest).days > _DAILY_LOOKBACK_DAYS:
+            return None
+        return known[nearest]
 
     def _ensure_window(self, pair: str, start: date, end: date) -> str:
         """Fetch a window unless it has already been asked for. Says what it did.
@@ -350,12 +383,21 @@ class Rates:
             # No historical fetch injected: nothing was asked, so nothing may be
             # concluded. ``FAILED`` is the only answer that arms no terminal.
             return FAILED
+        failed_at = self._failed_at.get(pair)
+        if failed_at is not None and self._clock() - failed_at < self._ttl:
+            # This pair failed a moment ago and nothing about it has changed.
+            # Asking again once per point of a chunk is how a Yahoo hiccup
+            # turned into a flood; the answer is the same ``FAILED``, which arms
+            # no terminal, so nothing downstream reads it as a reply.
+            return FAILED
         try:
             fetched = self._fetch_series(pair, start, end) or {}
         except Exception as exc:
             logger.warning(
                 f"Could not fetch the {pair} history over [{start}, {end}]: {exc}")
+            self._failed_at[pair] = self._clock()
             return FAILED
+        self._failed_at.pop(pair, None)
         self._daily.setdefault(pair, {}).update(
             {_as_date(day): float(value) for day, value in fetched.items()})
         self._windows.setdefault(pair, []).append((start, end))

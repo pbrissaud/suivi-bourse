@@ -174,8 +174,15 @@ class EventAggregator:
     def _apply_share_cash(self, cash: CashState, event: Event) -> bool:
         """Apply a share event's cash effect. Returns True if cash changed.
 
-        BUY debits, SELL and DIVIDEND credit (fee always worsens cash); GRANT is
-        cash-neutral.
+        BUY debits, SELL and DIVIDEND credit, and the fee always makes the cash
+        worse. A GRANT is cash-neutral **in its award** — nothing was bought —
+        but not in its fee: the validator accepts one on the row, the loader
+        parses it, and it used to reach neither the cash, nor the basis, nor any
+        of ADR-0018's four terms. It is an acquisition cost like a ``BUY``'s, so
+        it is debited here and absorbed into the basis by
+        :meth:`_process_grant`, which is exactly what ADR-0003 prescribes and
+        what keeps the identity closed: the cash falls by the fee, and so does
+        the latent gain.
         """
         fee = event.fee or 0.0
         if event.event_type == EventType.BUY:
@@ -185,7 +192,9 @@ class EventAggregator:
         elif event.event_type == EventType.DIVIDEND:
             cash.cash_balance += event.amount - fee
         else:  # GRANT
-            return False
+            if not fee:
+                return False
+            cash.cash_balance -= fee
         return True
 
     @staticmethod
@@ -278,7 +287,14 @@ class EventAggregator:
         price is interpreted.
         """
         state.quantity += event.quantity
-        state.cost_basis += declared_value(event.quantity, event.unit_price)
+        # The award's declared value, plus what it cost to receive it. The two
+        # are added here and not inside ``declared_value``: that function feeds
+        # the **contribution** as well, and a fee is not money the owner put in
+        # from outside — it is money the portfolio spent. Adding it to the basis
+        # alone is what keeps the four terms telescoping, the latent gain
+        # falling by exactly what the cash did.
+        state.cost_basis += declared_value(
+            event.quantity, event.unit_price) + (event.fee or 0.0)
 
     def _process_dividend(self, state: ShareState, event: Event) -> None:
         """Process a DIVIDEND: it leaves the profit-and-loss entirely.

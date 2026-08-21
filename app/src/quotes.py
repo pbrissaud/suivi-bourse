@@ -585,10 +585,18 @@ def repair_conversions(store, symbol: str,
             '   AND price_converted IS NULL AND CAST(ts AS DATE) = ?',
             [(factors[day], factors[day], symbol, day) for day in days])
 
+        # ``ORDER BY rowid DESC`` and not ``ORDER BY ts``: ``ts`` is pinned
+        # to one value by the WHERE clause, so ordering by it discriminates
+        # nothing and DuckDB is free to answer with either row. ``price_point``
+        # carries no key (ADR-0007), so two points *can* land on one second —
+        # which is exactly the tie ``record_history`` and ``collapse_to_ladder``
+        # both take the trouble to break, and by the same rule: the last one
+        # posted wins. Left as it was, ``symbol_quote.last_*`` could copy a
+        # different point than the one the series serves.
         latest = store.query(
             'SELECT price_native, price_converted, fx_rate FROM price_point '
             ' WHERE symbol = ? AND ts = ? AND price_converted IS NOT NULL '
-            ' ORDER BY ts LIMIT 1', [symbol, newest])
+            ' ORDER BY rowid DESC LIMIT 1', [symbol, newest])
         if latest:
             _advance_latest(store, symbol, _utc(newest), *latest[0])
 

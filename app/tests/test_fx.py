@@ -201,6 +201,63 @@ def test_a_day_with_no_close_of_its_own_takes_the_last_one_before_it():
     assert rates.rate('USD', 'EUR', date(2024, 5, 1)) is None
 
 
+def test_the_forward_fill_stops_at_the_lookback_and_never_borrows_another_year():
+    """A missing conversion is repairable; a wrong one is not.
+
+    The fill used to walk the pair's whole cache, every window confounded. So
+    when the window a day needs failed to fetch, the ``bisect`` answered with a
+    rate from another year — and that rate is *written down*: the backfill puts
+    it on the point and the store persists it, while the lateral pass only ever
+    revisits ``price_converted IS NULL``. A 2026 quote converted at a 2020 rate
+    is definitive and invisible.
+
+    The same shape occurs with no failure at all: a one-year window Yahoo
+    answers ten days of would otherwise carry day ten's rate over the remaining
+    355.
+    """
+    def history(pair, start, end):
+        if start.year == 2020:
+            return {date(2020, 6, 1): 0.90, date(2020, 6, 2): 0.91}
+        raise RuntimeError('Yahoo said no')
+
+    rates = fx.Rates(_Fetch(), history, clock=_Clock())
+    rates.series('USD', 'EUR', date(2020, 6, 1), date(2020, 6, 30))
+
+    assert rates.rate('USD', 'EUR', date(2020, 6, 3)) == 0.91
+    # Six years later, over a window that did not come back: nothing, rather
+    # than June 2020's rate.
+    assert rates.rate('USD', 'EUR', date(2026, 6, 15)) is None
+
+
+def test_a_failed_window_is_not_re_asked_once_per_point_of_the_chunk():
+    """An outage costs one request per pair, not one per day of the chunk.
+
+    Only a *successful* fetch records a window, so after a failed prefetch every
+    point of the chunk fell through the coverage test and asked for an
+    eleven-day window of its own — up to 365 extra requests to Yahoo, emitted by
+    the job that already makes more of them than the rest of the application,
+    and precisely while it is already failing.
+    """
+    calls = []
+
+    def history(pair, start, end):
+        calls.append((start, end))
+        raise RuntimeError('Yahoo said no')
+
+    clock = _Clock()
+    rates = fx.Rates(_Fetch(), history, ttl=300.0, clock=clock)
+
+    for offset in range(30):
+        rates.rate('USD', 'EUR', date(2026, 6, 1) + timedelta(days=offset))
+
+    assert len(calls) == 1
+
+    # And it is a TTL, not a memory: the pair is asked again once it expires.
+    clock.at += 301.0
+    rates.rate('USD', 'EUR', date(2026, 6, 1))
+    assert len(calls) == 2
+
+
 # --- The three answers, and why two is not enough (issue #704) -------------- #
 
 def test_a_window_that_came_back_empty_is_a_reply_and_not_a_failure():

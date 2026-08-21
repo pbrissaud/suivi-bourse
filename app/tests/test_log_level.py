@@ -11,6 +11,8 @@ on an unknown level. A ``set_log_level`` that moved no handler at all would pass
 that test, which is precisely the bug the first test below exists to catch.
 """
 import logging
+import re
+from pathlib import Path
 
 import pytest
 
@@ -43,6 +45,25 @@ class TestLogLevel:
                 assert logging.getLogger(name).level == logging.WARNING
         finally:
             main.set_log_level('INFO')
+
+    def test_the_list_names_every_logger_the_tree_creates(self):
+        """The list is explicit, so it is the list that goes stale — on the source.
+
+        `MANAGED_LOGGERS` is spelled out rather than walked off
+        `logging.root.manager`, which is the right call: a walk would turn a
+        dependency's own logger up with the app. The cost is that a module
+        added later is simply not in it, and nothing says so — four were
+        missing, `fx` among them, which is the module that most often explains
+        why a conversion is absent and therefore the commonest reason to reach
+        for DEBUG at all. Read off `src/` so the list cannot drift again.
+        """
+        source = Path(main.__file__).resolve().parent
+        named = {match.group(1)
+                 for path in source.rglob('*.py')
+                 for match in re.finditer(r'getLogger\(\s*[\'"]([^\'"]+)[\'"]',
+                                          path.read_text(encoding='utf-8'))}
+
+        assert named - set(main.MANAGED_LOGGERS) == set()
 
     def test_an_unknown_level_is_refused(self):
         with pytest.raises(ValueError):

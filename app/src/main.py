@@ -66,6 +66,11 @@ MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
     'quotes', 'perf_series', 'ledger', 'positions', 'prometheus_exporter',
     'advisories', 'web.api',
+    # Four names the list had never caught up with. `PUT /api/config/log-level`
+    # turned the app to DEBUG and left them at the boot level — `fx` above all,
+    # which is the module that most often explains why a conversion is missing,
+    # i.e. the commonest reason to reach for DEBUG in the first place.
+    'fx', 'accounts', 'entries', 'reassignment',
 )
 
 
@@ -3466,7 +3471,13 @@ class SuiviBourseMetrics:
         # a replay of nothing and the prune takes its days away.
         declared = accounts_module.read_accounts(store_handle)
 
-        today = datetime.now(timezone.utc).date()
+        # **One clock for the whole cycle**, the rule #705 gave ``backfill()``:
+        # a recompute that straddles UTC midnight read one ``now`` for the
+        # horizons and their caps and a second one for the holding windows
+        # ``terminal_symbols`` measures, so the two were a day apart and the
+        # cycle stated its figures against two different todays.
+        now = datetime.now(timezone.utc)
+        today = now.date()
         acc_points: List[AccountMetricPoint] = []
         total_points: List[PortfolioTotalPoint] = []
         latest_by_account: Dict[str, AccountMetricPoint] = {}
@@ -3503,8 +3514,7 @@ class SuiviBourseMetrics:
                     for position in timeline.current()
                     if position.get('symbol') and position.get('quantity')}
             carried = quotes.terminal_symbols(
-                store_handle, holding_windows(events, held),
-                datetime.now(timezone.utc))
+                store_handle, holding_windows(events, held), now)
             # And its **first** term, which ``price_at`` cannot supply: that
             # callable reads ``price_converted``, so a symbol whose pair does not
             # resolve is priceless to it while its quote is known. Carrying those

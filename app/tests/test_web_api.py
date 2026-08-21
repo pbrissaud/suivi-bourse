@@ -21,6 +21,7 @@ import advisories
 import ledger
 import main
 import perf_series
+import portfolio_view
 import quotes
 import runtime_state
 import settings_registry
@@ -1968,6 +1969,29 @@ def test_account_history_storage_failure_is_503_problem_json(tmp_path):
     assert response.status_code == 503
     assert response.mimetype == 'application/problem+json'
     assert 'account_metrics' in response.get_json()['detail']
+
+
+def test_a_fault_of_ours_is_a_500_and_not_a_storage_failure(tmp_path, mocker):
+    """`503` is a claim about the store, and it was made about every fault.
+
+    The handler answered `storage_unavailable` unconditionally, so a `TypeError`
+    in a view module told the client the database was unreachable. The front
+    branches on `problem.type` and nothing else (#745), so it drew the *store
+    unreachable* screen for a bug of ours — and `503` is deliberately not `500`
+    precisely because the condition is meant to be transient, where a `500`
+    invites the bug report this one deserved. `problem.internal_error` was
+    already written and exported, and had no caller.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    mocker.patch.object(portfolio_view, 'build_positions',
+                        side_effect=TypeError('a fault of ours'))
+
+    response = client.get('/api/positions')
+
+    assert response.status_code == 500
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == '/problems/internal-error'
 
 
 def test_account_history_rejects_an_inverted_window(tmp_path):
