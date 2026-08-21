@@ -76,14 +76,14 @@ has the rest of the back-off.
 Six names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
-| Variable                | Default   | What it decides                            |
-| ----------------------- | --------- | ------------------------------------------ |
-| `SB_STORE_DIR`          | `/data`   | the directory the store lives in           |
-| `SB_IMPORT_DIR`         | `/import` | the directory the drop folder is read from |
-| `SB_WEB_PORT`           | `8080`    | the port the app and its API are served on |
-| `SB_METRICS_PORT`       | `8081`    | the port `/metrics` is served on           |
-| `SB_PROMETHEUS_ENABLED` | `true`    | whether `/metrics` is mounted at all       |
-| `LOG_LEVEL`             | `INFO`    | how loudly the app logs                    |
+| Variable                | Default   | What it decides                                                    |
+| ----------------------- | --------- | ------------------------------------------------------------------ |
+| `SB_STORE_DIR`          | `/data`   | the directory the store lives in                                   |
+| `SB_IMPORT_DIR`         | `/import` | the directory the drop folder is read from                         |
+| `SB_WEB_PORT`           | `8080`    | the first socket the app is bound to                               |
+| `SB_METRICS_PORT`       | `8081`    | the second socket the app is bound to, added when `/metrics` is on |
+| `SB_PROMETHEUS_ENABLED` | `true`    | whether `/metrics` is mounted at all                               |
+| `LOG_LEVEL`             | `INFO`    | how loudly the app logs                                            |
 
 * **The two paths are directories, never files.** The app names its own store
   file inside the one and reads whatever it finds in the other. That removes the
@@ -99,6 +99,12 @@ environment; nothing else in it is consulted.
   process before the app is even imported, so they cannot come from the store;
   and a port changed from the interface would cut the connection the interface
   arrived by. That is a nature, not only a sequence.
+* **They are two sockets, not two servers.** The server binds a *list*, and one
+  application answers behind both: `/metrics` is served on `8080` as well, and
+  the whole interface and API — `POST /api/events`, `PUT /api/settings`,
+  `DELETE /api/store/orphans` included — are served on `8081` as well. When both
+  variables name the same port there is simply one socket, which is the same
+  application again.
 * **`LOG_LEVEL` is here because the most likely failure of this app is the store
   failing to open**, and a log level kept inside the store cannot report that.
 * **No secret lives in the environment any more.** There was exactly one, the
@@ -117,6 +123,14 @@ which is the only non-interactive way to post the base currency.
 it has to be answered before the store is open. Set it to `false` and
 `SB_METRICS_PORT` is simply never bound. The page has no port of its own — it is
 served on the API's — so there is nothing equivalent to turn off.
+
+**Which is why "publish only the metrics port" is not a way to hide the API.**
+An operator who runs `-p 8081:8081` alone has published the write API on `8081`:
+one application, two sockets, and neither of them is a filtered view of the
+other. Whoever reaches a port reaches everything — the page, the reads, and the
+writes. If the API must not be reachable from a network, that is a decision for
+the network: bind the container to `127.0.0.1`, or put it behind something that
+authenticates. The app itself has no half to serve.
 
 ## What version 4 said, and is no longer read
 
