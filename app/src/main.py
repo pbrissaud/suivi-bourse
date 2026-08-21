@@ -3521,21 +3521,36 @@ class SuiviBourseMetrics:
             # --- the sliding horizon and its cap (issues #708, #765) ---------
             # The oldest **usable** price of each symbol, which is the oldest day
             # ``price_at`` can answer for: ``price_series`` is converted-only, so
-            # a symbol quoted in a currency whose pair does not resolve is absent
-            # here while being perfectly well quoted. That is the second half of
-            # ``settled`` below — an absence no cycle of the backward pass will
-            # ever repair, as opposed to the reconstruction simply not having
-            # reached that far yet. That half now says exactly what this sentence
-            # always claimed (#773): ``first_quoted`` is quoted **in a nameable
-            # unit**, so a symbol whose unit was never recorded is settled by the
-            # *first* half alone — i.e. when and only when its backward pass has
-            # concluded, which is also when it becomes carryable. Blocking until
-            # then is the honest reading: no day of it is written, rather than
+            # a symbol quoted in a currency whose conversion has not landed is
+            # absent here while being perfectly well quoted. It therefore blocks,
+            # and that is the honest reading — the absence is transitory, lifted
+            # by #704's lateral pass rather than by any cycle of the backward
+            # one, and under the horizon no day is written at all rather than
             # written with the position counted at nothing.
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
-            settled = set(carried) | {
-                symbol for symbol in first_quoted if symbol not in oldest_priced}
+            # **Settled is terminal *and* valuable**, which is one condition
+            # and used to be written as two halves that between them let the
+            # opposite through. A symbol settles a day only if that day can
+            # actually carry a figure: either its conversion has landed (it is
+            # in ``oldest_priced``), or no quote of it was ever observed in a
+            # nameable unit — in which case ADR-0004 carries it at its own cost
+            # and the figure is real.
+            #
+            # What is excluded is the third shape: **quoted, in a unit, and
+            # never converted**. ``carrying_price`` refuses it on purpose (#706
+            # — a security whose quote is known and whose rate is not is
+            # *waiting*, not priceless), so ``price_at`` answers ``None`` and
+            # the position counts **zero** beside a cash ledger that has already
+            # paid. Settling it published exactly the crater #708 measured:
+            # ``twr_index`` 0,057 and a head reading −100 % on a portfolio worth
+            # eleven thousand euros. Blocking is the honest reading — an account
+            # holding a security it cannot value in the reporting currency
+            # cannot state its performance, and ``unconvertible`` is the notice
+            # that asks the owner to act. The block lifts by itself the moment
+            # #704's lateral pass lands a rate.
+            settled = {symbol for symbol in carried
+                       if symbol in oldest_priced or symbol not in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
                     self._holding_windows(timeline, account.id, symbols, today),

@@ -739,8 +739,17 @@ def get_account_history(account_id: str):
     whole install, and ``/api/portfolio`` is where it is said.
     """
     accounts = _snapshot().accounts
-    declared = accounts.get(account_id) if accounts is not None else None
-    if declared is None:
+    if accounts is not None:
+        known = accounts.get(account_id) is not None
+    else:
+        # Nothing declared: the declaration is the seeded ``default`` row, which
+        # is exactly what ``list_accounts`` answers with in the same state. The
+        # two decided against different things and disagreed on the one install
+        # that has never been configured — the commonest one there is. The page
+        # asks for the history of every row the collection gave it, so a 404
+        # here put a failure band on the accounts page of a fresh install.
+        known = any(row.id == account_id for row in _seeded_only())
+    if not known:
         return not_found(f"No declared account {account_id!r}")
 
     try:

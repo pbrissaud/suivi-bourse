@@ -165,6 +165,36 @@ def test_xirr_computed_over_realistic_horizon():
     assert perf.gain_absolu == pytest.approx(100.0)
 
 
+def test_a_flow_dated_after_today_never_reaches_the_xirr():
+    """#766's rule, on the last reader that had not been given it.
+
+    ``_running_contribution`` stopped counting a flow dated past the last day of
+    the series; ``_xirr_cashflows`` went on stacking every flow of the ledger.
+    Here the cost is worse than a wrong total: the terminal value is stamped at
+    ``today``, so a later flow lands *after* the closing position and the solver
+    is handed a series no rate explains. The rate simply vanished from the page —
+    every other column unmoved, and nothing on screen naming the cause. A single
+    mistyped year does it; a nearer one leaves the rate in place and wrong.
+    """
+    base = [
+        Event(date(2023, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2023, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    mistyped = base + [
+        Event(date(2025, 6, 1), EventType.DEPOSIT, amount=100.0, account="PEA"),
+    ]
+    price_at = _price_at({"AAPL": {date(2023, 1, 1): 100.0, date(2024, 1, 1): 110.0}})
+
+    def rate(events):
+        return compute_account(EventAggregator().replay(events), PEA, {"AAPL"},
+                               price_at, start=date(2023, 1, 1),
+                               today=date(2024, 1, 1)).xirr
+
+    assert rate(base) == pytest.approx(0.10, abs=1e-3)
+    assert rate(mistyped) == pytest.approx(rate(base), abs=1e-9)
+
+
 def test_twr_neutral_to_external_flow():
     """A pure deposit (no price move) must not change the TWR index."""
     events = [

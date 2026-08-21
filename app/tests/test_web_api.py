@@ -1929,10 +1929,35 @@ def test_an_undeclared_account_history_is_404_problem_json(tmp_path):
 
 
 def test_account_history_without_any_declaration_is_404(tmp_path):
-    """No `accounts:` block at all — every id is unknown."""
+    """No `accounts:` block at all — every id *but the seeded one* is unknown."""
     response = build_client(tmp_path).get('/api/accounts/pea/history')
 
     assert response.status_code == 404
+
+
+def test_the_seeded_account_has_a_history_on_an_install_that_declared_nothing(
+        tmp_path):
+    """The two resources decide against the same declaration (ADR-0013).
+
+    `list_accounts` falls back to the seeded `default` row when nothing was
+    declared — that is what a fresh install shows — while this route decided
+    against `_snapshot().accounts`, which is `None` in exactly that state. So
+    every id was unknown here, `default` included, and the page asks for the
+    history of every row the collection just gave it: a failure band on the
+    accounts page of the commonest install there is.
+    """
+    client = build_client(tmp_path, events=(
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n"))
+
+    listed = client.get('/api/accounts').get_json()
+    assert listed['declared'] is False
+    assert [row['id'] for row in listed['accounts']] == ['default']
+
+    response = client.get('/api/accounts/default/history')
+
+    assert response.status_code == 200
+    assert response.get_json()['account'] == 'default'
 
 
 def test_account_history_storage_failure_is_503_problem_json(tmp_path):

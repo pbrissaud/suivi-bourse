@@ -559,12 +559,23 @@ def _external_flow_by_date(cash_flows, grant_flows) -> Dict[date, float]:
 def _xirr_cashflows(cash_flows, grant_flows,
                     terminal_value: float, today: date) -> List[Tuple[date, float]]:
     """Build the investor-perspective cashflows for XIRR: contributions negative,
-    terminal value positive."""
+    terminal value positive.
+
+    **Nothing dated after ``today``**, which is the same rule
+    :func:`_running_contribution` keeps and for the same reason (#766): a row
+    dated next year is not money the portfolio has received. Here the cost of
+    breaking it is worse than a wrong total — the terminal value is stamped at
+    ``today``, so a later flow lands *after* the closing position and the solver
+    is handed a series that no rate explains. A single mistyped year therefore
+    took ``xirr`` off the page entirely, with every other column unmoved and
+    nothing on screen naming the cause; a nearer one simply made it wrong.
+    """
     cfs: List[Tuple[date, float]] = []
     for d, amount in cash_flows:
-        cfs.append((d, -amount))               # deposit(+)→pay in(-); withdrawal(-)→receive(+)
+        if d <= today:
+            cfs.append((d, -amount))           # deposit(+)→pay in(-); withdrawal(-)→receive(+)
     for d, value in grant_flows:
-        if value:
+        if value and d <= today:
             cfs.append((d, -value))            # in-kind contribution
     cfs.append((today, terminal_value))
     return cfs

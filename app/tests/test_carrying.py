@@ -542,19 +542,29 @@ def test_the_perf_recompute_carries_a_terminal_symbol(
     assert total == pytest.approx(1000.0)
 
 
-def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
+def test_a_symbol_waiting_for_a_rate_is_not_written_at_zero(
         store, declare_ledger, mocker):
-    """A stored quote with no conversion: the day is observed, not carried.
+    """A stored quote with no conversion: the day is **not written at all**.
 
     Reachable on any install whose pair does not resolve — the point is written
     with ``price_converted`` ``NULL`` rather than not written (#702), and #704 is
-    what repairs the stock. ``price_at`` sees nothing there; ``first_quoted``
-    is what stops that reading as *nobody ever priced this*.
+    what repairs the stock. ``price_at`` sees nothing there, and
+    ``carrying_price`` refuses the row on purpose (#706: a security whose quote
+    is known and whose rate is not is *waiting*, not priceless). So the position
+    can be given no figure, and the only two answers are *no row* or *a row
+    counting it at nothing*.
 
-    The quote's own **unit** is part of the state and is recorded as such: a pair
-    that does not resolve is a pair, so there is a currency to name it with. With
-    none the row is #773's third state and is carried, which the test below
-    pins — the two must not be told apart by a fixture's omission.
+    It used to be the second, and that is the crater #708 measured and #773 half
+    repaired: zero holdings beside a cash ledger that has already paid, chained
+    forward by a time-weighted index — two accounts on the real portfolio read
+    −99,98 % and −29 120,25 %. #773 took the **no-unit** half of that population
+    into the carrying convention and left this half pinned at zero, which is why
+    it is the same defect and not a second one.
+
+    Nothing is written instead. An account holding a security it cannot value in
+    the reporting currency cannot state its performance, which is what a horizon
+    *is* (``CONTEXT.md`` § Horizon), and ``unconvertible`` is the notice that
+    asks the owner to act. The block lifts by itself the moment a rate lands.
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     store.execute(
@@ -567,11 +577,8 @@ def test_the_perf_recompute_leaves_a_symbol_waiting_for_a_rate_alone(
 
     metrics.update_account_metrics()
 
-    (holdings, total) = store.query(
-        'SELECT holdings_value, total_value FROM account_metrics '
-        " WHERE account = 'PEA' ORDER BY day LIMIT 1")[0]
-    assert holdings == pytest.approx(0.0)
-    assert total == pytest.approx(0.0)
+    assert store.query(
+        "SELECT count(*) FROM account_metrics WHERE account = 'PEA'") == [(0,)]
 
 
 def test_the_perf_recompute_carries_a_symbol_quoted_in_no_nameable_unit(
@@ -630,21 +637,23 @@ def test_a_p1_row_quoted_in_no_nameable_unit_is_carried_at_its_cost():
     assert [a.market_value for a in share.accounts] == [pytest.approx(1000.0)]
 
 
-def test_a_symbol_waiting_for_a_rate_does_not_hold_the_horizon_back(
+def test_a_symbol_waiting_for_a_rate_holds_the_horizon_back(
         store, declare_ledger, mocker):
-    """The second flavour of *settled* (issue #708, criterion 2).
+    """*Settled* is terminal **and valuable**, and this symbol is not valuable.
 
-    Quoted, and not convertible: the backward pass can walk to the first
-    acquisition and every point it brings back will still carry
-    ``price_converted NULL``. Blocking on it would pin the horizon at today **for
-    ever** — the repair is #704's lateral pass, which fetches rates and not
-    history, so no cycle of the reconstruction can lift the condition.
+    Quoted, in a nameable unit, and not converted: ``price_at`` answers nothing
+    and ``carrying_price`` refuses to invent one (#706 — the app owes a
+    conversion rather than a convention). A day whose only position can be given
+    no figure is a day nothing honest can be said about, so the horizon holds and
+    no row is written.
 
-    What the day then says is *waiting for a rate*, which is #706's answer and
-    not this ticket's: the figure is not carried at cost, because the app knows
-    the quote and owes a conversion rather than a convention — and knowing the
-    quote is knowing its **unit** as well, which is why the fixture records one
-    (#773).
+    It used to settle, on the argument that blocking would pin the horizon at
+    today for ever, the repair being #704's lateral pass rather than any cycle of
+    the reconstruction. The argument is sound and the conclusion was not: what it
+    bought was every one of those days written with the position counted at
+    **zero**, which is the crater the test above now pins. Between a figure that
+    is wrong and no figure, this repository answers the same way everywhere else
+    (ADR-0026, and the recompute's own rule under the horizon).
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     store.execute(
@@ -657,10 +666,11 @@ def test_a_symbol_waiting_for_a_rate_does_not_hold_the_horizon_back(
 
     horizons = metrics.update_account_metrics()
 
-    assert horizons['PEA'] is None
+    # The horizon has not arrived: the day after the last day it could not
+    # write, which is the shape #708 gives an account with nothing publishable.
+    assert horizons['PEA'] is not None
     assert store.query(
-        "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"
-    ) == [(date(2024, 1, 15),)]
+        "SELECT count(*) FROM account_metrics WHERE account = 'PEA'") == [(0,)]
 
 
 def test_the_perf_recompute_writes_nothing_at_all_under_the_horizon(
