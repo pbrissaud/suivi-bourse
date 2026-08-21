@@ -8,7 +8,7 @@
  * lightnesses does better than twelve hues, twelve hues at constant lightness
  * being at the edge of discriminability and below it for a colour-blind reader.
  *
- * Two consequences are load-bearing and both live in the table below:
+ * Three consequences are load-bearing and all three live in the table below:
  *
  *  - **Rank 1 is the most contrasted in *both* themes**, which forces two
  *    opposite lightness ramps: dark stands out on white, light stands out on
@@ -17,6 +17,12 @@
  *    Read against lightness that reads as "decreasing with lightness" in light
  *    and "increasing with lightness" in dark — the same rule, seen from the two
  *    grounds.
+ *  - **Every stop is a colour sRGB can hold.** A browser clamps what it cannot
+ *    show instead of refusing it, so a ramp written outside the gamut renders
+ *    several ranks as one colour while every declared value still looks right.
+ *
+ * The first two are rules; the third is a constraint the first two have to be
+ * satisfied *within*, and it is what sets the chroma ends apart between grounds.
  *
  * The ramp holds *only because* the allocation is sorted and legended. A
  * surface that drew these twelve shares without a legend, or in another order,
@@ -39,13 +45,41 @@ export interface RampEnds {
   lightness: [number, number]
   /** Chroma at rank 1 → rank 12. Falls with rank on both grounds. */
   chroma: [number, number]
-  /** One hue, the preset's own `--chart-2`, in twelve steps. */
+  /** One hue, chosen near both grounds and claimed by nothing else. */
   hue: number
 }
 
+/**
+ * Recomputed on the midnight ground (ADR-0029), and two things moved with it.
+ *
+ * **The hue, 262, is chosen and not derived.** ADR-0023 took the preset's
+ * `--chart-2` because the preset was near monochrome and that slot was the only
+ * blue in it. The midnight preset states a ground *and* an accent, so the choice
+ * needs its own argument: mint, purple and teal are spoken for by a state or a
+ * mark, and a share of a total is neither, so the ramp sits in the blue nobody
+ * claimed. It is deliberately **near** both grounds — `266.4` dark, `258.3`
+ * light — without being either: a single ramp cannot be two hues, and reading
+ * one ground's hue would make the light ramp answer to the dark one. Twelve
+ * lightnesses of that blue read as shades of the surface, never as a meaning.
+ *
+ * **The chroma ends are bounded by rank 1, and rank 1 alone.** Blue keeps almost
+ * no chroma at high lightness: at `L 0.86` the screen can show `0.069`, and
+ * `0.16` — what both ramps used to ask for — was outside sRGB. The browser
+ * clamped those first stops, rendering several ranks as one colour, which is the
+ * ramp failing at exactly the job it exists for. Since chroma must then *fall*
+ * from rank 1, that one ceiling sets the whole dark ramp: the later stops have
+ * three to six times the headroom they use, and could not use it without
+ * breaking the rule.
+ *
+ * The honest consequence is that **on the dark ground the chroma cue is nearly
+ * mute** — `0.055` to `0.018` is a travel a reader will not see — and lightness
+ * carries the rank alone. That is acceptable only because lightness was always
+ * the primary cue and the legend carries name and percentage besides. The light
+ * ramp, drawn where blue has room, keeps both cues.
+ */
 export const ALLOCATION_RAMP: Record<Ground, RampEnds> = {
-  light: { lightness: [0.45, 0.78], chroma: [0.16, 0.06], hue: 264 },
-  dark: { lightness: [0.85, 0.52], chroma: [0.16, 0.06], hue: 264 },
+  light: { lightness: [0.42, 0.8], chroma: [0.16, 0.05], hue: 262 },
+  dark: { lightness: [0.86, 0.42], chroma: [0.055, 0.018], hue: 262 },
 }
 
 function interpolate(from: number, to: number, step: number, steps: number): number {

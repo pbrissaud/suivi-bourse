@@ -135,3 +135,9 @@ dmypy.json
 # Ils contiennent une copie complète du dépôt : sans cette ligne, un `git add -A`
 # lancé par un agent les emporterait.
 .claude/worktrees/
+
+# Les maquettes de la refonte (#787), exportées de Claude.design. Elles ne sont
+# pas suivies **et elles embarquent le vrai portefeuille** — les symboles réels
+# sont en clair dans le bundle. Sans cette ligne, un `git add -A` les publierait
+# dans un dépôt public. La référence de forme se lit en local, jamais versionnée.
+docs/design-revamp-*.html

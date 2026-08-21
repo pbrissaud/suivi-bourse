@@ -200,7 +200,7 @@ export function PortfolioChart() {
                       type="monotone"
                       dataKey="value"
                       name={t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
-                      stroke="var(--chart-1)"
+                      stroke="var(--color-price)"
                       strokeWidth={1.75}
                       dot={false}
                       isAnimationActive={false}
@@ -225,7 +225,13 @@ export function PortfolioChart() {
                       type="monotone"
                       dataKey="performance"
                       name={t('dashboard.chart.performance')}
-                      stroke="var(--chart-2)"
+                      // **Not `--color-price`**, which is the mint: this curve
+                      // crosses the zero line, and a portfolio down 8 % would
+                      // draw its whole descent in the colour the app uses for a
+                      // gain. It is the reason the Area above stays neutral,
+                      // one line further down. The foreground says nothing
+                      // about sign, and this is the only curve on the plot.
+                      stroke="var(--foreground)"
                       strokeWidth={1.75}
                       dot={false}
                       isAnimationActive={false}
@@ -246,7 +252,7 @@ export function PortfolioChart() {
                 <span
                   aria-hidden
                   className="inline-block size-2.5 rounded-full"
-                  style={{ backgroundColor: 'var(--chart-1)' }}
+                  style={{ backgroundColor: 'var(--color-price)' }}
                 />
                 <span className="text-muted-foreground">
                   {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}

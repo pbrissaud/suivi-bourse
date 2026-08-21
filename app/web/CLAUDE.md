@@ -1,10 +1,11 @@
 # app/web/ — the front
 
-> **ADR-0028 to 0031 are decided and not yet built.** Where this file cites one of
-> them — the accounts page, the data page's three tabs, the paginated ledger, the
-> preset — it describes the destination, and the code has not been there yet. That
-> is the one place `docs/adr/README.md`'s rule for `preview/v5` is suspended, and it
-> ends when the tickets from that design session merge.
+> **ADR-0028, ADR-0030 and ADR-0031 are decided and not yet built.** Where this
+> file cites one of them — the accounts page, the data page's three tabs, the
+> paginated ledger — it describes the destination, and the code has not been
+> there yet. That is the one place `docs/adr/README.md`'s rule for `preview/v5`
+> is suspended, and it ends when the tickets from that design session merge.
+> **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -95,10 +96,14 @@ Two nets hold a rule nothing made true by construction:
   density came later; a record is dated, and it is this line that carries the
   count.
 - **`index.css` has exactly three blocks** (ADR-0023, whose preset ADR-0029
-  replaces): the tweakcn primitives (**never hand-edited**, regenerated with
-  `pnpm dlx shadcn@latest add <url>` — `…/themes/vercel.json` until the midnight
-  preset is chosen or published, and **never a pasted JSON**), the
-  domain layer (only what the preset cannot say), and an `@theme inline` bridge.
+  replaced): the tweakcn primitives (**never hand-edited**, regenerated with
+  `pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn`
+  — our own *Suivi Bourse* preset, since none of the registry's forty-two said
+  midnight and mint, and **never a pasted JSON**), the domain layer (only what
+  the preset cannot say — the three marks are aliases now, so only `--gain`,
+  `--loss` and `--attention` are really added), and an `@theme inline` bridge.
+  `src/themeCut.test.ts` holds all of that on the source, including that no
+  theme JSON is versioned anywhere and that no third party is in the build.
 - **`lib/api.ts` is the only module that knows a URL**, and the paths it exports
   are what the test handlers fake.
 - The front branches on `problem.type` and renders `detail` nowhere.

@@ -20,6 +20,21 @@ the three-block cut of `index.css` collapses into two.
 The order is therefore: look in the registry for a preset that already says this, and
 only if none does, publish ours on tweakcn and keep its URL.
 
+**None of the forty-two did**, and the two nearest misses miss in the same direction.
+*Ocean Breeze* has the mint and a blue-dark ground, then declares `DM Sans`/`IBM Plex
+Mono` and colours all five chart slots in one green family. *Rewaff*, a community theme
+proposed for the job, has a blue-dark ground and a green accent, then spends that green
+on `--accent` and leaves its dark sidebar at shadcn's untouched greys. Both match the
+*hue* and miss the property, which is the distinction this record opened with. So ours
+is published, and installed from
+`https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn`.
+
+Building it surfaced one trap worth naming, because it is invisible until a reader
+hovers something: **shadcn spends `--accent` on the hover and the selected row**, not on
+the brand. A preset that puts the mint there paints every hovered menu entry and the
+active nav item in full accent, and the accompanying `--accent-foreground` then sits at
+2,4:1. The mint lives in `--primary`; `--accent` is a muted raise of the ground.
+
 ## Consequences
 
 - **The cut of `index.css` survives untouched.** Three blocks: the preset, never
@@ -30,6 +45,30 @@ only if none does, publish ours on tweakcn and keep its URL.
   1 must be the most contrasted on each ground — *the first token in the product whose
   value depends on the ground rather than merely adapting to it*. A new ground moves both
   endpoints; the rule that rank 1 wins the contrast does not move.
+
+  Recomputing them found the old ones **outside sRGB**: blue holds almost no chroma at
+  high lightness — `0.070` at `L 0.86` against the `0.16` both ramps asked for — so the
+  browser was clamping the first stops and rendering several ranks as one colour, which
+  is the ramp failing at the only job it has. The gamut is therefore a third constraint
+  the two rules have to be satisfied *within*, and it is why the two grounds now carry
+  different chroma ends. It is asserted per stop, as is *rank 1 is the most contrasted*
+  — which is now measured against `--background` read from the stylesheet, rather than
+  against the ramp's own other end, because on a midnight ground those stopped being the
+  same claim.
+- **The three marks become aliases, and the domain layer loses its last picked colour.**
+  ADR-0023 had `--price` take `--chart-2`, `--grant` take `--chart-1`, and `--dividend`
+  hand-picked because the preset's remaining slots were grey. The new preset states the
+  two mark hues it can, so the assignment is now `--price: var(--primary)` — the redesign
+  draws every curve in the mint — `--grant: var(--chart-1)` and `--dividend:
+  var(--chart-2)`. The sizing rule is unchanged and bites harder: what is left in the
+  layer is `--gain`, `--loss` and `--attention`, and nothing else.
+
+  It also caught a call site that had been outside the rule all along. The dashboard's
+  chart drew its curve straight from `var(--chart-1)`, which was merely a different
+  colour under *Vercel* and becomes **the attribution's purple** here — the portfolio's
+  valuation wearing the mark that means *a grant*, on a page next to the one where it
+  means exactly that. It reads `--color-price` now, like the two other curves.
+
 - **`--loss` stays lower in chroma than `--destructive`.** The redesign raises green and
   red in lightness for the darker ground, which is the right correction for legibility
   and the wrong one to apply to chroma: ADR-0023's reason holds unchanged — the theme's

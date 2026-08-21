@@ -348,10 +348,20 @@ export function chartRows(series: readonly RebasedSeries[]): Record<string, numb
  * hue in twelve lightnesses precisely because the allocation is sorted and
  * legended, so colour there encodes rank redundantly with the angle. Here the
  * rows are in **declaration order** and colour has to say *which account*, which
- * is what hues do and lightnesses do not. Evenly rotated from the preset's own
- * `--chart-2`, at one lightness and one chroma so no curve reads as more
- * important than another; the strip and the table carry the names, so colour
- * never identifies on its own.
+ * is what hues do and lightnesses do not. Six hues 60° apart, at one lightness
+ * and one chroma so no curve reads as more important than another; the strip and
+ * the table carry the names, so colour never identifies on its own.
+ *
+ * The wheel used to be **anchored** on the preset's `--chart-2`, which was 264
+ * under *Vercel*. ADR-0029 moved that slot to the dividend's teal, so the anchor
+ * is now a plain chosen value and the numbers below stayed put: rotating them to
+ * follow a preset would repaint every account's identity on a theme change,
+ * which is the one thing an identity colour must not do.
+ *
+ * One tension it leaves, worth knowing before adding a seventh: `144` sits some
+ * twenty degrees off the mint that `--gain` and `--price` share, at a close
+ * lightness. An account curve and a gain figure can therefore land side by side
+ * in two greens that mean different things.
  */
 export const SERIES_HUES = [264, 324, 24, 84, 144, 204] as const
 

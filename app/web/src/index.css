@@ -6,11 +6,11 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ==========================================================================
- * 1. The primitives — tweakcn's `Vercel` preset. **Never hand-edited.**
+ * 1. The primitives — our `Suivi Bourse` preset. **Never hand-edited.**
  *
  * Regenerate with, and only with:
  *
- *     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/vercel.json
+ *     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn
  *
  * The cut between this block and the next *is* the decision (ADR-0023): the
  * preset owns the chrome and regenerates; the domain layer owns the meaning and
@@ -18,50 +18,69 @@
  * apart in the prototype — a `radix-nova` style nobody chose, with a
  * hand-written layer piled on top and nothing saying which won.
  *
- * The preset was picked on evidence already in the repository: it declares
- * `font-sans: Geist`, and `@fontsource-variable/geist` had been a dependency
- * since the prototype. Its primitives are near monochrome (`primary: oklch(0 0
- * 0)`), which leaves all the colour to the domain — ADR-0016's posture exactly.
+ * ADR-0029 changed **which** preset arrives and nothing about how. The registry
+ * held forty-two and none of them said this — so this one is ours, published at
+ * the URL above, which is the order that ADR wrote: look first, publish only if
+ * nothing approaches. A theme pasted in as JSON would be the same values and a
+ * dead file: it stops regenerating, and the three blocks collapse into two.
+ *
+ * What it keeps from `Vercel`, which it replaces, is not a hue but a property:
+ * **the primitives leave the colour to the domain**. Only `--primary`/`--ring`
+ * carry the mint, and only `--chart-1` and `--chart-2` carry a mark's hue — the
+ * three remaining chart slots are grey, exactly as before. That is ADR-0016's
+ * posture, and it is what makes the block below able to stay short.
+ *
+ * Two things about it are load-bearing and easy to undo by accident:
+ *
+ *  - **`--accent` is a surface, not the brand.** shadcn spends it on the hover
+ *    and the selected row (`button`, `dropdown-menu`, `sidebar`), so an accent
+ *    set to the mint paints every hovered menu entry green and drops that text
+ *    to 2,4:1. It is a muted raise of the ground here, and the mint lives in
+ *    `--primary`.
+ *  - **The fonts name the variable families.** `@fontsource-variable/geist`
+ *    registers `Geist Variable`, not `Geist`; the preset says both, so the
+ *    bridge below has nothing to catch up. It used to say them itself, and
+ *    every regeneration overwrote it.
  * ========================================================================== */
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.9900 0 0);
-  --foreground: oklch(0 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0 0 0);
-  --popover: oklch(0.9900 0 0);
-  --popover-foreground: oklch(0 0 0);
-  --primary: oklch(0 0 0);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9400 0 0);
-  --secondary-foreground: oklch(0 0 0);
-  --muted: oklch(0.9700 0 0);
-  --muted-foreground: oklch(0.4400 0 0);
-  --accent: oklch(0.9400 0 0);
-  --accent-foreground: oklch(0 0 0);
-  --destructive: oklch(0.6300 0.1900 23.0300);
-  --border: oklch(0.9200 0 0);
-  --input: oklch(0.9400 0 0);
-  --ring: oklch(0 0 0);
-  --chart-1: oklch(0.8100 0.1700 75.3500);
-  --chart-2: oklch(0.5500 0.2200 264.5300);
-  --chart-3: oklch(0.7200 0 0);
-  --chart-4: oklch(0.9200 0 0);
-  --chart-5: oklch(0.5600 0 0);
-  --sidebar: oklch(0.9900 0 0);
-  --sidebar-foreground: oklch(0 0 0);
-  --sidebar-primary: oklch(0 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9400 0 0);
-  --sidebar-accent-foreground: oklch(0 0 0);
-  --sidebar-border: oklch(0.9400 0 0);
-  --sidebar-ring: oklch(0 0 0);
-  --destructive-foreground: oklch(1 0 0);
-  --font-sans: Geist, sans-serif;
+  --background: oklch(0.9695 0.0045 258.3246);
+  --foreground: oklch(0.1993 0.0154 261.5830);
+  --card: oklch(0.9906 0.0017 247.8388);
+  --card-foreground: oklch(0.1993 0.0154 261.5830);
+  --popover: oklch(0.9906 0.0017 247.8388);
+  --popover-foreground: oklch(0.1993 0.0154 261.5830);
+  --primary: oklch(0.5200 0.1082 164.9273);
+  --primary-foreground: oklch(0.9906 0.0017 247.8388);
+  --secondary: oklch(0.9394 0.0046 258.3251);
+  --secondary-foreground: oklch(0.1993 0.0154 261.5830);
+  --muted: oklch(0.9394 0.0046 258.3251);
+  --muted-foreground: oklch(0.4991 0.0102 264.4757);
+  --accent: oklch(0.9298 0.0063 255.4766);
+  --accent-foreground: oklch(0.1993 0.0154 261.5830);
+  --destructive: oklch(0.5498 0.2096 25.1372);
+  --border: oklch(0.8898 0.0081 253.8584);
+  --input: oklch(0.8202 0.0097 242.8655);
+  --ring: oklch(0.5200 0.1082 164.9273);
+  --chart-1: oklch(0.4991 0.1609 284.9747);
+  --chart-2: oklch(0.5001 0.0851 210.0599);
+  --chart-3: oklch(0.5993 0.0098 264.4937);
+  --chart-4: oklch(0.4801 0.0095 253.9192);
+  --chart-5: oklch(0.3598 0.0127 267.1788);
+  --sidebar: oklch(0.9906 0.0017 247.8388);
+  --sidebar-foreground: oklch(0.1993 0.0154 261.5830);
+  --sidebar-primary: oklch(0.5200 0.1082 164.9273);
+  --sidebar-primary-foreground: oklch(0.9906 0.0017 247.8388);
+  --sidebar-accent: oklch(0.9298 0.0063 255.4766);
+  --sidebar-accent-foreground: oklch(0.1993 0.0154 261.5830);
+  --sidebar-border: oklch(0.9298 0.0063 255.4766);
+  --sidebar-ring: oklch(0.5200 0.1082 164.9273);
+  --destructive-foreground: oklch(0.9906 0.0017 247.8388);
+  --font-sans: 'Geist Variable', Geist, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Geist Mono, monospace;
-  --shadow-color: hsl(0 0% 0%);
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --shadow-color: #000000;
   --shadow-opacity: 0.18;
   --shadow-blur: 2px;
   --shadow-spread: 0px;
@@ -81,43 +100,43 @@
 }
 
 .dark {
-  --background: oklch(0 0 0);
-  --foreground: oklch(1 0 0);
-  --card: oklch(0.1400 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.1800 0 0);
-  --popover-foreground: oklch(1 0 0);
-  --primary: oklch(1 0 0);
-  --primary-foreground: oklch(0 0 0);
-  --secondary: oklch(0.2500 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.2300 0 0);
-  --muted-foreground: oklch(0.7200 0 0);
-  --accent: oklch(0.3200 0 0);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.6900 0.2000 23.9100);
-  --border: oklch(0.2600 0 0);
-  --input: oklch(0.3200 0 0);
-  --ring: oklch(0.7200 0 0);
-  --chart-1: oklch(0.8100 0.1700 75.3500);
-  --chart-2: oklch(0.5800 0.2100 260.8400);
-  --chart-3: oklch(0.5600 0 0);
-  --chart-4: oklch(0.4400 0 0);
-  --chart-5: oklch(0.9200 0 0);
-  --sidebar: oklch(0.1800 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(1 0 0);
-  --sidebar-primary-foreground: oklch(0 0 0);
-  --sidebar-accent: oklch(0.3200 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.3200 0 0);
-  --sidebar-ring: oklch(0.7200 0 0);
-  --destructive-foreground: oklch(0 0 0);
+  --background: oklch(0.1547 0.0159 266.3824);
+  --foreground: oklch(0.9495 0.0055 274.9641);
+  --card: oklch(0.1855 0.0182 259.6896);
+  --card-foreground: oklch(0.9495 0.0055 274.9641);
+  --popover: oklch(0.1640 0.0156 266.6179);
+  --popover-foreground: oklch(0.9495 0.0055 274.9641);
+  --primary: oklch(0.8189 0.1395 164.9312);
+  --primary-foreground: oklch(0.1547 0.0159 266.3824);
+  --secondary: oklch(0.2088 0.0214 263.9436);
+  --secondary-foreground: oklch(0.9495 0.0055 274.9641);
+  --muted: oklch(0.2299 0.0191 262.1114);
+  --muted-foreground: oklch(0.6194 0.0208 265.8957);
+  --accent: oklch(0.2389 0.0207 264.0671);
+  --accent-foreground: oklch(0.9495 0.0055 274.9641);
+  --destructive: oklch(0.7008 0.1902 25.1101);
+  --border: oklch(0.2598 0.0202 264.1313);
+  --input: oklch(0.3395 0.0210 262.5785);
+  --ring: oklch(0.8189 0.1395 164.9312);
+  --chart-1: oklch(0.7197 0.1209 285.1072);
+  --chart-2: oklch(0.7200 0.1100 200.3052);
+  --chart-3: oklch(0.5606 0.0204 261.3044);
+  --chart-4: oklch(0.7005 0.0148 258.3557);
+  --chart-5: oklch(0.8408 0.0094 258.3392);
+  --sidebar: oklch(0.1290 0.0150 266.3779);
+  --sidebar-foreground: oklch(0.9495 0.0055 274.9641);
+  --sidebar-primary: oklch(0.8189 0.1395 164.9312);
+  --sidebar-primary-foreground: oklch(0.1290 0.0150 266.3779);
+  --sidebar-accent: oklch(0.2088 0.0214 263.9436);
+  --sidebar-accent-foreground: oklch(0.9495 0.0055 274.9641);
+  --sidebar-border: oklch(0.2389 0.0207 264.0671);
+  --sidebar-ring: oklch(0.8189 0.1395 164.9312);
+  --destructive-foreground: oklch(0.1547 0.0159 266.3824);
   --radius: 0.5rem;
-  --font-sans: Geist, sans-serif;
+  --font-sans: 'Geist Variable', Geist, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Geist Mono, monospace;
-  --shadow-color: hsl(0 0% 0%);
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --shadow-color: #000000;
   --shadow-opacity: 0.18;
   --shadow-blur: 2px;
   --shadow-spread: 0px;
@@ -139,10 +158,15 @@
  * 2. The domain — what the preset cannot say, and nothing else.
  *
  * The sizing rule is the block's whole defence (ADR-0023): a token enters only
- * when no preset token already says it. `--price` takes `--chart-2` and
- * `--grant` takes `--chart-1` **verbatim**; only `--dividend` is added, the
- * preset's three remaining chart slots being grey. Without that rule the layer
+ * when no preset token already says it. Under ADR-0029 that rule bites harder
+ * than it used to — **the three marks are now aliases and nothing else**.
+ * `--price` takes `--primary` because the redesign draws every curve in the
+ * mint, `--grant` takes `--chart-1` and `--dividend` takes `--chart-2`, and the
+ * hand-picked teal that used to sit here is gone. Without that rule the layer
  * grows with every page and becomes the hand-written half we just deleted.
+ *
+ * What remains is what a preset genuinely cannot say: whether a figure is money
+ * gained or money lost, and whether something is worth a look. Three tokens.
  *
  * The twelve `--alloc-*` are **absent on purpose**: they are the one ramp whose
  * *direction* depends on the ground rather than merely adapting to it, so they
@@ -154,35 +178,49 @@
 
 :root {
   /* The two colours this app reasons in. `--loss` is deliberately **not**
-     `--destructive` despite two degrees of hue between them, and is lower in
-     chroma: the theme's red says *this failed*, and an unrealised loss is not
-     an error — a portfolio is made of small moves, and a screen of vivid red
-     reads as an alarm rather than as −0,4 %. */
-  --gain: oklch(0.58 0.13 155);
-  --loss: oklch(0.58 0.13 25);
+     `--destructive`, and now shares its hue exactly — so the whole distinction
+     rests on chroma, which is the point: the theme's red says *this failed*,
+     and an unrealised loss is not an error. A portfolio is made of small moves,
+     and a screen of vivid red reads as an alarm rather than as −0,4 %.
+     `themeCut.test.ts` holds the inequality, on both grounds. */
+  --gain: oklch(0.5000 0.1100 160);
+  --loss: oklch(0.5200 0.1500 25);
 
-  /* The chart's marks. Two of the three are the preset's own chart tokens,
-     taken verbatim rather than re-picked; only the dividend needed a colour,
-     the preset's remaining slots being grey. */
-  --price: var(--chart-2);
+  /* The chart's marks, all three taken from the preset **verbatim**. The curve
+     is the mint because that is what the redesign draws it in; the attribution
+     and the dividend are the two chart slots the preset gives a hue to, and the
+     three that stay grey stay unclaimed. Nothing is picked here any more.
+
+     `--price` and `--gain` therefore sit two degrees of hue apart, and that is
+     the one place this file lets a **mark** and a **state** share a colour. It
+     holds because `--price` only ever strokes an *unsigned* curve — a value, a
+     quotation — while `--gain` only ever colours a figure through
+     `lib/sign.ts`. The moment a curve carries a sign the rule bites: the
+     dashboard's performance reading crosses zero, so it is drawn in
+     `--foreground` and not in the mint. */
+  --price: var(--primary);
   --grant: var(--chart-1);
-  --dividend: oklch(0.60 0.11 195);
+  --dividend: var(--chart-2);
 
   /* The status dot and the ephemeral-store notice have no colour in the preset:
      `--gain` / `--loss` are semantic for *money*, `--destructive` says *error*,
      and neither says *worth a look*. Checked token by token against the preset
-     before adding this one. Kept off `--grant`'s hue so a mark and a state are
-     never the same colour. */
-  --attention: oklch(0.62 0.16 50);
+     before adding this one. Kept off `--grant`'s hue, and dark enough on white
+     to clear 4,5:1 — it is read as **text**, in a form's error line and in two
+     table labels, not only as a dot. */
+  --attention: oklch(0.5400 0.1300 55);
 }
 
 .dark {
-  --gain: oklch(0.72 0.14 155);
-  --loss: oklch(0.72 0.14 25);
-  --price: var(--chart-2);
+  /* Lifted in lightness for the darker ground, which is the legibility
+     correction the redesign makes — and **not** in chroma towards the theme's
+     red, which is the correction ADR-0029 refuses. */
+  --gain: oklch(0.7600 0.1400 163);
+  --loss: oklch(0.7200 0.1300 25);
+  --price: var(--primary);
   --grant: var(--chart-1);
-  --dividend: oklch(0.72 0.10 195);
-  --attention: oklch(0.75 0.15 55);
+  --dividend: var(--chart-2);
+  --attention: oklch(0.7500 0.1500 55);
 }
 
 /* ==========================================================================
@@ -283,6 +321,7 @@
   --shadow-spread: var(--shadow-spread);
   --shadow-blur: var(--shadow-blur);
   --shadow-opacity: var(--shadow-opacity);
+  --radius: 0.5rem;
 }
 
 @layer base {

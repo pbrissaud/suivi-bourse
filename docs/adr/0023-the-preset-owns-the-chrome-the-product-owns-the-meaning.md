@@ -1,5 +1,13 @@
 # The preset owns the chrome, the product owns the meaning
 
+> **The preset half is superseded by
+> [ADR-0029](./0029-the-preset-becomes-ours.md)** (#788). What that record keeps is the
+> cut, the sizing rule, and the *rule* that shapes the two allocation ramps — rank 1
+> most contrasted on each ground, chroma falling with rank. Their **values** below are
+> history, along with the *Vercel* preset and the command naming it: running that
+> command today would revert the theme without touching a line of code, and the live
+> URL is the one in `app/web/src/index.css`.
+
 The theme was never decided. `components.json` **carried** `"style": "radix-nova"` from the
 prototype until #713 set it to `"new-york"`, with a long hand-written layer piled on top of it
 in `index.css` and nothing saying which wins or how the preset half gets updated. It is the map's one charting blind spot: the
