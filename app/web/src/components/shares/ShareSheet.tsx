@@ -56,10 +56,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { positionRenderings, type Rendering } from '@/lib/absence'
+import { positionRenderings, renderFigure } from '@/lib/absence'
 import { api, type ChartWindow, type Position } from '@/lib/api'
 import type { DocsAnchor } from '@/lib/docs'
-import { ABSENT, useFormatters } from '@/lib/format'
+import { useFormatters } from '@/lib/format'
 import {
   gainTotal,
   securityTerms,
@@ -69,7 +69,7 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 import {
   accountBreakdown,
@@ -96,21 +96,6 @@ const TERM_EXPLAIN: Record<(typeof SHEET_TERMS)[number], { body: MessageKey; anc
     realised: { body: 'shares.realised.explain', anchor: 'realized-gain' },
     dividends: { body: 'shares.dividends.explain', anchor: 'dividends' },
   }
-
-type Translate = (key: MessageKey, values?: MessageValues) => string
-
-/** The same three-way switch every surface uses — written once per file, on
- *  purpose: written per *site*, the dash wins even where the rule says *name it*. */
-function figure(rendering: Rendering, format: () => string, t: Translate) {
-  switch (rendering.kind) {
-    case 'figure':
-      return format()
-    case 'dash':
-      return ABSENT
-    case 'named':
-      return t(rendering.message, rendering.values)
-  }
-}
 
 export interface ShareSheetProps {
   row: ShareRow | null
@@ -192,7 +177,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           <Stat
             size="head"
             label={t('shares.gainTotal')}
-            value={figure(
+            value={renderFigure(
               sumRendering(total),
               () => f.currency(total.known ? total.value : null, currency),
               t,
@@ -214,7 +199,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                     <Stat
                       size="term"
                       label={t(TERM_LABELS[term])}
-                      value={figure(
+                      value={renderFigure(
                         termRendering(terms, term as GainTermName),
                         () => f.currency(amount, currency),
                         t,
@@ -247,7 +232,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             <Stat
               size="term"
               label={t('shares.column.price')}
-              value={figure(
+              value={renderFigure(
                 renderings.price,
                 () => f.currency(row.price?.value ?? null, row.price?.currency ?? currency),
                 t,
@@ -273,7 +258,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             <Stat
               size="term"
               label={t('shares.column.value')}
-              value={figure(renderings.valuation, () => f.currency(value, currency), t)}
+              value={renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
             />
             {/* `Investi` is `Valorisation − latente`, which is why it is not a
                 tenth column in the table and is here instead. */}
@@ -351,7 +336,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                           {f.currency(unitCost(line), currency)}
                         </TableCell>
                         <TableCell className="text-right tabular">
-                          {figure(
+                          {renderFigure(
                             lineRenderings.valuation,
                             () => f.currency(lineValue, currency),
                             t,
@@ -364,7 +349,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
                               : signClass(null)
                           }`}
                         >
-                          {figure(
+                          {renderFigure(
                             lineRenderings.unrealised,
                             () => f.currency(lineGain, currency),
                             t,

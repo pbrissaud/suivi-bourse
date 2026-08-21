@@ -53,7 +53,7 @@ import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { api } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
-import type { Rendering } from '@/lib/absence'
+import { renderFigure } from '@/lib/absence'
 import {
   GAIN_TERMS,
   gainTotal,
@@ -65,7 +65,7 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
 import { oneBand, readConditions } from '@/lib/status'
 
@@ -74,27 +74,6 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
   realised: 'gain.term.realised',
   dividends: 'gain.term.dividends',
   transferFees: 'gain.term.transferFees',
-}
-
-/**
- * A figure's text, decided by `lib/absence.ts` and formatted here.
- *
- * The one place this block turns *there is no number* into words, and it is a
- * switch over a closed set rather than a `value === null ? ABSENT : …` written
- * at each site. Written per site, the dash won every time — including where the
- * rule says something must be **named**, which is the whole of ADR-0016.
- */
-type Translate = (key: MessageKey, values?: MessageValues) => string
-
-function figure(rendering: Rendering, format: () => string, t: Translate) {
-  switch (rendering.kind) {
-    case 'figure':
-      return format()
-    case 'dash':
-      return ABSENT
-    case 'named':
-      return t(rendering.message, rendering.values)
-  }
 }
 
 export function DashboardHead() {
@@ -222,7 +201,7 @@ export function DashboardHead() {
         // one is also what `totals: null` now produces on a portfolio that has
         // positions: the headline goes out, and the sentence at the foot of the
         // block says why.
-        value={figure(
+        value={renderFigure(
           sumRendering(total),
           () => f.currency(total.known ? total.value : null, currency),
           t,
@@ -257,7 +236,7 @@ export function DashboardHead() {
               key={term}
               size="term"
               label={t(TERM_LABELS[term])}
-              value={figure(termRendering(terms, term), () => f.currency(value, currency), t)}
+              value={renderFigure(termRendering(terms, term), () => f.currency(value, currency), t)}
               // Colour only where the sign can turn. A dividend received is
               // never negative and a transfer fee never positive; painting them
               // steals the signal from the red of a realised loss. An absent

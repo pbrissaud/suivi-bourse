@@ -37,8 +37,8 @@ import { Stat } from '@/components/Stat'
 import type { Position } from '@/lib/api'
 import type { ShareRow } from '@/lib/shares'
 import { valuationTotal } from '@/lib/shares'
-import { ABSENT, useFormatters } from '@/lib/format'
-import type { Rendering } from '@/lib/absence'
+import { useFormatters } from '@/lib/format'
+import { renderFigure } from '@/lib/absence'
 import {
   gainTotal,
   securityTerms,
@@ -48,7 +48,7 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import type { DocsAnchor } from '@/lib/docs'
 import { signClass } from '@/lib/sign'
 
@@ -73,20 +73,8 @@ const TERM_EXPLAIN: Record<(typeof SHARES_TERMS)[number], { body: MessageKey; an
     dividends: { body: 'shares.dividends.explain', anchor: 'dividends' },
   }
 
-type Translate = (key: MessageKey, values?: MessageValues) => string
-
 /** Identical to the dashboard head's, and for the same reason: written per site,
  *  the dash wins every time — including where the rule says *name it*. */
-function figure(rendering: Rendering, format: () => string, t: Translate) {
-  switch (rendering.kind) {
-    case 'figure':
-      return format()
-    case 'dash':
-      return ABSENT
-    case 'named':
-      return t(rendering.message, rendering.values)
-  }
-}
 
 export interface SharesHeadProps {
   /**
@@ -118,7 +106,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
       <Stat
         size="head"
         label={t('shares.gainTotal')}
-        value={figure(
+        value={renderFigure(
           sumRendering(total),
           () => f.currency(total.known ? total.value : null, currency),
           t,
@@ -143,7 +131,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
               key={term}
               size="term"
               label={t(TERM_LABELS[term])}
-              value={figure(
+              value={renderFigure(
                 termRendering(terms, term as GainTermName),
                 () => f.currency(value, currency),
                 t,
@@ -173,7 +161,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
       <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
         <Stat
           label={t('shares.value')}
-          value={figure(
+          value={renderFigure(
             sumRendering(valuation),
             () => f.currency(valuation.known ? valuation.value : null, currency),
             t,

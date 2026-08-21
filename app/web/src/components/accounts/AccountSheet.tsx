@@ -59,7 +59,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import type { Rendering } from '@/lib/absence'
+import { renderFigure } from '@/lib/absence'
 import {
   accountPositions,
   declaredLabel,
@@ -69,7 +69,7 @@ import {
   type AccountRow,
 } from '@/lib/accounts'
 import type { PerfPoint, Position } from '@/lib/api'
-import { ABSENT, useFormatters } from '@/lib/format'
+import { useFormatters } from '@/lib/format'
 import {
   GAIN_TERMS,
   gainTotal,
@@ -81,7 +81,7 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 import { signClass } from '@/lib/sign'
 
@@ -90,21 +90,6 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
   realised: 'gain.term.realised',
   dividends: 'gain.term.dividends',
   transferFees: 'gain.term.transferFees',
-}
-
-type Translate = (key: MessageKey, values?: MessageValues) => string
-
-/** The same three-way switch every surface uses — written once per file, on
- *  purpose: written per *site*, the dash wins even where the rule says *name it*. */
-function figure(rendering: Rendering, format: () => string, t: Translate) {
-  switch (rendering.kind) {
-    case 'figure':
-      return format()
-    case 'dash':
-      return ABSENT
-    case 'named':
-      return t(rendering.message, rendering.values)
-  }
 }
 
 export interface AccountSheetProps {
@@ -194,7 +179,7 @@ export function AccountSheet({
             <Stat
               size="head"
               label={t('accounts.column.gainTotal')}
-              value={figure(
+              value={renderFigure(
                 sumRendering(total),
                 () => f.currency(total.known ? total.value : null, currency),
                 t,
@@ -223,7 +208,7 @@ export function AccountSheet({
                       <Stat
                         size="term"
                         label={t(TERM_LABELS[term])}
-                        value={figure(
+                        value={renderFigure(
                           termRendering(terms, term),
                           () => f.currency(amount, currency),
                           t,

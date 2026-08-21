@@ -30,6 +30,7 @@
  * act on — *« jamais »* would be a guess, and it is not computable.
  */
 import type { Converted, Quote } from '@/lib/api'
+import { ABSENT } from '@/lib/format'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 export interface PositionAbsenceInput {
@@ -119,6 +120,35 @@ export interface PositionRenderings {
 export const FIGURE: Rendering = { kind: 'figure' }
 export const DASH: Rendering = { kind: 'dash' }
 export const AWAITING_RATE: Rendering = { kind: 'named', message: 'absence.awaitingRate' }
+
+/** What a component needs of `useI18n`'s `t` to name an absence. */
+export type Translate = (key: MessageKey, values?: MessageValues) => string
+
+/**
+ * A figure's text: the number when there is one, the em dash when there is
+ * nothing to compute, and the **name** of what is missing otherwise (ADR-0016).
+ *
+ * A switch over a closed set rather than a `value === null ? ABSENT : …`
+ * written at each site: written per site, the dash won every time — including
+ * where the rule says something must be named, which is the whole of ADR-0016.
+ *
+ * It lives here rather than once per file. Five components had it, byte for
+ * byte, each with a comment claiming the copy was deliberate — and the
+ * repository's own rule is that *a rule is written once*, `lib/gain.ts` calling
+ * `absenceCase` rather than holding a second copy because written twice the copy
+ * loses a branch (it did). Five copies of a four-branch switch is four branches
+ * with five chances of losing one.
+ */
+export function renderFigure(rendering: Rendering, format: () => string, t: Translate): string {
+  switch (rendering.kind) {
+    case 'figure':
+      return format()
+    case 'dash':
+      return ABSENT
+    case 'named':
+      return t(rendering.message, rendering.values)
+  }
+}
 
 export function positionRenderings(input: PositionAbsenceInput): PositionRenderings {
   switch (absenceCase(input)) {

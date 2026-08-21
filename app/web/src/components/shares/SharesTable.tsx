@@ -44,25 +44,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { positionRenderings, type Rendering } from '@/lib/absence'
+import { positionRenderings, renderFigure, type Rendering } from '@/lib/absence'
 import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
-import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { isAnomalous, marketValue, unitCost, unrealised, unrealisedRatio, type ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
-
-type Translate = (key: MessageKey, values?: MessageValues) => string
-
-function figure(rendering: Rendering, format: () => string, t: Translate) {
-  switch (rendering.kind) {
-    case 'figure':
-      return format()
-    case 'dash':
-      return ABSENT
-    case 'named':
-      return t(rendering.message, rendering.values)
-  }
-}
 
 /** The colour of a cell whose content is not a number at all. */
 function toneOf(rendering: Rendering, value: number | null): string {
@@ -157,7 +144,7 @@ export function SharesTable({ rows, currency, onSelect }: SharesTableProps) {
                   broker shows them, and the converted one is what the value
                   column is built from. */}
               <TableCell className="text-right tabular">
-                {figure(
+                {renderFigure(
                   renderings.price,
                   () => f.currency(row.price?.value ?? null, row.price?.currency ?? currency),
                   t,
@@ -173,11 +160,11 @@ export function SharesTable({ rows, currency, onSelect }: SharesTableProps) {
               </TableCell>
 
               <TableCell className={`text-right tabular ${toneOf(renderings.valuation, value)}`}>
-                {figure(renderings.valuation, () => f.currency(value, currency), t)}
+                {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
               </TableCell>
 
               <TableCell className={`text-right tabular ${toneOf(renderings.unrealised, gain)}`}>
-                {figure(renderings.unrealised, () => f.currency(gain, currency), t)}
+                {renderFigure(renderings.unrealised, () => f.currency(gain, currency), t)}
                 {/* The percentage is a second line, never a tenth column. */}
                 {renderings.unrealised.kind === 'figure' && ratio !== null ? (
                   <span className="block text-xs text-muted-foreground">{f.percent(ratio)}</span>
