@@ -37,6 +37,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0024](./0024-the-english-catalogue-is-not-a-translation.md) | The English catalogue is not a translation of the French one |
 | [0025](./0025-every-version-has-an-address.md) | Every version has an address, and the newest is not an exception |
 | [0026](./0026-a-read-in-flight-is-not-an-absence.md) | A read in flight is not an absence |
+| [0027](./0027-a-key-names-a-row-for-as-long-as-the-row-lives.md) | A key names a row for as long as the row lives, and no longer |
 
 > These records describe **v5**, and which side wins an argument depends on the branch.
 >
