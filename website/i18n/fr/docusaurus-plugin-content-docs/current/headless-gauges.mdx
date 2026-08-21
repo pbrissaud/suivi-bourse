@@ -15,14 +15,41 @@ For that reader, the gauges below are the entire contract.
 ## What "headless" is, and what it is not
 
 **There is no switch that turns the page off.** Headless is a usage, not a
-setting: an operator who wants no interface publishes one port and not the other.
-What can be turned off is `/metrics` itself, with `SB_PROMETHEUS_ENABLED` — and
-turning it off leaves its port unbound rather than serving an empty endpoint.
+setting: an operator who wants no interface simply never opens it. What can be
+turned off is `/metrics` itself, with `SB_PROMETHEUS_ENABLED` — and turning it
+off leaves its port unbound rather than serving an empty endpoint.
 
 **The API is always served.** It is the only non-interactive way to answer the
 one question the app asks at first run, so nothing is allowed to take it away.
 [Settings](./settings.mdx) is where that question and the six boot variables
-live.
+live — and where the two ports are described for what they are: two sockets in
+front of **one** application, each serving everything the other does.
+
+**A port has to be published for a scraper to reach it.** The
+[Get started](./get-started.mdx) command publishes `8080` alone, and the
+`prometheus.yml` below points at `8081` — so run the headless form of the same
+command, which publishes both:
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -p 8080:8080 \
+  -p 8081:8081 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+**And the two sockets are one application, not two servers.** Whatever the app
+serves it serves on both: `8081` answers `/metrics` *and* the whole write API,
+`8080` answers the write API *and* `/metrics`. Two consequences for an operator,
+and the second is the one that surprises. Publishing `8081` alone is not a way to
+expose only the metrics — it exposes `POST /api/events` and `PUT /api/settings`
+with them; if the API must be unreachable from a network, that is the network's
+decision to make, not a port's. And `-p 8080:8080` alone is already scrapable, at
+`localhost:8080/metrics`: a single published port is a legitimate deployment, and
+this page names `8081` because that is the default the two-port form gives a
+scraper. [Settings](./settings.mdx) states the rule and what it costs.
 
 ```yaml title="prometheus.yml"
 scrape_configs:
@@ -57,34 +84,69 @@ against the app's own vocabulary rather than memorised.
 
 ## Prices and symbols
 
-A market price belongs to no account, so these carry no `account` label.
+**Every gauge here carries the same three labels** — `share_name`,
+`share_symbol` and `account` — and that is one identity, published once and used
+everywhere. `account` is in it because a symbol held in two accounts would
+otherwise collapse onto a single series and silently overwrite itself;
+`share_name` is in it because a headless dashboard has no other place to read a
+human name from, and it falls back to the symbol when the position carries none.
 
-| Gauge                   | Labels                                                           | Meaning                                                                                                                                   |
-| ----------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `sb_share_price`        | `share_symbol`                                                   | last price, **in your base currency**. Absent until the base currency is answered                                                         |
-| `sb_share_price_native` | `share_symbol`                                                   | the same price as quoted, in the security's own currency                                                                                  |
-| `sb_fx_rate`            | `share_symbol`                                                   | the rate that turned the second into the first                                                                                            |
-| `sb_dividend_yield`     | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
-| `sb_pe_ratio`           | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
-| `sb_market_cap`         | `share_symbol`                                                   | current value only, as fetched                                                                                                            |
-| `sb_price_staleness`    | `share_symbol`                                                   | `1` when the stored price is **silently stale** — frozen across consecutive open-market cycles while the live quote moves — `0` otherwise |
-| `sb_share_info`         | `share_symbol`, `share_currency`, `share_exchange`, `quote_type` | always `1`; carries the attributes as labels                                                                                              |
+| Gauge                   | Labels                                                                | Meaning                                                                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sb_share_price`        | `share_name`, `share_symbol`, `account`                               | last price, **in your base currency**. Absent until the base currency is answered                                                                                     |
+| `sb_share_price_native` | `share_name`, `share_symbol`, `account`                               | the same price as quoted, in the security's own currency                                                                                                              |
+| `sb_fx_rate`            | `share_name`, `share_symbol`, `account`                               | the rate that turned the second into the first                                                                                                                        |
+| `sb_dividend_yield`     | `share_name`, `share_symbol`, `account`                               | current value only, as fetched                                                                                                                                        |
+| `sb_pe_ratio`           | `share_name`, `share_symbol`, `account`                               | current value only, as fetched                                                                                                                                        |
+| `sb_market_cap`         | `share_name`, `share_symbol`, `account`                               | current value only, as fetched                                                                                                                                        |
+| `sb_price_staleness`    | `share_name`, `share_symbol`, `account`                               | `1` when the stored price is **silently stale** — frozen across consecutive open-market cycles while the live quote moves — `0` when the check ran and found it fresh |
+| `sb_share_info`         | the same three, plus `share_currency`, `share_exchange`, `quote_type` | always `1`; carries the attributes as labels                                                                                                                          |
+
+### What that costs the query you write
+
+**Joining is free.** A price series and a position series carry the *same* label
+set, so `sb_share_price * sb_owned_quantity` matches label for label with no
+`on()` and no `group_left`. That is the whole reason the identity is shared.
+
+**Summing is not.** A price is a fact about a security, not about a holding, so
+the same number is published once per account that holds it:
+`sum(sb_share_price)` counts a symbol held in a PEA and a CTO twice, and answers
+a figure nothing in the portfolio has. Fold the accounts away first:
+
+```promql
+# The price of each symbol, once — identical across accounts by construction
+max by (share_symbol) (sb_share_price)
+
+# A market value that *is* additive, because quantity is per account
+sum(sb_share_price * sb_owned_quantity)
+```
+
+The rule reads in one line: **the price gauges are per holding, and only their
+quantity-weighted forms are summable.**
 
 `sb_price_staleness` is a gauge and not a counter on purpose: it clears itself
-when the writer recovers. See
+when the writer recovers. It is also written by the price-freshness check alone,
+which runs on a **cycle that writes** — an open market, essentially. A symbol
+whose market has been closed since the app started, one that has just been
+declared, or an install whose staleness horizon is `0` therefore have **no such
+series at all**: absence here means *the check has not been able to compare*,
+which is not the same statement as `0`. See
 [How prices are collected](./how-prices-are-collected.mdx).
 
 ## Positions
 
 One series per symbol **per account**, since a position is something an account
-holds.
+holds — under the same three labels as the section above, `share_name` included.
 
-| Gauge                  | Labels                    | Meaning                                                                                              |
-| ---------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `sb_owned_quantity`    | `share_symbol`, `account` | quantity currently held                                                                              |
-| `sb_cost_basis`        | `share_symbol`, `account` | what the held quantity cost, as an **amount**; the unit average cost is that divided by the quantity |
-| `sb_realized_gain`     | `share_symbol`, `account` | gain already realised on what has been sold                                                          |
-| `sb_received_dividend` | `share_symbol`, `account` | dividends received                                                                                   |
+| Gauge                  | Labels                                  | Meaning                                                                                              |
+| ---------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `sb_owned_quantity`    | `share_name`, `share_symbol`, `account` | quantity currently held                                                                              |
+| `sb_cost_basis`        | `share_name`, `share_symbol`, `account` | what the held quantity cost, as an **amount**; the unit average cost is that divided by the quantity |
+| `sb_realized_gain`     | `share_name`, `share_symbol`, `account` | gain already realised on what has been sold                                                          |
+| `sb_received_dividend` | `share_name`, `share_symbol`, `account` | dividends received                                                                                   |
+
+These four **are** additive: they are amounts an account holds, so `sum by
+(account)` and `sum by (share_symbol)` both answer something real.
 
 :::note Gauges that left in v5, and why they were not simply redefined
 `sb_purchased_quantity`, `sb_purchased_price` and `sb_purchased_fee` are gone,
