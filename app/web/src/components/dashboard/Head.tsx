@@ -189,9 +189,7 @@ export function DashboardHead() {
   // make on silence. So absence keeps the rebuild's sentence, which names
   // something the app is doing and is repaired by waiting.
   const ytdPending = t(
-    runtime.data?.rebuilding === false
-      ? 'dashboard.ytd.noPreviousYear'
-      : 'dashboard.ytd.pending',
+    runtime.data?.rebuilding === false ? 'dashboard.ytd.noPreviousYear' : 'dashboard.ytd.pending',
   )
   // Base 100 leaves this page and the mock-up's `TWR 202,89 (+102,9 %)` with it.
   // An index on base 100 is an instrument for putting two series side by side,
@@ -200,9 +198,10 @@ export function DashboardHead() {
   // (#721), which compares — and there it comes with the rebasing rule, since
   // two indices counted from different origins share a unit without being a
   // comparison. The index stays the store's own.
-  const twrMove = totalsRow?.twr_index === null || totalsRow?.twr_index === undefined
-    ? null
-    : (totalsRow.twr_index - 100) / 100
+  const twrMove =
+    totalsRow?.twr_index === null || totalsRow?.twr_index === undefined
+      ? null
+      : (totalsRow.twr_index - 100) / 100
 
   // **Not `?? 0`.** ADR-0013 seeds a `default` row that is never removed, so
   // there is always at least one account and `0 compte` is a state the product
@@ -224,95 +223,114 @@ export function DashboardHead() {
     // is a figure read badly.
     <Card className="gap-0 border-border/60 bg-gradient-to-br from-card via-card to-primary/10">
       <CardContent className="space-y-6">
-        {/* The head, and the gain alone in it. */}
-        <Stat
-          size="head"
-          label={t('dashboard.gainTotal')}
-          // Unknown here has **two** causes since #775 and they read apart: a
-          // held position whose rate has not resolved is *named*, because the app
-          // repairs it by itself, while a fourth term nothing can bound wears the
-          // em dash — a total amputated of a term is not that total (ADR-0018),
-          // and *there is nothing to compute* is the truth about it. That second
-          // one is also what `totals: null` now produces on a portfolio that has
-          // positions: the headline goes out, and the sentence at the foot of the
-          // block says why.
-          value={renderFigure(
-            sumRendering(total),
-            () => f.currency(total.known ? total.value : null, currency),
-            t,
-          )}
-          valueClassName={signClass(total.known ? total.value : null)}
-          explain={
-            <Explain
-              figure={t('dashboard.gainTotal')}
-              body="dashboard.gainTotal.explain"
-              anchor="total-gain"
-            />
-          }
-        >
-          {/* The two **periods of the total**, and they stay with it. */}
-          {totalsRow === null ? null : (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {today === null ? null : (
-                <Period
-                  amount={today}
-                  text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
-                />
-              )}
-              {ytdGain === null ? (
-                // The one figure the rebuild degrades, and it says which figure
-                // and why — the head above it is exact from the first cycle. It
-                // stays a **sentence** rather than a pill: what it carries is a
-                // reason, and a reason does not fit in a badge.
-                <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
-              ) : (
-                <Period
-                  amount={ytdGain}
-                  text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
-                />
-              )}
-            </div>
-          )}
-        </Stat>
+        {/* **The total and its terms, side by side and never at equal weight.**
+            ADR-0016 is amended in its wording and not in its rule (#787): what
+            it refuses is four numeric columns of the *same* weight, where
+            nothing says the last three are inside the first — the twelve-column
+            table it was measured on. Subordination is a **size** as much as a
+            position, and `head` against `term` is a factor of three: read here,
+            nobody adds the four to the one. What the ADR buys is that the
+            reader cannot sum them by accident, and this arrangement buys it. */}
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+          <Stat
+            size="head"
+            label={t('dashboard.gainTotal')}
+            // Unknown here has **two** causes since #775 and they read apart: a
+            // held position whose rate has not resolved is *named*, because the app
+            // repairs it by itself, while a fourth term nothing can bound wears the
+            // em dash — a total amputated of a term is not that total (ADR-0018),
+            // and *there is nothing to compute* is the truth about it. That second
+            // one is also what `totals: null` now produces on a portfolio that has
+            // positions: the headline goes out, and the sentence at the foot of the
+            // block says why.
+            value={renderFigure(
+              sumRendering(total),
+              () => f.currency(total.known ? total.value : null, currency),
+              t,
+            )}
+            valueClassName={signClass(total.known ? total.value : null)}
+            explain={
+              <Explain
+                figure={t('dashboard.gainTotal')}
+                body="dashboard.gainTotal.explain"
+                anchor="total-gain"
+              />
+            }
+          >
+            {/* The two **periods of the total**, and they stay with it. */}
+            {totalsRow === null ? null : (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {today === null ? null : (
+                  <Period
+                    amount={today}
+                    text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
+                  />
+                )}
+                {ytdGain === null ? (
+                  // The one figure the rebuild degrades, and it says which figure
+                  // and why — the head above it is exact from the first cycle. It
+                  // stays a **sentence** rather than a pill: what it carries is a
+                  // reason, and a reason does not fit in a badge.
+                  <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
+                ) : (
+                  <Period
+                    amount={ytdGain}
+                    text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
+                  />
+                )}
+              </div>
+            )}
+          </Stat>
 
-        {/* The four terms, on their own row and never on the head's. */}
-        {/* **A row that spreads rather than one that packs left.** `flex
+          {/* Two by two, so the four read as a block beside the total and not
+              as a row under it: at two columns the eye takes them as one
+              object. Below `md` they fall under it and the rule comes back —
+              side by side is a statement the width has to be able to make. */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t pt-4 md:border-0 md:pt-0">
+            {GAIN_TERMS.map((term) => {
+              const value = termAmount(terms, term)
+              if (!termIsRendered(term, value)) return null
+              return (
+                <Stat
+                  key={term}
+                  size="term"
+                  label={t(TERM_LABELS[term])}
+                  value={renderFigure(
+                    termRendering(terms, term),
+                    () => f.currency(value, currency),
+                    t,
+                  )}
+                  // Colour only where the sign can turn. A dividend received is
+                  // never negative and a transfer fee never positive; painting them
+                  // steals the signal from the red of a realised loss. An absent
+                  // value keeps the grey of absence whatever the term.
+                  valueClassName={
+                    value === null
+                      ? signClass(null)
+                      : termCarriesSign(term)
+                        ? signClass(value)
+                        : signClass(0)
+                  }
+                />
+              )
+            })}
+          </div>
+        </div>
+
+        {/* The statistics, on a row of their own — and only the ones that
+            exist. They are **not** terms of the total: `Valeur totale` and
+            `Versé net` are what the gain is the difference of, and the two rates
+            are not sums at all, so they keep the full width the four do not.
+
+            **A row that spreads rather than one that packs left.** `flex
             flex-wrap` put a fixed gap between the figures and left the rest of
             the card empty — invisible while the content column was capped at
             1 280 px, and the whole right half of the card since #792 uncapped it
             (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
             so the figures that **do** exist share the width whatever their
-            number, which is what these rows need: both render only the terms and
-            the statistics this installation has. The floor is **8rem and not 9**,
-            measured: at 9 the five statistics came to more than the card on the
-            wide track holds and the row wrapped four and one. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
-          {GAIN_TERMS.map((term) => {
-            const value = termAmount(terms, term)
-            if (!termIsRendered(term, value)) return null
-            return (
-              <Stat
-                key={term}
-                size="term"
-                label={t(TERM_LABELS[term])}
-                value={renderFigure(termRendering(terms, term), () => f.currency(value, currency), t)}
-                // Colour only where the sign can turn. A dividend received is
-                // never negative and a transfer fee never positive; painting them
-                // steals the signal from the red of a realised loss. An absent
-                // value keeps the grey of absence whatever the term.
-                valueClassName={
-                  value === null
-                    ? signClass(null)
-                    : termCarriesSign(term)
-                      ? signClass(value)
-                      : signClass(0)
-                }
-              />
-            )
-          })}
-        </div>
-
-        {/* The statistics, on a third row — and only the ones that exist. */}
+            number. The floor is **8rem and not 9**, measured: at 9 the five
+            statistics came to more than the card holds and the row wrapped four
+            and one. */}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
           {totalsRow?.total_value == null ? null : (
             <Stat

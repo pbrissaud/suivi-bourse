@@ -89,8 +89,12 @@ Two nets hold a rule nothing made true by construction:
   that opens **on click and never on hover** (hover does not exist on a finger),
   closes on scroll, and links to the versioned, localised docs (`lib/docs.ts`).
   One icon per figure **and per surface**; never on a cell.
-- **A total and its terms never share a row.** Subordination is vertical: in a
-  table the total is the header; in a panel it is a block containing its terms.
+- **A total and its terms are never read at equal weight** (ADR-0016, amended by
+  #787). Subordination is a **size** as much as a position: in a table the total
+  is the header and in a panel it is a block containing its terms, and on a card
+  it may sit beside them where the type tells them apart — `head` against `term`
+  is a factor of three. A shared row is a defect only where neither cue is
+  there.
 - **A block with nothing in it does not exist.** The layout shifts when a notice
   appears.
 - **One band on screen or none.** `lib/status.ts` holds the causal order between

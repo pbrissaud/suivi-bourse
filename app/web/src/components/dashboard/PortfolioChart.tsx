@@ -234,7 +234,15 @@ export function PortfolioChart() {
                           of the surface rather than in the colour of a sign: it
                           crosses zero inside a window often enough that one
                           colour for the whole band would be plausibly wrong half
-                          the time. The caption under it names what it is. */}
+                          the time. The caption under it names what it is.
+
+                          **And it is drawn strongly enough to be seen.** At
+                          `0.14` of the muted foreground the band was barely
+                          perceptible on the midnight ground, while the caption
+                          under it promised *l'écart entre les deux courbes est
+                          votre gain total* — a reading the drawing did not
+                          deliver. A caption that names a mark nobody can find is
+                          a caption about nothing. */}
                       <Area
                         dataKey={(row: { value: number | null; contributed: number | null }) =>
                           row.value === null || row.contributed === null
@@ -243,8 +251,8 @@ export function PortfolioChart() {
                         }
                         name={t('dashboard.chart.area')}
                         stroke="none"
-                        fill="var(--muted-foreground)"
-                        fillOpacity={0.14}
+                        fill="var(--foreground)"
+                        fillOpacity={0.16}
                         isAnimationActive={false}
                         connectNulls={false}
                       />

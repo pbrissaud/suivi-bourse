@@ -220,15 +220,36 @@ export function performanceRows(
 }
 
 /**
- * Where the value axis starts: **zero when nothing drawn is negative**.
+ * Where the value axis starts, and it is **two rules and not one**.
  *
- * Left to itself Recharts fitted the data and put `−1 411 €` under a series that
- * has never been negative — a graduation the reader has no way to know is an
- * artefact. `'auto'` is kept the moment a real negative appears: there the floor
- * is information, and forcing zero would clip the curve out of the plot.
+ * The first is the defect it was written against: left to itself Recharts fitted
+ * the data and put `−1 411 €` under a series that has never been negative — a
+ * graduation the reader has no way to know is an artefact. Nothing drawn being
+ * negative, nothing graduated may be.
+ *
+ * The second is what forcing **zero** cost, measured on the real portfolio: a
+ * series living between 9 000 € and 17 000 € was drawn on an axis running from
+ * 0 to 18 000, so half the plot was empty and every move of the year was
+ * squashed into its top third. *Never graduate below zero* and *start at zero*
+ * are not the same instruction, and only the first one is owed to the reader.
+ *
+ * So the floor is the lowest point with a tenth of the amplitude of air under
+ * it, **clamped at zero** — and `'auto'` the moment a real negative appears,
+ * where the floor is information and forcing anything would clip the curve out
+ * of the plot.
  */
-export function yFloor(values: readonly (number | null)[]): 0 | 'auto' {
-  return values.some((value) => value !== null && value < 0) ? 'auto' : 0
+export function yFloor(values: readonly (number | null)[]): number | 'auto' {
+  const drawn = values.filter((value): value is number => value !== null)
+  // Nothing drawn: there is no amplitude to breathe around, and zero is the one
+  // floor that cannot be wrong about a series nobody has seen.
+  if (drawn.length === 0) return 0
+  const low = Math.min(...drawn)
+  if (low < 0) return 'auto'
+  const high = Math.max(...drawn)
+  // A flat series has no amplitude to take a tenth of, and a flat series at zero
+  // has no magnitude either — hence the two fallbacks, in that order.
+  const air = (high - low) / 10 || Math.abs(low) / 10 || 1
+  return Math.max(0, low - air)
 }
 
 /** Every number the *Amounts* reading draws — the argument {@link yFloor} takes. */

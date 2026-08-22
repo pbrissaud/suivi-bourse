@@ -76,14 +76,33 @@ describe('the value axis', () => {
   it('is floored at zero when nothing drawn is negative', () => {
     // The measured defect: a graduation at `−1 411 €` under a series that has
     // never been negative, which the reader has no way to know is an artefact.
-    expect(yFloor(amountsValues(amountsFromTotals(aPortfolioHistory().points, null)))).toBe(0)
+    expect(yFloor(amountsValues(amountsFromTotals(aPortfolioHistory().points, null)))).toBeGreaterThan(
+      0,
+    )
+  })
+
+  it('does not spend the plot on the space between zero and the series', () => {
+    // Measured on the real portfolio: a series living between 9 000 € and
+    // 17 000 € drawn from zero puts half the plot on nothing and squashes the
+    // year into its top third. *Never graduate below zero* and *start at zero*
+    // are not the same instruction.
+    expect(yFloor([9000, 12000, 17000])).toBe(9000 - 800)
+    // And the clamp holds where a tenth of the amplitude reaches under zero.
+    expect(yFloor([100, 12000])).toBe(0)
   })
 
   it('gives the floor back the moment a real negative appears', () => {
-    // There the floor is information, and forcing zero would clip the curve
+    // There the floor is information, and forcing anything would clip the curve
     // out of the plot altogether.
     expect(yFloor([1200, -40, 900])).toBe('auto')
-    expect(yFloor([null, 0, 12])).toBe(0)
+  })
+
+  it('answers a floor for a series with no amplitude, and for one with none at all', () => {
+    // A flat series has no amplitude to take a tenth of, and a flat series at
+    // zero has no magnitude either.
+    expect(yFloor([1000, 1000])).toBe(900)
+    expect(yFloor([0, 0])).toBe(0)
+    expect(yFloor([null, null])).toBe(0)
   })
 })
 

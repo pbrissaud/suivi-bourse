@@ -38,15 +38,25 @@ they cannot stack: they distribute.
   realized and dividends — because their sum is an identity, and three figures aligned
   without their total is exactly what invites adding them to something else. In a table
   the form does not nest, so it is three columns whose sum is the header.
-- **A total and its terms never share a row.** Subordination is vertical, and a table row
-  has only the horizontal axis: mounted side by side, `Gain total +942,37 €`, `latente
-  +493,37 €` and `réalisée −659,98 €` are five numeric columns of equal weight, and
-  nothing says the last four are *inside* the first — the form invites exactly the
-  addition ADR-0003 says a contributor will attempt. So either the total is the **column
-  header** over its terms (the shares table, ADR-0017), or the total is the cell and the
-  terms live in a **block** elsewhere (the accounts table, ADR-0019). Never both on one
-  line. This is also why the shares sheet is the only surface where the form appears
-  naked: a block is the only place it can.
+- **A total and its terms are never read at equal weight.** Mounted side by side and at
+  the same size, `Gain total +942,37 €`, `latente +493,37 €` and `réalisée −659,98 €` are
+  five numeric columns of equal weight, and nothing says the last four are *inside* the
+  first — the form invites exactly the addition ADR-0003 says a contributor will attempt.
+  So either the total is the **column header** over its terms (the shares table,
+  ADR-0017), or the total is the cell and the terms live in a **block** elsewhere (the
+  accounts table, ADR-0019). This is also why the shares sheet is the only surface where
+  the form appears naked: a block is the only place it can.
+
+  **Amended (#787): the rule is the weight, not the line.** It read *never share a row*,
+  and that is the rule as a **table** made it — a row has only the horizontal axis, so
+  there the two are the same sentence. Transposed to a card they stop being: the
+  dashboard's head draws its total at `text-4xl` beside four terms at `text-base`, a
+  factor of three, and nothing about that arrangement invites a sum. What the record buys
+  is that the reader cannot add the terms to the total by accident; **a size buys it as
+  surely as a position does**, and forbidding the position where the size already answers
+  is the letter outliving its reason. Where neither is available — a table row, equal type
+  — the original sentence stands unchanged, and it is the one that keeps holding the
+  shares table's group headers up.
 - **A bubble never outlives the figure it explains.** Click-to-open was chosen so the
   reader can walk to the link inside it, not so the bubble survives its subject leaving
   the screen — a pinned bubble floating over unrelated content is worse than no bubble.
