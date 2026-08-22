@@ -14,17 +14,26 @@
  *    can show**: the server's rule is the shape, and two roads reach it without
  *    passing here — a headless `curl` on `PUT /api/settings`, which is the one
  *    non-interactive path ADR-0015 keeps open, and #710's `base_currency`
- *    import column. A stored code the list does not carry therefore gets an
- *    option of its own, or a controlled `select` with no matching option falls
- *    back to the empty one and the screen states the question is *unanswered*
- *    over a store that holds the answer.
+ *    import column. A stored code the list does not carry is therefore
+ *    **rendered as the answer it is**, and named as one this field would not
+ *    have offered. Since #794 that is the only place it can appear: the field
+ *    is drawn on an unanswered dial alone, so a `select` never has a stored
+ *    code to fail to match.
  *  - **The screen says how long the answer stays changeable, where the answer
- *    is given.** The rule is the dial's own — free while the ledger is empty,
- *    fixed from the first recorded event, because adopting another unit
- *    afterwards re-reads every amount already stored rather than converting it
- *    (ADR-0002). A reader who learns that on the refusal has learnt it too late.
- *    Not observed is **not a sentence**: with no ledger read landed, neither
- *    half is something this screen has the standing to write (ADR-0026).
+ *    is given** — and since #794 it says the true thing: the currency is fixed
+ *    **the moment it is answered**, because adopting another unit afterwards
+ *    re-reads every amount already stored rather than converting it (ADR-0002).
+ *    A reader who learns that on the refusal has learnt it too late.
+ *  - **Once fixed, it stops being drawn as a field.** A `select` a reader can
+ *    open, choose in, and then watch refuse the write is a form that lied about
+ *    what it was; greyed out it invites the same click and reads as a form that
+ *    refused. What is left is the answer, rendered, and the sentence that says
+ *    it cannot be taken back — the same move the installation tab makes for
+ *    what the container imposes.
+ *    Not observed is **not a sentence** and not a rendering either: with the
+ *    settings read not landed, neither half is something this screen has the
+ *    standing to write (ADR-0026), and the field it draws in the meantime is
+ *    the one the question is asked in.
  */
 import { CURRENCIES, isSupported } from '@/lib/currencies'
 import { useI18n } from '@/lib/i18n'
@@ -34,14 +43,33 @@ export interface CurrencyFieldProps {
   /** The code in force in the form. The empty string is *unanswered*. */
   value: string
   onChange: (value: string) => void
-  /** `undefined` — the ledger has not been read, so neither half is claimed. */
-  mutable?: boolean
+  /**
+   * Whether the answer is already given, and therefore fixed. `undefined` — the
+   * settings have not been read, so neither half is claimed.
+   */
+  fixed?: boolean
   /** Whether the reader is told a locale suggested this. Modal only. */
   suggested?: boolean
 }
 
-export function CurrencyField({ id, value, onChange, mutable, suggested }: CurrencyFieldProps) {
+export function CurrencyField({ id, value, onChange, fixed, suggested }: CurrencyFieldProps) {
   const { t } = useI18n()
+
+  // The answer, and no field around it: what a reader can do here is read it.
+  if (fixed === true) {
+    return (
+      <div className="space-y-1">
+        {/* No `id`: nothing labels a paragraph, and the name sits above it —
+            the shape the installation tab already gives what it only reads. */}
+        <p className="tabular text-sm font-medium">
+          {value === '' ? t('currency.unanswered')
+            : isSupported(value) ? value
+            : t('currency.offList', { code: value })}
+        </p>
+        <p className="text-xs text-muted-foreground">{t('currency.fixed')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-1">
@@ -54,12 +82,6 @@ export function CurrencyField({ id, value, onChange, mutable, suggested }: Curre
         {/* The unanswered state is an option of its own: a `<select>` opening on
             the first code of the list would answer the question by rendering. */}
         <option value="">{t('currency.unanswered')}</option>
-        {/* What another road already stored, shown rather than swallowed. It is
-            named as being outside the list, so the reader can tell an answer
-            the app will honour from one the field would have offered. */}
-        {value !== '' && !isSupported(value) ? (
-          <option value={value}>{t('currency.offList', { code: value })}</option>
-        ) : null}
         {CURRENCIES.map((code) => (
           <option key={code} value={code}>
             {code}
@@ -67,10 +89,8 @@ export function CurrencyField({ id, value, onChange, mutable, suggested }: Curre
         ))}
       </select>
       {suggested ? <p className="text-xs text-muted-foreground">{t('currency.suggested')}</p> : null}
-      {mutable === undefined ? null : (
-        <p className="text-xs text-muted-foreground">
-          {t(mutable ? 'currency.mutable' : 'currency.fixed')}
-        </p>
+      {fixed === undefined ? null : (
+        <p className="text-xs text-muted-foreground">{t('currency.untilAnswered')}</p>
       )}
     </div>
   )

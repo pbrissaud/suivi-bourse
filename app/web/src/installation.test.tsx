@@ -1,17 +1,18 @@
 /**
- * The installation tab (#724, ADR-0014, ADR-0015, ADR-0020, ADR-0021), at the
- * one seam: the whole app in jsdom, HTTP the only faked edge.
+ * The installation tab (#724, #794, ADR-0014, ADR-0015, ADR-0020, ADR-0021,
+ * ADR-0030), at the one seam: the whole app in jsdom, HTTP the only faked edge.
  *
- * Every case below names what it prevents, and three of them are measurements
+ * **The notices left this tab at #794** and are in `notices.test.tsx`, with the
+ * badge that promises them: a notice is prose, and what is left here is what
+ * the installation *is* — the settings, the store and its orphans.
+ *
+ * Every case below names what it prevents, and two of them are measurements
  * rather than opinions:
  *
  *  - **79 % of a store's rows purged for zero bytes** — 126,0 Mo before, 126,0
  *    Mo after, the same content rebuilt from scratch fitting in 26,0. That is
  *    why a size and a purge button cannot be shown without the sentence between
  *    them;
- *  - **a badge that promises something and leaves the reader hunting** — the
- *    three things it must not count are the ephemeral store, the orphans and
- *    the reconstruction, and each for its own reason;
  *  - **a greyed-out form that refused** — the environment half is a description,
  *    and the test of that is mechanical: nothing in it is an `input`.
  */
@@ -25,7 +26,6 @@ import type { Advisory, StoreState } from '@/lib/api'
 import {
   aConfig,
   aLegacyFileAdvisory,
-  anAdvisory,
   aRuntime,
   aStore,
 } from '@/test/factories'
@@ -48,269 +48,26 @@ function block(name: RegExp | string) {
   return screen.getByRole('region', { name })
 }
 
-describe('the three blocks, in one order', () => {
-  it('reads Avis · Réglages · Le magasin, and an empty block does not exist', async () => {
+describe('the two blocks, in one order', () => {
+  it('reads Réglages · Le magasin, what you can change before what it is', async () => {
     await openInstallation()
 
     const headings = await screen.findAllByRole('heading', { level: 2 })
-    expect(headings.map((heading) => heading.textContent)).toEqual([
-      'Avis',
-      'Réglages',
-      'Le magasin',
-    ])
+    expect(headings.map((heading) => heading.textContent)).toEqual(['Réglages', 'Le magasin'])
   })
 
-  it('drops the notices block entirely when nothing is standing', async () => {
-    await openInstallation([])
-
-    // The layout shifts when a notice appears, and that is the point: a badge
-    // that promised something and left the reader hunting for it is the failure.
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Réglages' })).toBeInTheDocument(),
-    )
-    expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument()
-  })
-})
-
-describe('the badge on the tab', () => {
-  it('counts unacknowledged notices and nothing else', async () => {
-    server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([
-          anAdvisory(),
-          aLegacyFileAdvisory(),
-          // Acknowledged: gone from the block, so gone from the count.
-          aLegacyFileAdvisory({
-            key: 'legacy_settings_file',
-            acknowledged: true,
-            acknowledged_at: '2026-02-01T00:00:00.000Z',
-          }),
-          // The reconstruction has exactly **one** announcer, and it is the
-          // banner. Counted here it would be a second one; shown in the block
-          // and not counted, the badge would under-count what is on screen.
-          anAdvisory({ key: 'reconstruction_running', message: 'Rebuild in progress' }),
-        ]),
-      ),
-      // Neither of these is a notice: the ephemeral store's predicate is never
-      // acknowledgeable, and an orphan is a choice rather than a waste.
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(aRuntime({ store: { persistence: 'ephemeral', path: '/data/x.duckdb' } })),
-      ),
-      http.get(ROUTES.store, () =>
-        HttpResponse.json(aStore({ orphans: [{ symbol: 'ZZX', points: 1204 }] })),
-      ),
-    )
-    renderApp({ url: '/donnees' })
-
-    const tab = await screen.findByRole('tab', { name: /L’installation/ })
-    expect(await within(tab).findByLabelText('2 avis à lire')).toBeInTheDocument()
-  })
-
-  it('is absent when there is nothing to read', async () => {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([])))
-    renderApp({ url: '/donnees' })
-
-    const tab = await screen.findByRole('tab', { name: /L’installation/ })
-    await waitFor(() => expect(tab).toHaveTextContent('L’installation'))
-    expect(within(tab).queryByLabelText(/avis à lire/)).not.toBeInTheDocument()
-  })
-})
-
-describe('the notices', () => {
-  it('offers no « acknowledge all », whatever the count', async () => {
-    await openInstallation([anAdvisory(), aLegacyFileAdvisory()])
-
-    await screen.findByRole('heading', { name: 'Avis' })
-    // Five at the very most, and a bulk acknowledgement is exactly how the one
-    // notice the app cannot recompute gets swept away unread.
-    expect(within(block('Avis')).getAllByRole('button', { name: 'Acquitter' })).toHaveLength(2)
-    expect(screen.queryByRole('button', { name: /tout acquitter/i })).not.toBeInTheDocument()
-  })
-
-  it('makes an acknowledged notice disappear rather than grey it out', async () => {
-    const { user } = await openInstallation([aLegacyFileAdvisory()])
-
-    await screen.findByRole('heading', { name: 'Avis' })
-    server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([
-          aLegacyFileAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
-        ]),
-      ),
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Acquitter' }))
-
-    // Kept greyed out, the notice of somebody who decided to keep their
-    // `config.yaml` for ever would be a permanent fixture of their screen.
-    await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument(),
-    )
-  })
-
-  it('re-arms when its predicate becomes true again', async () => {
-    const { user } = await openInstallation([aLegacyFileAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
-
-    server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([aLegacyFileAdvisory({ acknowledged: true })]),
-      ),
-    )
-    await user.click(screen.getByRole('button', { name: 'Acquitter' }))
-    await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument(),
-    )
-
-    // The file comes back. The server drops the row and arms a fresh one, and
-    // the block shows it again — an acknowledgement of a fact that stopped
-    // being true must not make its next occurrence invisible.
-    server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([aLegacyFileAdvisory({ first_seen_at: '2026-03-02T11:00:00.000Z' })]),
-      ),
-    )
-    await user.click(screen.getByRole('tab', { name: /Le grand livre/ }))
-    await user.click(screen.getByRole('tab', { name: /L’installation/ }))
-
-    expect(await screen.findByRole('heading', { name: 'Avis' })).toBeInTheDocument()
-  })
-
-  it('leads to the events a notice names, in the ledger, already reduced', async () => {
-    const { user } = await openInstallation([anAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
-
-    await user.click(screen.getByRole('button', { name: 'Voir les événements concernés' }))
-
-    // **Every security the sentence enumerated, not the first of them.** The
-    // notice named ZZA, ZZB and ZZC; a gesture keeping one would land the reader
-    // on a ledger stating a repair perimeter smaller than the one they have just
-    // read, with nothing on screen saying the other two were dropped.
-    const rows = await screen.findAllByRole('row')
-    const cells = rows.map((row) => row.textContent ?? '')
-    expect(cells.filter((text) => text.includes('ZZA'))).toHaveLength(2)
-    expect(cells.filter((text) => text.includes('ZZC'))).toHaveLength(1)
-    // And the reduction is *stated*, with all three names, and can be undone —
-    // a ledger silently shorter than the reader expects is the same defect one
-    // step further on. The names are enumerated in the reader's language (#768),
-    // not joined on a comma: this is a sentence, and French closes it on *et*.
-    expect(screen.getByText(/Réduit à 3 titres : ZZA, ZZB et ZZC/)).toBeInTheDocument()
-
-    // The cash movement names no security, so a reduction to securities drops
-    // it; clearing brings it back, which is what makes the reduction reversible
-    // rather than a shorter ledger.
-    expect(cells.some((text) => text.includes('Virement entrant'))).toBe(false)
-    await user.click(screen.getByRole('button', { name: 'Afficher de nouveau tous les titres' }))
-    expect(await screen.findByText(/Virement entrant/)).toBeInTheDocument()
-  })
-
-
-  it('gives a notice about a file on disk no button it cannot honour', async () => {
+  it('says nothing about the notices, which are a tab of their own', async () => {
     await openInstallation([aLegacyFileAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
+    await screen.findByRole('heading', { name: 'Réglages' })
 
-    // A file on disk is outside the app's reach, and the sentence — which names
-    // this installation's own path — says what to do out there.
-    const notices = block('Avis')
-    expect(within(notices).queryByRole('button', { name: /Voir les événements/ })).not.toBeInTheDocument()
-    expect(notices).toHaveTextContent('/config/config.yaml')
+    // A notice is prose — a date, an acknowledgement, a link to the events
+    // concerned — and a card in a column beside the store has nowhere to say
+    // it (ADR-0030).
+    expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
 })
 
-/**
- * The notices are read in the reader's language (#768, ADR-0024).
- *
- * `AdvisoriesBlock` rendered `advisory.message` verbatim, and those sentences
- * are built in English by `advisories.py` — so the **whole content** of the
- * block was English on a French installation, framed by a title, a date and a
- * button that were not. The tests below are at the same seam as the rest of the
- * file: the whole app in jsdom, HTTP the only faked edge, and the language taken
- * from the browser because it defaults to `auto`.
- */
-describe('the language of a notice', () => {
-  async function openNotices(advisories: Advisory[], browserLanguages: readonly string[]) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
-    const rendered = renderApp({ url: '/donnees', browserLanguages })
-    const tab = browserLanguages[0].startsWith('fr') ? /L’installation/ : /The installation/
-    await rendered.user.click(await screen.findByRole('tab', { name: tab }))
-    return rendered
-  }
-
-  it('reads French for a French reader, and never the server’s English', async () => {
-    await openNotices([aLegacyFileAdvisory(), anAdvisory()], ['fr-FR'])
-
-    const notices = block('Avis')
-    // The path is the server's — it names *this* installation — and everything
-    // around it is the catalogue's.
-    expect(notices).toHaveTextContent(
-      /\/config\/config\.yaml est toujours là et cette version ne le lit pas/,
-    )
-    expect(notices).toHaveTextContent(/Vos montants ont été lus en EUR/)
-    // Plurals through ICU, and an enumeration the language closes on *et* —
-    // never `4 event(s)` and never `ZZA, ZZB, ZZC`.
-    expect(notices).toHaveTextContent(/4 événements sur 3 lignes cotées en GBP et USD \(ZZA, ZZB et ZZC\)/)
-    expect(notices).not.toHaveTextContent('event(s)')
-    expect(notices).not.toHaveTextContent('Your amounts were read as EUR')
-  })
-
-  it('reads English for an English reader, plurals and list included', async () => {
-    await openNotices([aLegacyFileAdvisory(), anAdvisory()], ['en-GB'])
-
-    const notices = screen.getByRole('region', { name: 'Notices' })
-    expect(notices).toHaveTextContent(
-      /\/config\/config\.yaml is still there and this version does not read it/,
-    )
-    expect(notices).toHaveTextContent(/4 events on 3 lines quoted in GBP and USD \(ZZA, ZZB and ZZC\)/)
-    // The English catalogue is the source, not a copy of the payload: the `(s)`
-    // and the `', '.join(...)` are the log line's, and they stay there.
-    expect(notices).not.toHaveTextContent('event(s)')
-    expect(notices).not.toHaveTextContent('line(s)')
-  })
-
-  it('says the four the block owns, and each of them in French', async () => {
-    // Not only the one that is easy to provoke. The fifth key,
-    // `reconstruction_running`, has exactly one announcer and it is the banner
-    // (#724) — its sentence is in the same catalogue and composed by the same
-    // function, pinned in `lib/advisories.test.ts` in both languages.
-    await openNotices(
-      [
-        aLegacyFileAdvisory(),
-        aLegacyFileAdvisory({
-          key: 'legacy_settings_file',
-          detail: { path: '/config/settings.yaml' },
-        }),
-        anAdvisory({
-          key: 'unread_environment',
-          detail: { variables: ['SB_PERF_INTERVAL', 'INFLUXDB_TOKEN'] },
-        }),
-        anAdvisory(),
-      ],
-      ['fr-FR'],
-    )
-
-    const notices = block('Avis')
-    expect(notices).toHaveTextContent(/un grand livre d’événements datés/)
-    expect(notices).toHaveTextContent(/les comptes se déclarent par un fichier/)
-    expect(notices).toHaveTextContent(
-      /2 variables d’environnement sont définies et ne sont lues par rien : SB_PERF_INTERVAL et INFLUXDB_TOKEN/,
-    )
-    expect(notices).toHaveTextContent(/Vos montants ont été lus en EUR/)
-  })
-
-  it('says what the notice *is* when this process observed nothing', async () => {
-    // `detail: null` is #709's third answer — a runtime that cannot see the
-    // source — and the server does the same thing one level up, falling back to
-    // `AdvisorySpec.doc`. A paragraph with `undefined` where a path belongs
-    // would be the alternative.
-    await openNotices([aLegacyFileAdvisory({ detail: null })], ['fr-FR'])
-
-    const notices = block('Avis')
-    expect(notices).toHaveTextContent(
-      'Un config.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.',
-    )
-    expect(notices).not.toHaveTextContent('undefined')
-  })
-})
 
 describe('the settings, which are one surface', () => {
   it('has two sections and no separate effective-configuration card', async () => {
@@ -357,6 +114,27 @@ describe('the settings, which are one surface', () => {
     expect(field).toHaveAttribute('min', '1')
     expect(field).toHaveAttribute('max', '9')
     expect(screen.getByText('Something a later version added.')).toBeInTheDocument()
+  })
+
+  it('carries the five dials and the currency, the mock-up having dropped three', async () => {
+    await openInstallation()
+    await screen.findByRole('heading', { name: 'Réglages' })
+
+    // The list is the registry's and the words are the catalogue's, so this is
+    // an assertion about *the tab*, not about a hard-written form: the redesign
+    // kept two of the six and this is what says the other four came back
+    // (#787, #794).
+    const settings = block('Réglages')
+    for (const dial of [
+      'Cadence de relevé (secondes)',
+      'Cadence de reconstruction (secondes)',
+      'Délai entre deux requêtes de reconstruction (secondes)',
+      'Historique récupéré par requête (jours)',
+      'Horizon de cours figé (secondes)',
+      'Devise de base',
+    ]) {
+      expect(within(settings).getByText(dial)).toBeInTheDocument()
+    }
   })
 
   it('quantifies what a cadence change reaches, and names the retroactive trap', async () => {
@@ -459,10 +237,10 @@ describe('the store', () => {
     // The only screen where a trial run learns that it is a trial run.
     expect(screen.getByText('Ce conteneur ne garde rien')).toBeInTheDocument()
     // And never a notice: its predicate is not acknowledgeable, so acknowledging
-    // it would make it go quiet while it was still true.
-    expect(screen.queryByRole('heading', { name: 'Avis' })?.parentElement).not.toHaveTextContent(
-      'Ce conteneur ne garde rien',
-    )
+    // it would make it go quiet while it was still true. Since #794 the notices
+    // are not even on this tab, and the tab that carries them is asserted on in
+    // `notices.test.tsx`.
+    expect(screen.getByRole('tab', { name: /Les avis/ })).not.toHaveTextContent(/avis à lire/)
   })
 
   it('says nothing about persistence it cannot observe', async () => {
@@ -574,12 +352,11 @@ describe('the tab’s own reads', () => {
 })
 
 describe('the tab in English', () => {
-  it('renders the three blocks whole', async () => {
+  it('renders the two blocks whole', async () => {
     const { user } = renderApp({ url: '/donnees', browserLanguages: ['en-GB'] })
     await user.click(await screen.findByRole('tab', { name: /The installation/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Notices' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'The store' })).toBeInTheDocument()
     expect(screen.getByText('What the container imposes')).toBeInTheDocument()
   })

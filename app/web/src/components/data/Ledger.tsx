@@ -1,5 +1,5 @@
 /**
- * Tab 1 — the ledger, in its journal half (#723, ADR-0020).
+ * Tab 1 — the ledger, and where it came from (#723, #794, ADR-0020, ADR-0030).
  *
  * The page was a **repair** surface and becomes a **revocation** one: #662's
  * whole apparatus — the inline editor, the opaque token over `(file, sheet,
@@ -9,12 +9,13 @@
  * apparatus loses its subject in one go, and none of it has a row-by-row
  * successor: the unit of the gesture is the **import** (#728), not the line.
  *
- * What this half owes is the journal itself, its reduction, the create form that
- * is the onboarding, the **declaration of the accounts** (#729) — the same thing
- * said about another table — and, since #728, **Import et export**: the sources
- * as the unit of revocation, and the way back out. The three blocks read one
- * ledger between them: the count a refusal is made of, and the count a
- * revocation announces, are that same table grouped two ways.
+ * What this tab owes is the journal itself, its reduction, the create form that
+ * is the onboarding, and — as **one band above the table** since #794 — the
+ * drop zone, the export menu and the sources with their revocation. The
+ * declaration of the accounts left at #793 (ADR-0028): a declaration is made
+ * where its subject is looked at. The blocks read one ledger between them: the
+ * count a refusal is made of, and the count a revocation announces, are that
+ * same table grouped two ways.
  *
  * Reads and failures follow the rule the shares page keeps: `/api/runtime`
  * answers from process memory and never opens the store (#668), so the shell's
@@ -125,6 +126,22 @@ export function Ledger({ focus }: LedgerProps = {}) {
     <div className="space-y-6">
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
+      {/* **Above the table, and one band** (#794, ADR-0030): the drop zone, the
+          export menu and the sources with their revocation. It renders beside
+          the two others and at every N, the empty ledger included — an install
+          that has imported an accounts file and no event has a source to
+          forget, and one that has only ever typed has something to export. What
+          it renders on nothing at all is nothing, and the drop zone is then the
+          empty state's own entry, one line below. */}
+      {failure || !events.data ? null : (
+        <ImportsBlock
+          imports={imports.data ?? null}
+          events={all}
+          accounts={accounts.data ?? null}
+          highlight={highlighted}
+        />
+      )}
+
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
       {ledgerFailure || !events.data ? null : all.length === 0 ? (
@@ -182,19 +199,6 @@ export function Ledger({ focus }: LedgerProps = {}) {
             />
           )}
         </>
-      )}
-
-      {/* Beside the two others and at every N, the empty ledger included: an
-          install that has imported an accounts file and no event has a source
-          to forget, and one that has only ever typed has something to export.
-          What it renders on nothing at all is nothing. */}
-      {failure || !events.data ? null : (
-        <ImportsBlock
-          imports={imports.data ?? null}
-          events={all}
-          accounts={accounts.data ?? null}
-          highlight={highlighted}
-        />
       )}
 
       <EventForm

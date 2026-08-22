@@ -32,7 +32,7 @@
  *    the number in the formula.
  */
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { CurrencyField } from '@/components/CurrencyField'
@@ -45,7 +45,7 @@ import {
   type SettingDescription,
   type SettingsWriteResponse,
 } from '@/lib/api'
-import { currencyMutable, currencyUnanswered, CURRENCY_KEY } from '@/lib/firstRun'
+import { currencyFixed, CURRENCY_KEY } from '@/lib/firstRun'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { receiptMessage } from '@/lib/receipts'
 import {
@@ -106,17 +106,12 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
     setDraft(draftFrom(config.settings))
   }, [config.settings])
 
-  // The ledger, for one sentence and one only: how long the reporting currency
-  // stays changeable, said **where it is chosen** (#726). A read that has not
-  // landed writes neither half (ADR-0026).
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
-  // Both clauses of the dial's rule: a dial nobody has ever answered has
-  // interpreted nothing, so it stays free whatever the ledger holds.
-  const unanswered = currencyUnanswered(config.settings)
-  const mutable = currencyMutable({
-    events: events.data,
-    answered: unanswered === undefined ? undefined : !unanswered,
-  })
+  // Whether the one dial with no default has been answered — which is what
+  // decides both the sentence under it and whether it is drawn as a field at
+  // all (#794). It is read off the settings this block already has, so the
+  // ledger read this block used to make for it went with the rule that needed
+  // it.
+  const fixed = currencyFixed(config.settings)
 
   const save = useMutation({
     mutationFn: () => api.saveSettings(changedValues(config.settings, draft)),
@@ -162,7 +157,7 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
               setting={setting}
               value={draft[setting.key] ?? ''}
               reach={reach}
-              mutable={mutable}
+              fixed={fixed}
               onChange={(value) => setDraft((current) => ({ ...current, [setting.key]: value }))}
             />
           ))}
@@ -200,20 +195,24 @@ function Dial({
   setting,
   value,
   reach,
-  mutable,
+  fixed,
   onChange,
 }: {
   setting: SettingDescription
   value: string
   reach: CadenceReach | null
-  /** Whether the ledger is still empty — the currency's own rule, and only its. */
-  mutable: boolean | undefined
+  /** Whether the currency is answered — the currency's own rule, and only its. */
+  fixed: boolean | undefined
   onChange: (value: string) => void
 }) {
   const { t } = useI18n()
   const id = settingFieldId(setting.key)
   const label = DIAL_LABEL[setting.key]
   const hint = DIAL_HINT[setting.key]
+  // A fixed currency is not drawn as a field, so nothing here is labellable:
+  // a `<label for>` pointing at a paragraph names something a reader cannot
+  // reach, and the name belongs to the value all the same.
+  const drawn = !(setting.type === 'currency' && fixed === true)
   // Both sentences are about **this** dial, so they live under it rather than
   // under the section: read at the bottom of a form they would be about the
   // save, and only one of the six dials rescales anything retroactively.
@@ -221,15 +220,19 @@ function Dial({
 
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="text-sm text-muted-foreground">
-        {label ? t(label) : setting.key}
-      </label>
+      {drawn ? (
+        <label htmlFor={id} className="text-sm text-muted-foreground">
+          {label ? t(label) : setting.key}
+        </label>
+      ) : (
+        <p className="text-sm text-muted-foreground">{label ? t(label) : setting.key}</p>
+      )}
       {/* The currency is the one dial whose *values* are a closed list, and the
           registry says so with its own type — so the field follows the registry
           here as everywhere else, and it is the same component the first-run
           modal mounts (#726). */}
       {setting.type === 'currency' ? (
-        <CurrencyField id={id} value={value} onChange={onChange} mutable={mutable} />
+        <CurrencyField id={id} value={value} onChange={onChange} fixed={fixed} />
       ) : (
         <Input
           id={id}

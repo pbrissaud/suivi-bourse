@@ -1,16 +1,19 @@
 /**
- * Tab 2 — **the installation**, as opposed to what the user declared (#724,
- * ADR-0020, ADR-0014).
+ * Tab 3 — **the installation**, as opposed to what the user declared (#724,
+ * #794, ADR-0020, ADR-0014, ADR-0030).
  *
- * The line between the two tabs is ADR-0014's boot test transposed to the
- * render, and this side of it holds three blocks in one order: **Notices ·
- * Settings · The store**. What comes first is what the installation has to say
- * to its owner, then what they can change about it, then what it *is*.
+ * The line between the tabs is ADR-0014's boot test transposed to the render,
+ * and what is left on this side of it is *what the installation is*: the
+ * reconstruction the dot leads to, the settings, the store and its orphans.
+ * **The notices left** at #794 — a notice is prose, and a card in a column
+ * beside the store has nowhere to say *a `config.yaml` of the v4 sits in the
+ * configuration directory and is not read*, with a date, an acknowledgement and
+ * a link to the events concerned.
  *
- * **A block with nothing in it does not exist.** The notices block is absent at
- * zero and the layout shifts when one appears — that shift is the point, and it
- * is the counterpart of the badge on the tab: a badge that promised something
- * and left the reader hunting for it is the failure the criterion names.
+ * **Two tracks from `lg`**, and the split is what each block is about: the
+ * settings are a form the reader fills in, the store is a fact they read. Below
+ * `lg` — the 976 px case ADR-0022 measured — it is one column, in the order the
+ * blocks are written.
  *
  * The reads follow the rule the other pages keep: `/api/runtime` answers from
  * process memory and never opens the store (#668), so the shell's banner is
@@ -28,7 +31,6 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
-import { AdvisoriesBlock } from '@/components/data/AdvisoriesBlock'
 import { SettingsBlock } from '@/components/data/SettingsBlock'
 import { RebuildBlock } from '@/components/data/RebuildBlock'
 import { StoreBlock } from '@/components/data/StoreBlock'
@@ -36,16 +38,10 @@ import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { oneBand, readConditions } from '@/lib/status'
 
-export interface InstallationProps {
-  /** Take the reader to the ledger, reduced to every security a notice names. */
-  onShowInLedger: (symbols: readonly string[]) => void
-}
-
-export function Installation({ onShowInLedger }: InstallationProps) {
+export function Installation() {
   const { t } = useI18n()
 
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const store = useQuery({ queryKey: ['store'], queryFn: api.store })
   // The reconstruction's two other facts (#787). Both are **optional** to it:
@@ -63,9 +59,10 @@ export function Installation({ onShowInLedger }: InstallationProps) {
   const failure = oneBand(
     readConditions({
       shellError: runtime.error,
-      // Causal order: the dials and the notices both live in the store, so the
-      // first of the two to fail is the one that names the cause.
-      errors: [config.error, advisories.error, store.error],
+      // Causal order: the dials and the store's own figures both come out of
+      // the store, so the first of the two to fail is the one that names the
+      // cause.
+      errors: [config.error, store.error],
     }),
   )
 
@@ -73,23 +70,26 @@ export function Installation({ onShowInLedger }: InstallationProps) {
     <div className="space-y-8">
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
-      {/* First, because it is what the dot sent the reader here for. */}
+      {/* Full width and first, because it is what the dot sent the reader here
+          for, and because a progress bar in a column is a progress bar nobody
+          reads across. */}
       <RebuildBlock
         runtime={runtime.data ?? null}
         firstEvent={firstEvent}
         accounts={accounts.data ?? null}
       />
 
-      {advisories.data ? (
-        <AdvisoriesBlock advisories={advisories.data} onShowInLedger={onShowInLedger} />
-      ) : null}
-
-      {/* The settings surface needs the registry to draw itself, so it waits
-          for it: a form of six fields that appeared empty and then filled in
-          would let a reader type into a dial whose bounds had not arrived. */}
-      {config.data ? <SettingsBlock config={config.data} runtime={runtime.data} /> : null}
-
-      <StoreBlock runtimeStore={runtime.data?.store ?? null} store={store.data ?? null} />
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* The settings surface needs the registry to draw itself, so it waits
+            for it: a form of six fields that appeared empty and then filled in
+            would let a reader type into a dial whose bounds had not arrived. */}
+        <div className="space-y-8">
+          {config.data ? <SettingsBlock config={config.data} runtime={runtime.data} /> : null}
+        </div>
+        <div className="space-y-8">
+          <StoreBlock runtimeStore={runtime.data?.store ?? null} store={store.data ?? null} />
+        </div>
+      </div>
     </div>
   )
 }

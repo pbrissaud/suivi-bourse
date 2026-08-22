@@ -265,7 +265,7 @@ describe('the sentence a notice is read in', () => {
     const partial = advisory({ key: 'assumed_base_currency', detail: { base_currency: 'EUR' } })
     expect(say('fr', partial)).not.toContain('undefined')
     expect(say('en', partial)).toBe(
-      'Amounts imported from files were taken to be in the reporting currency.',
+      'Amounts imported from files were taken to be in the base currency.',
     )
   })
 

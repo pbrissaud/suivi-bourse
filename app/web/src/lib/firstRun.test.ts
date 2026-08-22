@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { currencyMutable, currencyUnanswered, firstRunStands } from '@/lib/firstRun'
-import { aSetting, anEvent, defaultSettings } from '@/test/factories'
+import { currencyFixed, currencyUnanswered, firstRunStands } from '@/lib/firstRun'
+import { aSetting, defaultSettings } from '@/test/factories'
 
 const unanswered = () =>
   defaultSettings().map((setting) =>
@@ -28,25 +28,19 @@ describe('the one predicate', () => {
   })
 })
 
-describe('the currency stops being mutable at the first event', () => {
-  it('is free on an empty ledger and fixed afterwards, once it has been answered', () => {
-    expect(currencyMutable({ events: [], answered: true })).toBe(true)
-    expect(currencyMutable({ events: [anEvent()], answered: true })).toBe(false)
+describe('the currency is fixed the moment it is answered', () => {
+  it('reads the dial and not the ledger', () => {
+    // `CONTEXT.md`: *immutable once set — the answer can be given late, it just
+    // cannot be taken back*. The server is looser, and what its looseness buys
+    // is a window in which a reader adopts a second unit and discovers on their
+    // first import that the first one was never converted.
+    expect(currencyFixed(defaultSettings())).toBe(true)
+    expect(currencyFixed(unanswered())).toBe(false)
   })
 
-  it('stays free on a dial nobody has ever answered, whatever the ledger holds', () => {
-    // The server's own first clause, one line before it counts the events: a
-    // dial never answered has interpreted nothing, so nothing can be
-    // re-interpreted. Without it the modal — whose whole population is that
-    // dial — told a v4 arrival with 285 events it was already too late, over a
-    // form whose save then worked.
-    expect(currencyMutable({ events: [anEvent()], answered: false })).toBe(true)
-    expect(currencyMutable({ events: undefined, answered: false })).toBe(true)
-  })
-
-  it('claims neither while either read is still out', () => {
-    expect(currencyMutable({ events: undefined, answered: true })).toBeUndefined()
-    expect(currencyMutable({ events: null, answered: true })).toBeUndefined()
-    expect(currencyMutable({ events: [], answered: undefined })).toBeUndefined()
+  it('claims neither half while the settings read is still out', () => {
+    expect(currencyFixed(undefined)).toBeUndefined()
+    // A registry that does not carry the dial is not an install that answered.
+    expect(currencyFixed([aSetting()])).toBeUndefined()
   })
 })

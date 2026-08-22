@@ -55,16 +55,49 @@ async function openTheForm(user: ReturnType<typeof renderApp>['user']) {
   return screen.getByRole('radiogroup', { name: 'Ce qui s’est passé' })
 }
 
-describe('the two tabs under one route', () => {
-  it('names them by what the user declared and what the installation is', async () => {
+describe('the three tabs under one route', () => {
+  it('names them by what you declared, what the app has to say and what it is', async () => {
     renderData()
 
-    // A tab is not a page: the product's cut at four pages holds, and the line
-    // between the two is ADR-0014's boot test transposed to the render.
+    // A tab is not a page: the product's cut at four pages holds. What the
+    // three names are is ADR-0030's: the ledger and its provenance, the
+    // notices, and ADR-0014's boot test transposed to the render.
     const tabs = await screen.findAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Le grand livre', 'L’installation'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'Le grand livre',
+      'Les avis',
+      'L’installation',
+    ])
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+  })
+
+  it('lands on the ledger for a hash that names no tab, inherited names included', async () => {
+    // A lookup table written as an object literal answers `#toString` with an
+    // inherited **function**, which is truthy — and a function handed to
+    // `useState` is called as an initialiser, which took the route down.
+    renderData(ledgerEvents(), '/donnees#toString')
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Le grand livre' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      ),
+    )
+    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+  })
+
+  it('opens the tab the hash names, the notices included', async () => {
+    // The hash is what makes the links that point here arrive somewhere — the
+    // status dot, and the currency band's own gesture. Read, never written.
+    renderData(ledgerEvents(), '/donnees#notices')
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Les avis/ })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      ),
+    )
   })
 })
 

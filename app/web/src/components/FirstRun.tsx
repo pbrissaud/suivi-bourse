@@ -52,8 +52,7 @@ import { api, type ConfigResponse } from '@/lib/api'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
-  currencyMutable,
-  currencyUnanswered,
+  currencyFixed,
   firstRunDismissed,
   firstRunStands,
   rememberFirstRunDismissed,
@@ -62,11 +61,6 @@ import { useI18n } from '@/lib/i18n'
 import { receiptMessage } from '@/lib/receipts'
 
 const FIELD_ID = 'first-run-currency'
-
-/** `undefined` in, `undefined` out: a silence stays a silence (ADR-0026). */
-function negate(value: boolean | undefined): boolean | undefined {
-  return value === undefined ? undefined : !value
-}
 
 export function FirstRun() {
   const { t } = useI18n()
@@ -81,7 +75,6 @@ export function FirstRun() {
   // shell's own read under the same key — the banner and the status dot ask for
   // it everywhere — so arming it here costs nothing and takes nothing away.
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime, enabled: stands })
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events, enabled: stands })
 
   // A suggestion, never a default: the field opens on it, the question is still
   // unanswered, and what it buys is one click instead of a scroll. The
@@ -159,13 +152,10 @@ export function FirstRun() {
               if (save.isError) save.reset()
               setChoice(value)
             }}
-            // Both clauses of the dial's rule. Here the first one settles it —
-            // the modal only stands on an unanswered dial — and it is passed
-            // rather than assumed, so the field states one rule on both mounts.
-            mutable={currencyMutable({
-              events: events.data,
-              answered: negate(currencyUnanswered(config.data?.settings)),
-            })}
+            // The dial's rule, read off the dial. Here it settles itself — the
+            // modal only stands on an unanswered one — and it is passed rather
+            // than assumed, so the field states one rule on both mounts.
+            fixed={currencyFixed(config.data?.settings)}
             // The note is about **this value**: a reader who overrode the
             // suggestion is no longer reading a pre-filled field, and the
             // reservation would then be about a code the browser never named.

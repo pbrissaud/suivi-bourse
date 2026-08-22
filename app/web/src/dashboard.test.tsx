@@ -512,7 +512,7 @@ describe('the statistics shrink instead of filling with dashes', () => {
     renderApp()
 
     await screen.findByRole('group', { name: 'Gain total' })
-    expect(screen.getByText(/attendent une devise de report/)).toBeInTheDocument()
+    expect(screen.getByText(/attendent une devise de base/)).toBeInTheDocument()
     expect(
       screen.queryByText(/Un grand livre d’événements datés ajouterait/),
     ).not.toBeInTheDocument()

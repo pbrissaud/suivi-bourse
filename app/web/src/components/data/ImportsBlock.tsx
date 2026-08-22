@@ -1,6 +1,12 @@
 /**
  * **Import et export** — the unit of revocation, and the way back out (#728,
- * ADR-0020, ADR-0015, ADR-0005).
+ * #794, ADR-0020, ADR-0030, ADR-0015, ADR-0005).
+ *
+ * Since #794 it is **one band above the ledger table**, and it holds three
+ * things: the drop zone, the export menu and the imported files with their
+ * revocation. That placement is ADR-0020's, restored — provenance is a property
+ * of a *declared row*, and the provenance cell is already a link into this
+ * list, so split across two tabs that link crossed the page.
  *
  * What replaces #662's per-row repair apparatus is not another per-row gesture:
  * it is **the source**. A decision was taken against the interview here and it
@@ -38,6 +44,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -126,15 +140,36 @@ export function ImportsBlock({ imports, events, accounts, highlight }: ImportsBl
   if (rows.length === 0 && !files.events && !files.accounts) return null
 
   return (
-    <section aria-labelledby="data-imports" className="space-y-4">
-      <div>
-        <h2 id="data-imports" className="text-lg font-semibold tracking-tight">
-          {t('data.imports.title')}
-        </h2>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          {t('data.imports.description')}
-        </p>
-      </div>
+    <section
+      aria-labelledby="data-imports"
+      className="space-y-4 rounded-lg border border-dashed p-4"
+    >
+      <h2 id="data-imports" className="sr-only">
+        {t('data.imports.title')}
+      </h2>
+
+      {/* The drop zone and the way back out, on one line: the two gestures a
+          file is the unit of. The zone **names the folder** rather than
+          offering the browser a target it has nowhere to send — there is no
+          upload route, the drop folder is the mechanism, and a rectangle that
+          swallowed a file and did nothing would be the worst of the three.
+
+          It is **not said twice**: with nothing recorded, the ledger's own
+          empty state carries the same instruction as one of its two entries of
+          equal weight, one line below this band. An install with a source on
+          record and no event — an accounts file, or every import forgotten —
+          is exactly where both would otherwise render. */}
+      {events.length > 0 || files.events || files.accounts ? (
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {events.length > 0 ? (
+            <div>
+              <p className="font-medium">{t('data.drop.title')}</p>
+              <p className="max-w-prose text-sm text-muted-foreground">{t('data.drop.body')}</p>
+            </div>
+          ) : null}
+          {files.events || files.accounts ? <ExportMenu files={files} /> : null}
+        </div>
+      ) : null}
 
       {rows.length > 0 ? (
         <ImportsTable
@@ -150,8 +185,6 @@ export function ImportsBlock({ imports, events, accounts, highlight }: ImportsBl
           pending={forget.isPending}
         />
       ) : null}
-
-      {files.events || files.accounts ? <ExportHalf files={files} /> : null}
 
       <ForgetDialog
         row={confirming}
@@ -353,13 +386,21 @@ function nameOf(id: string, accounts: AccountsResponse | null): string {
 }
 
 /**
- * The way back out. **Two files and not one** (#710): a file is an accounts
- * source *or* an event source according to its header, so exporting the events
- * alone would restore a multi-account install into a refusal. That is not an
- * option offered to the reader — it is what the format is — and the accounts
- * file appears only where something is declared, the seeded row being no
- * declaration (ADR-0013) and the file it would produce a header with no rows
- * under it, which v4's loader refuses the whole directory over.
+ * The way back out — **a menu since #794**, because the band has one line for
+ * it and because the entries are about to be four (#796). What it is not is a
+ * button that exports *the current reduction*: the justification of the export
+ * is the round trip, a partial file is not one, and it would make re-importing
+ * look like a restore.
+ *
+ * **Two files and not one** (#710): a file is an accounts source *or* an event
+ * source according to its header, so exporting the events alone would restore a
+ * multi-account install into a refusal. That is not an option offered to the
+ * reader — it is what the format is — and it is said **in the menu**, where the
+ * choice is made, rather than as a paragraph on a page that has stopped
+ * explaining its own rules. The accounts file appears only where something is
+ * declared, the seeded row being no declaration (ADR-0013) and the file it
+ * would produce a header with no rows under it, which v4's loader refuses the
+ * whole directory over.
  *
  * An `<a download>` rather than a fetch: the browser's own *Save as* is the
  * whole of the interface this gesture needs, and the file's name is the
@@ -369,32 +410,38 @@ function nameOf(id: string, accounts: AccountsResponse | null): string {
  * twice — the argument is beside `EXPORT_FILENAMES` in `web/api.py`, and the
  * date a reader wants is on the import list, in `Importé le`.
  */
-function ExportHalf({ files }: { files: { events: boolean; accounts: boolean } }) {
+function ExportMenu({ files }: { files: { events: boolean; accounts: boolean } }) {
   const { t } = useI18n()
 
   return (
-    <div className="space-y-3 rounded-lg border p-4">
-      <div>
-        <h3 className="font-medium">{t('data.export.title')}</h3>
-        <p className="max-w-prose text-sm text-muted-foreground">{t('data.export.description')}</p>
-      </div>
-      <div className="flex flex-wrap gap-3">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline">
+          {t('data.export.title')}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-w-xs">
         {files.events ? (
-          <Button asChild variant="outline">
+          <DropdownMenuItem asChild>
             <a href={ROUTES.exportEvents} download>
               {t('data.export.events')}
             </a>
-          </Button>
+          </DropdownMenuItem>
         ) : null}
         {files.accounts ? (
-          <Button asChild variant="outline">
+          <DropdownMenuItem asChild>
             <a href={ROUTES.exportAccounts} download>
               {t('data.export.accounts')}
             </a>
-          </Button>
+          </DropdownMenuItem>
         ) : null}
-      </div>
-      <p className="max-w-prose text-xs text-muted-foreground">{t('data.export.two')}</p>
-    </div>
+        <DropdownMenuSeparator />
+        {/* Not an entry: it is what the two above are, said where they are
+            chosen. `DropdownMenuLabel` is not focusable and answers no click. */}
+        <DropdownMenuLabel className="font-normal text-xs whitespace-normal text-muted-foreground">
+          {t('data.export.two')}
+        </DropdownMenuLabel>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

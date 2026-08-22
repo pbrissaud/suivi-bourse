@@ -134,7 +134,7 @@ describe('what it says, and what it refuses to say', () => {
   it('says nothing about persistence on a mounted store', async () => {
     await firstRun()
 
-    await waitFor(() => expect(within(modal()).getByLabelText('Devise de report')).toBeInTheDocument())
+    await waitFor(() => expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument())
     expect(within(modal()).queryByText(/ne garde rien/)).not.toBeInTheDocument()
   })
 })
@@ -199,7 +199,7 @@ describe('the currency itself', () => {
   it('is a closed list bounded by what the rate source quotes', async () => {
     await firstRun()
 
-    const field = within(modal()).getByLabelText('Devise de report')
+    const field = within(modal()).getByLabelText('Devise de base')
     expect(field.tagName).toBe('SELECT')
     const offered = within(field as HTMLSelectElement)
       .getAllByRole('option')
@@ -212,7 +212,7 @@ describe('the currency itself', () => {
   it('is pre-filled from the browser locale as a suggestion and not as an answer', async () => {
     await firstRun({ browserLanguages: ['fr-CH'] })
 
-    const field = within(modal()).getByLabelText('Devise de report') as HTMLSelectElement
+    const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
     expect(field.value).toBe('CHF')
     // A suggestion poses nothing: the reservation is on screen where it applies.
     expect(within(modal()).getByText(/il nomme un pays, pas un portefeuille/)).toBeInTheDocument()
@@ -221,7 +221,7 @@ describe('the currency itself', () => {
   it('drops the pre-filled note the moment the reader overrides the suggestion', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
-    const field = within(modal()).getByLabelText('Devise de report')
+    const field = within(modal()).getByLabelText('Devise de base')
     expect(within(modal()).getByText(/il nomme un pays, pas un portefeuille/)).toBeInTheDocument()
 
     await user.selectOptions(field, 'CHF')
@@ -246,54 +246,65 @@ describe('the currency itself', () => {
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
     expect(await within(modal()).findByRole('alert')).toHaveTextContent(/a refusé cette valeur/)
 
-    await user.selectOptions(within(modal()).getByLabelText('Devise de report'), 'CHF')
+    await user.selectOptions(within(modal()).getByLabelText('Devise de base'), 'CHF')
     expect(within(modal()).queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('opens empty rather than guessing when the locale names no currency it can offer', async () => {
     await firstRun({ browserLanguages: ['fr'] })
 
-    const field = within(modal()).getByLabelText('Devise de report') as HTMLSelectElement
+    const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
     expect(field.value).toBe('')
     expect(within(modal()).queryByText(/il nomme un pays/)).not.toBeInTheDocument()
   })
 
-  it('says where the choice is made that it is still free on an empty ledger', async () => {
+  it('says where the choice is made that answering it is what fixes it', async () => {
+    // The one sentence the reader has to have before they answer, and the one
+    // the screen used to get wrong: *you can still change this, your ledger is
+    // empty* over a dial whose second answer re-reads three years of euros as
+    // dollars. The window that sentence described is real on the server and it
+    // is not one the app offers (#794, `CONTEXT.md`).
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
     await firstRun()
 
     await waitFor(() =>
-      expect(within(modal()).getByText(/votre grand livre est vide/)).toBeInTheDocument(),
+      expect(within(modal()).getByText(/Elle est fixée dès que vous y répondez/)).toBeInTheDocument(),
     )
+    expect(within(modal()).queryByText(/^Fixée /)).not.toBeInTheDocument()
   })
 
-  it('stays free on a full ledger, this dial having never been answered', async () => {
+  it('is still asked on a full ledger, this dial having never been answered', async () => {
     // The modal's whole population, and the v4 arrival is the ordinary case of
     // it: files carrying no `base_currency` column (#710) leave the dial
-    // unanswered under hundreds of events. The server returns early on
-    // *never answered* one clause before it counts them, so *« elle est fixée »*
-    // here is a refusal the app does not make — over a form whose save works.
+    // unanswered under hundreds of events. It is the *answer* that fixes it, so
+    // the question is still asked here — and it is asked in a field.
     await firstRun()
 
     await waitFor(() =>
-      expect(within(modal()).getByText(/Vous pouvez encore la changer/)).toBeInTheDocument(),
+      expect((within(modal()).getByLabelText('Devise de base') as HTMLElement).tagName).toBe(
+        'SELECT',
+      ),
     )
-    expect(within(modal()).queryByText(/Elle est désormais fixée/)).not.toBeInTheDocument()
   })
 
-  it('is fixed on the installation tab once it has been answered and events exist', async () => {
+  it('stops being drawn as a field on the installation tab once it is answered', async () => {
+    // Greyed out, a field invites the click and reads as a form that refused;
+    // open, it lets a reader choose a code the write will not take. What is
+    // left is the answer and the sentence that says it cannot be taken back.
     const { user } = renderApp({ url: '/donnees' })
     await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
-    expect(await screen.findByText(/Elle est désormais fixée/)).toBeInTheDocument()
+    expect(await screen.findByText(/Fixée : vos montants y sont enregistrés/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Devise de base')).not.toBeInTheDocument()
+    expect(screen.getByText('Devise de base')).toBeInTheDocument()
   })
 
-  it('shows a code another road stored, rather than reading it as unanswered', async () => {
+  it('shows a code another road stored, and names it as being outside the list', async () => {
     // Two roads reach the dial without this field: a headless `curl` on
     // `PUT /api/settings` (ADR-0015's one non-interactive path) and #710's
-    // import column. A controlled `select` with no matching option falls back
-    // to the empty one, and the screen would state the question is unanswered
-    // over a store that holds the answer.
+    // import column. **What is closed is what the field offers, not what it can
+    // show**: the stored answer is rendered whatever it is, and named as one the
+    // field would not have offered.
     const config = aConfig()
     server.use(
       http.get(ROUTES.config, () =>
@@ -308,9 +319,7 @@ describe('the currency itself', () => {
     const { user } = renderApp({ url: '/donnees' })
     await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
-    const field = (await screen.findByLabelText('Devise de report')) as HTMLSelectElement
-    expect(field.value).toBe('AED')
-    expect(within(field).getByRole('option', { name: /AED/ })).toBeInTheDocument()
+    expect(await screen.findByText(/AED — enregistrée hors de cette liste/)).toBeInTheDocument()
   })
 
   it('answering it writes the dial, receipts the gesture and closes the modal', async () => {
@@ -320,7 +329,7 @@ describe('the currency itself', () => {
 
     // `findAllBy`: a toast renders its text twice, once drawn and once in the
     // live region that announces it.
-    expect(await screen.findAllByText(/Devise de report enregistrée : EUR/)).not.toHaveLength(0)
+    expect(await screen.findAllByText(/Devise de base enregistrée : EUR/)).not.toHaveLength(0)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })
@@ -334,18 +343,18 @@ describe('the banner, with the currency unanswered', () => {
 
     const bands = await screen.findAllByRole('status')
     expect(bands).toHaveLength(1)
-    expect(bands[0]).toHaveTextContent(/Aucune devise de report n’a encore été choisie/)
+    expect(bands[0]).toHaveTextContent(/Aucune devise de base n’a encore été choisie/)
     // Its gesture is a link to its own field — never an acknowledgement — and
     // it is followed rather than merely inspected: an `href` asserted alone
     // passes on a link that lands on the wrong tab, which is what it did.
     await user.click(within(bands[0]).getByRole('link', { name: 'La choisir' }))
-    expect(await screen.findByLabelText('Devise de report')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Devise de base')).toBeInTheDocument()
     // And still one band, never two: the gesture landed on the tab where the
     // reconstruction's own block lives, and that block is not a band. Since
     // #787 the rule holds by construction rather than by ordering — the rebuild
     // stopped competing for the slot at all.
     expect(screen.getAllByRole('status')).toHaveLength(1)
-    expect(screen.getByRole('status')).toHaveTextContent(/Aucune devise de report/)
+    expect(screen.getByRole('status')).toHaveTextContent(/Aucune devise de base/)
   })
 
   it('frees the slot the moment the question is answered, and hands it to nobody', async () => {
@@ -376,12 +385,14 @@ describe('the ceiling loses nothing: what does not fit the slot is held by the p
 
     // The same field the modal mounts, still there — the panel holds it anyway,
     // which is what licenses capping the banner at one band.
-    const field = await screen.findByLabelText('Devise de report')
+    const field = await screen.findByLabelText('Devise de base')
     expect((field as HTMLSelectElement).value).toBe('')
     // And it is an *encart with a gesture*, never an acknowledgeable notice:
-    // acknowledging *I have no currency* means nothing (ADR-0021).
-    const notices = screen.getByRole('region', { name: 'Avis' })
-    expect(within(notices).queryByText(/devise de report/i)).not.toBeInTheDocument()
+    // acknowledging *I have no currency* means nothing (ADR-0021). The notices
+    // are a tab of their own since #794, so this is asked where they are.
+    await user.click(await screen.findByRole('tab', { name: /Les avis/ }))
+    const notices = await screen.findByRole('region', { name: 'Avis' })
+    expect(within(notices).queryByText(/devise de base/i)).not.toBeInTheDocument()
   })
 })
 

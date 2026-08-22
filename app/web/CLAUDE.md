@@ -1,10 +1,12 @@
 # app/web/ — the front
 
-> **ADR-0030 and ADR-0031 are decided and not yet built.** Where this file cites
-> one of them — the data page's three tabs, the paginated ledger — it describes
-> the destination, and the code has not been there yet. That is the one place
-> `docs/adr/README.md`'s rule for `preview/v5` is suspended, and it ends when
-> the tickets from that design session merge.
+> **ADR-0031 is decided and not yet built.** Where this file cites it — the
+> paginated ledger — it describes the destination, and the code has not been
+> there yet. That is the one place `docs/adr/README.md`'s rule for `preview/v5`
+> is suspended, and it ends when #795 merges.
+> **ADR-0030 has landed** (#794): the data page is the three tabs described
+> below, the notices are the one block that exists when it is empty, and the
+> imports are one band above the ledger table.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed

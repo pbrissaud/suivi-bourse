@@ -22,7 +22,7 @@
  * Storing it in the store would be a second dial answering a question the app
  * has just decided it asks once.
  */
-import type { LedgerEvent, SettingDescription } from '@/lib/api'
+import type { SettingDescription } from '@/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
 /** Same shape as the theme and language keys, deliberately (ADR-0024). */
@@ -59,37 +59,31 @@ export function currencyUnanswered(
 }
 
 /**
- * Whether the reporting currency may still be changed — the dial's own rule
- * (`settings._refuse_a_reinterpretation`), **both of its clauses**.
+ * Whether the base currency is **fixed** — answered, and therefore no longer
+ * something this app draws a field for (#794, ADR-0002, `CONTEXT.md`).
  *
- * The refusal exists because every amount in the ledger is recorded *in* the
- * reporting currency (ADR-0002), so a second answer does not convert three
- * years of euros, it silently re-reads them as dollars. But that is an argument
- * about a **re-interpretation**, and a dial nobody has ever answered has
- * interpreted nothing: the server returns early on `current is None` before it
- * so much as counts the events, precisely so that an install can *answer late*.
+ * *Immutable once set: the answer can be given late, it just cannot be taken
+ * back.* The screen said something else and it said it twice: *you can still
+ * change this: your ledger is empty*, over a dial whose second answer does not
+ * convert three years of euros but silently re-reads them as dollars. The
+ * server is looser than that — `_refuse_a_reinterpretation` returns early on an
+ * empty ledger, which is what lets an install answer late — and the front is
+ * deliberately **not**: what the loose clause buys is a window in which a
+ * reader can adopt a second unit and discover on their first import that the
+ * first one was never converted. The one thing the app owes here is the
+ * sentence, said before the answer rather than on the refusal.
  *
- * Written with the ledger alone, the sentence was false for the modal's whole
- * population — a v4 arrival whose files carry no `base_currency` column
- * (#710) boots with hundreds of events and the dial unanswered, so the one
- * surface that exists to ask the question told them it was already too late,
- * over a form whose save then worked.
+ * It is a rename of the predicate and not a second reading of it: *answered*
+ * is what the dial publishes (`currencyUnanswered`), and this is its name on
+ * screen.
  *
- * `undefined` is *not observed from here*: with neither read landed, neither
- * *you may still change this* nor *this is now fixed* is a sentence this screen
- * has the standing to write (ADR-0026).
+ * `undefined` is *not observed from here*: with the settings read not landed,
+ * neither *it is fixed the moment you answer* nor *it is fixed* is a sentence
+ * this screen has the standing to write (ADR-0026).
  */
-export function currencyMutable(input: {
-  events: readonly LedgerEvent[] | null | undefined
-  /** Whether the dial carries an answer. `undefined` — nothing observed yet. */
-  answered: boolean | undefined
-}): boolean | undefined {
-  if (input.answered === undefined) return undefined
-  // Never answered: this *is* the answer, not a change, whatever the ledger
-  // holds. The server says exactly this, one clause earlier than the count.
-  if (!input.answered) return true
-  if (!input.events) return undefined
-  return input.events.length === 0
+export function currencyFixed(settings: readonly SettingDescription[] | undefined) {
+  const unanswered = currencyUnanswered(settings)
+  return unanswered === undefined ? undefined : !unanswered
 }
 
 /** Whether this browser has already waved the modal away. */

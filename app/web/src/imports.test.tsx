@@ -56,6 +56,12 @@ function ledger() {
   return screen.getByRole('table', { name: 'Vos événements' })
 }
 
+/** The export is a menu since #794: its entries exist once it is open. */
+async function openExport(user: ReturnType<typeof renderApp>['user']) {
+  await user.click(await screen.findByRole('button', { name: 'Exporter' }))
+  return screen.findByRole('menu')
+}
+
 function rowFor(file: string) {
   return within(block())
     .getAllByRole('row')
@@ -228,38 +234,58 @@ describe('the revocation', () => {
 
 describe('the export', () => {
   it('is total, and offers nothing to narrow it with', async () => {
-    renderImports()
+    const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
+    const menu = await openExport(user)
 
-    const events = screen.getByRole('link', { name: 'Vos événements' })
-    expect(events).toHaveAttribute('href', '/api/export/events.csv')
-    expect(screen.getByRole('link', { name: 'Vos comptes' })).toHaveAttribute(
+    expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toHaveAttribute(
+      'href',
+      '/api/export/events.csv',
+    )
+    expect(within(menu).getByRole('menuitem', { name: 'Vos comptes' })).toHaveAttribute(
       'href',
       '/api/export/accounts.csv',
     )
     // The tempting feature, and the one the criterion forbids by name: an export
     // of the current reduction is not a round trip while looking exactly like
     // one.
-    expect(screen.queryByRole('button', { name: /Exporter (la sélection|ce filtre|cette vue)/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/porte dans une colonne la devise/)).toBeInTheDocument()
+    expect(
+      within(menu).queryByRole('menuitem', { name: /(la sélection|ce filtre|cette vue)/ }),
+    ).not.toBeInTheDocument()
+    // Two files and not one, said where the choice is made rather than as a
+    // paragraph on a page that has stopped explaining its own rules.
+    expect(within(menu).getByText(/porte dans une colonne la devise/)).toBeInTheDocument()
   })
 
   it('does not offer the accounts file on an install that has declared nothing', async () => {
     // The seeded row is not a declaration (ADR-0013): the file would be a header
     // with no rows under it, and v4's loader refuses the whole directory over
     // it — which is the round trip this export exists for.
-    renderImports({ accounts: [theSeededAccount()], declared: false })
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Vos événements' })).toBeInTheDocument())
+    const { user } = renderImports({ accounts: [theSeededAccount()], declared: false })
+    const menu = await openExport(user)
 
-    expect(screen.queryByRole('link', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
   })
 
-  it('lives in the block, which is named for both halves', async () => {
+  it('lives in the band, which holds the drop zone and the sources with it', async () => {
     renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    // Getting one's data out is a question of files, not of the ledger.
-    expect(screen.getByRole('heading', { name: 'Import et export' })).toBeInTheDocument()
+    // One band above the table (#794, ADR-0030): the zone, the menu and the
+    // files. Getting one's data out is a question of files, not of the ledger.
+    const band = screen.getByRole('region', { name: 'Import et export' })
+    expect(within(band).getByText(/Déposez un \.csv ou un \.xlsx/)).toBeInTheDocument()
+    expect(within(band).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
+    expect(within(band).getByRole('table', { name: 'Import et export' })).toBeInTheDocument()
+  })
+
+  it('puts the band above the ledger it describes', async () => {
+    renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const band = screen.getByRole('region', { name: 'Import et export' })
+    expect(band.compareDocumentPosition(ledger()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
@@ -284,8 +310,7 @@ describe('a read that has not landed', () => {
     // block waiting.
     expect(screen.queryByRole('table', { name: 'Import et export' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Oublier cet import' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Vos comptes' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
   })
 
   it('leads nowhere from a provenance while the list of sources is in flight', async () => {
@@ -336,19 +361,35 @@ describe('a refusal the reader could not foresee', () => {
 
 describe('an install that has imported nothing', () => {
   it('renders no list, and still hands back what was typed', async () => {
-    renderImports({ events: [aTypedEvent({ id: 'typed-1' })], imports: [] })
-    await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'Vos événements' })).toBeInTheDocument(),
-    )
+    const { user } = renderImports({ events: [aTypedEvent({ id: 'typed-1' })], imports: [] })
+    const menu = await openExport(user)
+    expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toBeInTheDocument()
 
     expect(screen.queryByRole('table', { name: 'Import et export' })).not.toBeInTheDocument()
   })
 
-  it('renders no block at all with nothing recorded and nothing declared', async () => {
+  it('says where to drop a file once, never beside the empty state that says it', async () => {
+    // An install with a source on record and no event — an accounts file, or
+    // every import forgotten — is where the band and the ledger's own empty
+    // state would each carry the instruction.
+    renderImports({ events: [], accounts: [anAccount({ id: 'zeta' })] })
+    await screen.findByText('Déposer un fichier')
+
+    // The band is there — it has a source to forget — and the instruction is
+    // said once, by the entry of the empty state and not by the band.
+    const band = screen.getByRole('region', { name: 'Import et export' })
+    expect(within(band).queryByText(/Déposez un \.csv ou un \.xlsx/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/Déposez un \.csv ou un \.xlsx/)).toHaveLength(1)
+  })
+
+  it('renders no band at all with nothing recorded and nothing declared', async () => {
+    // The drop zone is then the empty state's own entry, one line below: the
+    // band would say the same thing twice, and a block with nothing in it does
+    // not exist.
     renderImports({ events: [], imports: [], accounts: [theSeededAccount()], declared: false })
     await screen.findByText('Déposer un fichier')
 
-    expect(screen.queryByRole('heading', { name: 'Import et export' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Vos événements' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
   })
 })
