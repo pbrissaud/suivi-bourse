@@ -94,7 +94,7 @@
 
   "dashboard.allocation.title": "Répartition",
   "dashboard.allocation.others": "{count, plural, one {# autre ligne} other {# autres lignes}}",
-  "dashboard.allocation.total": "{amount} de titres.",
+  "dashboard.allocation.total": "Titres",
   "dashboard.allocation.unplaced": "{count, plural, one {# ligne n’est pas} other {# lignes ne sont pas}} dans cette répartition, cotée{count, plural, one {} other {s}} sans taux résolu : {symbols}. Les y compter rendrait tous les autres pourcentages faux.",
   "dashboard.allocation.empty": "Aucune position détenue",
   "dashboard.allocation.empty.body": "Votre grand livre porte des événements mais aucune position ouverte : il n’y a rien à répartir.",

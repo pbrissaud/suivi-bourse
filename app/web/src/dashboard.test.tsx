@@ -801,14 +801,24 @@ describe('the allocation', () => {
     // 1 300 / 600 / 400 out of 2 300 — and the legend is in the slices' own
     // descending order, which is what pairs a legend row to its slice and what
     // licenses the rank ramp of ADR-0023.
-    const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
+    const list = await screen.findByRole('list', { name: 'Répartition' })
+    const legend = within(list)
     const rows = legend.getAllByRole('listitem').map((row) => row.textContent ?? '')
     expect(rows.map((row) => row.replace(/\s/g, ''))).toEqual([
       'ZetaAlpha56,52%',
       'ZetaGamma26,09%',
       'ZetaBeta17,39%',
     ])
-    expect(screen.getByText(/de titres\./)).toHaveTextContent(/2\D?300,00/)
+    // The total, in the ring's own hole — **one named group and two lines**,
+    // not a sentence: `2 300,00 € de titres` measured wider than the hole and
+    // was drawn over the slices it divides. The pair stays whole where it has
+    // to, which is the accessible tree.
+    //
+    // Scoped to the card, because the head one track over names the same figure
+    // the same way: the ring's centre is the total *this figure* is the division
+    // of, and the two agree because they read one number.
+    const card = list.closest('[data-slot="card"]') as HTMLElement
+    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
   })
 
   it('names what it could not place instead of dropping it in silence', async () => {

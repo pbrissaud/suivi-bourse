@@ -94,7 +94,7 @@
 
   "dashboard.allocation.title": "Allocation",
   "dashboard.allocation.others": "{count, plural, one {# other holding} other {# other holdings}}",
-  "dashboard.allocation.total": "{amount} in securities.",
+  "dashboard.allocation.total": "Securities",
   "dashboard.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
   "dashboard.allocation.empty": "Nothing held",
   "dashboard.allocation.empty.body": "Your ledger has events but no open position, so there is nothing to divide up.",

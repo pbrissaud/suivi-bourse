@@ -38,6 +38,13 @@ export interface StatProps {
   /** The colour of the value, decided by `lib/sign.ts` and never here. */
   valueClassName?: string
   size?: 'head' | 'stat' | 'term'
+  /**
+   * Where the pair sits on its own line. `start` everywhere but one: the
+   * allocation's total is drawn **inside the ring's hole**, which has a middle
+   * and no left edge. It is a prop rather than a fifth copy of this component —
+   * the whole reason this primitive exists is that the prototype had four.
+   */
+  align?: 'start' | 'center'
 }
 
 const SIZES: Record<NonNullable<StatProps['size']>, string> = {
@@ -53,10 +60,15 @@ export function Stat({
   children,
   valueClassName,
   size = 'stat',
+  align = 'start',
 }: StatProps) {
   return (
-    <div role="group" aria-label={label} className="min-w-0 space-y-1">
-      <div className="flex items-center gap-1.5">
+    <div
+      role="group"
+      aria-label={label}
+      className={cn('min-w-0 space-y-1', align === 'center' && 'text-center')}
+    >
+      <div className={cn('flex items-center gap-1.5', align === 'center' && 'justify-center')}>
         <span className="text-sm text-muted-foreground">{label}</span>
         {explain}
       </div>

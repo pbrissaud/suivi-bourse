@@ -22,10 +22,14 @@
  *    account is working* has a page of its own.
  *  - **The total is at the centre of the donut** (#790), which is the one
  *    place on the figure where it is not a fourteenth line competing with the
- *    twelve slices and the tail. It stays **one** sentence — the amount and
- *    what it is the amount *of* — because splitting them would put the figure
- *    in one element and its unit in another, and the unit is what makes
- *    `2 300,00 €` mean *of securities* rather than *of the portfolio*.
+ *    twelve slices and the tail. It is **one object and two lines**: #790 wrote
+ *    it as one sentence so that the figure and what it is the amount *of* could
+ *    not be separated, and a sentence does not fit a hole — `2 300,00 € de
+ *    titres` measured 144 px inside a 139 px ring and was drawn over the slices
+ *    it divides. `Stat` keeps the pair whole where it matters, which is the
+ *    accessible tree: one named group, read *Titres, 2 300,00 €*. That is why
+ *    the primitive gained an alignment rather than this file gaining a fifth
+ *    copy of it.
  *  - **It names what it could not place.** A position quoted in a currency whose
  *    rate has not resolved has no value in the reporting currency, so summing it
  *    would make every other percentage silently wrong — the exclusion was
@@ -35,6 +39,7 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
+import { Stat } from '@/components/Stat'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { allocation, type AllocationSlice } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
@@ -76,8 +81,14 @@ export function Allocation({ rows, currency }: AllocationProps) {
             description={t('dashboard.allocation.empty.body')}
           />
         ) : (
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:items-center lg:grid-cols-1">
-            <div className="relative h-56">
+          /* The ring on the left and the legend beside it, at every width that
+             has room for the pair. The `lg:grid-cols-1` that used to close this
+             grid back up belonged to the **rail**, where this block sat until
+             the plateau put it on the wide track: left there, it stacked a
+             one-column legend under a centred ring on exactly the screens the
+             redesign was drawn for. */
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
+            <div className="relative h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -99,9 +110,13 @@ export function Allocation({ rows, currency }: AllocationProps) {
                   figure it is the division of belongs in it. `pointer-events-none`
                   so the slices under it stay reachable. */}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <p className="tabular max-w-[9rem] text-center text-sm text-muted-foreground">
-                  {t('dashboard.allocation.total', { amount: f.currency(total, currency) })}
-                </p>
+                <div className="max-w-[9rem]">
+                  <Stat
+                    align="center"
+                    label={t('dashboard.allocation.total')}
+                    value={f.currency(total, currency)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -109,7 +124,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
                 first column, then down the second, so rank stays legible. */}
             <ul
               aria-label={t('dashboard.allocation.title')}
-              className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-1"
+              className="grid gap-x-6 gap-y-1.5 text-sm xl:grid-cols-2"
             >
               {slices.map((slice, rank) => (
                 <li
