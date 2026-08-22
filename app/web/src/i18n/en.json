@@ -190,7 +190,6 @@
   "shares.fundamentals.peRatio": "P/E",
   "shares.fundamentals.marketCap": "Market cap",
 
-  "accounts.asOf": "Figures as of {date}",
   "accounts.chart.rangeName": "{range, select, 1M {1M} YTD {YTD} 1Y {1Y} SINCE_OPENING {Since the opening} other {}}",
 
   "accounts.rail.title": "Weight of your accounts",

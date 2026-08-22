@@ -51,14 +51,12 @@ import {
 } from '@/lib/accounts'
 import { accountOf } from '@/lib/ledger'
 import { api, type Account, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
-import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import { oneBand, readConditions } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
-  const f = useFormatters()
   const { compte } = useSearch({ from: '/comptes' })
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
   // account is *open on that account*. Three states, the ledger's three.
@@ -110,17 +108,28 @@ export default function AccountsPage() {
   // before the ledger has answered would be the opposite mistake.
   const offer = reassignmentOf(accounts.data, ledger ?? [])
 
-  // The page's name and the day its figures are of, both said in the header
-  // (#789). **The day is the opened account's own**, not a `max` over all of
-  // them: on the eight-column table the newest day covered every row, and on a
-  // master-detail it would put *« arrêtés au 2 mars »* over an account still
-  // being backfilled to 15 January. The date waits for the read the way every
-  // figure does — an invented *today* is the reading this mention exists to
-  // prevent.
-  usePageHeading(
-    t('page.accounts'),
-    opened?.as_of == null ? null : t('accounts.asOf', { date: f.date(opened.as_of) }),
-  )
+  // **The page's name, and nothing beside it** (#787).
+  //
+  // It carried *« Chiffres arrêtés au 22 août 2026 »* since #721, on the
+  // argument that these figures are a **day** and that a page of money with no
+  // date reads as *now*. The argument was right about the risk and wrong about
+  // the answer, because the product already answers it twice and better:
+  //
+  //  - the **status dot** says whether the installation is reading quotes and
+  //    rebuilding history on its cadence, and it *leads* to the tab that
+  //    explains it (ADR-0021, ADR-0022);
+  //  - the **band** says the reconstruction is running, and how far it has got.
+  //
+  // Between them there is no state left for the date to report. The perf cycle
+  // writes today's row every two minutes while the scheduler runs — weekends
+  // included, the series being daily — so with the dot green and no band the
+  // day *is* today, on every install, always. A mention that is constant is not
+  // a safeguard; it is a word in the one line that carries the page's name, and
+  // on a phone it took that name down with it.
+  //
+  // What remains true is the risk it named. What answers it now is the dot,
+  // which is the surface built for exactly that question.
+  usePageHeading(t('page.accounts'))
 
   return (
     <div className="space-y-6">

@@ -231,12 +231,20 @@ describe('what the page stopped doing', () => {
 })
 
 describe('the page’s own reads', () => {
-  it('dates its money figures once, at the level of the page', async () => {
+  it('does not date its money figures: the dot already answers that question', async () => {
+    // The mention was #721's — *these figures are a day, and a page of money
+    // with no date reads as now*. The risk is real and the answer was the wrong
+    // surface: the perf cycle writes today's row every two minutes while the
+    // scheduler runs, weekends included, so with the dot green and no band the
+    // day **is** today on every install, always. A constant mention is not a
+    // safeguard, and on a phone it took the page's own name down with it.
     renderAccounts()
     await settled()
 
-    expect(screen.getByText('Chiffres arrêtés au 2 mars 2026')).toBeInTheDocument()
-    // The interval is carried by the range control and never written twice.
+    expect(screen.queryByText(/Chiffres arrêtés/)).not.toBeInTheDocument()
+    // What answers it instead, and it leads somewhere the sentence never did.
+    expect(screen.getByRole('link', { name: /L’installation/ })).toBeInTheDocument()
+    // The interval is carried by the range control and never written in words.
     expect(screen.queryByText(/sur (un an|les douze derniers mois)/i)).not.toBeInTheDocument()
   })
 

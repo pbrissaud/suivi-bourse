@@ -190,7 +190,6 @@
   "shares.fundamentals.peRatio": "PER",
   "shares.fundamentals.marketCap": "Capitalisation",
 
-  "accounts.asOf": "Chiffres arrêtés au {date}",
   "accounts.chart.rangeName": "{range, select, 1M {1M} YTD {Depuis le 1ᵉʳ janvier} 1Y {1A} SINCE_OPENING {Depuis l’ouverture} other {}}",
 
   "accounts.rail.title": "Poids de vos comptes",
