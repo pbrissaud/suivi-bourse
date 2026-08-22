@@ -28,9 +28,35 @@ status dot with it. The sidebar answers with the component's drawer. A lost func
 chrome — a column that is empty across roughly two thirds of its height at four entries, more at
 three.
 
-The cap stays. Uncapping gives the content 1616 px at 1920 (+31,2 %), a width neither paying page
-was ever judged at, and the dashboard head visibly loosens there. `max-w-7xl` stops being an
-inheritance and becomes a measured decision.
+The cap stayed. Uncapping gave the content 1616 px at 1920 (+31,2 %), a width neither paying page
+had ever been judged at, and the dashboard head visibly loosened there. `max-w-7xl` stopped being
+an inheritance and became a measured decision.
+
+## Amended (#792): the cap is removed
+
+Not because the measurement was wrong, but because **both pages it measured are gone**. The
+twelve-slice allocation and the eight-column accounts table were the two payers; the redesign
+([#787](https://github.com/pbrissaud/suivi-bourse/issues/787)) rebuilt the first into a plateau of
+two tracks and [ADR-0028](./0028-the-accounts-page-shows-one-account.md) deleted the second
+outright, and the dashboard head that *visibly loosened* at 1616 px was rewritten in the same
+session. #787 reconducted the cap without re-measuring it against the form it was replacing them
+with — so what stood on the branch was a rule protecting two pages that no longer existed.
+
+What it did instead is the other entry of this record, the one filed as a known cost and never
+corrected. Below 1536 px the cap **does not bind at all**: the sidebar has already taken the
+width. Above it, its only observable effect is that the page is **off-centre** — 472 px of margin
+on the left against 216 on the right, `mx-auto` centring inside a `SidebarInset` that is itself
+already offset by the column. A rule inert where most readers are and wrong where the rest are is
+not a measured decision any more.
+
+The redesign answers width the way it answers it everywhere else: **with tracks, not with longer
+rows.** The plateau gains a column where there is room for one, and gains nothing where there is
+not — which is the mechanism the cap was standing in for, badly.
+
+**The cost that comes with it is real and is not corrected here**: at 2560 px the ten columns of
+Titres and the nine of the ledger spread across some 2300 px, and a row followed that far is a row
+lost. That is a bound on a **table**, not on a shell, and it is left to the surface whose subject
+it is — the day it is measured, it is that page's record and not this one.
 
 ## Consequences
 
@@ -56,6 +82,10 @@ inheritance and becomes a measured decision.
   question rather than answering it.
 - **N ≥ 3 stays unobserved.** The column was judged at four entries and at three; the navigation
   does not vary beyond that, but chrome is judged on a product that does not grow.
+- **The content column is `w-full`, and `mx-auto` goes with the cap.** Centring a column that
+  fills its parent does nothing, and it was the source of the off-centring: what it centred in was
+  never the viewport. The 976 px reflow target is untouched — the cap never bound there — and so
+  is the 390 px case.
 
 [Full argument: #691](https://github.com/pbrissaud/suivi-bourse/issues/691) ·
 [the widths it re-measured: #683](https://github.com/pbrissaud/suivi-bourse/issues/683),

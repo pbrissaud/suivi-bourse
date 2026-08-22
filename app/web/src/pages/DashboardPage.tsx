@@ -21,10 +21,15 @@
  *  - **The four states are one decision** (`lib/dashboard.ts`), not a `?.length`
  *    per block: *no events* is a sentence and a link, while *events and nothing
  *    held* is an ordinary page whose blocks each say why they are empty.
- *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`: the
- *    figures the reader came for on the wide one — the head, the chart, the
- *    accounts — and the two blocks that are *read down* in the rail beside it,
- *    the allocation and the movers. Below `lg` the tracks collapse into one, so
+ *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`, and
+ *    the split is *drawn against read down*: the wide one carries the three
+ *    figures that are **drawn** — the head, the value/performance chart, and the
+ *    allocation, whose ring plus legend wants the same width the chart does —
+ *    and the rail carries the two that are **read down as lists**, the movers
+ *    and the accounts. That is the maquette's own order, and it is the one the
+ *    eye follows: a donut squeezed into a third of the page loses its legend to
+ *    two columns of six, and a list of five rows does not gain a thing from
+ *    twice the width. Below `lg` the tracks collapse into one, so
  *    the 976 px case ADR-0022 measured is the **stacked** page and cannot
  *    overflow sideways; the two-track grid only starts where there is room for
  *    it. And it starts only where there is something to put in the rail: at
@@ -121,7 +126,7 @@ export default function DashboardPage() {
         {state !== 'portfolio' ? null : (
           <>
             <PortfolioChart />
-            <AccountsCard />
+            <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
           </>
         )}
       </div>
@@ -129,7 +134,6 @@ export default function DashboardPage() {
       {/* The rail: two blocks that are read down rather than across. */}
       {state !== 'portfolio' ? null : (
         <div className="space-y-6 lg:col-start-2 lg:row-start-1">
-          <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
           <Movers
             // `?? null` and never `?? []`: this read is armed only once the
             // page reaches `portfolio`, so there is a real window in which an
@@ -140,6 +144,10 @@ export default function DashboardPage() {
             rows={rows}
             currency={positions.data?.base_currency ?? null}
           />
+          {/* Last, and it is allowed to render nothing at all: at one account a
+              comparison is the head's own figure with a border round it, so the
+              rail then holds the movers alone. */}
+          <AccountsCard />
         </div>
       )}
     </div>

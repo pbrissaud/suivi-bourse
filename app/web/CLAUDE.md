@@ -25,6 +25,12 @@ pnpm build   # → app/src/static/ (git-ignored)
 pnpm dev     # Vite :5173, proxying /api → localhost:8080 (SB_API_URL to change it)
 ```
 
+The content column is **uncapped** since #792: `max-w-7xl` was a measured
+decision whose measurement expired with the two pages it was taken on, and what
+it did on the branch was nothing below 1 536 px and an off-centre page above it
+(ADR-0022, amended). Width is answered by **tracks, not by longer rows**; the
+976 px reflow target and the 390 px drawer are untouched.
+
 **`lint` is the type-checker and nothing else** — there is no ESLint here. Two
 `// eslint-disable-next-line react-hooks/exhaustive-deps` survive from the
 prototype (`AccountsCard`, `AccountsBlock`); they document a deliberate
@@ -149,13 +155,15 @@ src/
 
 ## The four pages, one line each
 
-- **Dashboard** (`/`) — the head computes `Gain total` from its four terms and
-  never reads `gain_absolu`; under it, one chart slot with two readings (*Amounts*
-  / *Performance*), the allocation in twelve slices, the movers, and the **accounts
-  card** — which since ADR-0028 is where accounts are compared, and therefore holds
-  ADR-0019's rule: one range for every figure on it, sparkline included. The head's
-  two period figures sit with the total, never among its four terms. It is the
-  dashboard **unconditionally**, zero events included.
+- **Dashboard** (`/`) — a **plateau of two tracks** from `lg`, split *drawn*
+  against *read down*: the head (which computes `Gain total` from its four terms
+  and never reads `gain_absolu`), the chart slot with two readings (*Amounts* /
+  *Performance*) and the allocation in twelve slices on the wide one; the movers
+  and the **accounts card** in the rail. That card is where accounts are compared
+  since ADR-0028, and it therefore holds ADR-0019's rule: one range for every
+  figure on it, sparkline included. The head's two period figures sit with the
+  total, never among its four terms. It is the dashboard **unconditionally**,
+  zero events included.
 - **Shares** (`/titres`) — ten columns since the weight bar, the header sums its
   lines, so the closed positions **fold** rather than being filtered (the fold is
   not a filter, and the header does not move when the section opens). Grouping by
