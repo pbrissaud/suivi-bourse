@@ -495,6 +495,26 @@ def rounded(measured):
             for name, rows in measured.items()}
 
 
+def test_a_control_character_costs_a_cell_and_never_the_workbook(tmp_path):
+    """A note pasted out of a PDF must not take the whole file down.
+
+    OOXML cannot hold ``\x00``–``\x1f`` and ``openpyxl`` refuses the cell, so
+    with nothing done one vertical tab in one note would make
+    ``GET /api/export/events.xlsx`` a ``500`` **for the entire ledger** — and
+    invisibly, the CSV going on working, until the reader picks the other entry.
+    The character leaves; the row, the file and the other 284 rows stay.
+    """
+    events = [Event(date=date(2024, 1, 2), event_type=EventType.DEPOSIT,
+                    account='pea', amount=10.0, notes='bad\x01char')]
+
+    assert workbook_rows(
+        events_export.render_events_workbook(events))['2024'][0]['notes'] == \
+        'badchar'
+    # The CSV is the backup and keeps the byte: text is what text is, and
+    # nothing in that format refuses it.
+    assert 'bad\x01char' in events_export.render_events(events)
+
+
 def test_reimporting_the_workbook_rebuilds_the_same_ledger(tmp_path):
     """The tabs are a shape, never a second format: the file re-enters whole."""
     _, source = install(tmp_path / 'source',

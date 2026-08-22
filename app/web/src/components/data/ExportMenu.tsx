@@ -7,6 +7,13 @@
  * instant of the click — and the declared accounts. The first two and the last
  * were the menu; the middle two are what this ticket adds.
  *
+ * **Three of the four entries are a perimeter stated by the entry itself.** The
+ * workbook is the ledger *entire*, deliberately: the resource takes the
+ * reduction in either shape, so a workbook of the selection is one parameter
+ * away, and what stops the menu from offering it is that four entries were what
+ * the reader was promised. The perimeter is named by the one entry that
+ * reduces, which is what keeps the other three unambiguous.
+ *
  * **Nothing here narrows anything.** The selection is the ledger's own
  * reduction, carried to the server as the four names the chips hold (`q`,
  * `type`, `account`, `symbol`) and answered there: the importable form belongs
@@ -66,7 +73,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { api, ROUTES, type ExportFile } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
-import { exportHref, type LedgerFilters } from '@/lib/ledger'
+import { exportHref, selectionParams, type LedgerFilters } from '@/lib/ledger'
 import { problemMessageKey } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 import { saveFile } from '@/lib/save'
@@ -120,11 +127,17 @@ export function ExportMenu({ files, selection, selected }: ExportMenuProps) {
             {/* The count is the label: it is what the entry will produce, said
                 before the click rather than discovered in a file. With nothing
                 pressed the reduction is the whole ledger, which is what the
-                chips retain then — and the server names the file for what it
-                is, so the reader never gets a partial file wearing the backup's
-                name. */}
+                chips retain then — and the receipt then says *your events*,
+                like the file the server answers under. The kind is read off the
+                reduction and never off the entry that was clicked, or the one
+                sentence on screen would contradict the name on the disk. */}
             <DropdownMenuItem
-              onSelect={() => run('selection', exportHref(ROUTES.exportEvents, selection))}
+              onSelect={() =>
+                run(
+                  selectionParams(selection).size > 0 ? 'selection' : 'events',
+                  exportHref(ROUTES.exportEvents, selection),
+                )
+              }
             >
               {t('data.export.selection', { count: selected })}
             </DropdownMenuItem>

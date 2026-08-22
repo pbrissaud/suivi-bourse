@@ -8,9 +8,19 @@
  * front that touches the document to do something other than render — a
  * detached anchor, clicked, and taken straight back out.
  *
- * The object URL is **revoked**: a blob held by a URL nobody released is a copy
- * of the whole ledger kept alive for as long as the tab is open, and a reader
- * who exports twice would hold two.
+ * The object URL is **revoked**, and revoked on a **later task**. Both halves
+ * are load-bearing. A blob held by a URL nobody released is a copy of the whole
+ * ledger kept alive for as long as the tab is open, and a reader who exports
+ * twice holds two — but released in the same task as the click it is released
+ * *before the save*: only Chrome starts reading the blob during `click()`,
+ * where Firefox and Safari queue the download and resolve the `blob:` URL
+ * afterwards. The reader would then be told the file is on their disk with
+ * nothing written, which is the one failure a receipt must not be able to
+ * report. The anchor stays in the document until then, for the same reason.
+ *
+ * No test sees this: jsdom implements neither object URLs nor downloads, so the
+ * suite stands in for both and would pass on either ordering. It is written
+ * down here because that is the only place it can be held.
  */
 import type { DownloadedFile } from '@/lib/api'
 
@@ -23,6 +33,8 @@ export function saveFile({ blob, filename }: DownloadedFile): void {
   anchor.download = filename
   document.body.append(anchor)
   anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }, 0)
 }

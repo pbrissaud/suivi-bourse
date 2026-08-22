@@ -57,6 +57,7 @@ response.
 """
 import csv
 import io
+import re
 import unicodedata
 from datetime import date
 from typing import (
@@ -75,6 +76,13 @@ EVENT_COLUMNS = (
     'quantity', 'unit_price', 'fee', 'amount', 'notes',
     BASE_CURRENCY_COLUMN,
 )
+
+#: What a worksheet cannot carry: the C0 controls, tab, newline and carriage
+#: return excepted. It is exactly the range ``openpyxl`` raises on, restated
+#: here because it is a fact about the **format** rather than about the library
+#: — and because naming it costs no import at module scope, which the workbook
+#: deliberately does not take.
+_UNWRITABLE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 
 #: The sheet a workbook falls back to when there is no year to name — an empty
 #: ledger. A workbook with no sheet at all is not a file a spreadsheet opens, so
@@ -254,18 +262,38 @@ def _by_year(events: Iterable[Event]) -> Dict[str, List[Event]]:
 
 
 def _write_row(sheet, values: Sequence[Any]) -> None:
-    """One row of cells, with text kept text.
+    """One row of cells, with text kept text and kept **writable**.
+
+    Two things happen to a string on the way in, and each is a defect the
+    library would otherwise hand the reader.
 
     ``openpyxl`` binds a string beginning with ``=`` as a **formula**, so a note
     reading ``=SUM(A1:A2)`` would leave as one, be evaluated where the file is
     opened, and come back as whatever that evaluated to. A ledger's note is what
     somebody typed; the type is restated after the binding, which is the only
     place the library offers to say so.
+
+    And OOXML cannot carry ``\x00``–``\x1f``, so ``openpyxl`` **raises** on a
+    cell holding one. Nothing upstream removes them — the API's text members are
+    stripped, which never touches an interior character, and both loaders pass a
+    cell through as it came — so one vertical tab in one note pasted out of a
+    PDF would make the workbook route a ``500`` for the *whole* ledger, silently,
+    the CSV going on working until the reader picks the other entry. The
+    character is dropped here rather than the file being lost: it is not
+    renderable in a spreadsheet under any encoding, and the CSV — the backup —
+    keeps the byte.
     """
-    sheet.append(list(values))
+    sheet.append([_writable(value) for value in values])
     for cell in sheet[sheet.max_row]:
         if isinstance(cell.value, str):
             cell.data_type = 's'
+
+
+def _writable(value: Any) -> Any:
+    """One value a worksheet will accept — text minus what OOXML cannot hold."""
+    if not isinstance(value, str):
+        return value
+    return _UNWRITABLE.sub('', value)
 
 
 # --------------------------------------------------------------------- #

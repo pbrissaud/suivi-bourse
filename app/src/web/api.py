@@ -1223,9 +1223,12 @@ def export_events_workbook():
     :func:`events.export.render_events_workbook`: OOXML carries a double one
     significant digit short of what round-trips exactly.
 
-    It takes the same reduction the CSV does, for the same reason: the menu
-    offers one selection, and offering it in one of the two files only would
-    make the shape and the perimeter one choice instead of two.
+    It takes the same reduction the CSV does, so that **the shape and the
+    perimeter stay two questions** on the resource: a workbook of one year is a
+    ``curl`` away for a headless install, and a fifth menu entry the day the
+    interface wants one. The menu spends its four on the four the ticket names,
+    and the workbook entry is therefore the ledger **entire** — the perimeter is
+    carried by the entry that says it reduces, and by no other.
     """
     try:
         selection = _selection()

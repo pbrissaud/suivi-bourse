@@ -351,6 +351,21 @@ describe('the export', () => {
     await waitFor(() => expect(saved).toEqual(['suivi-bourse-selection.csv']))
   })
 
+  it('names the file it is really making, and not the entry that was clicked', async () => {
+    // With no chip pressed the selection *is* the whole ledger: the server
+    // answers under the backup's name, so a receipt saying « votre sélection »
+    // would be the one sentence on screen contradicting the file on the disk.
+    const { user } = renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', { name: /La sélection filtrée/ }),
+    )
+
+    expect(await screen.findByText('Vos événements sont sur votre disque.')).toBeInTheDocument()
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.csv']))
+  })
+
   it('asks the workbook route for the workbook', async () => {
     const asked: string[] = []
     server.use(

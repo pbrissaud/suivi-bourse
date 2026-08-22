@@ -8,10 +8,12 @@
  *     capture, `ResizeObserver`, `scrollIntoView`. None of them is a stand-in
  *     for a decision; they are browser API jsdom never implemented.
  *  3. **No network, no configuration.** MSW answers the faked edge and errors on
- *     any request no handler names; the clock, the storage and the root element
- *     are reset between tests, so nothing a test does can reach the next one.
+ *     any request no handler names; the clock, the storage, the root element
+ *     and the receipts are reset between tests, so nothing a test does can
+ *     reach the next one.
  */
 import '@testing-library/jest-dom/vitest'
+import { toast } from 'sonner'
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 import { installMatchMedia, setViewportWidth } from '@/test/media'
@@ -84,6 +86,15 @@ beforeEach(() => {
 afterEach(() => {
   server.resetHandlers()
   vi.useRealTimers()
+  // The receipts. `sonner` portals its toaster into `document.body` and holds
+  // its own module-level store, so neither survives a render and both survive
+  // React Testing Library's cleanup: measured, a receipt raised in one test is
+  // still on screen while the next one runs, and a second test asserting the
+  // same sentence finds two. It costs the state *and* the node — dismissing
+  // alone leaves the element standing, removing alone leaves the store holding
+  // it.
+  toast.dismiss()
+  document.querySelectorAll('[data-sonner-toaster]').forEach((node) => node.remove())
   window.localStorage.clear()
   document.cookie = 'sidebar_state=; Max-Age=0; path=/'
   document.documentElement.className = ''
