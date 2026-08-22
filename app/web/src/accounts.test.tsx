@@ -41,6 +41,13 @@ function rail() {
   return screen.getByRole('list', { name: 'Vos comptes' })
 }
 
+/** The bar's own legend, one card up: it is where a share is written. */
+function weights() {
+  return within(screen.getByRole('list', { name: 'Poids de vos comptes' }))
+    .getAllByRole('listitem')
+    .map((row) => row.textContent ?? '')
+}
+
 function entries() {
   return within(rail())
     .getAllByRole('link')
@@ -57,12 +64,17 @@ describe('the rail', () => {
     renderAccounts()
     await settled()
 
+    // **Two objects**: the weights are a card of their own, and each account is
+    // its own card carrying what it is worth.
     expect(entries()).toHaveLength(3)
     expect(entries()[0]).toContain('Alpha')
+    expect(entries()[0]).toMatch(/1\D?800,00/)
+
+    expect(weights()[0]).toContain('Alpha')
     // A share of a whole, never a change: `+54,55 %` would put the sign of a
     // gain on a weight.
-    expect(entries()[0]).toMatch(/54,55\s%/)
-    expect(entries()[0]).not.toContain('+54,55')
+    expect(weights()[0]).toMatch(/54,55\s%/)
+    expect(weights()[0]).not.toContain('+54,55')
   })
 
   it('weighs an account on its securities where no cash ledger was ever kept', async () => {
@@ -73,7 +85,8 @@ describe('the rail', () => {
     // same. Weighed on the total alone it would read `0,00 %` — silently, the
     // bar still summing to a hundred.
     expect(entries()[2]).toContain('Gamma')
-    expect(entries()[2]).toMatch(/18,18\s%/)
+    expect(entries()[2]).toMatch(/600,00/)
+    expect(weights()[2]).toMatch(/18,18\s%/)
   })
 
   it('names the reason an account has no figures, and never a progress', async () => {

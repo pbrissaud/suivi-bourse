@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   accountWeights,
+  accountWorth,
   declaredLabel,
   declaredType,
   degradedReason,
@@ -96,6 +97,8 @@ export interface AccountsRailProps {
    * title reads as acting on it.
    */
   onDeclare: () => void
+  /** The one currency everything is reported in (ADR-0002). */
+  currency: string | null
 }
 
 export function AccountsRail({
@@ -104,6 +107,7 @@ export function AccountsRail({
   rebuilding,
   offer,
   onDeclare,
+  currency,
 }: AccountsRailProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -115,106 +119,158 @@ export function AccountsRail({
   const drawable = rows.filter((row) => (weights.get(row.id) ?? null) !== null)
 
   return (
-    <Card className="gap-4 lg:sticky lg:top-6">
-      <CardHeader>
-        <h2 className="text-sm font-medium">{t('accounts.rail.title')}</h2>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {drawable.length === 0 ? null : (
-          <span aria-hidden className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+    // **Two objects, not one** (#787): the weights are one card, and each
+    // account is its own. Folded into a single card the rail read as a legend
+    // with links in it, where what it is is a stack of accounts with a bar above
+    // them — and an account with room for its own figure stops being a row in
+    // somebody else's table.
+    <div className="space-y-3 lg:sticky lg:top-6">
+      <Card className="gap-3 py-4">
+        <CardHeader className="px-4">
+          <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {t('accounts.rail.title')}
+          </h2>
+        </CardHeader>
+        <CardContent className="space-y-3 px-4">
+          {drawable.length === 0 ? null : (
+            <span aria-hidden className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full">
+              {rows.map((row, index) => {
+                const share = weights.get(row.id) ?? null
+                if (share === null) return null
+                return (
+                  <span
+                    key={row.id}
+                    className="block"
+                    style={{ width: `${share * 100}%`, backgroundColor: segmentColour(index) }}
+                  />
+                )
+              })}
+            </span>
+          )}
+
+          {/* The bar's own legend, and only that: it pairs a colour to a name
+              and states the share. What each account *is* is its own card. */}
+          <ul aria-label={t('accounts.rail.title')} className="space-y-1.5">
             {rows.map((row, index) => {
               const share = weights.get(row.id) ?? null
-              if (share === null) return null
               return (
-                <span
+                <li
                   key={row.id}
-                  style={{ width: `${share * 100}%`, backgroundColor: segmentColour(index) }}
-                />
-              )
-            })}
-          </span>
-        )}
-
-        <ul aria-label={t('accounts.rail.label')} className="-mx-2 flex flex-col">
-          {rows.map((row, index) => {
-            const share = weights.get(row.id) ?? null
-            const reason = degradedReason(row, rebuilding)
-            const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
-            return (
-              <li key={row.id}>
-                <Link
-                  to="/comptes"
-                  search={{ compte: row.id }}
-                  aria-current={row.id === selected ? 'true' : undefined}
-                  className={cn(
-                    'flex flex-col gap-0.5 rounded-md px-2 py-2 text-sm hover:bg-muted/60',
-                    row.id === selected && 'bg-muted',
-                  )}
+                  className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
                 >
-                  <span className="flex items-baseline gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                     <span
                       aria-hidden
-                      className="inline-block size-2.5 shrink-0 rounded-full"
+                      className="inline-block size-2 shrink-0 rounded-sm"
                       style={{ backgroundColor: segmentColour(index) }}
                     />
-                    <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-                    {/* A share of a whole, never a change: `percent` signs what
-                        it renders, and a weight has no sign to carry. The em
-                        dash is right here — an account nothing has been written
-                        about has no share to compute, and the sentence under it
-                        names why. */}
-                    <span className="tabular shrink-0 text-muted-foreground">
-                      {share === null ? ABSENT : f.percentPoints(share * 100)}
+                    <span className="truncate">
+                      {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
                     </span>
                   </span>
-                  <span className="pl-[1.125rem] text-xs text-muted-foreground">
-                    {declaredType(row) ??
-                      (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)}
+                  <span className="tabular shrink-0">
+                    {share === null ? ABSENT : f.percentPoints(share * 100)}
                   </span>
-                  {reason === null ? null : (
-                    <span className="pl-[1.125rem] text-xs text-attention">
-                      {t(REASON_LABELS[reason])}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
+                </li>
+              )
+            })}
+          </ul>
+        </CardContent>
+      </Card>
 
-        {/* The one population the promise *your declared accounts* does not
-            cover, and the only way to repair it. It leads to the **seeded
-            account's own detail**, where the offer stands: the link owes its
-            reader the gesture and not the page (#725), and since ADR-0028 the
-            gesture is one click away in this very page rather than on another
-            one. */}
-        {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
-          <Link
-            to="/comptes"
-            search={{ compte: DEFAULT_ACCOUNT_ID }}
-            className="block px-2 text-left text-xs underline underline-offset-4"
-          >
-            {t('accounts.default.reassign')}
-          </Link>
-        ) : (
-          // **Where nothing is declared yet the gesture *is* the declaration**,
-          // so this one opens the panel instead of leading anywhere: there is no
-          // list of accounts to assign to, and the account the reader is about
-          // to create is the only answer the question can have. A button, not a
-          // link — it goes nowhere.
-          <button
-            type="button"
-            onClick={onDeclare}
-            className="block px-2 text-left text-xs underline underline-offset-4"
-          >
-            {t('accounts.default.reassign')}
-          </button>
-        )}
+      {/* One card per account, and the list is **bounded**: a rail is a rail and
+          not a page, so past a dozen accounts it scrolls inside itself rather
+          than pushing the declaration off the bottom of the screen. */}
+      <ul aria-label={t('accounts.rail.label')} className="max-h-[26rem] space-y-2 overflow-y-auto">
+        {rows.map((row, index) => {
+          const reason = degradedReason(row, rebuilding)
+          const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
+          const type =
+            declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+          return (
+            <li key={row.id}>
+              <Link
+                to="/comptes"
+                search={{ compte: row.id }}
+                aria-current={row.id === selected ? 'true' : undefined}
+                className={cn(
+                  'block rounded-xl border bg-card px-4 py-3 hover:border-primary/40',
+                  row.id === selected && 'border-primary/50 bg-muted',
+                )}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    <span
+                      aria-hidden
+                      className="inline-block size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: segmentColour(index) }}
+                    />
+                    <span className="truncate">{name}</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{type}</span>
+                </span>
 
-        <Button type="button" variant="outline" className="w-full" onClick={onDeclare}>
-          {t('accounts.new')}
-        </Button>
-      </CardContent>
-    </Card>
+                {/* **What the account is worth, and never how it performed.** The
+                    maquette puts a `perf` here and ADR-0028 does not let it: a
+                    rate with no stated period beside a total is the
+                    unbounded-window failure in miniature, and this rail has no
+                    range control to state one. The value is the absolute the
+                    share above is a share *of*. */}
+                <span className="tabular mt-1 block text-lg font-semibold tracking-tight">
+                  {f.currency(accountWorth(row), currency)}
+                </span>
+
+                {/* The id, on a line of its own: it is what every event names and
+                    what a file's `account` column has to spell, and a card is
+                    where there is finally room for it. *Already said* is
+                    **either line above it** — an account whose id is `CTO` and
+                    whose type is `CTO` printed the same word twice. */}
+                {name === row.id || type === row.id ? null : (
+                  <span className="mt-2 block border-t pt-2 font-mono text-xs text-muted-foreground">
+                    {row.id}
+                  </span>
+                )}
+
+                {reason === null ? null : (
+                  <span className="mt-1 block text-xs text-attention">
+                    {t(REASON_LABELS[reason])}
+                  </span>
+                )}
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+
+      {/* The one population the promise *your declared accounts* does not cover,
+          and the only way to repair it. It leads to the **seeded account's own
+          detail**, where the offer stands: the link owes its reader the gesture
+          and not the page (#725). */}
+      {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
+        <Link
+          to="/comptes"
+          search={{ compte: DEFAULT_ACCOUNT_ID }}
+          className="block px-1 text-left text-xs underline underline-offset-4"
+        >
+          {t('accounts.default.reassign')}
+        </Link>
+      ) : (
+        // **Where nothing is declared yet the gesture *is* the declaration**, so
+        // this one opens the panel instead of leading anywhere: there is no list
+        // of accounts to assign to, and the account the reader is about to create
+        // is the only answer the question can have. A button, not a link.
+        <button
+          type="button"
+          onClick={onDeclare}
+          className="block px-1 text-left text-xs underline underline-offset-4"
+        >
+          {t('accounts.default.reassign')}
+        </button>
+      )}
+
+      <Button type="button" variant="outline" className="w-full" onClick={onDeclare}>
+        {t('accounts.new')}
+      </Button>
+    </div>
   )
 }

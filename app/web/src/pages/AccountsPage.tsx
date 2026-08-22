@@ -178,6 +178,7 @@ export default function AccountsPage() {
             selected={opened.id}
             rebuilding={runtime.data?.rebuilding ?? null}
             onDeclare={() => setEditing(null)}
+            currency={currency}
             // Whether there is anything to reassign — the module's own answer
             // (#725), which is *events still naming a row nobody declared* and
             // not *a row called `default` exists*: renamed, retyped or taken
