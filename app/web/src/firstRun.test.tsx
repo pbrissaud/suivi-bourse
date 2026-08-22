@@ -325,7 +325,7 @@ describe('the currency itself', () => {
   })
 })
 
-describe('the banner, with both conditions true at once', () => {
+describe('the banner, with the currency unanswered', () => {
   it('renders one band and it is the currency, gesture included', async () => {
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     const { user } = await firstRun()
@@ -340,18 +340,28 @@ describe('the banner, with both conditions true at once', () => {
     // passes on a link that lands on the wrong tab, which is what it did.
     await user.click(within(bands[0]).getByRole('link', { name: 'La choisir' }))
     expect(await screen.findByLabelText('Devise de report')).toBeInTheDocument()
-    // And never the reconstruction beside it: two bands is the wall.
-    expect(screen.queryByText(/en cours de reconstruction/)).not.toBeInTheDocument()
+    // And still one band, never two: the gesture landed on the tab where the
+    // reconstruction's own block lives, and that block is not a band. Since
+    // #787 the rule holds by construction rather than by ordering — the rebuild
+    // stopped competing for the slot at all.
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent(/Aucune devise de report/)
   })
 
-  it('hands the slot to the reconstruction once the currency is answered', async () => {
+  it('frees the slot the moment the question is answered, and hands it to nobody', async () => {
+    // The causal order still holds — it is simply one condition shorter. What
+    // used to take the slot next is the reconstruction, and it no longer
+    // competes for one.
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
 
-    expect(await screen.findByText(/en cours de reconstruction/)).toBeInTheDocument()
-    expect(screen.getAllByRole('status')).toHaveLength(1)
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+    // The fact is not lost: the dot carries it, and it is a link.
+    expect(
+      screen.getByRole('link', { name: /L’historique est en cours de reconstruction/ }),
+    ).toBeInTheDocument()
   })
 })
 

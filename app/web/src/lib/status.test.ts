@@ -39,7 +39,7 @@ describe('the banner shows one band or none', () => {
   })
 })
 
-describe('the causal order of the shell’s three conditions (#726)', () => {
+describe('the causal order of the shell’s two conditions (#726, #787)', () => {
   const rebuilding = aRuntime({ rebuilding: true, accounts: [] })
 
   it('puts the app not answering first: nothing under it has a figure to excuse', () => {
@@ -54,10 +54,7 @@ describe('the causal order of the shell’s three conditions (#726)', () => {
     ).toEqual({ message: 'problem.unreachable' })
   })
 
-  it('renders one band with both conditions true, and it is the currency', () => {
-    // With no reporting currency nothing is converted and the perf job writes
-    // nothing at all, so a reconstruction running underneath has no figure to
-    // excuse yet. Two bands here would be the wall the ticket exists against.
+  it('renders the currency band, whatever else is true of the installation', () => {
     // The property is *what reaches the slot*, not how long the list is:
     // `oneBand` is the cap, and asserting the length would fail on an ordered
     // list built whole — which is the same behaviour on screen.
@@ -68,10 +65,13 @@ describe('the causal order of the shell’s three conditions (#726)', () => {
     })
   })
 
-  it('frees the slot the moment the question is answered', () => {
-    expect(oneBand(shellConditions({ currencyUnanswered: false, runtime: rebuilding }))).toEqual({
-      message: 'banner.rebuilding',
-    })
+  it('frees the slot the moment the question is answered, and hands it to nobody', () => {
+    // The order is one condition shorter since #787: the reconstruction is a
+    // **state of the dot** now, not a band. A condition that ends by itself does
+    // not take the top of every page on every route, and the dot it moved to is
+    // a link — so the fact kept its address and lost its cost.
+    expect(oneBand(shellConditions({ currencyUnanswered: false, runtime: rebuilding }))).toBeNull()
+    expect(installationState({ runtime: rebuilding })).toBe('rebuilding')
   })
 
   it('keeps its gesture, because the reader can make this condition stop', () => {

@@ -1017,12 +1017,32 @@ describe('the four states of the page', () => {
   })
 })
 
-describe('the reconstruction, in the banner and only there', () => {
+describe('the reconstruction, on the dot and in the tab it leads to', () => {
+  it('takes the green off the dot: the consolidated figures are behind', async () => {
+    // **Green means the quotes are read *and* the performance is up to date**
+    // (#787). It used to mean the scheduler was running, which is true during a
+    // rebuild — so the dot said the installation was fine while a red band said
+    // the opposite at the top of the same page.
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
+    )
+    renderApp()
+
+    expect(
+      await screen.findByRole('link', { name: /L’historique est en cours de reconstruction/ }),
+    ).toBeInTheDocument()
+    // And the band is gone with it: a condition that ends by itself does not
+    // take the top of every page on every route.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
   it('carries a bar and names the account holding the global figures back', async () => {
     // The global series is written only where **every** account is (ADR-0018),
     // so without the name *one slow account delays the whole home page* is a
     // rule nothing on screen states — and the owner reads the delay as a fault
-    // of the portfolio as a whole.
+    // of the portfolio as a whole. It is on the installation tab now, which is
+    // where the dot leads.
     server.use(
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(
@@ -1037,15 +1057,26 @@ describe('the reconstruction, in the banner and only there', () => {
         ),
       ),
     )
-    renderApp()
+    const { user } = renderApp({ url: '/donnees' })
+    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
-    const band = await screen.findByRole('status')
-    expect(band).toHaveTextContent(/Alpha est le compte le plus en retard/)
+    expect(
+      await screen.findByText(/Alpha est le compte le plus en retard/),
+    ).toBeInTheDocument()
     // (2026-03-02 → 2026-01-01) over (2026-03-02 → 2025-12-24), the oldest day
     // the ledger names: 60 days of 68.
     expect(await screen.findByRole('progressbar')).toHaveAccessibleName(
       /88\D?% de la période couverte/,
     )
+  })
+
+  it('does not exist when nothing is being rebuilt', async () => {
+    // A block with nothing in it does not exist.
+    const { user } = renderApp({ url: '/donnees' })
+    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+    await screen.findByRole('heading', { name: 'Le magasin' })
+
+    expect(screen.queryByText(/Reconstruction de l’historique/)).not.toBeInTheDocument()
   })
 })
 

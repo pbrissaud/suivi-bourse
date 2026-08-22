@@ -19,14 +19,19 @@ import { installationState, type InstallationState } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 /**
- * The four states, in colour. Exported because the sidebar's status card is the
+ * The five states, in colour. Exported because the sidebar's status card is the
  * **development** of this dot (#789) and a second copy of the mapping is a
  * second opinion on what *attention* looks like.
+ *
+ * `rebuilding` shares `attention`'s tone and not its word (#787): both say *not
+ * everything on screen is what it will be*, which is what a colour can carry,
+ * and only the sentence can say that one needs a hand and the other only time.
  */
 export const STATE_TONE: Record<InstallationState, string> = {
   unknown: 'bg-muted-foreground',
   ok: 'bg-gain',
   attention: 'bg-attention',
+  rebuilding: 'bg-attention',
   unreachable: 'bg-destructive',
 }
 

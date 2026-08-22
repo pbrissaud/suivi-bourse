@@ -99,7 +99,15 @@ Two nets hold a rule nothing made true by construction:
   appears.
 - **One band on screen or none.** `lib/status.ts` holds the causal order between
   the shell's band (what is true of the installation) and a page's own (a read of
-  its own that failed).
+  its own that failed). Since #787 that order is **two conditions**, not three:
+  the reconstruction left the band for the **dot**, which gained a fifth state
+  for it, and its detail — the bar and the lagging account — is a block on the
+  installation tab, where the dot leads.
+- **Green means the quotes are read *and* the performance is up to date** (#787).
+  The dot used to hold one predicate, the scheduler, and stayed green while a red
+  band announced a rebuild on every page — two surfaces disagreeing about one
+  installation. With the rebuild folded in, one glance answers *are the figures I
+  am looking at any good*, which is why no page dates its own figures any more.
 - **The theme, the language and the table density are the reader's three
   preferences, one mechanism** (ADR-0024 decided the first two): three states each
   for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density

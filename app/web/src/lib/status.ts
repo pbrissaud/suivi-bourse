@@ -23,18 +23,43 @@ import { problemMessageKey } from '@/lib/problem'
  * A state, never a count (ADR-0021). A counter stuck at "1" for the life of an
  * install is the noise the rule was written against.
  */
-export type InstallationState = 'unknown' | 'ok' | 'attention' | 'unreachable'
+export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 'unreachable'
 
+/**
+ * **Green means the quotes are read *and* the performance is up to date** — and
+ * that invariant is the whole of #787's amendment to this function.
+ *
+ * It used to hold one predicate, the scheduler, on the argument that it is the
+ * one the reader can act on. That left the dot **green while a red band
+ * announced a reconstruction at the top of every page** — two surfaces
+ * disagreeing about the same installation, and the one the reader is taught to
+ * trust saying the wrong thing.
+ *
+ * Worse, it made the dot unable to answer the question it exists for. A reader
+ * asking *are the figures I am looking at any good* got *the scheduler is
+ * running*, which does not imply it: during a rebuild the consolidated figures
+ * are behind, and nothing green should say otherwise. With the rebuild folded
+ * in, one glance answers it — and three pages lost the dated mention they
+ * carried to answer it themselves, because the dot now does.
+ *
+ * The order is causal, like the banner's: the app not answering is stronger
+ * than a stopped scheduler, which is stronger than a rebuild — a scheduler that
+ * has stopped is *why* a rebuild would never finish, so naming the rebuild there
+ * would name the symptom over the cause.
+ *
+ * **Rebuilding is its own state and not `attention`**, because the two ask
+ * opposite things of the reader: *attention* is a stopped scheduler, which needs
+ * a hand, and a rebuild needs only time. One word for both would make the dot's
+ * own sentence wrong half the time — which is the defect it is being fixed of.
+ */
 export function installationState(input: {
   runtime?: RuntimeState
   error?: unknown
 }): InstallationState {
   if (input.error) return 'unreachable'
   if (!input.runtime) return 'unknown'
-  // One predicate today, and it is the one the reader can do something about:
-  // the scheduler is the thing that fetches quotes and rebuilds history, so a
-  // stopped scheduler is why every figure on every page stops moving.
-  return input.runtime.scheduler_running ? 'ok' : 'attention'
+  if (!input.runtime.scheduler_running) return 'attention'
+  return input.runtime.rebuilding ? 'rebuilding' : 'ok'
 }
 
 /**
@@ -147,11 +172,6 @@ export function shellConditions(input: {
    */
   currencyUnanswered?: boolean
   runtime?: RuntimeState
-  /** The oldest day the ledger names — the bar's denominator, and only that. */
-  firstEvent?: string | null
-  /** How the lagging account is named. The **declaration's** name (#729). */
-  nameAccount?: (account: string) => string
-  now?: Date
 }): BannerCondition[] {
   if (input.error) return [{ message: problemMessageKey(input.error) }]
 
@@ -170,23 +190,14 @@ export function shellConditions(input: {
     ]
   }
 
-  if (input.runtime?.rebuilding !== true) return []
-
-  const { account, ratio } = rebuildProgress(
-    input.runtime.accounts ?? [],
-    input.firstEvent ?? null,
-    input.now ?? new Date(),
-  )
-  // Named or not, the sentence is not the same one: *which* account is late is
-  // the whole of what makes the rule visible, and inventing a name for an
-  // account nothing reported would be worse than the shorter sentence.
-  return [
-    {
-      message: account === null ? 'banner.rebuilding' : 'banner.rebuilding.account',
-      values: account === null ? undefined : { account: input.nameAccount?.(account) ?? account },
-      ...(ratio === null ? {} : { progress: ratio }),
-    },
-  ]
+  // **The reconstruction is no longer a band** (#787). It had one for the same
+  // reason it had a progress bar — it advances, and a reader waiting on it wants
+  // to know how far — but a band is the most expensive surface in the product:
+  // it takes the top of *every* page, on every route, for a condition that ends
+  // by itself. The dot carries the fact now (`installationState`) and the
+  // installation tab carries the detail, which is where the dot leads. What is
+  // left here is what the reader can act on.
+  return []
 }
 
 /**

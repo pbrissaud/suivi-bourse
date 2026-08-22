@@ -17,8 +17,8 @@
   "sidebar.rail": "Replier ou déplier la navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
-  "sidebar.status.title": "{state, select, ok {Système opérationnel} attention {Ordonnanceur arrêté} unreachable {Application injoignable} other {}}",
-  "sidebar.status.body": "{state, select, ok {Les cours sont relevés et l’historique reconstruit à leur cadence.} attention {Plus rien n’est relevé ni reconstruit tant qu’il n’a pas redémarré.} unreachable {Rien n’a répondu, donc rien à l’écran n’est frais.} other {}}",
+  "sidebar.status.title": "{state, select, ok {Système opérationnel} attention {Ordonnanceur arrêté} rebuilding {Reconstruction en cours} unreachable {Application injoignable} other {}}",
+  "sidebar.status.body": "{state, select, ok {Les cours sont relevés et l’historique reconstruit à leur cadence.} attention {Plus rien n’est relevé ni reconstruit tant qu’il n’a pas redémarré.} rebuilding {Les cours sont relevés ; les chiffres consolidés rattrapent encore votre historique.} unreachable {Rien n’a répondu, donc rien à l’écran n’est frais.} other {}}",
   "sheet.close": "Fermer",
   "dialog.close": "Fermer",
 
@@ -31,7 +31,7 @@
   "theme.dark": "Sombre",
 
   "status.link": "État de l’installation",
-  "status.dot": "{state, select, ok {L’installation va bien} attention {L’installation demande un regard} unreachable {L’application ne répond pas} other {L’état de l’installation est inconnu}}",
+  "status.dot": "{state, select, ok {L’installation va bien} attention {L’installation demande un regard} rebuilding {L’historique est en cours de reconstruction} unreachable {L’application ne répond pas} other {L’état de l’installation est inconnu}}",
 
   "page.dashboard": "Tableau de bord",
   "page.shares": "Titres",
@@ -113,9 +113,11 @@
   "dashboard.accounts.range": "Plage comparée",
   "dashboard.accounts.empty": "Rien à comparer sur cette plage pour l’instant.",
 
-  "banner.rebuilding": "L’historique de votre portefeuille est en cours de reconstruction.",
-  "banner.rebuilding.account": "L’historique de votre portefeuille est en cours de reconstruction. {account} est le compte le plus en retard, et les chiffres consolidés l’attendent.",
-  "banner.rebuilding.progress": "{percent, number, percent} de la période couverte",
+  "installation.rebuild.title": "Reconstruction de l’historique",
+  "installation.rebuild.body": "L’historique de votre portefeuille est en cours de reconstruction. Les cours continuent d’être relevés ; ce sont les chiffres consolidés qui rattrapent.",
+  "installation.rebuild.body.account": "L’historique de votre portefeuille est en cours de reconstruction. {account} est le compte le plus en retard, et les chiffres consolidés l’attendent.",
+  "installation.rebuild.progress": "{percent, number, percent} de la période couverte",
+  "installation.rebuild.link": "Voir le tableau de bord",
   "banner.currency": "Aucune devise de report n’a encore été choisie : rien n’est converti et aucune performance n’est calculée. Vos cours continuent d’être relevés et enregistrés dans leur propre devise.",
   "banner.currency.gesture": "La choisir",
 

@@ -30,6 +30,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Band } from '@/components/Band'
 import { AdvisoriesBlock } from '@/components/data/AdvisoriesBlock'
 import { SettingsBlock } from '@/components/data/SettingsBlock'
+import { RebuildBlock } from '@/components/data/RebuildBlock'
 import { StoreBlock } from '@/components/data/StoreBlock'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -47,6 +48,17 @@ export function Installation({ onShowInLedger }: InstallationProps) {
   const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const store = useQuery({ queryKey: ['store'], queryFn: api.store })
+  // The reconstruction's two other facts (#787). Both are **optional** to it:
+  // the ledger gives the bar its denominator and the declaration gives the
+  // lagging account its name, and an absent one removes a bar or a name rather
+  // than falsifying the sentence — so neither is waited for.
+  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  const firstEvent = (events.data ?? []).reduce<string | null>(
+    (oldest, event) =>
+      event.date !== null && (oldest === null || event.date < oldest) ? event.date : oldest,
+    null,
+  )
 
   const failure = oneBand(
     readConditions({
@@ -60,6 +72,13 @@ export function Installation({ onShowInLedger }: InstallationProps) {
   return (
     <div className="space-y-8">
       {failure ? <Band>{t(failure.message)}</Band> : null}
+
+      {/* First, because it is what the dot sent the reader here for. */}
+      <RebuildBlock
+        runtime={runtime.data ?? null}
+        firstEvent={firstEvent}
+        accounts={accounts.data ?? null}
+      />
 
       {advisories.data ? (
         <AdvisoriesBlock advisories={advisories.data} onShowInLedger={onShowInLedger} />

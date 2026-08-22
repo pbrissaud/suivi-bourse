@@ -32,7 +32,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 
 import { Band } from '@/components/Band'
-import { declaredLabel } from '@/lib/accounts'
 import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
@@ -44,40 +43,20 @@ export function Banner() {
   // The same read the first-run modal composes its predicate from — one query
   // key, so it is one request, and **no new API state** for either surface.
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
-  const rebuilding = runtime.data?.rebuilding === true
-  const events = useQuery({ queryKey: ['events'], queryFn: api.events, enabled: rebuilding })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled: rebuilding })
-
-  // The oldest day the ledger names. A read that has not landed leaves the bar
-  // out and the sentence in: *the reconstruction is running* is true either way,
-  // and a denominator nobody has answered is not a measurement.
-  const firstEvent = (events.data ?? []).reduce<string | null>(
-    (oldest, event) =>
-      event.date !== null && (oldest === null || event.date < oldest) ? event.date : oldest,
-    null,
-  )
-
+  // **The ledger and the declaration went with the reconstruction** (#787).
+  // They were read here for one sentence — the bar's denominator and the
+  // lagging account's name — and that sentence lives on the installation tab
+  // now, where the dot leads. A band that reads two resources for a condition
+  // it no longer announces is two requests on every route for nothing.
   const band = oneBand(
     shellConditions({
       error: runtime.error,
       currencyUnanswered: currencyUnanswered(config.data?.settings),
       runtime: runtime.data,
-      firstEvent,
-      nameAccount: (id) => {
-        // **An optional read, so the `?? []` survives** (ADR-0026): not finding
-        // the declaration removes a *name* from the sentence and falls back to
-        // the id — it falsifies nothing, and withholding the band over it would
-        // hide the condition the reader is waiting on.
-        const declared = (accounts.data?.accounts ?? []).find((account) => account.id === id)
-        return (declared ? declaredLabel(declared) : null) ?? t('accounts.default.label')
-      },
-      now: new Date(),
     }),
   )
 
   if (!band) return null
-
-  const percent = band.progress === undefined ? null : Math.round(band.progress * 100)
 
   return (
     <Band className="rounded-none border-x-0 border-t-0">
@@ -92,16 +71,6 @@ export function Banner() {
             {t(band.gesture.label)}
           </Link>
         ) : null}
-        {percent === null ? null : (
-          // A native `<progress>`, so the figure is announced rather than
-          // drawn: the bar is the rendering and the percentage is the fact.
-          <progress
-            className="h-1.5 w-full"
-            value={percent}
-            max={100}
-            aria-label={t('banner.rebuilding.progress', { percent: percent / 100 })}
-          />
-        )}
       </div>
     </Band>
   )
