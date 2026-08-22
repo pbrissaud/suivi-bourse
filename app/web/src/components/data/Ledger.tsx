@@ -31,7 +31,7 @@
  * rendered nothing would make *the store is unreadable* and *you have recorded
  * nothing yet* the same screen, in its worst form, a blank one.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
@@ -123,8 +123,39 @@ export function Ledger({ focus }: LedgerProps = {}) {
   // budget silently not applying at the exact moment the reader asked a
   // question. `filters` is a fresh object per gesture, which is what makes this
   // fire on the gesture and not on the value.
-  useEffect(() => setBudget(PAGE), [filters])
+  //
+  // Adjusted **during the render** and not in an effect, which is React's own
+  // pattern for a state derived from a prop that changed and is the difference
+  // between resetting and *flashing*: an effect runs after the commit, so the
+  // render that first sees the new reduction would draw it at the old budget —
+  // a hundred rows and « 100 sur 100 affichés » painted for one frame, on every
+  // keystroke in the search field, before the reset lands.
+  const [reduced, setReduced] = useState(filters)
+  if (reduced !== filters) {
+    setReduced(filters)
+    setBudget(PAGE)
+  }
   const page = reveal(shown, budget)
+
+  // **The last packet takes the control the reader just pressed with it.** With
+  // nothing done about it the focus falls to `<body>` and a reader without a
+  // pointer loses their place in a table of two hundred rows; the region that
+  // replaced the button takes the focus instead. It is also the one thing on
+  // this surface worth announcing — forty rows arriving is a change with no
+  // sound — so the region is polite and holds both sentences rather than each
+  // of them holding its own.
+  const tail = useRef<HTMLDivElement>(null)
+  const offeredMore = useRef(false)
+  useEffect(() => {
+    if (!page.atEnd) {
+      offeredMore.current = true
+      return
+    }
+    if (offeredMore.current && document.activeElement === document.body) {
+      tail.current?.focus()
+    }
+    offeredMore.current = false
+  }, [page.atEnd])
 
   // The accounts read joins the causal order rather than failing quietly: it is
   // a second read of the same store, and this tab now renders a table off it —
@@ -233,25 +264,32 @@ export function Ledger({ focus }: LedgerProps = {}) {
                   And there is **no spinner**, in this state or in any other.
                   There is not even a wait to dress: the next forty rows are in
                   memory, and pressing the button is a `setState` and a render. */}
-              {page.atEnd ? (
-                <p className="text-center text-xs text-muted-foreground">
-                  {t('data.ledger.end', { count: page.total })}
-                </p>
-              ) : (
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    {t('data.ledger.shown', { shown: page.shown, total: page.total })}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBudget((current) => current + PAGE)}
-                  >
-                    {t('data.ledger.more')}
-                  </Button>
-                </div>
-              )}
+              <div
+                ref={tail}
+                tabIndex={-1}
+                aria-live="polite"
+                className="flex flex-wrap items-center justify-center gap-3 outline-none"
+              >
+                {page.atEnd ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t('data.ledger.end', { count: page.total })}
+                  </p>
+                ) : (
+                  <>
+                    <span className="text-xs text-muted-foreground">
+                      {t('data.ledger.shown', { shown: page.shown, total: page.total })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBudget((current) => current + PAGE)}
+                    >
+                      {t('data.ledger.more')}
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </>

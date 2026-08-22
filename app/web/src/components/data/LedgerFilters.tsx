@@ -29,7 +29,9 @@
  * The account chips appear **at N ≥ 2 only**. ADR-0013 seeds a `default` row
  * that is never removed, so a single-account install would get a group with one
  * option beside its own exit: a filter that cannot filter, which is the same
- * defect as a column that cannot discriminate.
+ * defect as a column that cannot discriminate. The one exception is a reduction
+ * already **in force**: the group stays whatever N is, because a filter with no
+ * way out is worse than a filter that cannot filter.
  *
  * **A reduction that came from a gesture names itself and can be undone** (#724).
  * The securities filter has no control to type into — it arrives from the
@@ -63,6 +65,18 @@ export interface LedgerFiltersProps {
 export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFiltersProps) {
   const { t } = useI18n()
   const f = useFormatters()
+
+  // **A reduction in force always has a chip that releases it.** `accounts` is
+  // what the *ledger* names, and the ledger changes under the reader: revoking
+  // from the band above this bar the import that carried every `beta` event
+  // takes `beta` out of the list while `filters.account` still holds it, and the
+  // group would then disappear with the only control that could clear it —
+  // leaving a table that is simply shorter than it should be and nothing on
+  // screen saying why, which is the defect #724 was written against.
+  const named =
+    filters.account !== null && !accounts.includes(filters.account)
+      ? [...accounts, filters.account]
+      : accounts
 
   return (
     <div className="flex min-w-0 grow flex-wrap items-center gap-x-4 gap-y-3">
@@ -102,14 +116,14 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
         ))}
       </div>
 
-      {accounts.length > 1 ? (
+      {named.length > 1 || filters.account !== null ? (
         <div role="group" aria-label={t('data.filter.account')} className="flex flex-wrap gap-1.5">
           <Chip
             pressed={filters.account === null}
             label={t('data.filter.account.all')}
             onPress={() => onChange({ ...filters, account: null })}
           />
-          {accounts.map((account) => (
+          {named.map((account) => (
             <Chip
               key={account}
               pressed={filters.account === account}
@@ -177,8 +191,12 @@ function Chip({
         'h-7 rounded-full border px-3 text-xs font-medium transition-colors',
         'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         mono && 'font-mono',
+        // Solid, and not the mint on a wash of the mint: that pairing reads at
+        // 4,06:1 at 12 px on the light ground, where `--primary` against
+        // `--primary-foreground` is the contrast the preset guarantees (5,21
+        // light, 10,84 dark) — the same one every primary button rests on.
         pressed
-          ? 'border-primary/50 bg-primary/12 text-primary'
+          ? 'border-primary bg-primary text-primary-foreground'
           : 'border-input text-muted-foreground hover:text-foreground',
       )}
     >

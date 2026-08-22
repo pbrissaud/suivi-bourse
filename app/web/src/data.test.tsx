@@ -24,6 +24,8 @@ import {
   aLongLedger,
   anAccountsPayload,
   anEvent,
+  anImport,
+  anImportsPayload,
   aTypedEvent,
   importedOnly,
   ledgerEvents,
@@ -367,6 +369,71 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     await user.click(within(types).getByRole('button', { name: 'Versement' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
     expect(screen.getByText('Fin du grand livre · 3 événements')).toBeInTheDocument()
+  })
+})
+
+describe('a reduction in force always has the chip that releases it', () => {
+  it('keeps the account chip after the import that named that account is forgotten', async () => {
+    // The ledger is what names the accounts, and the ledger changes under the
+    // reader: forgetting the file that carried every `beta` row takes `beta` out
+    // of the list while the filter still holds it. With the group gone the table
+    // is simply shorter than it should be, with nothing on screen saying why or
+    // how to get the rest back — #724's defect, arrived from the other side.
+    const withBeta = [
+      ...ledgerEvents(),
+      anEvent({ date: '2026-02-11', account: 'beta', source_row: 12 }),
+    ]
+    server.use(
+      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(withBeta))),
+      http.get(ROUTES.imports, () => HttpResponse.json(anImportsPayload([anImport({ events: 4 })]))),
+      http.delete(ROUTES.importSource, () => {
+        // The re-read that follows the revocation: `beta` is named by nothing.
+        server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))))
+        return HttpResponse.json({ id: 1, events_removed: 4 })
+      }),
+    )
+    const { user } = renderApp({ url: '/donnees' })
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const accounts = screen.getByRole('group', { name: 'Compte' })
+    await user.click(within(accounts).getByRole('button', { name: 'beta' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
+
+    await user.click(
+      within(screen.getByRole('table', { name: 'Import et export' })).getByRole('button', {
+        name: 'Oublier cet import',
+      }),
+    )
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Oublier cet import' }),
+    )
+
+    // The reduction survives the re-read, so the way out has to survive it too.
+    const after = await screen.findByRole('group', { name: 'Compte' })
+    expect(within(after).getByRole('button', { name: 'beta' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await user.click(within(after).getByRole('button', { name: 'Tous les comptes' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+  })
+
+  it('does not drop the reader on the floor when the last packet takes the button', async () => {
+    const { user } = renderData(aLongLedger(50))
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const more = screen.getByRole('button', { name: 'Afficher la suite' })
+    more.focus()
+    await user.click(more)
+
+    // The control the reader just pressed is gone with the rows it promised. A
+    // focus left on `<body>` loses a keyboard reader their place in fifty rows,
+    // so the region that replaced it takes the focus — and it is polite, which
+    // is what makes forty rows arriving a change with a sound.
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(50))
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement).toHaveTextContent('Fin du grand livre · 50 événements')
+    expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
   })
 })
 

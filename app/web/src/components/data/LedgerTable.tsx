@@ -83,23 +83,34 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
  * they wear the same one here and a reader crossing from one surface to the
  * other reads the same mark twice. The purchase takes the quotation's own mint
  * and the sale the loss's red, which is the pair the redesign drew; the two cash
- * movements name no security at all and take the muted pill, because the
+ * movements name no security at all and take an unhued pill, because the
  * product's colour vocabulary has nothing to say about a transfer.
  *
- * The risk this palette would otherwise run — a green pill read as *this row
- * gained* — is not open here: **no figure in this table is coloured**. The
- * amounts are the plain foreground (`f.currency`, never `signClass`), so the
- * badge is the only colour in the row and the only thing it can be about is the
- * word printed inside it. `lib/sign.ts` keeps its monopoly on colouring a
- * *figure*, which is the invariant `index.css` states.
+ * **The hue is the ground and the word is the foreground**, which is the one
+ * thing here that was measured rather than chosen. The redesign draws these
+ * badges as coloured *text* on a wash of its own hue, and that pairing cannot
+ * clear 4,5:1 at 12 px on the light ground whatever the wash is set to — the
+ * text and the wash share a hue, so raising the wash lowers the contrast and
+ * lowering it converges on the token alone, which is 4,77:1 for `--primary` and
+ * 4,85:1 for `--attention`. Measured on the light ground, a hovered row
+ * included: 4,06 for the purchase and 4,30 for the dividend. Put the hue under
+ * the foreground instead and the same six pills read at **12:1 or better on both
+ * grounds**, the wash carrying the whole of the colour — which is also the more
+ * honest reading of *the badge is coloured*.
+ *
+ * The risk the other way round would have run — a green pill read as *this row
+ * gained* — was never open here either: **no figure in this table is coloured**.
+ * The amounts are the plain foreground (`f.currency`, never `signClass`), so
+ * `lib/sign.ts` keeps its monopoly on colouring a *figure*, which is the
+ * invariant `index.css` states.
  */
 const TYPE_BADGE: Record<LedgerEventType, string> = {
-  BUY: 'bg-price/12 text-price',
-  SELL: 'bg-loss/12 text-loss',
-  GRANT: 'bg-grant/15 text-grant',
-  DIVIDEND: 'bg-dividend/15 text-dividend',
-  DEPOSIT: 'bg-muted text-muted-foreground',
-  WITHDRAWAL: 'bg-muted text-muted-foreground',
+  BUY: 'bg-price/20',
+  SELL: 'bg-loss/20',
+  GRANT: 'bg-grant/20',
+  DIVIDEND: 'bg-dividend/20',
+  DEPOSIT: 'bg-muted',
+  WITHDRAWAL: 'bg-muted',
 }
 
 export interface LedgerTableProps {
@@ -123,10 +134,15 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
   // The header stays put while the body scrolls under it: on a table revealed
   // forty rows at a time, a heading that leaves the viewport takes the meaning
   // of nine columns with it. The ground is opaque because the rows pass beneath.
-  const head = 'sticky top-0 z-10 bg-background'
+  // The rule under it is a `box-shadow` and not the row's `border-b`: preflight
+  // sets `border-collapse: collapse`, and under collapsed borders the border
+  // belongs to the table box rather than to the cell — so a stuck header keeps
+  // its ground and lets its own separator scroll away with the rows.
+  const head =
+    'sticky top-0 z-10 bg-background shadow-[inset_0_-1px_0_var(--border)]'
 
   return (
-    <Table containerClassName="max-h-[calc(100vh-22rem)] min-h-64 overflow-y-auto rounded-md border">
+    <Table containerClassName="max-h-[calc(100dvh-22rem)] min-h-64 overflow-y-auto rounded-md border">
       <caption className="sr-only">{t('data.ledger.label')}</caption>
       <TableHeader>
         <TableRow>

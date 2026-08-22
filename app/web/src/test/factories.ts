@@ -894,7 +894,10 @@ export function shareLedger(): LedgerEvent[] {
  *
  * The dates walk **backwards** one day at a time from the fixture's own, so the
  * order the table sorts into is the order this list is written in and a row can
- * be named by its rank.
+ * be named by its rank. The line numbers walk **forwards** for the plain reason
+ * that a file has no line −57: at 176 rows a decreasing count would hand the
+ * first test that reveals past the first packet a provenance no import could
+ * ever have written.
  */
 export function aLongLedger(count: number): LedgerEvent[] {
   const start = Date.UTC(2026, 1, 10)
@@ -902,8 +905,8 @@ export function aLongLedger(count: number): LedgerEvent[] {
     anEvent({
       date: new Date(start - index * 86_400_000).toISOString().slice(0, 10),
       notes: `Ordre num\u00e9ro ${index + 1}`,
-      source_row: 118 - index,
-      provenance: `zeta-events_2.csv, row ${118 - index}`,
+      source_row: 118 + index,
+      provenance: `zeta-events_2.csv, row ${118 + index}`,
     }),
   )
 }
