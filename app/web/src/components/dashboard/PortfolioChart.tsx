@@ -47,6 +47,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Area,
+  CartesianGrid,
   ComposedChart,
   Line,
   ReferenceLine,
@@ -163,6 +164,13 @@ export function PortfolioChart() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={drawn}>
+                  {/* The grid the maquette **does** draw: horizontal only, and
+                      a hair rather than a rule — `2 4` on the border colour,
+                      where Recharts' own default is a `3 3` in a grey it picked
+                      itself. It is a ground for the eye to rest a level on, not
+                      a scale: the scale left with the gradations. */}
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+
                   {/* **The axes are hidden, not removed.** What they drew — a
                       grid and two rows of gradations — is what the redesign took
                       off the chart, and it is said elsewhere: the window by the
@@ -196,29 +204,42 @@ export function PortfolioChart() {
 
                   {reading === 'amounts' ? (
                     <>
-                      {/* The area **is** the gain, and it is drawn in the neutral
-                          of the surface rather than in the colour of a sign: it
-                          crosses zero inside a window often enough that one
-                          colour for the whole band would be plausibly wrong half
-                          the time. The caption under it names what it is.
+                      {/* **The wash is under the value curve, not between the
+                          two** (#787) — the maquette's own arrangement, and it
+                          answers the objection that kept the band neutral for
+                          three tickets. A fill *between* the curves is a signed
+                          quantity: it is the gain, it crosses zero inside a
+                          window often enough that one colour would be wrong half
+                          the time, and it therefore had to stay grey — which
+                          made it invisible on midnight, under a caption that
+                          promised a mark nobody could find.
 
-                          **And it is drawn strongly enough to be seen.** At
-                          `0.14` of the muted foreground the band was barely
-                          perceptible on the midnight ground, while the caption
-                          under it promised *l'écart entre les deux courbes est
-                          votre gain total* — a reading the drawing did not
-                          deliver. A caption that names a mark nobody can find is
-                          a caption about nothing. */}
+                          A fill under the **value** claims nothing about a sign:
+                          the value is what it is, the curve is already drawn in
+                          the mint, and the wash is that curve's own weight. The
+                          gap the caption names is still read between the two
+                          lines — it is the mint above the dashed one — and it is
+                          legible precisely because the region under it is no
+                          longer empty.
+
+                          The gradient is the maquette's to the stop: `0.22` of
+                          the mint at the curve, `0.02` at the floor. */}
+                      <defs>
+                        <linearGradient id="portfolio-value-wash" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--color-price)" stopOpacity={0.22} />
+                          <stop offset="100%" stopColor="var(--color-price)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
                       <Area
-                        dataKey={(row: { value: number | null; contributed: number | null }) =>
-                          row.value === null || row.contributed === null
-                            ? null
-                            : [row.contributed, row.value]
-                        }
+                        // A **function** key, so the tooltip drops it: the wash
+                        // repeats the value line's own figure, and answering the
+                        // pointer twice with one number is two announcers of it
+                        // (`ChartTooltip`).
+                        dataKey={(row: { value: number | null }) => row.value}
                         name={t('dashboard.chart.area')}
+                        baseValue="dataMin"
                         stroke="none"
-                        fill="var(--foreground)"
-                        fillOpacity={0.16}
+                        fill="url(#portfolio-value-wash)"
                         isAnimationActive={false}
                         connectNulls={false}
                       />
@@ -227,7 +248,7 @@ export function PortfolioChart() {
                         dataKey="value"
                         name={t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
                         stroke="var(--color-price)"
-                        strokeWidth={1.75}
+                        strokeWidth={2}
                         dot={false}
                         isAnimationActive={false}
                         connectNulls={false}
@@ -238,7 +259,7 @@ export function PortfolioChart() {
                         name={t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
                         stroke="var(--muted-foreground)"
                         strokeWidth={1.25}
-                        strokeDasharray="4 3"
+                        strokeDasharray="4 4"
                         dot={false}
                         isAnimationActive={false}
                         connectNulls={false}
@@ -269,9 +290,13 @@ export function PortfolioChart() {
               </ResponsiveContainer>
             </div>
 
-            {/* The legend is written here rather than left to the library: it is
-                what pairs a curve to its name, and the caption is what names the
-                surface between them — which changes with its subject. */}
+            {/* The legend is written here rather than left to the library: it
+                is what pairs a curve to its name, and the caption names the
+                **gap** between them — which changes with its subject. *Gap* and
+                not *area* since #787: the wash under the value curve is the one
+                area drawn, and it is not the gain. A caption naming a fill the
+                chart no longer draws that way is a caption pointing at the wrong
+                mark. */}
             {reading === 'amounts' ? (
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                 <span className="flex items-center gap-2">

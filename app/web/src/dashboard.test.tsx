@@ -754,7 +754,7 @@ describe('one chart slot, two readings', () => {
     // clearest answer to *did I gain because it went up or because I put more
     // in*. Naming it is what makes the surface readable at all.
     expect(
-      await screen.findByText(/L’aire entre les deux courbes est votre gain total/),
+      await screen.findByText(/L’écart entre les deux courbes est votre gain total/),
     ).toBeInTheDocument()
   })
 
@@ -771,7 +771,7 @@ describe('one chart slot, two readings', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     expect(
-      await screen.findByText(/L’aire entre les deux courbes est votre plus-value latente/),
+      await screen.findByText(/L’écart entre les deux courbes est votre plus-value latente/),
     ).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Performance' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
@@ -789,7 +789,7 @@ describe('one chart slot, two readings', () => {
 
     await user.click(await screen.findByRole('tab', { name: 'Performance' }))
     expect(await screen.findByText(/Base 0 % au premier jour de la plage affichée/)).toBeInTheDocument()
-    expect(screen.queryByText(/L’aire entre les deux courbes/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/L’écart entre les deux courbes/)).not.toBeInTheDocument()
   })
 })
 

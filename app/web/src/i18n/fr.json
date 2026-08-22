@@ -87,8 +87,8 @@
   "dashboard.chart.valuation": "Valorisation",
   "dashboard.chart.cost": "Prix de revient",
   "dashboard.chart.area": "Entre les deux courbes",
-  "dashboard.chart.area.gain": "L’aire entre les deux courbes est votre gain total.",
-  "dashboard.chart.area.unrealised": "L’aire entre les deux courbes est votre plus-value latente. Votre portefeuille n’enregistre aucun mouvement d’espèces, donc l’application ne peut pas distinguer ce que vous avez versé de ce que vos positions ont coûté.",
+  "dashboard.chart.area.gain": "L’écart entre les deux courbes est votre gain total.",
+  "dashboard.chart.area.unrealised": "L’écart entre les deux courbes est votre plus-value latente. Votre portefeuille n’enregistre aucun mouvement d’espèces, donc l’application ne peut pas distinguer ce que vous avez versé de ce que vos positions ont coûté.",
   "dashboard.chart.performance.base": "Base 0 % au premier jour de la plage affichée.",
   "dashboard.chart.empty": "Rien à tracer sur cette plage pour l’instant.",
 
