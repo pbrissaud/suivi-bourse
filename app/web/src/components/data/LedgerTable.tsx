@@ -25,7 +25,14 @@
  * because nothing has to: *a row that carries a provenance came from a file; a
  * row that carries none was typed here*. The information was already in the one
  * column that actually discriminates, and it is that same column that says
- * `Saisi dans l'application` on the rows the app may edit.
+ * `Saisie manuelle` on the rows the app may edit.
+ *
+ * Since #795 the table is also **bounded and revealed** (ADR-0031): the header
+ * is sticky, the body scrolls inside its own container, and how many rows are in
+ * it is the caller's business — this component draws what it is handed and
+ * says nothing about what it was not. The type is a coloured badge and the four
+ * money columns are set in the mono face, both for the same reason: forty rows
+ * are read by scanning down a column, not across a row.
  *
  * **The provenance is a label, never an address** — the file's *name* and its
  * line, never a path, and never its presence on disk: the drop folder is an
@@ -55,6 +62,7 @@ import type { LedgerEvent, LedgerEventType } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, identityOf, isEditable, rowKey } from '@/lib/ledger'
+import { cn } from '@/lib/utils'
 
 /** The six, named by their **effect** and never by their code (ADR-0024). */
 export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
@@ -64,6 +72,34 @@ export const TYPE_LABEL: Record<LedgerEventType, MessageKey> = {
   DIVIDEND: 'event.type.DIVIDEND',
   DEPOSIT: 'event.type.DEPOSIT',
   WITHDRAWAL: 'event.type.WITHDRAWAL',
+}
+
+/**
+ * The badge's hue, and **it is spent where the product already spends it**
+ * (#787, ADR-0016's rationing one notch down).
+ *
+ * The attribution and the dividend own a colour already — `--grant` and
+ * `--dividend` are the two marks the share's chart draws its events with — so
+ * they wear the same one here and a reader crossing from one surface to the
+ * other reads the same mark twice. The purchase takes the quotation's own mint
+ * and the sale the loss's red, which is the pair the redesign drew; the two cash
+ * movements name no security at all and take the muted pill, because the
+ * product's colour vocabulary has nothing to say about a transfer.
+ *
+ * The risk this palette would otherwise run — a green pill read as *this row
+ * gained* — is not open here: **no figure in this table is coloured**. The
+ * amounts are the plain foreground (`f.currency`, never `signClass`), so the
+ * badge is the only colour in the row and the only thing it can be about is the
+ * word printed inside it. `lib/sign.ts` keeps its monopoly on colouring a
+ * *figure*, which is the invariant `index.css` states.
+ */
+const TYPE_BADGE: Record<LedgerEventType, string> = {
+  BUY: 'bg-price/12 text-price',
+  SELL: 'bg-loss/12 text-loss',
+  GRANT: 'bg-grant/15 text-grant',
+  DIVIDEND: 'bg-dividend/15 text-dividend',
+  DEPOSIT: 'bg-muted text-muted-foreground',
+  WITHDRAWAL: 'bg-muted text-muted-foreground',
 }
 
 export interface LedgerTableProps {
@@ -84,20 +120,25 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
   const { t } = useI18n()
   const f = useFormatters()
 
+  // The header stays put while the body scrolls under it: on a table revealed
+  // forty rows at a time, a heading that leaves the viewport takes the meaning
+  // of nine columns with it. The ground is opaque because the rows pass beneath.
+  const head = 'sticky top-0 z-10 bg-background'
+
   return (
-    <Table>
+    <Table containerClassName="max-h-[calc(100vh-22rem)] min-h-64 overflow-y-auto rounded-md border">
       <caption className="sr-only">{t('data.ledger.label')}</caption>
       <TableHeader>
         <TableRow>
-          <TableHead>{t('data.column.date')}</TableHead>
-          <TableHead>{t('data.column.type')}</TableHead>
-          <TableHead>{t('data.column.what')}</TableHead>
-          <TableHead className="text-right">{t('data.column.quantity')}</TableHead>
-          <TableHead className="text-right">{t('data.column.unitPrice')}</TableHead>
-          <TableHead className="text-right">{t('data.column.fee')}</TableHead>
-          <TableHead className="text-right">{t('data.column.amount')}</TableHead>
-          <TableHead>{t('data.column.account')}</TableHead>
-          <TableHead>{t('data.column.provenance')}</TableHead>
+          <TableHead className={head}>{t('data.column.date')}</TableHead>
+          <TableHead className={head}>{t('data.column.type')}</TableHead>
+          <TableHead className={head}>{t('data.column.what')}</TableHead>
+          <TableHead className={cn(head, 'text-right')}>{t('data.column.quantity')}</TableHead>
+          <TableHead className={cn(head, 'text-right')}>{t('data.column.unitPrice')}</TableHead>
+          <TableHead className={cn(head, 'text-right')}>{t('data.column.fee')}</TableHead>
+          <TableHead className={cn(head, 'text-right')}>{t('data.column.amount')}</TableHead>
+          <TableHead className={head}>{t('data.column.account')}</TableHead>
+          <TableHead className={head}>{t('data.column.provenance')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -105,8 +146,17 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
           const identity = identityOf(event)
           return (
             <TableRow key={rowKey(event, index)}>
-              <TableCell className="whitespace-nowrap">{f.date(event.date)}</TableCell>
-              <TableCell>{t(TYPE_LABEL[event.event_type])}</TableCell>
+              <TableCell className="tabular whitespace-nowrap">{f.date(event.date)}</TableCell>
+              <TableCell>
+                <span
+                  className={cn(
+                    'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                    TYPE_BADGE[event.event_type],
+                  )}
+                >
+                  {t(TYPE_LABEL[event.event_type])}
+                </span>
+              </TableCell>
 
               {/* The ticker in first rank, the label in second — and the label
                   alone where there is no security to name. */}
@@ -118,19 +168,27 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
               </TableCell>
 
               {/* An em dash here is ADR-0016's own: a transfer has no quantity
-                  to be missing, and a dividend no unit price. */}
-              <TableCell className="text-right tabular">{f.quantity(event.quantity)}</TableCell>
-              <TableCell className="text-right tabular">
+                  to be missing, and a dividend no unit price. The four money
+                  columns are set in the **mono** face on top of the tabular
+                  figures: read down a column of forty rows, the two together are
+                  what lets a comma line up with a comma. */}
+              <TableCell className="text-right font-mono tabular">
+                {f.quantity(event.quantity)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular">
                 {f.currency(event.unit_price, currency)}
               </TableCell>
-              <TableCell className="text-right tabular">
+              <TableCell className="text-right font-mono tabular">
                 {f.currency(event.fee, currency)}
               </TableCell>
-              <TableCell className="text-right tabular">
+              <TableCell className="text-right font-mono tabular">
                 {f.currency(event.amount, currency)}
               </TableCell>
 
-              <TableCell>{accountOf(event)}</TableCell>
+              {/* An account id is typed, not written: the mono face is what
+                  says so, and it is the one the accounts page already sets an
+                  id in (`AccountDetail`, `AccountsRail`). */}
+              <TableCell className="font-mono text-xs">{accountOf(event)}</TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 <Provenance event={event} onShowImport={onShowImport} />
               </TableCell>

@@ -1,9 +1,11 @@
 # app/web/ — the front
 
-> **ADR-0031 is decided and not yet built.** Where this file cites it — the
-> paginated ledger — it describes the destination, and the code has not been
-> there yet. That is the one place `docs/adr/README.md`'s rule for `preview/v5`
-> is suspended, and it ends when #795 merges.
+> **ADR-0031 has landed for the ledger** (#795): the table reveals forty rows at
+> a time, its header is sticky and its body bounded, the two filters are chips,
+> and the count and the end-of-ledger sentence are true of the reduction. The
+> suspension of `docs/adr/README.md`'s rule for `preview/v5` that this file
+> carried ends here — with one clause of the record still ahead of the code, the
+> ⌘K palette's three optional sections, which are #797.
 > **ADR-0030 has landed** (#794): the data page is the three tabs described
 > below, the notices are the one block that exists when it is empty, and the
 > imports are one band above the ledger table.
@@ -57,13 +59,17 @@ quote with no currency). No fixture carries a real symbol, amount or label.
 **Assertions are on the accessible rendering** — never a class, a component name,
 or a DOM snapshot.
 
-Two nets hold a rule nothing made true by construction:
+Three nets hold a rule nothing made true by construction:
 
 - `src/readsInFlight.test.tsx` — for each of six surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
   that read hanging for ever**, asserting an *absence*. It also fails when a route
   of `ROUTES` is visited by no surface. Since #777 it reads **every rendered
   phrase carrying a word**, not only the emptiness markers.
+- `src/noSpinner.test.ts` — on the *source* as well, and for what no rendering
+  test can see: a turning circle carries no word, so the net above walks straight
+  past it. `animate-spin`, `animate-pulse`, a `progressbar`, an `aria-busy` and
+  any reach for the registry's `Skeleton` are refused outside `ui/`.
 - `src/inFlightShape.test.ts` — at the level of the *source*: it builds the app's
   own program from `tsconfig.app.json` and asks the checker what each slot was
   **declared** to hold. `tsc` does not close the `readonly X[] | null` shape
@@ -76,12 +82,14 @@ Two nets hold a rule nothing made true by construction:
   page passes `?? null` and never `?? []`; `?? []` survives only where an absent
   read *removes a line* instead of falsifying one.
 - **Paginated, only the first flight is silent** (ADR-0031). The ledger's first page
-  in flight renders nothing, headers included; *load more* and the count describe a
-  table that has landed and may therefore speak. No spinner in either case, and
-  *end of the ledger* is never said before the last row has arrived. The three
-  sections of ⌘K that read — shares, accounts, events — are **optional**: an absent
-  one removes its section instead of holding the palette, and the palette reads on
-  **open**, never on mount.
+  in flight renders nothing, headers included; *show more* and the count describe a
+  table that has landed and may therefore speak — the paging is a **rendering
+  budget** (`lib/ledger.ts`'s `PAGE` and `reveal`), never a second fetch, because
+  `GET /api/events` answered once and with the ledger entire. No spinner in either
+  case, and *end of the ledger* is never said before the last row has arrived. The
+  three sections of ⌘K that read — shares, accounts, events — are **optional**: an
+  absent one removes its section instead of holding the palette, and the palette
+  reads on **open**, never on mount.
 - **Four renderings of absence and no fifth** (`lib/absence.ts`, ADR-0021). The em
   dash says *there is nothing to compute*; anything merely missing is **named**.
   Zero is not absence (`lib/sign.ts`).
@@ -150,7 +158,7 @@ src/
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
-│   ├── ledger.ts imports.ts  # a type's fields, the two parses · what a revocation removes
+│   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what a revocation removes
 │   ├── advisories.ts         # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts
@@ -201,8 +209,10 @@ src/
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
-- **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table, and above
-  it one band holding the drop zone, the export menu and the imported files with
-  their revocation), *The notices* — **always mounted**, saying so when there is
-  nothing, because the status dot must have one destination — and *The
-  installation* (settings, the store and its orphans).
+- **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table — bounded,
+  sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
+  groups of chips and a search — and above it one band holding the drop zone, the
+  export menu and the imported files with their revocation), *The notices* —
+  **always mounted**, saying so when there is nothing, because the status dot must
+  have one destination — and *The installation* (settings, the store and its
+  orphans).

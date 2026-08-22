@@ -883,6 +883,31 @@ export function shareLedger(): LedgerEvent[] {
   ]
 }
 
+/**
+ * A ledger **longer than one rendering budget** (#795, ADR-0031).
+ *
+ * The four events above settled every column of the table and none of its
+ * paging: forty is the reveal, and a fixture of four can never be on the wrong
+ * side of it. This one is parameterised on the single number that matters —
+ * how many rows the reduction holds against the forty on screen — and it is
+ * still the real portfolio's own shape, every row imported.
+ *
+ * The dates walk **backwards** one day at a time from the fixture's own, so the
+ * order the table sorts into is the order this list is written in and a row can
+ * be named by its rank.
+ */
+export function aLongLedger(count: number): LedgerEvent[] {
+  const start = Date.UTC(2026, 1, 10)
+  return Array.from({ length: count }, (_, index) =>
+    anEvent({
+      date: new Date(start - index * 86_400_000).toISOString().slice(0, 10),
+      notes: `Ordre num\u00e9ro ${index + 1}`,
+      source_row: 118 - index,
+      provenance: `zeta-events_2.csv, row ${118 - index}`,
+    }),
+  )
+}
+
 /** The real portfolio's own shape: everything imported, nothing typed. */
 export function importedOnly(): LedgerEvent[] {
   return ledgerEvents().filter((event) => event.source_id !== null)

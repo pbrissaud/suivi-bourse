@@ -1,21 +1,35 @@
 /**
- * The reduction bar — and it is what pays for *no pagination* (#723, ADR-0020).
+ * The reduction bar — **chips, and a count that is true of what they hold**
+ * (#723, #795, ADR-0020, ADR-0031).
  *
  * A ledger is opened to check what has just happened, so the rows come sorted by
- * date descending and they all stay: *« page 4 sur 6 »* means nothing on an axis
- * of dates, and a reader looking for last Tuesday would have to guess which page
- * holds it. What reduces is here instead.
+ * date descending and *« page 4 sur 6 »* was never on the table: a page number
+ * means nothing on an axis of dates, and a reader looking for last Tuesday would
+ * have to guess which page holds it. Since ADR-0031 the table **reveals** forty
+ * rows at a time instead, which is a rendering budget rather than a place in a
+ * sequence — and nothing about that changes what this bar is for. What reduces
+ * is here, and it is named.
  *
- * **The full-text search is not a convenience.** It is the consequence of the
- * identity column: on nineteen purchases of the same ETF the free-text label is
- * the only discriminant a row owns, and on a cash movement it is the only name
- * at all. It reads the ticker, the label and the account — everything the
- * identity and account columns show — with accents folded.
+ * **The two filters are chips rather than dropdowns**, which is the change #795
+ * makes and it is not only a shape: a `<select>` collapsed to `Tous` states the
+ * absence of a reduction and nothing else, so the six types and the accounts an
+ * install actually uses were facts a reader had to open a menu to learn. Laid
+ * out, the vocabulary of the ledger is on screen before the first click, the one
+ * in force is pressed, and the way out is the chip beside it. Two groups,
+ * because they are two questions: the types on one side, the accounts on the
+ * other.
  *
- * The account filter appears **at N ≥ 2 only**. ADR-0013 seeds a `default` row
- * that is never removed, so a single-account install would get a control with
- * one option: a filter that cannot filter, which is the same defect as a column
- * that cannot discriminate.
+ * **The full-text search stays, and it is not a convenience.** It is the
+ * consequence of the identity column: on nineteen purchases of the same ETF the
+ * free-text label is the only discriminant a row owns, and on a cash movement it
+ * is the only name at all. It reads the ticker, the label and the account —
+ * everything the identity and account columns show — with accents folded, and
+ * nothing about it is expressible as a chip.
+ *
+ * The account chips appear **at N ≥ 2 only**. ADR-0013 seeds a `default` row
+ * that is never removed, so a single-account install would get a group with one
+ * option beside its own exit: a filter that cannot filter, which is the same
+ * defect as a column that cannot discriminate.
  *
  * **A reduction that came from a gesture names itself and can be undone** (#724).
  * The securities filter has no control to type into — it arrives from the
@@ -24,24 +38,25 @@
  * than the reader expects, with the search field empty and nothing on screen
  * saying why or how to get the rest back. It lists them all, in one line, for
  * the same reason: a set stated as its first element reads as its whole.
+ *
+ * **The count is the reduction's**, not the store's: it is rendered here, beside
+ * the chips that made it, and it moves when they move.
  */
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { EVENT_TYPES, type LedgerEventType } from '@/lib/api'
+import { EVENT_TYPES } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { LedgerFilters as Filters } from '@/lib/ledger'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
-
-const SELECT_CLASS =
-  'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30'
+import { cn } from '@/lib/utils'
 
 export interface LedgerFiltersProps {
   filters: Filters
   onChange: (filters: Filters) => void
   /** The accounts the ledger actually names — never the declared list. */
   accounts: readonly string[]
-  /** How many rows survive the reduction, stated because nothing paginates. */
+  /** How many rows survive the reduction, stated where the reduction is made. */
   shown: number
 }
 
@@ -50,9 +65,9 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
   const f = useFormatters()
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="grow space-y-1 sm:max-w-xs">
-        <label htmlFor="ledger-search" className="text-sm text-muted-foreground">
+    <div className="flex min-w-0 grow flex-wrap items-center gap-x-4 gap-y-3">
+      <div className="grow sm:max-w-xs">
+        <label htmlFor="ledger-search" className="sr-only">
           {t('data.search.label')}
         </label>
         <Input
@@ -64,50 +79,45 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
         />
       </div>
 
-      <div className="space-y-1">
-        <label htmlFor="ledger-type" className="text-sm text-muted-foreground">
-          {t('data.filter.type')}
-        </label>
-        <select
-          id="ledger-type"
-          className={SELECT_CLASS}
-          value={filters.type ?? ''}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              type: event.target.value === '' ? null : (event.target.value as LedgerEventType),
-            })
-          }
-        >
-          <option value="">{t('data.filter.all')}</option>
-          {EVENT_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {t(TYPE_LABEL[type])}
-            </option>
-          ))}
-        </select>
+      {/* The group carries the question, so a chip only has to carry its own
+          answer: read out, `Type · Achat` rather than six buttons named after
+          nothing. */}
+      <div role="group" aria-label={t('data.filter.type')} className="flex flex-wrap gap-1.5">
+        <Chip
+          pressed={filters.type === null}
+          label={t('data.filter.type.all')}
+          onPress={() => onChange({ ...filters, type: null })}
+        />
+        {EVENT_TYPES.map((type) => (
+          <Chip
+            key={type}
+            pressed={filters.type === type}
+            label={t(TYPE_LABEL[type])}
+            // Pressing the one in force does **not** clear it: the exit is a
+            // chip of its own and it is always on screen, so a second gesture
+            // meaning *undo* would give the same control two behaviours
+            // depending on a state the reader has to have noticed.
+            onPress={() => onChange({ ...filters, type })}
+          />
+        ))}
       </div>
 
       {accounts.length > 1 ? (
-        <div className="space-y-1">
-          <label htmlFor="ledger-account" className="text-sm text-muted-foreground">
-            {t('data.filter.account')}
-          </label>
-          <select
-            id="ledger-account"
-            className={SELECT_CLASS}
-            value={filters.account ?? ''}
-            onChange={(event) =>
-              onChange({ ...filters, account: event.target.value === '' ? null : event.target.value })
-            }
-          >
-            <option value="">{t('data.filter.all')}</option>
-            {accounts.map((account) => (
-              <option key={account} value={account}>
-                {account}
-              </option>
-            ))}
-          </select>
+        <div role="group" aria-label={t('data.filter.account')} className="flex flex-wrap gap-1.5">
+          <Chip
+            pressed={filters.account === null}
+            label={t('data.filter.account.all')}
+            onPress={() => onChange({ ...filters, account: null })}
+          />
+          {accounts.map((account) => (
+            <Chip
+              key={account}
+              pressed={filters.account === account}
+              label={account}
+              mono
+              onPress={() => onChange({ ...filters, account })}
+            />
+          ))}
         </div>
       ) : null}
 
@@ -137,5 +147,42 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * One chip. `aria-pressed` and not a `radio`: a reader arriving by keyboard on
+ * a radiogroup lands on the *checked* option and moves with the arrows, which
+ * would make the six types one stop and hide five of them behind a gesture the
+ * chips exist to remove. Pressed is also stated in **two** ways — the state and
+ * the ground — because a colour alone is not read by everyone.
+ */
+function Chip({
+  pressed,
+  label,
+  mono,
+  onPress,
+}: {
+  pressed: boolean
+  label: string
+  mono?: boolean
+  onPress: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onPress}
+      className={cn(
+        'h-7 rounded-full border px-3 text-xs font-medium transition-colors',
+        'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        mono && 'font-mono',
+        pressed
+          ? 'border-primary/50 bg-primary/12 text-primary'
+          : 'border-input text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {label}
+    </button>
   )
 }

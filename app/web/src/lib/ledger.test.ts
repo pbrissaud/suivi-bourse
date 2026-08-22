@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { anEvent, aTypedEvent, ledgerEvents } from '@/test/factories'
+import { aLongLedger, anEvent, aTypedEvent, ledgerEvents } from '@/test/factories'
 import {
   accountOf,
   byDateDescending,
@@ -18,8 +18,10 @@ import {
   identityOf,
   isEditable,
   NO_FILTERS,
+  PAGE,
   parseDay,
   parseDecimal,
+  reveal,
 } from '@/lib/ledger'
 
 describe('the fields of a type', () => {
@@ -136,5 +138,58 @@ describe('the two parses', () => {
     expect(parseDecimal('')).toBeNull()
     expect(parseDecimal('deux cents')).toBeNull()
     expect(parseDecimal('12,5,5')).toBeNull()
+  })
+})
+
+describe('the reveal, which is a rendering budget and not a fetch', () => {
+  it('draws forty of a longer reduction and says so, without claiming the end', () => {
+    const long = aLongLedger(176)
+    const first = reveal(long, PAGE)
+
+    expect(PAGE).toBe(40)
+    expect(first.rows).toHaveLength(40)
+    // The two numbers the sentence under the table is made of, and they are
+    // both about the reduction handed in — nothing here knows what the store
+    // holds.
+    expect(first.shown).toBe(40)
+    expect(first.total).toBe(176)
+    expect(first.atEnd).toBe(false)
+  })
+
+  it('says the end exactly when the last row of the reduction is drawn', () => {
+    const long = aLongLedger(80)
+
+    expect(reveal(long, 79).atEnd).toBe(false)
+    expect(reveal(long, 80).atEnd).toBe(true)
+    // A budget wider than the reduction is the whole of it, never a hole: the
+    // reader who revealed 120 rows and then narrowed the chips is exactly this
+    // call.
+    const beyond = reveal(long, 120)
+    expect(beyond.rows).toHaveLength(80)
+    expect(beyond.shown).toBe(80)
+    expect(beyond.atEnd).toBe(true)
+  })
+
+  it('draws nothing rather than slicing from the end on a budget below zero', () => {
+    // `slice(0, -1)` drops the last row and returns the rest, which is the one
+    // way this could fail silently: a reader would see a table one row short
+    // and nothing would say why.
+    expect(reveal(aLongLedger(5), -1).rows).toEqual([])
+    expect(reveal(aLongLedger(5), -1).atEnd).toBe(false)
+  })
+
+  it('is the end of an empty reduction, which has no next row to promise', () => {
+    // Nothing renders it — a reduction with no row is the *no match* state one
+    // level up — but the predicate has to be true here, or a table showing
+    // nothing would offer to show more of it.
+    expect(reveal([], PAGE)).toEqual({ rows: [], shown: 0, total: 0, atEnd: true })
+  })
+
+  it('reveals the reduction, so the count follows the chips rather than the store', () => {
+    const all = byDateDescending(ledgerEvents())
+    const deposits = filterEvents(all, { ...NO_FILTERS, type: 'DEPOSIT' })
+
+    expect(reveal(all, PAGE).total).toBe(4)
+    expect(reveal(deposits, PAGE).total).toBe(1)
   })
 })

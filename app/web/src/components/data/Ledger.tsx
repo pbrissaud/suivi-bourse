@@ -17,6 +17,14 @@
  * count a refusal is made of, and the count a revocation announces, are that
  * same table grouped two ways.
  *
+ * Since #795 the table is **revealed forty rows at a time** (ADR-0031), and the
+ * budget lives here rather than in the table because it is a property of the
+ * *reduction*: the chips and the search are on this component, so a reduction
+ * that moves has to start its reveal over, and the two sentences under the table
+ * count what survives them. Nothing about that is a fetch — `GET /api/events`
+ * answered once and handed back the ledger entire — which is why the control may
+ * speak while the read never could.
+ *
  * Reads and failures follow the rule the shares page keeps: `/api/runtime`
  * answers from process memory and never opens the store (#668), so the shell's
  * banner is **silent** on the one failure that empties this tab — and a tab that
@@ -41,6 +49,8 @@ import {
   byDateDescending,
   filterEvents,
   NO_FILTERS,
+  PAGE,
+  reveal,
   type LedgerFilters as Filters,
 } from '@/lib/ledger'
 import { oneBand, readConditions } from '@/lib/status'
@@ -101,6 +111,20 @@ export function Ledger({ focus }: LedgerProps = {}) {
 
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
+
+  // **The rendering budget** (ADR-0031). It is a number of rows and not a page
+  // index, and the difference is the whole record: `GET /api/events` answered
+  // once, from the published snapshot in process memory, and handed back the
+  // ledger entire — so raising this asks nobody anything.
+  const [budget, setBudget] = useState(PAGE)
+  // A reduction that moved is a different table, and it starts at its own first
+  // row: a reader who revealed a hundred and sixty rows and then pressed a type
+  // chip would otherwise get every event of that type at once, which is the
+  // budget silently not applying at the exact moment the reader asked a
+  // question. `filters` is a fresh object per gesture, which is what makes this
+  // fire on the gesture and not on the value.
+  useEffect(() => setBudget(PAGE), [filters])
+  const page = reveal(shown, budget)
 
   // The accounts read joins the causal order rather than failing quietly: it is
   // a second read of the same store, and this tab now renders a table off it —
@@ -165,7 +189,7 @@ export function Ledger({ focus }: LedgerProps = {}) {
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <LedgerFilters
               filters={filters}
               onChange={setFilters}
@@ -180,23 +204,55 @@ export function Ledger({ focus }: LedgerProps = {}) {
           {shown.length === 0 ? (
             <EmptyState title={t('data.filter.none.title')} description={t('data.filter.none.body')} />
           ) : (
-            <LedgerTable
-              events={shown}
-              currency={currency}
-              onEdit={setEditing}
-              // Offered only once the list it leads to is on screen: a label
-              // that marked a block nobody can see would be a click that does
-              // nothing, and it is the same rule one notch down as the block
-              // rendering nothing while its own read is in flight.
-              onShowImport={
-                imports.data
-                  ? (id) => {
-                      setHighlighted({ id })
-                      document.getElementById(`import-${id}`)?.scrollIntoView({ block: 'center' })
-                    }
-                  : null
-              }
-            />
+            <div className="space-y-3">
+              <LedgerTable
+                events={page.rows}
+                currency={currency}
+                onEdit={setEditing}
+                // Offered only once the list it leads to is on screen: a label
+                // that marked a block nobody can see would be a click that does
+                // nothing, and it is the same rule one notch down as the block
+                // rendering nothing while its own read is in flight.
+                onShowImport={
+                  imports.data
+                    ? (id) => {
+                        setHighlighted({ id })
+                        document.getElementById(`import-${id}`)?.scrollIntoView({ block: 'center' })
+                      }
+                    : null
+                }
+              />
+
+              {/* **The reveal speaks, and the read did not** (ADR-0031). Both
+                  sentences below describe rows the app already holds — one of
+                  them counts what is drawn against what the reduction holds,
+                  the other says the last of them is drawn — so neither is a
+                  claim made on a silence, and the in-flight rule is not in
+                  contention here: this whole branch sits behind `events.data`.
+
+                  And there is **no spinner**, in this state or in any other.
+                  There is not even a wait to dress: the next forty rows are in
+                  memory, and pressing the button is a `setState` and a render. */}
+              {page.atEnd ? (
+                <p className="text-center text-xs text-muted-foreground">
+                  {t('data.ledger.end', { count: page.total })}
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {t('data.ledger.shown', { shown: page.shown, total: page.total })}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBudget((current) => current + PAGE)}
+                  >
+                    {t('data.ledger.more')}
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </>
       )}

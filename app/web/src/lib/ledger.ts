@@ -16,8 +16,12 @@
  *    285 doubled by a truncated `Notes`.
  *  - **the reduction.** Full-text search is not a convenience here: on nineteen
  *    purchases of the same ETF the label is the only discriminant the row owns.
- *    It is also what pays for *no pagination* — filters and search reduce, and
- *    « page 4 sur 6 » means nothing on an axis of dates.
+ *    It is also why *« page 4 sur 6 »* was never on the table: what reduces is
+ *    named — a type, an account, a word — and a page number means nothing on an
+ *    axis of dates. What the ledger does instead is **reveal**, below.
+ *  - **the reveal.** Forty rows at a time (ADR-0031), which is a rendering
+ *    budget and not a fetch: the whole ledger is already in memory when the
+ *    first row is drawn.
  *  - **the two parses.** `<input type="date">` silently discards what it cannot
  *    parse, and `<input type="number">` does exactly the same with a decimal
  *    comma; both hand back an empty string, which reads as *the user left it
@@ -157,6 +161,46 @@ export function byDateDescending(events: readonly LedgerEvent[]): LedgerEvent[] 
     if (earlier === later) return 0
     return earlier < later ? 1 : -1
   })
+}
+
+/**
+ * **The rendering budget** (ADR-0031): how many rows a first reveal draws, and
+ * how many each *show more* adds.
+ *
+ * Forty is not a page size in the usual sense, because nothing is fetched a
+ * second time: `GET /api/events` answers from the published snapshot in process
+ * memory and hands back the ledger entire, so what this number bounds is the
+ * number of `<tr>` in the document and nothing else. It is why the control below
+ * the table may speak while the table is on screen — it describes rows the app
+ * already holds — and why no state of this surface has a wait to dress.
+ */
+export const PAGE = 40
+
+/**
+ * What is on screen, and what the two sentences under the table are true of.
+ *
+ * They are true of the **reduction**, never of the store: the chips are a
+ * filter, so *forty of a hundred and seventy-six* and *the end of the ledger*
+ * both count what survives them and both move when they move. A table silently
+ * shorter than expected stays the defect it always was, which is why the count
+ * is rendered beside the chips that made it.
+ */
+export interface Reveal {
+  /** The rows to draw, in the order the reduction handed them over. */
+  rows: readonly LedgerEvent[]
+  /** How many of them are drawn — the first number of the sentence. */
+  shown: number
+  /** How many the reduction holds — the second. */
+  total: number
+  /** The last row of the reduction is drawn, so the end may be said. */
+  atEnd: boolean
+}
+
+export function reveal(events: readonly LedgerEvent[], upTo: number): Reveal {
+  // Clamped on both sides: a budget below zero draws nothing rather than
+  // slicing from the end, and one above the reduction is simply the whole of it.
+  const shown = Math.min(Math.max(upTo, 0), events.length)
+  return { rows: events.slice(0, shown), shown, total: events.length, atEnd: shown >= events.length }
 }
 
 /** The accounts an install actually uses, in the order they first appear. */

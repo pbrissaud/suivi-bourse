@@ -13,10 +13,23 @@ import { cn } from "@/lib/utils"
 // below (#789, ADR-0024): the cells key their padding on an ancestor carrying
 // it, so a table written on these primitives obeys the density by being written
 // on them — no prop to thread, and no second place to forget.
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+// A **bounded** table scrolls in that same container and not in one of its own
+// (#795, ADR-0031): `position: sticky` on a header cell resolves against the
+// nearest scrolling ancestor, and `overflow-x-auto` already makes this div one —
+// so a `max-height` wrapped around the whole thing would scroll the outer box
+// while the header stayed stuck to an inner one that never moves. The ceiling
+// has to land here, which is what `containerClassName` is for.
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   const density = useDensity()
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div
+      data-slot="table-container"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
+    >
       <table
         data-slot="table"
         data-density={density}

@@ -21,7 +21,9 @@ import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aLedgerPayload,
+  aLongLedger,
   anAccountsPayload,
+  anEvent,
   aTypedEvent,
   importedOnly,
   ledgerEvents,
@@ -162,18 +164,35 @@ describe('the columns of the ledger', () => {
     expect(within(ledger()).queryByRole('button', { name: /oublier/i })).not.toBeInTheDocument()
   })
 
-  it('sorts by date descending and paginates nothing', async () => {
+  it('sorts by date descending, and numbers no page', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // A ledger is opened to check what has just happened, and « page 4 sur 6 »
-    // means nothing on an axis of dates.
+    // A ledger is opened to check what has just happened. The table reveals by
+    // packets since ADR-0031, but « page 4 sur 6 » is still nowhere: a place in
+    // a sequence means nothing on an axis of dates, which is why what the
+    // control below the table counts is **rows**.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(
       rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[0].textContent),
     ).toEqual(['10 févr. 2026', '12 janv. 2026', '5 janv. 2026', '24 déc. 2025'])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
+  })
+
+  it('says a row typed in the app was entered by hand, and never with a dash', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // The em dash is refused here by ADR-0016: it means *there is nothing to
+    // compute*, and there is something — the row was typed here, which is the
+    // fact the padlock column was trying to carry 285 times.
+    const typed = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    const cells = within(typed).getAllByRole('cell')
+    expect(cells[cells.length - 1]).toHaveTextContent('Saisie manuelle')
+    // The dashes elsewhere on that row are ADR-0016's own — a grant raises no
+    // question of a fee — and it is the provenance cell that must not carry one.
+    expect(cells[cells.length - 1]).not.toHaveTextContent('—')
   })
 })
 
@@ -194,12 +213,67 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
   })
 
-  it('filters by type, and says how many rows are left', async () => {
+  it('lays the six types out as chips, the one in force pressed', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    expect(screen.getByText('4 événements')).toBeInTheDocument()
+    const types = screen.getByRole('group', { name: 'Type' })
 
-    await user.selectOptions(screen.getByLabelText('Type'), 'DEPOSIT')
+    // A `<select>` collapsed to `Tous` said the absence of a reduction and
+    // nothing else: the vocabulary of the ledger was behind a menu.
+    expect(within(types).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Tous les types',
+      'Achat',
+      'Vente',
+      'Attribution',
+      'Dividende',
+      'Versement',
+      'Retrait',
+    ])
+    expect(within(types).getByRole('button', { name: 'Tous les types' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    expect(screen.getByText('4 événements')).toBeInTheDocument()
+    await user.click(within(types).getByRole('button', { name: 'Versement' }))
+
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
+    // The chip states what it retains, and the count follows the reduction.
+    expect(within(types).getByRole('button', { name: 'Versement' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByText('1 événement')).toBeInTheDocument()
+
+    // And it offers the way out, which is the chip beside it.
+    await user.click(within(types).getByRole('button', { name: 'Tous les types' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+    expect(screen.getByText('4 événements')).toBeInTheDocument()
+  })
+
+  it('offers account chips only where there are two accounts to tell apart', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // ADR-0013 seeds an account that is never removed, so an install naming one
+    // would get a group with a single option beside its own exit: a filter that
+    // cannot filter, which is the defect a column that cannot discriminate is.
+    expect(screen.queryByRole('group', { name: 'Compte' })).not.toBeInTheDocument()
+
+    const two = [...ledgerEvents(), anEvent({ date: '2026-02-11', account: 'beta', source_row: 12 })]
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(two))))
+    await user.click(screen.getByRole('tab', { name: /L’installation/ }))
+    await user.click(screen.getByRole('tab', { name: 'Le grand livre' }))
+
+    const accounts = await screen.findByRole('group', { name: 'Compte' })
+    expect(within(accounts).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
+      'Tous les comptes',
+      // The order the ledger names them in, which is the sorted table's own.
+      'beta',
+      'alpha',
+    ])
+
+    await user.click(within(accounts).getByRole('button', { name: 'beta' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
     expect(screen.getByText('1 événement')).toBeInTheDocument()
   })
@@ -214,6 +288,85 @@ describe('the reduction, which is what pays for no pagination', () => {
     // is not reduced by a search over the ledger. What the assertion is about is
     // that the *ledger* is replaced rather than left empty.
     expect(screen.queryByRole('table', { name: 'Vos événements' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the ledger reveals by packets, and only the first flight is silent', () => {
+  it('draws forty of a hundred and seventy-six, and says so without a spinner', async () => {
+    renderData(aLongLedger(176))
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // Forty rows, and the sentence under them counts rows the app **already
+    // holds**: `GET /api/events` answered once, from the published snapshot in
+    // process memory, and handed back the ledger entire.
+    expect(rowsOf(ledger())).toHaveLength(40)
+    expect(screen.getByText('40 sur 176 affichés')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Afficher la suite' })).toBeInTheDocument()
+    // The end is not said before the last row has arrived.
+    expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
+    // And there is no wait to dress, so nothing dresses one.
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('adds forty per gesture, and says the end at the last row', async () => {
+    const { user } = renderData(aLongLedger(85))
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
+    expect(screen.getByText('80 sur 85 affichés')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(85))
+    // The control goes with the rows it was promising: there are none left.
+    expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
+    expect(screen.getByText('Fin du grand livre · 85 événements')).toBeInTheDocument()
+  })
+
+  it('says the end straight away on a ledger shorter than one packet', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    expect(rowsOf(ledger())).toHaveLength(4)
+    expect(screen.getByText('Fin du grand livre · 4 événements')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
+  })
+
+  it('counts the reduction and not the store, and starts it over when a chip moves', async () => {
+    const mixed = [
+      ...aLongLedger(120),
+      ...Array.from({ length: 3 }, (_, index) =>
+        anEvent({
+          date: `2025-06-0${index + 1}`,
+          event_type: 'DEPOSIT',
+          symbol: null,
+          name: null,
+          notes: `Virement ${index + 1}`,
+          quantity: null,
+          unit_price: null,
+          amount: 100,
+          source_row: 200 + index,
+        }),
+      ),
+    ]
+    const { user } = renderData(mixed)
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Afficher la suite' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
+
+    // The chips are a reduction, so both sentences are true of what survives
+    // them — and the budget starts over, or a reader asking a question would
+    // get every row answering it at once.
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
+    expect(screen.getByText('40 sur 120 affichés')).toBeInTheDocument()
+    expect(screen.getByText('120 événements')).toBeInTheDocument()
+
+    await user.click(within(types).getByRole('button', { name: 'Versement' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+    expect(screen.getByText('Fin du grand livre · 3 événements')).toBeInTheDocument()
   })
 })
 
@@ -494,5 +647,10 @@ describe('the page in English', () => {
     // difference of case.
     expect(within(table).getByText('Cash in')).toBeInTheDocument()
     expect(within(table).getByText('Free shares')).toBeInTheDocument()
+    // The reveal speaks English too, and the English is the source (ADR-0024).
+    expect(screen.getByRole('group', { name: 'Type' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All types' })).toBeInTheDocument()
+    expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()
+    expect(within(table).getByText('Entered by hand')).toBeInTheDocument()
   })
 })
