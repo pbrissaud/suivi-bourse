@@ -58,6 +58,7 @@
   "dashboard.ytd.gain": "{amount} depuis le 1ᵉʳ janvier",
   "dashboard.ytd.pending": "historique pas encore reconstruit jusque-là",
   "dashboard.ytd.noPreviousYear": "rien d’enregistré avant le 1ᵉʳ janvier, il n’y a pas encore d’année d’où compter",
+  "dashboard.day.gain": "{amount} aujourd’hui",
   "dashboard.totalValue": "Valeur totale",
   "dashboard.netContributed": "Versé net",
   "dashboard.netContributed.explain": "Versé net : vos versements moins vos retraits, frais exclus. C’est le dénominateur silencieux des deux rendements, et la raison pour laquelle le gain total a un quatrième terme — un frais prélevé sur un virement sort de vos liquidités sans réduire ce que ce chiffre enregistre.",
@@ -107,6 +108,10 @@
   "dashboard.movers.others": "{count, plural, one {# autre ligne n’apparaît pas ici} other {# autres lignes n’apparaissent pas ici}}, {unchanged, plural, =0 {dont aucune n’a bougé de rien} one {dont # n’a pas bougé} other {dont # n’ont pas bougé}}.",
   "dashboard.movers.empty": "Rien à comparer",
   "dashboard.movers.empty.body": "Une ligne entre dans ce bloc dès qu’elle a un cours sur deux séances : un premier jour n’a rien à quoi se comparer.",
+
+  "dashboard.accounts.title": "Vos comptes, comparés",
+  "dashboard.accounts.range": "Plage comparée",
+  "dashboard.accounts.empty": "Rien à comparer sur cette plage pour l’instant.",
 
   "banner.rebuilding": "L’historique de votre portefeuille est en cours de reconstruction.",
   "banner.rebuilding.account": "L’historique de votre portefeuille est en cours de reconstruction. {account} est le compte le plus en retard, et les chiffres consolidés l’attendent.",

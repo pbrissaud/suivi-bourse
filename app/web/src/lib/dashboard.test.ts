@@ -13,6 +13,7 @@ import {
   amountsFromValuation,
   amountsValues,
   dashboardState,
+  dayMove,
   hasCashLedger,
   moversSplit,
   performanceRows,
@@ -23,6 +24,7 @@ import { buildShareRows } from '@/lib/shares'
 import {
   aClosedPosition,
   aMover,
+  aPerfPoint,
   aPortfolioHistory,
   aPosition,
   aPositionsHistory,
@@ -263,6 +265,45 @@ describe('the movers', () => {
     expect(split.risers.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
     expect(split.fallers).toEqual([])
     expect(split.others).toBe(3)
+  })
+})
+
+describe('the day’s move', () => {
+  const day = (t: string, totalValue: number | null, contributed: number | null) => ({
+    ...aPerfPoint(t, 100),
+    total_value: totalValue,
+    net_contributed: contributed,
+  })
+
+  it('counts the movement of the gain, which no deposit moves', () => {
+    // `gain_absolu = total_value − net_contributed`, so a 500,00 deposit made
+    // today lifts both terms and the day's move stays what the holdings did.
+    // It is `_ytd`'s own definition over a one-day window, which is the whole
+    // reason the figure is spelled on this series rather than on the movers.
+    expect(
+      dayMove([day('2026-03-01', 1800, 1380), day('2026-03-02', 2330, 1880)], now),
+    ).toBeCloseTo(30, 10)
+  })
+
+  it('says nothing about today until the series has reached today', () => {
+    // A series stopping short is a reconstruction in progress, and *today* is
+    // then a claim nothing on the wire supports.
+    expect(dayMove([day('2026-02-28', 1800, 1380), day('2026-03-01', 1830, 1380)], now)).toBeNull()
+  })
+
+  it('has no figure while the read is in flight, or with one day to its name', () => {
+    // `null` is the read; a single point is a payload with no difference in it.
+    expect(dayMove(null, now)).toBeNull()
+    expect(dayMove([day('2026-03-02', 1800, 1380)], now)).toBeNull()
+  })
+
+  it('goes out on an install with no cash ledger rather than reading a gain of nothing', () => {
+    // `total_value` and `net_contributed` are both `NULL` there (#708), where
+    // `gain_absolu` is written always — so the year-to-date pill survives this
+    // one and an absent pill is not a false one.
+    expect(
+      dayMove([day('2026-03-01', null, null), day('2026-03-02', null, null)], now),
+    ).toBeNull()
   })
 })
 

@@ -14,6 +14,14 @@
  * payload is reduced to those same held lines before anything is counted off it
  * (`moversSplit`), so the two halves of the sentence describe one set.
  *
+ * **The right rail, and the ticker on every line** (#790). The block sits in
+ * the narrow column of the plateau, so the two columns of five stack there and
+ * spread again the moment the card has the width; and each line carries its
+ * **symbol** beside the name, which is the identity the rest of the product
+ * addresses a security by — `lib/api.ts`'s own rule, `symbol` being the
+ * identity and `name` display only. A rail of names alone cannot be matched to
+ * the allocation's legend, to the shares table, or to a broker's own screen.
+ *
  * The reference close is named here and nowhere else. It is the **second** of
  * the page's two permanent time announcers — the first is the page's own price
  * mention — and it is a different instant from it: the block compares against
@@ -21,6 +29,7 @@
  * instead of the close it found announced a session that had not happened yet.
  */
 import { EmptyState } from '@/components/EmptyState'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { Mover } from '@/lib/api'
 import { moversSplit } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
@@ -61,44 +70,48 @@ export function Movers({ movers, reference, rows, currency }: MoversProps) {
   const { risers, fallers, others, unchanged } = moversSplit(movers, rows)
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <Card className="gap-4">
+      <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-sm font-medium">{t('dashboard.movers.title')}</h2>
         {reference === null ? null : (
           <p className="text-sm text-muted-foreground">
             {t('dashboard.movers.since', { date: f.dateTime(reference) })}
           </p>
         )}
-      </div>
+      </CardHeader>
 
-      {risers.length === 0 && fallers.length === 0 ? (
-        <EmptyState
-          title={t('dashboard.movers.empty')}
-          description={t('dashboard.movers.empty.body')}
-        />
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Column
-            title={t('dashboard.movers.risers')}
-            rows={risers}
-            currency={currency}
-            empty={t('dashboard.movers.noRiser')}
+      <CardContent className="space-y-3">
+        {risers.length === 0 && fallers.length === 0 ? (
+          <EmptyState
+            title={t('dashboard.movers.empty')}
+            description={t('dashboard.movers.empty.body')}
           />
-          <Column
-            title={t('dashboard.movers.fallers')}
-            rows={fallers}
-            currency={currency}
-            empty={t('dashboard.movers.noFaller')}
-          />
-        </div>
-      )}
+        ) : (
+          // Two columns where there is room, stacked in the rail — the rail
+          // being where this block lives on the plateau.
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
+            <Column
+              title={t('dashboard.movers.risers')}
+              rows={risers}
+              currency={currency}
+              empty={t('dashboard.movers.noRiser')}
+            />
+            <Column
+              title={t('dashboard.movers.fallers')}
+              rows={fallers}
+              currency={currency}
+              empty={t('dashboard.movers.noFaller')}
+            />
+          </div>
+        )}
 
-      {others === 0 ? null : (
-        <p className="text-sm text-muted-foreground">
-          {t('dashboard.movers.others', { count: others, unchanged })}
-        </p>
-      )}
-    </section>
+        {others === 0 ? null : (
+          <p className="text-sm text-muted-foreground">
+            {t('dashboard.movers.others', { count: others, unchanged })}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -124,7 +137,18 @@ function Column({
         <ul className="space-y-1.5">
           {rows.map((mover) => (
             <li key={mover.symbol} className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate">{mover.name ?? mover.symbol}</span>
+              <span className="flex min-w-0 items-baseline gap-2">
+                {/* The identity, then what it is called: a rail of names alone
+                    cannot be matched to anything else on the page. */}
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {mover.symbol}
+                </span>
+                {/* And the name only where there is one: `name` is display
+                    only, and a symbol printed twice names nothing twice. */}
+                {mover.name === null ? null : (
+                  <span className="min-w-0 truncate">{mover.name}</span>
+                )}
+              </span>
               <span className="flex shrink-0 items-baseline gap-3">
                 {/* The percentage and what it did in money: a 12 % jump on a
                     token holding and a 0,4 % drift on the biggest line are not

@@ -396,3 +396,57 @@ export function moversSplit(movers: readonly Mover[], rows: readonly ShareRow[])
     unchanged: shown.filter((mover) => mover.change_pct === 0).length,
   }
 }
+
+// ------------------------------------------------------------------------- //
+// The day's move — the second period of the total (#790, ADR-0018)
+// ------------------------------------------------------------------------- //
+
+/**
+ * What the **total** did today, and it is the year-to-date figure's own
+ * definition over a one-day window.
+ *
+ * That identity is the whole of why it is spelled on the perf series rather
+ * than on the movers, which is where it was first written. `portfolio_view._ytd`
+ * counts the movement of `gain_absolu`, and `gain_absolu = total_value −
+ * net_contributed` — so the difference of two of the series' days is
+ * deposit-neutral by construction, and it carries **everything** the total
+ * carries: a sale booked today, a dividend encashed today, the fee a transfer
+ * cost today. Summed off `/api/portfolio/movers` instead, the figure was
+ * `change × quantity` over the lines still **held**, which is the price move of
+ * the holdings and not the movement of the gain: sell a line at a profit this
+ * morning and the pill said `+10,00 €` under a headline that had just gained
+ * `+180,00 €`. Two figures side by side, one of them named after the other's
+ * window.
+ *
+ * **The last point must be today**, or the pill is not about today. The series
+ * is dense over calendar days (`perf_series`), so the point before it is
+ * yesterday and no gap has to be looked for — but a series that has not reached
+ * today is a rebuild in progress, and *today* is then a claim nothing supports.
+ * That is also what retires the reference instant the movers block names: this
+ * figure counts calendar days on the product's own clock, so a Monday morning
+ * reads against Sunday — which, the series being dense, is Friday's close
+ * carried forward — instead of naming a session that has not happened.
+ *
+ * `null` on an install with **no cash ledger**: `total_value` and
+ * `net_contributed` are both `NULL` there (#708's per-field rule), and the read
+ * this reduces is not even armed. The year-to-date pill survives on its own,
+ * `gain_absolu` being written always — an absent pill is not a false one.
+ */
+export function dayMove(points: readonly PerfPoint[] | null, now: Date): number | null {
+  // A read in flight is not an absence, and it reaches here as `null` rather
+  // than as an empty array (ADR-0026). One point is not a difference.
+  if (points === null || points.length < 2) return null
+
+  const last = points[points.length - 1]
+  if (last.t !== now.toISOString().slice(0, 10)) return null
+
+  const gain = (point: PerfPoint) =>
+    point.total_value === null || point.net_contributed === null
+      ? null
+      : point.total_value - point.net_contributed
+
+  const today = gain(last)
+  const yesterday = gain(points[points.length - 2])
+  if (today === null || yesterday === null) return null
+  return today - yesterday
+}

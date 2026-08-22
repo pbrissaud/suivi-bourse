@@ -20,6 +20,12 @@
  *  - **No breakdown by account and none by type.** A second selector beside the
  *    chart's is the duplication this page keeps closing, and the question *which
  *    account is working* has a page of its own.
+ *  - **The total is at the centre of the donut** (#790), which is the one
+ *    place on the figure where it is not a fourteenth line competing with the
+ *    twelve slices and the tail. It stays **one** sentence — the amount and
+ *    what it is the amount *of* — because splitting them would put the figure
+ *    in one element and its unit in another, and the unit is what makes
+ *    `2 300,00 €` mean *of securities* rather than *of the portfolio*.
  *  - **It names what it could not place.** A position quoted in a currency whose
  *    rate has not resolved has no value in the reporting currency, so summing it
  *    would make every other percentage silently wrong — the exclusion was
@@ -29,6 +35,7 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { allocation, type AllocationSlice } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
@@ -53,86 +60,94 @@ export function Allocation({ rows, currency }: AllocationProps) {
     slice.symbol === null ? t('dashboard.allocation.others', { count: slice.count }) : slice.label
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-medium">{t('dashboard.allocation.title')}</h2>
+    <Card className="gap-4">
+      <CardHeader>
+        {/* A real heading, and not the primitive's `<div>`: the block is a
+            section of the page and a reader jumping by heading must find it. */}
+        <h2 className="text-sm font-medium">{t('dashboard.allocation.title')}</h2>
+      </CardHeader>
 
-      {slices.length === 0 ? (
-        // It says **why** it is empty, which at *events but nothing held* is the
-        // whole information: nothing is broken, there is nothing to divide.
-        <EmptyState
-          title={t('dashboard.allocation.empty')}
-          description={t('dashboard.allocation.empty.body')}
-        />
-      ) : (
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:items-center">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={slices as AllocationSlice[]}
-                  dataKey="value"
-                  nameKey="symbol"
-                  innerRadius="55%"
-                  outerRadius="85%"
-                  isAnimationActive={false}
-                  stroke="var(--background)"
+      <CardContent className="space-y-3">
+        {slices.length === 0 ? (
+          // It says **why** it is empty, which at *events but nothing held* is the
+          // whole information: nothing is broken, there is nothing to divide.
+          <EmptyState
+            title={t('dashboard.allocation.empty')}
+            description={t('dashboard.allocation.empty.body')}
+          />
+        ) : (
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:items-center lg:grid-cols-1">
+            <div className="relative h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={slices as AllocationSlice[]}
+                    dataKey="value"
+                    nameKey="symbol"
+                    innerRadius="62%"
+                    outerRadius="88%"
+                    isAnimationActive={false}
+                    stroke="var(--background)"
+                  >
+                    {slices.map((slice, rank) => (
+                      <Cell key={slice.symbol ?? 'others'} fill={stop(rank)} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              {/* The total, in the hole it left: the ring has a middle and the
+                  figure it is the division of belongs in it. `pointer-events-none`
+                  so the slices under it stay reachable. */}
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <p className="tabular max-w-[9rem] text-center text-sm text-muted-foreground">
+                  {t('dashboard.allocation.total', { amount: f.currency(total, currency) })}
+                </p>
+              </div>
+            </div>
+
+            {/* Two columns, and the reading order is the slices' order — down the
+                first column, then down the second, so rank stays legible. */}
+            <ul
+              aria-label={t('dashboard.allocation.title')}
+              className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2 lg:grid-cols-1"
+            >
+              {slices.map((slice, rank) => (
+                <li
+                  key={slice.symbol ?? 'others'}
+                  className="flex items-baseline justify-between gap-3"
                 >
-                  {slices.map((slice, rank) => (
-                    <Cell key={slice.symbol ?? 'others'} fill={stop(rank)} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span
+                      aria-hidden
+                      className="inline-block size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: stop(rank) }}
+                    />
+                    <span className="truncate">{name(slice)}</span>
+                  </span>
+                  {/* A share of a whole, never a change: `formatPercent` signs
+                      what it renders (`+56,52 %`), which is right for a movement
+                      and reads as one here. */}
+                  <span className="tabular shrink-0 text-muted-foreground">
+                    {f.percentPoints(slice.share * 100)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
+        )}
 
-          {/* Two columns, and the reading order is the slices' order — down the
-              first column, then down the second, so rank stays legible. */}
-          <ul
-            aria-label={t('dashboard.allocation.title')}
-            className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2"
-          >
-            {slices.map((slice, rank) => (
-              <li
-                key={slice.symbol ?? 'others'}
-                className="flex items-baseline justify-between gap-3"
-              >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span
-                    aria-hidden
-                    className="inline-block size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: stop(rank) }}
-                  />
-                  <span className="truncate">{name(slice)}</span>
-                </span>
-                {/* A share of a whole, never a change: `formatPercent` signs
-                    what it renders (`+56,52 %`), which is right for a movement
-                    and reads as one here. */}
-                <span className="tabular shrink-0 text-muted-foreground">
-                  {f.percentPoints(slice.share * 100)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {slices.length === 0 ? null : (
-        <p className="text-sm text-muted-foreground">
-          {t('dashboard.allocation.total', { amount: f.currency(total, currency) })}
-        </p>
-      )}
-
-      {unplaced.length === 0 ? null : (
-        <p className="text-sm text-attention">
-          {t('dashboard.allocation.unplaced', {
-            count: unplaced.length,
-            // `f.list` and not `join(', ')`: this is a sentence, and a
-            // language does not enumerate with a separator (#768). English
-            // closes on *and*, French on *et*.
-            symbols: f.list(unplaced),
-          })}
-        </p>
-      )}
-    </section>
+        {unplaced.length === 0 ? null : (
+          <p className="text-sm text-attention">
+            {t('dashboard.allocation.unplaced', {
+              count: unplaced.length,
+              // `f.list` and not `join(', ')`: this is a sentence, and a
+              // language does not enumerate with a separator (#768). English
+              // closes on *and*, French on *et*.
+              symbols: f.list(unplaced),
+            })}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }

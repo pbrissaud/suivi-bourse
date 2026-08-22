@@ -33,8 +33,8 @@
  * terms themselves carry none. The other three go on `Versé net`, `TRI` and
  * `TWR`.
  *
- * **The year-to-date is two figures that do not touch**: the euro under the
- * head figure, the percentage filed inside the TWR statistic. Measured on the
+ * **The year-to-date is two figures that do not touch**: the euro on a pill
+ * beside the head figure, the percentage filed inside the TWR statistic. Measured on the
  * real portfolio, `+40,69 €` and `−1,25 %` over the same period, of opposite
  * signs and both correct — the portfolio grew by 6 673 € of deposits while its
  * holdings lost 1,25 %. Side by side they read as a contradiction; they are
@@ -43,6 +43,20 @@
  * **There is no range control.** The delta is fixed to year-to-date, on the
  * gain and on the time-weighted return, and **never on the money-weighted
  * one**, which is annualised from the origin and has no window to narrow.
+ *
+ * **And since #790 the head is a card, with the two periods of the total in
+ * it.** *Today* and *since 1 January* are the same figure over two other
+ * windows, so they stay **with** the total and never join the row of four:
+ * mounted there they would read as two more things to add, which is the exact
+ * addition ADR-0018's subordination exists to prevent. That *the same figure*
+ * is load-bearing rather than decorative: the day's move is the movement of
+ * `gain_absolu` over one day (`lib/dashboard.ts`), which is `_ytd`'s own
+ * definition over another window — so the two pills answer one question twice
+ * and never two questions once.
+ *
+ * The series it reduces is the chart's, read under the chart's own condition
+ * and therefore costing no request of its own: one key, one read, two
+ * consumers.
  */
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -51,6 +65,7 @@ import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
+import { Card, CardContent } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
@@ -65,9 +80,11 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
+import { dayMove, hasCashLedger } from '@/lib/dashboard'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
 import { oneBand, readConditions } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 const TERM_LABELS: Record<GainTermName, MessageKey> = {
   unrealised: 'gain.term.unrealised',
@@ -83,6 +100,14 @@ export function DashboardHead() {
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The chart's series, under the chart's own condition — same key, so the two
+  // consumers share one request. Without a cash ledger there is no series at
+  // all (#708), and the pill it feeds is then simply not drawn.
+  const history = useQuery({
+    queryKey: ['portfolio-totals-history'],
+    queryFn: api.portfolioTotalsHistory,
+    enabled: totals.isSuccess && hasCashLedger(totals.data?.totals ?? null),
+  })
 
   // A failed read is **named here**, and it has to be: `/api/runtime` answers
   // from process memory and never opens the store, so the shell's band stays
@@ -187,176 +212,223 @@ export function DashboardHead() {
   // written down at all: the figures above it are exact either way.
   const accountCount = accounts.data?.accounts.length ?? null
 
-  return (
-    <div className="space-y-6">
-      {/* The head, and the gain alone in it. */}
-      <Stat
-        size="head"
-        label={t('dashboard.gainTotal')}
-        // Unknown here has **two** causes since #775 and they read apart: a
-        // held position whose rate has not resolved is *named*, because the app
-        // repairs it by itself, while a fourth term nothing can bound wears the
-        // em dash — a total amputated of a term is not that total (ADR-0018),
-        // and *there is nothing to compute* is the truth about it. That second
-        // one is also what `totals: null` now produces on a portfolio that has
-        // positions: the headline goes out, and the sentence at the foot of the
-        // block says why.
-        value={renderFigure(
-          sumRendering(total),
-          () => f.currency(total.known ? total.value : null, currency),
-          t,
-        )}
-        valueClassName={signClass(total.known ? total.value : null)}
-        explain={
-          <Explain
-            figure={t('dashboard.gainTotal')}
-            body="dashboard.gainTotal.explain"
-            anchor="total-gain"
-          />
-        }
-      >
-        {totalsRow === null ? null : (
-          <p className="text-sm text-muted-foreground">
-            {ytdGain === null
-              ? // The one figure the rebuild degrades, and it says which figure
-                // and why — the head above it is exact from the first cycle.
-                ytdAbsence(ytdGain)
-              : t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
-          </p>
-        )}
-      </Stat>
+  // `?? null` and never `?? []`: a series that has not answered is not a day
+  // on which nothing moved (ADR-0026).
+  const today = dayMove(history.data?.points ?? null, new Date())
 
-      {/* The four terms, on their own row and never on the head's. */}
-      <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
-        {GAIN_TERMS.map((term) => {
-          const value = termAmount(terms, term)
-          if (!termIsRendered(term, value)) return null
-          return (
+  return (
+    // The hero card, and the one gradient in the product (#787): it is the
+    // page’s first object, so it is the one that may say *start here*
+    // without another card having to compete. The ground stays `--card` and
+    // the mint is a wash over it — a figure read against a saturated field
+    // is a figure read badly.
+    <Card className="gap-0 border-border/60 bg-gradient-to-br from-card via-card to-primary/10">
+      <CardContent className="space-y-6">
+        {/* The head, and the gain alone in it. */}
+        <Stat
+          size="head"
+          label={t('dashboard.gainTotal')}
+          // Unknown here has **two** causes since #775 and they read apart: a
+          // held position whose rate has not resolved is *named*, because the app
+          // repairs it by itself, while a fourth term nothing can bound wears the
+          // em dash — a total amputated of a term is not that total (ADR-0018),
+          // and *there is nothing to compute* is the truth about it. That second
+          // one is also what `totals: null` now produces on a portfolio that has
+          // positions: the headline goes out, and the sentence at the foot of the
+          // block says why.
+          value={renderFigure(
+            sumRendering(total),
+            () => f.currency(total.known ? total.value : null, currency),
+            t,
+          )}
+          valueClassName={signClass(total.known ? total.value : null)}
+          explain={
+            <Explain
+              figure={t('dashboard.gainTotal')}
+              body="dashboard.gainTotal.explain"
+              anchor="total-gain"
+            />
+          }
+        >
+          {/* The two **periods of the total**, and they stay with it. */}
+          {totalsRow === null ? null : (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {today === null ? null : (
+                <Period
+                  amount={today}
+                  text={t('dashboard.day.gain', { amount: f.signedCurrency(today, currency) })}
+                />
+              )}
+              {ytdGain === null ? (
+                // The one figure the rebuild degrades, and it says which figure
+                // and why — the head above it is exact from the first cycle. It
+                // stays a **sentence** rather than a pill: what it carries is a
+                // reason, and a reason does not fit in a badge.
+                <p className="text-sm text-muted-foreground">{ytdAbsence(ytdGain)}</p>
+              ) : (
+                <Period
+                  amount={ytdGain}
+                  text={t('dashboard.ytd.gain', { amount: f.signedCurrency(ytdGain, currency) })}
+                />
+              )}
+            </div>
+          )}
+        </Stat>
+
+        {/* The four terms, on their own row and never on the head's. */}
+        <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+          {GAIN_TERMS.map((term) => {
+            const value = termAmount(terms, term)
+            if (!termIsRendered(term, value)) return null
+            return (
+              <Stat
+                key={term}
+                size="term"
+                label={t(TERM_LABELS[term])}
+                value={renderFigure(termRendering(terms, term), () => f.currency(value, currency), t)}
+                // Colour only where the sign can turn. A dividend received is
+                // never negative and a transfer fee never positive; painting them
+                // steals the signal from the red of a realised loss. An absent
+                // value keeps the grey of absence whatever the term.
+                valueClassName={
+                  value === null
+                    ? signClass(null)
+                    : termCarriesSign(term)
+                      ? signClass(value)
+                      : signClass(0)
+                }
+              />
+            )
+          })}
+        </div>
+
+        {/* The statistics, on a third row — and only the ones that exist. */}
+        <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+          {totalsRow?.total_value == null ? null : (
             <Stat
-              key={term}
-              size="term"
-              label={t(TERM_LABELS[term])}
-              value={renderFigure(termRendering(terms, term), () => f.currency(value, currency), t)}
-              // Colour only where the sign can turn. A dividend received is
-              // never negative and a transfer fee never positive; painting them
-              // steals the signal from the red of a realised loss. An absent
-              // value keeps the grey of absence whatever the term.
-              valueClassName={
-                value === null
-                  ? signClass(null)
-                  : termCarriesSign(term)
-                    ? signClass(value)
-                    : signClass(0)
+              label={t('dashboard.totalValue')}
+              value={f.currency(totalsRow.total_value, currency)}
+            />
+          )}
+          {/* The securities, beside the value they are part of — and it is the
+              one money statistic an install with **no cash ledger** still has:
+              `holdings_value` is written always (#708), where `total_value` and
+              both returns are `NULL`. It is also what makes *events, and nothing
+              held* an ordinary page rather than an empty one: `0,00 €` is a
+              figure, in the colour of text, read beside the em dash of the latent
+              gain — the one place in the product where the two are side by side
+              at the scale of the portfolio. */}
+          {totalsRow?.holdings_value == null ? null : (
+            <Stat
+              label={t('dashboard.holdings')}
+              value={f.currency(totalsRow.holdings_value, currency)}
+            />
+          )}
+          {totalsRow?.net_contributed == null ? null : (
+            <Stat
+              label={t('dashboard.netContributed')}
+              value={f.currency(totalsRow.net_contributed, currency)}
+              explain={
+                <Explain
+                  figure={t('dashboard.netContributed')}
+                  body="dashboard.netContributed.explain"
+                  anchor="net-contributed"
+                />
               }
             />
-          )
-        })}
-      </div>
-
-      {/* The statistics, on a third row — and only the ones that exist. */}
-      <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
-        {totalsRow?.total_value == null ? null : (
-          <Stat
-            label={t('dashboard.totalValue')}
-            value={f.currency(totalsRow.total_value, currency)}
-          />
-        )}
-        {/* The securities, beside the value they are part of — and it is the
-            one money statistic an install with **no cash ledger** still has:
-            `holdings_value` is written always (#708), where `total_value` and
-            both returns are `NULL`. It is also what makes *events, and nothing
-            held* an ordinary page rather than an empty one: `0,00 €` is a
-            figure, in the colour of text, read beside the em dash of the latent
-            gain — the one place in the product where the two are side by side
-            at the scale of the portfolio. */}
-        {totalsRow?.holdings_value == null ? null : (
-          <Stat
-            label={t('dashboard.holdings')}
-            value={f.currency(totalsRow.holdings_value, currency)}
-          />
-        )}
-        {totalsRow?.net_contributed == null ? null : (
-          <Stat
-            label={t('dashboard.netContributed')}
-            value={f.currency(totalsRow.net_contributed, currency)}
-            explain={
-              <Explain
-                figure={t('dashboard.netContributed')}
-                body="dashboard.netContributed.explain"
-                anchor="net-contributed"
-              />
-            }
-          />
-        )}
-        {totalsRow?.xirr == null ? null : (
-          <Stat
-            label={t('dashboard.xirr')}
-            value={t('dashboard.xirr.value', { percent: f.percent(totalsRow.xirr) })}
-            explain={
-              <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
-            }
-          />
-        )}
-        {twrMove === null ? null : (
-          <Stat
-            label={t('dashboard.twr')}
-            value={f.percent(twrMove)}
-            explain={
-              <Explain figure={t('dashboard.twr')} body="dashboard.twr.explain" anchor="twr" />
-            }
-          >
-            {/* The base date rides the origin scalar **only while it moves**.
-                Once the reconstruction is done the base stops moving, and a
-                date that never changes again is not news. */}
-            {runtime.data?.rebuilding && totalsRow?.twr_since ? (
-              <p className="text-xs text-muted-foreground">
-                {t('dashboard.twr.since', { date: f.date(totalsRow.twr_since) })}
-              </p>
-            ) : null}
-            {/* The other half of the year-to-date pair — and it degrades the
-                same way, sentence included. The two are **deliberately** far
-                apart (they read as a contradiction side by side), so a reader
-                looking at this one never sees the caption written under the
-                other: a bare dash here says, by the product's own rule, *there
-                is nothing to compute*, when what is going on is a history not
-                yet rebuilt that far — nameable and repairable. */}
-            <p className="text-sm text-muted-foreground">
-              {ytdTwr === null
-                ? ytdAbsence(ytdTwr)
-                : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
-            </p>
-          </Stat>
-        )}
-      </div>
-
-      {/* The consolidated figures name their perimeter — and at N = 1 the link
-          disappears of itself, the accounts page having left the navigation. */}
-      {accountCount === null ? null : (
-        <p className="text-sm text-muted-foreground">
-          {accountCount > 1 ? (
-            <Link to="/comptes" className="underline underline-offset-4">
-              {t('dashboard.scope', { count: accountCount })}
-            </Link>
-          ) : (
-            t('dashboard.scope', { count: accountCount })
           )}
-        </p>
-      )}
+          {totalsRow?.xirr == null ? null : (
+            <Stat
+              label={t('dashboard.xirr')}
+              value={t('dashboard.xirr.value', { percent: f.percent(totalsRow.xirr) })}
+              explain={
+                <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
+              }
+            />
+          )}
+          {twrMove === null ? null : (
+            <Stat
+              label={t('dashboard.twr')}
+              value={f.percent(twrMove)}
+              explain={
+                <Explain figure={t('dashboard.twr')} body="dashboard.twr.explain" anchor="twr" />
+              }
+            >
+              {/* The base date rides the origin scalar **only while it moves**.
+                  Once the reconstruction is done the base stops moving, and a
+                  date that never changes again is not news. */}
+              {runtime.data?.rebuilding && totalsRow?.twr_since ? (
+                <p className="text-xs text-muted-foreground">
+                  {t('dashboard.twr.since', { date: f.date(totalsRow.twr_since) })}
+                </p>
+              ) : null}
+              {/* The other half of the year-to-date pair — and it degrades the
+                  same way, sentence included. The two are **deliberately** far
+                  apart (they read as a contradiction side by side), so a reader
+                  looking at this one never sees the caption written under the
+                  other: a bare dash here says, by the product's own rule, *there
+                  is nothing to compute*, when what is going on is a history not
+                  yet rebuilt that far — nameable and repairable. */}
+              <p className="text-sm text-muted-foreground">
+                {ytdTwr === null
+                  ? ytdAbsence(ytdTwr)
+                  : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
+              </p>
+            </Stat>
+          )}
+        </div>
 
-      {/* `totals: null` has **two** causes and they are not the same sentence
-          (#745): no ledger at all, or a reporting currency nobody has answered.
-          The second is the ordinary one here — reaching this line at all means
-          positions exist, so a ledger exists — and it is the actionable one:
-          the perf job writes nothing until the dial is answered (#702), every
-          figure it computes being money. Written as one sentence, the app told
-          a reader with a full portfolio that they had no ledger. The condition
-          is read where ADR-0021 says it is stated, the head's `currency` being
-          `null`, and no fourth kind of absence is invented for it. */}
-      {totalsRow === null ? (
-        <p className="max-w-prose text-sm text-muted-foreground">
-          {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
-        </p>
-      ) : null}
-    </div>
+        {/* The consolidated figures name their perimeter — and at N = 1 the link
+            disappears of itself, the accounts page having left the navigation. */}
+        {accountCount === null ? null : (
+          <p className="text-sm text-muted-foreground">
+            {accountCount > 1 ? (
+              <Link to="/comptes" className="underline underline-offset-4">
+                {t('dashboard.scope', { count: accountCount })}
+              </Link>
+            ) : (
+              t('dashboard.scope', { count: accountCount })
+            )}
+          </p>
+        )}
+
+        {/* `totals: null` has **two** causes and they are not the same sentence
+            (#745): no ledger at all, or a reporting currency nobody has answered.
+            The second is the ordinary one here — reaching this line at all means
+            positions exist, so a ledger exists — and it is the actionable one:
+            the perf job writes nothing until the dial is answered (#702), every
+            figure it computes being money. Written as one sentence, the app told
+            a reader with a full portfolio that they had no ledger. The condition
+            is read where ADR-0021 says it is stated, the head's `currency` being
+            `null`, and no fourth kind of absence is invented for it. */}
+        {totalsRow === null ? (
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {currency === null ? t('dashboard.awaitingCurrency') : t('dashboard.withoutLedger')}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * One **period of the total** — today, or since 1 January.
+ *
+ * A pill and not a statistic, deliberately: a `Stat` is a figure of its own,
+ * and these two are the head's figure seen through another window. Mounted as
+ * statistics they join a row of things to add, which is the reading ADR-0018's
+ * subordination exists to prevent; mounted as pills beside the headline they
+ * read as what they are.
+ */
+function Period({ amount, text }: { amount: number; text: string }) {
+  return (
+    <span
+      className={cn(
+        'tabular rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium',
+        signClass(amount),
+      )}
+    >
+      {text}
+    </span>
   )
 }

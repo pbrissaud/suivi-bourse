@@ -21,10 +21,20 @@
  *  - **The four states are one decision** (`lib/dashboard.ts`), not a `?.length`
  *    per block: *no events* is a sentence and a link, while *events and nothing
  *    held* is an ordinary page whose blocks each say why they are empty.
+ *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`: the
+ *    figures the reader came for on the wide one — the head, the chart, the
+ *    accounts — and the two blocks that are *read down* in the rail beside it,
+ *    the allocation and the movers. Below `lg` the tracks collapse into one, so
+ *    the 976 px case ADR-0022 measured is the **stacked** page and cannot
+ *    overflow sideways; the two-track grid only starts where there is room for
+ *    it. And it starts only where there is something to put in the rail: at
+ *    zero events — or while the two reads are in flight — the second track
+ *    would be a third of the page held empty beside one sentence.
  */
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { Allocation } from '@/components/dashboard/Allocation'
 import { DashboardHead } from '@/components/dashboard/Head'
 import { Movers } from '@/components/dashboard/Movers'
@@ -36,6 +46,7 @@ import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
 import { oneBand, readConditions } from '@/lib/status'
 import { usePageHeading } from '@/lib/pageHeading'
+import { cn } from '@/lib/utils'
 
 export default function DashboardPage() {
   const { t } = useI18n()
@@ -97,12 +108,27 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="space-y-8">
-      <DashboardHead />
+    <div
+      className={cn(
+        'grid items-start gap-6',
+        state === 'portfolio' && 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]',
+      )}
+    >
+      {/* The wide track: what the page leads with, then what it draws. */}
+      <div className="space-y-6 lg:col-start-1">
+        <DashboardHead />
 
+        {state !== 'portfolio' ? null : (
+          <>
+            <PortfolioChart />
+            <AccountsCard />
+          </>
+        )}
+      </div>
+
+      {/* The rail: two blocks that are read down rather than across. */}
       {state !== 'portfolio' ? null : (
-        <>
-          <PortfolioChart />
+        <div className="space-y-6 lg:col-start-2 lg:row-start-1">
           <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
           <Movers
             // `?? null` and never `?? []`: this read is armed only once the
@@ -114,7 +140,7 @@ export default function DashboardPage() {
             rows={rows}
             currency={positions.data?.base_currency ?? null}
           />
-        </>
+        </div>
       )}
     </div>
   )

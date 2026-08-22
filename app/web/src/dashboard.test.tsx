@@ -19,11 +19,15 @@ import { describe, expect, it } from 'vitest'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
+  anAccount,
+  anAccountHistory,
   anAccountsPayload,
   aClosedPosition,
   aMover,
   aMoversPayload,
   aPosition,
+  aPerfPoint,
+  aPortfolioHistory,
   aPositionsPayload,
   aRuntime,
   aTotals,
@@ -99,18 +103,26 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(twr).not.toHaveTextContent(/40,69/)
   })
 
-  it('leaves the page **one** range control, and it is not the head’s', async () => {
+  it('leaves the head **no** range control, and gives each figure one', async () => {
     renderApp()
     const head = await screen.findByRole('group', { name: 'Gain total' })
 
     // The delta is fixed to year-to-date. The `1S / 1M / 1A / —` selector was a
-    // *second* range control on this page, and two sibling controls read as two
-    // settings of the same thing — so the head carries none and the chart's is
-    // the only one (#718, #727).
-    await waitFor(() => expect(screen.getAllByRole('radiogroup')).toHaveLength(1))
+    // *second* range control **on the head**, and two sibling controls read as
+    // two settings of the same thing — so the head carries none (#718, #727).
     expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(within(figure('TWR')).queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
+
+    // Two on the page, and they are two **figures**, not two settings of one:
+    // the chart's drives the portfolio's own series, the accounts card's drives
+    // the comparison ADR-0028 moved here — one range for every figure drawn on
+    // that card, sparkline included (ADR-0019, carried over by ADR-0028).
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
+      ).toEqual(['Plage', 'Plage comparée']),
+    )
   })
 
   it('never puts a delta on the money-weighted return, which is annualised', async () => {
@@ -118,6 +130,157 @@ describe('the year-to-date is two figures that do not touch', () => {
     const xirr = await screen.findByRole('group', { name: 'TRI' })
     expect(xirr).toHaveTextContent(/\+3,22\D?%/)
     expect(xirr).not.toHaveTextContent(/janvier/)
+  })
+})
+
+describe('the two periods of the total', () => {
+  /** One day of the global series, at a stated value and contribution. */
+  const perfDay = (t: string, totalValue: number, contributed: number) => ({
+    ...aPerfPoint(t, 100),
+    total_value: totalValue,
+    net_contributed: contributed,
+  })
+
+  it('keeps them with the total and out of the row of four terms', async () => {
+    renderApp()
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+
+    // A period is the same figure through another window; a term is a *part* of
+    // it. Mounted among the four they read as two more things to add, which is
+    // the addition ADR-0018's subordination exists to prevent.
+    expect(head).toHaveTextContent(/aujourd’hui/)
+    expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
+    for (const term of [
+      'Plus-value latente',
+      'Plus-value réalisée',
+      'Dividendes reçus',
+      'Frais de versement',
+    ]) {
+      expect(figure(term)).not.toHaveTextContent(/aujourd’hui|janvier/)
+    }
+  })
+
+  it('counts the movement of the gain, which a deposit made today does not move', async () => {
+    // 500,00 paid in today lifts the value and the contributions by the same
+    // amount; what is left is the +30,00 the holdings did. It is `_ytd`'s own
+    // definition over a one-day window, which is what makes the two pills two
+    // periods of **one** figure rather than two figures.
+    server.use(
+      http.get(ROUTES.portfolioTotalsHistory, () =>
+        HttpResponse.json(
+          aPortfolioHistory([perfDay('2026-03-01', 1800, 1380), perfDay('2026-03-02', 2330, 1880)]),
+        ),
+      ),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    await waitFor(() => expect(head).toHaveTextContent(/\+30,00\D?€ aujourd’hui/))
+  })
+
+  it('says nothing about today while the series has not reached today', async () => {
+    // A series stopping short is a reconstruction in progress, and *today* is
+    // then a claim nothing on the wire supports. The head above is untouched:
+    // the day's move is a window on the total, never a term of it.
+    server.use(
+      http.get(ROUTES.portfolioTotalsHistory, () =>
+        HttpResponse.json(
+          aPortfolioHistory([perfDay('2026-02-28', 1800, 1380), perfDay('2026-03-01', 1830, 1380)]),
+        ),
+      ),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/370,00/)
+    await waitFor(() => expect(screen.queryByText(/aujourd’hui/)).not.toBeInTheDocument())
+    expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
+  })
+})
+
+describe('the accounts card, where the comparison moved (ADR-0028)', () => {
+  /** The card's own rows, by the name its list wears. */
+  function comparison() {
+    return within(screen.getByRole('list', { name: 'Vos comptes, comparés' }))
+  }
+
+  it('offers the four presets and never `MAX`', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    const range = await screen.findByRole('radiogroup', { name: 'Plage comparée' })
+    expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
+      '1M',
+      'Depuis le 1ᵉʳ janvier',
+      '1A',
+      'Depuis l’ouverture',
+    ])
+    // A time-weighted index has no bounded amplitude, so one account's ancient
+    // volatility would set the scale for every other (ADR-0019, ADR-0028).
+    expect(within(range).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
+  })
+
+  it('draws every figure on the card over the one range the reader chose', async () => {
+    const { user } = renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // A year: `alpha` rebases on 150 and ends on 171,5, `beta` on its own
+    // opening at 100 and ends on 115. `gamma` has no index at all (#708), so
+    // there is nothing to compute and the em dash says exactly that.
+    await waitFor(() =>
+      expect(comparison().getByText('Alpha').closest('li')).toHaveTextContent(/\+14,33/),
+    )
+    expect(comparison().getByText('Beta').closest('li')).toHaveTextContent(/\+15,00/)
+    expect(comparison().getByText('Gamma').closest('li')).toHaveTextContent('—')
+
+    // One month, and **both** figures follow: the curve and the percentage are
+    // read off one rebasing, so a thirty-day sparkline can never sit beside a
+    // one-year percentage.
+    const range = within(screen.getByRole('radiogroup', { name: 'Plage comparée' }))
+    await user.click(range.getByRole('radio', { name: '1M' }))
+    await waitFor(() => expect(comparison().getByText('Alpha').closest('li')).toHaveTextContent(/\+3,94/))
+    expect(comparison().getByText('Beta').closest('li')).toHaveTextContent(/\+2,68/)
+  })
+
+  it('is absent where there is one account, and reads no series for it', async () => {
+    // ADR-0013 seeds a `default` row that is never removed, so the
+    // single-account install is the ordinary one: gated on the rendering alone,
+    // every load fetched that account's whole daily series to throw it away.
+    let asked = 0
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([anAccount()]))),
+      http.get(ROUTES.accountHistory, ({ params }) => {
+        asked += 1
+        return HttpResponse.json(anAccountHistory(String(params.account)))
+      }),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // The head's own figures already are that account's, with a border round
+    // them — *a block with nothing in it does not exist*.
+    await waitFor(() => expect(screen.getByText('1 compte')).toBeInTheDocument())
+    expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
+    expect(asked).toBe(0)
+  })
+
+  it('says there is nothing to compare rather than dashing every account', async () => {
+    // `windowStart` answers `null` on *since the opening* alone, so an empty
+    // perf cache — a fresh install whose backfill has not run — left the
+    // default one-year preset rendering an em dash per account: *there is
+    // nothing to compute* said about a history merely not rebuilt yet.
+    server.use(
+      http.get(ROUTES.accountHistory, ({ params }) =>
+        HttpResponse.json({ ...anAccountHistory(String(params.account)), points: [] }),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(
+      await screen.findByText('Rien à comparer sur cette plage pour l’instant.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument()
   })
 })
 
@@ -677,9 +840,12 @@ describe('the allocation', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // No breakdown by account and none by type: a second control beside the
-    // range is the duplication this page keeps closing.
-    await waitFor(() => expect(screen.getAllByRole('radiogroup')).toHaveLength(1))
+    // No breakdown by account and none by type: a second control **on this
+    // block** is the duplication this page keeps closing. The two radio groups
+    // on the page belong to the chart and to the accounts card, and the
+    // allocation has neither.
+    const allocation = screen.getByRole('list', { name: 'Répartition' }).closest('[data-slot="card"]')!
+    expect(within(allocation as HTMLElement).queryByRole('radiogroup')).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
@@ -692,6 +858,11 @@ describe('the movers', () => {
     expect(await screen.findByText('Hausses')).toBeInTheDocument()
     expect(screen.getByText('Baisses')).toBeInTheDocument()
     expect(screen.getByText(/Rien n’a baissé/)).toBeInTheDocument()
+
+    // The **ticker** beside the name (#790): it is the identity the rest of the
+    // product addresses a security by, and a rail of names alone cannot be
+    // matched to the allocation's legend or to a broker's own screen.
+    expect(screen.getByText('ZZA').closest('li')).toHaveTextContent('Zeta Alpha')
 
     // Three lines held, one of them shown: `ZZB` moved by exactly 0,00 % and is
     // in neither column, `ZZC` has never been quoted and has nothing to compare
@@ -799,6 +970,7 @@ describe('the four states of the page', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
     expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
     expect(screen.queryByText('Mouvements')).not.toBeInTheDocument()
+    expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
     // And the route is the dashboard unconditionally: a bookmark valid
     // yesterday is valid at zero events too.
     expect(screen.getByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()

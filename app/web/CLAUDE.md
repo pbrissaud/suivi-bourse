@@ -125,7 +125,7 @@ src/
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
-│   ├── dashboard.ts          # the two readings, the twelve slices, the four states
+│   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the vanishing column, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses · what a revocation removes
 │   ├── advisories.ts         # what the block shows, what the badge counts
@@ -135,7 +135,7 @@ src/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
 │   ├── Shell · ContentHeader (the title, the dot, the three preferences)
 │   ├── AppSidebar (the navigation, and the status card that develops the dot)
-│   ├── dashboard/  # the head, the one chart slot, the allocation, the movers
+│   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export
 │   │               # tab 2: notices  ·  tab 3: settings, the store
