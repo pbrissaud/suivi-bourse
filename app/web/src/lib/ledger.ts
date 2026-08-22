@@ -28,7 +28,7 @@
  *    blank* one line later. Here a value that cannot be understood comes back
  *    `null` and the form **names** it, which is the whole of that criterion.
  */
-import type { LedgerEvent, LedgerEventType } from '@/lib/api'
+import { EVENT_TYPES, type LedgerEvent, type LedgerEventType } from '@/lib/api'
 
 /**
  * What a type asks for. `unitPrice` is three-valued rather than a boolean
@@ -176,6 +176,87 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
   // on this collection.
   for (const symbol of filters.symbols ?? []) params.append('symbol', symbol)
   return params
+}
+
+/**
+ * **A reduced ledger has an address** (#797), and it is spelled the way the
+ * export resource spells one.
+ *
+ * The ⌘K palette leads to an event, and it leads there from another route — so
+ * the reduction has to cross a navigation. It does it in the URL rather than in
+ * a state a link would have to carry, which is the reason `?compte=` is a search
+ * parameter on the two other pages: it survives a reload, it can be handed to
+ * somebody else, and the way back is the browser's own button.
+ *
+ * **Three of the four dimensions, and the fourth on purpose.** `q`, `type` and
+ * `account` are the names {@link selectionParams} already gives them, so the
+ * address of a reduced ledger *is* the query string of its own export. The set
+ * of securities is left out: it arrives from a gesture made on the page itself —
+ * the assumed-currency notice, one tab away — and a repeated parameter is not
+ * something the router serialises in the resource's own spelling anyway. A
+ * dimension that has never needed an address does not get half of one.
+ */
+export interface LedgerSearch {
+  q?: string
+  type?: LedgerEventType
+  account?: string
+}
+
+/**
+ * The address, validated rather than read raw — the rule `?compte=` follows.
+ *
+ * **Blank counts as unset**, which is what the server reads `?type=&account=`
+ * as, and a word outside the closed set of six types reduces *nothing* rather
+ * than reducing to nothing: the type is the one member with a closed set, so it
+ * is the one member that can be outside it.
+ */
+export function validateLedgerSearch(search: Record<string, unknown>): LedgerSearch {
+  const text = (value: unknown): string | undefined => {
+    const trimmed = typeof value === 'string' ? value.trim() : ''
+    return trimmed === '' ? undefined : trimmed
+  }
+  const named = text(search.type)?.toUpperCase()
+  const type = EVENT_TYPES.find((one) => one === named)
+  return {
+    ...(text(search.q) === undefined ? {} : { q: text(search.q) }),
+    ...(type === undefined ? {} : { type }),
+    ...(text(search.account) === undefined ? {} : { account: text(search.account) }),
+  }
+}
+
+/** The reduction an address carries, or `null` where it reduces nothing. */
+export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
+  if (search.q === undefined && search.type === undefined && search.account === undefined) {
+    return null
+  }
+  return {
+    ...NO_FILTERS,
+    query: search.q ?? '',
+    type: search.type ?? null,
+    account: search.account ?? null,
+  }
+}
+
+/**
+ * The reduction as an address — built off {@link selectionParams} rather than
+ * beside it, so the two spellings cannot part company.
+ *
+ * **A set of securities is not addressable and is dropped here**, which is the
+ * other half of {@link LedgerSearch}'s clause: that dimension arrives from a
+ * gesture made on the page itself and has never had a link to travel on. The one
+ * caller is the ⌘K palette, whose reductions are three coordinates of an event
+ * and carry none.
+ */
+export function ledgerSearchOf(filters: LedgerFilters): LedgerSearch {
+  const params = selectionParams(filters)
+  const type = params.get('type')
+  const account = params.get('account')
+  const query = params.get('q')
+  return {
+    ...(query === null ? {} : { q: query }),
+    ...(type === null ? {} : { type: type as LedgerEventType }),
+    ...(account === null ? {} : { account }),
+  }
 }
 
 /** One export route, carrying the reduction in force — or nothing at all. */

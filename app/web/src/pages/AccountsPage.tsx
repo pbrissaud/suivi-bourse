@@ -32,8 +32,8 @@
  * component mounted twice would be two panels, one of which the reader cannot
  * see closing.
  */
-import { useState } from 'react'
-import { useSearch } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { AccountDetail } from '@/components/accounts/AccountDetail'
@@ -57,10 +57,22 @@ import { oneBand, readConditions } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
-  const { compte } = useSearch({ from: '/comptes' })
+  const { compte, ouvrir } = useSearch({ from: '/comptes' })
+  const navigate = useNavigate()
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
   // account is *open on that account*. Three states, the ledger's three.
   const [editing, setEditing] = useState<Account | null | undefined>(undefined)
+
+  // **The declaration, armed from the ⌘K palette** (#797). An entry named
+  // *declare an account* has to open the declaration, or it is a page entry
+  // wearing an action's name — and unlike the reduction one page over, the
+  // arming is **spent on arrival**: a gesture is not an address, so a reload
+  // must not make it again.
+  useEffect(() => {
+    if (ouvrir !== 'compte') return
+    setEditing(null)
+    void navigate({ to: '/comptes', search: { compte }, replace: true })
+  }, [ouvrir, compte, navigate])
 
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })

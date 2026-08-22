@@ -3,6 +3,7 @@ import type { RouterHistory } from '@tanstack/react-router'
 
 import { NotFound } from '@/components/NotFound'
 import { Shell } from '@/components/Shell'
+import { validateLedgerSearch, type LedgerSearch } from '@/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
@@ -52,9 +53,20 @@ const sharesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/titres',
   component: SharesPage,
-  validateSearch: (search: Record<string, unknown>): { compte?: string } => {
+  validateSearch: (search: Record<string, unknown>): { compte?: string; titre?: string } => {
     const account = typeof search.compte === 'string' ? search.compte.trim() : ''
-    return account === '' ? {} : { compte: account }
+    // **And `?titre=`, since #797**: the ⌘K palette reaches a held security from
+    // any of the four routes, and a sheet opened by a state no link can carry is
+    // a place nothing outside this page can lead to. It is the same clause as
+    // the reduction above, one object down — validated, a blank one being *no
+    // sheet* — and a symbol naming no row of the table simply opens nothing,
+    // there being no first security to fall back to the way there is a first
+    // declared account.
+    const symbol = typeof search.titre === 'string' ? search.titre.trim() : ''
+    return {
+      ...(account === '' ? {} : { compte: account }),
+      ...(symbol === '' ? {} : { titre: symbol }),
+    }
   },
 })
 
@@ -71,16 +83,40 @@ const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/comptes',
   component: AccountsPage,
-  validateSearch: (search: Record<string, unknown>): { compte?: string } => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { compte?: string; ouvrir?: 'compte' } => {
     const account = typeof search.compte === 'string' ? search.compte.trim() : ''
-    return account === '' ? {} : { compte: account }
+    return {
+      ...(account === '' ? {} : { compte: account }),
+      // **A gesture, not an address** (#797): the palette's *declare an account*
+      // has to open the declaration, or it is a page entry wearing an action's
+      // name. The page spends it on arrival — nothing of it survives a reload,
+      // which is exactly what tells it from the reduction beside it.
+      ...(search.ouvrir === 'compte' ? { ouvrir: 'compte' as const } : {}),
+    }
   },
 })
 
+/**
+ * The third route that reads a search parameter, and the first whose parameters
+ * are a **reduction** (#797).
+ *
+ * `q`, `type` and `account` are the ledger's own dimensions under the names the
+ * export resource already parses (`lib/ledger.ts`): the address of a reduced
+ * ledger is the query string of its own export, which is what an event result in
+ * the ⌘K palette leads to. `ouvrir` is the other species — a gesture, spent on
+ * arrival — and the two live side by side here because they arrive by the same
+ * door and leave by two.
+ */
 const dataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/donnees',
   component: DataPage,
+  validateSearch: (search: Record<string, unknown>): LedgerSearch & { ouvrir?: 'evenement' } => ({
+    ...validateLedgerSearch(search),
+    ...(search.ouvrir === 'evenement' ? { ouvrir: 'evenement' as const } : {}),
+  }),
 })
 
 const routeTree = rootRoute.addChildren([

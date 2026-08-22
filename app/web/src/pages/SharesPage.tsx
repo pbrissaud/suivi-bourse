@@ -42,7 +42,7 @@
  * one band on screen or none.
  */
 import { useMemo, useState } from 'react'
-import { Link, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
@@ -63,8 +63,27 @@ export default function SharesPage() {
   const { t } = useI18n()
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
-  const { compte = null } = useSearch({ from: '/titres' })
+  const { compte = null, titre = null } = useSearch({ from: '/titres' })
+  const navigate = useNavigate()
+  // **Which sheet is open is a URL** (#797), the same clause as the reduction
+  // beside it: the ⌘K palette reaches a held security from any of the four
+  // routes, and a selection kept in a state no link can carry is a place nothing
+  // outside this page can lead to. The reduction rides along untouched — leaving
+  // a sheet must not silently show the accounts it was reduced away from.
+  //
+  // **It replaces rather than pushes, in both directions.** A sheet is a modal
+  // and not a place: pushed on the way in and replaced on the way out, three
+  // sheets opened and dismissed leave three identical `/titres` entries the
+  // reader has to press Back through before anything moves. Escape, the cross
+  // and the overlay are its way out; the address exists so that somebody can
+  // **arrive** at one — which is what ⌘K does — not so that the history holds a
+  // record of every row that was looked at.
+  const select = (symbol: string | null) =>
+    void navigate({
+      to: '/titres',
+      search: (previous) => ({ ...previous, titre: symbol ?? undefined }),
+      replace: true,
+    })
 
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
@@ -225,8 +244,8 @@ export default function SharesPage() {
               rule, and handing it the held lines alone is what printed the
               other correct figure. */}
           <SharesHead positions={summed} rows={onScreen} currency={currency} />
-          <SharesTable rows={shown} currency={currency} onSelect={setSelected} />
-          <ClosedShares rows={closed} currency={currency} onSelect={setSelected} />
+          <SharesTable rows={shown} currency={currency} onSelect={select} />
+          <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}
 
@@ -234,11 +253,11 @@ export default function SharesPage() {
           is keyed by `(account, symbol)`, which is exactly what `buildShareRows`
           has just folded away. */}
       <ShareSheet
-        row={rows.find((row) => row.symbol === selected) ?? null}
+        row={rows.find((row) => row.symbol === titre) ?? null}
         positions={reduced}
         failures={failures}
         currency={currency}
-        onClose={() => setSelected(null)}
+        onClose={() => select(null)}
       />
     </div>
   )

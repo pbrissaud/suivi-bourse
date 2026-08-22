@@ -198,6 +198,25 @@ const SURFACES: readonly Surface[] = [
     },
   },
   {
+    // The palette is the one surface whose sections are **optional** (#797): an
+    // absent read removes one instead of holding the whole of it, which is a
+    // property this net reads the right way round — what disappears is not a
+    // claim, and what must never appear is the sentence about nothing matching.
+    // The query is one that reaches all three sections, so all three are in the
+    // baseline and each one's read can be seen to take its own away.
+    name: 'la palette ⌘K, une recherche tapée',
+    url: '/',
+    heading: 'Tableau de bord',
+    open: async ({ user }) => {
+      await user.click(await screen.findByRole('button', { name: /^Rechercher/ }))
+      const field = await screen.findByRole('searchbox', {
+        name: 'Rechercher dans votre portefeuille',
+      })
+      await user.type(field, 'alpha')
+      return field
+    },
+  },
+  {
     name: 'les données · l’installation',
     url: '/donnees',
     heading: 'Données',

@@ -24,6 +24,9 @@ import {
   parseDecimal,
   reveal,
   selectionParams,
+  filtersFromSearch,
+  ledgerSearchOf,
+  validateLedgerSearch,
 } from '@/lib/ledger'
 
 describe('the fields of a type', () => {
@@ -226,5 +229,45 @@ describe('the reduction as the export takes it', () => {
     // retains every row. Sent, it would name the file a selection and give the
     // reader a partial-looking backup of the whole ledger.
     expect(selectionParams({ ...NO_FILTERS, query: '   ' }).toString()).toBe('')
+  })
+})
+
+describe('the address of a reduced ledger', () => {
+  it('is the export’s own three parameters, blank counting as unset', () => {
+    expect(validateLedgerSearch({ q: 'ZZA', type: 'buy', account: 'alpha' })).toEqual({
+      q: 'ZZA',
+      type: 'BUY',
+      account: 'alpha',
+    })
+    // Blank is unset, which is the server's own reading of `?type=&account=`.
+    expect(validateLedgerSearch({ q: '  ', type: '', account: ' ' })).toEqual({})
+    // A word that is not one of the six types reduces nothing rather than
+    // reducing to nothing: the closed set is the only member that has one.
+    expect(validateLedgerSearch({ type: 'CROISSANCE' })).toEqual({})
+    expect(validateLedgerSearch({ q: 42, account: ['alpha'] })).toEqual({})
+  })
+
+  it('is `null` where nothing reduces, and a whole reduction where something does', () => {
+    expect(filtersFromSearch({})).toBeNull()
+    expect(filtersFromSearch({ q: 'ZZA', type: 'BUY', account: 'alpha' })).toEqual({
+      query: 'ZZA',
+      type: 'BUY',
+      account: 'alpha',
+      // The fourth dimension has no address: it arrives from a gesture made on
+      // the page itself and has never needed one.
+      symbols: null,
+    })
+    expect(filtersFromSearch({ account: 'alpha' })).toEqual({ ...NO_FILTERS, account: 'alpha' })
+  })
+
+  it('round-trips the reduction it carries', () => {
+    const filters: typeof NO_FILTERS = {
+      query: 'Virement',
+      type: 'DEPOSIT',
+      account: 'default',
+      symbols: null,
+    }
+    expect(filtersFromSearch(ledgerSearchOf(filters))).toEqual(filters)
+    expect(ledgerSearchOf(NO_FILTERS)).toEqual({})
   })
 })

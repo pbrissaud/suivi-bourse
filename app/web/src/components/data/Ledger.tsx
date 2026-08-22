@@ -40,7 +40,7 @@ import { EntryPair } from '@/components/EntryPair'
 import { EventForm } from '@/components/data/EventForm'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
-import { LedgerTable } from '@/components/data/LedgerTable'
+import { LedgerTable, TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
 import { api, type LedgerEvent } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -55,40 +55,103 @@ import {
 } from '@/lib/ledger'
 import { oneBand, readConditions } from '@/lib/status'
 
-export interface LedgerProps {
+export interface LedgerFocus {
   /**
-   * A reduction asked for from elsewhere — today, the assumed-currency notice
-   * of the other tab, which **names the events it was made about** (#724).
-   *
-   * Every security it names, never the first of them: the sentence the reader
-   * has just read enumerates them all, and a ledger showing one of three states
-   * a repair perimeter the notice did not.
-   *
-   * A fresh object per gesture rather than a bare list: the reader may have
-   * cleared the reduction in between, and asking twice for the same securities
-   * has to reduce the ledger twice.
+   * The reduction to put in force. **Set, never merged**: what is in force
+   * afterwards is exactly what the sender names — a free-text search or a type
+   * left behind would subtract from that perimeter in silence, landing the
+   * reader on fewer rows than the sentence they have just read announced.
    */
-  focus?: { symbols: readonly string[] }
+  filters: Filters
+  /**
+   * Whether the reduction has to **name itself** here.
+   *
+   * `false` for the notice's set of securities, which draws its own line in the
+   * bar below (#724). `true` for one that arrived by the **address** (#797):
+   * nothing on screen would otherwise say that a ledger the reader has just
+   * landed on is shorter than their ledger.
+   */
+  named: boolean
 }
 
-export function Ledger({ focus }: LedgerProps = {}) {
+export interface LedgerProps {
+  /**
+   * A reduction asked for from elsewhere: the assumed-currency notice of the
+   * other tab, which **names the events it was made about** (#724), and since
+   * #797 an event result of the ⌘K palette, which arrives by the address.
+   *
+   * A fresh object per gesture rather than a bare value: the reader may have
+   * cleared the reduction in between, and asking twice for the same events has
+   * to reduce the ledger twice.
+   */
+  focus?: LedgerFocus
+  /**
+   * The reader moved the reduction themselves — so an **address** that
+   * delivered one has stopped describing this table, and the page that owns it
+   * says so (#797). Fired by every gesture of the bar, the way out included.
+   */
+  onReduced?: () => void
+  /**
+   * *Record an event*, armed from elsewhere — the ⌘K palette's own action
+   * (#797). A fresh object per gesture, the `focus` prop's rule: a reader who
+   * closed the form and asks again has to see it open again.
+   */
+  compose?: object
+  /**
+   * The arming has been **made**, and the page that armed it drops it.
+   *
+   * Without this the gesture outlives itself: Radix unmounts the inactive tab,
+   * so a reader who closed the form and came back through *the notices* would
+   * find it open again — the effect below firing on the remount, on a gesture
+   * made two tabs ago. A gesture is spent once, and this is where it is spent.
+   */
+  onComposed?: () => void
+}
+
+export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
   const { t } = useI18n()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
 
   useEffect(() => {
     if (!focus) return
-    // **The reduction is set, never merged.** What is in force afterwards is
-    // exactly what the notice names — a free-text search or a type left behind
-    // would subtract from the notice's own perimeter in silence, landing the
-    // reader on fewer rows than the sentence above the button announced. Radix
-    // unmounts the inactive tab, so nothing survives the switch today and this
-    // is not repairing an observed defect; it is what keeps the property from
-    // depending on that.
-    setFilters({ ...NO_FILTERS, symbols: focus.symbols })
+    // Radix unmounts the inactive tab, so nothing survives the switch today and
+    // this is not repairing an observed defect; it is what keeps the property
+    // from depending on that.
+    setFilters(focus.filters)
   }, [focus])
+
+  // **The reduction is named while it is the one that was delivered**, and the
+  // identity is the test: the reader's first gesture on the bar hands back a
+  // fresh object, and the sentence goes with the reduction it described.
+  //
+  // The sentence is composed **here**, off the reduction in force, rather than
+  // handed over by the page: it is a rendering of the three dimensions, and the
+  // language it is read in is this component's own. The two members it names are
+  // required — an address carrying one dimension of the three is named by the
+  // chip or the field it presses, each of which is on screen with its own way
+  // out — so the line appears for the shape the palette sends and for no other.
+  const delivered =
+    focus?.named === true &&
+    filters === focus.filters &&
+    filters.type !== null &&
+    filters.account !== null
+      ? { type: filters.type, account: filters.account, query: filters.query }
+      : null
+
+  /** Every reduction the reader makes by hand — the way out being one of them. */
+  const reduce = (next: Filters) => {
+    setFilters(next)
+    onReduced?.()
+  }
   // `undefined` is *the panel is shut*; `null` is *open on a new event*; a row is
   // *open on that row*. Three states, because "shut" and "creating" are two.
   const [editing, setEditing] = useState<LedgerEvent | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (!compose) return
+    setEditing(null)
+    onComposed?.()
+  }, [compose, onComposed])
   // The source a provenance cell asked to see. A fresh object per gesture, the
   // `focus` prop's own rule: following two rows of the same file in a row has to
   // mark it twice, and the reader may have scrolled away in between.
@@ -226,10 +289,36 @@ export function Ledger({ focus }: LedgerProps = {}) {
         />
       ) : (
         <>
+          {/* **A reduction that came from an address names itself and offers the
+              way out** (#797, the clause #724 wrote for the notice's own). What
+              it states is what it *retains* — a type, a word and an account —
+              and never the row it was asked about: a ledger row has no address
+              (ADR-0020), so a sentence naming one would promise a reduction the
+              product cannot make. */}
+          {delivered === null ? null : (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+              <p>
+                {t('data.reduced', {
+                  named: delivered.query.trim() === '' ? 'no' : 'yes',
+                  subject: delivered.query,
+                  type: t(TYPE_LABEL[delivered.type]),
+                  account: delivered.account,
+                })}
+              </p>
+              <button
+                type="button"
+                onClick={() => reduce(NO_FILTERS)}
+                className="text-muted-foreground underline underline-offset-4"
+              >
+                {t('data.reduced.undo')}
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <LedgerFilters
               filters={filters}
-              onChange={setFilters}
+              onChange={reduce}
               accounts={accountsNamed(all)}
               shown={shown.length}
             />

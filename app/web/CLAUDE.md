@@ -1,11 +1,16 @@
 # app/web/ — the front
 
+> **The ⌘K palette has landed** (#797): it reads **on open** and never on mount,
+> its three data sections are optional — an absent read removes one instead of
+> holding the palette — and an event result leads to a ledger reduced by an
+> **address**, which names what it retains and offers the way out. It is
+> ADR-0026's optional read applied to a surface, not a new decision, and it is
+> the last clause of the record that was still ahead of the code: the suspension
+> of `docs/adr/README.md`'s rule that this file carried for `preview/v5` ends
+> here.
 > **ADR-0031 has landed for the ledger** (#795): the table reveals forty rows at
 > a time, its header is sticky and its body bounded, the two filters are chips,
-> and the count and the end-of-ledger sentence are true of the reduction. The
-> suspension of `docs/adr/README.md`'s rule for `preview/v5` that this file
-> carried ends here — with one clause of the record still ahead of the code, the
-> ⌘K palette's three optional sections, which are #797.
+> and the count and the end-of-ledger sentence are true of the reduction.
 > **ADR-0030 has landed** (#794): the data page is the three tabs described
 > below, the notices are the one block that exists when it is empty, and the
 > imports are one band above the ledger table.
@@ -61,7 +66,7 @@ or a DOM snapshot.
 
 Three nets hold a rule nothing made true by construction:
 
-- `src/readsInFlight.test.tsx` — for each of six surfaces, the routes actually
+- `src/readsInFlight.test.tsx` — for each of eight surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
   that read hanging for ever**, asserting an *absence*. It also fails when a route
   of `ROUTES` is visited by no surface. Since #777 it reads **every rendered
@@ -89,7 +94,10 @@ Three nets hold a rule nothing made true by construction:
   case, and *end of the ledger* is never said before the last row has arrived. The
   three sections of ⌘K that read — shares, accounts, events — are **optional**: an
   absent one removes its section instead of holding the palette, and the palette
-  reads on **open**, never on mount.
+  reads on **open**, never on mount (`enabled: open`, and the client's thirty
+  seconds make a second opening free). Its five sections are `lib/palette.ts`, and
+  its two entries named after a **gesture** arm one: *record an event* landing on
+  the data page with the form shut would be a page entry wearing an action's name.
 - **Four renderings of absence and no fifth** (`lib/absence.ts`, ADR-0021). The em
   dash says *there is nothing to compute*; anything merely missing is **named**.
   Zero is not absence (`lib/sign.ts`).
@@ -171,11 +179,13 @@ src/
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what a revocation removes
 │   ├── advisories.ts         # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
+│   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
 ├── components/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
-│   ├── Shell · ContentHeader (the title, the dot, the three preferences)
+│   ├── Shell · ContentHeader (the title, the dot, ⌘K, the three preferences)
+│   ├── Palette                # ⌘K: five sections, three of them optional reads
 │   ├── AppSidebar (the navigation, and the status card that develops the dot)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
@@ -203,7 +213,9 @@ src/
   account puts each
   subtotal in the **group header**, never in a footer row: a total and its terms
   never share a row, one level down. One sheet per share, where a
-  selection links the chart to the event list.
+  selection links the chart to the event list — and **which sheet is open is a
+  URL** (`?titre=`) since #797, the same clause as the `?compte=` reduction beside
+  it, because ⌘K reaches a held title from any of the four routes.
 - **Accounts** (`/comptes`) — master-detail (ADR-0028): a sticky rail of weights
   and names, one account's detail beside it — the gain over its four terms, the
   composition, the annualised rate, the dividends, the lines and the last events.
@@ -221,7 +233,12 @@ src/
   account's events.
 - **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
-  groups of chips and a search — and above it one band holding the drop zone, the
+  groups of chips, a search and, since #797, by an **address**: `q`, `type` and
+  `account`, which are the three the export resource already parses, so a reduced
+  ledger's URL is the query string of its own export. A reduction that arrived
+  that way names what it retains and offers the way out; the reader's first
+  gesture on the chips takes the address back off, an address being a description
+  of the table — and above it one band holding the drop zone, the
   export menu — **four entries** since #796: every event, a workbook with one
   sheet per year, the filtered selection and the accounts, the middle two
   server-side because the importable form belongs to `events/export.py` and a

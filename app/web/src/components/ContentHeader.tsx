@@ -13,6 +13,7 @@
  */
 import { Languages, MonitorCog, Moon, Rows3, Sun } from 'lucide-react'
 
+import { Palette } from '@/components/Palette'
 import { PreferenceMenu } from '@/components/PreferenceMenu'
 import { StatusDot } from '@/components/StatusDot'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -59,6 +60,10 @@ export function ContentHeader() {
         )}
       </div>
       <div className="ml-auto flex items-center gap-1">
+        {/* The visible half of the ⌘K palette (#797): a shortcut is not an
+            interface on a phone, and this bar is where a control that belongs to
+            no page lives. */}
+        <Palette />
         <StatusDot />
         <PreferenceMenu<DensityChoice>
           label={t('header.density')}
