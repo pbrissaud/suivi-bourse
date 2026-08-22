@@ -115,7 +115,7 @@ export default function DashboardPage() {
   return (
     <div
       className={cn(
-        'grid items-start gap-6',
+        'grid grid-cols-1 items-start gap-6',
         state === 'portfolio' && 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]',
       )}
     >

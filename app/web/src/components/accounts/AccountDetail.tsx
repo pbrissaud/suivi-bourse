@@ -286,7 +286,7 @@ export function AccountDetail({
                 />
               }
             >
-              <ul className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ul className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 lg:grid-cols-4">
                 {GAIN_TERMS.map((term) => {
                   const amount = termAmount(terms, term)
                   // The fourth renders **only when it is not zero**: an account
@@ -401,7 +401,7 @@ export function AccountDetail({
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader>
             <h3 className="text-sm font-medium">{t('accounts.detail.composition')}</h3>
@@ -487,7 +487,7 @@ export function AccountDetail({
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Held lines only: a sold position is worth exactly zero, and a list
             ordered by value would put every one of them in one block at the
             bottom saying nothing. The page they lead to folds them instead. */}

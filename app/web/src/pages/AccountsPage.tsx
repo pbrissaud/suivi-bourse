@@ -157,7 +157,13 @@ export default function AccountsPage() {
         // the worst realistic case the page is the **stacked** one and cannot
         // overflow sideways, and the rail only becomes a rail where there is
         // room for a detail beside it.
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
+        // `grid-cols-1` is not decoration: with a column named at `lg` alone,
+        // the implicit track below it is `auto` — `minmax(min-content,
+        // max-content)` — so one long event label took this column past the
+        // width of a phone and every card under it with it. `grid-cols-1` is
+        // `repeat(1, minmax(0, 1fr))`, and the `0` is what puts the truncations
+        // back in charge (`src/gridColumns.test.ts`).
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
           <AccountsRail
             rows={rows}
             selected={opened.id}

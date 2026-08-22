@@ -87,7 +87,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
              the plateau put it on the wide track: left there, it stacked a
              one-column legend under a centred ring on exactly the screens the
              redesign was drawn for. */
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:items-center">
             <div className="relative h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -124,7 +124,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
                 first column, then down the second, so rank stays legible. */}
             <ul
               aria-label={t('dashboard.allocation.title')}
-              className="grid gap-x-6 gap-y-1.5 text-sm xl:grid-cols-2"
+              className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm xl:grid-cols-2"
             >
               {slices.map((slice, rank) => (
                 <li

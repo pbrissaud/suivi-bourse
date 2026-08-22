@@ -231,7 +231,7 @@ export function DashboardHead() {
             position, and `head` against `term` is a factor of three: read here,
             nobody adds the four to the one. What the ADR buys is that the
             reader cannot sum them by accident, and this arrangement buys it. */}
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
           <Stat
             size="head"
             label={t('dashboard.gainTotal')}

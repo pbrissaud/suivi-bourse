@@ -89,7 +89,7 @@ export function Movers({ movers, reference, rows, currency }: MoversProps) {
         ) : (
           // Two columns where there is room, stacked in the rail — the rail
           // being where this block lives on the plateau.
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-1">
             <Column
               title={t('dashboard.movers.risers')}
               rows={risers}

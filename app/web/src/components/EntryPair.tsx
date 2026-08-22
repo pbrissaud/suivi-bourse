@@ -58,7 +58,7 @@ export interface EntryPairProps {
 
 export function EntryPair({ entries, empty }: EntryPairProps) {
   return (
-    <div data-empty={empty ? '' : undefined} className="grid gap-4 sm:grid-cols-2">
+    <div data-empty={empty ? '' : undefined} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       {entries.map((entry) => (
         <section
           key={entry.title}

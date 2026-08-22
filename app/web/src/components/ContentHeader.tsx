@@ -42,10 +42,17 @@ export function ContentHeader() {
           reader reading them as *now* — a phone is where a stale figure is most
           likely to be read, not where the safeguard can be spared. So both
           truncate and neither hides: narrow degrades the sentence, it does not
-          remove it. */}
+          remove it.
+
+          **But the title does not pay for it** (#787). Sharing the space evenly,
+          390 px gave `Compt…` beside `Chiffres arrêtés au 2…` — two truncations
+          where one was owed, and the one that broke is the page's own name,
+          which is the whole reason ADR-0022 moved it into this bar. The name is
+          short and fixed, so it takes the room it needs and the sentence takes
+          what is left. */}
       <div className="flex min-w-0 items-baseline gap-3">
         {title === '' ? null : (
-          <h1 className="truncate text-sm font-semibold tracking-tight">{title}</h1>
+          <h1 className="shrink-0 text-sm font-semibold tracking-tight">{title}</h1>
         )}
         {subtitle === null ? null : (
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
