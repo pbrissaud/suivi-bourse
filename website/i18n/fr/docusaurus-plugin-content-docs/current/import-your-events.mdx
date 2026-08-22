@@ -208,20 +208,36 @@ Your portfolio can leave the way it came in. **The export format is the import
 format**, so the round trip is round by construction: what comes out is a file
 this same app reads, with no conversion and no special path.
 
-In the app, the two files are under **Data → Import and export**. Headless, they
-are two requests:
+In the app, the export menu is under **Data → Import and export**, and it offers
+four files: every event, the same events as a **workbook with one sheet per
+year**, the **selection your filters hold** at the moment you click, and your
+accounts. Headless, they are requests:
 
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
+curl -O http://localhost:8080/api/export/events.xlsx
 curl -O http://localhost:8080/api/export/accounts.csv
+
+# The selection, by the same names the filters on the page carry.
+# `symbol` may be repeated; anything left out is simply not narrowed.
+# `-OJ` rather than `-O`: the name is the server's, and it is not the one in the URL.
+curl -OJ 'http://localhost:8080/api/export/events.csv?type=BUY&account=pea&q=liquide&symbol=AI.PA'
 ```
 
-The export is **total or nothing** — there is nothing to choose, and filtering
-the ledger on screen does not narrow what comes out. A partial file is not a
-round trip while looking exactly like one. The accounts file is offered only
-once you have declared something: on an install that has not, it would be a
-header row with no rows under it, and a version 4 install refuses a whole
-directory over one.
+A selection is saved as `suivi-bourse-selection.csv` and never under the whole
+ledger's name: **a partial file must not replace a complete one**, either in
+your downloads folder or in a drop folder, where a re-import identifies a source
+by its file name. The whole file is what a backup is; the selection is for
+sending a year to your accountant.
+
+The workbook is importable too — the app reads every sheet of it. The plain
+`.csv` remains the one to keep as a backup, because a spreadsheet carries one
+significant digit fewer than a text file does: a broker's `0.34898399999999996`
+comes back exactly from a CSV and as `0.348984` from a workbook.
+
+The accounts file is offered only once you have declared something: on an
+install that has not, it would be a header row with no rows under it, and a
+version 4 install refuses a whole directory over one.
 
 Two files, because that is the format — a file is an accounts source or an
 event source according to its header, never both. Drop them into the drop folder
