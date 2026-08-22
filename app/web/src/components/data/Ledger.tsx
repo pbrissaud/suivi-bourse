@@ -28,7 +28,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
-import { AccountsBlock } from '@/components/data/AccountsBlock'
 import { EventForm } from '@/components/data/EventForm'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
@@ -59,18 +58,9 @@ export interface LedgerProps {
    * has to reduce the ledger twice.
    */
   focus?: { symbols: readonly string[] }
-  /**
-   * The reader followed the `Non affecté` row's link (#725), and has not been
-   * taken to the gesture yet. A **one-shot**: the page above owns it and
-   * `onReassignmentShown` spends it, because the hash it comes from is never
-   * cleared and Radix remounts this tab on every switch back.
-   */
-  reassignment?: boolean
-  /** Called once the offer has actually been reached. */
-  onReassignmentShown?: () => void
 }
 
-export function Ledger({ focus, reassignment, onReassignmentShown }: LedgerProps = {}) {
+export function Ledger({ focus }: LedgerProps = {}) {
   const { t } = useI18n()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
 
@@ -192,26 +182,6 @@ export function Ledger({ focus, reassignment, onReassignmentShown }: LedgerProps
             />
           )}
         </>
-      )}
-
-      {/* Beside the ledger and never in place of it, at **every N** — three
-          declared accounts, one, none at all and the seeded row alone, or a
-          declaration with no event under it yet. It is beside the branch above
-          rather than inside it precisely for that last case: an install that
-          imported an accounts file and no event still has accounts to name, and
-          the block that renames them cannot be the one thing the empty screen
-          hides. It takes the ledger rather than a read of its own, because the
-          count a refusal is made of comes off the table above —
-          *« 71 événements nomment ce compte »* is that same ledger, grouped —
-          and it is withheld until that read has landed, which is what keeps
-          *not arrived yet* from rendering as *nothing names this account*. */}
-      {failure || !events.data ? null : (
-        <AccountsBlock
-          accounts={accounts.data}
-          events={all}
-          focusReassignment={reassignment}
-          onReassignmentShown={onReassignmentShown}
-        />
       )}
 
       {/* Beside the two others and at every N, the empty ledger included: an

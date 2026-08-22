@@ -33,11 +33,14 @@
  */
 import { useId, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { AccountCurve } from '@/components/accounts/AccountCurve'
+import { Band } from '@/components/Band'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { renderFigure } from '@/lib/absence'
 import {
@@ -58,8 +61,9 @@ import {
   type AccountRow,
   type DegradedReason,
   type Range,
+  type Reassignment as ReassignmentOffer,
 } from '@/lib/accounts'
-import type { LedgerEvent, PerfPoint, Position } from '@/lib/api'
+import { api, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import {
   GAIN_TERMS,
@@ -73,7 +77,8 @@ import {
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { FIELDS } from '@/lib/ledger'
+import { FIELDS, identityOf } from '@/lib/ledger'
+import { problemMessageKey } from '@/lib/problem'
 import { buildShareRows, heldRows, marketValue, unrealisedRatio } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
@@ -113,6 +118,17 @@ export interface AccountDetailProps {
   currency: string | null
   /** Whether the reconstruction is still running. `null` — not observed yet. */
   rebuilding: boolean | null
+  /**
+   * The standing offer to move the events nobody assigned onto a declared
+   * account (#725), or `none` where there is nothing to move — which is what the
+   * detail of every account but the seeded one gets. It is **here** since
+   * ADR-0028 because its subject is *this account's* events: the seeded row is
+   * the one carrying them, and its own detail is where its owner is looking at
+   * them.
+   */
+  reassignment: ReassignmentOffer
+  /** Renaming, and removing — the panel this account's name opens. */
+  onEdit: () => void
 }
 
 export function AccountDetail({
@@ -122,6 +138,8 @@ export function AccountDetail({
   points,
   currency,
   rebuilding,
+  reassignment,
+  onEdit,
 }: AccountDetailProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -132,7 +150,13 @@ export function AccountDetail({
   const heading = useId()
 
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
+  const type = declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
   const reason = degradedReason(row, rebuilding)
+  // What a file declared is corrected in the file, never in the app (ADR-0020's
+  // rule, one table over). `editable` is published rather than derived: a rule
+  // the front re-implements is a rule that can disagree with the API enforcing
+  // it.
+  const editable = row.editable !== false
 
   // **Every derivation below is memoised, and against the reads themselves.**
   // The series is some two and a half thousand days long and the ledger is the
@@ -193,18 +217,52 @@ export function AccountDetail({
   return (
     <section aria-labelledby={heading} className="space-y-6">
       <header className="space-y-1">
+        {/* The name **is** the affordance, which is the ledger's own rule read
+            one table over: a button exactly where the row may be edited, and
+            plain text where a file declared it and only the file can correct
+            it. A column of identical pencils discriminates nothing. */}
         <h2 id={heading} className="text-xl font-semibold tracking-tight">
-          {name}
+          {editable ? (
+            <button type="button" className="underline-offset-4 hover:underline" onClick={onEdit}>
+              {name}
+            </button>
+          ) : (
+            name
+          )}
         </h2>
-        <p className="text-sm text-muted-foreground">
-          {declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)}
-        </p>
+        <p className="text-sm text-muted-foreground">{type}</p>
+        {/* The id is what every event names and what a file's `account` column
+            has to spell, so it is on screen wherever it is not already said.
+            *Already said* is **either line above it**: an account whose id is
+            `CTO` and whose type is `CTO` printed the same word twice, one over
+            the other. The rail cannot carry it — it has a weight and a type on
+            that line already — so it is here, where the account is read in
+            full. */}
+        {name === row.id || type === row.id ? null : (
+          <p className="font-mono text-xs text-muted-foreground">{row.id}</p>
+        )}
+        {/* **An affordance that is absent names its reason**, which is the rule
+            the removal has generalised twice already: the name above is plain
+            text here and nothing says why, so the sentence does. It carries the
+            repair too — the file is corrected and dropped again, or its import
+            is forgotten — because *read-only* on its own is a dead end. */}
+        {editable ? null : (
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {t('accounts.detail.fromFile')}
+          </p>
+        )}
         {/* The reason a detail has no figures — a **reason**, never a progress
             with a target date, which stays on the banner. */}
         {reason === null ? null : (
           <p className="text-sm text-attention">{t(REASON_LABELS[reason])}</p>
         )}
       </header>
+
+      {/* **Réaffecter, jamais refuser** (#725). It sits above the figures and
+          not under them: an owner who ran a month before declaring anything has
+          their whole ledger under this row, and what they came for is the way
+          out — not this account's composition. */}
+      {reassignment.kind === 'standing' ? <Reassignment offer={reassignment} /> : null}
 
       {/* ADR-0018's four terms, per account — the one place in the product where
           that decomposition exists for anything but the portfolio. */}
@@ -407,8 +465,10 @@ export function AccountDetail({
               <h3 className="text-sm font-medium">{t('accounts.detail.dividends')}</h3>
             </CardHeader>
             <CardContent>
+              {/* The figure's label is what it *is* — encashed — and never the
+                  block's own name a second time. */}
               <Stat
-                label={t('accounts.detail.dividends')}
+                label={t('accounts.detail.dividends.encashed')}
                 value={renderFigure(
                   termRendering(terms, 'dividends'),
                   () => f.currency(termAmount(terms, 'dividends'), currency),
@@ -416,7 +476,7 @@ export function AccountDetail({
                 )}
                 explain={
                   <Explain
-                    figure={t('accounts.detail.dividends')}
+                    figure={t('accounts.detail.dividends.encashed')}
                     body="accounts.detail.dividends.explain"
                     anchor="dividends"
                   />
@@ -483,28 +543,36 @@ export function AccountDetail({
                         this block sits in is narrow at the width ADR-0022
                         measured, and a date that cannot wrap is what pushes a
                         row past its edge. */}
+                    {/* **What it is about, then what it is.** The type alone
+                        read as *Versement · Versement · Retrait* down the
+                        block, three rows saying nothing about which security or
+                        which transfer — the ledger's own identity column is
+                        what discriminates, here as there (`identityOf`). */}
                     <span className="min-w-0">
-                      <span className="block truncate">{t(TYPE_LABEL[event.event_type])}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {f.date(event.date)}
+                      <span className="block truncate">{eventName(event) ?? ABSENT}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {t(TYPE_LABEL[event.event_type])} · {f.date(event.date)}
                       </span>
                     </span>
                     {/* The field the **type** declares, and never a total
                         composed out of the others: a purchase states a quantity
                         and a transfer an amount, so the one that is a figure of
-                        the row is the one rendered. */}
+                        the row is the one rendered — and the two do not share a
+                        rendering. `× 0,1661` beside `10,20 €` is a quantity; a
+                        bare `0,1661` in the same column is read as money. */}
                     <span className="tabular shrink-0">
-                      {FIELDS[event.event_type].amount
-                        ? f.currency(event.amount, currency)
-                        : f.quantity(event.quantity)}
+                      {FIELDS[event.event_type].amount ? (
+                        f.currency(event.amount, currency)
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {`\u00d7\u00a0${f.quantity(event.quantity)}`}
+                        </span>
+                      )}
                     </span>
                   </li>
                 ))}
               </ul>
-              <Link
-                to="/donnees"
-                className="text-sm font-medium underline underline-offset-4"
-              >
+              <Link to="/donnees" className="text-sm font-medium underline underline-offset-4">
                 {t('accounts.detail.events.link')}
               </Link>
             </CardContent>
@@ -512,6 +580,95 @@ export function AccountDetail({
         )}
       </div>
     </section>
+  )
+}
+
+/** The row's own name — the ticker where there is one, the label otherwise. */
+function eventName(event: LedgerEvent): string | null {
+  const identity = identityOf(event)
+  return identity.ticker ?? identity.label
+}
+
+/**
+ * The standing half of the reassignment (#725, ADR-0006).
+ *
+ * The other half rides **inside** the first declaration, where there is no list
+ * of accounts to choose from yet. This one is reachable with no gesture in this
+ * app at all — an accounts file dropped in the folder declares as much as the
+ * form does, and the event file beside it is then refused for the blank column
+ * it was right to carry — so it stands on its own, with the declared accounts
+ * as its targets.
+ *
+ * **No correspondence layer**: what crosses the wire is one target id, and the
+ * population is the `account` column's own value. A `default → pea` map beside
+ * the events would be a second truth about the account an event names.
+ */
+function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'standing' }> }) {
+  const { t } = useI18n()
+  const queryClient = useQueryClient()
+  const heading = useId()
+  const move = useMutation({
+    mutationFn: (id: string) => api.reassignEvents(id),
+    // The whole cache: what account an event names moves every page's grouping,
+    // not just this block's count.
+    onSuccess: () => void queryClient.invalidateQueries(),
+  })
+
+  // A select of one entry is a question whose answer is already known — the rule
+  // `accountChoice` states for the event form, applied to the one control here.
+  const only = offer.targets.length === 1 ? offer.targets[0].id : ''
+  const [target, setTarget] = useState('')
+  const chosen = target || only
+
+  return (
+    // A **named landmark**, like the removal block one file over: it is the
+    // thing the rail's link leads to, and a block a reader is sent to has to be
+    // one they — and a test — can take hold of by its name. `Card` ships a
+    // `div`, so the role is stated rather than inherited from a `<section>`.
+    <Card role="region" aria-labelledby={heading}>
+      <CardHeader>
+        <h3 id={heading} className="text-sm font-medium">
+          {t('accounts.reassign.title')}
+        </h3>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="max-w-prose text-sm text-muted-foreground">
+          {t('accounts.reassign.body', { count: offer.count })}
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <label htmlFor="reassign-target" className="text-sm font-medium">
+              {t('accounts.reassign.target')}
+            </label>
+            <select
+              id="reassign-target"
+              className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+              value={chosen}
+              onChange={(changed) => setTarget(changed.target.value)}
+            >
+              {/* Absent where there is one account: the empty entry is what
+                    makes a choice a choice, and there is none to make. */}
+              {offer.targets.length === 1 ? null : (
+                <option value="">{t('accounts.reassign.choose')}</option>
+              )}
+              {offer.targets.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {declaredLabel(account) ?? account.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            type="button"
+            disabled={chosen === '' || move.isPending}
+            onClick={() => move.mutate(chosen)}
+          >
+            {t('accounts.reassign.submit')}
+          </Button>
+        </div>
+        {move.error ? <Band>{t(problemMessageKey(move.error))}</Band> : null}
+      </CardContent>
+    </Card>
   )
 }
 

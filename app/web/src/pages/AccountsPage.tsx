@@ -26,19 +26,31 @@
  *    nothing would make *the store is unreadable* and *you own nothing yet* the
  *    same screen.
  *
- * **The declaration is not here yet.** ADR-0028 puts it here and the ticket that
- * follows moves it; until then it is on the data page, where ADR-0030 found it,
- * and the empty state points there.
+ * **And the declaration lives here** (#793, ADR-0028): declared from the rail,
+ * renamed and removed from the panel the account's own name opens. The panel is
+ * the page's, not the rail's and not the detail's, because both open it — and a
+ * component mounted twice would be two panels, one of which the reader cannot
+ * see closing.
  */
-import { Link, useSearch } from '@tanstack/react-router'
+import { useState } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { AccountDetail } from '@/components/accounts/AccountDetail'
+import { AccountForm } from '@/components/accounts/AccountForm'
 import { AccountsRail } from '@/components/accounts/AccountsRail'
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
-import { buildAccountRows, chooseAccount, reassignmentOf } from '@/lib/accounts'
-import { api, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import {
+  buildAccountRows,
+  chooseAccount,
+  reassignmentOf,
+  removalOf,
+  DEFAULT_ACCOUNT_ID,
+} from '@/lib/accounts'
+import { accountOf } from '@/lib/ledger'
+import { api, type Account, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
@@ -48,6 +60,9 @@ export default function AccountsPage() {
   const { t } = useI18n()
   const f = useFormatters()
   const { compte } = useSearch({ from: '/comptes' })
+  // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
+  // account is *open on that account*. Three states, the ledger's three.
+  const [editing, setEditing] = useState<Account | null | undefined>(undefined)
 
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
@@ -55,7 +70,8 @@ export default function AccountsPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
 
-  const rows = buildAccountRows(accounts.data?.accounts ?? [])
+  const declared = accounts.data?.accounts ?? []
+  const rows = buildAccountRows(declared)
   const opened = chooseAccount(rows, compte)
 
   // **One read per opened account, and only for the one that is open.** The
@@ -77,6 +93,22 @@ export default function AccountsPage() {
   )
 
   const currency = totals.data?.base_currency ?? null
+  // `?? null` and never `?? []`: an empty payload is a **fact** about the
+  // reader's data and a request in flight is not one (ADR-0026). The three
+  // flattenings are here because this is where the reads are.
+  const heldPositions: readonly Position[] | null = positions.data?.positions ?? null
+  const ledger: readonly LedgerEvent[] | null = events.data ?? null
+  const series: readonly PerfPoint[] | null = history.data?.points ?? null
+
+  // The reassignment, composed once for the page: its **standing** half goes to
+  // the seeded account's detail and its **first declaration** half rides in the
+  // panel, and the two are one function so they cannot disagree about whether
+  // there is anything to move.
+  //
+  // `?? []` is the legitimate one ADR-0026 leaves open: an absent read removes
+  // the offer instead of falsifying it, and claiming there are unassigned events
+  // before the ledger has answered would be the opposite mistake.
+  const offer = reassignmentOf(accounts.data, ledger ?? [])
 
   // The page's name and the day its figures are of, both said in the header
   // (#789). **The day is the opened account's own**, not a `max` over all of
@@ -89,13 +121,6 @@ export default function AccountsPage() {
     t('page.accounts'),
     opened?.as_of == null ? null : t('accounts.asOf', { date: f.date(opened.as_of) }),
   )
-
-  // `?? null` and never `?? []`: an empty payload is a **fact** about the
-  // reader's data and a request in flight is not one (ADR-0026). The three
-  // flattenings are here because this is where the reads are.
-  const heldPositions: readonly Position[] | null = positions.data?.positions ?? null
-  const ledger: readonly LedgerEvent[] | null = events.data ?? null
-  const series: readonly PerfPoint[] | null = history.data?.points ?? null
 
   return (
     <div className="space-y-6">
@@ -112,13 +137,19 @@ export default function AccountsPage() {
           while the declaration is in flight, and above all not that there is
           none. */}
       {accounts.error || !accounts.data ? null : opened === null ? (
+        // A state `/api/accounts` does not produce — ADR-0013 gives every
+        // install one account and the resource publishes the seeded row while
+        // nothing else is declared — so the sentence says that rather than
+        // *you have none*, and the one way out is the declaration itself. It
+        // used to send the reader to the data page, which is where the form
+        // was until #793.
         <EmptyState
           title={t('accounts.empty.title')}
           description={t('accounts.empty.body')}
           action={
-            <Link to="/donnees" className="font-medium underline underline-offset-4">
-              {t('accounts.empty.link')}
-            </Link>
+            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+              {t('accounts.new')}
+            </Button>
           }
         />
       ) : (
@@ -131,6 +162,7 @@ export default function AccountsPage() {
             rows={rows}
             selected={opened.id}
             rebuilding={runtime.data?.rebuilding ?? null}
+            onDeclare={() => setEditing(null)}
             // Whether there is anything to reassign — the module's own answer
             // (#725), which is *events still naming a row nobody declared* and
             // not *a row called `default` exists*: renamed, retyped or taken
@@ -141,7 +173,7 @@ export default function AccountsPage() {
             // absent read **removes the offer** instead of falsifying it, and
             // claiming there are unassigned events before the ledger has
             // answered would be the opposite mistake.
-            reassignable={reassignmentOf(accounts.data, ledger ?? []).kind !== 'none'}
+            offer={offer}
           />
           <AccountDetail
             row={opened}
@@ -150,9 +182,37 @@ export default function AccountsPage() {
             points={series}
             currency={currency}
             rebuilding={runtime.data?.rebuilding ?? null}
+            // The standing offer belongs to the account carrying the events, so
+            // it is composed here — where both reads are — and handed to the
+            // detail that is about that account. Everywhere else it is `none`
+            // and the block does not exist.
+            reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
+            onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
           />
         </div>
       )}
+
+      {/* One panel for the page, opened from the rail and from the detail. It
+          is mounted outside the branch above so that shutting it cannot depend
+          on what is on screen behind it. */}
+      <AccountForm
+        open={editing !== undefined}
+        account={editing ?? null}
+        // `null` while the ledger has not landed, never *nothing to move*: the
+        // panel waits for the answer before it lets a declaration go, which is
+        // what keeps the flag and the declaration one gesture (#725).
+        offer={ledger === null ? null : offer}
+        // `null` while the ledger has not landed (ADR-0026): the count a refusal
+        // is made of comes off it, and a removal offered before it lands offers
+        // a gesture the server is about to refuse.
+        removal={editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))}
+        onClose={() => setEditing(undefined)}
+      />
     </div>
   )
+}
+
+/** How many events name this account — the count a refusal is made of. */
+function named(events: readonly LedgerEvent[], account: string): number {
+  return events.filter((event) => accountOf(event) === account).length
 }

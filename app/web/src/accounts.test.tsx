@@ -101,11 +101,12 @@ describe('the rail', () => {
     // catalogue rather than from the payload (#745).
     expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
-    // **The gesture, not the page** (#725): a link with no hash landed on the
-    // ledger and left the reader to find the reassignment for themselves.
+    // **The gesture, not the page** (#725): the link leads to the seeded
+    // account's own detail, where the offer stands — one click away on this very
+    // page since ADR-0028, rather than on another one.
     expect(
       await screen.findByRole('link', { name: 'Affecter ces événements à un compte' }),
-    ).toHaveAttribute('href', '/donnees#reassignment')
+    ).toHaveAttribute('href', '/comptes?compte=default')
   })
 
   it('offers the reassignment for events, never for a row named `default`', async () => {
@@ -206,7 +207,7 @@ describe('what the page stopped doing', () => {
         'Ce que veut dire Versé net',
         'Ce que veut dire perf',
         'Ce que veut dire TRI',
-        'Ce que veut dire Dividendes',
+        'Ce que veut dire Encaissés',
       ]),
     )
   })
@@ -277,10 +278,15 @@ describe('the page’s own reads', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('says nothing has been declared, and where to declare it', async () => {
-    renderAccounts([])
+  it('says nothing has been declared, and offers the declaration itself', async () => {
+    // A state the resource does not produce — ADR-0013 gives every install one
+    // account — so the way out is the form on this very page, not a trip to the
+    // data page, which is where it was until #793.
+    const { user } = renderAccounts([])
     expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller à Données' })).toHaveAttribute('href', '/donnees')
+
+    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
   it('answers at N = 1, on a page that is no longer a comparison', async () => {

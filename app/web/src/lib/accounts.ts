@@ -314,6 +314,13 @@ export interface AccountRow {
   type: string | null
   /** The day the money figures describe. `null` — no cycle wrote this account. */
   as_of: string | null
+  /**
+   * Whether the app may write this row — published by the server rather than
+   * derived from `source_id`, because a rule the front re-implements is a rule
+   * that can disagree with the API enforcing it. What a file declared is
+   * corrected in the file (ADR-0020).
+   */
+  editable: boolean
   total_value: number | null
   holdings_value: number | null
   cash_balance: number | null
@@ -341,6 +348,10 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     label: account.label ?? null,
     type: account.type ?? null,
     as_of: account.as_of ?? null,
+    // Absent is **editable**: the member is optional on the wire, and a client
+    // that read a missing field as *read-only* would hide the rename on every
+    // row of a server that has not published it yet.
+    editable: account.editable !== false,
     total_value: account.total_value ?? null,
     holdings_value: account.holdings_value ?? null,
     // **`Liquidités` follows `total_value`.** The two are written together or
@@ -550,23 +561,6 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
 // ------------------------------------------------------------------------- //
 
 /**
- * Where a row's declaration comes from, and it is **three** answers rather than
- * `source_id === null`. The seeded row carries no `source_id` either, so read as
- * a pair the column said *declared in the app* about the one row nobody
- * declared — on the first-run screen, where it is the only row there is.
- */
-export type Origin = 'file' | 'app' | 'seed'
-
-export function originOf(account: Account): Origin {
-  if ((account.source_id ?? null) !== null) return 'file'
-  // A file may take the seeded row over (#698), and it is then a file's row like
-  // any other — which the branch above has already answered. What is left here
-  // is the row as the schema wrote it, and a name the owner gave it is what says
-  // they have taken it over themselves.
-  return isSeededOnly(account) ? 'seed' : 'app'
-}
-
-/**
  * Is this the row **nobody declared** — the seed, still saying what it said?
  *
  * The same rule the server states on the other side of the seam
@@ -616,45 +610,6 @@ export function removalOf(account: Account, events: number): Removal {
   if (events > 0) return { kind: 'namedByEvents', count: events }
   if (account.editable === false) return { kind: 'fromFile' }
   return { kind: 'offered' }
-}
-
-export interface DeclarationRow {
-  account: Account
-  /** How many events name it, off the ledger the tab has already read. */
-  events: number
-  removal: Removal
-}
-
-/**
- * The declaration, as one table: the rows the resource served, each with the
- * events that name it and the reason its removal is not offered.
- *
- * **Nothing is synthesised.** The server's list already holds `default` wherever
- * the block needs it — while an event names it, and always while nothing else is
- * declared — so there is one authority instead of two, and the `label` a rename
- * writes is on the row rather than absent from a copy. An empty result therefore
- * means one thing only: the read has not landed. `/api/accounts` never serves an
- * empty list (ADR-0013 — there is always at least one account).
- */
-export function declarationRows(
-  payload: AccountsResponse | undefined,
-  events: readonly LedgerEvent[],
-): DeclarationRow[] {
-  const counts = countByAccount(events)
-
-  return (payload?.accounts ?? []).map((account) => {
-    const count = counts.get(account.id) ?? 0
-    return { account, events: count, removal: removalOf(account, count) }
-  })
-}
-
-function countByAccount(events: readonly LedgerEvent[]): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const event of events) {
-    const id = accountOf(event)
-    counts.set(id, (counts.get(id) ?? 0) + 1)
-  }
-  return counts
 }
 
 // ------------------------------------------------------------------------- //

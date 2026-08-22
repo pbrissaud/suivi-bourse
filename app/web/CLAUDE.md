@@ -6,9 +6,9 @@
 > `docs/adr/README.md`'s rule for `preview/v5` is suspended, and it ends when
 > the tickets from that design session merge.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
-> **ADR-0028 has landed in read only** (#792): the accounts page is the
-> master-detail described below, and the **declaration, the rename and the
-> removal are still on the data page** — the ticket after this one moves them.
+> **ADR-0028 has landed whole** (#792, #793): the accounts page is the
+> master-detail described below, and it is where an account is declared, renamed
+> and removed.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -31,12 +31,12 @@ it did on the branch was nothing below 1 536 px and an off-centre page above it
 (ADR-0022, amended). Width is answered by **tracks, not by longer rows**; the
 976 px reflow target and the 390 px drawer are untouched.
 
-**`lint` is the type-checker and nothing else** — there is no ESLint here. Two
-`// eslint-disable-next-line react-hooks/exhaustive-deps` survive from the
-prototype (`AccountsCard`, `AccountsBlock`); they document a deliberate
-dependency and **enforce nothing**, so a hook's dependency array is held by
-review alone. Both sit on a `useMemo` keyed by a hand-built stamp, and the
-stamp is the thing to read when touching either.
+**`lint` is the type-checker and nothing else** — there is no ESLint here. One
+`// eslint-disable-next-line react-hooks/exhaustive-deps` survives from the
+prototype (`AccountsCard`); it documents a deliberate dependency and **enforces
+nothing**, so a hook's dependency array is held by review alone. It sits on a
+`useMemo` keyed by a hand-built stamp, and the stamp is the thing to read when
+touching it.
 
 The *why* of each screen is in `docs/adr/` (0016 through 0026), then in
 `docs/v5-decisions.md`.
@@ -148,8 +148,8 @@ src/
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export
 │   │               # tab 2: notices  ·  tab 3: settings, the store
-│   │               # (accounts moved to accounts/ — ADR-0028)
-│   └── accounts/   # the rail of weights, one account's detail, its curve
+│   │               # (the accounts declaration moved to accounts/ — ADR-0028)
+│   └── accounts/   # the rail of weights, one account's detail, its curve, its form
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
 
@@ -180,8 +180,12 @@ src/
   on a stated day and no curve at all, which is the second half of ADR-0028's
   sparkline clause. The cross-account comparison is the dashboard's accounts card
   now, and ADR-0019's rule travelled with it. It is **also** where an account is
-  declared, renamed and removed — ADR-0028 says so and the ticket after #792
-  moves them; until then they are on the data page.
+  declared (from the rail), renamed and removed (from the panel its own name
+  opens) — the removal's three refusals being prose, which a table cell never had
+  room for. The reassignment rides with the **declaration** where nothing is
+  declared yet (#725, offered and never required), and stands on its own in the
+  **seeded account's own detail** once something is: its subject is that
+  account's events.
 - **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table, and above
   it one band holding the drop zone, the export menu and the imported files with
   their revocation), *The notices* — **always mounted**, saying so when there is

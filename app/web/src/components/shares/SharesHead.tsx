@@ -131,7 +131,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
             so the figures that **do** exist share the width whatever their
             number, which is what these rows need: both render only the terms and
             the statistics this installation has. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
         {SHARES_TERMS.map((term) => {
           const value = termAmount(terms, term as GainTermName)
           return (
@@ -166,7 +166,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
         })}
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
         <Stat
           label={t('shares.value')}
           value={renderFigure(

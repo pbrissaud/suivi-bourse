@@ -21,14 +21,12 @@ import {
   accountWorth,
   buildAccountRows,
   chooseAccount,
-  declarationRows,
   declaredLabel,
   declaredType,
   degradedReason,
   DEFAULT_RANGE,
   firstDay,
   LAST_EVENTS,
-  originOf,
   distinctSymbols,
   reassignmentOf,
   rebase,
@@ -348,21 +346,6 @@ describe('the name one account wears, on both pages', () => {
   })
 })
 
-describe('where a declaration comes from — three answers, not two', () => {
-  it('does not credit the owner with the row nobody declared', () => {
-    // Read as `source_id === null` the column said *declared in the app* about
-    // the seeded row, on the first-run screen where it is the only row there is.
-    expect(originOf(theSeededAccount())).toBe('seed')
-    expect(originOf(anAccount())).toBe('app')
-    expect(originOf(aFileAccount())).toBe('file')
-  })
-
-  it('counts a relabelled seed as the owner’s own, and a file’s take-over as a file’s', () => {
-    expect(originOf(theSeededAccount({ label: 'Mon PEA' }))).toBe('app')
-    expect(originOf(theSeededAccount({ source_id: 2, editable: false }))).toBe('file')
-  })
-})
-
 describe('a removal that cannot happen names its reason', () => {
   it('follows `accounts.delete_account`’s own order', () => {
     // Not alphabetical: the seeded row first, then the events naming it, then
@@ -376,35 +359,6 @@ describe('a removal that cannot happen names its reason', () => {
     })
     expect(removalOf(aFileAccount({ id: 'beta' }), 0)).toEqual({ kind: 'fromFile' })
     expect(removalOf(anAccount({ id: 'gamma' }), 0)).toEqual({ kind: 'offered' })
-  })
-})
-
-describe('the row set is what the resource served', () => {
-  it('joins the ledger’s counts to those rows and synthesises none', () => {
-    const rows = declarationRows(anAccountsPayload(), ledgerEvents())
-
-    expect(rows.map((row) => row.account.id)).toEqual(['alpha', 'beta', 'gamma'])
-    // The four fixture events all name `alpha`; nothing invents a fourth row for
-    // an account the resource did not serve.
-    expect(rows.map((row) => row.events)).toEqual([4, 0, 0])
-  })
-
-  it('counts an event with a blank account against the seeded row', () => {
-    // #698's rule, read from the ledger's side: a blank account means `default`
-    // until something is declared, so the count has to resolve it the same way.
-    const rows = declarationRows(noAccountsDeclared(), [
-      anEvent({ account: '' }),
-      anEvent({ account: 'default', date: '2026-01-12' }),
-    ])
-
-    expect(rows).toHaveLength(1)
-    expect(rows[0].events).toBe(2)
-  })
-
-  it('answers nothing while the read has not landed — never an empty declaration', () => {
-    // `/api/accounts` never serves an empty list (ADR-0013), so *no row* has
-    // exactly one meaning left and the block renders nothing on it.
-    expect(declarationRows(undefined, ledgerEvents())).toEqual([])
   })
 })
 

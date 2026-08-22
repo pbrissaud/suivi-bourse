@@ -1,6 +1,6 @@
 /**
- * Réaffecter, jamais refuser (#725, ADR-0013, ADR-0006), at the one seam: the
- * whole app in jsdom, HTTP the only faked edge.
+ * Réaffecter, jamais refuser (#725, #793, ADR-0013, ADR-0006, ADR-0028), at the
+ * one seam: the whole app in jsdom, HTTP the only faked edge.
  *
  * **The state under test cannot be reached on the real portfolio.** Its 285
  * events all name an account, so `default` is nowhere in it and every case below
@@ -9,6 +9,10 @@
  * guards is an install that ran a month before declaring anything: the blank
  * `account` column meant `default` at the instant those rows were imported
  * (#698), and the seeded row then carries a history its owner never created.
+ *
+ * Both renderings live on `/comptes` since ADR-0028: the box rides inside the
+ * first declaration, and the standing offer sits in the **seeded account's own
+ * detail**, whose events it is about.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -35,10 +39,10 @@ function declaredBesideTheSeed(...ids: string[]): AccountsResponse {
   )
 }
 
-function renderData(
+function renderAccounts(
   accounts: AccountsResponse,
   events: LedgerEvent[] = unassignedLedger(),
-  url = '/donnees',
+  url = '/comptes',
 ) {
   server.use(
     http.get(ROUTES.accounts, () => HttpResponse.json(accounts)),
@@ -47,16 +51,17 @@ function renderData(
   return renderApp({ url })
 }
 
-function declaration() {
-  return screen.getByRole('table', { name: 'Vos comptes' })
+function rail() {
+  return screen.findByRole('list', { name: 'Vos comptes' })
 }
 
 const OFFER = 'Des événements affectés à aucun compte'
+const REASSIGN = 'Affecter ces événements à un compte'
 
 describe('the first declaration carries the reassignment', () => {
   it('offers it in the same gesture, checked by default', async () => {
-    const { user } = renderData(noAccountsDeclared())
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(noAccountsDeclared())
+    await rail()
 
     let sent: unknown = null
     server.use(
@@ -88,8 +93,8 @@ describe('the first declaration carries the reassignment', () => {
     // Refusing is the trap this ticket is named after: it locks the owner out of
     // the one action that repairs their state. So the box is an offer, and the
     // declaration goes through without it.
-    const { user } = renderData(noAccountsDeclared())
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(noAccountsDeclared())
+    await rail()
 
     let sent: unknown = null
     server.use(
@@ -113,10 +118,11 @@ describe('the first declaration carries the reassignment', () => {
     // Renaming the seeded row **is** the declaration, on an install with a page
     // and no file (#729) — so its events name the account their owner named, and
     // a pre-ticked box on a second declaration would move them off it.
-    const { user } = renderData(noAccountsDeclared({ label: 'Mon PEA' }))
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(noAccountsDeclared({ label: 'Mon PEA' }))
+    await rail()
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: REASSIGN })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
     const panel = await screen.findByRole('dialog')
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
@@ -125,8 +131,8 @@ describe('the first declaration carries the reassignment', () => {
   it('asks nothing where there is nothing to move', async () => {
     // The real portfolio's own shape: every event names an account, so no box
     // and no block. The constraint is unobservable there, deliberately.
-    const { user } = renderData(noAccountsDeclared(), ledgerEvents())
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(noAccountsDeclared(), ledgerEvents())
+    await rail()
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
@@ -136,24 +142,40 @@ describe('the first declaration carries the reassignment', () => {
 })
 
 describe('and it stands on its own once something is declared', () => {
+  /** The offer lives in the seeded account's own detail — its events, its page. */
+  async function openTheSeed(user: ReturnType<typeof renderApp>['user']) {
+    await user.click(within(await rail()).getByRole('link', { name: /Non affecté/ }))
+    return screen.findByRole('region', { name: 'Non affecté' })
+  }
+
   it('appears where a file declared, with no gesture in the app at all', async () => {
     // The other road (#698): an accounts source declares as much as the form
     // does, and the event file beside it is refused for the blank column it was
     // right to carry — leaving its rows under the seeded account with nothing on
     // any page able to move them. This block is that gesture.
-    renderData(declaredBesideTheSeed('pea', 'cto'))
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(declaredBesideTheSeed('pea', 'cto'))
+    const seed = await openTheSeed(user)
 
-    const block = screen.getByRole('region', { name: OFFER })
+    const block = within(seed).getByRole('region', { name: OFFER })
     expect(block).toHaveTextContent('3 événements ont été enregistrés')
+  })
+
+  it('is not on any other account’s detail', async () => {
+    // Its subject is *this* account's events: rendered beside `PEA`'s figures it
+    // would be an offer to move events that account never carried.
+    const { user } = renderAccounts(declaredBesideTheSeed('pea'))
+    await user.click(within(await rail()).getByRole('link', { name: /PEA/ }))
+
+    const pea = await screen.findByRole('region', { name: 'PEA' })
+    expect(within(pea).queryByRole('region', { name: OFFER })).not.toBeInTheDocument()
   })
 
   it('moves them onto the account chosen, and never one event at a time', async () => {
     // **No correspondence layer** (ADR-0006): what crosses the wire is one
     // target id, never a `default → pea` map beside the events — which would be
     // a second truth about the account an event names.
-    const { user } = renderData(declaredBesideTheSeed('pea', 'cto'))
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(declaredBesideTheSeed('pea', 'cto'))
+    const seed = await openTheSeed(user)
 
     let posted = 0
     server.use(
@@ -163,9 +185,9 @@ describe('and it stands on its own once something is declared', () => {
       }),
     )
 
-    const block = screen.getByRole('region', { name: OFFER })
     // One control for the whole population, not one per row: three events are
-    // on screen and there is a single target to choose.
+    // under this account and there is a single target to choose.
+    const block = within(seed).getByRole('region', { name: OFFER })
     expect(within(block).getAllByRole('combobox')).toHaveLength(1)
     await user.selectOptions(within(block).getByLabelText('Les affecter à'), 'cto')
     await user.click(within(block).getByRole('button', { name: 'Affecter ces événements' }))
@@ -176,8 +198,8 @@ describe('and it stands on its own once something is declared', () => {
   it('does not ask a question whose answer is already known', async () => {
     // One declared account: a select of one entry is a question with one answer,
     // and the gesture is one click.
-    const { user } = renderData(declaredBesideTheSeed('pea'))
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(declaredBesideTheSeed('pea'))
+    const seed = await openTheSeed(user)
 
     let posted = 0
     server.use(
@@ -187,7 +209,7 @@ describe('and it stands on its own once something is declared', () => {
       }),
     )
 
-    const block = screen.getByRole('region', { name: OFFER })
+    const block = within(seed).getByRole('region', { name: OFFER })
     expect(within(block).queryByText('Choisir un compte')).not.toBeInTheDocument()
     await user.click(within(block).getByRole('button', { name: 'Affecter ces événements' }))
 
@@ -195,49 +217,46 @@ describe('and it stands on its own once something is declared', () => {
   })
 
   it('leaves the screen once the window is spent', async () => {
-    renderData(declaredBesideTheSeed('pea'), ledgerEvents())
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
+    const { user } = renderAccounts(declaredBesideTheSeed('pea'), ledgerEvents())
+    const seed = await openTheSeed(user)
 
-    expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
+    expect(seed).not.toHaveTextContent(OFFER)
   })
 })
 
 describe('the link from the unassigned line lands on the gesture', () => {
-  it('shows the offer itself, not the page it lives on', async () => {
-    renderData(declaredBesideTheSeed('pea'), unassignedLedger(), '/donnees#reassignment')
+  it('leads to the offer itself, not to the page it lives on', async () => {
+    // The link owes its reader the **gesture** (#725), and since ADR-0028 that
+    // gesture is one click away on this very page rather than on another one.
+    const { user } = renderAccounts(declaredBesideTheSeed('pea'))
+    await rail()
 
-    expect(await screen.findByRole('region', { name: OFFER })).toBeInTheDocument()
-    // The ledger tab, named by the hash rather than left to the default: a
-    // reader arriving on the other tab would have landed beside the gesture.
-    expect(screen.getByRole('tab', { name: 'Le grand livre' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
-  })
+    const link = screen.getByRole('link', { name: REASSIGN })
+    expect(link).toHaveAttribute('href', '/comptes?compte=default')
+    await user.click(link)
 
-  it('takes the reader there once, and a shut panel stays shut', async () => {
-    // The hash is read and never written, and Radix unmounts the inactive tab —
-    // so a signal derived from it straight came back true on every remount, and
-    // a panel the reader had answered by closing reopened behind their back.
-    const { user } = renderData(noAccountsDeclared(), unassignedLedger(), '/donnees#reassignment')
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Annuler' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    await user.click(screen.getByRole('tab', { name: /L’installation/ }))
-    await user.click(screen.getByRole('tab', { name: 'Le grand livre' }))
-    await waitFor(() => expect(declaration()).toBeInTheDocument())
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const seed = await screen.findByRole('region', { name: 'Non affecté' })
+    expect(within(seed).getByRole('region', { name: OFFER })).toBeInTheDocument()
   })
 
   it('opens the declaration where the gesture *is* the first declaration', async () => {
     // Nothing declared: the offer has no target to name, so it rides inside the
-    // panel — and the link owes the reader that panel, open.
-    renderData(noAccountsDeclared(), unassignedLedger(), '/donnees#reassignment')
+    // panel — and there is nowhere to lead to. A button, not a link.
+    const { user } = renderAccounts(noAccountsDeclared())
+    await rail()
+
+    expect(screen.queryByRole('link', { name: REASSIGN })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: REASSIGN }))
 
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByRole('checkbox')).toBeChecked()
+  })
+
+  it('is offered by neither rendering where there is nothing to move', async () => {
+    renderAccounts(declaredBesideTheSeed('pea'), ledgerEvents())
+    await rail()
+
+    expect(screen.queryByRole('link', { name: REASSIGN })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: REASSIGN })).not.toBeInTheDocument()
   })
 })

@@ -283,8 +283,10 @@ export function DashboardHead() {
             (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
             so the figures that **do** exist share the width whatever their
             number, which is what these rows need: both render only the terms and
-            the statistics this installation has. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
+            the statistics this installation has. The floor is **8rem and not 9**,
+            measured: at 9 the five statistics came to more than the card on the
+            wide track holds and the row wrapped four and one. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
           {GAIN_TERMS.map((term) => {
             const value = termAmount(terms, term)
             if (!termIsRendered(term, value)) return null
@@ -311,7 +313,7 @@ export function DashboardHead() {
         </div>
 
         {/* The statistics, on a third row — and only the ones that exist. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
           {totalsRow?.total_value == null ? null : (
             <Stat
               label={t('dashboard.totalValue')}

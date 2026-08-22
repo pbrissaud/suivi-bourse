@@ -219,7 +219,7 @@ describe('the five blocks', () => {
     // The very term the block above decomposes, read once and rendered at two
     // altitudes: *what has this account paid me* is the one term that answers a
     // question on its own.
-    expect(await within(detail).findByRole('group', { name: 'Dividendes' })).toHaveTextContent(
+    expect(await within(detail).findByRole('group', { name: 'Encaissés' })).toHaveTextContent(
       /25,00/,
     )
   })

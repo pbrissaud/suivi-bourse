@@ -31,6 +31,7 @@
  */
 import { Link } from '@tanstack/react-router'
 
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   accountWeights,
@@ -38,10 +39,12 @@ import {
   declaredType,
   degradedReason,
   isDefaultAccount,
+  DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
   DEFAULT_ACCOUNT_TYPE,
   type AccountRow,
   type DegradedReason,
+  type Reassignment as ReassignmentOffer,
 } from '@/lib/accounts'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
@@ -72,15 +75,29 @@ export interface AccountsRailProps {
   /** Whether the reconstruction is still running. `null` — not observed yet. */
   rebuilding: boolean | null
   /**
-   * Whether events still name a row nobody declared (#725) — the page's answer
-   * off `reassignmentOf`, never *is one of these called `default`*: a seeded row
-   * its owner has renamed is an ordinary account, and the offer would then point
-   * at a population that no longer exists.
+   * Whether events still name a row nobody declared, and **which of #725's two
+   * renderings applies** — the page's answer off `reassignmentOf`, never *is one
+   * of these called `default`*: a seeded row its owner has renamed is an
+   * ordinary account, and the offer would then point at a population that no
+   * longer exists.
    */
-  reassignable: boolean
+  offer: ReassignmentOffer
+  /**
+   * Declaring an account — **here, because this is where the accounts are**
+   * (ADR-0028). It is the one control of the rail, at its foot rather than in
+   * its header: the header names what the rail shows, and a button beside a
+   * title reads as acting on it.
+   */
+  onDeclare: () => void
 }
 
-export function AccountsRail({ rows, selected, rebuilding, reassignable }: AccountsRailProps) {
+export function AccountsRail({
+  rows,
+  selected,
+  rebuilding,
+  offer,
+  onDeclare,
+}: AccountsRailProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -159,18 +176,37 @@ export function AccountsRail({ rows, selected, rebuilding, reassignable }: Accou
         </ul>
 
         {/* The one population the promise *your declared accounts* does not
-            cover, and the only way to repair it. The **hash** is what makes that
-            repair reachable (#725): the link owes its reader the gesture and not
-            the page. */}
-        {reassignable ? (
+            cover, and the only way to repair it. It leads to the **seeded
+            account's own detail**, where the offer stands: the link owes its
+            reader the gesture and not the page (#725), and since ADR-0028 the
+            gesture is one click away in this very page rather than on another
+            one. */}
+        {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
           <Link
-            to="/donnees"
-            hash="reassignment"
-            className="block px-2 text-xs underline underline-offset-4"
+            to="/comptes"
+            search={{ compte: DEFAULT_ACCOUNT_ID }}
+            className="block px-2 text-left text-xs underline underline-offset-4"
           >
             {t('accounts.default.reassign')}
           </Link>
-        ) : null}
+        ) : (
+          // **Where nothing is declared yet the gesture *is* the declaration**,
+          // so this one opens the panel instead of leading anywhere: there is no
+          // list of accounts to assign to, and the account the reader is about
+          // to create is the only answer the question can have. A button, not a
+          // link — it goes nowhere.
+          <button
+            type="button"
+            onClick={onDeclare}
+            className="block px-2 text-left text-xs underline underline-offset-4"
+          >
+            {t('accounts.default.reassign')}
+          </button>
+        )}
+
+        <Button type="button" variant="outline" className="w-full" onClick={onDeclare}>
+          {t('accounts.new')}
+        </Button>
       </CardContent>
     </Card>
   )

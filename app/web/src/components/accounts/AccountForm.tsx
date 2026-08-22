@@ -1,15 +1,22 @@
 /**
  * The declaration form — **the ledger's form, for an account** (#729, ADR-0013,
- * ADR-0002).
+ * ADR-0002, ADR-0028).
  *
- * Nothing about it is invented: a lateral panel, opened from the row's own name,
- * one field per thing the row carries, a band for what the server refuses. That
- * sameness is the criterion rather than a convenience — the accounts are
+ * Nothing about it is invented: a lateral panel, opened from the account's own
+ * name, one field per thing the row carries, a band for what the server refuses.
+ * That sameness is the criterion rather than a convenience — the accounts are
  * provisionable by file exactly as the events are, read-only for what came from
  * one and editable for what came from here, and a second shape for the same rule
  * is the defect *individually right, collectively unreadable* by definition.
  *
- * Two decisions of its own:
+ * It lives on `/comptes` since ADR-0028, with the page that reads the accounts,
+ * and it is where an account is **removed** as well as declared and renamed.
+ * That move is the point of the removal rather than a side effect of it: the
+ * three refusals are **prose** — the account every install owns, the *n* events
+ * that name it, the imported file that declares it — and prose in a table cell
+ * is a sentence nobody has room to read. Here it has a paragraph.
+ *
+ * Three decisions of its own:
  *
  *  - **It has no `currency` field.** ADR-0002 deleted `Account.currency` rather
  *    than guarding it: there are two currency levels — the reporting currency,
@@ -42,10 +49,32 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { declaredLabel, declaredType, DEFAULT_ACCOUNT_LABEL } from '@/lib/accounts'
+import {
+  declaredLabel,
+  declaredType,
+  DEFAULT_ACCOUNT_LABEL,
+  type Reassignment,
+  type Removal,
+} from '@/lib/accounts'
 import { api, type Account, type AccountDraft } from '@/lib/api'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
+
+/**
+ * The three refusals, in `accounts.delete_account`'s own order.
+ *
+ * `fromFile` is unreachable **by construction and not by accident**: this panel
+ * only opens from an editable account's name, and `removalOf` answers `fromFile`
+ * only where `editable` is false. It stays in the map all the same — the map
+ * mirrors the server's classification, and a record of three answers with two
+ * entries is a record that has stopped being one. The reason a file's account
+ * has no panel at all is said on its detail instead.
+ */
+const REFUSALS: Record<Exclude<Removal['kind'], 'offered'>, MessageKey> = {
+  seeded: 'accounts.remove.seeded',
+  namedByEvents: 'accounts.remove.namedByEvents',
+  fromFile: 'accounts.remove.fromFile',
+}
 
 interface Draft {
   id: string
@@ -62,21 +91,41 @@ export interface AccountFormProps {
   /** The row being edited — `null` is a declaration. */
   account: Account | null
   /**
-   * How many events still name the seeded row, when this panel is the **first**
-   * declaration this install has ever made (#725). `null` everywhere else — on
-   * an edit, and on a declaration made where something is already declared, the
-   * offer stands in the block instead and has a target to choose.
+   * The reassignment as the page reads it, or **`null` while the ledger has not
+   * landed** (ADR-0026).
    *
-   * It rides on the declaration rather than beside it because *in the same
-   * gesture* is the criterion: at this instant there is no list to pick from,
-   * and the account the reader is in the middle of creating is the only answer
-   * the question can have.
+   * The offer rides on the declaration rather than beside it because *in the
+   * same gesture* is the criterion: at this instant there is no list to pick
+   * from, and the account the reader is in the middle of creating is the only
+   * answer the question can have.
+   *
+   * `null` is not *nothing to move*, and the difference is the whole promise
+   * #725 is named after: the accounts payload is small and the ledger is the
+   * big one, so a reader who opens this panel in between saw **no box** and
+   * declared without it — the two gestures the flag exists to make one. So a
+   * declaration waits for the answer, exactly as the removal below does.
    */
-  unassigned: number | null
+  offer: Reassignment | null
+  /**
+   * Whether this account may be removed, and the reason it may not — the
+   * module's own classification, in `accounts.delete_account`'s order.
+   *
+   * **`null` is the ledger read still in flight** (ADR-0026), never *no reason*:
+   * the count a refusal is made of comes off the ledger, and a removal offered
+   * before it lands would offer a gesture the server is about to refuse. The
+   * block renders nothing at all until then, title included.
+   */
+  removal: Removal | null
   onClose: () => void
 }
 
-export function AccountForm({ open, account, unassigned, onClose }: AccountFormProps) {
+export function AccountForm({
+  open,
+  account,
+  offer,
+  removal,
+  onClose,
+}: AccountFormProps) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
 
@@ -88,10 +137,40 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
   // the declaration is *never* refused because events are unassigned.
   const [reassign, setReassign] = useState(true)
 
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.removeAccount(id),
+    onSuccess: () => {
+      // The whole cache: an account that is gone changes what every page groups
+      // by, not only the list this panel was opened from.
+      void queryClient.invalidateQueries()
+      onClose()
+    },
+  })
+
+  const write = useMutation({
+    mutationFn: (body: AccountDraft) =>
+      account === null ? api.createAccount(body) : api.updateAccount(account.id, body),
+    onSuccess: () => {
+      // A declaration moves what an event file is allowed to say and what every
+      // page groups by, so the whole cache goes rather than a list of keys that
+      // would drift from the pages reading them.
+      void queryClient.invalidateQueries()
+      onClose()
+    },
+  })
+
   useEffect(() => {
     if (!open) return
     setErrors({})
     setReassign(true)
+    // **The mutations are reset with the panel.** It is mounted once for the
+    // page and reused for every account, so a `409` earned declaring `delta`
+    // was still on screen when the next account's name opened it — and a
+    // removal that failed on Gamma rendered its band under Alpha's refusal,
+    // attributing one account's failure to another.
+    write.reset()
+    remove.reset()
     setDraft(
       account === null
         ? EMPTY
@@ -108,18 +187,6 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
     )
   }, [open, account])
 
-  const write = useMutation({
-    mutationFn: (body: AccountDraft) =>
-      account === null ? api.createAccount(body) : api.updateAccount(account.id, body),
-    onSuccess: () => {
-      // A declaration moves what an event file is allowed to say and what every
-      // page groups by, so the whole cache goes rather than a list of keys that
-      // would drift from the pages reading them.
-      void queryClient.invalidateQueries()
-      onClose()
-    },
-  })
-
   function set(field: FieldName, value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
     setErrors((previous) => ({ ...previous, [field]: undefined }))
@@ -127,20 +194,23 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
 
   // The offer exists on a declaration alone, and only where there is something
   // to move: a box proposing to reassign nothing is a question with no subject.
-  const offered = account === null && unassigned !== null && unassigned > 0
+  const unassigned = offer?.kind === 'firstDeclaration' ? offer.count : null
+  const offered = account === null && unassigned !== null
+  /** A declaration cannot be submitted before the offer is known. See {@link AccountFormProps.offer}. */
+  const waiting = account === null && offer === null
 
   function submit() {
     const found: Partial<Record<FieldName, MessageKey>> = {}
     const id = draft.id.trim()
     const type = draft.type.trim()
 
-    if (account === null && id === '') found.id = 'data.accounts.form.required'
+    if (account === null && id === '') found.id = 'accounts.form.required'
     // Required on a **declaration** only, which is where the store requires it
     // (`create_account` raises without one). On an edit a blank type is the
     // label's own case: `update_account` keeps what is there, so refusing here
     // would make *renaming* the seeded row — the one gesture this panel exists
     // for at N = 1 — conditional on answering a second question.
-    if (account === null && type === '') found.type = 'data.accounts.form.required'
+    if (account === null && type === '') found.type = 'accounts.form.required'
 
     setErrors(found)
     if (Object.values(found).some(Boolean)) return
@@ -172,11 +242,11 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
           <SheetTitle>
             {t(
               account === null
-                ? 'data.accounts.form.create.title'
-                : 'data.accounts.form.edit.title',
+                ? 'accounts.form.create.title'
+                : 'accounts.form.edit.title',
             )}
           </SheetTitle>
-          <SheetDescription>{t('data.accounts.form.description')}</SheetDescription>
+          <SheetDescription>{t('accounts.form.description')}</SheetDescription>
         </SheetHeader>
 
         <form
@@ -187,7 +257,7 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
           }}
         >
           {account === null ? (
-            <Field name="id" label="data.accounts.form.id" error={errors.id}>
+            <Field name="id" label="accounts.form.id" error={errors.id}>
               {(id, described) => (
                 <Input
                   id={id}
@@ -203,15 +273,15 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
             // reads as a form that refused, where the honest sentence is that
             // this value is what the ledger names.
             <div className="space-y-1">
-              <p className="text-sm font-medium">{t('data.accounts.form.id')}</p>
+              <p className="text-sm font-medium">{t('accounts.form.id')}</p>
               <p className="font-mono text-sm">{account.id}</p>
               <p className="max-w-prose text-xs text-muted-foreground">
-                {t('data.accounts.form.id.fixed')}
+                {t('accounts.form.id.fixed')}
               </p>
             </div>
           )}
 
-          <Field name="type" label="data.accounts.form.type" error={errors.type}>
+          <Field name="type" label="accounts.form.type" error={errors.type}>
             {(id, described) => (
               <Input
                 id={id}
@@ -223,7 +293,7 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
             )}
           </Field>
 
-          <Field name="label" label="data.accounts.form.label" error={errors.label} optional>
+          <Field name="label" label="accounts.form.label" error={errors.label} optional>
             {(id, described) => (
               <Input
                 id={id}
@@ -251,10 +321,10 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
                   checked={reassign}
                   onChange={(changed) => setReassign(changed.target.checked)}
                 />
-                <span>{t('data.accounts.form.reassign', { count: unassigned })}</span>
+                <span>{t('accounts.form.reassign', { count: unassigned })}</span>
               </label>
               <p className="max-w-prose text-xs text-muted-foreground">
-                {t('data.accounts.form.reassign.hint')}
+                {t('accounts.form.reassign.hint')}
               </p>
             </div>
           ) : null}
@@ -262,14 +332,56 @@ export function AccountForm({ open, account, unassigned, onClose }: AccountFormP
           {write.error ? <Band>{t(problemMessageKey(write.error))}</Band> : null}
 
           <div className="flex gap-2">
-            <Button type="submit" disabled={write.isPending}>
-              {t(account === null ? 'data.accounts.form.submit' : 'data.accounts.form.save')}
+            <Button type="submit" disabled={write.isPending || waiting}>
+              {t(account === null ? 'accounts.form.submit' : 'accounts.form.save')}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
-              {t('data.accounts.form.cancel')}
+              {t('accounts.form.cancel')}
             </Button>
           </div>
         </form>
+
+        {/* The removal, and it is **outside the form**: submitting the panel
+            saves the account, and a destructive control inside a form is one
+            Enter key away from being the thing that submits. Nothing at all on
+            a declaration — there is no row yet to remove — and nothing while
+            the ledger has not landed. */}
+        {account === null || removal === null ? null : (
+          <section
+            aria-labelledby="account-removal"
+            className="space-y-2 border-t px-4 pb-8 pt-6"
+          >
+            <h3 id="account-removal" className="text-sm font-medium">
+              {t('accounts.remove.title')}
+            </h3>
+            {removal.kind === 'offered' ? (
+              <>
+                <p className="max-w-prose text-sm text-muted-foreground">
+                  {t('accounts.remove.offered')}
+                </p>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(account.id)}
+                >
+                  {t('accounts.remove')}
+                </Button>
+              </>
+            ) : (
+              /* **Absent and naming its reason**, never present and refusing: a
+                 control the app knows will be refused teaches nothing by being
+                 there, while the sentence is the exact thing its owner has to
+                 act on. */
+              <p className="max-w-prose text-sm text-muted-foreground">
+                {t(REFUSALS[removal.kind], removal.kind === 'namedByEvents' ? removal : undefined)}
+              </p>
+            )}
+            {/* A refusal the reader could not foresee — the declaration moved
+                under them between the render and the click. */}
+            {remove.error ? <Band>{t(problemMessageKey(remove.error))}</Band> : null}
+          </section>
+        )}
       </SheetContent>
     </Sheet>
   )
