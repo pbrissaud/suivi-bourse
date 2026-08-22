@@ -217,11 +217,25 @@ export function DashboardHead() {
 
   return (
     // The hero card, and the one gradient in the product (#787): it is the
-    // page’s first object, so it is the one that may say *start here*
-    // without another card having to compete. The ground stays `--card` and
-    // the mint is a wash over it — a figure read against a saturated field
-    // is a figure read badly.
-    <Card className="gap-0 border-border/60 bg-gradient-to-br from-card via-card to-primary/10">
+    // page's first object, so it is the one that may say *start here* without
+    // another card having to compete. The ground stays `--card` and the wash
+    // sits over it — a figure read against a saturated field is a figure read
+    // badly.
+    //
+    // **It falls from the top left**, which is the maquette's own `160deg` and
+    // the reverse of what shipped: `bg-gradient-to-br` piled the tint into the
+    // bottom right corner, under nothing, while the figure the card exists for
+    // sits at the top left. A wash is a light source, and a light source behind
+    // the reader's back lights nothing.
+    //
+    // And it is `--accent` rather than the mint. The preset states that token as
+    // *a muted raise of the ground*, which is exactly what the maquette paints
+    // there — a cool lift of the surface, not a mark. Taking the mint instead
+    // put a **meaning** into the chrome: it is `--gain` and `--price`, and a
+    // card washed in the colour of a gain is a card that says something about
+    // the figure on it. It also survives the light ground, which a hand-written
+    // midnight value would not (ADR-0023).
+    <Card className="gap-0 border-border/60 bg-linear-160 from-accent to-card to-60%">
       <CardContent className="space-y-6">
         {/* **The total and its terms, side by side and never at equal weight.**
             ADR-0016 is amended in its wording and not in its rule (#787): what
