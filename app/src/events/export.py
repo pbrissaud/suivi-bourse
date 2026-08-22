@@ -229,8 +229,8 @@ def render_events_workbook(events: Iterable[Event],
         sheet = workbook.create_sheet(title=year)
         _write_row(sheet, list(EVENT_COLUMNS))
         for event in rows:
-            _write_row(sheet, [_event_row(event, base_currency)[column]
-                               for column in EVENT_COLUMNS])
+            cells = _event_row(event, base_currency)
+            _write_row(sheet, [cells[column] for column in EVENT_COLUMNS])
     if not workbook.sheetnames:
         _write_row(workbook.create_sheet(title=UNDATED_SHEET),
                    list(EVENT_COLUMNS))
