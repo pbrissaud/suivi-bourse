@@ -61,8 +61,15 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
  * deliberately not reused: those encode **rank** on a sorted, legended figure,
  * and this bar is in declaration order — a segment's colour here says *which
  * account*, which is what a hue does and a lightness does not.
+ *
+ * **The wheel starts on the accent's own hue** (#787), `165`, and turns by sixty
+ * degrees from there. An identity palette cannot be one colour — that is the
+ * whole of what it is for — but it can start somewhere rather than nowhere: at
+ * `264` the first account, which on most installs is the only one anybody looks
+ * at, was drawn in a blue the product uses nowhere. It is now the mint, and the
+ * five after it are that mint's own wheel.
  */
-const SEGMENT_HUES = [264, 324, 24, 84, 144, 204] as const
+const SEGMENT_HUES = [165, 225, 285, 345, 45, 105] as const
 
 function segmentColour(index: number): string {
   return `oklch(0.62 0.15 ${SEGMENT_HUES[index % SEGMENT_HUES.length]})`

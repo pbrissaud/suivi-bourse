@@ -50,36 +50,43 @@ export interface RampEnds {
 }
 
 /**
- * Recomputed on the midnight ground (ADR-0029), and two things moved with it.
+ * **The hue is the product's own** (#787, amending ADR-0029).
  *
- * **The hue, 262, is chosen and not derived.** ADR-0023 took the preset's
- * `--chart-2` because the preset was near monochrome and that slot was the only
- * blue in it. The midnight preset states a ground *and* an accent, so the choice
- * needs its own argument: mint, purple and teal are spoken for by a state or a
- * mark, and a share of a total is neither, so the ramp sits in the blue nobody
- * claimed. It is deliberately **near** both grounds — `266.4` dark, `258.3`
- * light — without being either: a single ramp cannot be two hues, and reading
- * one ground's hue would make the light ramp answer to the dark one. Twelve
- * lightnesses of that blue read as shades of the surface, never as a meaning.
+ * ADR-0023 took the preset's `--chart-2` because that preset was near monochrome
+ * and the slot was the only blue in it. ADR-0029 then *chose* 262 on the
+ * argument that mint, purple and teal were spoken for by a state or a mark, and
+ * that a share of a total is neither — so the ramp went to the blue nobody
+ * claimed. That reasoning protects the marks and forgets the reader: it leaves
+ * the one figure drawn largest on the page in a hue the product uses nowhere
+ * else, beside a chart stroked in `--price`, which *is* `--primary`. The
+ * allocation ended up the only surface that did not look like the application.
  *
- * **The chroma ends are bounded by rank 1, and rank 1 alone.** Blue keeps almost
- * no chroma at high lightness: at `L 0.86` the screen can show `0.069`, and
- * `0.16` — what both ramps used to ask for — was outside sRGB. The browser
- * clamped those first stops, rendering several ranks as one colour, which is the
- * ramp failing at exactly the job it exists for. Since chroma must then *fall*
- * from rank 1, that one ceiling sets the whole dark ramp: the later stops have
- * three to six times the headroom they use, and could not use it without
- * breaking the rule.
+ * So the ramp is twelve lightnesses of the **accent's own hue**, `165` — the
+ * value `--primary` carries on both grounds. What the mint is spoken for is a
+ * *state* (`--gain`) and a *mark* (`--price`), and neither is a slice: a share
+ * of a whole is unsigned and always positive, it is legended, and it never sits
+ * beside a gain figure it could be mistaken for. The collision ADR-0029 feared
+ * is between a **signed** figure and a curve, and this ramp draws neither.
  *
- * The honest consequence is that **on the dark ground the chroma cue is nearly
- * mute** — `0.055` to `0.018` is a travel a reader will not see — and lightness
- * carries the rank alone. That is acceptable only because lightness was always
- * the primary cue and the legend carries name and percentage besides. The light
- * ramp, drawn where blue has room, keeps both cues.
+ * **And the gamut stops being the binding constraint**, which is the measured
+ * half of the change. Blue keeps almost no chroma where the dark ramp needs it —
+ * at `L 0.86` the screen can show `0.069` — so ADR-0029 had to cap the dark
+ * ramp's rank 1 there and let chroma fall from it, leaving a travel of `0.055`
+ * to `0.018` that it admitted no reader would see. **The mint holds `0.181` at
+ * that same lightness.** The chroma cue comes back, and rank stops resting on
+ * lightness alone.
+ *
+ * The two rules that shape the ramps do not move: rank 1 is the most contrasted
+ * on **each** ground, which is what forces two opposite lightness ramps, and
+ * chroma falls with rank on both. The light ramp is the one the mint constrains
+ * — green holds less chroma dark than blue does (`0.101` at `L 0.48` against
+ * `0.209`) — so its rank 1 is a touch lighter and a touch less saturated than
+ * ADR-0029's. Every stop is asserted in sRGB in `lib/alloc.test.ts`, which is
+ * what makes these four pairs measurements rather than tastes.
  */
 export const ALLOCATION_RAMP: Record<Ground, RampEnds> = {
-  light: { lightness: [0.42, 0.8], chroma: [0.16, 0.05], hue: 262 },
-  dark: { lightness: [0.86, 0.42], chroma: [0.055, 0.018], hue: 262 },
+  light: { lightness: [0.48, 0.84], chroma: [0.09, 0.028], hue: 165 },
+  dark: { lightness: [0.86, 0.42], chroma: [0.14, 0.03], hue: 165 },
 }
 
 function interpolate(from: number, to: number, step: number, steps: number): number {
