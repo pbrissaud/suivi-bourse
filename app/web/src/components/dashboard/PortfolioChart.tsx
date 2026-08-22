@@ -47,16 +47,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Area,
-  CartesianGrid,
   ComposedChart,
   Line,
   ReferenceLine,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 
+import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -164,68 +163,35 @@ export function PortfolioChart() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={drawn}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  {/* No `domain`: the ticks are the days the series holds, so the
-                      axis cannot name a date the data says nothing about. */}
-                  <XAxis
-                    dataKey="t"
-                    tickFormatter={(value: string) => f.date(value)}
-                    minTickGap={32}
+                  {/* **The axes are hidden, not removed.** What they drew — a
+                      grid and two rows of gradations — is what the redesign took
+                      off the chart, and it is said elsewhere: the window by the
+                      range control (a second announcer of it is what ADR-0019
+                      refuses), the magnitude by the head's own statistics, the
+                      exact figure by the pointer. What they *decide* stays, and
+                      is the whole reason they are still mounted: the value
+                      scale's floor (`yFloor`) is what keeps the curve off the
+                      bottom sixth of the plot, and the category axis is what
+                      keeps the days the series holds from being interpolated. */}
+                  <XAxis dataKey="t" hide />
+                  <YAxis
+                    domain={[
+                      reading === 'amounts'
+                        ? yFloor(amountsValues(rows))
+                        : yFloor(performance.map((row) => row.performance)),
+                      'auto',
+                    ]}
+                    hide
                   />
-                  {reading === 'amounts' ? (
-                    <YAxis
-                      domain={[yFloor(amountsValues(rows)), 'auto']}
-                      tickFormatter={(value: number) => f.currency(value, currency, 0)}
-                      width={80}
-                    />
-                  ) : (
-                    <YAxis
-                      domain={[yFloor(performance.map((row) => row.performance)), 'auto']}
-                      tickFormatter={(value: number) => f.percent(value)}
-                      width={72}
-                    />
-                  )}
 
-                  {/* What the pointer answers. `cursor` is the border rather
-                      than the library's grey band, which paints over the very
-                      marks it is helping read. */}
-                  <Tooltip
-                    cursor={{ stroke: 'var(--border)' }}
-                    isAnimationActive={false}
-                    content={({ active, payload, label }) => {
-                      if (!active || typeof label !== 'string') return null
-                      // The area is dropped here: its `dataKey` is a function
-                      // returning the `[contributed, value]` pair the band is
-                      // drawn between — a drawing instruction, not a figure.
-                      const lines = (payload ?? []).flatMap((entry) =>
-                        typeof entry.dataKey === 'string' && typeof entry.value === 'number'
-                          ? [
-                              {
-                                key: entry.dataKey,
-                                name: String(entry.name ?? ''),
-                                value: entry.value,
-                                colour: entry.color,
-                              },
-                            ]
-                          : [],
-                      )
-                      if (lines.length === 0) return null
-                      return (
-                        <div className="rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-                          <p className="mb-1 font-medium">{f.date(label)}</p>
-                          {lines.map((line) => (
-                            <p key={line.key} className="flex items-baseline gap-3">
-                              <span className="text-muted-foreground">{line.name}</span>
-                              <span className="tabular ml-auto" style={{ color: line.colour }}>
-                                {reading === 'amounts'
-                                  ? f.currency(line.value, currency)
-                                  : f.percent(line.value)}
-                              </span>
-                            </p>
-                          ))}
-                        </div>
-                      )
-                    }}
+                  {/* What the pointer answers, and since #787 the **only**
+                      thing that does: the axes went with the grid, so the exact
+                      figure is a hover away and the magnitude at rest is the
+                      head's two statistics one card up. */}
+                  <ChartTooltip
+                    format={(value) =>
+                      reading === 'amounts' ? f.currency(value, currency) : f.percent(value)
+                    }
                   />
 
                   {reading === 'amounts' ? (

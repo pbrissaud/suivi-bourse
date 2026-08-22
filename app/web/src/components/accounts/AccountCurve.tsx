@@ -19,8 +19,9 @@
  *    with no cash event has `net_contributed` at `null` for ever (#708), and a
  *    line drawn along the floor would say the owner put nothing in.
  */
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
+import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
+import { ChartTooltip } from '@/components/ChartTooltip'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ValuePoint } from '@/lib/accounts'
@@ -40,15 +41,16 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points as ValuePoint[]}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="t" tickFormatter={(value: string) => f.date(value)} minTickGap={32} />
-            <YAxis
-              // On the data, never on a window asked for — the same rule the
-              // price chart's axis follows.
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={(value: number) => f.currency(value, currency, 0)}
-              width={72}
-            />
+            {/* **Hidden, not removed** — the dashboard's chart to the letter
+                (#787): the grid and the gradations left, and what the axes
+                *decide* stayed. The domain is on the data and never on a window
+                asked for, so the two curves fill the plot they are drawn in. */}
+            <XAxis dataKey="t" hide />
+            <YAxis domain={['dataMin', 'dataMax']} hide />
+            {/* The exact figure is a hover away, which is what makes a chart
+                with no gradations readable at all — and this one had no pointer
+                to answer until the axes went. */}
+            <ChartTooltip format={(value) => f.currency(value, currency)} />
             <Line
               type="monotone"
               dataKey="value"
