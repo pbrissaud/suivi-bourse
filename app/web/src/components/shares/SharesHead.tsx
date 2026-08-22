@@ -123,7 +123,15 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
 
       {/* The three terms, on their own row and never on the head's — and the
           same three the table carries as columns. */}
-      <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+      {/* **A row that spreads rather than one that packs left.** `flex
+            flex-wrap` put a fixed gap between the figures and left the rest of
+            the card empty — invisible while the content column was capped at
+            1 280 px, and the whole right half of the card since #792 uncapped it
+            (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
+            so the figures that **do** exist share the width whatever their
+            number, which is what these rows need: both render only the terms and
+            the statistics this installation has. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
         {SHARES_TERMS.map((term) => {
           const value = termAmount(terms, term as GainTermName)
           return (
@@ -158,7 +166,7 @@ export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
         })}
       </div>
 
-      <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
         <Stat
           label={t('shares.value')}
           value={renderFigure(

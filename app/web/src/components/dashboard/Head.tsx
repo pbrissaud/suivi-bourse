@@ -276,7 +276,15 @@ export function DashboardHead() {
         </Stat>
 
         {/* The four terms, on their own row and never on the head's. */}
-        <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+        {/* **A row that spreads rather than one that packs left.** `flex
+            flex-wrap` put a fixed gap between the figures and left the rest of
+            the card empty — invisible while the content column was capped at
+            1 280 px, and the whole right half of the card since #792 uncapped it
+            (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
+            so the figures that **do** exist share the width whatever their
+            number, which is what these rows need: both render only the terms and
+            the statistics this installation has. */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
           {GAIN_TERMS.map((term) => {
             const value = termAmount(terms, term)
             if (!termIsRendered(term, value)) return null
@@ -303,7 +311,7 @@ export function DashboardHead() {
         </div>
 
         {/* The statistics, on a third row — and only the ones that exist. */}
-        <div className="flex flex-wrap gap-x-10 gap-y-4 border-t pt-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-x-10 gap-y-4 border-t pt-4">
           {totalsRow?.total_value == null ? null : (
             <Stat
               label={t('dashboard.totalValue')}
