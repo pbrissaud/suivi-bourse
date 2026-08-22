@@ -16,6 +16,7 @@ are the same ledger.
 """
 import csv
 import io
+from datetime import date
 
 import pytest
 
@@ -26,6 +27,7 @@ import settings_registry
 import store as store_module
 from events import export as events_export
 from events.loader import BASE_CURRENCY_COLUMN, EventLoader, EventLoaderError
+from events.schemas import Event, EventType
 
 #: A ledger with something of every shape in it: two accounts, a valued grant
 #: and a dilution, a partial sale, cash events, a fee, a note carrying a comma,
@@ -395,3 +397,223 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
 
     assert metrics.base_currency == 'CHF'
     opened.close()
+
+
+# --------------------------------------------------------------------- #
+# The workbook — one sheet per year (issue #796)
+# --------------------------------------------------------------------- #
+
+def workbook_rows(payload):
+    """An exported workbook back into ``{sheet: [row, ...]}``, cells and all."""
+    import openpyxl
+    book = openpyxl.load_workbook(io.BytesIO(payload), data_only=True)
+    sheets = {}
+    for sheet in book.worksheets:
+        rows = list(sheet.iter_rows(values_only=True))
+        header = [str(cell) for cell in rows[0]]
+        sheets[sheet.title] = [dict(zip(header, row)) for row in rows[1:]]
+    book.close()
+    return sheets
+
+
+def test_the_workbook_has_one_sheet_per_year_of_the_exported_events(tmp_path):
+    """The years are the ledger's own, and no other tab exists.
+
+    A workbook with a tab per year is what a person opens a spreadsheet for —
+    and the tabs are **read** off the events rather than laid out from a range,
+    so a ledger that skips a year skips a tab.
+    """
+    _, opened = install(tmp_path / 'a', {
+        '2024.csv': _LEDGER,
+        '2026.csv': ("date,event_type,account,symbol,name,quantity,unit_price,"
+                     "fee,amount,notes\n"
+                     "2026-02-02,DEPOSIT,pea,,,,,,500.00,Later\n"),
+        'accounts.csv': _ACCOUNTS})
+    sheets = workbook_rows(events_export.render_events_workbook(
+        ledger.read_events(opened), opened.setting('base_currency')))
+    opened.close()
+
+    assert list(sheets) == ['2024', '2026']
+    assert len(sheets['2024']) == 8
+    assert len(sheets['2026']) == 1
+
+
+def test_every_sheet_of_the_workbook_carries_the_import_header(tmp_path):
+    """Each tab is a file the loader reads, which is what makes it importable."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    payload = events_export.render_events_workbook(
+        ledger.read_events(opened), opened.setting('base_currency'))
+    opened.close()
+
+    sheets = workbook_rows(payload)
+    for rows in sheets.values():
+        assert rows
+        for row in rows:
+            assert set(row) == set(events_export.EVENT_COLUMNS)
+            assert row[BASE_CURRENCY_COLUMN] == 'EUR'
+
+
+def test_an_empty_ledger_still_makes_a_workbook(tmp_path):
+    """Emptiness is a state: a workbook with no sheet at all is not a file."""
+    opened = empty_store(tmp_path / 'a')
+    sheets = workbook_rows(events_export.render_events_workbook([], None))
+    opened.close()
+
+    assert list(sheets) == [events_export.UNDATED_SHEET]
+    assert sheets[events_export.UNDATED_SHEET] == []
+
+
+def test_a_note_that_begins_with_an_equals_sign_stays_a_note(tmp_path):
+    """A spreadsheet reads ``=`` as a formula, and a ledger's note is text.
+
+    Left to the default binding the cell would come back as a formula string
+    the loader stores verbatim on the way in — and Excel would evaluate it.
+    """
+    payload = events_export.render_events_workbook([
+        Event(date=date(2024, 1, 2), event_type=EventType.DEPOSIT,
+              account='pea', amount=10.0, notes='=SUM(A1:A2)'),
+    ])
+
+    assert workbook_rows(payload)['2024'][0]['notes'] == '=SUM(A1:A2)'
+
+
+def rounded(measured):
+    """The figures, at the precision a **workbook** carries.
+
+    ``openpyxl`` writes a double as ``%.16g``, which is one significant digit
+    short of the shortest string that reads back as the same double — so a
+    broker's ``0.34898399999999996`` comes back as ``0.348984`` from a workbook
+    where it survives a CSV bit for bit. That is the whole reason the *CSV*
+    keeps the backup's name: this file is the reading copy, and the difference
+    is named here rather than left for somebody to find in a diff.
+    """
+    return {name: [tuple(round(cell, 9) if isinstance(cell, float) else cell
+                         for cell in row)
+                   for row in rows]
+            for name, rows in measured.items()}
+
+
+def test_reimporting_the_workbook_rebuilds_the_same_ledger(tmp_path):
+    """The tabs are a shape, never a second format: the file re-enters whole."""
+    _, source = install(tmp_path / 'source',
+                        {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    payload = events_export.render_events_workbook(
+        ledger.read_events(source), source.setting('base_currency'))
+    _, accounts_csv = export_of(source)
+    before = figures(source)
+    source.close()
+
+    restored_root = tmp_path / 'restored'
+    restored_root.mkdir(parents=True, exist_ok=True)
+    (restored_root / 'events').mkdir(exist_ok=True)
+    (restored_root / 'events' / 'suivi-bourse-events.xlsx').write_bytes(payload)
+    _, restored = install(restored_root,
+                          {'suivi-bourse-accounts.csv': accounts_csv})
+    after = figures(restored)
+    assert restored.setting('base_currency') == 'EUR'
+    restored.close()
+
+    assert rounded(after) == rounded(before)
+
+
+# --------------------------------------------------------------------- #
+# The selection — the chips, server-side (issue #796)
+# --------------------------------------------------------------------- #
+
+def test_a_selection_that_reduces_nothing_is_the_whole_ledger(tmp_path):
+    """No parameter is *no reduction*, never *no match*."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    assert events_export.select(events, events_export.NO_SELECTION) == events
+    assert not events_export.NO_SELECTION.reduces
+
+
+def test_a_selection_keeps_what_the_chips_retain(tmp_path):
+    """The four parameters are the table's four, and they compose."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    def kept(**parameters):
+        selection = events_export.Selection(**parameters)
+        assert selection.reduces
+        return events_export.select(events, selection)
+
+    assert {event.event_type for event in kept(event_type='BUY')} == \
+        {EventType.BUY}
+    assert {event.account for event in kept(account='cto')} == {'cto'}
+    assert {event.symbol for event in kept(symbols=('AI.PA',))} == {'AI.PA'}
+    # Composed, and the two reductions are an intersection.
+    assert len(kept(event_type='BUY', account='pea')) == 1
+
+
+def test_the_search_reads_what_the_table_shows_accents_folded(tmp_path):
+    """The ticker, the label and the account — folded, as a French ear hears."""
+    _, opened = install(tmp_path / 'a', {
+        '2024.csv': ("date,event_type,account,symbol,name,quantity,unit_price,"
+                     "fee,amount,notes\n"
+                     "2024-01-02,DEPOSIT,pea,,,,,,2000.00,Versement de février\n"
+                     "2024-01-15,BUY,pea,AI.PA,Air Liquide,10,168.40,,,\n"),
+        'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    def found(query):
+        return [event.event_type.value for event
+                in events_export.select(events,
+                                        events_export.Selection(query=query))]
+
+    assert found('FEVRIER') == ['DEPOSIT']
+    assert found('février') == ['DEPOSIT']
+    assert found('ai.pa') == ['BUY']
+    # The account column is searched too: it is one of the three the table shows.
+    assert len(found('pea')) == 2
+    assert found('nothing here') == []
+
+
+def test_a_selection_of_no_row_is_a_file_with_no_row(tmp_path):
+    """A reduction that retains nothing is a header, never an error."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    rendered = events_export.render_events(
+        events_export.select(events, events_export.Selection(account='zzz')))
+
+    assert rendered == ','.join(events_export.EVENT_COLUMNS) + '\n'
+
+
+def test_a_selected_export_is_importable_like_any_other(tmp_path):
+    """A reduction is not a backup, and it is still a file this app reads.
+
+    Which is the whole reason the reduction is taken **here** rather than
+    regenerated in the front: the rows leave through the one renderer that owns
+    the importable form.
+    """
+    _, source = install(tmp_path / 'source',
+                        {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    selected = events_export.render_events(
+        events_export.select(ledger.read_events(source),
+                             events_export.Selection(account='cto')),
+        source.setting('base_currency'))
+    _, accounts_csv = export_of(source)
+    source.close()
+
+    _, restored = install(tmp_path / 'restored', {
+        'suivi-bourse-accounts.csv': accounts_csv,
+        'suivi-bourse-selection.csv': selected,
+    })
+    accounts_held = {row[0] for row in restored.query(
+        'SELECT DISTINCT account FROM event')}
+    restored.close()
+
+    assert accounts_held == {'cto'}

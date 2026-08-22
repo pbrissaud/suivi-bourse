@@ -34,24 +34,21 @@
  *    optional, so the app **does not know** whether the reader still has the
  *    file. *« Ré-importable si vous avez encore le fichier »* is the sentence
  *    that is true, and *« annulable »* is discarded for that reason alone.
- *  - **The export is total or nothing.** One gesture per file, no option, and
- *    above all **no export of the current reduction** — which is the tempting
- *    feature: the justification of the export is the round trip, a partial file
- *    is not one, and it makes re-importing look like a restore.
+ *  - **The export is four files and one of them is the reduction** (#796). It
+ *    was *total or nothing* until this ticket, on the argument that a partial
+ *    file is not a round trip and makes re-importing look like a restore. What
+ *    settles it is the **name**: the server calls a reduction a selection and
+ *    not a backup, so the file cannot replace the whole one on a disk — and the
+ *    reduction is taken on the side that owns the importable form, so what
+ *    comes back is an ordinary event file rather than an extract wearing one's
+ *    clothes. The menu itself is `ExportMenu.tsx`.
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
+import { ExportMenu } from '@/components/data/ExportMenu'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -70,7 +67,6 @@ import {
 import { declaredLabel } from '@/lib/accounts'
 import {
   api,
-  ROUTES,
   type AccountsResponse,
   type ImportKind,
   type ImportsResponse,
@@ -79,6 +75,7 @@ import {
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { exportable, importRows, type ImportRow } from '@/lib/imports'
+import type { LedgerFilters } from '@/lib/ledger'
 import { problemMessageKey } from '@/lib/problem'
 
 /** One key per kind, so the catalogue is reached by a name and not by a fold. */
@@ -103,9 +100,24 @@ export interface ImportsBlockProps {
    * gesture**: following the same line twice has to mark the row twice.
    */
   highlight?: { id: number }
+  /**
+   * The reduction the table holds, and how many rows it retains (#796) — what
+   * the *filtered selection* entry of the menu exports. It comes down from the
+   * tab rather than being read here: the chips are the ledger's, and this band
+   * only offers the gesture.
+   */
+  selection: LedgerFilters
+  selected: number
 }
 
-export function ImportsBlock({ imports, events, accounts, highlight }: ImportsBlockProps) {
+export function ImportsBlock({
+  imports,
+  events,
+  accounts,
+  highlight,
+  selection,
+  selected,
+}: ImportsBlockProps) {
   const { t } = useI18n()
   const [confirming, setConfirming] = useState<ImportRow | null>(null)
   const queryClient = useQueryClient()
@@ -167,7 +179,9 @@ export function ImportsBlock({ imports, events, accounts, highlight }: ImportsBl
               <p className="max-w-prose text-sm text-muted-foreground">{t('data.drop.body')}</p>
             </div>
           ) : null}
-          {files.events || files.accounts ? <ExportMenu files={files} /> : null}
+          {files.events || files.accounts ? (
+            <ExportMenu files={files} selection={selection} selected={selected} />
+          ) : null}
         </div>
       ) : null}
 
@@ -383,65 +397,4 @@ function nameOf(id: string, accounts: AccountsResponse | null): string {
   // before it can ever be freed — so there is no catalogue name to reach for
   // here, only the name its owner gave it and the id events spell.
   return account ? (declaredLabel(account) ?? account.id) : id
-}
-
-/**
- * The way back out — **a menu since #794**, because the band has one line for
- * it and because the entries are about to be four (#796). What it is not is a
- * button that exports *the current reduction*: the justification of the export
- * is the round trip, a partial file is not one, and it would make re-importing
- * look like a restore.
- *
- * **Two files and not one** (#710): a file is an accounts source *or* an event
- * source according to its header, so exporting the events alone would restore a
- * multi-account install into a refusal. That is not an option offered to the
- * reader — it is what the format is — and it is said **in the menu**, where the
- * choice is made, rather than as a paragraph on a page that has stopped
- * explaining its own rules. The accounts file appears only where something is
- * declared, the seeded row being no declaration (ADR-0013) and the file it
- * would produce a header with no rows under it, which v4's loader refuses the
- * whole directory over.
- *
- * An `<a download>` rather than a fetch: the browser's own *Save as* is the
- * whole of the interface this gesture needs, and the file's name is the
- * server's to state. It carries **no date**, deliberately: a re-import
- * identifies a source by its file name, so under dated names two exports of one
- * install are droppable side by side and every event they share is recorded
- * twice — the argument is beside `EXPORT_FILENAMES` in `web/api.py`, and the
- * date a reader wants is on the import list, in `Importé le`.
- */
-function ExportMenu({ files }: { files: { events: boolean; accounts: boolean } }) {
-  const { t } = useI18n()
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline">
-          {t('data.export.title')}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-w-xs">
-        {files.events ? (
-          <DropdownMenuItem asChild>
-            <a href={ROUTES.exportEvents} download>
-              {t('data.export.events')}
-            </a>
-          </DropdownMenuItem>
-        ) : null}
-        {files.accounts ? (
-          <DropdownMenuItem asChild>
-            <a href={ROUTES.exportAccounts} download>
-              {t('data.export.accounts')}
-            </a>
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuSeparator />
-        {/* Not an entry: it is what the two above are, said where they are
-            chosen. `DropdownMenuLabel` is not focusable and answers no click. */}
-        <DropdownMenuLabel className="font-normal text-xs whitespace-normal text-muted-foreground">
-          {t('data.export.two')}
-        </DropdownMenuLabel>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
 }

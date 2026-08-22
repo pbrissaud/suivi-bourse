@@ -69,8 +69,16 @@ export const ROUTES = {
    * because a file is an accounts source *or* an event source according to its
    * header and never both. Exporting the events alone would restore a
    * multi-account install into a refusal.
+   *
+   * The events resource takes the ledger's own reduction on its query string
+   * since #796 (`q`, `type`, `account`, repeated `symbol`), and answers it in
+   * either shape: the `.csv` that re-imports bit for bit, and the `.xlsx` laid
+   * out one sheet per year. The reduction is applied **there** and never here —
+   * the importable form belongs to `events/export.py`, and a partial file
+   * assembled on this side would be a second spelling of it.
    */
   exportEvents: '/api/export/events.csv',
+  exportEventsWorkbook: '/api/export/events.xlsx',
   exportAccounts: '/api/export/accounts.csv',
   /** What this install is configured with: the dials and the boot variables. */
   config: '/api/config',
@@ -131,12 +139,15 @@ export const WRITE_ONLY_ROUTES = [
   'advisoryAcknowledgement',
   'storeOrphans',
   'importSource',
-  // The two exports are in here for a reason of *who fetches them*, not of what
-  // they do: the client never reads them at all — the **browser** does, from an
-  // `href`, and hands the bytes to the reader's own *Save as*. Nothing on any
-  // page is rendered on the strength of them, which is exactly the property
-  // this list names.
+  // The three exports are in here for what they are, not for who fetches them:
+  // **nothing on any page is rendered on the strength of one**, which is
+  // exactly the property this list names. Since #796 the client does fetch them
+  // — the receipt has to last as long as the operation, and an `href` the
+  // browser follows on its own settles at no observable moment — but a gesture
+  // in flight holds no surface hostage, so none of them is a read the net has
+  // anything to say about.
   'exportEvents',
+  'exportEventsWorkbook',
   'exportAccounts',
 ] as const satisfies readonly RouteName[]
 
@@ -205,17 +216,25 @@ export class ApiProblem extends Error {
 }
 
 async function unwrap<T>(response: Response, path: string): Promise<T> {
-  const contentType = response.headers.get('content-type') ?? ''
-  if (!response.ok) {
-    if (contentType.includes('problem+json')) {
-      throw new ApiProblem(await response.json())
-    }
-    // No problem+json means something in front of the app answered — a proxy,
-    // or the SPA catch-all if its `/api` guard ever regressed. A `type` of
-    // `null` is what the interface reads as "not even the app answered".
-    throw new ApiProblem({ status: response.status, title: `${path}: no problem+json` })
-  }
+  if (!response.ok) throw await refusal(response, path)
   return response.json() as Promise<T>
+}
+
+/**
+ * What a failed response *is*, read once — every caller throws it, none of them
+ * decides what it means. A second copy of this would eventually stop reading
+ * the media type and turn a proxy's HTML error page into a `type` the front
+ * branches on.
+ */
+async function refusal(response: Response, path: string): Promise<ApiProblem> {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (contentType.includes('problem+json')) {
+    return new ApiProblem(await response.json())
+  }
+  // No problem+json means something in front of the app answered — a proxy,
+  // or the SPA catch-all if its `/api` guard ever regressed. A `type` of
+  // `null` is what the interface reads as "not even the app answered".
+  return new ApiProblem({ status: response.status, title: `${path}: no problem+json` })
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -236,6 +255,54 @@ async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unk
     }),
     path,
   )
+}
+
+/**
+ * The four files a reader can ask for (#796), named so a receipt can say which
+ * one is being made. They are names of *files*, not of routes: two of them are
+ * the same resource under two reductions, and one is that resource in the other
+ * shape.
+ */
+export const EXPORT_FILES = ['events', 'workbook', 'selection', 'accounts'] as const
+
+export type ExportFile = (typeof EXPORT_FILES)[number]
+
+/** Bytes the server named, on their way to the reader's own *Save as*. */
+export interface DownloadedFile {
+  blob: Blob
+  /** What to save it as — the server's word (`Content-Disposition`). */
+  filename: string
+}
+
+/**
+ * One exported file, **fetched** rather than followed (#796).
+ *
+ * An `<a download>` hands the request to the browser and reports nothing back,
+ * so a receipt over it could only be a guess with a timer on it — which is the
+ * three-second confirmation the criterion refuses by name. Fetched, the gesture
+ * has an end, and the receipt can last exactly as long as it does.
+ *
+ * What is lost is the browser's own naming, so the name is read off the
+ * response: the server states it, and it is the server's to state — a reduction
+ * does not carry the backup's name, and that rule lives on the one side that
+ * knows whether anything was held back.
+ */
+async function download(path: string): Promise<DownloadedFile> {
+  const response = await fetch(path, { headers: { Accept: '*/*' } })
+  if (!response.ok) throw await refusal(response, path)
+  return { blob: await response.blob(), filename: filenameOf(response, path) }
+}
+
+/**
+ * The name the response states, or the last segment of the path it came from.
+ *
+ * The fallback is not decoration: a file saved as `events` with no suffix is
+ * one no spreadsheet opens and one the drop folder ignores, so a header a proxy
+ * happened to strip must not cost the reader the extension.
+ */
+function filenameOf(response: Response, path: string): string {
+  const stated = /filename="?([^";]+)"?/.exec(response.headers.get('content-disposition') ?? '')
+  return stated?.[1]?.trim() || path.split('?')[0].split('/').pop() || 'export'
 }
 
 /**
@@ -1118,4 +1185,8 @@ export const api = {
   forgetImport: (id: number) => remove<ForgottenImport>(importPath(id)),
   store: () => get<StoreState>(ROUTES.store),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
+  // The way back out (#710, #796). It answers bytes and a name rather than a
+  // payload, and it is the one call whose result no cache holds: a file is
+  // handed to the reader, not rendered.
+  download: (path: string) => download(path),
 }

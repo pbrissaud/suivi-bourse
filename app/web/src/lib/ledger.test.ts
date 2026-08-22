@@ -13,6 +13,7 @@ import { aLongLedger, anEvent, aTypedEvent, ledgerEvents } from '@/test/factorie
 import {
   accountOf,
   byDateDescending,
+  exportHref,
   FIELDS,
   filterEvents,
   identityOf,
@@ -22,6 +23,7 @@ import {
   parseDay,
   parseDecimal,
   reveal,
+  selectionParams,
 } from '@/lib/ledger'
 
 describe('the fields of a type', () => {
@@ -191,5 +193,38 @@ describe('the reveal, which is a rendering budget and not a fetch', () => {
 
     expect(reveal(all, PAGE).total).toBe(4)
     expect(reveal(deposits, PAGE).total).toBe(1)
+  })
+})
+
+
+describe('the reduction as the export takes it', () => {
+  it('sends nothing at all when nothing is held back', () => {
+    // Which is what tells the server it is serving a **backup** rather than a
+    // selection, and therefore which of the two names the file takes.
+    expect(selectionParams(NO_FILTERS).toString()).toBe('')
+    expect(exportHref('/api/export/events.csv', NO_FILTERS)).toBe('/api/export/events.csv')
+  })
+
+  it('carries the four names the chips hold, the securities one repeated', () => {
+    const params = selectionParams({
+      query: 'zza',
+      type: 'BUY',
+      account: 'beta',
+      symbols: ['ZZA', 'ZZB'],
+    })
+
+    expect(params.get('q')).toBe('zza')
+    expect(params.get('type')).toBe('BUY')
+    expect(params.get('account')).toBe('beta')
+    // Repeated and singular — the spelling `GET /api/events?symbol=` already
+    // uses on this collection, and the one `events/export.py` reads.
+    expect(params.getAll('symbol')).toEqual(['ZZA', 'ZZB'])
+  })
+
+  it('leaves a query of spaces out, a reduction being what actually reduces', () => {
+    // `filterEvents` trims before searching, so a field holding two spaces
+    // retains every row. Sent, it would name the file a selection and give the
+    // reader a partial-looking backup of the whole ledger.
+    expect(selectionParams({ ...NO_FILTERS, query: '   ' }).toString()).toBe('')
   })
 })

@@ -16,20 +16,33 @@
  *    its `Imported at` column already; a toast that fired only for the imports
  *    somebody happened to be looking at would be a trace with holes in it.
  *
- * **Three receipts, and they are a closed list.** Only the first has a gesture
- * in the product today: the currency answered, from the modal and from the
- * settings form alike. It was written with two more, held for an in-app import
+ * **Two gestures have one, and the list is closed on them.** The currency
+ * answered, from the modal and from the settings form alike; and the export,
+ * since #796. It was written with two more variants, held for an in-app import
  * gesture #728 was expected to bring — and #728 landed without one, because an
  * import comes from the drop folder, which is a watcher and not a gesture:
  * *« an import started by the watcher has no receipt, its record is its
- * provenance »* (`CONTEXT.md` § Receipt). The two variants are gone rather than
- * left waiting for a call site the product has decided against.
+ * provenance »* (`CONTEXT.md` § Receipt). Those are gone rather than left
+ * waiting for a call site the product has decided against.
+ *
+ * **The export's receipt is two sentences and no timer**, which is the whole of
+ * #796's criterion: it says what is being made at the click, and what is there
+ * when it is there. The rule above still holds — nothing here is given an
+ * infinite duration — because the wait it covers is an *operation*, which ends.
+ * That is also what separates it from a read in flight: a read is not dressed
+ * because nothing may be claimed about a subject nobody has heard from, while a
+ * gesture is the reader's own act and the app owes them its end.
  */
+import type { ExportFile } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 export type Receipt =
   /** The one question the app asks, answered. */
-  { kind: 'currency.saved'; currency: string }
+  | { kind: 'currency.saved'; currency: string }
+  /** A file is being made, and this says which one (#796). */
+  | { kind: 'export.running'; file: ExportFile }
+  /** It is on the reader's disk. */
+  | { kind: 'export.saved'; file: ExportFile }
 
 /**
  * What the receipt says, as a catalogue key and its values. Pure, so the
@@ -39,5 +52,12 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
   switch (receipt.kind) {
     case 'currency.saved':
       return { message: 'receipt.currency.saved', values: { currency: receipt.currency } }
+    // Which file it is, as a value the catalogue selects on rather than four
+    // keys: the two sentences differ by one noun, and a language that agrees
+    // that noun with a verb needs the whole sentence to be its own.
+    case 'export.running':
+      return { message: 'receipt.export.running', values: { file: receipt.file } }
+    case 'export.saved':
+      return { message: 'receipt.export.saved', values: { file: receipt.file } }
   }
 }

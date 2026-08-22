@@ -148,6 +148,43 @@ export function filterEvents(
 }
 
 /**
+ * The reduction as the **export resource's own parameters** (#796).
+ *
+ * The four names are the four the chips hold, and they travel rather than the
+ * rows they retain: the importable form belongs to `events/export.py`, and a
+ * file assembled here would be a second spelling of a format written once — the
+ * rule that has already cost this product a branch. So what crosses the wire is
+ * the *question*, and the answer is rendered on the side that owns the format.
+ *
+ * A member that reduces nothing is **left out**, so no reduction is an empty
+ * query string — which is what lets the same builder serve the whole ledger and
+ * a selection of it, and what tells the server which of the two names to give
+ * the file.
+ *
+ * The two reductions are read on two different subjects and that is deliberate,
+ * not a slip: this one runs on the published snapshot the table draws, the
+ * export's on the **store**, because a backup is of what is stored. They part
+ * exactly where a validator refused an import — and there, the file is right.
+ */
+export function selectionParams(filters: LedgerFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  const query = filters.query.trim()
+  if (query !== '') params.set('q', query)
+  if (filters.type !== null) params.set('type', filters.type)
+  if (filters.account !== null) params.set('account', filters.account)
+  // Repeated and singular, the spelling `GET /api/events?symbol=` already uses
+  // on this collection.
+  for (const symbol of filters.symbols ?? []) params.append('symbol', symbol)
+  return params
+}
+
+/** One export route, carrying the reduction in force — or nothing at all. */
+export function exportHref(route: string, filters: LedgerFilters): string {
+  const params = selectionParams(filters).toString()
+  return params === '' ? route : `${route}?${params}`
+}
+
+/**
  * **Date descending, and there is no second ordering to offer.** A ledger is
  * opened to check what has just happened. The sort is **stable**, so two events
  * of one day keep the order the store handed them in — the aggregator sorted

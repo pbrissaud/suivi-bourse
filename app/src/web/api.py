@@ -1152,10 +1152,26 @@ def _number_member(body: dict, name: str) -> Optional[float]:
 #: would need a rule on the *import* side that no criterion asks for, so the
 #: criterion is refused rather than half-met — and the file's own date is on the
 #: import list, in `Importé le`, which is where a reader looks for it.
+#:
+#: **A reduction does not take the backup's name** (issue #796), and it is the
+#: same argument one notch further: a selection saved as
+#: ``suivi-bourse-events.csv`` would overwrite the whole ledger's export in the
+#: reader's downloads folder, and dropped back in would *replace* the import
+#: that carried every row it left out. So there are two names for one resource,
+#: chosen by whether anything is being held back.
 EXPORT_FILENAMES = {
-    'events': 'suivi-bourse-events.csv',
-    'accounts': 'suivi-bourse-accounts.csv',
+    'events.csv': 'suivi-bourse-events.csv',
+    'events.xlsx': 'suivi-bourse-events.xlsx',
+    'selection.csv': 'suivi-bourse-selection.csv',
+    'selection.xlsx': 'suivi-bourse-selection.xlsx',
+    'accounts.csv': 'suivi-bourse-accounts.csv',
 }
+
+#: The media type OOXML registered for a workbook. Written out rather than
+#: reached for: it is what the browser matches to hand the file to a
+#: spreadsheet, and getting it wrong saves a ``.xlsx`` nothing will open.
+XLSX_MIME = ('application/vnd.openxmlformats-officedocument'
+             '.spreadsheetml.sheet')
 
 
 @api_bp.get('/export/events.csv')
@@ -1178,11 +1194,51 @@ def export_events():
     answered the question — see :mod:`events.export` for why a column rather
     than a preamble, and why it is not called ``currency``.
     """
+    try:
+        selection = _selection()
+    except _InvalidParameter as exc:
+        return unprocessable_parameter(str(exc), key=exc.key)
+
     opened = _store()
-    return _csv_response(
-        events_export.render_events(ledger.read_events(opened),
-                                    opened.setting('base_currency')),
-        EXPORT_FILENAMES['events'])
+    return _file_response(
+        events_export.render_events(
+            events_export.select(ledger.read_events(opened), selection),
+            opened.setting('base_currency')),
+        _export_name('csv', selection),
+        'text/csv; charset=utf-8')
+
+
+@api_bp.get('/export/events.xlsx')
+def export_events_workbook():
+    """The same ledger, as a workbook with **one sheet per year** (issue #796).
+
+    Not a second format and not a second reading of the store: the rows are the
+    ones :func:`export_events` renders, through the same module, and the tabs
+    are the years those rows are dated. It re-enters by the ordinary import path
+    like every other file — the loader reads every worksheet of a workbook — so
+    what this adds is a *shape*, which is what somebody opening a spreadsheet
+    came for.
+
+    The CSV stays the backup all the same, and the difference is named beside
+    :func:`events.export.render_events_workbook`: OOXML carries a double one
+    significant digit short of what round-trips exactly.
+
+    It takes the same reduction the CSV does, for the same reason: the menu
+    offers one selection, and offering it in one of the two files only would
+    make the shape and the perimeter one choice instead of two.
+    """
+    try:
+        selection = _selection()
+    except _InvalidParameter as exc:
+        return unprocessable_parameter(str(exc), key=exc.key)
+
+    opened = _store()
+    return _file_response(
+        events_export.render_events_workbook(
+            events_export.select(ledger.read_events(opened), selection),
+            opened.setting('base_currency')),
+        _export_name('xlsx', selection),
+        XLSX_MIME)
 
 
 @api_bp.get('/export/accounts.csv')
@@ -1201,14 +1257,76 @@ def export_accounts():
     one row every install owns a ``source_id``, making it read-only and
     forgettable, which is exactly what ADR-0013 keeps it from being.
     """
-    return _csv_response(
+    return _file_response(
         events_export.render_accounts(events_export.declared_accounts(
             accounts_module.read_accounts(_store()),
             store_module.DEFAULT_ACCOUNT_ROW)),
-        EXPORT_FILENAMES['accounts'])
+        EXPORT_FILENAMES['accounts.csv'],
+        'text/csv; charset=utf-8')
 
 
-def _csv_response(body: str, filename: str) -> Response:
+class _InvalidParameter(Exception):
+    """A query parameter carrying a value the product does not know."""
+
+    def __init__(self, message: str, key: str):
+        super().__init__(message)
+        self.key = key
+
+
+def _selection() -> events_export.Selection:
+    """The reduction the ledger's chips hold, off the query string (issue #796).
+
+    The four names are the table's four, and they are read here rather than
+    applied in the front because what leaves is the **importable** form — see
+    :mod:`events.export`. ``symbol`` is repeatable and singular, the spelling
+    ``GET /api/events?symbol=`` already uses on this same collection.
+
+    An unknown ``type`` is **refused**, not served as a file with no row in it:
+    a backup that silently comes back empty is worse than one that fails, and
+    ``?type=ACHAT`` is a word the product does not know rather than a kind of
+    event this install happens never to have recorded. Every other parameter has
+    no closed set to be outside of — an account nothing names and a word nothing
+    contains are both *this reduction retains nothing*, which is a state and not
+    an error.
+
+    **Blank counts as unset**, which is ADR-0014's rule about the environment
+    read one level out: ``?type=&account=`` is what a client assembling a query
+    string from empty fields sends, and reading it as *retain the events of no
+    type* would answer a file with nothing in it — under the *selection* name,
+    which is the reader being told a reduction they never made held nothing.
+    """
+    event_type = _argument('type')
+    if event_type is not None:
+        try:
+            event_type = EventType(event_type.upper()).value
+        except ValueError:
+            raise _InvalidParameter(
+                f"{event_type!r} is not an event type; "
+                f"the six are {', '.join(kind.value for kind in EventType)}",
+                'type')
+
+    symbols = tuple(symbol for symbol in request.args.getlist('symbol')
+                    if symbol.strip())
+    return events_export.Selection(
+        query=request.args.get('q', ''),
+        event_type=event_type,
+        account=_argument('account'),
+        symbols=symbols or None)
+
+
+def _argument(name: str) -> Optional[str]:
+    """One query parameter, ``None`` when it is absent **or blank**."""
+    value = request.args.get(name)
+    return value.strip() if value and value.strip() else None
+
+
+def _export_name(suffix: str, selection: events_export.Selection) -> str:
+    """What the browser saves the file as — and a reduction is not a backup."""
+    subject = 'selection' if selection.reduces else 'events'
+    return EXPORT_FILENAMES[f'{subject}.{suffix}']
+
+
+def _file_response(body, filename: str, content_type: str) -> Response:
     """One exported file on the wire.
 
     ``attachment`` rather than an inline body: the browser's own *Save as* is
@@ -1216,9 +1334,14 @@ def _csv_response(body: str, filename: str) -> Response:
     is a backup nobody took. The charset is stated because the ledger carries
     the user's own text — a share called *Société Générale* read as latin-1 is a
     file that re-imports with a mangled name.
+
+    The name is stated as well as the bytes, and since #796 the front **reads**
+    it: the gesture is a fetch there now, so that the receipt can last exactly
+    as long as the operation, and the file it hands the reader is the one this
+    side named.
     """
-    return Response(body, mimetype='text/csv', headers={
-        'Content-Type': 'text/csv; charset=utf-8',
+    return Response(body, headers={
+        'Content-Type': content_type,
         'Content-Disposition': f'attachment; filename="{filename}"',
     })
 

@@ -194,6 +194,12 @@ export function Ledger({ focus }: LedgerProps = {}) {
           events={all}
           accounts={accounts.data ?? null}
           highlight={highlighted}
+          // The chips, at the instant the menu is clicked (#796). They live
+          // here because they reduce the table, and the export's third entry is
+          // the same reduction asked of the store — which is why what travels
+          // is the four parameters and never the rows they retain.
+          selection={filters}
+          selected={shown.length}
         />
       )}
 

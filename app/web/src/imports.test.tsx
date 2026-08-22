@@ -9,7 +9,7 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ROUTES, type Account, type ImportRecord, type LedgerEvent } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
@@ -27,7 +27,42 @@ import {
   theSeededAccount,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
-import { server } from '@/test/server'
+import { problemHandler, server } from '@/test/server'
+
+/**
+ * What the browser was handed, per test. A download has **no accessible
+ * rendering** — the file leaves the document, and the *Save as* is the
+ * browser's own — so the one thing observable about it is that the app asked
+ * for it and under which name. jsdom implements neither object URLs nor
+ * downloads, so both are stood in for here and nowhere else: everything above
+ * them is the app as it ships, HTTP still the only faked edge.
+ */
+const saved: string[] = []
+
+beforeEach(() => {
+  saved.length = 0
+  URL.createObjectURL = vi.fn(() => 'blob:export')
+  URL.revokeObjectURL = vi.fn()
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    saved.push(this.download)
+  })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+/** One exported file as the server hands it over: bytes, and their name. */
+function csvNamed(filename: string) {
+  return new HttpResponse('date,event_type\n', {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  })
+}
 
 function renderImports({
   events = ledgerEvents(),
@@ -233,25 +268,23 @@ describe('the revocation', () => {
 })
 
 describe('the export', () => {
-  it('is total, and offers nothing to narrow it with', async () => {
+  it('offers four files: the ledger, the workbook, the selection and the accounts', async () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
     const menu = await openExport(user)
 
-    expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toHaveAttribute(
-      'href',
-      '/api/export/events.csv',
-    )
-    expect(within(menu).getByRole('menuitem', { name: 'Vos comptes' })).toHaveAttribute(
-      'href',
-      '/api/export/accounts.csv',
-    )
-    // The tempting feature, and the one the criterion forbids by name: an export
-    // of the current reduction is not a round trip while looking exactly like
-    // one.
     expect(
-      within(menu).queryByRole('menuitem', { name: /(la sélection|ce filtre|cette vue)/ }),
-    ).not.toBeInTheDocument()
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Vos événements',
+      'Un classeur, un onglet par année',
+      // The count is the label: what the entry will produce, said before the
+      // click rather than discovered in a file.
+      'La sélection filtrée (4 événements)',
+      'Vos comptes',
+    ])
     // Two files and not one, said where the choice is made rather than as a
     // paragraph on a page that has stopped explaining its own rules.
     expect(within(menu).getByText(/porte dans une colonne la devise/)).toBeInTheDocument()
@@ -266,6 +299,127 @@ describe('the export', () => {
 
     expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toBeInTheDocument()
     expect(within(menu).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
+  })
+
+  it('asks the server for the whole ledger, and saves it under the name it answers with', async () => {
+    const asked: string[] = []
+    server.use(
+      http.get(ROUTES.exportEvents, ({ request }) => {
+        asked.push(request.url)
+        return csvNamed('suivi-bourse-events.csv')
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+
+    await waitFor(() => expect(asked).toHaveLength(1))
+    // No parameter at all: this entry is the backup, and the backup is whole.
+    expect(new URL(asked[0]).search).toBe('')
+    // The name is the server's — it is the one side that knows whether anything
+    // was held back, and therefore which of the two names the file takes.
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.csv']))
+  })
+
+  it('carries the chips to the server rather than narrowing the file here', async () => {
+    const asked: string[] = []
+    server.use(
+      http.get(ROUTES.exportEvents, ({ request }) => {
+        asked.push(request.url)
+        return csvNamed('suivi-bourse-selection.csv')
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // The reduction, made with the controls the reader has: a type chip and the
+    // search field.
+    await user.click(screen.getByRole('button', { name: 'Achat' }))
+    await user.type(screen.getByRole('searchbox'), 'zza')
+
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', { name: /La sélection filtrée/ }),
+    )
+
+    await waitFor(() => expect(asked).toHaveLength(1))
+    const parameters = new URL(asked[0]).searchParams
+    expect(parameters.get('type')).toBe('BUY')
+    expect(parameters.get('q')).toBe('zza')
+    // What comes back is a file the server named a selection: a reduction does
+    // not take the backup's name, and the front does not compose either.
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-selection.csv']))
+  })
+
+  it('asks the workbook route for the workbook', async () => {
+    const asked: string[] = []
+    server.use(
+      http.get(ROUTES.exportEventsWorkbook, ({ request }) => {
+        asked.push(request.url)
+        return csvNamed('suivi-bourse-events.xlsx')
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', { name: 'Un classeur, un onglet par année' }),
+    )
+
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.xlsx']))
+    expect(asked).toHaveLength(1)
+  })
+
+  it('confirms for as long as the file is being made, and not one second more', async () => {
+    // The criterion, and the reason the entries are gestures rather than links:
+    // a receipt over an `<a download>` could only be a guess with a timer on it.
+    let hand: (() => void) | null = null
+    server.use(
+      http.get(ROUTES.exportEvents, async () => {
+        await new Promise<void>((resolve) => {
+          hand = resolve
+        })
+        return csvNamed('suivi-bourse-events.csv')
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+
+    // It says what is being made, and it is still saying it a while later: the
+    // sentence is not on a clock of its own.
+    expect(await screen.findByText('Préparation de vos événements…')).toBeInTheDocument()
+    await waitFor(() => expect(hand).not.toBeNull())
+    expect(screen.getByText('Préparation de vos événements…')).toBeInTheDocument()
+
+    hand!()
+
+    // And it leaves when the file is there, saying so.
+    expect(await screen.findByText('Vos événements sont sur votre disque.')).toBeInTheDocument()
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.csv']))
+    expect(screen.queryByText('Préparation de vos événements…')).not.toBeInTheDocument()
+  })
+
+  it('says the refusal rather than handing over a file that is not there', async () => {
+    server.use(
+      problemHandler(ROUTES.exportEvents, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'Portfolio storage unavailable',
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+
+    // Read by `problem.type` like every other refusal, never by the sentence
+    // the server wrote for a log.
+    expect(
+      await screen.findByText(/Les données ne sont pas lisibles pour l’instant/),
+    ).toBeInTheDocument()
+    expect(saved).toEqual([])
   })
 
   it('lives in the band, which holds the drop zone and the sources with it', async () => {

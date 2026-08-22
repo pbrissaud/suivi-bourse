@@ -13,8 +13,10 @@ an ``/api`` 404.
 """
 from datetime import date, datetime, timedelta, timezone
 
+import io
 import json
 
+import openpyxl
 import pytest
 
 import advisories
@@ -2257,6 +2259,147 @@ def test_an_empty_ledger_exports_the_header_and_no_row(tmp_path):
     body = client.get('/api/export/events.csv').get_data(as_text=True)
 
     assert body == ','.join(events_export.EVENT_COLUMNS) + '\n'
+    opened.close()
+
+
+_SELECTABLE = (
+    "date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes\n"
+    "2024-01-15,BUY,pea,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase\n"
+    "2024-03-01,DIVIDEND,pea,AAPL,Apple Inc,,,,8.50,\n"
+    "2025-02-02,DEPOSIT,default,,,,,,500.00,Versement de février\n"
+)
+
+
+def test_the_workbook_is_reachable_over_http(tmp_path):
+    """The second file the menu offers, and it is a spreadsheet's own shape."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get('/api/export/events.xlsx')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'] == (
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    assert 'suivi-bourse-events.xlsx' in response.headers['Content-Disposition']
+
+    book = openpyxl.load_workbook(io.BytesIO(response.data), data_only=True)
+    assert book.sheetnames == ['2024', '2025']
+    opened.close()
+
+
+def test_the_export_takes_the_reduction_the_chips_hold(tmp_path):
+    """The four parameters are the table's four, on the resource itself."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    def rows(query):
+        body = client.get(f'/api/export/events.csv?{query}').get_data(as_text=True)
+        return body.strip().splitlines()[1:]
+
+    assert len(rows('type=BUY')) == 1
+    assert len(rows('account=pea')) == 2
+    assert len(rows('symbol=AAPL')) == 2
+    # Accents folded, as the search field on the table folds them.
+    assert len(rows('q=FEVRIER')) == 1
+    # Composed: two reductions are an intersection.
+    assert rows('type=BUY&account=pea') == rows('type=BUY')
+    opened.close()
+
+
+def test_a_reduction_does_not_take_the_backup_s_name(tmp_path):
+    """A partial file is not a backup, and must not replace one on a disk.
+
+    A re-import identifies a source by its **file name**, so a selection saved
+    under ``suivi-bourse-events.csv`` would overwrite the whole ledger's export
+    in the reader's downloads folder and, dropped back in, replace the import
+    that carried every other row.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    whole = client.get('/api/export/events.csv')
+    reduced = client.get('/api/export/events.csv?type=BUY')
+    workbook = client.get('/api/export/events.xlsx?type=BUY')
+
+    assert 'suivi-bourse-events.csv' in whole.headers['Content-Disposition']
+    assert 'suivi-bourse-selection.csv' in reduced.headers['Content-Disposition']
+    assert 'suivi-bourse-selection.xlsx' in workbook.headers['Content-Disposition']
+    opened.close()
+
+
+def test_a_parameter_naming_no_type_is_refused_rather_than_served_empty(tmp_path):
+    """A backup that silently comes back empty is worse than one that fails.
+
+    ``?type=ACHAT`` is not a ledger this install does not have — it is a word
+    the product does not know, and answering it with a valid file holding no row
+    would read as *you have recorded nothing of that kind*.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get('/api/export/events.csv?type=ACHAT')
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['key'] == 'type'
+    opened.close()
+
+
+def test_a_blank_parameter_is_no_reduction_at_all(tmp_path):
+    """``?type=&account=`` is a client with empty fields, not a reduction.
+
+    Read as one, it would answer a file with no row in it under the *selection*
+    name — a reader told that a reduction they never made retained nothing.
+    ADR-0014's rule about the environment, one level out.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get('/api/export/events.csv?type=&account=&q=&symbol=')
+
+    assert len(response.get_data(as_text=True).strip().splitlines()) == 4
+    assert 'suivi-bourse-events.csv' in response.headers['Content-Disposition']
+    opened.close()
+
+
+def test_a_type_is_read_however_it_is_spelled(tmp_path):
+    """``?type=buy`` is the same question as ``?type=BUY``.
+
+    The write path already reads a type case-insensitively
+    (``web.api._event_from_body``), and two spellings of one rule eventually
+    disagree — here the disagreement would be a ``422`` on a ``curl`` that works
+    against every other route.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    lower = client.get('/api/export/events.csv?type=buy')
+    upper = client.get('/api/export/events.csv?type=BUY')
+
+    assert lower.get_data() == upper.get_data()
+    assert len(lower.get_data(as_text=True).strip().splitlines()) == 2
+    opened.close()
+
+
+def test_a_reduction_that_retains_nothing_is_a_header_and_not_an_error(tmp_path):
+    """The empty collection, in a file: valid, and carrying nothing."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get('/api/export/events.csv?account=zzz')
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == \
+        ','.join(events_export.EVENT_COLUMNS) + '\n'
+    opened.close()
+
+
+def test_an_unreadable_store_fails_the_workbook_too(tmp_path):
+    """Same contract as the CSV: a query error is a ``503``, never a file."""
+    client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)
+    opened.execute('DROP TABLE event')
+
+    assert client.get('/api/export/events.xlsx').status_code == 503
     opened.close()
 
 

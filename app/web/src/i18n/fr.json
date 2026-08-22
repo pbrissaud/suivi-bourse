@@ -137,6 +137,8 @@
   "firstRun.entry.file.body": "Déposez un .csv ou un .xlsx de vos événements dans {path}. L’application le lit toute seule, quel que soit son nom. Ce dossier est un montage optionnel : sans lui il n’y a rien à y déposer, et l’autre entrée reste ouverte.",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
+  "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} accounts {Préparation de vos comptes…} other {Préparation de votre fichier…}}",
+  "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} accounts {Vos comptes sont sur votre disque.} other {Votre fichier est sur votre disque.}}",
 
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",
@@ -360,8 +362,10 @@
   "data.imports.confirm.submit": "Oublier cet import",
   "data.imports.confirm.cancel": "Le garder",
   "data.export.title": "Exporter",
-  "data.export.two": "Deux fichiers et non un : un fichier est une source de comptes ou une source d’événements selon son en-tête. Le fichier d’événements porte dans une colonne la devise dans laquelle vos montants sont enregistrés, si bien qu’un fichier écrit avant cette colonne s’importe à l’identique.",
+  "data.export.two": "Un aller-retour complet demande deux fichiers : un fichier est une source de comptes ou une source d’événements selon son en-tête, jamais les deux. Le fichier d’événements porte dans une colonne la devise dans laquelle vos montants sont enregistrés, si bien qu’un fichier écrit avant cette colonne s’importe à l’identique.",
   "data.export.events": "Vos événements",
+  "data.export.workbook": "Un classeur, un onglet par année",
+  "data.export.selection": "La sélection filtrée ({count, plural, one {# événement} other {# événements}})",
   "data.export.accounts": "Vos comptes",
 
   "installation.advisories": "Avis",

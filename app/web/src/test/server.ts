@@ -106,6 +106,18 @@ export function defaultHandlers() {
       HttpResponse.json({ id: Number(params.id), events_removed: 3 }),
     ),
 
+    // The way back out (#710, #796). It is fetched by the client since the
+    // receipt has to last as long as the operation, so it is a faked edge like
+    // any other now — bytes, and the **name** the server states, which is what
+    // tells a reduction from a backup.
+    http.get(ROUTES.exportEvents, ({ request }) =>
+      exported(new URL(request.url).search === '' ? 'events' : 'selection', 'csv'),
+    ),
+    http.get(ROUTES.exportEventsWorkbook, ({ request }) =>
+      exported(new URL(request.url).search === '' ? 'events' : 'selection', 'xlsx'),
+    ),
+    http.get(ROUTES.exportAccounts, () => exported('accounts', 'csv')),
+
     // The installation tab (#724). The default install has one notice standing,
     // a store on a mount and no orphan — the ephemeral store and the orphan
     // list are what a test asks for by name, both being exactly what the block
@@ -132,6 +144,21 @@ export function defaultHandlers() {
       HttpResponse.json({ symbols: ['ZZX'], points_removed: 1204 }),
     ),
   ]
+}
+
+/**
+ * One exported file as the server hands it over: bytes, and the name to save
+ * them under. The body is a header alone — what the front does with it is save
+ * it, and a fixture with rows in it would suggest an assertion nobody can make
+ * about a file the browser owns.
+ */
+function exported(kind: 'events' | 'selection' | 'accounts', suffix: 'csv' | 'xlsx') {
+  return new HttpResponse('date,event_type\n', {
+    headers: {
+      'Content-Type': suffix === 'csv' ? 'text/csv; charset=utf-8' : 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="suivi-bourse-${kind}.${suffix}"`,
+    },
+  })
 }
 
 /**

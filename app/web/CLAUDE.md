@@ -107,6 +107,16 @@ Three nets hold a rule nothing made true by construction:
   there.
 - **A block with nothing in it does not exist.** The layout shifts when a notice
   appears.
+- **A receipt lasts as long as the operation, never three seconds** (#796,
+  `CONTEXT.md` § Receipt). The export is therefore a **fetch** and not an
+  `<a download>`: a link hands the request to the browser, which settles at no
+  observable moment, so anything said over it would be a guess with a timer on
+  it. `lib/save.ts` is the two lines that hand the bytes to the reader's own
+  *Save as*, and the file's **name is the server's** — which of the two names
+  the events resource answers under is a fact about whether anything was held
+  back. This is the one wait the product dresses, and it is not in contention
+  with the spinner rule: that rule is about a **read**, whose subject nothing
+  may be claimed about; this is the reader's own act.
 - **One band on screen or none.** `lib/status.ts` holds the causal order between
   the shell's band (what is true of the installation) and a page's own (a read of
   its own that failed). Since #787 that order is **two conditions**, not three:
@@ -161,7 +171,7 @@ src/
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what a revocation removes
 │   ├── advisories.ts         # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
-│   ├── currencies.ts firstRun.ts receipts.ts docs.ts
+│   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
 ├── components/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
@@ -169,7 +179,7 @@ src/
 │   ├── AppSidebar (the navigation, and the status card that develops the dot)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
-│   ├── data/       # tab 1: ledger, create form, drop zone, import and export
+│   ├── data/       # tab 1: ledger, create form, drop zone, import and export menu
 │   │               # tab 2: notices  ·  tab 3: settings, the store
 │   │               # (the accounts declaration moved to accounts/ — ADR-0028)
 │   └── accounts/   # the rail of weights, one account's detail, its curve, its form
@@ -212,7 +222,11 @@ src/
 - **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
   groups of chips and a search — and above it one band holding the drop zone, the
-  export menu and the imported files with their revocation), *The notices* —
+  export menu — **four entries** since #796: every event, a workbook with one
+  sheet per year, the filtered selection and the accounts, the middle two
+  server-side because the importable form belongs to `events/export.py` and a
+  rule written twice loses a branch — and the imported files with their
+  revocation), *The notices* —
   **always mounted**, saying so when there is nothing, because the status dot must
   have one destination — and *The installation* (settings, the store and its
   orphans).
