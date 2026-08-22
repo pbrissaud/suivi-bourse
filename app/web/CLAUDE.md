@@ -146,6 +146,7 @@ src/
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts
 ├── components/
 │   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
+│   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
 │   ├── Shell · ContentHeader (the title, the dot, the three preferences)
 │   ├── AppSidebar (the navigation, and the status card that develops the dot)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
