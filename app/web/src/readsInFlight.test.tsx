@@ -40,7 +40,7 @@
  * not this ticket's subject; one that appears *because* a read has not answered
  * is.
  */
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -139,11 +139,11 @@ interface Surface {
 }
 
 /**
- * Six surfaces for four pages: two of them are a reader's gesture away — the
- * two sheets — and two more are a state of the dashboard, whose chart reads
- * **one** of two series and picks by the same discriminant that decides its
- * reading. Without the second the valuation series is armed under a condition
- * false by default and never enters the net.
+ * Six surfaces for four pages: one is a reader's gesture away — the share's
+ * sheet — and two more are a state of the dashboard, whose chart reads **one**
+ * of two series and picks by the same discriminant that decides its reading.
+ * Without the second the valuation series is armed under a condition false by
+ * default and never enters the net.
  */
 const SURFACES: readonly Surface[] = [
   { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
@@ -178,19 +178,10 @@ const SURFACES: readonly Surface[] = [
       return screen.findByRole('dialog')
     },
   },
-  {
-    name: 'les comptes, un volet ouvert',
-    url: '/comptes',
-    heading: 'Comptes',
-    open: async ({ user }) => {
-      const table = await screen.findByRole('table')
-      const row = within(table)
-        .getAllByRole('row')
-        .find((candidate) => (candidate.textContent ?? '').includes('Alpha'))!
-      await user.click(within(row).getAllByRole('cell')[0])
-      return screen.findByRole('dialog')
-    },
-  },
+  // Since ADR-0028 the account's detail is the page rather than a panel a
+  // gesture away, so the six reads it makes are on the mount: there is nothing
+  // left to open.
+  { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
   { name: 'les données · le grand livre', url: '/donnees', heading: 'Données' },
   {
     name: 'les données · l’installation',

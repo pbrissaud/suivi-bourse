@@ -1,66 +1,44 @@
 /**
- * The accounts page (#721, ADR-0019, ADR-0016).
+ * The accounts page — **master-detail, in read only** (ADR-0028, ADR-0026).
  *
- * It exists to answer *which of my accounts is working*, and it is the only one
- * of the four that had been **rendered and never judged**: measured on a
- * declared account it reproduced the dashboard's head to the cent, and its
- * *compared performance* drew a series. At N = 2 what the measurement showed is
- * not that each column discriminates — it is that **the instrument of
- * comparison was not one**. `pea 171,5` against `TR 115,0` compares 6,8 years
- * with 2,4.
+ * The eight-column table is gone. ADR-0019 built it to answer *which of my
+ * accounts is working* and that question moved to the dashboard's accounts card
+ * with its one range control; what is here now is the other question — *what is
+ * in this one* — which eight columns could never have answered.
  *
- * Three page-level objects, and each is a decision:
+ * Four page-level objects, and each is a decision:
  *
- *  - **One range control**, driving the chart **and** the table's `perf` column.
- *    Two would be two announcers contradicting each other, which is the defect
- *    the dashboard has already paid for once.
+ *  - **The rail is the master, and it carries the weights.** It is sticky, so
+ *    the way into another account does not scroll off the top of a detail five
+ *    blocks long.
+ *  - **Which account is open is a URL** (`?compte=`), the same reduction the
+ *    shares page carries and for the same three reasons: it survives a reload,
+ *    it can be handed to somebody else, and the way out is the browser's own
+ *    back button. An id naming nothing falls back to the first declared account
+ *    rather than to an empty page.
  *  - **One mention of the date**, at the level of the page — the money figures
- *    are a **day**, and a table of money with no date reads as *now*. The
- *    *interval* is deliberately not written in words anywhere: the range control
- *    already carries it, and a sentence repeating it would be the second
- *    announcer under another name.
- *  - **A subtitle that tells the two rates apart**, because an account can show
- *    `−0,62 €` of gain and `+15 %` of performance in the same row, and both are
- *    correct.
+ *    are a **day**, and a page of money with no date reads as *now*. The window
+ *    is not written in words anywhere: the detail's range control carries it,
+ *    and a sentence repeating it would be a second announcer.
+ *  - **One band, for every read the page makes.** `/api/runtime` answers from
+ *    process memory and never opens the store (#668), so the shell's banner is
+ *    silent on the one failure that empties this page — and a page that rendered
+ *    nothing would make *the store is unreadable* and *you own nothing yet* the
+ *    same screen.
  *
- * The panel one row opens is **#722's**, and it holds what the table cannot say:
- * `Gain total` dominating its four terms, and the value-against-contributed
- * curve — the only surface in the product where that shape exists per account.
- * It repeats none of the eight columns, and in place of a positions table it
- * carries a link to the shares page reduced to this account.
- *
- * Reads and failures follow the shares page's rule and for the same reason:
- * `/api/runtime` answers from process memory and never opens the store (#668),
- * so the shell's banner is silent on the one failure that empties this page.
+ * **The declaration is not here yet.** ADR-0028 puts it here and the ticket that
+ * follows moves it; until then it is on the data page, where ADR-0030 found it,
+ * and the empty state points there.
  */
-import { useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { Link, useSearch } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 
-import { AccountSheet } from '@/components/accounts/AccountSheet'
-import { AccountsChart } from '@/components/accounts/AccountsChart'
-import { AccountsTable } from '@/components/accounts/AccountsTable'
+import { AccountDetail } from '@/components/accounts/AccountDetail'
+import { AccountsRail } from '@/components/accounts/AccountsRail'
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
-import {
-  buildAccountRows,
-  declaredLabel,
-  DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_RANGE,
-  figuresAsOf,
-  portfolioRow,
-  PORTFOLIO_KEY,
-  rebase,
-  seriesColour,
-  settledSeries,
-  sortRows,
-  visibleColumns,
-  windowStart,
-  type FigureColumn,
-  type Range,
-  type Sort,
-} from '@/lib/accounts'
-import { api, type PerfPoint } from '@/lib/api'
+import { buildAccountRows, chooseAccount, reassignmentOf } from '@/lib/accounts'
+import { api, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
@@ -69,154 +47,71 @@ import { oneBand, readConditions } from '@/lib/status'
 export default function AccountsPage() {
   const { t } = useI18n()
   const f = useFormatters()
-  const [range, setRange] = useState<Range>(DEFAULT_RANGE)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [opened, setOpened] = useState<string | null>(null)
-  const [sort, setSort] = useState<Sort | null>(null)
+  const { compte } = useSearch({ from: '/comptes' })
 
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  // The panel's three position terms, and **only** while a panel is open: the
-  // page under it owes the positions nothing, its eight columns coming off
-  // `/api/accounts`. Same arrangement as the share sheet's ledger read (#720).
-  const positions = useQuery({
-    queryKey: ['positions'],
-    queryFn: api.positions,
+  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
+  const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+
+  const rows = buildAccountRows(accounts.data?.accounts ?? [])
+  const opened = chooseAccount(rows, compte)
+
+  // **One read per opened account, and only for the one that is open.** The
+  // series is some two and a half thousand days long, and the rail owes it
+  // nothing: what the rail draws is a share of a total on a stated day, not a
+  // window. Read whole, because the longest range the detail offers is the
+  // account's own opening and only the series says when that was.
+  const history = useQuery({
+    queryKey: ['account-history', opened?.id],
+    queryFn: () => api.accountHistory(opened!.id),
     enabled: opened !== null,
-  })
-
-  const declared = accounts.data?.accounts ?? []
-
-  // One read per account, and the whole series each time. The bound this page
-  // applies is a `max` over the accounts' openings, and no payload states an
-  // opening — so the series is what defines the longest window, and asking the
-  // server for that window would mean knowing it before reading what defines
-  // it. Read once for the four presets, which is also what keeps the chart and
-  // the table's scalar column one arithmetic rather than two.
-  const histories = useQueries({
-    queries: declared.map((account) => ({
-      queryKey: ['account-history', account.id],
-      queryFn: () => api.accountHistory(account.id),
-    })),
-  })
-  const portfolioHistory = useQuery({
-    queryKey: ['portfolio-totals-history'],
-    queryFn: api.portfolioTotalsHistory,
   })
 
   const failure = oneBand(
     readConditions({
       shellError: runtime.error,
-      errors: [
-        accounts.error,
-        totals.error,
-        // The fourth read of the page, and it feeds a cell like the other
-        // three: without it a failing `/api/portfolio-totals/history` renders
-        // the `Portefeuille` row's `perf` as a silent dash — *there is nothing
-        // to compute* said about a store that did not answer.
-        portfolioHistory.error,
-        ...histories.map((one) => one.error),
-      ],
+      errors: [accounts.error, totals.error, positions.error, events.error, history.error],
     }),
   )
 
-  // `?? null` and never `?? []`: an empty series is a **payload** — an account
-  // whose perf cache says nothing — and a request in flight is not one
-  // (ADR-0026). The honesty is upstream of the prop because the flattening is:
-  // the array is built here, so this is where the two states have to survive.
-  const points: (readonly PerfPoint[] | null)[] = histories.map((one) => one.data?.points ?? null)
-  // **The N are waited for together**, because the comparison *is* the object:
-  // an account landing after the others moves the day every curve is rebased
-  // on, so the whole plot and the `perf` column are redrawn under the reader's
-  // eyes. `null` here is *not yet*, and it reaches the chart and the table as
-  // such rather than as *there is nothing to compare*.
-  const landed = settledSeries(points)
-  const from = landed === null ? null : windowStart(range, new Date(), landed)
-
-  // `useQueries` hands back a new array on every render, so the rebasing is
-  // memoised against what actually moved: when each read landed, which accounts
-  // there are, and the window. Selecting a curve or sorting a column must not
-  // replay a few thousand points per account.
-  const stamp = `${histories.map((one) => one.dataUpdatedAt).join('|')} ${declared
-    .map((account) => account.id)
-    .join('|')} ${from}`
-  const rebased = useMemo(
-    () =>
-      from === null || landed === null
-        ? []
-        : declared.map((account, index) => rebase(account.id, landed[index] ?? [], from)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stamp],
-  )
-
-  // The global series is one read of its own, and it is in flight until it
-  // answers: `?? []` rebased the `Portefeuille` row against nothing and printed
-  // an em dash where the store holds a figure.
-  const portfolioSeries =
-    from === null || !portfolioHistory.data
-      ? null
-      : rebase(PORTFOLIO_KEY, portfolioHistory.data.points, from)
-
-  const performance = new Map(rebased.map((one) => [one.key, one.performance]))
-  const rows = buildAccountRows(declared, landed === null ? null : performance)
-  const visible = visibleColumns(rows)
   const currency = totals.data?.base_currency ?? null
 
-  // The colour a curve is drawn in, by account — the chart draws in row order,
-  // so the swatch in the table and the line in the plot cannot drift apart.
-  const drawnKeys = rebased.filter((one) => one.points.length > 0).map((one) => one.key)
-  const colourOf = (account: string) => {
-    const index = drawnKeys.indexOf(account)
-    return index === -1 ? null : seriesColour(index)
-  }
-
-  const labels = new Map(
-    declared.map((account) => [
-      account.id,
-      declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL),
-    ]),
-  )
-
-  // At N = 1 there is no `Portefeuille` line: it would copy the single row
-  // above it, with a rule drawn between a line and itself. The page itself
-  // survives — it leaves the **navigation**, never the route, so a bookmark
-  // that was valid yesterday does not cost a 404 (`AppSidebar`).
-  //
-  // `totals.data?.totals ?? null` collapsed two states: *the read has not
-  // landed* and *the perf cache holds no global row*. The second is a fact and
-  // renders eight dashes; the first is not, and the row is simply not composed
-  // until it is one (ADR-0026).
-  const portfolio =
-    rows.length > 1 && totals.data
-      ? portfolioRow(
-          totals.data.totals,
-          portfolioSeries?.performance ?? null,
-          // A **read** in flight, never a window with nothing in it: at
-          // `SINCE_OPENING` on an empty perf cache `from` is `null` too, and
-          // that one is a fact about the reader's data.
-          landed === null || !portfolioHistory.data,
-        )
-      : null
-
-  const asOf = figuresAsOf(portfolio === null ? rows : [...rows, portfolio])
-
+  // The page's name and the day its figures are of, both said in the header
+  // (#789). **The day is the opened account's own**, not a `max` over all of
+  // them: on the eight-column table the newest day covered every row, and on a
+  // master-detail it would put *« arrêtés au 2 mars »* over an account still
+  // being backfilled to 15 January. The date waits for the read the way every
+  // figure does — an invented *today* is the reading this mention exists to
+  // prevent.
   usePageHeading(
     t('page.accounts'),
-    asOf === null ? null : t('accounts.asOf', { date: f.date(asOf) }),
+    opened?.as_of == null ? null : t('accounts.asOf', { date: f.date(opened.as_of) }),
   )
 
-  return (
-    <div className="space-y-8">
-      <header>
-        <p className="max-w-prose text-sm text-muted-foreground">{t('accounts.subtitle')}</p>
-      </header>
+  // `?? null` and never `?? []`: an empty payload is a **fact** about the
+  // reader's data and a request in flight is not one (ADR-0026). The three
+  // flattenings are here because this is where the reads are.
+  const heldPositions: readonly Position[] | null = positions.data?.positions ?? null
+  const ledger: readonly LedgerEvent[] | null = events.data ?? null
+  const series: readonly PerfPoint[] | null = history.data?.points ?? null
 
+  return (
+    <div className="space-y-6">
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
-      {/* A read that has not landed is not a fact: nothing is claimed while the
-          declaration is in flight, and above all not that there is none. */}
-      {failure || !accounts.data ? null : rows.length === 0 ? (
+      {/* **The declaration is what this page is made of, and the four other
+          reads are what its blocks are made of.** A band is raised for any of
+          them — one band or none, `lib/status.ts` — but only the declaration
+          failing empties the page: a ledger that would not answer took the rail
+          and the detail with it, so an owner lost every figure they *did* have
+          because the *last events* block could not be composed.
+
+          A read that has not landed is not a fact either: nothing is claimed
+          while the declaration is in flight, and above all not that there is
+          none. */}
+      {accounts.error || !accounts.data ? null : opened === null ? (
         <EmptyState
           title={t('accounts.empty.title')}
           description={t('accounts.empty.body')}
@@ -227,65 +122,37 @@ export default function AccountsPage() {
           }
         />
       ) : (
-        <>
-          <AccountsChart
-            // `null` and never `[]`: the block draws nothing at all — title
-            // included — while the N reads are in flight, where an empty array
-            // made it announce *« rien à comparer »* about series nobody had
-            // answered for yet (ADR-0026).
-            series={landed === null ? null : rebased}
-            labels={labels}
-            range={range}
-            onRangeChange={setRange}
-            selected={selected}
+        // Two tracks from `lg`, one below it: at the width ADR-0022 measured as
+        // the worst realistic case the page is the **stacked** one and cannot
+        // overflow sideways, and the rail only becomes a rail where there is
+        // room for a detail beside it.
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
+          <AccountsRail
+            rows={rows}
+            selected={opened.id}
+            rebuilding={runtime.data?.rebuilding ?? null}
+            // Whether there is anything to reassign — the module's own answer
+            // (#725), which is *events still naming a row nobody declared* and
+            // not *a row called `default` exists*: renamed, retyped or taken
+            // over by a file, that row is an ordinary account and the offer
+            // would be about nothing.
+            //
+            // `?? []` here is the legitimate one ADR-0026 leaves open: an
+            // absent read **removes the offer** instead of falsifying it, and
+            // claiming there are unassigned events before the ledger has
+            // answered would be the opposite mistake.
+            reassignable={reassignmentOf(accounts.data, ledger ?? []).kind !== 'none'}
           />
-          <AccountsTable
-            rows={sortRows(rows, sort)}
-            portfolio={portfolio}
-            visible={visible}
+          <AccountDetail
+            row={opened}
+            positions={heldPositions}
+            events={ledger}
+            points={series}
             currency={currency}
             rebuilding={runtime.data?.rebuilding ?? null}
-            selected={selected}
-            // **Posé, jamais basculé.** Le basculement servait un clic, qui a
-            // deux états à alterner ; le survol en a deux qu'il nomme lui-même
-            // — entrer et sortir — et un basculement les ferait se battre dès
-            // que la souris repasse sur la même ligne.
-            onSelect={setSelected}
-            onOpen={setOpened}
-            sort={sort}
-            onSort={(column: FigureColumn) =>
-              setSort((previous) =>
-                previous?.column === column
-                  ? { column, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
-                  : { column, direction: 'desc' },
-              )
-            }
-            colourOf={colourOf}
           />
-        </>
+        </div>
       )}
-
-      {/* The panel reads the account's **whole** series rather than the visible
-          window: the range control drives the comparison, and an account's own
-          history is not one (ADR-0019). The page has already read it, so the
-          curve costs no request of its own. */}
-      <AccountSheet
-        row={rows.find((row) => row.id === opened) ?? null}
-        // `?? null` and never `?? []`: the panel's block is composed from these
-        // rows, and an empty array is a *payload*, not a request in flight —
-        // read as one it summed three terms over nothing (#722's own rule,
-        // held for the failure branch alone).
-        positions={positions.data?.positions ?? null}
-        // The panel is about **one** account, so its curve waits only for its
-        // own read — not for the N the comparison above is one object of. `[]`
-        // here drew no curve at all under *a block with nothing in it does not
-        // exist*, whose sentence is *an account with no cash ledger has no
-        // value to trace*: an absence read as a fact (ADR-0026).
-        points={points[declared.findIndex((account) => account.id === opened)] ?? null}
-        currency={currency}
-        positionsError={positions.error}
-        onClose={() => setOpened(null)}
-      />
     </div>
   )
 }

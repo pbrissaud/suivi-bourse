@@ -1,11 +1,14 @@
 # app/web/ — the front
 
-> **ADR-0028, ADR-0030 and ADR-0031 are decided and not yet built.** Where this
-> file cites one of them — the accounts page, the data page's three tabs, the
-> paginated ledger — it describes the destination, and the code has not been
-> there yet. That is the one place `docs/adr/README.md`'s rule for `preview/v5`
-> is suspended, and it ends when the tickets from that design session merge.
+> **ADR-0030 and ADR-0031 are decided and not yet built.** Where this file cites
+> one of them — the data page's three tabs, the paginated ledger — it describes
+> the destination, and the code has not been there yet. That is the one place
+> `docs/adr/README.md`'s rule for `preview/v5` is suspended, and it ends when
+> the tickets from that design session merge.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
+> **ADR-0028 has landed in read only** (#792): the accounts page is the
+> master-detail described below, and the **declaration, the rename and the
+> removal are still on the data page** — the ticket after this one moves them.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -24,7 +27,7 @@ pnpm dev     # Vite :5173, proxying /api → localhost:8080 (SB_API_URL to chang
 
 **`lint` is the type-checker and nothing else** — there is no ESLint here. Two
 `// eslint-disable-next-line react-hooks/exhaustive-deps` survive from the
-prototype (`AccountsPage`, `AccountsBlock`); they document a deliberate
+prototype (`AccountsCard`, `AccountsBlock`); they document a deliberate
 dependency and **enforce nothing**, so a hook's dependency array is held by
 review alone. Both sit on a `useMemo` keyed by a hand-built stamp, and the
 stamp is the thing to read when touching either.
@@ -126,7 +129,7 @@ src/
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
-│   ├── accounts.ts           # the rebasing to 100, the vanishing column, the reassignment
+│   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses · what a revocation removes
 │   ├── advisories.ts         # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
@@ -140,7 +143,7 @@ src/
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export
 │   │               # tab 2: notices  ·  tab 3: settings, the store
 │   │               # (accounts moved to accounts/ — ADR-0028)
-│   └── accounts/   # the rail of weights, one account's detail, its form
+│   └── accounts/   # the rail of weights, one account's detail, its curve
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
 
@@ -160,13 +163,17 @@ src/
   subtotal in the **group header**, never in a footer row: a total and its terms
   never share a row, one level down. One sheet per share, where a
   selection links the chart to the event list.
-- **Accounts** (`/comptes`) — master-detail (ADR-0028): a sticky rail of weights and
-  names, one account's detail beside it. It is also where an account is declared,
-  renamed and removed — the reassignment rides with the **declaration** (#725,
-  offered and never required), and the removal's three refusals live in the edit
-  dialog. The cross-account comparison is the dashboard's accounts card now, and
-  ADR-0019's rule travels with it: **one range for every figure drawn on that
-  card**, `MAX` still not offered.
+- **Accounts** (`/comptes`) — master-detail (ADR-0028): a sticky rail of weights
+  and names, one account's detail beside it — the gain over its four terms, the
+  composition, the annualised rate, the dividends, the lines and the last events.
+  Which account is open is a **URL** (`?compte=`), and an id naming nothing falls
+  back to the first declared one. **One** range control drives the detail's curve
+  *and* the rate beside it, `MAX` not offered; the rail draws a share of a total
+  on a stated day and no curve at all, which is the second half of ADR-0028's
+  sparkline clause. The cross-account comparison is the dashboard's accounts card
+  now, and ADR-0019's rule travelled with it. It is **also** where an account is
+  declared, renamed and removed — ADR-0028 says so and the ticket after #792
+  moves them; until then they are on the data page.
 - **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table, and above
   it one band holding the drop zone, the export menu and the imported files with
   their revocation), *The notices* — **always mounted**, saying so when there is

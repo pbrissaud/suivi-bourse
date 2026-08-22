@@ -72,7 +72,12 @@ describe('the walking skeleton', () => {
     expect(screen.getByRole('tab', { name: 'Le grand livre' })).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
-  })
+    // Headroom, and it is measured rather than defensive: this one walks the
+    // four routes **twice**, and since ADR-0028 the accounts route mounts a
+    // detail reading the positions, the ledger and a perf series on top of the
+    // declaration. Two seconds and a half in a quiet run, and the default five
+    // is not a margin under a loaded worker.
+  }, 20_000)
 })
 
 describe('the four routes', () => {
@@ -107,17 +112,22 @@ describe('the four routes', () => {
 })
 
 describe('a single account', () => {
-  it('drops the entry from the navigation and keeps the route answering', async () => {
+  it('keeps the entry, the page being a reading of one account and not a comparison', async () => {
+    // The entry used to disappear here, and the argument was the accounts
+    // page's own: comparing one term is not comparing. ADR-0028 replaced that
+    // page with a master-detail whose four blocks exist nowhere else, so at one
+    // account it is the **ordinary** reading — and hiding it would put the
+    // composition, the annualised rate, the dividends and the last events out
+    // of reach of most installs.
     server.use(
       http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload([defaultAccounts()[0]]))),
     )
 
     const { unmount } = renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
     await waitFor(() =>
-      expect(within(nav()).queryByRole('link', { name: 'Comptes' })).not.toBeInTheDocument(),
+      expect(within(nav()).getByRole('link', { name: 'Comptes' })).toBeInTheDocument(),
     )
-    // The other three are still there — the entry left, the navigation did not.
-    expect(within(nav()).getByRole('link', { name: 'Titres' })).toBeInTheDocument()
     unmount()
 
     renderApp({ url: '/comptes' })

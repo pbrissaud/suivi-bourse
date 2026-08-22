@@ -19,11 +19,12 @@ import SharesPage from '@/pages/SharesPage'
  * class of problem (`c87a0b1`, the front's `lib/` swallowed by the root
  * gitignore). The crossover is roughly ten routes; the map plans four.
  *
- * The four paths do not move: `/`, `/titres`, `/comptes`, `/donnees`. The
- * accounts page leaves the **navigation** at N = 1 and never the **route** — a
- * 404 on a bookmark that was valid yesterday costs for nothing. And `/` is the
- * dashboard **unconditionally**: a redirect while the ledger is empty would make
- * it the one route in the product whose behaviour depends on the data.
+ * The four paths do not move: `/`, `/titres`, `/comptes`, `/donnees`, and all
+ * four are in the navigation at every N — the accounts page used to leave it at
+ * one account, and ADR-0028 removed the argument by making that page a reading
+ * of *one* account rather than a comparison. And `/` is the dashboard
+ * **unconditionally**: a redirect while the ledger is empty would make it the
+ * one route in the product whose behaviour depends on the data.
  */
 
 const rootRoute = createRootRoute({
@@ -38,7 +39,7 @@ const dashboardRoute = createRoute({
 })
 
 /**
- * The one route that reads a search parameter (#722).
+ * The first route that reads a search parameter (#722).
  *
  * `?compte=` is the reduction an account's panel leads to, and it lives in the
  * **URL** rather than in a state the link would have to carry: it survives a
@@ -57,10 +58,23 @@ const sharesRoute = createRoute({
   },
 })
 
+/**
+ * The second route that reads a search parameter (ADR-0028).
+ *
+ * `?compte=` is **which account the detail is about** — the master-detail's own
+ * selection, in the URL for the reasons the shares page's reduction is: it
+ * survives a reload, it can be handed to somebody else, and the way back is the
+ * browser's own button. Validated rather than read raw, and an id naming no
+ * declared account falls back to the first one rather than to an empty page.
+ */
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/comptes',
   component: AccountsPage,
+  validateSearch: (search: Record<string, unknown>): { compte?: string } => {
+    const account = typeof search.compte === 'string' ? search.compte.trim() : ''
+    return account === '' ? {} : { compte: account }
+  },
 })
 
 const dataRoute = createRoute({

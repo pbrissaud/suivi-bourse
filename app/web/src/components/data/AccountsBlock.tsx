@@ -32,11 +32,10 @@
  *    the accounts page reads, so two pages cannot name one thing two ways. Both
  *    halves are the *server*'s (`list_accounts`), so the row carries the label a
  *    rename wrote. And the block exists **at every N, N = 1 included, the true
- *    first run included**: the accounts *page* leaves the navigation at one
- *    account because a comparison of one term is not a comparison, while the
- *    declaration is the only place `default` can be renamed or replaced, and the
- *    only place a first account can be declared without writing a file. Removing
- *    it at N = 1 locked in precisely the owner the reassignment exists to free.
+ *    first run included**: the declaration is the only place `default` can be
+ *    renamed or replaced, and the only place a first account can be declared
+ *    without writing a file. Removing it at N = 1 locked in precisely the owner
+ *    the reassignment exists to free.
  *  - **And the reassignment is that owner's way out** (#725). Running a month
  *    before declaring anything puts the whole ledger under the seeded row — the
  *    rule of #698 doing exactly what it says — and the seeded row then becomes

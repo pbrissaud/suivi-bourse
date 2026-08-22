@@ -53,15 +53,15 @@ const ENTRIES: Entry[] = [
 export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
 
-  // At N = 1 the accounts page leaves the **navigation** — comparing one term is
-  // not comparing — and never the **route**: a bookmark valid yesterday costs a
-  // 404 for nothing. Written as "hide when we know there is exactly one" rather
-  // than "show when we know there are several", so an unanswered query leaves
-  // the navigation whole instead of quietly losing an entry.
-  const single = accounts.data?.accounts.length === 1
-  const entries = ENTRIES.filter((entry) => entry.to !== '/comptes' || !single)
+  // **The four entries are four, at every N.** The accounts entry used to
+  // disappear at one account, and the argument was the page's own: comparing one
+  // term is not comparing. ADR-0028 made that page a master-detail — five blocks
+  // about *one* account, four of which exist nowhere else — so at one account it
+  // is not a degenerate comparison, it is the ordinary reading, and hiding it
+  // would put the composition, the annualised rate, the dividends and the last
+  // events out of reach of the install that has exactly one account, which is
+  // most of them.
 
   return (
     <Sidebar collapsible="icon">
@@ -76,7 +76,7 @@ export function AppSidebar() {
               it is what a screen reader — and a test — takes hold of. */}
           <nav aria-label={t('nav.label')}>
             <SidebarMenu>
-              {entries.map((entry) => (
+              {ENTRIES.map((entry) => (
                 <SidebarMenuItem key={entry.to}>
                   <SidebarMenuButton
                     asChild

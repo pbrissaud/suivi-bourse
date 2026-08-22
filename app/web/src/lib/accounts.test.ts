@@ -1,41 +1,43 @@
 /**
- * The comparison's arithmetic, pinned (#721, ADR-0019).
+ * The account's arithmetic, pinned (#721, ADR-0019, ADR-0028).
  *
  * The measured counter-example is the reason the rebasing exists: the store
  * answers `alpha 171,5` against `beta 115,0`, and read as they stand those are
  * a figure counted from 2019 beside one counted from 2025. Rebased on a common
  * window the two **swap places between one month and one year**, every figure
  * correct along the way. Those numbers are the test.
+ *
+ * Since ADR-0028 the surface that reads them is a master-detail, so the rail's
+ * two derivations are here too: what an account weighs, and which one the URL
+ * opens.
  */
 import { describe, expect, it } from 'vitest'
 
 import {
   accountChoice,
+  accountEvents,
   accountPositions,
+  accountWeights,
+  accountWorth,
   buildAccountRows,
+  chooseAccount,
   declarationRows,
   declaredLabel,
   declaredType,
   degradedReason,
   DEFAULT_RANGE,
-  DIMMED_OPACITY,
   firstDay,
-  isPending,
+  LAST_EVENTS,
   originOf,
-  portfolioRow,
   distinctSymbols,
   reassignmentOf,
   rebase,
   RANGES,
   removalOf,
-  seriesColour,
   settledSeries,
-  sortRows,
   submittedAccount,
   valueSeries,
-  visibleColumns,
   windowStart,
-  type AccountRow,
 } from '@/lib/accounts'
 import type { PerfPoint } from '@/lib/api'
 import {
@@ -147,95 +149,64 @@ describe('the rebasing', () => {
     expect(gamma.performance).toBeNull()
   })
 
-  it('gives the portfolio a scalar of its own, read from its own series', () => {
-    // It is never drawn — its curve is the dashboard's — so this figure lives
-    // in the table's `Portefeuille` row and nowhere else.
+  it('gives a series of its own the same scalar, whatever level it is of', () => {
+    // One shape for the account and for the portfolio, deliberately: the
+    // dashboard reads a global scalar off this very function, so two shapes
+    // would mean two rebasings and, sooner or later, two answers to *how did
+    // this period go*.
     const portfolio = rebase('p', aPortfolioHistory().points, '2025-03-02')
     expect(portfolio.performance! * 100).toBeCloseTo(6.78, 2)
   })
 })
 
-describe('the drawing’s two constants', () => {
-  it('keeps an unselected curve well above the opacity where it becomes a filter', () => {
-    expect(DIMMED_OPACITY).toBeGreaterThan(0.16)
-  })
+describe('the rows, and the weights the rail draws off them', () => {
+  const rows = buildAccountRows(defaultAccounts())
 
-  it('gives each curve a hue of its own — identity, never rank', () => {
-    expect(seriesColour(0)).not.toBe(seriesColour(1))
-    expect(seriesColour(0)).toBe(seriesColour(6))
-  })
-})
-
-describe('the table', () => {
-  const rows = buildAccountRows(defaultAccounts(), new Map([['alpha', 0.1433]]))
-
-  it('keeps the declaration order, whatever the window does', () => {
-    // Sorting by `perf` would make the ranking a property of the range control,
-    // and the rows would jump on every click of a preset.
-    expect(sortRows(rows, null).map((row) => row.id)).toEqual(['alpha', 'beta', 'gamma'])
-  })
-
-  it('sorts on a header, absences last in both directions', () => {
-    expect(sortRows(rows, { column: 'total_value', direction: 'desc' }).map((r) => r.id)).toEqual([
-      'alpha',
-      'beta',
-      'gamma',
-    ])
-    expect(sortRows(rows, { column: 'total_value', direction: 'asc' }).map((r) => r.id)).toEqual([
-      'beta',
-      'alpha',
-      'gamma',
-    ])
+  it('keeps the declaration order the resource answered in', () => {
+    // Not sorted by value: the rail draws the weights, so the eye already has
+    // the ranking, and a list re-ordering itself as figures land would move the
+    // entry under the reader's pointer.
+    expect(rows.map((row) => row.id)).toEqual(['alpha', 'beta', 'gamma'])
   })
 
   it('reads the cash balance only where a total value exists', () => {
     // Without a cash ledger the balance is `−6 517,26 €` — the replay debits
     // every purchase and nothing ever credits it. Arithmetically defined,
-    // semantically false: five dashes, not four.
-    const gamma = buildAccountRows(
-      [anAccount({ id: 'gamma', total_value: null, cash_balance: -6517.26 })],
-      new Map(),
-    )[0]
+    // semantically false.
+    const [gamma] = buildAccountRows([
+      anAccount({ id: 'gamma', total_value: null, cash_balance: -6517.26 }),
+    ])
     expect(gamma.cash_balance).toBeNull()
   })
 
-  it('drops a column absent for every account, and keeps it for one out of three', () => {
-    expect(visibleColumns(rows)).toContain('cash_balance')
-
-    const noCash = defaultAccounts().map((account) => ({
-      ...account,
-      total_value: null,
-      cash_balance: null,
-      net_contributed: null,
-      xirr: null,
-    }))
-    const dropped = visibleColumns(buildAccountRows(noCash, new Map()))
-    expect(dropped).not.toContain('cash_balance')
-    expect(dropped).not.toContain('total_value')
-    expect(dropped).toContain('holdings_value')
+  it('weighs an account on its securities where no cash ledger was ever kept', () => {
+    // `gamma` holds 600,00 € of shares and has no `total_value` at all (#708).
+    // Read as `total_value` and nothing else it would weigh zero — and the
+    // failure would be silent, the bar still adding up to a hundred per cent.
+    expect(accountWorth(rows[2])).toBe(600)
+    const weights = accountWeights(rows)
+    expect(weights.get('alpha')).toBeCloseTo(1800 / 3300, 6)
+    expect(weights.get('gamma')).toBeCloseTo(600 / 3300, 6)
+    expect([...weights.values()].reduce<number>((sum, share) => sum + (share ?? 0), 0)).toBeCloseTo(1, 6)
   })
 
-  it('keeps the column whose read is in flight, and empties its cells (#775)', () => {
-    // *Absent for every account* is a statement about the reader's data, and it
-    // cannot be made about a request nobody has answered — dropped and put
-    // back, the table would gain a column under the reader's eyes.
-    const pending = buildAccountRows(defaultAccounts(), null)
-    expect(visibleColumns(pending)).toContain('performance')
-    expect(pending.every((row) => isPending(row, 'performance'))).toBe(true)
-    // And it is the **only** column that can be in that state: one figure of
-    // the row is read off N series, the seven others come with the row.
-    expect(pending.every((row) => !isPending(row, 'gain_absolu'))).toBe(true)
-
-    // An empty map is not that state: it is what an install whose perf cache
-    // says nothing over the window answers, and there the column goes.
-    const answered = buildAccountRows(defaultAccounts(), new Map())
-    expect(visibleColumns(answered)).not.toContain('performance')
+  it('has no share to state for an account nothing has been written about', () => {
+    const [empty] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })])
+    expect(accountWorth(empty)).toBeNull()
+    expect(accountWeights([...rows, empty]).get('delta')).toBeNull()
   })
 
-  it('waits for the N series together, the comparison being the object (#775)', () => {
-    // An account landing after the others moves `windowStart`, so every curve
-    // is rebased on another day and the whole plot is redrawn under the
-    // reader's eyes — the figure swap #718 forbade on the dashboard's head.
+  it('divides nothing by nothing nowhere', () => {
+    // An install whose accounts are all worth zero has no shares to state, and
+    // `0 / 0` renders as `NaN %`.
+    const flat = buildAccountRows([anAccount({ total_value: 0, holdings_value: 0 })])
+    expect(accountWeights(flat).get('alpha')).toBeNull()
+  })
+
+  it('waits for the N series together where a comparison is the object (#775)', () => {
+    // The dashboard's accounts card is that surface now: an account landing
+    // after the others moves `windowStart`, so every curve is rebased on another
+    // day and the whole card is redrawn under the reader's eyes.
     const landed = anAccountHistory('alpha').points
     expect(settledSeries([landed, null])).toBeNull()
     expect(settledSeries([landed, []])).toEqual([landed, []])
@@ -243,82 +214,57 @@ describe('the table', () => {
     // in it, and the page's own empty state owns that one.
     expect(settledSeries([])).toEqual([])
   })
+})
 
-  it('reads the portfolio row rather than summing the accounts', () => {
-    // The accounts cannot be summed at all here: `gamma` has no cash ledger, so
-    // `total_value` is not a number on that line (#708). The consolidated
-    // figures have exactly one source.
-    const portfolio = portfolioRow(
-      { day: '2026-03-02', total_value: 2800, xirr: 0.0322 } as never,
-      0.0678,
-      false,
-    )
-    expect(portfolio.total_value).toBe(2800)
-    expect(rows.reduce((sum, row) => sum + (row.total_value ?? 0), 0)).not.toBe(2800)
+describe('which account the detail is about', () => {
+  const rows = buildAccountRows(defaultAccounts())
+
+  it('opens the one the URL names', () => {
+    expect(chooseAccount(rows, 'beta')?.id).toBe('beta')
+  })
+
+  it('falls back to the first declared one rather than to an empty page', () => {
+    // An id naming nothing is what a bookmark becomes when an account is
+    // renamed away or an import is revoked: answering it with an empty detail
+    // beside a full rail reads as a broken page, not as a stale link.
+    expect(chooseAccount(rows, undefined)?.id).toBe('alpha')
+    expect(chooseAccount(rows, 'gone')?.id).toBe('alpha')
+  })
+
+  it('has nothing to open where nothing is declared', () => {
+    expect(chooseAccount([], 'alpha')).toBeNull()
   })
 })
 
 describe('a row with no figures names its reason', () => {
-  const visible = visibleColumns(buildAccountRows(defaultAccounts(), new Map()))
+  it('tells one absent figure from every absent figure, which look alike', () => {
+    const [withoutLedger] = buildAccountRows([defaultAccounts()[2]])
+    const [withoutSeries] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })])
 
-  function reasonOf(row: AccountRow, rebuilding: boolean | null) {
-    return degradedReason(row, visible, rebuilding)
-  }
-
-  it('tells five dashes from eight, which are indistinguishable without it', () => {
-    const [withoutLedger] = buildAccountRows(
-      [defaultAccounts()[2]],
-      new Map(),
-    )
-    const [withoutSeries] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })], new Map())
-
-    expect(reasonOf(withoutLedger, true)).toBe('withoutCashLedger')
-    expect(reasonOf(withoutSeries, true)).toBe('rebuilding')
-    expect(reasonOf(withoutLedger, true)).not.toBe(reasonOf(withoutSeries, true))
+    expect(degradedReason(withoutLedger, true)).toBe('withoutCashLedger')
+    expect(degradedReason(withoutSeries, true)).toBe('rebuilding')
   })
 
   it('does not announce a rebuild to an account with nothing to rebuild', () => {
     // A positive observation is what the second sentence needs: the
     // reconstruction being over, an account with no series has nothing coming.
     // A runtime read that has not landed keeps the rebuild's sentence.
-    const [empty] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })], new Map())
-    expect(reasonOf(empty, false)).toBe('empty')
-    expect(reasonOf(empty, null)).toBe('rebuilding')
+    const [empty] = buildAccountRows([anAccountWithoutSeries({ id: 'delta' })])
+    expect(degradedReason(empty, false)).toBe('empty')
+    expect(degradedReason(empty, null)).toBe('rebuilding')
   })
 
-  it('says nothing about a row whose figures are all on screen', () => {
-    const [alpha] = buildAccountRows([anAccount()], new Map([['alpha', 0.1433]]))
-    expect(reasonOf(alpha, true)).toBeNull()
-  })
-
-  it('says nothing about a column whose read is in flight (#775)', () => {
-    // A visible column with no figure drops **every** row into *« sans grand
-    // livre de liquidités »* — a false sentence written on every line at once,
-    // for as long as the N series take to answer. The pending cell is not a
-    // missing figure and `degradedReason` has to know it.
-    const rows = buildAccountRows(defaultAccounts(), null)
-    expect(rows.every((row) => row.performancePending)).toBe(true)
-    const [alpha] = rows
-    expect(degradedReason(alpha, visibleColumns(rows), true)).toBeNull()
-  })
-
-  it('says nothing about a column the page has dropped', () => {
-    // A dropped column is not an absence the reader can see, so it is not one
-    // to explain — which is what keeps the dashes a **difference between the
-    // accounts** rather than a property of the installation.
-    const rows = buildAccountRows(
-      [anAccount({ id: 'one', total_value: null, cash_balance: null, net_contributed: null, xirr: null })],
-      new Map([['one', 0.1]]),
-    )
-    expect(degradedReason(rows[0], visibleColumns(rows), true)).toBeNull()
+  it('says nothing about a row whose figures are all there', () => {
+    const [alpha] = buildAccountRows([anAccount()])
+    expect(degradedReason(alpha, true)).toBeNull()
   })
 })
 
 // ------------------------------------------------------------------------- //
-// The account's own panel (#722)
+// The detail (#722, ADR-0028)
 // ------------------------------------------------------------------------- //
 
-describe('what one account’s panel is about', () => {
+describe('what one account’s detail is about', () => {
   it('keeps its closed lines in the set the four terms are summed over', () => {
     // A sold position has a realised gain and dividends, and dropping it here
     // produces the *other correct figure* — the one the shares page spent a
@@ -351,6 +297,27 @@ describe('what one account’s panel is about', () => {
     // #708 writes `total_value` and `net_contributed` together or not at all,
     // and a line along the floor would say the owner put nothing in.
     expect(valueSeries(series('gamma'))).toEqual([])
+  })
+
+  it('shows the account’s own last events, newest first and capped', () => {
+    const events = accountEvents(ledgerEvents(), 'alpha')
+    expect(events.map((event) => event.date)).toEqual([
+      '2026-02-10',
+      '2026-01-12',
+      '2026-01-05',
+      '2025-12-24',
+    ])
+    expect(accountEvents(ledgerEvents(), 'beta')).toEqual([])
+    expect(accountEvents(ledgerEvents(), 'alpha', 2)).toHaveLength(2)
+    expect(LAST_EVENTS).toBeGreaterThan(0)
+  })
+
+  it('reads a blank account as the seeded row, which is the aggregator’s rule', () => {
+    // An install that recorded events before declaring anything writes them
+    // under a row nobody named (ADR-0013) — the population #725 exists for, and
+    // the one a strict `event.account === id` would show as an empty detail.
+    expect(accountEvents(unassignedLedger(), 'default')).toHaveLength(3)
+    expect(accountEvents([anEvent({ account: '  ' })], 'default')).toHaveLength(1)
   })
 })
 

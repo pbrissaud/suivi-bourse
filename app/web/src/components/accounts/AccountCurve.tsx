@@ -36,7 +36,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
 
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-medium">{t('accounts.sheet.curve.title')}</h3>
+      <h3 className="text-sm font-medium">{t('accounts.detail.curve.title')}</h3>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points as ValuePoint[]}>
@@ -52,7 +52,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
             <Line
               type="monotone"
               dataKey="value"
-              name={t('accounts.sheet.curve.value')}
+              name={t('accounts.detail.curve.value')}
               stroke="var(--color-price)"
               dot={false}
               isAnimationActive={false}
@@ -61,7 +61,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
             <Line
               type="monotone"
               dataKey="contributed"
-              name={t('accounts.sheet.curve.contributed')}
+              name={t('accounts.detail.curve.contributed')}
               stroke="var(--color-muted-foreground)"
               strokeDasharray="4 4"
               dot={false}
@@ -82,14 +82,14 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
             className="inline-block size-2.5 rounded-full"
             style={{ backgroundColor: 'var(--color-price)' }}
           />
-          {t('accounts.sheet.curve.value')}
+          {t('accounts.detail.curve.value')}
         </li>
         <li className="flex items-baseline gap-2">
           <span
             aria-hidden
             className="inline-block h-0.5 w-4 border-t-2 border-dashed border-muted-foreground"
           />
-          {t('accounts.sheet.curve.contributed')}
+          {t('accounts.detail.curve.contributed')}
         </li>
       </ul>
     </section>

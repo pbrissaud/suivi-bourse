@@ -1,20 +1,16 @@
 /**
- * The accounts page (#721, ADR-0019, ADR-0016), at the one seam: the whole app
- * in jsdom, HTTP the only faked edge.
+ * The accounts page (ADR-0028, ADR-0019, ADR-0016), at the one seam: the whole
+ * app in jsdom, HTTP the only faked edge.
  *
- * *A comparison never outruns the period where it exists* is not a property of
- * a chart component — it appears only once the range control, the curves and
- * the table's scalar column are mounted together, which is why this suite lives
- * here.
+ * What this file holds is the **master**: the rail, the weights it draws, and
+ * the fact that which account is open is a URL. The detail's five blocks are
+ * `accountDetail.test.tsx`'s.
  *
- * The fixture's arithmetic is by hand in `test/factories.ts`. Two figures carry
- * the whole ticket:
- *
- *     stored     alpha 171,5   ·   beta 115,0     — 6,8 years beside 2,4
- *     rebased    1 an: beta +15,00 % > alpha +14,33 %
- *                1 mois: alpha +3,94 % > beta  +2,68 %
- *
- * Four windows, one inversion, every figure correct.
+ * The fixture's three accounts are worth `1 800`, `900` and `600` — the third
+ * having no cash ledger at all, so it states securities and nothing else — and
+ * `3 300` is the whole. Those shares are the test: read as `total_value` alone
+ * the third account would weigh zero, and the bar would still add up to a
+ * hundred per cent.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -27,343 +23,106 @@ import {
   anAccount,
   anAccountsPayload,
   anAccountWithoutSeries,
+  aLedgerPayload,
   aRuntime,
   defaultAccounts,
   theSeededAccount,
+  unassignedLedger,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-function renderAccounts(accounts: Account[] = defaultAccounts()) {
+function renderAccounts(accounts: Account[] = defaultAccounts(), url = '/comptes') {
   server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts))))
-  return renderApp({ url: '/comptes' })
+  return renderApp({ url })
 }
 
-function table() {
-  return screen.getByRole('table', { name: 'Vos comptes, comparés' })
+function rail() {
+  return screen.getByRole('list', { name: 'Vos comptes' })
 }
 
-function rows() {
-  return within(table())
-    .getAllByRole('row')
-    .slice(1)
-    .map((row) => row.textContent ?? '')
+function entries() {
+  return within(rail())
+    .getAllByRole('link')
+    .map((link) => link.textContent ?? '')
 }
 
-function columnNames() {
-  return within(table())
-    .getAllByRole('columnheader')
-    .map((cell) => (cell.textContent ?? '').replace(/[↑↓]/g, '').trim())
+/** The detail — a landmark named by the account it is about. */
+async function settled(name = 'Alpha') {
+  return screen.findByRole('region', { name })
 }
 
-/**
- * The page is settled once the rebasing has run: `+14,33 %` appears twice, on
- * the strip and in the `perf` cell, which is the coupling the ticket is about.
- */
-async function settled() {
-  await waitFor(() => expect(screen.getAllByText(/\+14,33/)).toHaveLength(2))
-}
-
-function range() {
-  return screen.getByRole('radiogroup', { name: 'Plage' })
-}
-
-describe('the comparison', () => {
-  it('rebases both series to 100 at the start of the window, never showing the stored index', async () => {
+describe('the rail', () => {
+  it('lists every declared account and carries its weight', async () => {
     renderAccounts()
     await settled()
 
-    // `171,5` read as an index would render `+71,50 %` beside `+15,00 %`: a
-    // figure counted from 2019 next to one counted from 2025.
-    expect(screen.getAllByText(/\+15,00/).length).toBeGreaterThan(0)
-    expect(screen.queryByText(/\+71,50/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/171,5/)).not.toBeInTheDocument()
+    expect(entries()).toHaveLength(3)
+    expect(entries()[0]).toContain('Alpha')
+    // A share of a whole, never a change: `+54,55 %` would put the sign of a
+    // gain on a weight.
+    expect(entries()[0]).toMatch(/54,55\s%/)
+    expect(entries()[0]).not.toContain('+54,55')
   })
 
-  it('drives the chart and the table’s scalar column from one control', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    // One control on the page, and one only: two would be two announcers.
-    expect(screen.getAllByRole('radiogroup')).toHaveLength(1)
-
-    // Over one month the ranking is the other way round — and both the strip
-    // under the chart and the `perf` cell move together, because they read one
-    // rebasing.
-    await user.click(within(range()).getByRole('radio', { name: '1M' }))
-    expect(await screen.findAllByText(/\+3,94/)).toHaveLength(2)
-    expect(screen.getAllByText(/\+2,68/)).toHaveLength(2)
-    expect(screen.queryByText(/\+14,33/)).not.toBeInTheDocument()
-  })
-
-  it('offers four presets and never MAX', async () => {
+  it('weighs an account on its securities where no cash ledger was ever kept', async () => {
     renderAccounts()
     await settled()
 
-    expect(within(range()).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
-      '1M',
-      'Depuis le 1ᵉʳ janvier',
-      '1A',
-      'Depuis l’ouverture',
-    ])
-    expect(within(range()).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
+    // `gamma` has `total_value` at `null` (#708) and 600,00 € of shares all the
+    // same. Weighed on the total alone it would read `0,00 %` — silently, the
+    // bar still summing to a hundred.
+    expect(entries()[2]).toContain('Gamma')
+    expect(entries()[2]).toMatch(/18,18\s%/)
   })
 
-  it('reads one thing only — there is no amounts view to mount four curves on', async () => {
-    renderAccounts()
-    await settled()
-
-    // *Amounts* here is four curves at two accounts, ten at five, the pairs
-    // overlapping and no surface being anybody's gain.
-    expect(screen.queryByRole('radio', { name: /montants/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
-  })
-})
-
-describe('the table', () => {
-  it('carries eight columns, the type folded into the account cell', async () => {
-    renderAccounts()
-    await settled()
-
-    expect(columnNames()).toEqual([
-      'Compte',
-      'Valeur totale',
-      'Titres',
-      'Liquidités',
-      'Versé net',
-      'Gain total',
-      'TRI',
-      'perf',
-    ])
-    // `Type` is a second level of the `Compte` cell rather than a column.
-    expect(rows()[0]).toContain('PEA')
-  })
-
-  it('carries Gain total alone — its four terms live in the panel', async () => {
-    renderAccounts()
-    await settled()
-
-    // A total and its terms never share a row: mounted side by side they are
-    // numeric columns of equal weight, and nothing says the last four are
-    // inside the first. The twelve-column variant fits at 1 440 px, which is
-    // exactly what condemns it.
-    expect(columnNames()).not.toContain('Latente')
-    expect(columnNames()).not.toContain('Réalisée')
-    expect(columnNames()).not.toContain('Dividendes')
-    // `Versé net` stays though it is `Valeur − Gain`: it is the silent
-    // denominator of the two columns after it.
-    expect(columnNames()).toContain('Versé net')
-  })
-
-  it('closes with a Portefeuille line, never a Total, and it is not a train of dashes', async () => {
-    renderAccounts()
-    await settled()
-
-    const last = rows()[rows().length - 1]
-    expect(last).toContain('Portefeuille')
-    expect(within(table()).queryByText('Total')).not.toBeInTheDocument()
-    // The two rates are not sums — two rates do not add — and they are not
-    // absences either: the store holds both at portfolio level.
-    expect(last).toMatch(/\+3,22/)
-    expect(last).toMatch(/\+6,78/)
-    expect(last).toMatch(/2\s?800,00/)
-  })
-
-  it('keeps the portfolio out of the strip under the chart', async () => {
-    renderAccounts()
-    await settled()
-
-    // The portfolio is not drawn — its curve is the dashboard's — so the strip
-    // carries one scalar per **drawn** curve and its performance lives in its
-    // table row only.
-    expect(screen.getAllByText(/\+6,78/)).toHaveLength(1)
-    expect(within(table()).getByText(/\+6,78/)).toBeInTheDocument()
-  })
-
-  it('keeps the declaration order when the window changes', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    const order = () => rows().map((row) => row.slice(0, 5))
-    const before = order()
-    await user.click(within(range()).getByRole('radio', { name: '1M' }))
-    await screen.findAllByText(/\+3,94/)
-    expect(order()).toEqual(before)
-    await user.click(within(range()).getByRole('radio', { name: 'Depuis l’ouverture' }))
-    // Bounded at the youngest opening, the old account is **down** — and the
-    // rows have not moved for it.
-    await screen.findAllByText(/-4,72/)
-    expect(order()).toEqual(before)
-  })
-
-  it('sorts on a header when the reader asks for it', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
-    expect(rows()[0]).toContain('Alpha')
-    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
-    expect(rows()[0]).toContain('Beta')
-  })
-
-  it('says which column is sorted, and which way, without the glyph', async () => {
-    // The direction lived only in the ` ↑` / ` ↓` inside the button — whose
-    // accessible name the `aria-label` overrides — so the one state of this
-    // table a sighted reader gets for free was announced to nobody. The helper
-    // above strips those arrows before comparing, which is why no test saw it.
-    const { user } = renderAccounts()
-    await settled()
-
-    const header = () =>
-      screen.getByRole('button', { name: 'Trier par Valeur totale' }).closest('th')!
-
-    expect(header()).toHaveAttribute('aria-sort', 'none')
-    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
-    expect(header()).toHaveAttribute('aria-sort', 'descending')
-    await user.click(screen.getByRole('button', { name: 'Trier par Valeur totale' }))
-    expect(header()).toHaveAttribute('aria-sort', 'ascending')
-  })
-})
-
-describe('the two gestures', () => {
-  function accountRow(name: string) {
-    return within(table())
-      .getAllByRole('row')
-      .find((row) => (row.textContent ?? '').includes(name))!
-  }
-
-  it('previews a curve on hover and puts it back on the way out', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    await user.hover(accountRow('Alpha'))
-    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'true')
-    // Pointing at a row is not choosing it: nothing opens, and nothing is left
-    // behind once the pointer goes.
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-    await user.unhover(accountRow('Alpha'))
-    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
-  })
-
-  it('opens the panel from anywhere on the row, not from the name alone', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    // The click target is the whole row — a figure cell is as good as the name.
-    // The row is held by reference: the open panel puts the whole column behind
-    // an `aria-hidden`, so it cannot be queried again.
-    const beta = accountRow('Beta')
-    await user.click(within(beta).getAllByRole('cell')[1])
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Beta')
-  })
-
-  it('lets the keyboard preview what the pointer previews', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    // Hover says nothing to a keyboard, so focus carries the same preview —
-    // without it the isolated curve would exist for the mouse alone.
-    await user.tab()
-    while (
-      document.activeElement?.textContent !== 'Alpha' &&
-      document.activeElement !== document.body
-    ) {
-      await user.tab()
-    }
-    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'true')
-  })
-
-  it('leaves a row with no curve out of the gesture that previews one', async () => {
-    const { user } = renderAccounts()
-    await settled()
-
-    // `gamma` has no cash event, so no index, so no curve on the plot. Previewed
-    // it would dim every drawn series and put none forward — the chart going
-    // out for a gesture with no subject, on a line reading as chosen. It still
-    // **opens**, because a row with no curve is still an account.
-    await user.hover(accountRow('Gamma'))
-    expect(accountRow('Gamma')).not.toHaveAttribute('aria-selected')
-    expect(accountRow('Alpha')).toHaveAttribute('aria-selected', 'false')
-
-    await user.click(accountRow('Gamma'))
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Gamma')
-  })
-})
-
-describe('the degraded rows', () => {
-  it('names two different reasons where the dashes look alike', async () => {
-    // *Without a cash ledger* is five dashes out of eight and *being rebuilt* is
-    // eight; the trains of dashes are indistinguishable, the sentences are not.
+  it('names the reason an account has no figures, and never a progress', async () => {
     renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
     server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     await settled()
 
-    expect(screen.getByText('aucun mouvement d’espèces enregistré sur ce compte')).toBeInTheDocument()
+    // *Without a cash ledger* and *being rebuilt* are the same absent figures
+    // and two different sentences.
+    expect(
+      await screen.findByText('aucun mouvement d’espèces enregistré sur ce compte'),
+    ).toBeInTheDocument()
     expect(screen.getByText('historique encore en reconstruction')).toBeInTheDocument()
-  })
-
-  it('names a reason and never a progress with a target date', async () => {
-    renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
-    await settled()
-
     // A progression with a date belongs to the banner, which is the one place
-    // that can carry it without repeating it per row.
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
-    expect(within(table()).queryByText(/%.*reconstruction|reconstruction.*%/)).not.toBeInTheDocument()
-  })
-
-  it('drops a column absent for every account, and keeps it for one out of three', async () => {
-    const noCash = defaultAccounts().map((account) => ({
-      ...account,
-      total_value: null,
-      cash_balance: null,
-      net_contributed: null,
-      xirr: null,
-      twr_index: null,
-    }))
-    renderAccounts(noCash)
-    await waitFor(() => expect(columnNames()).not.toContain('Liquidités'))
-
-    // `Liquidités` follows `total_value`: without a ledger the balance is
-    // defined and false. As soon as one account out of three has one, the
-    // dashes come back — there they are a difference between the accounts.
-    expect(columnNames()).not.toContain('Valeur totale')
-    expect(columnNames()).toContain('Titres')
+    // that can carry it without repeating it per account.
+    expect(within(rail()).queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
   it('distinguishes the unassigned line and gives it the way back', async () => {
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(unassignedLedger()))))
     renderAccounts([...defaultAccounts(), theSeededAccount()])
     await settled()
 
-    // The one line the promise *your declared accounts* does not cover — and
-    // while it still wears the name the schema seeded, that name comes from the
+    // While it still wears the name the schema seeded, that name comes from the
     // catalogue rather than from the payload (#745).
-    expect(screen.getByRole('button', { name: 'Non affecté' })).toBeInTheDocument()
+    expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
     // **The gesture, not the page** (#725): a link with no hash landed on the
     // ledger and left the reader to find the reassignment for themselves.
     expect(
-      screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
+      await screen.findByRole('link', { name: 'Affecter ces événements à un compte' }),
     ).toHaveAttribute('href', '/donnees#reassignment')
   })
 
-  it('wears the name its owner gave it, once they have given one', async () => {
-    // #729 refines #745 rather than contradicting it, and the argument is
-    // #745's own: what must never follow the reader is a value *the server*
-    // seeded — English, written about a row nobody declared. A name the owner
-    // typed is not that, and the declaration block is the only place the row
-    // can be renamed at all, so a rename rendered nowhere would not be one.
-    // Both surfaces read `declaredLabel`, so they cannot disagree.
+  it('offers the reassignment for events, never for a row named `default`', async () => {
+    // The seeded row can *become* a declaration — renamed, retyped, or taken
+    // over by a file (#698, #729) — and its events then name the account their
+    // owner named. Offered on the id alone, the rail proposed moving events off
+    // the one line the reader had themselves put a name on.
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(unassignedLedger()))))
     renderAccounts([...defaultAccounts(), theSeededAccount({ label: 'Mon PEA' })])
     await settled()
 
-    expect(screen.getByRole('button', { name: 'Mon PEA' })).toBeInTheDocument()
-    expect(screen.queryByText('Non affecté')).not.toBeInTheDocument()
-    // Still the unassigned line, by its id: only the name moved.
-    expect(
-      screen.getByRole('link', { name: 'Affecter ces événements à un compte' }),
-    ).toHaveAttribute('href', '/donnees#reassignment')
+    expect(within(rail()).getByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('link', { name: 'Affecter ces événements à un compte' }),
+      ).not.toBeInTheDocument(),
+    )
   })
 
   it('reads the unassigned line’s name in the reader’s language', async () => {
@@ -374,56 +133,104 @@ describe('the degraded rows', () => {
     )
     renderApp({ url: '/comptes', browserLanguages: ['en-GB'] })
 
-    // A value seeded once never follows the reader; the catalogue does. Every
-    // other account shows what it declares, in the language its owner wrote it
-    // in.
-    expect(await screen.findByRole('button', { name: 'Unassigned' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: /Unassigned/ })).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('list', { name: 'Your accounts' })).getByRole('link', {
+        name: /Alpha/,
+      }),
+    ).toBeInTheDocument()
   })
 })
 
-describe('the icons, the date and N = 1', () => {
-  it('carries four bubbles, on the four figures that rest on a convention', async () => {
-    renderAccounts()
+describe('which account is open', () => {
+  it('is a URL, so it survives a reload and can be handed on', async () => {
+    const { user, router } = renderAccounts()
     await settled()
 
-    expect(
-      screen.getAllByRole('button', { name: /^Ce que veut dire/ }).map((button) =>
-        button.getAttribute('aria-label'),
-      ),
-    ).toEqual([
-      'Ce que veut dire Versé net',
-      'Ce que veut dire Gain total',
-      'Ce que veut dire TRI',
-      'Ce que veut dire perf',
-    ])
+    await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
+    await settled('Beta')
+    expect(router.state.location.href).toBe('/comptes?compte=beta')
   })
 
-  it('ends both rate bubbles on the same sentence, and lets perf warn against itself', async () => {
+  it('is read off the URL on arrival', async () => {
+    renderAccounts(defaultAccounts(), '/comptes?compte=gamma')
+    await settled('Gamma')
+  })
+
+  it('falls back to the first declared account rather than to an empty page', async () => {
+    // An id naming nothing is what a bookmark becomes when an account is
+    // renamed away or an import revoked.
+    renderAccounts(defaultAccounts(), '/comptes?compte=gone')
+    await settled('Alpha')
+  })
+
+  it('says which one is open, and not with a colour alone', async () => {
     const { user } = renderAccounts()
     await settled()
 
-    // The same last sentence in both, deliberately: the two rates are far more
-    // often misread together than apart.
-    const CONVENTION = /Les rendements sont calculés à partir des dates de vos événements\./
+    expect(within(rail()).getByRole('link', { name: /Alpha/ })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
+    await settled('Beta')
+    expect(within(rail()).getByRole('link', { name: /Alpha/ })).not.toHaveAttribute('aria-current')
+  })
+})
 
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire TRI' }))
-    const xirr = await screen.findByRole('dialog')
-    expect(xirr).toHaveTextContent(CONVENTION)
-    await user.keyboard('{Escape}')
+describe('what the page stopped doing', () => {
+  it('compares no account with any other', async () => {
+    renderAccounts()
+    await settled()
 
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire perf' }))
-    const perf = await screen.findByRole('dialog')
-    expect(perf).toHaveTextContent(CONVENTION)
-    // The one bubble in the product that warns against its own figure.
-    expect(perf).toHaveTextContent(/s’inversent quatre fois sur sept plages/)
-    expect(within(perf).getByRole('link')).toHaveAttribute(
-      'href',
-      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#twr',
+    // The eight columns and the plot of N curves are the dashboard's accounts
+    // card now, with ADR-0019's rule travelling with them.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByText('Portefeuille')).not.toBeInTheDocument()
+  })
+
+  it('explains its figures on the figures and never in prose', async () => {
+    renderAccounts()
+    await settled()
+
+    // The subtitle telling the two rates apart was prose about the product's
+    // own rules, which is what the bubbles are for (ADR-0016).
+    expect(screen.queryByText(/annualisé depuis l’origine/)).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('button', { name: /^Ce que veut dire/ }).map((button) =>
+          button.getAttribute('aria-label'),
+        ),
+      ).toEqual([
+        'Ce que veut dire Gain total',
+        'Ce que veut dire Versé net',
+        'Ce que veut dire perf',
+        'Ce que veut dire TRI',
+        'Ce que veut dire Dividendes',
+      ]),
     )
   })
 
-  it('dates its money figures once, at the level of the page, and names no interval', async () => {
+  it('carries one range control, and never offers MAX', async () => {
+    renderAccounts()
+    await settled()
+
+    // Two would be two announcers contradicting each other, which is the defect
+    // the dashboard has already paid for once.
+    const controls = await screen.findAllByRole('radiogroup')
+    expect(controls).toHaveLength(1)
+    expect(within(controls[0]).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
+    expect(within(controls[0]).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
+      '1M',
+      'Depuis le 1ᵉʳ janvier',
+      '1A',
+      'Depuis l’ouverture',
+    ])
+  })
+})
+
+describe('the page’s own reads', () => {
+  it('dates its money figures once, at the level of the page', async () => {
     renderAccounts()
     await settled()
 
@@ -432,33 +239,7 @@ describe('the icons, the date and N = 1', () => {
     expect(screen.queryByText(/sur (un an|les douze derniers mois)/i)).not.toBeInTheDocument()
   })
 
-  it('tells the two rates apart in its subtitle', async () => {
-    renderAccounts()
-    await settled()
-
-    expect(screen.getByText(/annualisé depuis l’origine/)).toBeInTheDocument()
-    expect(screen.getByText(/sur la plage affichée/)).toBeInTheDocument()
-  })
-
-  it('answers at N = 1, without a Portefeuille line and without a navigation entry', async () => {
-    renderAccounts([anAccount()])
-    await waitFor(() => expect(table()).toBeInTheDocument())
-
-    // The row would copy the single line above it, with a rule drawn between a
-    // line and itself.
-    expect(within(table()).queryByText('Portefeuille')).not.toBeInTheDocument()
-    // The page leaves the **navigation** and never the route: a bookmark that
-    // was valid yesterday costs a 404 for nothing.
-    expect(
-      within(screen.getByRole('navigation', { name: 'Sections' })).queryByRole('link', {
-        name: 'Comptes',
-      }),
-    ).not.toBeInTheDocument()
-  })
-})
-
-describe('the page’s own reads', () => {
-  it('names an unreadable store instead of showing an empty comparison', async () => {
+  it('names an unreadable store instead of showing an empty page', async () => {
     server.use(
       problemHandler(ROUTES.accounts, {
         status: 503,
@@ -469,12 +250,51 @@ describe('the page’s own reads', () => {
     renderApp({ url: '/comptes' })
 
     expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the page when a read one of its blocks needs is the one that failed', async () => {
+    // One band or none, and the band is raised for **any** of the page's five
+    // reads — but only the declaration failing empties it. Gated on *any*
+    // failure, a ledger that would not answer took the rail and the detail with
+    // it, so an owner lost every figure they did have because the *last events*
+    // block could not be composed.
+    server.use(
+      problemHandler(ROUTES.events, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    renderApp({ url: '/comptes' })
+
+    const detail = await settled()
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(rail()).toBeInTheDocument()
+    // And the one block that read it is absent — never composed out of nothing.
+    expect(
+      within(detail).queryByRole('list', { name: 'Derniers événements' }),
+    ).not.toBeInTheDocument()
   })
 
   it('says nothing has been declared, and where to declare it', async () => {
     renderAccounts([])
     expect(await screen.findByText('Aucun compte déclaré')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Aller à Données' })).toHaveAttribute('href', '/donnees')
+  })
+
+  it('answers at N = 1, on a page that is no longer a comparison', async () => {
+    renderAccounts([anAccount()])
+    await settled()
+
+    // One entry in the rail, and a detail beside it that is the ordinary
+    // reading rather than a degenerate comparison — which is why the navigation
+    // keeps its entry here (`AppSidebar`).
+    expect(entries()).toHaveLength(1)
+    expect(
+      within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('link', {
+        name: 'Comptes',
+      }),
+    ).toBeInTheDocument()
   })
 })

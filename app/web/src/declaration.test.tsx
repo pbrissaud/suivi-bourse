@@ -320,10 +320,9 @@ describe('`default` in this table, under the name the accounts page uses', () =>
 })
 
 describe('the block exists at every N', () => {
-  it('is there at N = 1, where the accounts page leaves the navigation', async () => {
-    // A comparison of one term is not a comparison, and that is the *page*'s
-    // argument. The declaration is the only place `default` can be renamed or
-    // replaced, so removing it at N = 1 would lock in precisely the owner the
+  it('is there at N = 1, whatever the accounts page does there', async () => {
+    // The declaration is the only place `default` can be renamed or replaced,
+    // so removing it at N = 1 would lock in precisely the owner the
     // reassignment exists to free.
     renderDeclaration(anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha' })]))
     await waitFor(() => expect(declaration()).toBeInTheDocument())
