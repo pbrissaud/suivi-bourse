@@ -7,7 +7,14 @@ The store, on the other hand, is real (issue #700): a write is asserted on the
 row it produced, never on a call it made. These cover the runtime glue that the
 pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation (add /
 remove / revive / untouched + the race guard), the write-gate vs reschedule-gate
-split, and the Prometheus fetch-success gate (#609).
+split, and the fetch-success gate (#609).
+
+The Prometheus exporter used to be this file's **second observation point**:
+nine tests read the fetch-success gate, the freshness sonde and the departure
+cleanup off the calls a double had received. They read them off the scrape
+**record** now — the one the runtime tab renders — and no gauge is left in an
+assertion here (#806, ADR-0033). What is left of the exporter is the single test
+whose *subject* it is, and that one goes with the module rather than moving.
 """
 
 import threading
@@ -105,6 +112,12 @@ def _metrics(shares, store, mocker, prometheus=None):
     The two ``INSERT``s are the configuration path's rows the foreign keys ask
     for: the market writer never invents a declaration, which is the schema rule
     (one writer per row) seen from a test's side.
+
+    **No exporter double by default** (#806): the wiring's proofs are the rows
+    the pass wrote and the record it published, so the object is built the way
+    the app itself will be built once ADR-0033 lands — ``prometheus_exporter``
+    at ``None``, every gauge call short-circuited by its own guard. The
+    parameter stays for the single test whose subject *is* the exporter.
     """
     for share in shares:
         store.execute(
@@ -115,8 +128,7 @@ def _metrics(shares, store, mocker, prometheus=None):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store)
-    m = SuiviBourseMetrics(cfg,
-                           prometheus_exporter=prometheus or mocker.MagicMock())
+    m = SuiviBourseMetrics(cfg, prometheus_exporter=prometheus)
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m
@@ -455,33 +467,59 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
 
 
 # ---------------------------------------------------------------------------
-# Prometheus fetch-success gate (#609)
+# The fetch-success gate (#609)
 # ---------------------------------------------------------------------------
 
-def test_prometheus_updates_on_closed_market_probe(
+def test_a_closed_probe_fetches_successfully_and_writes_nothing(
         store, fake_ticker, mocker, monkeypatch):
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    """The two gates are two gates, and a closed market is what separates them.
+
+    #609's whole point: the fetch succeeded — the pass read a market state and
+    had a price in hand — and the *write* gate is the only reason no point
+    landed. It used to be read off the quote gauges, which update on fetch
+    success and never on the write; it is read off the scrape record now, which
+    carries the two facts side by side and outlives the exporter (#806).
+    """
+    m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    # Closed -> no write, but the market gauges still update (fetch success).
     assert _prices(store) == []
-    prom.update_quote.assert_called_once()
-    # And the scrape never touches the position half — the replay owns it (#699).
-    prom.update_position.assert_not_called()
+    record = m.recorder.scrape_of("AAPL")
+    assert record.price_present is True
+    assert record.market_state == "CLOSED"
+    assert record.verdict == runtime_state.SCRAPE_CLOSED
+    assert record.wrote is False
+    # The write gate holds the **whole** market half, not the series alone: the
+    # ``latest`` row goes down in the same transaction as the point, so a closed
+    # probe leaves neither. The position half is the replay's table and has a
+    # writer of its own (#699), which the schema tests hold on the source.
+    assert store.query("SELECT count(*) FROM symbol_quote")[0][0] == 0
 
 
-def test_prometheus_not_updated_when_fetch_fails(
+def test_a_silent_fetch_failure_writes_nothing_and_says_so(
         store, mocker):
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    """The other side of the gate, and the quiet one.
+
+    ``_fetch_ticker_data`` catches three exception types and answers
+    ``(None, None)``: no price, no state, nothing to write and — unlike the
+    raising case further down — no error to name. The record says ``no_price``
+    with a ``market_state`` of ``None``, which is the honest answer and not a
+    state.
+    """
+    m = _metrics([_share()], store, mocker)
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
 
-    prom.update_share.assert_not_called()
+    assert _prices(store) == []
+    record = m.recorder.scrape_of("AAPL")
+    assert record.price_present is False
+    assert record.market_state is None
+    assert record.verdict == runtime_state.SCRAPE_NO_PRICE
+    assert record.wrote is False
+    assert record.error is None
 
 
 # ---------------------------------------------------------------------------
@@ -504,10 +542,14 @@ def _freeze_the_writer(store, mocker, stored=180.0):
 def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
         store, fake_ticker, mocker, monkeypatch, caplog):
     """A writer whose stored price stays frozen across consecutive REGULAR cycles
-    for >= the horizon while the live quote moves → WARNING + gauge 1. The signal
-    needs a first cycle to baseline, then a later cycle past the horizon."""
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    for >= the horizon while the live quote moves → WARNING + the record's
+    ``stale`` flag. The signal needs a first cycle to baseline, then a later
+    cycle past the horizon.
+
+    The two instruments the sonde ever had were the log line and the gauge; the
+    record is the third and the one the interface renders (#628, #806).
+    """
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     # Live close is 185.0 (fake_ticker default); the stored value never advances.
     _freeze_the_writer(store, mocker)
@@ -515,7 +557,7 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
 
     # Cycle 1: baseline — no signal yet.
     m._scrape_symbol("AAPL", now=NOW)
-    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+    assert m.recorder.scrape_of("AAPL").stale is False
 
     # Cycle 2, one horizon later (gap not wider than the horizon): still frozen,
     # quote moved → stale.
@@ -524,7 +566,6 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
 
     assert any("Price-freshness sonde" in r.message and "AAPL" in r.message
                for r in caplog.records)
-    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], True)
     # Diagnostic only: it never gates the write or the re-arm.
     assert m.recorder.scrape_of("AAPL").stale is True
     assert m.recorder.scrape_of("AAPL").verdict == runtime_state.SCRAPE_WROTE
@@ -559,8 +600,7 @@ def test_sonde_no_false_positive_first_tick_after_close(
     """The market-open-after-close fix: a polling gap wider than the horizon
     (overnight) re-baselines, so the first morning tick raises no signal even
     though the stored point is legitimately hours old and the quote gapped."""
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     _freeze_the_writer(store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -570,7 +610,7 @@ def test_sonde_no_false_positive_first_tick_after_close(
     # This morning, 16h later (a break in consecutive polling): re-baseline, not stale.
     m._scrape_symbol("AAPL", now=NOW + timedelta(hours=16))
 
-    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+    assert m.recorder.scrape_of("AAPL").stale is False
 
 
 def test_sonde_no_false_positive_when_writer_advances_value(
@@ -582,8 +622,7 @@ def test_sonde_no_false_positive_when_writer_advances_value(
     in the same transaction as the point, which is what makes the healthy case
     healthy.
     """
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), 180.0)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -591,15 +630,21 @@ def test_sonde_no_false_positive_when_writer_advances_value(
     m._scrape_symbol("AAPL", now=NOW)
     m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
 
-    assert prom.update_price_staleness.call_args == mocker.call(m.shares[0], False)
+    assert m.recorder.scrape_of("AAPL").stale is False
+    # And the writer really did advance, which is what makes the case healthy.
+    assert _prices(store) == [180.0, 185.0, 185.0]
 
 
 def test_sonde_does_not_run_on_closed_market(
         store, fake_ticker, mocker, monkeypatch):
     """The sonde is a REGULAR-only check: a closed probe writes nothing and never
-    reads the stored price or touches the staleness gauge."""
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    reads the stored price.
+
+    A pass that did not run the sonde and a pass that ran it and found nothing
+    wrong publish the same ``stale=False``, so the *skip* has no row and no
+    field of its own — which is the one case the convention keeps a spy for.
+    """
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
@@ -607,14 +652,15 @@ def test_sonde_does_not_run_on_closed_market(
     m._scrape_symbol("AAPL", now=NOW)
 
     read.assert_not_called()
-    prom.update_price_staleness.assert_not_called()
+    assert _prices(store) == []
+    assert m.recorder.scrape_of("AAPL").stale is False
 
 
 def test_sonde_disabled_when_horizon_non_positive(
         store, fake_ticker, mocker, monkeypatch):
-    """A non-positive horizon turns the sonde off: no read, no gauge, write intact."""
-    prom = mocker.MagicMock()
-    m = _metrics([_share()], store, mocker, prometheus=prom)
+    """A non-positive horizon turns the sonde off: no read, no signal, write
+    intact. Same argument as above for the spy — an off sonde leaves no trace."""
+    m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 0
     read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -622,7 +668,7 @@ def test_sonde_disabled_when_horizon_non_positive(
     m._scrape_symbol("AAPL", now=NOW)
 
     read.assert_not_called()
-    prom.update_price_staleness.assert_not_called()
+    assert m.recorder.scrape_of("AAPL").stale is False
     assert _prices(store) == [185.0]
 
 
@@ -642,18 +688,19 @@ def test_sonde_read_error_never_disturbs_scrape(
     assert m.scheduler.add_job.call_args.kwargs["run_date"] == NOW + timedelta(seconds=120)
 
 
-def test_the_sonde_asks_once_per_symbol_and_reports_to_every_holding(
+def test_the_sonde_asks_once_per_symbol_however_many_holdings(
         store, fake_ticker, mocker, monkeypatch):
     """It was per ``(symbol, account)`` until #700 and is per symbol now: the
     series it watches has one row per symbol, so the same value would have been
     compared against the same memory once per holding.
 
-    The **gauge** keeps its per-account identity, because that is how a headless
-    dashboard joins it to the position gauges beside it.
+    One question, one answer: the record is keyed by symbol and carries a single
+    ``stale``, which is the shape #700 gave the series. The per-account fan-out
+    the gauges kept was theirs alone — a label set, not a second answer — and it
+    leaves with them (#806).
     """
-    prom = mocker.MagicMock()
     shares = [_share(account="pea"), _share(account="cto")]
-    m = _metrics(shares, store, mocker, prometheus=prom)
+    m = _metrics(shares, store, mocker)
     m.staleness_horizon = 900
     read = mocker.spy(main.quotes, "last_price")
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -661,8 +708,9 @@ def test_the_sonde_asks_once_per_symbol_and_reports_to_every_holding(
     m._scrape_symbol("AAPL", now=NOW)
 
     assert read.call_count == 1
-    # Nothing stored yet → not stale, and both holdings' gauges are cleared.
-    assert prom.update_price_staleness.call_count == 2
+    # Nothing stored yet → not stale, and the one point is the one write.
+    assert m.recorder.scrape_of("AAPL").stale is False
+    assert _prices(store) == [185.0]
 
 
 # ---------------------------------------------------------------------------
@@ -746,23 +794,47 @@ def test_the_synchronous_driver_skips_a_sold_position_too(
     assert _prices(store, "ALO") == []
 
 
-def test_selling_out_removes_the_scrape_job_and_its_quote_gauges(
-        store, mocker):
-    prom = mocker.MagicMock()
-    m = _metrics([_share("AAPL"), _share("ALO", quantity=0)], store,
-                 mocker, prometheus=prom)
+def test_selling_out_removes_the_scrape_job_and_forgets_its_last_pass(
+        store, fake_ticker, mocker, monkeypatch):
+    """The departure cleanup #672 D6 asked for, on the record rather than a gauge.
+
+    Nothing will ever fetch this symbol again, so whatever its last pass left
+    behind would sit at its last observed value for the life of the process,
+    indistinguishable from a value that is simply not moving. That was the
+    argument for ``forget_quotes`` and it is word for word the argument for
+    ``recorder.forget_scrape`` — which is the one the runtime tab reads and the
+    one that outlives the exporter (#806).
+
+    The **backfill** record deliberately stays: a position sold out stops being
+    polled and goes on being reconstructed (#703).
+    """
+    m = _metrics([_share("AAPL"), _share("ALO", "Alstom")], store, mocker)
+    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    m._scrape_symbol("ALO", now=NOW)
+    assert m.recorder.scrape_of("ALO") is not None
+    m.scheduler.reset_mock()
+
+    # Sold out between two reconciles.
+    m.shares[1]["quantity"] = 0
     m.scheduler.get_jobs.return_value = [
         _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("ALO"))]
 
     m._reconcile_jobs()
 
     m.scheduler.remove_job.assert_called_once_with(_scrape_job_id("ALO"))
-    # A frozen sb_share_price is unreadable; an absent one is not (#672 D6).
-    prom.forget_quotes.assert_called_once_with("ALO")
+    assert m.recorder.scrape_of("ALO") is None
 
 
 def test_a_failing_gauge_removal_never_aborts_the_reconcile(
         store, mocker):
+    """The one test in this file whose **subject** is the exporter (#806).
+
+    It is not an observation point here: the double is the fault being injected,
+    and the assertion is on the pass carrying on. The behaviour has no successor
+    once ADR-0033 removes the module — there is nothing left in that loop that
+    can raise — so it is left standing while the exporter stands, and goes with
+    it rather than being re-anchored on nothing.
+    """
     prom = mocker.MagicMock()
     prom.forget_quotes.side_effect = RuntimeError("registry is unhappy")
     m = _metrics([_share("AAPL", quantity=0), _share("MSFT", quantity=0)],
@@ -861,9 +933,9 @@ def test_ingest_reconciles_against_scheduler(
     assert m.scheduler.add_job.call_args.kwargs["id"] == _scrape_job_id("AAPL")
 
 
-def test_reconcile_noop_without_scheduler(store, mocker):
+def test_reconcile_noop_without_scheduler():
     cfg = _FakeConfigManager([_share("AAPL")])
-    m = SuiviBourseMetrics(cfg, prometheus_exporter=mocker.MagicMock())
+    m = SuiviBourseMetrics(cfg, prometheus_exporter=None)
     # scheduler is None -> reconcile is a safe no-op (unit tests that never wire
     # a scheduler still exercise ingest()).
     assert m.scheduler is None
