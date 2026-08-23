@@ -30,6 +30,7 @@ import {
   aPositionsPayload,
   aPriceSeries,
   anImportsPayload,
+  aReceipt,
   aRuntime,
   aStore,
   aTotalsPayload,
@@ -95,6 +96,19 @@ export function defaultHandlers() {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: String(params.id), ...draft }))
     }),
+
+    // The way in (#811): one file, one receipt. The receipt is the fixture's
+    // and is not computed from what was sent — what a file holds is the
+    // server's business, and a handler parsing a CSV would be a second
+    // implementation of the loader living in the test harness.
+    //
+    // **The file itself does not survive this environment**, and that is worth
+    // knowing before writing an assertion about it: jsdom builds the `File`,
+    // undici serialises the body, and the two disagree — the part arrives named
+    // `blob` and empty. What is observable here is the request the app made,
+    // which is what these tests are about; what the server reads out of a real
+    // multipart body is asserted on the Python side, over the real route.
+    http.post(ROUTES.eventsImport, () => HttpResponse.json(aReceipt(), { status: 201 })),
 
     // The sources, and the one gesture that reaches an imported row (#728).
     // The revocation answers what it removed, which is what the store knows —

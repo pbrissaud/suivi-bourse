@@ -20,6 +20,7 @@ import {
   aFileAccount,
   anImport,
   anImportsPayload,
+  aReceipt,
   aLedgerPayload,
   aTypedEvent,
   defaultImports,
@@ -444,7 +445,7 @@ describe('the export', () => {
     // One band above the table (#794, ADR-0030): the zone, the menu and the
     // files. Getting one's data out is a question of files, not of the ledger.
     const band = screen.getByRole('region', { name: 'Import et export' })
-    expect(within(band).getByText(/Déposez un \.csv ou un \.xlsx/)).toBeInTheDocument()
+    expect(within(band).getByText(/Importer un \.csv ou un \.xlsx/)).toBeInTheDocument()
     expect(within(band).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(within(band).getByRole('table', { name: 'Import et export' })).toBeInTheDocument()
   })
@@ -537,18 +538,18 @@ describe('an install that has imported nothing', () => {
     expect(screen.queryByRole('table', { name: 'Import et export' })).not.toBeInTheDocument()
   })
 
-  it('says where to drop a file once, never beside the empty state that says it', async () => {
+  it('offers the file entrance once, never beside the empty state that offers it', async () => {
     // An install with a source on record and no event — an accounts file, or
     // every import forgotten — is where the band and the ledger's own empty
-    // state would each carry the instruction.
+    // state would each carry the gesture.
     renderImports({ events: [], accounts: [anAccount({ id: 'zeta' })] })
-    await screen.findByText('Déposer un fichier')
+    await screen.findByText('Importer un fichier')
 
-    // The band is there — it has a source to forget — and the instruction is
-    // said once, by the entry of the empty state and not by the band.
+    // The band is there — it has a source to forget — and the gesture is
+    // offered once, by the entry of the empty state and not by the band.
     const band = screen.getByRole('region', { name: 'Import et export' })
-    expect(within(band).queryByText(/Déposez un \.csv ou un \.xlsx/)).not.toBeInTheDocument()
-    expect(screen.getAllByText(/Déposez un \.csv ou un \.xlsx/)).toHaveLength(1)
+    expect(within(band).queryByText(/Importer un \.csv ou un \.xlsx/)).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('Choisir un fichier')).toHaveLength(1)
   })
 
   it('renders no band at all with nothing recorded and nothing declared', async () => {
@@ -556,9 +557,170 @@ describe('an install that has imported nothing', () => {
     // band would say the same thing twice, and a block with nothing in it does
     // not exist.
     renderImports({ events: [], imports: [], accounts: [theSeededAccount()], declared: false })
-    await screen.findByText('Déposer un fichier')
+    await screen.findByText('Importer un fichier')
 
     expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument()
+    // And the file entrance is **still there**: it is the empty state's own
+    // entry, which is the whole of story 2 — an install that mounted nothing is
+    // not an install missing half the product.
+    expect(screen.getByLabelText('Choisir un fichier')).toBeInTheDocument()
+  })
+})
+
+describe('the file handed over', () => {
+  /** One file, as a browser's own picker hands it to the input. */
+  function aFile(name = 'zeta-events_2.csv') {
+    return new File(['date,event_type\n'], name, { type: 'text/csv' })
+  }
+
+  it('takes a file from the picker and renders the receipt', async () => {
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    // What the gesture produced, in the units the owner counts in — and read by
+    // its accessible text, like every other assertion here.
+    expect(
+      await screen.findByText(
+        /3 événements écrits, du 5 janv\. 2026 au 27 févr\. 2026, sur 1 compte et 2 titres\./,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('sends the file to the gesture, and never to a resource', async () => {
+    // `/api/events/import` and not `/api/imports`: an import is no longer a
+    // resource, so there is nothing to POST to and nothing to come back to.
+    // What is asserted is the **request**: the route, and a multipart body —
+    // the file inside it does not survive jsdom and undici disagreeing about
+    // what a `File` is, and what the server makes of a real one is asserted
+    // over the real route in `tests/test_ledger.py`.
+    const seen: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        seen.push(request.headers.get('content-type') ?? 'no content type')
+        return HttpResponse.json(aReceipt(), { status: 201 })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile('broker.csv'))
+    await screen.findByText(/3 événements écrits/)
+
+    expect(seen).toHaveLength(1)
+    // The boundary is the browser's, never ours: a hand-written `Content-Type`
+    // is a multipart body no server can split.
+    expect(seen[0]).toMatch(/^multipart\/form-data; boundary=/)
+  })
+
+  it('says a file that wrote nothing wrote nothing, and states no period', async () => {
+    // *0 événements écrits, du — au —* would state a period the file does not
+    // carry, and no plural rule can invent the two days that are missing.
+    server.use(
+      http.post(ROUTES.eventsImport, () =>
+        HttpResponse.json(
+          aReceipt({ filename: 'vide.csv', written: 0, period: null, accounts: [], symbols: [] }),
+          { status: 201 },
+        ),
+      ),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile('vide.csv'))
+
+    expect(
+      await screen.findByText('vide.csv ne portait aucun événement : rien n’a été écrit.'),
+    ).toBeInTheDocument()
+  })
+
+  it('reads a refusal by its type, and never by the sentence the server wrote', async () => {
+    server.use(
+      http.post(ROUTES.eventsImport, () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.invalidFile,
+            title: 'Invalid file',
+            status: 422,
+            detail: "account 'pea' is not declared",
+          },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    expect(
+      await screen.findByText(/L’application a refusé ce fichier et n’a rien écrit/),
+    ).toBeInTheDocument()
+    // The server's own sentence is a diagnostic for a log, and English: it is
+    // carried, and rendered nowhere (ADR-0024).
+    expect(screen.queryByText(/is not declared/)).not.toBeInTheDocument()
+  })
+
+  it('names the bound rather than the generic refusal when the file is too big', async () => {
+    server.use(
+      http.post(ROUTES.eventsImport, () =>
+        HttpResponse.json(
+          { type: PROBLEM_TYPES.tooLarge, title: 'File too large', status: 413, limit: 8388608 },
+          { status: 413, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    expect(
+      await screen.findByText(/dépasse ce que l’application accepte en une fois/),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the receipt when the first import fills an empty ledger', async () => {
+    // **The gesture this whole ticket exists for**, and the one place a receipt
+    // held by the zone would be destroyed by the write it announces: an empty
+    // ledger offers the file entrance inside the entry pair, the import fills
+    // the table, the pair unmounts and the band's own zone mounts in its place.
+    const { user } = renderImports({ events: [], imports: [] })
+    await screen.findByText('Importer un fichier')
+    // The ledger the import leaves behind, armed **after** the empty one has
+    // been read: `renderImports` registers its own handler, and the last one
+    // registered is the one that answers.
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())))
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    // The table the import produced is there, and so is the sentence saying
+    // what produced it.
+    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(screen.getByText(/3 événements écrits/)).toBeInTheDocument()
+  })
+
+  it('reads the ledger again once the rows have landed', async () => {
+    // The server replays before answering (#697), so the receipt is the moment
+    // every figure downstream of the ledger is stale — and the table below is
+    // the nearest of them.
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+    // Armed **after** the first read has landed, so what it counts is the
+    // reading the gesture caused and not the one the mount did.
+    let reads = 0
+    server.use(
+      http.get(ROUTES.events, () => {
+        reads += 1
+        return HttpResponse.json(aLedgerPayload())
+      }),
+    )
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await screen.findByText(/3 événements écrits/)
+
+    await waitFor(() => expect(reads).toBeGreaterThan(0))
   })
 })

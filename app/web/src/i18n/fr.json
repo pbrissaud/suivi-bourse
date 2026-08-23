@@ -150,11 +150,14 @@
   "firstRun.ephemeral": "Ce conteneur ne garde rien : le magasin est dans sa propre couche inscriptible et disparaît à sa prochaine recréation. C’est très bien pour essayer l’application — montez un volume pour la conserver.",
   "firstRun.save": "Enregistrer",
   "firstRun.refused": "L’application a refusé cette valeur et n’a rien écrit.",
-  "firstRun.entry.file.body": "Déposez un .csv ou un .xlsx de vos événements dans {path}. L’application le lit toute seule, quel que soit son nom. Ce dossier est un montage optionnel : sans lui il n’y a rien à y déposer, et l’autre entrée reste ouverte.",
+  "firstRun.entry.file.body": "Remettez à l’application un .csv ou un .xlsx de vos événements depuis la page des données — ou déposez-en un dans {path}, qu’elle lit aussi. Dans les deux cas il est lu une fois, quel que soit son nom.",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
   "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} accounts {Préparation de vos comptes…} other {Préparation de votre fichier…}}",
   "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} accounts {Vos comptes sont sur votre disque.} other {Votre fichier est sur votre disque.}}",
+  "receipt.import.running": "Lecture de {file}…",
+  "receipt.import.written": "{count, plural, one {# événement écrit} other {# événements écrits}}, du {from} au {to}, sur {accounts, plural, one {# compte} other {# comptes}} et {symbols, plural, one {# titre} other {# titres}}.",
+  "receipt.import.empty": "{file} ne portait aucun événement : rien n’a été écrit.",
 
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",
@@ -352,14 +355,15 @@
 
 
 
-  "data.empty.file.title": "Déposer un fichier",
-  "data.empty.file.body": "Déposez un .csv ou un .xlsx de vos événements dans le dossier d’import. L’application le lit d’elle-même, quel que soit son nom, et un fichier qui ne couvre qu’une année est un début légitime.",
+  "data.empty.file.title": "Importer un fichier",
+  "data.empty.file.body": "Remettez à l’application un .csv ou un .xlsx de vos événements. Elle le lit une fois, quel que soit son nom, et un fichier qui ne couvre qu’une année est un début légitime.",
   "data.empty.manual.title": "Saisir un premier événement",
   "data.empty.manual.body": "Une position se saisit comme les événements qui l’ont construite — un achat, sa date, son prix. Si vous n’avez plus la date, saisissez votre meilleure estimation.",
 
   "data.imports.title": "Import et export",
-  "data.drop.title": "Déposez un .csv ou un .xlsx dans le dossier d’import",
-  "data.drop.body": "L’application le lit d’elle-même, quel que soit son nom. La révocation se fait par fichier : oublier un import retire les événements qu’il avait apportés, jamais une ligne d’entre eux.",
+  "data.drop.title": "Importer un .csv ou un .xlsx",
+  "data.drop.body": "Déposez-le ici, ou choisissez-le. L’application le lit une fois, quel que soit son nom, et ses lignes deviennent des événements comme les autres — modifiables et supprimables une par une.",
+  "data.drop.choose": "Choisir un fichier",
   "data.imports.column.file": "Fichier",
   "data.imports.column.kind": "Nature",
   "data.imports.column.at": "Importé le",
@@ -442,6 +446,8 @@
   "problem.notFound": "L’application répond que cela n’existe pas.",
   "problem.badRequest": "L’application a refusé la requête faite par cette page.",
   "problem.conflict": "L’application a refusé : ce que ce geste nomme existe déjà, ou quelque chose repose encore dessus.",
+  "problem.invalidFile": "L’application a refusé ce fichier et n’a rien écrit. Vérifiez qu’il s’agit bien d’un grand livre d’événements, que les comptes qu’il nomme sont déclarés, et que ses colonnes sont celles qu’écrit l’export.",
+  "problem.tooLarge": "Ce fichier dépasse ce que l’application accepte en une fois. Exportez une plage plus étroite, ou coupez-le en deux.",
   "problem.internal": "L’application a rencontré une erreur qu’elle n’attendait pas.",
   "problem.unreachable": "L’application ne répond pas. Rien de ce qui est affiché ne vient d’elle."
 }

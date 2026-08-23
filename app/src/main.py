@@ -71,6 +71,9 @@ MANAGED_LOGGERS = (
     # which is the module that most often explains why a conversion is missing,
     # i.e. the commonest reason to reach for DEBUG in the first place.
     'fx', 'accounts', 'entries', 'reassignment',
+    # The upload's own (#811). A file refused at the door leaves no row to look
+    # at, so the log line is the whole of what an owner debugging one has.
+    'uploads',
 )
 
 

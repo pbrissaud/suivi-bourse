@@ -75,6 +75,7 @@ import type {
   EnvironmentVariable,
   EventsResponse,
   Fundamentals,
+  ImportReceipt,
   ImportRecord,
   ImportsResponse,
   LedgerEvent,
@@ -947,6 +948,26 @@ export function anImport(overrides: Partial<ImportRecord> = {}): ImportRecord {
 
 export function anImportsPayload(imports: ImportRecord[] = defaultImports()): ImportsResponse {
   return imports
+}
+
+/**
+ * THE RECEIPT — what an upload produced (#811).
+ *
+ * It carries the four things the sentence is made of: how many rows landed, the
+ * period they cover, and the accounts and securities they touched. The default
+ * is a plausible year of one account and two securities; a test that is about
+ * the *empty* file passes `period: null`, which is the one shape the other
+ * sentence exists for.
+ */
+export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt {
+  return {
+    filename: 'zeta-events_2.csv',
+    written: 3,
+    period: { from: '2026-01-05', to: '2026-02-27' },
+    accounts: ['beta'],
+    symbols: ['ZETA', 'ZZX'],
+    ...overrides,
+  }
 }
 
 export function defaultImports(): ImportRecord[] {

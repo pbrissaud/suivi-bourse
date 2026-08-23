@@ -48,6 +48,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
 import { ExportMenu } from '@/components/data/ExportMenu'
+import { UploadZone, type EventUpload } from '@/components/data/UploadZone'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -85,6 +86,12 @@ const KIND_KEYS: Record<ImportKind, MessageKey> = {
 }
 
 export interface ImportsBlockProps {
+  /**
+   * The upload gesture, held by the tab (#811). It comes down rather than being
+   * made here because the zone is mounted in **two** places and the first
+   * import moves the reader from one to the other.
+   */
+  upload: EventUpload
   /** What `/api/imports` served. `null` — it has not landed (ADR-0026). */
   imports: ImportsResponse | null
   /** The ledger this tab has already read: what a revocation is counted from. */
@@ -111,6 +118,7 @@ export interface ImportsBlockProps {
 }
 
 export function ImportsBlock({
+  upload,
   imports,
   events,
   accounts,
@@ -161,24 +169,18 @@ export function ImportsBlock({
       </h2>
 
       {/* The drop zone and the way back out, on one line: the two gestures a
-          file is the unit of. The zone **names the folder** rather than
-          offering the browser a target it has nowhere to send — there is no
-          upload route, the drop folder is the mechanism, and a rectangle that
-          swallowed a file and did nothing would be the worst of the three.
+          file is the unit of. Since #811 the zone is a **target** rather than
+          the name of a folder — there is a route now, and a rectangle that
+          named a mount was the honest answer only while there was not.
 
           It is **not said twice**: with nothing recorded, the ledger's own
-          empty state carries the same instruction as one of its two entries of
+          empty state carries the same gesture as one of its two entries of
           equal weight, one line below this band. An install with a source on
           record and no event — an accounts file, or every import forgotten —
           is exactly where both would otherwise render. */}
       {events.length > 0 || files.events || files.accounts ? (
         <div className="flex flex-wrap items-start justify-between gap-4">
-          {events.length > 0 ? (
-            <div>
-              <p className="font-medium">{t('data.drop.title')}</p>
-              <p className="max-w-prose text-sm text-muted-foreground">{t('data.drop.body')}</p>
-            </div>
-          ) : null}
+          {events.length > 0 ? <UploadZone upload={upload} /> : null}
           {files.events || files.accounts ? (
             <ExportMenu files={files} selection={selection} selected={selected} />
           ) : null}

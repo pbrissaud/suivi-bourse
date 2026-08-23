@@ -55,6 +55,16 @@ export const ROUTES = {
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
   /**
+   * A file handed over, read once, and written as ordinary events (#811,
+   * ADR-0032).
+   *
+   * It is `/api/events/import` and not `/api/imports` because **an import is no
+   * longer a resource**: nothing persists that could be named, so it is a
+   * gesture on the collection it writes. What comes back is a receipt — what
+   * the gesture produced — and never an id to come back to.
+   */
+  eventsImport: '/api/events/import',
+  /**
    * The sources, which are the **unit of revocation** (#728, ADR-0020).
    *
    * A provenance is worth exactly two things: a displayable label, and this.
@@ -134,6 +144,10 @@ export type RouteName = keyof typeof ROUTES
 export const WRITE_ONLY_ROUTES = [
   'settings',
   'event',
+  // A gesture, and the plainest one on this list: nothing on any page is
+  // rendered on the strength of an upload in flight — the receipt is what the
+  // gesture answers, and it is the reader's own act rather than a read.
+  'eventsImport',
   'account',
   'accountReassignment',
   'advisoryAcknowledgement',
@@ -255,6 +269,23 @@ async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unk
     }),
     path,
   )
+}
+
+/**
+ * One file on its way in (#811, ADR-0032).
+ *
+ * `Content-Type` is deliberately **not** set: the browser writes it, boundary
+ * included, and a hand-written one is a multipart body no server can split. The
+ * refusal is read exactly as every other refusal is — `problem+json`, and a
+ * `type` the caller branches on — so an upload has no second error contract.
+ */
+async function upload<T>(path: string, file: File): Promise<T> {
+  const body = new FormData()
+  // The **third argument is the filename**, and it is not optional in practice:
+  // the receipt is named after the file, and an implementation that reads the
+  // `File`'s own name rather than the part's states `blob` back at the reader.
+  body.append('file', file, file.name)
+  return unwrap<T>(await fetch(path, { method: 'POST', headers: { Accept: 'application/json' }, body }), path)
 }
 
 /**
@@ -1136,6 +1167,32 @@ export interface ImportRecord {
 /** A bare collection, as served: `200` + `[]` on an install that has imported nothing. */
 export type ImportsResponse = ImportRecord[]
 
+/** The period an import covered — its two days, or nothing at all. */
+export interface ImportPeriod {
+  from: string
+  to: string
+}
+
+/**
+ * **What the gesture produced** (#811) — the receipt, in the units the owner
+ * counts in: lines written, the period they cover, the accounts and the
+ * securities they touched.
+ *
+ * `period` is an object or `null` and never two nullable members: the two days
+ * are absent **together**, on a file that wrote nothing, and half a period is a
+ * figure nobody's file carries.
+ *
+ * The same shape answers the preview of #813 before anything is written — one
+ * object, two moments — so the forecast and the fact are one thing read twice.
+ */
+export interface ImportReceipt {
+  filename: string
+  written: number
+  period: ImportPeriod | null
+  accounts: string[]
+  symbols: string[]
+}
+
 /** What the revocation answers: the source, and the rows that went with it. */
 export interface ForgottenImport {
   id: number
@@ -1179,6 +1236,9 @@ export const api = {
   acknowledgeAdvisory: (key: string) =>
     send<Advisory>(advisoryAcknowledgementPath(key), 'POST', {}),
   imports: () => get<ImportsResponse>(ROUTES.imports),
+  // The way in (#811). One file, one gesture, one receipt — and no id, because
+  // the store keeps no memory of the file it just read.
+  importEvents: (file: File) => upload<ImportReceipt>(ROUTES.eventsImport, file),
   // The **only** gesture that reaches an imported row, and the only one there
   // will be: read-only forbids editing line 42 of `broker.csv`, it does not
   // forbid revoking the file.

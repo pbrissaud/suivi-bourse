@@ -51,7 +51,7 @@ are recorded in**, which is the one thing an import writes outside its own three
 tables — and the exception is earned rather than convenient: the export states
 the currency so that a round trip cannot silently reinterpret every amount it
 carries, and reading that declaration is the whole reason it is worth writing.
-:func:`_currency_to_adopt` holds the rule and nothing else here knows about it.
+:func:`currency_to_adopt` holds the rule and nothing else here knows about it.
 
 **Not in this module**: the replay into ``position`` / ``account_state`` (#699).
 What is here writes ``import_source``, ``symbol`` and ``event`` — and, under the
@@ -619,7 +619,7 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
        was already good is untouched.
 
     A file that **declares a reporting currency** (issue #710) has that read
-    before anything else, by :func:`_currency_to_adopt`; the row it produces is
+    before anything else, by :func:`currency_to_adopt`; the row it produces is
     written first inside the transaction, so a refused import leaves the dial
     exactly as it found it.
 
@@ -642,7 +642,7 @@ def import_file(store, path: Path, *, fingerprint: Optional[str] = None,
     # already deleted this source's own rows, so a re-drop of the only file in a
     # store would be judged against an empty ledger and could quietly
     # reinterpret every amount it is about to re-insert.
-    adopted = _currency_to_adopt(store, loader.declared_currency)
+    adopted = currency_to_adopt(store, loader.declared_currency)
 
     with store.transaction():
         if adopted is not None:
@@ -739,8 +739,14 @@ def forget_import(store, source_id: int) -> int:
     return removed
 
 
-def _currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
+def currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
     """What an event file's ``base_currency`` column asks this install to store.
+
+    Public since #811 because a file arrives two ways now and the rule is one:
+    the upload asks the same question of the same function before writing a row,
+    so the two doors cannot come to disagree about the unit a ledger is recorded
+    in. It stays here, with the other half of the import, until #815 moves what
+    is left of this module.
 
     ``None`` means *write nothing*: the file declares no currency, or it declares
     the one already in force. Anything else is the value the import writes into
@@ -877,5 +883,5 @@ __all__ = [
     'read_events', 'list_imports', 'stamp', 'last_write',
     'orphan_symbols', 'purge_orphan_symbols',
     'sync_drop_folder', 'import_file', 'import_accounts_file', 'forget_import',
-    'import_counts',
+    'import_counts', 'currency_to_adopt',
 ]

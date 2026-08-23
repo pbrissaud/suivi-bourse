@@ -40,6 +40,7 @@ import runtime_view
 import settings as settings_module
 import settings_registry
 import store as store_module
+import uploads
 from events import EventAggregator, Event, EventType
 from events import export as events_export
 from events.aggregator import AggregationError
@@ -50,8 +51,10 @@ from web.problem import (
     internal_error,
     not_found,
     storage_unavailable,
+    too_large,
     unprocessable,
     unprocessable_entry,
+    unprocessable_file,
     unprocessable_parameter,
 )
 
@@ -942,6 +945,106 @@ def create_event():
 
     main.replay_after_write(runtime)
     return jsonify(_event_to_dict(created)), 201
+
+
+@api_bp.post('/events/import')
+def import_events():
+    """One file handed over, read once, and written as ordinary events (#811).
+
+    **The route is a gesture on the collection it writes, not a resource**
+    (ADR-0032): nothing persists that could be named, so there is no
+    ``/api/imports`` row to create and no id to hand back. What comes back is a
+    *receipt* — what the gesture produced — and the store keeps no memory of the
+    file at all.
+
+    The refusals are the file's own, and each names its subject: the header that
+    is not a ledger's, the account nobody declared, the v4 ``config.yaml`` (with
+    the migration page), a declaration of accounts, a format this app does not
+    read, and a reporting currency this install can no longer take. All of them are ``422`` and **none of them writes** — the parse is
+    whole-file and :func:`entries.create_many` holds its validation, its write
+    and its replay inside one transaction, so a file is imported entirely or not
+    at all. That is the loader's rule, at the door.
+
+    ``409`` is kept for the one refusal that is not about the file: a ledger that
+    would not replay. Overselling is a property of the *ledger*, so a file every
+    row of which is well formed can still be one the store's state refuses —
+    which is exactly what ``POST /api/events`` answers ``409`` to, one row at a
+    time.
+
+    **The bound is met before the body is parsed.** ``request.files`` makes
+    werkzeug read the whole multipart payload, spooling a large one to a
+    temporary file; the declared length is read first so an oversized upload
+    costs neither. :func:`uploads.read` bounds the stream as well, for a request
+    that declares no length at all.
+
+    The replay follows the write, synchronously and in this process, exactly as
+    on ``POST /api/events``: whoever just imported a file must not wait for a
+    timer to see their own gesture.
+    """
+    if uploads.oversize(request.content_length):
+        return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
+
+    upload = request.files.get('file')
+    if upload is None:
+        return bad_request(
+            "a file is required, as the 'file' part of a multipart/form-data "
+            "body")
+
+    try:
+        # Read and parsed **outside** the writers' mutex: the parse is the slow
+        # half of the gesture and it needs nothing from the ledger, so holding
+        # the one connection through it would stop the scrape writing for the
+        # length of a spreadsheet.
+        parsed = uploads.read(upload.filename or '', upload.stream)
+    except uploads.UploadTooLarge as exc:
+        return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
+    except uploads.UploadRefused as exc:
+        return unprocessable_file(str(exc))
+
+    runtime = current_runtime()
+    try:
+        # The writers' mutex, like every other write here: a Flask handler and
+        # the ingestion share one DuckDB connection. It is **not** a transaction
+        # (``ConfigurationManager.writing``), which is what lets the currency be
+        # decided here — against the ledger as it stands, exactly where
+        # ``ledger.import_file`` decides it — and written inside the one
+        # transaction that also writes the rows.
+        with runtime.config_manager.writing() as opened:
+            adopted = ledger.currency_to_adopt(opened, parsed.declared_currency)
+            written = entries.create_many(opened, parsed.events,
+                                          base_currency=adopted)
+    except settings_registry.InvalidSetting as exc:
+        return unprocessable_file(str(exc))
+    except entries.InvalidEntry as exc:
+        return unprocessable_file(str(exc))
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    return jsonify(_receipt_to_dict(
+        uploads.receipt(parsed.filename, written))), 201
+
+
+def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
+    """One :class:`uploads.Receipt`, on the wire.
+
+    ``period`` is an object or ``null`` rather than two nullable members: the two
+    days are absent **together** — a file that wrote nothing covers nothing — and
+    two members would let a client render half a period nobody's file carries.
+
+    The shape is the preview's shape (#813): one object, answered before the
+    write and after it, so the forecast and the fact are one thing read twice.
+    """
+    return {
+        'filename': receipt.filename,
+        'written': receipt.written,
+        'period': None if receipt.first_day is None else {
+            'from': receipt.first_day.isoformat(),
+            'to': receipt.last_day.isoformat(),
+        },
+        'accounts': list(receipt.accounts),
+        'symbols': list(receipt.symbols),
+    }
 
 
 @api_bp.patch('/events/<event_id>')

@@ -650,7 +650,7 @@ describe('the ledger at zero', () => {
     // Not an empty table with a small button over it: dropping a file and
     // typing a first event are two entrances to the same room, and the second
     // one *is* the onboarding since manual mode died (ADR-0005).
-    const file = await screen.findByRole('region', { name: 'Déposer un fichier' })
+    const file = await screen.findByRole('region', { name: 'Importer un fichier' })
     const manual = screen.getByRole('region', { name: 'Saisir un premier événement' })
     expect(file).toBeInTheDocument()
     expect(manual).toBeInTheDocument()
@@ -659,6 +659,11 @@ describe('the ledger at zero', () => {
     // accounts is a table of its own, it is not empty, and it replaces nothing
     // here — the install of this fixture has three declared accounts to name.
     expect(screen.queryByRole('table', { name: 'Vos événements' })).not.toBeInTheDocument()
+
+    // **Both entrances are gestures now** (#811): the file one is a real target
+    // rather than the name of a folder, so the pair is two doors and not a
+    // door beside an instruction.
+    expect(within(file).getByLabelText('Choisir un fichier')).toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })

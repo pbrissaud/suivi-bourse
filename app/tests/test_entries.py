@@ -298,6 +298,11 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
 
     Every gesture goes through the same refusal, so no future caller can reach
     an imported row by picking a different entry point.
+
+    ``create_many`` joins the surface at #811 and needs no refusal of its own:
+    it only ever **inserts**, and what it inserts carries ``source_id NULL`` like
+    everything else here. What would break the split is a fifth name that
+    addressed a row by its key, which is what this set is here to notice.
     """
     _drop(store, tmp_path)
     ((imported,),) = store.query('SELECT id FROM event')
@@ -309,4 +314,4 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
 
     assert set(entries.__all__) == {
         'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
-        'create', 'update', 'remove'}
+        'create', 'create_many', 'update', 'remove'}

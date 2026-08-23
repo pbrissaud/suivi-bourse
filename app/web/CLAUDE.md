@@ -1,5 +1,12 @@
 # app/web/ — the front
 
+> **The upload has landed** (#811, ADR-0032): the rectangle above the ledger is
+> a **target** rather than the name of a folder — dropped on, or chosen from the
+> picker — and the empty state's first entry carries the same gesture, so an
+> install that mounted nothing is not an install missing half the product. The
+> receipt is rendered under the zone and lasts as long as the gesture; it is the
+> surface #813's preview steps into. The drop folder and the list of sources
+> stay until #815 and #816.
 > **The ⌘K palette has landed** (#797): it reads **on open** and never on mount,
 > its three data sections are optional — an absent read removes one instead of
 > holding the palette — and an event result leads to a ledger reduced by an
@@ -116,8 +123,12 @@ Three nets hold a rule nothing made true by construction:
 - **A block with nothing in it does not exist.** The layout shifts when a notice
   appears.
 - **A receipt lasts as long as the operation, never three seconds** (#796,
-  `CONTEXT.md` § Receipt). The export is therefore a **fetch** and not an
-  `<a download>`: a link hands the request to the browser, which settles at no
+  `CONTEXT.md` § Receipt). Two gestures have one and they render it two ways,
+  which is a property of what they answer rather than an inconsistency: the
+  export says one sentence and says it in a toast, while the **import** says
+  what it produced — rows, period, accounts, securities — under the zone that
+  made it (`UploadZone`), where #813's forecast will stand beside it. The export
+  is therefore a **fetch** and not an `<a download>`: a link hands the request to the browser, which settles at no
   observable moment, so anything said over it would be a guess with a timer on
   it. `lib/save.ts` is the two lines that hand the bytes to the reader's own
   *Save as*, and the file's **name is the server's** — which of the two names
@@ -190,6 +201,7 @@ src/
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export menu
+│   │               # (UploadZone: the file in, the receipt under it)
 │   │               # tab 2: notices  ·  tab 3: settings, the store
 │   │               # (the accounts declaration moved to accounts/ — ADR-0028)
 │   └── accounts/   # the rail of weights, one account's detail, its curve, its form
@@ -238,7 +250,9 @@ src/
   ledger's URL is the query string of its own export. A reduction that arrived
   that way names what it retains and offers the way out; the reader's first
   gesture on the chips takes the address back off, an address being a description
-  of the table — and above it one band holding the drop zone, the
+  of the table — and above it one band holding the **upload zone** (a real
+  target since #811: a file dropped on it or chosen from it is handed to
+  `POST /api/events/import`, and the receipt is said under it), the
   export menu — **four entries** since #796: every event, a workbook with one
   sheet per year, the filtered selection and the accounts, the middle two
   server-side because the importable form belongs to `events/export.py` and a

@@ -12,13 +12,26 @@ the three rules this ticket carries are rules about *rows*:
 The first test in the file is the four-gesture scenario of the last acceptance
 criterion, and it is deliberately first: it is the seam, and each of the three
 rules above is one of its gestures.
+
+**And since #811 the file has a second half, which is the same subject through
+another door.** What it covers was never the folder: it is the loader, the
+validator and the aggregator — the header that decides the genre, the file
+refused whole, the events sorted by date whatever their order. Those survive the
+mount (ADR-0032) and are asserted below on ``POST /api/events/import``, on the
+API's own seam. The two doors coexist deliberately for two tickets: the product
+is never without a file entrance.
 """
+import io
 from datetime import date
 
+import openpyxl
 import pytest
 
 import ledger
+import uploads
 from events.schemas import DEFAULT_ACCOUNT, EventType
+from test_web_api import ACCOUNTS_FILE, build_client, build_client_and_store
+from web import problem
 
 
 ONE_BUY = (
@@ -492,3 +505,425 @@ def test_validation_lives_in_the_ddl_and_in_validator_py_and_nowhere_else():
 
     with pytest.raises(ImportError):
         import cerberus  # noqa: F401
+
+
+# --------------------------------------------------------------------------- #
+# The same file, another door: POST /api/events/import (issue #811, ADR-0032)
+#
+# What is above this line is about the **drop folder**, which is still mounted
+# and still watched — the mount leaves at #815, and until then the product is
+# never without a file entrance. What is below it is the *behaviours* the three
+# sections above prove, asserted through the route that will outlive them: the
+# header decides the genre, a file is refused whole, the events are sorted by
+# date whatever the file says. #803's trap is that this file reads as a test of
+# the folder and is not one — it is a test of the loader, the validator and the
+# aggregator, which change door and not meaning.
+#
+# The seam is the API's, on the same real store: the client is built by
+# ``test_web_api``'s own builder rather than by a second copy of it, so the two
+# files exercise one wiring.
+# --------------------------------------------------------------------------- #
+
+def _upload(client, body, filename="2024.csv"):
+    """Hand one file to the route, as a browser's own form would."""
+    return client.post(
+        '/api/events/import',
+        data={'file': (io.BytesIO(body), filename)},
+        content_type='multipart/form-data')
+
+
+def _workbook(rows):
+    """The same ledger as an ``.xlsx``, in memory."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for row in rows:
+        sheet.append(row)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def test_a_csv_uploaded_writes_its_lines(tmp_path):
+    """The criterion, and the assertion is on the table rather than on a call."""
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, ONE_BUY.encode('utf-8'))
+
+    assert response.status_code == 201
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+    # The symbol got its row before the event referenced it — the foreign key
+    # would have refused it otherwise, on this road as on the folder's.
+    assert opened.query('SELECT symbol FROM symbol') == [("AAPL",)]
+
+
+def test_an_xlsx_uploaded_writes_its_lines(tmp_path):
+    """The second format, and it is the header that says what the file is."""
+    client, opened = build_client_and_store(tmp_path)
+    body = _workbook([
+        ("date", "event_type", "symbol", "name", "quantity", "unit_price"),
+        ("2024-01-15", "BUY", "AAPL", "Apple Inc", 10, 150.0),
+    ])
+
+    response = _upload(client, body, filename="ledger.xlsx")
+
+    assert response.status_code == 201
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
+def test_an_uploaded_row_is_written_by_entries_and_carries_no_source(tmp_path):
+    """*Indistinguishable from a typed one* is a column, not a sentiment.
+
+    ``source_id NULL`` is what ``entries`` writes and what makes the row
+    editable; a second population would show up right here.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    _upload(client, ONE_BUY.encode('utf-8'))
+
+    assert opened.query('SELECT source_id FROM event') == [(None,)]
+    assert opened.query('SELECT count(*) FROM import_source') == [(0,)]
+
+
+def test_uploaded_events_are_sorted_by_date_whatever_the_file_order(tmp_path):
+    """The spreadsheet's own order has no meaning (story 12)."""
+    client, opened = build_client_and_store(tmp_path)
+    unsorted = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-09-15,BUY,AAPL,Apple Inc,1,190.00\n"
+        "2023-01-05,BUY,AAPL,Apple Inc,1,100.00\n"
+        "2024-06-01,BUY,AAPL,Apple Inc,1,150.00\n"
+    ).encode('utf-8')
+
+    _upload(client, unsorted)
+
+    assert [row[0] for row in _events(opened)] == [
+        date(2023, 1, 5), date(2024, 6, 1), date(2024, 9, 15)]
+
+
+def test_an_uploaded_line_is_then_read_by_the_events_resource(tmp_path):
+    """It joins the ledger everything else reads, not a second collection."""
+    client = build_client(tmp_path)
+
+    _upload(client, ONE_BUY.encode('utf-8'))
+    payload = client.get('/api/events').get_json()
+
+    (event,) = payload
+    assert event['symbol'] == "AAPL"
+    assert event['quantity'] == 10.0
+    assert event['source_filename'] is None
+    assert event['provenance'] is None
+
+
+def test_the_receipt_says_what_the_gesture_produced(tmp_path):
+    """Lines written, the period covered, the accounts and titles touched.
+
+    One object, and the preview of #813 answers the same one before writing.
+    """
+    client = build_client(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,\n"
+        "2024-06-01,BUY,MSFT,Microsoft,5,380.00,2.50,\n"
+        "2024-09-15,DIVIDEND,AAPL,Apple Inc,,,,8.50\n"
+    ).encode('utf-8')
+
+    receipt = _upload(client, body, filename="broker.csv").get_json()
+
+    assert receipt['filename'] == "broker.csv"
+    assert receipt['written'] == 3
+    assert receipt['period'] == {'from': '2024-01-15', 'to': '2024-09-15'}
+    assert receipt['accounts'] == ["default"]
+    assert receipt['symbols'] == ["AAPL", "MSFT"]
+
+
+def test_a_file_that_writes_nothing_has_a_receipt_with_no_period(tmp_path):
+    """A header and no row under it: nothing written, and no period to state."""
+    client = build_client(tmp_path)
+
+    receipt = _upload(
+        client, b"date,event_type,symbol,name,quantity,unit_price\n").get_json()
+
+    assert receipt['written'] == 0
+    assert receipt['period'] is None
+    assert receipt['symbols'] == []
+
+
+# --------------------------------------------------------------------------- #
+# The refusals: each one names its subject, and none of them writes
+# --------------------------------------------------------------------------- #
+
+def test_an_unrecognised_header_is_refused_naming_the_column(tmp_path):
+    """Not *the file is invalid*: the column that is missing (story 11)."""
+    client, opened = build_client_and_store(tmp_path)
+    body = b"day,kind,symbol\n2024-01-15,BUY,AAPL\n"
+
+    response = _upload(client, body)
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    assert 'event_type' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_an_undeclared_account_is_refused_naming_the_account(tmp_path):
+    """The statement is new (story 9), and it is written rather than deduced.
+
+    *Accounts before events* was a property of the order several files were
+    imported in. One file per gesture makes it this: a file naming an account
+    nobody declared is refused, and the refusal names the account so the reader
+    knows what to declare.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body)
+
+    assert response.status_code == 422
+    assert "'pea' is not declared" in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_declared_account_is_written_as_the_file_named_it(tmp_path):
+    """The refusal above is about the declaration, never about the column."""
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
+    ).encode('utf-8')
+
+    receipt = _upload(client, body).get_json()
+
+    assert receipt['accounts'] == ["pea"]
+    assert opened.query('SELECT account FROM event') == [("pea",)]
+
+
+def test_a_v4_config_file_is_refused_by_its_name_and_points_at_the_migration(tmp_path):
+    """The sentence the two ``legacy_*`` advisories said later and elsewhere.
+
+    It is said at the instant of the gesture now (story 10, ADR-0032), which is
+    the only moment at which the owner is holding the file.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, b"shares:\n  - name: Apple\n",
+                       filename="config.yaml")
+
+    assert response.status_code == 422
+    detail = response.get_json()['detail']
+    assert 'config.yaml' in detail
+    assert 'coming-from-v4' in detail
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_an_accounts_file_is_refused_naming_what_it_recognised(tmp_path):
+    """Accounts are born in the app and nowhere else (ADR-0034).
+
+    Read off the **header**, never off the name, which is the rule that does
+    not move: the file below is called after the events and declares accounts.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, ACCOUNTS_FILE.encode('utf-8'),
+                       filename="2024.csv")
+
+    assert response.status_code == 422
+    assert 'accounts' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM account WHERE id <> ?',
+                        ['default']) == [(0,)]
+
+
+def test_a_file_the_app_cannot_read_at_all_is_refused_naming_the_two_it_takes(tmp_path):
+    """A ``.pdf`` is not a ledger, and the refusal says what a ledger is."""
+    response = _upload(build_client(tmp_path), b"%PDF-1.4\n",
+                       filename="statement.pdf")
+
+    assert response.status_code == 422
+    detail = response.get_json()['detail']
+    assert '.csv' in detail and '.xlsx' in detail
+
+
+def test_a_file_beyond_the_bound_is_refused_with_its_own_type(tmp_path):
+    """A written bound beats a ``MemoryError`` (criterion 6)."""
+    client, opened = build_client_and_store(tmp_path)
+    oversized = b"x" * (uploads.MAX_UPLOAD_BYTES + 1)
+
+    response = _upload(client, oversized)
+
+    assert response.status_code == 413
+    assert response.mimetype == 'application/problem+json'
+    assert response.get_json()['type'] == problem.TYPE_TOO_LARGE
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_refused_upload_leaves_the_ledger_exactly_as_it_stood(tmp_path):
+    """One bad row refuses the file whole — the loader's rule, at the door.
+
+    The ledger below already holds an event, and what is uploaded is a file
+    whose second line is not one the validator takes. Nothing of it lands, and
+    what was there is untouched.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-02-01,BUY,MSFT,Microsoft,5,380.00\n"
+        "2024-03-01,BUY,MSFT,Microsoft,5,\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, filename="second.csv")
+
+    assert response.status_code == 422
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
+def test_a_ledger_that_would_not_replay_is_a_conflict(tmp_path):
+    """Overselling is a property of the **ledger**, not of a row.
+
+    The same answer ``POST /api/events`` gives, for the same reason: the file
+    is well formed and the store's state refuses what it would make.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-02-01,SELL,AAPL,Apple Inc,999,190.00\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, filename="sale.csv")
+
+    assert response.status_code == 409
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
+def test_the_route_wants_a_file_and_says_so(tmp_path):
+    """A multipart body with no file part is a malformed request, not a refusal."""
+    response = build_client(tmp_path).post(
+        '/api/events/import', data={}, content_type='multipart/form-data')
+
+    assert response.status_code == 400
+    assert response.mimetype == 'application/problem+json'
+
+
+def test_a_workbook_that_is_not_one_is_refused_rather_than_unexpected(tmp_path):
+    """Untrusted bytes are refused, never *the app hit an error it did not expect*.
+
+    A ``.xlsx`` that is not a zip raises out of openpyxl rather than as the
+    loader's own error, and a refusal is the one thing the reader can act on
+    about a file they chose themselves.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, b"not a workbook at all", filename="broker.xlsx")
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    assert 'broker.xlsx' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+# --------------------------------------------------------------------------- #
+# The one thing a file says about itself, and it says it through both doors
+# --------------------------------------------------------------------------- #
+
+def test_an_uploaded_file_declaring_a_currency_is_taken_at_its_word(tmp_path):
+    """#710's round trip, through the new door.
+
+    The export writes ``base_currency`` on every line precisely so a store that
+    has never answered the question takes the file's answer — *drop the export,
+    and the install is the install it came from*. A door that read the column
+    and dropped it would make that true of one entrance and not the other.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,EUR\n"
+    ).encode('utf-8')
+
+    assert _upload(client, body).status_code == 201
+
+    assert opened.setting('base_currency') == 'EUR'
+
+
+def test_a_currency_this_install_can_no_longer_take_is_refused_whole(tmp_path):
+    """The dial's own mutability rule, not a second one invented at the door.
+
+    Free while the ledger is empty, fixed from the first recorded event: adopting
+    here would re-read every stored amount in another unit, which is the
+    unrecoverable act ADR-0002 names. So the file is refused, and its rows with
+    it — the refusal is about the file, and the file is one thing.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,EUR\n"
+    ).encode('utf-8'))
+
+    response = _upload(client, (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-02-01,BUY,MSFT,Microsoft,5,380.00,USD\n"
+    ).encode('utf-8'), filename="second.csv")
+
+    assert response.status_code == 422
+    assert opened.setting('base_currency') == 'EUR'
+    assert [row[2] for row in _events(opened)] == ["AAPL"]
+
+
+def test_a_security_named_once_in_a_file_is_named_on_every_row_of_it(tmp_path):
+    """``create`` called N times would find the name; the batch must too.
+
+    ``entries._settled`` reads the name off the ledger when a row leaves it
+    blank — an attribute of the *security*, not of each of its events
+    (ADR-0020). The batch prefetches that index for the scan it saves, and the
+    index has to move as the file is walked or the tenth row of a file would be
+    named differently from the first.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n"
+        "2024-02-15,BUY,AAPL,,5,160.00\n"
+    ).encode('utf-8')
+
+    _upload(client, body)
+
+    assert opened.query('SELECT name FROM event ORDER BY id') == [
+        ("Apple Inc",), ("Apple Inc",)]
+
+
+def test_a_body_that_declares_no_length_is_still_bounded(tmp_path):
+    """The bound that stops bytes already in flight, and it is werkzeug's.
+
+    ``oversize`` reads a *declaration*, which a chunked upload does not make;
+    without ``MAX_CONTENT_LENGTH`` the whole body is spooled to disk before
+    anything here can refuse it.
+    """
+    client = build_client(tmp_path)
+
+    assert client.application.config['MAX_CONTENT_LENGTH'] == uploads.MAX_BODY_BYTES
+    assert uploads.MAX_BODY_BYTES > uploads.MAX_UPLOAD_BYTES
+
+
+def test_a_file_of_exactly_the_bound_is_not_refused_by_its_envelope(tmp_path):
+    """The two numbers measure two things, and only one of them is the file.
+
+    A ``multipart/form-data`` body is the file plus a boundary, a part header
+    and the filename, so an envelope compared to the file's **own** bound
+    refuses a legal file while saying *a file may carry at most 8 MiB* about one
+    that carries exactly 8 MiB.
+
+    What is asserted is that the file **reaches the parser**: the body below is
+    the bound to the byte and is refused for its header, which is a sentence
+    about its content and therefore proof that neither size check spoke.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = b"nope\n" + b"x" * (uploads.MAX_UPLOAD_BYTES - len(b"nope\n"))
+
+    response = _upload(client, body)
+
+    assert len(body) == uploads.MAX_UPLOAD_BYTES
+    assert response.status_code == 422
+    assert 'event_type' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]

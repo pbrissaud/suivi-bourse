@@ -146,10 +146,15 @@ Only what actually changed is re-armed (`reschedule_job` recomputes from *now*).
 
 ### The ledger (CSV/XLSX)
 
-Every `.csv`/`.xlsx` in the drop folder is imported. A file is an **accounts
-source** or an **event source** according to its *header*, never its name: `id` +
-`type` with no `event_type` makes it a declaration. No filename has a special
-meaning.
+A file reaches the app **two ways, and that is deliberate for two tickets**
+(ADR-0032): `POST /api/events/import` takes one in a `multipart/form-data` body
+and writes its rows through `entries` — no source row, no provenance, nothing to
+revoke — and the drop folder goes on importing whatever is in it until #815
+removes the mount. A file is an **accounts source** or an **event source**
+according to its *header*, never its name: `id` + `type` with no `event_type`
+makes it a declaration. No filename has a special meaning — except on the
+upload, where a v4 `config.yaml`/`settings.yaml` is recognised **by its name**
+and refused with the migration page, having no header to read.
 
 ```csv
 date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
@@ -180,6 +185,20 @@ while an event names it** (`409`, the cascade is refused rather than performed).
 
 If ingestion fails, **the previous valid configuration is kept** and scraping
 continues: a snapshot is published only once complete and validated.
+
+The upload's own refusals are all `422` and **none of them writes**: an
+unrecognised header (naming the column), an undeclared account (naming the
+account), a v4 file (naming it, with the migration page), a declaration of
+accounts (accounts are born in the app — ADR-0034), a format it does not read,
+and a `base_currency` this install can no longer take — that last one being
+`ledger.currency_to_adopt`, asked by **both** doors so they cannot come to
+disagree about the unit a ledger is recorded in. Past `uploads.MAX_UPLOAD_BYTES`
+it is `413`, and that bound is held in three places because each sees what the
+others cannot: the declared `Content-Length`, Flask's `MAX_CONTENT_LENGTH` (on
+the *envelope*, `MAX_BODY_BYTES` — the only one that stops bytes in flight), and
+the file's own size when it is read. What comes back on success is
+a **receipt** — rows written, the period covered, the accounts and securities
+touched — and the same object answers #813's preview before anything is written.
 
 ## Prometheus
 
@@ -219,8 +238,9 @@ src/
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
-├── ledger.py           # the import: provenance and revocation
-├── entries.py          # the typed row's three gestures (source_id NULL only)
+├── ledger.py           # the drop folder's import: provenance and revocation
+├── uploads.py          # the gesture: one file in, read once, refused by name
+├── entries.py          # the row's four gestures (source_id NULL only)
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path

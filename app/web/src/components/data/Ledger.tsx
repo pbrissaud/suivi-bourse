@@ -41,6 +41,7 @@ import { EventForm } from '@/components/data/EventForm'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
 import { LedgerTable, TYPE_LABEL } from '@/components/data/LedgerTable'
+import { UploadReceipt, UploadZone, useEventUpload } from '@/components/data/UploadZone'
 import { Button } from '@/components/ui/button'
 import { api, type LedgerEvent } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -111,6 +112,11 @@ export interface LedgerProps {
 export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = {}) {
   const { t } = useI18n()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  // **The gesture is held here and nowhere lower** (#811): the first import
+  // fills an empty ledger, which unmounts the entry pair the zone was in and
+  // mounts the band's own — so a receipt held by the zone would be destroyed by
+  // the write it announces, for the one reader who has never seen this work.
+  const upload = useEventUpload()
 
   useEffect(() => {
     if (!focus) return
@@ -253,6 +259,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
           empty state's own entry, one line below. */}
       {failure || !events.data ? null : (
         <ImportsBlock
+          upload={upload}
           imports={imports.data ?? null}
           events={all}
           accounts={accounts.data ?? null}
@@ -266,6 +273,11 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
         />
       )}
 
+      {/* The receipt of the gesture above, mounted **outside** both surfaces
+          that offer it: the empty state's entry and the band's zone are two
+          mounts of one control, and the first import swaps one for the other. */}
+      {failure ? null : <UploadReceipt upload={upload} />}
+
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
       {ledgerFailure || !events.data ? null : all.length === 0 ? (
@@ -275,6 +287,14 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
             {
               title: t('data.empty.file.title'),
               body: t('data.empty.file.body'),
+              // **The entry carries the gesture itself** since #811: the band
+              // above does not render on a ledger with nothing in it, so this
+              // is the whole of the file entrance on a fresh install — which is
+              // exactly the install ADR-0032 exists for, the one that never
+              // mounted anything. `EntryPair`'s *an unavailable entry keeps its
+              // place and says why* loses its one case with it: there is no
+              // mount left to be missing.
+              action: <UploadZone upload={upload} compact />,
             },
             {
               title: t('data.empty.manual.title'),

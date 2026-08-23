@@ -21,6 +21,7 @@ from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 import main
+import uploads
 from web import problem
 from web.api import api_bp
 from web.health import health_bp
@@ -63,6 +64,15 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
     # bundle, and every unknown path has to fall through to index.html for
     # client-side routing — which is `_serve_spa` below, not a static mount.
     flask_app = Flask(__name__, static_folder=None)
+    # **The one bound that can stop bytes already in flight** (issue #811).
+    # ``POST /api/events/import`` refuses a declared ``Content-Length`` before
+    # touching the body, and bounds the file when it reads it — but both of those
+    # run *after* werkzeug has parsed the multipart payload, and a body that
+    # declares no length at all (a chunked upload) is spooled to disk in full
+    # before either can speak. This is the limit werkzeug itself enforces while
+    # reading, and it is stated on the envelope rather than on the file, which is
+    # what ``MAX_BODY_BYTES`` is for.
+    flask_app.config['MAX_CONTENT_LENGTH'] = uploads.MAX_BODY_BYTES
     flask_app.register_blueprint(health_bp)
     flask_app.register_blueprint(api_bp)
 

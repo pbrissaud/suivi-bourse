@@ -28,6 +28,16 @@ export const PROBLEM_TYPES = {
    * is the opposite of what a refusal by design is.
    */
   conflict: '/problems/conflict',
+  /**
+   * A file this app writes no row from (#811): an unrecognised header, a
+   * declaration of accounts, a v4 `config.yaml`, a format it does not read, or
+   * a row the ledger's own rules refuse. Its own identifier rather than
+   * `badRequest`, because the reader is holding a file and *the request is
+   * malformed* would send them to look at the wrong thing.
+   */
+  invalidFile: '/problems/invalid-file',
+  /** The upload is past the bound the server states (#811). */
+  tooLarge: '/problems/payload-too-large',
   internal: '/problems/internal-error',
 } as const
 
@@ -36,6 +46,8 @@ const MESSAGES: Record<string, MessageKey> = {
   [PROBLEM_TYPES.notFound]: 'problem.notFound',
   [PROBLEM_TYPES.badRequest]: 'problem.badRequest',
   [PROBLEM_TYPES.conflict]: 'problem.conflict',
+  [PROBLEM_TYPES.invalidFile]: 'problem.invalidFile',
+  [PROBLEM_TYPES.tooLarge]: 'problem.tooLarge',
   [PROBLEM_TYPES.internal]: 'problem.internal',
 }
 

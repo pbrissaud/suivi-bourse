@@ -57,12 +57,13 @@ deliberate one, named and purgeable, because a forget is reversible and a price
 series is not.
 """
 from dataclasses import replace
-from typing import Optional
+from typing import Dict, List, Mapping, Optional, Sequence
 
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
 import ledger
+import settings_registry
 from events import EventAggregator, EventValidator
 from events.schemas import DEFAULT_ACCOUNT, Event
 
@@ -149,6 +150,101 @@ def create(store, draft: Event) -> Event:
     return replace(event, id=next_id, account=account)
 
 
+def create_many(store, drafts: Sequence[Event], *,
+                base_currency: Optional[str] = None) -> List[Event]:
+    """Record a whole file's worth of events. One transaction, one replay.
+
+    :func:`create` N times would be N replays of the ledger, which is quadratic
+    in the size of an import and is the only reason this exists — the rules are
+    the same rules, read from the same validator, and a row written here is a
+    row written there: ``source_id NULL``, and no column saying it arrived in
+    company (issue #811, ADR-0032).
+
+    Three details are the difference between *the same rules* and *the same
+    code*:
+
+    * **the validator is built once and judges the list**, so a file of three
+      hundred rows costs one read of the declaration rather than three hundred;
+    * **the names are resolved from one index** rather than one query per row —
+      ``_named``'s query orders the whole ``event`` table, so per-row it is a
+      scan per row;
+    * **the ids are contiguous from one read of the maximum**, which is what
+      keeps ``ORDER BY date, id`` reproducible: the rows arrive date-sorted from
+      the loader, so their keys are monotonic in the order the aggregator will
+      replay them.
+
+    ``base_currency`` is the one thing a **file** says about itself rather than
+    about a row: the reporting currency its amounts are recorded in (#710), as
+    :func:`ledger.currency_to_adopt` has already decided it against the ledger as
+    it stands. It is written **first**, inside this transaction, for the reason
+    :func:`ledger.import_file` writes it first: a refused import must leave the
+    dial exactly as it found it, and an amount re-read in another unit is the
+    unrecoverable act ADR-0002 names.
+
+    Returns the events as stored, keys included, in the order they were written.
+
+    Raises:
+        InvalidEntry: a row is not one the ledger takes; **nothing is written**,
+            the whole file included, which is the loader's rule at the door.
+        events.aggregator.AggregationError: the ledger it would make does not
+            replay (an oversell).
+    """
+    if not drafts and base_currency is None:
+        return []
+
+    with store.transaction():
+        if base_currency is not None:
+            store.execute(
+                'INSERT INTO setting (key, value) VALUES (?, ?) '
+                'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+                ['base_currency',
+                 settings_registry.stored_form('base_currency', base_currency)])
+            logger.info(f"The file declares {base_currency} as the reporting "
+                        f"currency; taking it up")
+
+        # **The index is updated as the file is walked**, not read once and
+        # frozen: a security named on the first row and left blank on the tenth
+        # is the same security, and ``create`` called ten times would have found
+        # the name — it re-queries per row. What the prefetch buys is the scan,
+        # never a different answer.
+        known = _known_names(store)
+        settled = []
+        for draft in drafts:
+            event = _settled(store, draft, known)
+            if event.symbol and event.name:
+                known[event.symbol] = event.name
+            settled.append(event)
+
+        issues = _validator(store).issues(settled)
+        if issues:
+            raise InvalidEntry(issues[0].message, field=issues[0].field)
+
+        if not settled:
+            return []
+
+        (next_id,) = store.query(
+            'SELECT coalesce(max(id), 0) + 1 FROM event')[0:1][0]
+        store.executemany(
+            'INSERT INTO symbol (symbol) VALUES (?) ON CONFLICT DO NOTHING',
+            [[symbol] for symbol in sorted({event.symbol for event in settled
+                                            if event.symbol})])
+        stored = [replace(event, id=next_id + offset,
+                          account=event.account or DEFAULT_ACCOUNT)
+                  for offset, event in enumerate(settled)]
+        store.executemany(
+            'INSERT INTO event (id, date, event_type, account, symbol, name, '
+            '                   quantity, unit_price, fee, amount, notes, '
+            '                   source_id, source_sheet, source_row) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
+            [[event.id, event.date, event.event_type.value, event.account,
+              event.symbol, event.name, event.quantity, event.unit_price,
+              event.fee, event.amount, event.notes] for event in stored])
+
+        _replays(store)
+        logger.info(f"Recorded {len(stored)} event(s) from one file")
+    return stored
+
+
 def update(store, event_id: int, draft: Event) -> Event:
     """Rewrite one event typed in the app, in place.
 
@@ -233,7 +329,8 @@ def _require_typed(store, event_id: int) -> None:
             f"import", source_id=source_id, filename=filename)
 
 
-def _settled(store, draft: Event) -> Event:
+def _settled(store, draft: Event,
+             known: Optional[Mapping[str, str]] = None) -> Event:
     """The draft with the one thing the store decides before it is judged.
 
     **The name**, which is an attribute of the *security* and not of each of its
@@ -257,21 +354,43 @@ def _settled(store, draft: Event) -> Event:
     ordering of :func:`ledger._insert_events`. Whitespace is folded into the
     blank rather than left standing: a ``account`` of ``"  "`` names no account
     on either road, and the file path's own cells arrive stripped.
+
+    ``known`` is that same lookup **prefetched** for a whole file
+    (:func:`create_many`) — the query below orders the entire ``event`` table,
+    so resolving row by row would scan it once per row.
     """
     return replace(draft, account=(draft.account or '').strip() or None,
-                   name=draft.name or _named(store, draft.symbol),
+                   name=draft.name or _named(store, draft.symbol, known),
                    id=None, source_id=None, source_sheet=None,
                    source_row=None, source_filename=None)
 
 
-def _named(store, symbol: Optional[str]) -> Optional[str]:
+def _named(store, symbol: Optional[str],
+           known: Optional[Mapping[str, str]] = None) -> Optional[str]:
     """What this ledger already calls that security, or the ticker itself."""
     if not symbol:
         return None
+    if known is not None:
+        return known.get(symbol) or symbol
     rows = store.query(
         'SELECT name FROM event WHERE symbol = ? AND name IS NOT NULL '
         'ORDER BY date DESC, id DESC LIMIT 1', [symbol])
     return rows[0][0] if rows else symbol
+
+
+def _known_names(store) -> Dict[str, str]:
+    """Every security's name as the ledger last stated it, in **one** read.
+
+    The same answer :func:`_named` gives one symbol at a time, and it has to
+    stay the same one: the rows come back in ``(date, id)`` order and each
+    overwrites the last, so what survives per symbol is the newest — which is
+    that query's ``ORDER BY date DESC, id DESC LIMIT 1``, read from the other
+    end.
+    """
+    rows = store.query(
+        'SELECT symbol, name FROM event '
+        'WHERE symbol IS NOT NULL AND name IS NOT NULL ORDER BY date, id')
+    return {symbol: name for symbol, name in rows}
 
 
 def _refuse(store, event: Event) -> None:
@@ -286,12 +405,22 @@ def _refuse(store, event: Event) -> None:
     *nothing is written* when there is one, and that is the transaction's doing,
     not this function's.
     """
-    validator = EventValidator(
-        account_ids=accounts_module.account_ids(store),
-        accounts_declared=accounts_module.accounts_are_declared(store))
-    issues = validator.issues([event])
+    issues = _validator(store).issues([event])
     if issues:
         raise InvalidEntry(issues[0].message, field=issues[0].field)
+
+
+def _validator(store) -> EventValidator:
+    """The one validator, with the context the file path already had.
+
+    Built from a **read of the store**, which is what makes a declaration made
+    in the same breath the one an event is judged against — and built once per
+    gesture, however many rows the gesture carries: the two queries below are
+    about the ledger, not about the row.
+    """
+    return EventValidator(
+        account_ids=accounts_module.account_ids(store),
+        accounts_declared=accounts_module.accounts_are_declared(store))
 
 
 def _insert_symbol(store, event: Event) -> None:
@@ -323,5 +452,5 @@ def _replays(store) -> None:
 
 __all__ = [
     'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
-    'create', 'update', 'remove',
+    'create', 'create_many', 'update', 'remove',
 ]

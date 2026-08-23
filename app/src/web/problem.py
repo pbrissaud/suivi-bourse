@@ -39,6 +39,17 @@ TYPE_BAD_REQUEST = '/problems/bad-request'
 TYPE_INTERNAL = '/problems/internal-error'
 TYPE_CONFLICT = '/problems/conflict'
 TYPE_INVALID_SETTING = '/problems/invalid-setting'
+#: A file handed to ``POST /api/events/import`` that this app writes no row
+#: from (issue #811). Its **own** identifier and not :data:`TYPE_BAD_REQUEST`,
+#: because the front branches on the identifier and nothing else: *the request
+#: is malformed* and *this file is not a ledger I read* are two sentences to a
+#: reader holding a file, and only the second one tells them to look at the file.
+TYPE_INVALID_FILE = '/problems/invalid-file'
+#: The upload is past the bound (issue #811). Also its own, and for the reason
+#: the bound is written down at all: *too big* is the one refusal whose repair
+#: — export a narrower range — the reader can make without reading a word of
+#: their file.
+TYPE_TOO_LARGE = '/problems/payload-too-large'
 
 # #662's write-path vocabulary — a stale fingerprint, a read-only source, an
 # unwritable directory, a wrong mode — left with the apparatus that raised it
@@ -175,6 +186,38 @@ def unprocessable_entry(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid event', detail, TYPE_BAD_REQUEST, **extra)
 
 
+def unprocessable_file(detail: str):
+    """422 — the file parsed as far as it could, and it is not a ledger.
+
+    The fourth member of the family, and a fourth function for the reason the
+    third is one: its **title**, and here its ``type`` as well. The three above
+    are refusals of a *value* somebody typed, which is why they share
+    :data:`TYPE_BAD_REQUEST`; this is the refusal of a *file* somebody handed
+    over, and the gesture it belongs to has a surface of its own — a drop zone,
+    not a form — so the front needs to tell the two apart to say anything true.
+
+    Every refusal an upload can earn goes through it: an unrecognised header, a
+    declaration of accounts (ADR-0034), a v4 ``config.yaml``, a format this app
+    does not read, and a row the ledger's own rules refuse. They are one answer
+    — *nothing was written, and here is what is wrong with the file* — and a
+    client branching on which of the five would be re-deciding what the sentence
+    already says.
+    """
+    return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE)
+
+
+def too_large(detail: str, limit: int):
+    """413 — the upload is past what one may carry.
+
+    ``limit`` is the bound in bytes, an extension member because it is a
+    **number the client can act on**: a page that knows it can refuse a file
+    before spending a minute sending it, and RFC 9457 explicitly allows the
+    member. The sentence is the server's, and the number is the same constant
+    the route enforces — there is no second bound written anywhere.
+    """
+    return problem(413, 'File too large', detail, TYPE_TOO_LARGE, limit=limit)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -183,6 +226,6 @@ def internal_error(detail: str):
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
     'unprocessable', 'unprocessable_parameter', 'unprocessable_entry',
-    'internal_error',
+    'unprocessable_file', 'too_large', 'internal_error',
     'CONTENT_TYPE',
 ]
