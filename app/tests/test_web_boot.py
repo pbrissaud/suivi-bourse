@@ -303,13 +303,18 @@ def test_a_mounted_container_says_nothing_at_all_about_persistence(
     assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
 
 
-def test_an_unobservable_mount_prints_nothing_and_leaves_the_gauge_absent(
+def test_an_unobservable_mount_prints_nothing_and_answers_unknown(
         fake_config, monkeypatch, caplog):
     """The third answer, end to end. On a developer's macOS there is no
-    ``/proc/self/mountinfo`` at all, and neither the line nor a ``0`` on the
-    gauge — which would state that the store *is* kept — may be manufactured
-    from that silence."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
+    ``/proc/self/mountinfo`` at all, and neither the line nor a *"the store is
+    kept"* may be manufactured from that silence.
+
+    ``store_persistence`` on the runtime is where that third answer lives: it is
+    what the runtime and store resources publish, and it says ``unknown``
+    rather than picking one of the two real answers. The gauge said the same
+    thing by being absent, and it is the redundant half (#806, ADR-0033).
+    """
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.UNKNOWN)
     caplog.set_level(logging.INFO)
@@ -318,28 +323,23 @@ def test_an_unobservable_mount_prints_nothing_and_leaves_the_gauge_absent(
 
     assert boot_conditions.NO_PERSISTENCE not in _conditions_said(caplog)
     assert runtime.store_persistence == main.mounts.UNKNOWN
-    assert runtime.prometheus.registry.get_sample_value(
-        'sb_store_ephemeral') is None
 
 
-@pytest.mark.parametrize("state,expected", [
-    (main.mounts.EPHEMERAL, 1.0),
-    (main.mounts.PERSISTENT, 0.0),
-])
-def test_the_boot_publishes_the_gauge_in_both_directions(
-        fake_config, monkeypatch, state, expected):
-    """Published in the **master**, so it crosses the fork with the registry the
-    Flask app serves — and published at ``0`` too, because a series that
-    disappears reads as a scraper that lost its target rather than as *off*."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
+@pytest.mark.parametrize("state", [main.mounts.EPHEMERAL,
+                                   main.mounts.PERSISTENT])
+def test_the_boot_carries_the_persistence_in_both_directions(
+        fake_config, monkeypatch, state):
+    """Observed in the **master**, so it crosses the fork on the runtime object
+    the worker inherits — and carried in both directions, because *"the store is
+    kept"* is as much of an answer as *"it is not"* and the resources that serve
+    it have to be able to say either."""
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: state)
 
     runtime = main.build_runtime()
 
     assert runtime.store_persistence == state
-    assert runtime.prometheus.registry.get_sample_value(
-        'sb_store_ephemeral') == expected
 
 
 def test_the_observation_interrogates_the_store_directory_it_was_given(
