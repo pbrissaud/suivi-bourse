@@ -2411,6 +2411,103 @@ def test_a_reduction_that_retains_nothing_is_a_header_and_not_an_error(tmp_path)
     opened.close()
 
 
+def test_the_export_serves_the_period_bounds_included(tmp_path):
+    """The fifth parameter, on both event routes (issue #810).
+
+    Bounds **inclusive**: the ledger is dated to the day (ADR-0008), so
+    ``?since=2024-01-15&until=2024-03-01`` is the two days it names and
+    everything between them — a half-open reading would drop the last day of
+    every year a reader extracts, in a file that looks complete.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get(
+        '/api/export/events.csv?since=2024-01-15&until=2024-03-01')
+    rows = response.get_data(as_text=True).strip().splitlines()[1:]
+
+    assert [row.split(',')[0] for row in rows] == ['2024-01-15', '2024-03-01']
+
+    # The workbook takes the same reduction, and its tabs are the years of what
+    # is left: the 2025 row is outside the interval, so there is no 2025 sheet.
+    workbook = client.get(
+        '/api/export/events.xlsx?since=2024-01-15&until=2024-03-01')
+    book = openpyxl.load_workbook(io.BytesIO(workbook.data), data_only=True)
+
+    assert book.sheetnames == ['2024']
+    opened.close()
+
+
+def test_one_bound_alone_opens_the_interval_on_the_other_side(tmp_path):
+    """*Everything since 2025* is a reduction, and each bound is optional."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    def days(query):
+        body = client.get(f'/api/export/events.csv?{query}').get_data(as_text=True)
+        return [row.split(',')[0] for row in body.strip().splitlines()[1:]]
+
+    assert days('since=2025-01-01') == ['2025-02-02']
+    assert days('until=2024-01-15') == ['2024-01-15']
+    opened.close()
+
+
+def test_a_blank_period_is_no_bound_at_all(tmp_path):
+    """``?since=&until=`` is a client with two empty date fields.
+
+    The rule ``?type=&account=`` already follows, and it matters more here: a
+    reduction read out of two blanks would name the file a *selection* and hand
+    the reader a partial-looking backup of the whole ledger.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.get('/api/export/events.csv?since=&until=')
+
+    assert len(response.get_data(as_text=True).strip().splitlines()) == 4
+    assert 'suivi-bourse-events.csv' in response.headers['Content-Disposition']
+    opened.close()
+
+
+def test_a_bound_that_is_not_a_day_is_refused_and_produces_no_file(tmp_path):
+    """``?since=hier`` is refused the way ``?type=ACHAT`` is (issue #810).
+
+    Two shapes of the same defect, and the second is the one no browser catches:
+    ``2024-02-31`` has the shape of a day and is not one, and a bound silently
+    dropped would answer a *file* holding a decade nobody asked for — or missing
+    one.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    for query, key in (('since=hier', 'since'),
+                       ('until=2024-02-31', 'until'),
+                       ('since=20240115', 'since')):
+        response = client.get(f'/api/export/events.csv?{query}')
+
+        assert response.status_code == 422
+        assert response.mimetype == 'application/problem+json'
+        assert response.get_json()['key'] == key
+        assert 'Content-Disposition' not in response.headers
+
+    assert client.get(
+        '/api/export/events.xlsx?since=hier').status_code == 422
+    opened.close()
+
+
+def test_a_reduction_on_the_period_alone_takes_the_selection_name(tmp_path):
+    """An extract of one year is not a backup, and must not be named as one."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    csv_file = client.get('/api/export/events.csv?since=2024-01-01&until=2024-12-31')
+    workbook = client.get('/api/export/events.xlsx?until=2024-12-31')
+
+    assert 'suivi-bourse-selection.csv' in csv_file.headers['Content-Disposition']
+    assert 'suivi-bourse-selection.xlsx' in workbook.headers['Content-Disposition']
+    opened.close()
+
+
 def test_an_unreadable_store_fails_the_workbook_too(tmp_path):
     """Same contract as the CSV: a query error is a ``503``, never a file."""
     client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)

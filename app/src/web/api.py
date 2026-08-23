@@ -1382,7 +1382,7 @@ class _InvalidParameter(Exception):
 def _selection() -> events_export.Selection:
     """The reduction the ledger's chips hold, off the query string (issue #796).
 
-    The four names are the table's four, and they are read here rather than
+    The five names are the table's five, and they are read here rather than
     applied in the front because what leaves is the **importable** form — see
     :mod:`events.export`. ``symbol`` is repeatable and singular, the spelling
     ``GET /api/events?symbol=`` already uses on this same collection.
@@ -1390,16 +1390,20 @@ def _selection() -> events_export.Selection:
     An unknown ``type`` is **refused**, not served as a file with no row in it:
     a backup that silently comes back empty is worse than one that fails, and
     ``?type=ACHAT`` is a word the product does not know rather than a kind of
-    event this install happens never to have recorded. Every other parameter has
-    no closed set to be outside of — an account nothing names and a word nothing
-    contains are both *this reduction retains nothing*, which is a state and not
-    an error.
+    event this install happens never to have recorded. A ``since`` or an
+    ``until`` that is not a day is refused for the same reason and by the same
+    sentence — ``?since=hier`` names no interval, and a file answered under it
+    would be a backup silently missing a decade (issue #810). Every other
+    parameter has no closed set to be outside of — an account nothing names and
+    a word nothing contains are both *this reduction retains nothing*, which is
+    a state and not an error.
 
     **Blank counts as unset**, which is ADR-0014's rule about the environment
-    read one level out: ``?type=&account=`` is what a client assembling a query
-    string from empty fields sends, and reading it as *retain the events of no
-    type* would answer a file with nothing in it — under the *selection* name,
-    which is the reader being told a reduction they never made held nothing.
+    read one level out: ``?type=&account=&since=`` is what a client assembling a
+    query string from empty fields sends, and reading it as *retain the events
+    of no type* would answer a file with nothing in it — under the *selection*
+    name, which is the reader being told a reduction they never made held
+    nothing.
     """
     event_type = _argument('type')
     if event_type is not None:
@@ -1417,13 +1421,39 @@ def _selection() -> events_export.Selection:
         query=request.args.get('q', ''),
         event_type=event_type,
         account=_argument('account'),
-        symbols=symbols or None)
+        symbols=symbols or None,
+        since=_day_argument('since'),
+        until=_day_argument('until'))
 
 
 def _argument(name: str) -> Optional[str]:
     """One query parameter, ``None`` when it is absent **or blank**."""
     value = request.args.get(name)
     return value.strip() if value and value.strip() else None
+
+
+def _day_argument(name: str) -> Optional[date]:
+    """One bound of the period, ``None`` when it is absent **or blank**.
+
+    Checked **twice**, the way ``_day_member`` checks the date of a written
+    event: for its shape, because ``date.fromisoformat`` takes spellings this
+    API does not — a bare ``20240115``, a whole instant — and a bound that
+    arrived as an instant is what silently drops a day; then for its existence,
+    because ``2024-02-31`` has the shape of a day and is not one. A ``422``
+    rather than a file: an unreadable bound is a reduction nobody can name, and
+    a backup that comes back short in silence is worse than one that fails.
+    """
+    value = _argument(name)
+    if value is None:
+        return None
+    if not _ISO_DAY.fullmatch(value):
+        raise _InvalidParameter(
+            f"{name} {value!r} is not a calendar day (YYYY-MM-DD)", name)
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise _InvalidParameter(
+            f"{name} {value!r} is not a day that exists", name)
 
 
 def _export_name(suffix: str, selection: events_export.Selection) -> str:

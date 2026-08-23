@@ -39,8 +39,10 @@ importable, the loader reading every worksheet of a file. A **selection** is the
 ledger's own chips applied here rather than in the front: what leaves is the
 importable form, so a partial file assembled on the other side of the wire would
 be a second spelling of a format that only this module owns. The front sends the
-four names on a query string; the reduction is arrived at twice over **one**
-format instead of once over two.
+names on a query string; the reduction is arrived at twice over **one** format
+instead of once over two. Since #810 there are **five** of them: the period
+joined the four, because an import is an interval of dates before it is anything
+else — and because *extract a year* is what a backup with no period cannot do.
 
 The two files are not interchangeable, and the difference is a precision.
 ``openpyxl`` writes a double as ``%.16g``, one significant digit short of the
@@ -303,23 +305,37 @@ def _writable(value: Any) -> Any:
 class Selection(NamedTuple):
     """What the ledger's chips retain, as the export resource takes it.
 
-    The four are the table's four, and they are read **here** rather than
+    The five are the table's five, and they are read **here** rather than
     applied in the front for the reason the whole module exists: what leaves is
     the *importable* form, and a file rendered on the other side of the wire
     would be a second spelling of it. What the front owns is the vocabulary —
-    the same four names, on the query string — and the reduction it draws is the
+    the same five names, on the query string — and the reduction it draws is the
     same reduction, arrived at twice over one contract rather than over two
     formats.
 
     Every member is *no reduction* by default, and no member is ever *no match*:
-    an empty query is every row, and ``None`` is every type, every account and
-    every security.
+    an empty query is every row, and ``None`` is every type, every account,
+    every security and every day.
+
+    **The period is named** ``since`` **and** ``until`` **, on both sides of the
+    wire** (issue #810). ``from`` is the natural word on a query string and it is
+    a Python keyword, so a ``NamedTuple`` cannot carry it: one vocabulary means
+    choosing the pair of names both sides can spell, rather than translating
+    ``?from=`` into something else here and letting the two drift.
+
+    **Two day bounds, inclusive, each optional.** The ledger is dated to the day
+    (ADR-0008), so both bounds retain the days they name — what the reader sees
+    on the chip is the interval they typed, and not a half-open one to reason
+    about. One bound alone is a legitimate reduction: *everything since 2023*
+    opens the interval on the other side.
     """
 
     query: str = ''
     event_type: Optional[str] = None
     account: Optional[str] = None
     symbols: Optional[Tuple[str, ...]] = None
+    since: Optional[date] = None
+    until: Optional[date] = None
 
     @property
     def reduces(self) -> bool:
@@ -329,9 +345,14 @@ class Selection(NamedTuple):
         backup**, so it does not take the backup's name — under it the partial
         file would replace the whole one on the reader's own disk, which is the
         one protection a fixed export name buys (see ``EXPORT_FILENAMES``).
+
+        **The period counts** (issue #810): an export reduced on the dates alone
+        is an extract of one year, and under the backup's name that partial file
+        would replace the whole one on the reader's own disk.
         """
         return bool(self.query.strip()) or self.event_type is not None \
-            or self.account is not None or self.symbols is not None
+            or self.account is not None or self.symbols is not None \
+            or self.since is not None or self.until is not None
 
 
 #: No parameter at all: the whole ledger, which is what the plain route serves.
@@ -339,11 +360,21 @@ NO_SELECTION = Selection()
 
 
 def select(events: Iterable[Event], selection: Selection) -> List[Event]:
-    """The events a selection retains, in the order they arrived."""
+    """The events a selection retains, in the order they arrived.
+
+    The two bounds are **inclusive**, which is the whole of the period's
+    contract: a ledger dated to the day has no instant to be before or after, so
+    ``since=2024-01-01`` and ``until=2024-12-31`` are the year 2024 and both of
+    the days they name are in it.
+    """
     needle = fold(selection.query.strip())
     symbols = None if selection.symbols is None else set(selection.symbols)
     kept = []
     for event in events:
+        if selection.since is not None and event.date < selection.since:
+            continue
+        if selection.until is not None and event.date > selection.until:
+            continue
         if selection.event_type is not None \
                 and event.event_type.value != selection.event_type:
             continue
