@@ -330,6 +330,13 @@ def test_the_scrape_carries_no_perf_state_at_all(
     scrape and the recompute shared. The recompute is unconditional now, so the
     price this cycle wrote is simply read by the next one out of the store —
     and there is no attribute left for a future cycle to consult.
+
+    What is forbidden is a **signal**: a flag, a watermark, a dirty set — anything
+    the scrape writes and the recompute reads instead of reading the store.
+    ``_perf_lock`` (issue #812) is not one and is named here rather than renamed
+    out of the way: it carries no information about what happened, the scrape
+    never touches it, and what it buys is that two recomputes do not overlap now
+    that the replay following a write is a second caller.
     """
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
@@ -337,7 +344,7 @@ def test_the_scrape_carries_no_perf_state_at_all(
     m._scrape_symbol("AAPL", now=NOW)
 
     assert _prices(store) == [185.0]
-    assert not [name for name in vars(m) if name.startswith("_perf")]
+    assert [name for name in vars(m) if name.startswith("_perf")] == ["_perf_lock"]
 
 
 def test_scrape_symbol_failed_store_write_is_named_as_such(

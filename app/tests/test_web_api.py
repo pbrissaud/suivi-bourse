@@ -98,6 +98,23 @@ class FakeMetrics:
         else:
             self._config_manager.replay()
 
+    def recompute_perf(self):
+        """The other half of the replay that follows the write (issue #812).
+
+        A no-op, deliberately. The real one is the whole
+        of :meth:`main.SuiviBourseMetrics.update_account_metrics` — a reporting
+        currency, a price series, a horizon per account — so a copy of it in
+        this class would be a simulation of the product rather than the product.
+        What #812 claims is claimed where it can be read off the store:
+        ``tests/test_replay_perf.py`` runs these same routes against a **real**
+        metrics object and asserts on ``account_metrics`` and
+        ``portfolio_totals``, with no tick anywhere.
+
+        Not even a counter, therefore: a call count nothing asserts is evidence
+        nobody reads, and it would leave this file green on the day the recompute
+        stopped following the write.
+        """
+
 
 def build_client(tmp_path, accounts=None, events=None, seed=None,
                  break_store=False, with_scheduler=True):

@@ -1108,6 +1108,14 @@ class SuiviBourseMetrics:
         self.base_currency: Optional[str] = None
         self.apply_dials(settings_registry.defaults())
 
+        # One perf recompute at a time (issue #812). See
+        # :meth:`update_account_metrics` for why this stopped being free the day
+        # the replay that follows the write started recomputing the series.
+        # **Reentrant**, so ``recompute_perf`` can hold it across the rebuild
+        # *and* the record it publishes about that rebuild, while the rebuild
+        # goes on taking it for a caller who reaches it directly.
+        self._perf_lock = threading.RLock()
+
         # The exchange rate (issue #702, ADR-0002). A TTL cache in front of two
         # yfinance fetches, and the TTL is what makes a market-open wave share
         # **one** rate per pair: converted at N slightly different rates, the
@@ -2144,24 +2152,37 @@ class SuiviBourseMetrics:
         which is why ``PERF_SKIPPED`` left with the predicate.
 
         Guarded so an error never kills the scheduler thread.
+
+        **The record is inside the lock, with the rebuild it describes** (issue
+        #812). ``_perf_lock`` orders the passes; publishing the record after
+        releasing it would leave the two orderings free to disagree, and a tick
+        descheduled between its own release and its ``record_perf`` would stamp
+        an older ``at`` and older horizons over the record of the request that
+        overtook it. ``/api/runtime`` would then name a cache that has been
+        replaced — the one thing :class:`runtime_state.PerfRecord` is written not
+        to do. The lock is reentrant for exactly this: the rebuild takes it again
+        on the same thread, and a caller reaching
+        :meth:`update_account_metrics` directly is still ordered against
+        everyone else.
         """
         horizons: Dict[str, Optional[date]] = {}
-        try:
-            horizons = self.update_account_metrics()
-            verdict, error = runtime_state.PERF_RAN, None
-        except Exception as e:
-            app_logger.error(f"Failed to update account metrics: {e}")
-            verdict, error = runtime_state.PERF_FAILED, str(e)
-        # Recorded rather than inferred, same as every other job's last pass. The
-        # horizons ride along (issue #708) rather than being a record of their
-        # own: they are *what this pass wrote from*, so a reader taking them from
-        # one pass and the verdict from another would be reading a cache that no
-        # longer exists. A failed pass publishes none, which is the honest state —
-        # the previous cycle's cache still stands but this cycle established
-        # nothing.
-        self.recorder.record_perf(runtime_state.PerfRecord(
-            at=datetime.now(timezone.utc), verdict=verdict, error=error,
-            horizons=horizons))
+        with self._perf_lock:
+            try:
+                horizons = self.update_account_metrics()
+                verdict, error = runtime_state.PERF_RAN, None
+            except Exception as e:
+                app_logger.error(f"Failed to update account metrics: {e}")
+                verdict, error = runtime_state.PERF_FAILED, str(e)
+            # Recorded rather than inferred, same as every other job's last pass.
+            # The horizons ride along (issue #708) rather than being a record of
+            # their own: they are *what this pass wrote from*, so a reader taking
+            # them from one pass and the verdict from another would be reading a
+            # cache that no longer exists. A failed pass publishes none, which is
+            # the honest state — the previous cycle's cache still stands but this
+            # cycle established nothing.
+            self.recorder.record_perf(runtime_state.PerfRecord(
+                at=datetime.now(timezone.utc), verdict=verdict, error=error,
+                horizons=horizons))
 
     def ingest(self, import_files: bool = True):
         """Import the drop folder, replay the ledger, reconcile the scrape jobs.
@@ -2196,8 +2217,17 @@ class SuiviBourseMetrics:
             before = self.config_manager.current().shares
             snapshot = (self.config_manager.reload() if import_files
                         else self.config_manager.replay())
-            if import_files:
-                self._adopt_declared_currency()
+            # **On every ingest, not only on a folder scan** (issue #812). The
+            # condition here used to be ``if import_files``, which was right
+            # while the only file that could carry a reporting currency arrived
+            # through the drop folder. ``POST /api/events/import`` writes that
+            # setting too (:func:`entries.create_many`) and comes through the
+            # replay that follows the write, i.e. with ``import_files=False`` —
+            # so the row landed in the store and the running process went on
+            # holding ``None``. Since the perf gate reads the *attribute*, every
+            # later tick was blind as well: an install whose first gesture is an
+            # import had no performance series at all until a restart.
+            self._adopt_declared_currency()
             after = snapshot.shares
             # The gauges the replay owns (issue #699). Published on every
             # ingest, not only on a change: a restart replays an unchanged
@@ -2326,8 +2356,13 @@ class SuiviBourseMetrics:
         symptom is invisible, since a missing currency writes ``NULL``
         conversions rather than failing anything.
 
-        Read after the reload and not before it: the value this looks for is
-        written *by* the import the reload performs.
+        Read after the replay and not before it: the value this looks for is
+        written *by* the import that replay follows. And it is read on **every**
+        ingest since #812 — a file uploaded to ``POST /api/events/import``
+        declares a currency exactly as one dropped in the folder does, and that
+        road comes through ``replay_after_write``, which scans no folder.
+        Idempotent by the condition below, so the boot's own ingest and every
+        write that changes nothing here cost one ``setting`` read.
 
         And it triggers the lateral pass for the same reason ``PUT
         /api/settings`` does (issue #704): this **is** the pose of the reporting
@@ -3351,6 +3386,50 @@ class SuiviBourseMetrics:
         return spans
 
     def update_account_metrics(self) -> Dict[str, Optional[date]]:
+        """Rebuild the perf cache — **one pass at a time** (issue #812).
+
+        A thin wrapper, and the lock is the whole of it. :meth:`_rebuild_series`
+        below carries the design; what is decided *here* is that two of them
+        never overlap, and that became a question the day the recompute stopped
+        having a single caller.
+
+        Until #812 the only one was the ``perf`` interval job, and APScheduler's
+        ``max_instances=1`` made an overlap impossible on its own. The replay
+        that follows the write is a **request thread** (``threads = 4`` in
+        ``gunicorn.conf.py``), so two passes are now ordinary: two writes at
+        once, or a write landing while the tick is mid-flight.
+
+        Overlapping is not merely wasteful, it is **destructive**, and the shape
+        of the damage is the one this ticket exists to prevent. The pass reads
+        and computes outside any mutex and takes ``writing()`` only for its final
+        upsert-and-prune, so the *last* transaction to commit wins — and
+        :func:`perf_series.prune_account_metrics` is bounded by **that pass's own
+        spans**. A tick that started before a back-dated event was recorded would
+        therefore commit second with the old ledger's spans and *delete the years
+        of history the request had just written*, leaving the screen wrong until
+        the next tick.
+
+        The lock is held across read, compute **and** write, which is what makes
+        the ordering total: whoever acquires last reads last, so the series that
+        stands is always the one computed from the freshest ledger. What it costs
+        is a queue: with four request threads and the tick there are five
+        possible callers, and ``threading.RLock`` is not fair, so a write can
+        wait out several full rebuilds — 460 ms each over five years (ADR-0011).
+        That is the price of a cache that cannot silently lose a decade, and it
+        is bounded by the number of callers rather than by anything unbounded.
+
+        It is a lock over *this pass* and not over the store. It **is** held
+        while :meth:`_rebuild_series` takes ``config_manager.writing()`` — that
+        is its ordinary path, not an exception — so what keeps the pair safe is
+        the single ordering: ``_perf_lock`` then ``writing()``, and no path takes
+        them the other way round. Every ``replay_after_write`` call site sits
+        outside its own ``with writing()`` block, which is what makes that true
+        by inspection.
+        """
+        with self._perf_lock:
+            return self._rebuild_series()
+
+    def _rebuild_series(self) -> Dict[str, Optional[date]]:
         """Rebuild the daily ``account_metrics`` + ``portfolio_totals`` cache.
 
         Returns ``{account: horizon}`` — the first day each account's figures were
@@ -4007,9 +4086,35 @@ def replay_after_write(runtime: Runtime) -> None:
     reconciled against the symbols the write added or removed. Before the fork
     — and in a test holding only a manager — there is nothing to reconcile, so
     the snapshot is republished directly.
+
+    **And it carries the performance with it** (issue #812, ADR-0032). The
+    positions followed the write from the start; the series waited for the
+    ``PERF_TICK``, so correcting a mistake made in 2019 left every curve exactly
+    as it was for up to two minutes — during which *taken*, *taken wrong* and
+    *not taken yet* were one screen. The recompute is
+    :meth:`SuiviBourseMetrics.recompute_perf` and not
+    ``update_account_metrics``: it is the guarded shape, so a cache that fails to
+    rebuild is a ``PERF_FAILED`` record rather than a ``500`` on a write that
+    committed, and the pass is recorded exactly as a tick's is — because it is
+    one.
+
+    **Integral, and that is the decision.** ADR-0011 measured the full rebuild at
+    460 ms over five years and removed the incremental windows on purpose. A
+    window *from the event's date to today* would buy four hundred milliseconds
+    against a frontier to reason about for ever — and this seam exists precisely
+    because a false day left behind a frontier is invisible.
+
+    The periodic job does not move: it stays the net for the changes that go
+    through no write at all — a quote landing, a backfill chunk arriving, and a
+    file dropped in the folder, whose watcher is wired straight to ``ingest``
+    rather than through here. That last one keeps the tick's old symptom on the
+    headless road, and it is left there deliberately: ADR-0032 removes the drop
+    folder, so it goes with the mount rather than by a second spelling of this
+    seam.
     """
     if runtime.metrics is not None:
         runtime.metrics.ingest(import_files=False)
+        runtime.metrics.recompute_perf()
     else:
         runtime.config_manager.replay()
 

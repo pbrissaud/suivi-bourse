@@ -80,7 +80,17 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
 - **Performance** — an **integral and unconditional** recompute every tick
   (ADR-0011: the two tables are a *cache*, a pure function of the ledger, the
   price points and the declared accounts). A block `UPSERT` plus a bounded prune,
-  never a `DELETE`+`INSERT`. The series is **dense over calendar days**.
+  never a `DELETE`+`INSERT`. The series is **dense over calendar days**. It also
+  runs **on every write through `/api`**, inside `replay_after_write` and in the
+  same shape (ADR-0032). The tick is what is left for the rest: a quote landing,
+  a backfill chunk — **and a file dropped in `/import`**, whose watcher is wired
+  straight to `ingest` and therefore still leaves the curves up to one
+  `PERF_TICK` behind. That last one is a gap rather than a design: ADR-0032
+  removes the drop folder, so it closes with the mount rather than by a second
+  spelling of the seam. **One pass at a time** (`_perf_lock`, reentrant): the
+  pass computes outside the writers' mutex and the prune is bounded by its *own*
+  spans, so a stale pass committing last would delete the days a fresh one just
+  wrote. The lock order is `_perf_lock` then `writing()`, never the reverse.
 
 ## The figures
 
