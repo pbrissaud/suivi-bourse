@@ -33,6 +33,20 @@
  * already **in force**: the group stays whatever N is, because a filter with no
  * way out is worse than a filter that cannot filter.
  *
+ * **The period is two day fields and one chip** (#810). It is the one dimension
+ * with no vocabulary to lay out — the six types are six, the accounts are what
+ * the install uses, and the days are all of them — so the control is a pair of
+ * `<input type="date">` and never a row of chips. What the chip does is the
+ * other half: while a period is in force it **names the interval** and is the
+ * way out of it, exactly as the securities line is for the reduction that
+ * arrives from a gesture. Without it a reader who typed one bound and scrolled
+ * would have a table shorter than their ledger with two small fields, somewhere
+ * above, as the only explanation.
+ *
+ * The bounds are **inclusive on both sides**, and the chip says so in words: a
+ * ledger is dated to the day, so the interval a reader typed is the interval
+ * they get, and there is no half-open bound to reason about.
+ *
  * **A reduction that came from a gesture names itself and can be undone** (#724).
  * The securities filter has no control to type into — it arrives from the
  * assumed-currency notice of the other tab, which names *every* security it
@@ -49,7 +63,7 @@ import { Input } from '@/components/ui/input'
 import { EVENT_TYPES } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import type { LedgerFilters as Filters } from '@/lib/ledger'
+import { parseDay, type LedgerFilters as Filters } from '@/lib/ledger'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { cn } from '@/lib/utils'
 
@@ -77,6 +91,19 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
     filters.account !== null && !accounts.includes(filters.account)
       ? [...accounts, filters.account]
       : accounts
+
+  // Which of the three sentences the chip reads out. `both` is the interval,
+  // and the two others are the bound that was typed alone — an interval open on
+  // the other side, which is a legitimate reduction and has to be readable as
+  // one rather than as half of a missing pair.
+  const period =
+    filters.since !== null && filters.until !== null
+      ? 'both'
+      : filters.since !== null
+        ? 'since'
+        : filters.until !== null
+          ? 'until'
+          : null
 
   return (
     <div className="flex min-w-0 grow flex-wrap items-center gap-x-4 gap-y-3">
@@ -134,6 +161,54 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
           ))}
         </div>
       ) : null}
+
+      {/* The period. Two fields rather than chips — the days are not a
+          vocabulary to lay out — and a chip that appears only once a bound is
+          in force, naming the interval and releasing it. */}
+      <div
+        role="group"
+        aria-label={t('data.filter.period')}
+        className="flex flex-wrap items-center gap-x-2 gap-y-1.5"
+      >
+        <label htmlFor="ledger-since" className="text-xs text-muted-foreground">
+          {t('data.filter.since')}
+        </label>
+        <Input
+          id="ledger-since"
+          type="date"
+          className="h-8 w-auto text-xs"
+          value={filters.since ?? ''}
+          // A field a reader emptied is *no bound*, and a day the field could
+          // not read is the same thing: `<input type="date">` hands back an
+          // empty string for both, and `parseDay` refuses what has the shape of
+          // a day without being one.
+          onChange={(event) => onChange({ ...filters, since: parseDay(event.target.value) })}
+        />
+        <label htmlFor="ledger-until" className="text-xs text-muted-foreground">
+          {t('data.filter.until')}
+        </label>
+        <Input
+          id="ledger-until"
+          type="date"
+          className="h-8 w-auto text-xs"
+          value={filters.until ?? ''}
+          onChange={(event) => onChange({ ...filters, until: parseDay(event.target.value) })}
+        />
+        {period === null ? null : (
+          <Chip
+            pressed
+            label={t('data.filter.period.chip', {
+              bounds: period,
+              since: f.date(filters.since),
+              until: f.date(filters.until),
+            })}
+            // A toggle that is pressed releases when it is pressed again, which
+            // is what `aria-pressed` promises — and unlike the type chips there
+            // is no second control here to be the way out.
+            onPress={() => onChange({ ...filters, since: null, until: null })}
+          />
+        )}
+      </div>
 
       <p className="ml-auto text-sm text-muted-foreground">
         {t('data.filter.count', { count: shown })}

@@ -280,6 +280,99 @@ describe('the reduction, which is what pays for no pagination', () => {
     expect(screen.getByText('1 événement')).toBeInTheDocument()
   })
 
+  it('reduces to a period, names the interval on a chip, and lets it go', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    // Two fields and no chip while nothing is in force: the days are not a
+    // vocabulary to lay out, so there is nothing to press until a bound exists.
+    const period = screen.getByRole('group', { name: 'Période' })
+    expect(within(period).queryAllByRole('button')).toHaveLength(0)
+
+    // `fireEvent` and not `user.type`: a date field takes its value whole, and
+    // jsdom sanitises anything it cannot parse to an empty string before any
+    // code sees it — which is exactly the trap `parseDay` exists for.
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2025-12-24' } })
+    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-01-12' } })
+
+    // Both bounds retain the day they name: the 24th and the 12th are in, and
+    // a half-open reading would have dropped one of the three rows.
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+    expect(screen.getByText('3 événements')).toBeInTheDocument()
+
+    const chip = within(period).getByRole('button', {
+      name: 'Du 24 déc. 2025 au 12 janv. 2026',
+    })
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
+
+    // A table shorter than the reader's ledger always has, on screen, the
+    // sentence that says why and the control that undoes it.
+    await user.click(chip)
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+    expect(within(period).queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('takes one bound alone, which is an interval open on the other side', async () => {
+    renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-06' } })
+
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    // Read out as what it is — *everything since that day* — rather than as
+    // half of a pair the reader forgot to fill in.
+    expect(
+      within(screen.getByRole('group', { name: 'Période' })).getByRole('button', {
+        name: 'Depuis le 6 janv. 2026',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('carries the period on the export’s own address', async () => {
+    // What travels is the *question*, never the rows: the importable form
+    // belongs to `events/export.py`, and the two names are the server's.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-01' } })
+    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-12-31' } })
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+
+    let asked: string | null = null
+    server.use(
+      http.get(ROUTES.exportEvents, ({ request }) => {
+        asked = new URL(request.url).search
+        return new HttpResponse('date\n', {
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="suivi-bourse-selection.csv"',
+          },
+        })
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Exporter' }))
+    await user.click(await screen.findByRole('menuitem', { name: /La sélection filtrée/ }))
+
+    await waitFor(() => expect(asked).toBe('?since=2026-01-01&until=2026-12-31'))
+  })
+
+  it('takes the period from the address, and gives it back when it is released', async () => {
+    // A reduced ledger has an address, and since #810 the period is one of its
+    // dimensions: a reader who reloads on an extract of a year keeps it.
+    const { user, router } = renderData(ledgerEvents(), '/donnees?since=2026-01-06')
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    const period = screen.getByRole('group', { name: 'Période' })
+    expect(screen.getByLabelText('Du')).toHaveValue('2026-01-06')
+
+    await user.click(within(period).getByRole('button', { name: 'Depuis le 6 janv. 2026' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+    // The address stopped describing the table, so it stops being one — a
+    // reload restoring a reduction the reader has just lifted is the defect.
+    expect(router.state.location.search).toEqual({})
+  })
+
   it('says nothing matches rather than showing an empty table', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())

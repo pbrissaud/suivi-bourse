@@ -114,6 +114,29 @@ describe('the reduction', () => {
     expect(filterEvents(events, { ...NO_FILTERS, symbols: [] })).toHaveLength(0)
   })
 
+  it('reduces to a period, and both bounds retain the day they name', () => {
+    const events = ledgerEvents()
+
+    // 2026-02-10, 2026-01-12, 2026-01-05 and 2025-12-24 — the interval below
+    // names its two ends, and a half-open reading would drop one of them.
+    expect(
+      filterEvents(events, { ...NO_FILTERS, since: '2025-12-24', until: '2026-01-12' }).map(
+        (event) => event.date,
+      ),
+    ).toEqual(['2026-01-12', '2026-01-05', '2025-12-24'])
+    // One bound alone opens the interval on the other side — *everything since
+    // January*, which is a legitimate reduction and not half of a pair.
+    expect(filterEvents(events, { ...NO_FILTERS, since: '2026-01-06' })).toHaveLength(2)
+    expect(filterEvents(events, { ...NO_FILTERS, until: '2025-12-31' })).toHaveLength(1)
+    // Composed with the four others: one reduction, and it is an intersection.
+    expect(
+      filterEvents(events, { ...NO_FILTERS, type: 'DEPOSIT', since: '2026-01-01' }),
+    ).toHaveLength(1)
+    expect(
+      filterEvents(events, { ...NO_FILTERS, type: 'DEPOSIT', since: '2026-01-06' }),
+    ).toHaveLength(0)
+  })
+
   it('sorts by date descending, and keeps the store’s order inside a day', () => {
     const sorted = byDateDescending([
       anEvent({ notes: 'b', date: '2025-01-01' }),
@@ -208,12 +231,24 @@ describe('the reduction as the export takes it', () => {
     expect(exportHref('/api/export/events.csv', NO_FILTERS)).toBe('/api/export/events.csv')
   })
 
-  it('carries the four names the chips hold, the securities one repeated', () => {
+  it('puts the period on the export’s own address, which is how a year leaves', () => {
+    expect(
+      exportHref('/api/export/events.csv', {
+        ...NO_FILTERS,
+        since: '2025-01-01',
+        until: '2025-12-31',
+      }),
+    ).toBe('/api/export/events.csv?since=2025-01-01&until=2025-12-31')
+  })
+
+  it('carries the five names the chips hold, the securities one repeated', () => {
     const params = selectionParams({
       query: 'zza',
       type: 'BUY',
       account: 'beta',
       symbols: ['ZZA', 'ZZB'],
+      since: '2025-01-01',
+      until: '2025-12-31',
     })
 
     expect(params.get('q')).toBe('zza')
@@ -222,6 +257,20 @@ describe('the reduction as the export takes it', () => {
     // Repeated and singular — the spelling `GET /api/events?symbol=` already
     // uses on this collection, and the one `events/export.py` reads.
     expect(params.getAll('symbol')).toEqual(['ZZA', 'ZZB'])
+    // `since`/`until` and not `from`/`to`: the server's `Selection` is a
+    // `NamedTuple` and `from` is a Python keyword, so one vocabulary means the
+    // pair of names both sides can spell.
+    expect(params.get('since')).toBe('2025-01-01')
+    expect(params.get('until')).toBe('2025-12-31')
+  })
+
+  it('sends one bound alone, an interval open on the other side', () => {
+    expect(selectionParams({ ...NO_FILTERS, since: '2026-01-01' }).toString()).toBe(
+      'since=2026-01-01',
+    )
+    expect(selectionParams({ ...NO_FILTERS, until: '2026-01-01' }).toString()).toBe(
+      'until=2026-01-01',
+    )
   })
 
   it('leaves a query of spaces out, a reduction being what actually reduces', () => {
@@ -253,9 +302,12 @@ describe('the address of a reduced ledger', () => {
       query: 'ZZA',
       type: 'BUY',
       account: 'alpha',
-      // The fourth dimension has no address: it arrives from a gesture made on
+      // The one dimension with no address: it arrives from a gesture made on
       // the page itself and has never needed one.
       symbols: null,
+      // Named by no bound, so the address reduces on nothing here either.
+      since: null,
+      until: null,
     })
     expect(filtersFromSearch({ account: 'alpha' })).toEqual({ ...NO_FILTERS, account: 'alpha' })
   })
@@ -266,8 +318,29 @@ describe('the address of a reduced ledger', () => {
       type: 'DEPOSIT',
       account: 'default',
       symbols: null,
+      since: '2025-12-01',
+      until: '2026-01-31',
     }
     expect(filtersFromSearch(ledgerSearchOf(filters))).toEqual(filters)
     expect(ledgerSearchOf(NO_FILTERS)).toEqual({})
+  })
+
+  it('carries a period alone, and refuses a bound that is not a day', () => {
+    // The period is a reduction of its own: an address holding nothing else
+    // still describes a shorter ledger, so it has to answer as one.
+    expect(validateLedgerSearch({ since: '2026-01-05', until: '2026-02-10' })).toEqual({
+      since: '2026-01-05',
+      until: '2026-02-10',
+    })
+    expect(filtersFromSearch({ since: '2026-01-05' })).toEqual({
+      ...NO_FILTERS,
+      since: '2026-01-05',
+    })
+    // Blank is unset, and a word or a day that does not exist reduces
+    // **nothing** rather than reducing to nothing: the page still renders the
+    // ledger the link was pointing at.
+    expect(validateLedgerSearch({ since: '  ', until: 'hier' })).toEqual({})
+    expect(validateLedgerSearch({ since: '2026-02-31' })).toEqual({})
+    expect(validateLedgerSearch({ until: 20260210 })).toEqual({})
   })
 })

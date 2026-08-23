@@ -89,17 +89,24 @@ export default function DataPage() {
   const [compose, setCompose] = useState<object | undefined>(undefined)
 
   // **The address, and the two species it carries** (#797). A *reduction* is one:
-  // `q`, `type` and `account` are the ledger's own dimensions under the names the
-  // export resource parses, so a reduced ledger's address is the query string of
-  // its own export, and it survives a reload the way `?compte=` does two pages
-  // over. A *gesture* is not: `ouvrir` arms the create form and is spent on
-  // arrival, because a form reopening on every reload is a state nobody asked
-  // for twice.
+  // `q`, `type`, `account` and — since #810 — `since`/`until` are the ledger's
+  // own dimensions under the names the export resource parses, so a reduced
+  // ledger's address is the query string of its own export, and it survives a
+  // reload the way `?compte=` does two pages over. A *gesture* is not: `ouvrir`
+  // arms the create form and is spent on arrival, because a form reopening on
+  // every reload is a state nobody asked for twice.
   const search = useSearch({ from: '/donnees' })
   const navigate = useNavigate()
   const reduction = useMemo(
-    () => filtersFromSearch({ q: search.q, type: search.type, account: search.account }),
-    [search.q, search.type, search.account],
+    () =>
+      filtersFromSearch({
+        q: search.q,
+        type: search.type,
+        account: search.account,
+        since: search.since,
+        until: search.until,
+      }),
+    [search.q, search.type, search.account, search.since, search.until],
   )
 
   useEffect(() => {
@@ -121,10 +128,24 @@ export default function DataPage() {
     // palette never sends both, and an address that carries the two means both.
     void navigate({
       to: '/donnees',
-      search: { q: search.q, type: search.type, account: search.account },
+      search: {
+        q: search.q,
+        type: search.type,
+        account: search.account,
+        since: search.since,
+        until: search.until,
+      },
       replace: true,
     })
-  }, [search.ouvrir, search.q, search.type, search.account, navigate])
+  }, [
+    search.ouvrir,
+    search.q,
+    search.type,
+    search.account,
+    search.since,
+    search.until,
+    navigate,
+  ])
 
   /**
    * **The address has stopped describing this table**, so it stops being one.
