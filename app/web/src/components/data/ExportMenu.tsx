@@ -15,8 +15,8 @@
  * reduces, which is what keeps the other three unambiguous.
  *
  * **Nothing here narrows anything.** The selection is the ledger's own
- * reduction, carried to the server as the four names the chips hold (`q`,
- * `type`, `account`, `symbol`) and answered there: the importable form belongs
+ * reduction, carried to the server as the five names the chips hold (`q`,
+ * `type`, `account`, `symbol`, and since #810 `since`/`until`) and answered there: the importable form belongs
  * to `events/export.py`, and a partial file assembled in TypeScript would be a
  * second spelling of a format written once. What comes back is therefore an
  * ordinary event file — droppable, re-importable — and not an extract that

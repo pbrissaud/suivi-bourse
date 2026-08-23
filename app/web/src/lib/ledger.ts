@@ -128,9 +128,26 @@ export interface LedgerFilters {
    * one of them — which is what a notice about quoted lines means.
    */
   symbols: readonly string[] | null
+  /**
+   * The first day retained, `YYYY-MM-DD`, or `null` for *no lower bound* (#810).
+   *
+   * It is spelled `since` and not `from` on the wire and here, because the
+   * server's `Selection` is a `NamedTuple` and `from` is a Python keyword: one
+   * vocabulary means picking the pair of names both sides can spell.
+   */
+  since: string | null
+  /** The last day retained, **inclusive** — the ledger is dated to the day. */
+  until: string | null
 }
 
-export const NO_FILTERS: LedgerFilters = { query: '', type: null, account: null, symbols: null }
+export const NO_FILTERS: LedgerFilters = {
+  query: '',
+  type: null,
+  account: null,
+  symbols: null,
+  since: null,
+  until: null,
+}
 
 export function filterEvents(
   events: readonly LedgerEvent[],
@@ -139,6 +156,14 @@ export function filterEvents(
   const needle = fold(filters.query.trim())
   const symbols = filters.symbols === null ? null : new Set(filters.symbols)
   return events.filter((event) => {
+    if (filters.since !== null || filters.until !== null) {
+      // A row with no day at all belongs to no interval — the symbols rule one
+      // dimension over, and the comparison is on the ISO spelling, which sorts
+      // as the calendar does.
+      if (event.date === null) return false
+      if (filters.since !== null && event.date < filters.since) return false
+      if (filters.until !== null && event.date > filters.until) return false
+    }
     if (filters.type !== null && event.event_type !== filters.type) return false
     if (filters.account !== null && accountOf(event) !== filters.account) return false
     if (symbols !== null && (!event.symbol || !symbols.has(event.symbol))) return false
@@ -150,7 +175,7 @@ export function filterEvents(
 /**
  * The reduction as the **export resource's own parameters** (#796).
  *
- * The four names are the four the chips hold, and they travel rather than the
+ * The five names are the five the chips hold, and they travel rather than the
  * rows they retain: the importable form belongs to `events/export.py`, and a
  * file assembled here would be a second spelling of a format written once — the
  * rule that has already cost this product a branch. So what crosses the wire is
@@ -175,6 +200,11 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
   // Repeated and singular, the spelling `GET /api/events?symbol=` already uses
   // on this collection.
   for (const symbol of filters.symbols ?? []) params.append('symbol', symbol)
+  // The period, under the two names the server spells (#810). Each bound is
+  // sent on its own: one alone opens the interval on the other side, which is
+  // *everything since 2023* and a legitimate reduction.
+  if (filters.since !== null) params.set('since', filters.since)
+  if (filters.until !== null) params.set('until', filters.until)
   return params
 }
 
@@ -188,18 +218,25 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  * parameter on the two other pages: it survives a reload, it can be handed to
  * somebody else, and the way back is the browser's own button.
  *
- * **Three of the four dimensions, and the fourth on purpose.** `q`, `type` and
- * `account` are the names {@link selectionParams} already gives them, so the
- * address of a reduced ledger *is* the query string of its own export. The set
- * of securities is left out: it arrives from a gesture made on the page itself —
- * the assumed-currency notice, one tab away — and a repeated parameter is not
- * something the router serialises in the resource's own spelling anyway. A
- * dimension that has never needed an address does not get half of one.
+ * **Four of the five dimensions, and the fifth on purpose.** `q`, `type`,
+ * `account` and — since #810 — `since`/`until` are the names
+ * {@link selectionParams} already gives them, so the address of a reduced ledger
+ * *is* the query string of its own export. The set of securities is left out: it
+ * arrives from a gesture made on the page itself — the assumed-currency notice,
+ * one tab away — and a repeated parameter is not something the router serialises
+ * in the resource's own spelling anyway. A dimension that has never needed an
+ * address does not get half of one.
+ *
+ * The period is the opposite case and therefore does get one: it is typed into
+ * the bar, it is what an extract of a year is made of, and a reader who reloads
+ * on it must not lose it.
  */
 export interface LedgerSearch {
   q?: string
   type?: LedgerEventType
   account?: string
+  since?: string
+  until?: string
 }
 
 /**
@@ -209,11 +246,23 @@ export interface LedgerSearch {
  * as, and a word outside the closed set of six types reduces *nothing* rather
  * than reducing to nothing: the type is the one member with a closed set, so it
  * is the one member that can be outside it.
+ *
+ * The two bounds have a closed set of their own — the days that exist — so they
+ * are the second member that can be outside it, and {@link parseDay} is what
+ * says so: `?since=hier` and `?since=2026-02-31` both reduce **nothing** here.
+ * The server answers a `422` to the same string, and the difference is the
+ * subject: a refused export is a gesture the reader just made, an address is a
+ * link they followed, and a page that refused to render over a bad link would
+ * hide the ledger it was pointing at.
  */
 export function validateLedgerSearch(search: Record<string, unknown>): LedgerSearch {
   const text = (value: unknown): string | undefined => {
     const trimmed = typeof value === 'string' ? value.trim() : ''
     return trimmed === '' ? undefined : trimmed
+  }
+  const day = (value: unknown): string | undefined => {
+    const trimmed = text(value)
+    return trimmed === undefined ? undefined : (parseDay(trimmed) ?? undefined)
   }
   const named = text(search.type)?.toUpperCase()
   const type = EVENT_TYPES.find((one) => one === named)
@@ -221,12 +270,20 @@ export function validateLedgerSearch(search: Record<string, unknown>): LedgerSea
     ...(text(search.q) === undefined ? {} : { q: text(search.q) }),
     ...(type === undefined ? {} : { type }),
     ...(text(search.account) === undefined ? {} : { account: text(search.account) }),
+    ...(day(search.since) === undefined ? {} : { since: day(search.since) }),
+    ...(day(search.until) === undefined ? {} : { until: day(search.until) }),
   }
 }
 
 /** The reduction an address carries, or `null` where it reduces nothing. */
 export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
-  if (search.q === undefined && search.type === undefined && search.account === undefined) {
+  if (
+    search.q === undefined &&
+    search.type === undefined &&
+    search.account === undefined &&
+    search.since === undefined &&
+    search.until === undefined
+  ) {
     return null
   }
   return {
@@ -234,6 +291,8 @@ export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
     query: search.q ?? '',
     type: search.type ?? null,
     account: search.account ?? null,
+    since: search.since ?? null,
+    until: search.until ?? null,
   }
 }
 
@@ -252,10 +311,14 @@ export function ledgerSearchOf(filters: LedgerFilters): LedgerSearch {
   const type = params.get('type')
   const account = params.get('account')
   const query = params.get('q')
+  const since = params.get('since')
+  const until = params.get('until')
   return {
     ...(query === null ? {} : { q: query }),
     ...(type === null ? {} : { type: type as LedgerEventType }),
     ...(account === null ? {} : { account }),
+    ...(since === null ? {} : { since }),
+    ...(until === null ? {} : { until }),
   }
 }
 

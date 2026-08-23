@@ -245,19 +245,20 @@ src/
   account's events.
 - **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
-  groups of chips, a search and, since #797, by an **address**: `q`, `type` and
-  `account`, which are the three the export resource already parses, so a reduced
-  ledger's URL is the query string of its own export. A reduction that arrived
-  that way names what it retains and offers the way out; the reader's first
-  gesture on the chips takes the address back off, an address being a description
-  of the table — and above it one band holding the **upload zone** (a real
-  target since #811: a file dropped on it or chosen from it is handed to
-  `POST /api/events/import`, and the receipt is said under it), the
-  export menu — **four entries** since #796: every event, a workbook with one
-  sheet per year, the filtered selection and the accounts, the middle two
-  server-side because the importable form belongs to `events/export.py` and a
-  rule written twice loses a branch — and the imported files with their
-  revocation), *The notices* —
-  **always mounted**, saying so when there is nothing, because the status dot must
-  have one destination — and *The installation* (settings, the store and its
-  orphans).
+  groups of chips, a search, a **period** — two date fields since #810, both
+  bounds inclusive, and a chip that shows up only once a bound is in force, to
+  name the interval and be the way out of it — and, since #797, by an
+  **address**: `q`, `type`, `account` and, since #810, `since` and `until`, which
+  are the five the export resource already parses, so a reduced ledger's URL is
+  the query string of its own export. A reduction that arrived that way names
+  what it retains and offers the way out; the reader's first gesture on the chips
+  takes the address back off, an address being a description of the table — and
+  above it one band holding the **upload zone** (a real target since #811: a file
+  dropped on it or chosen from it is handed to `POST /api/events/import`, and the
+  receipt is said under it), the export menu — **four entries** since #796: every
+  event, a workbook with one sheet per year, the filtered selection and the
+  accounts, the middle two server-side because the importable form belongs to
+  `events/export.py` and a rule written twice loses a branch — and the imported
+  files with their revocation), *The notices* — **always mounted**, saying so when
+  there is nothing, because the status dot must have one destination — and *The
+  installation* (settings, the store and its orphans).

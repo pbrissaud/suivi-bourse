@@ -131,7 +131,7 @@ export function eventsMatching(events: readonly LedgerEvent[], query: string): L
  * and a word — so that is what the reduction says it retains, and it says it in
  * those terms.
  *
- * The three are also, and not by accident, three of the four parameters the
+ * The three are also, and not by accident, three of the five parameters the
  * export resource parses (`selectionParams`): the address of a reduced ledger is
  * the query string of its own export.
  */

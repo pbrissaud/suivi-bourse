@@ -637,3 +637,75 @@ def test_a_selected_export_is_importable_like_any_other(tmp_path):
     restored.close()
 
     assert accounts_held == {'cto'}
+
+
+# --------------------------------------------------------------------- #
+# The period — the fifth member of the reduction (issue #810)
+# --------------------------------------------------------------------- #
+
+def test_the_period_retains_the_two_days_it_names(tmp_path):
+    """Both bounds are **inclusive**, which is what the chip states.
+
+    A ledger dated to the day (ADR-0008) has no instant to be before or after,
+    so a half-open interval would drop the last day of every year a reader asks
+    for — silently, in a file that looks complete.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    kept = events_export.select(events, events_export.Selection(
+        since=date(2024, 3, 1), until=date(2024, 9, 15)))
+
+    assert [event.date for event in kept] == [
+        date(2024, 3, 1), date(2024, 5, 20), date(2024, 6, 10),
+        date(2024, 9, 15),
+    ]
+
+
+def test_one_bound_opens_the_interval_on_the_other_side(tmp_path):
+    """*Everything since 2024-06-10* is a reduction, and a legitimate one."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    since = events_export.select(events, events_export.Selection(
+        since=date(2024, 6, 10)))
+    until = events_export.select(events, events_export.Selection(
+        until=date(2024, 1, 15)))
+
+    assert [event.date for event in since] == [
+        date(2024, 6, 10), date(2024, 9, 15), date(2024, 10, 1),
+    ]
+    assert [event.date for event in until] == [
+        date(2024, 1, 2), date(2024, 1, 15),
+    ]
+
+
+def test_the_period_composes_with_the_four_others(tmp_path):
+    """The five members are one reduction, and it is an intersection."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    events = ledger.read_events(opened)
+    opened.close()
+
+    kept = events_export.select(events, events_export.Selection(
+        account='pea', since=date(2024, 2, 1), until=date(2024, 6, 30)))
+
+    assert [(event.account, event.date) for event in kept] == [
+        ('pea', date(2024, 3, 1)), ('pea', date(2024, 5, 20)),
+    ]
+
+
+def test_a_reduction_on_the_period_alone_is_still_a_reduction():
+    """``reduces`` counts it, which is what names the file a *selection*.
+
+    An export reduced on the dates alone is an extract of one year; under the
+    backup's name that partial file would replace the whole one on the reader's
+    own disk.
+    """
+    assert events_export.Selection(since=date(2024, 1, 1)).reduces
+    assert events_export.Selection(until=date(2024, 12, 31)).reduces
+    assert not events_export.Selection().reduces
