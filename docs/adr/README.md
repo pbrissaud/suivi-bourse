@@ -42,6 +42,11 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0029](./0029-the-preset-becomes-ours.md) | The preset becomes ours, and it is still installed from a URL |
 | [0030](./0030-the-data-page-has-three-tabs.md) | The data page has three tabs, and the notices keep one when they have nothing to say |
 | [0031](./0031-the-ledger-loads-in-pages.md) | The ledger loads in pages, and only the first one is silent |
+| [0032](./0032-the-import-is-a-gesture-not-a-mount.md) | The import is a gesture, not a mount |
+| [0033](./0033-prometheus-leaves-and-the-api-stops-being-a-contract.md) | Prometheus leaves, and the API stops being a contract |
+| [0034](./0034-accounts-are-born-in-the-app.md) | Accounts are born in the app, and nowhere else |
+| [0035](./0035-the-first-run-has-three-passages.md) | The first run has three passages, and its memory is the browser's |
+| [0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md) | The dot says health, and the notices lose their exception |
 
 > These records describe **v5**, and which side wins an argument depends on the branch.
 >

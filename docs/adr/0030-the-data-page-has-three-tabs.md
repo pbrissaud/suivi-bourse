@@ -1,5 +1,14 @@
 # The data page has three tabs, and the notices keep one when they have nothing to say
 
+> **The notices' exception is withdrawn by
+> [ADR-0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md)**: the dot
+> says health and leads to the installation tab, so the notices lose the question they were
+> mounted to answer and become an ordinary block that does not exist when it is empty. And
+> the file list with its revocation goes with
+> [ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md) — the band above the ledger keeps
+> the upload and the export, and loses the sources. What stands below is the **three-tab
+> cut** and the reason provenance belonged beside the rows it described.
+
 [ADR-0020](./0020-the-line-is-no-longer-the-unit.md) cut the data page in two — what the
 user *declared* against what the installation *is* — and put the notices inside the
 second half, as a block that does not exist when it is empty.

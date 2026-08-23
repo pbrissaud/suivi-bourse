@@ -16,6 +16,8 @@ Where a v4 term was retired, the retirement is noted under `_Avoid_` and the ADR
 A single dated fact about the portfolio, as the owner recorded it. One of six kinds:
 `BUY`, `SELL`, `GRANT`, `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL`. Events are the only
 user-authored truth about a portfolio; everything else is derived from them.
+**How it arrived is not part of it**: an event typed in the app and an event read from
+an uploaded file are one row of one kind, and nothing distinguishes them afterwards.
 _Avoid_: transaction, operation, movement
 
 **Ledger**:
@@ -164,24 +166,17 @@ store carries a copy of it, and a value it does not carry is that default.
 _Avoid_: configuration, option, parameter, environment variable
 
 **Boot variable**:
-Something the process has to know *before* it can open the store — where the store
-is, where the drop folder is, which ports to bind, whether to serve metrics, how
-loudly to log. The only thing the environment still says. Not a setting, and never
-editable from the app. Its defaults describe a container; anything else overrides them.
+Something the process has to know *before* it can open the store — where the store is,
+which port to bind, how loudly to log. The only thing the environment still says. Not a
+setting, and never editable from the app. Its defaults describe a container; anything
+else overrides them.
 
-**Drop folder**:
-The directory a portfolio's files are read from — the events and the account
-declaration. Read-only and optional: the app never writes to it and never creates it,
-and an install that has none is ordinary rather than degraded. A provisioning input,
-never the truth.
-_Avoid_: config directory, events directory, data directory
-
-**Headless**:
-An install whose owner reads only the Prometheus gauges. Not a configuration — there is
-no switch that turns the interface off; the page is always served, it is simply never
-looked at. The API is served too, which is what keeps everything declarable and every
-setting turnable by hand.
-_Avoid_: headless mode, API-only mode
+**Import**:
+A gesture, never a source. A file the owner hands to the app, read once, whose rows
+become ordinary events the moment they land — indistinguishable from typed ones, and
+individually editable and removable like them. The store keeps no memory of the file:
+there is nothing to revoke, because there is nothing that stands.
+_Avoid_: source, drop folder, provisioning, sync
 
 **Ephemeral install**:
 An install whose store has nowhere to live, so it lasts exactly as long as the process.
@@ -190,23 +185,40 @@ somewhere to keep things — which makes it the honest way to try the app. The a
 so every time, because it stays true until it stops being true.
 _Avoid_: demo mode, temporary mode, test mode
 
-**Advisory**:
-Something the app has to tell the owner: a predicate and a sentence. Most are
-*derived* — the file that is present, the variable that is ignored, the key that is
-missing — and are recomputed rather than recorded; only what cannot be recomputed is
-written down, and only the acknowledgement is stored. An advisory is not a trace of
-what happened: provenance is what records that.
-_Avoid_: audit log, journal, notification, toast
+**Health**:
+Whether the app is doing its work: it serves, its store answers, its jobs ran when they
+were due. It is said in **two registers that never mix** — an HTTP status code, whose
+only reader is the orchestrator and whose only question is *should this container be
+restarted*; and a body, whose reader is a person and which carries each job's last pass.
+A silent scrape is health the colour of a warning and never a failing code: restarting
+repairs nothing that yfinance broke.
+_Avoid_: liveness (as the whole of it), uptime, monitoring
 
-**Provenance**:
-Where a declared row came from — which file, imported when, with what fingerprint.
-Displayable ("row 14 of `2024.csv`"), never an address to write back to.
+**Installation fact**:
+Something true of *this install* that the owner should know and cannot compute — a
+retired variable still set, a currency adopted from a file, a reconstruction under way.
+A predicate and a sentence, recomputed rather than recorded; only the acknowledgement is
+stored, because it is the one part that cannot be derived. It says nothing about the
+portfolio and nothing about whether the app is working.
+_Avoid_: advisory (for this), audit log, journal, notification, toast
+
+**Advisory**:
+What the owner's **data** says about itself — an audit on the portfolio, not on the app
+and not on the install: a quarter of an account sitting in cash, a position that has
+outgrown the rest. Derived on every read and stored nowhere; it is a **condition the
+owner can end**, so it is never acknowledged and never dismissed — it stops when the
+figure that raised it stops. It is read beside the figures it comments on, never in an
+administration page.
+_Avoid_: alert, warning, recommendation, notification
 
 **First run**:
-Not a moment in the boot sequence but a state: the base currency is absent, which is to
-say nobody has ever answered here. It is the app's only question, and the only setting
-without a default. It ends when the question is answered — by a person, or by an import
-that declares its currency — and a restored backup never re-enters it.
+Not a moment in the boot sequence but a state: a required setting is unanswered, which
+is to say nobody has ever answered here. Today there is one, the base currency — the
+only setting without a default — and the state is written to hold more. It carries three
+passages in order: **the required settings**, **the accounts**, and **the first events**,
+the last opened by either of two doors of equal weight — a file handed over, or an event
+typed. It ends when they have been traversed, and the memory of that is the browser's
+alone, so the state stays derived on the server and a wiped store asks again.
 _Avoid_: onboarding (as a phase), setup, installation wizard, first boot
 
 ### On screen
@@ -238,8 +250,9 @@ _Avoid_: alert bar, notification bar, status strip
 **Receipt**:
 What a gesture produced, said back to whoever made it — and it lasts as long as the
 operation does, not three seconds. It acknowledges an act; it is never the record of one.
-An import started by the watcher has no gesture and therefore no receipt: its record is
-its provenance.
+An import is read back **before** it is written as well as after: what the file holds,
+what of it the ledger already has, and what will be added — the same sentence twice, once
+as a forecast the owner may refuse, once as a fact.
 _Avoid_: toast, notification, snackbar, flash message
 
 **Absence**:

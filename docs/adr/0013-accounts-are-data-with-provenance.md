@@ -1,5 +1,11 @@
 # Accounts are user data with provenance, not a setting
 
+> **The provenance half is superseded by
+> [ADR-0034](./0034-accounts-are-born-in-the-app.md).** There is no accounts file and no
+> `source_id`: an account is declared in the app and nowhere else. What stands below is the
+> half that was always load-bearing — an account is **user data**, not a knob, and it is
+> **undeletable while any event names it**.
+
 An account was inherited as a block of the settings file, and that inheritance was
 wrong: an account is user data, with a source and a history, not a knob. It is
 therefore declared like events are — from a file, with its provenance recorded, or

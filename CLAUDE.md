@@ -21,7 +21,7 @@ embedded DuckDB store** (ADR-0001).
 | `app/web/` | The v5 front (Vite + React 19 + TS) — `app/web/CLAUDE.md` |
 | `website/` | The versioned Docusaurus site, bilingual by construction — `website/CLAUDE.md` |
 | `CONTEXT.md` | The domain glossary: the v5 vocabulary |
-| `docs/adr/` | The 26 structural decisions |
+| `docs/adr/` | The 36 structural decisions |
 | `docs/v5-decisions.md` | The ticket-by-ticket narrative of the rewrite (archive) |
 | `docs/agents/` | How the skills consume this repo (issues, labels, waves) |
 

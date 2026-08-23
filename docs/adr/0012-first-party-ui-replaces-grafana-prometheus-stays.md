@@ -1,5 +1,14 @@
 # The first-party UI replaces Grafana, and Prometheus stays
 
+> **The Prometheus half is superseded by
+> [ADR-0033](./0033-prometheus-leaves-and-the-api-stops-being-a-contract.md).** The endpoint
+> goes, and *headless* leaves the vocabulary. What stands below is the first-party UI
+> replacing Grafana in full — and the **third consequence**, which is history rather than a
+> rule but is load-bearing history: accounts were provisionable from files *because* a
+> headless install had no UI to declare them in. That sentence is why the provenance
+> apparatus ever existed, and
+> [ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md) is what spends its inheritance.
+
 Grafana leaves v5: the first-party UI, built and played for real as a prototype,
 replaces it in full — a clean departure that owes nothing, no dashboard and no alert
 rule having to be carried. The front is rewritten on the same stack the prototype

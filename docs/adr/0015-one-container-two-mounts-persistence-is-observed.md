@@ -1,5 +1,12 @@
 # One container, two mounts, and persistence that is observed rather than demanded
 
+> **The second mount is superseded by
+> [ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md)**, and the *headless is a usage*
+> consequence by [ADR-0033](./0033-prometheus-leaves-and-the-api-stops-being-a-contract.md).
+> One container, **one** mount: the drop folder is gone and a file is handed to the app
+> instead. What stands below is the whole of the persistence argument — a bare `docker run`
+> starts, does not persist, and says so, because a mount is *observed* rather than demanded.
+
 v5 ships as **one container with two mounts**: the store in a named volume, the drop
 folder as an **optional read-only bind**. That split is what finally separates what the
 app *writes* from what a human *edits* — and with it the whole apparatus that existed

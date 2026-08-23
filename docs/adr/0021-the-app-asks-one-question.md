@@ -1,5 +1,15 @@
 # The app asks one question, and not at boot
 
+> **The single screen is amended by
+> [ADR-0035](./0035-the-first-run-has-three-passages.md)**: the first run walks three
+> passages — the required settings, the accounts, the first events — and the memory of that
+> traversal is the browser's. What stands below is everything that made it possible: the
+> first run is a **predicate and not a moment**, the question is still the base currency
+> alone, the modal closes on its cross with no *Later*, and **the banner shows conditions the
+> owner can end while the badge counts facts they can only acknowledge** — the rule
+> [ADR-0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md) uses to
+> split health, installation facts and advisories.
+
 v5 has exactly one thing it must be told: the **base currency**, the only setting with no
 default. Everything a first run might otherwise have asked has been removed or answered
 elsewhere — the mode is gone (ADR-0005), accounts are seeded and reassignable (ADR-0013),
