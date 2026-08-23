@@ -1436,6 +1436,66 @@ def test_accounts_keeps_a_declared_account_that_has_no_series_yet(tmp_path):
     assert payload['accounts'][0]['total_value'] is None
 
 
+def test_an_absent_field_reaches_the_wire_as_null_and_never_as_a_zero(
+        tmp_path, mocker):
+    """#708's per-field rule, said on an API response (#806, ADR-0033).
+
+    The rule was written against a *zero*, not against an absence: a zero makes
+    *"no cash ledger"* and *"a ledger at zero"* the same figure, so anything
+    summing or thresholding the column answers about an account it has never
+    been told anything about. It was proved twice — on the store, by the writer's
+    own tests, and on `/metrics`, where an absent field meant an absent series.
+    The second proof leaves with the exporter; this is the one that replaces it,
+    on the surface the front actually reads.
+
+    The population is the ordinary one: a ledger of purchases alone, which is
+    every v4 arrival and every owner who only ever recorded buys. `cash_balance`
+    would be `−invested` and `net_contributed` `0`, so `total_value` would
+    publish the latent gain under the label *total value* — those four and
+    `xirr` are `NULL` at the writer and `null` here.
+
+    And the discriminator in the same payload: `transfer_fees` **is** `0.0`. A
+    broker that moves money for free is a figure worth nothing, not an absence,
+    and the wire tells the two apart.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,80.00,pea\n"
+    )
+
+    def seed(opened):
+        for day, price in ((date(2024, 1, 15), 80.00),
+                           (date(2024, 6, 3), 92.00)):
+            seed_quote(opened, price=price, currency='EUR', converted=price,
+                       rate=1.0,
+                       at=datetime(day.year, day.month, day.day, 17, 0,
+                                   tzinfo=timezone.utc))
+        opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')")
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=events,
+                          seed=seed)
+
+    _fixed_today(mocker, 2024, 6, 3)
+    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics.base_currency = 'EUR'
+    metrics.update_account_metrics()
+
+    row = client.get('/api/accounts').get_json()['accounts'][0]
+
+    # The two the ledger can answer exactly: ten shares at 92,00 against 800,00
+    # invested, so the gain is `holdings − invested` with no contribution in it.
+    assert row['as_of'] == '2024-06-03'
+    assert row['holdings_value'] == pytest.approx(920.00, abs=5e-3)
+    assert row['gain_absolu'] == pytest.approx(120.00, abs=5e-3)
+    # And the five the ledger cannot: `null`, and `is None` is the assertion
+    # precisely because a `0.0` would satisfy anything weaker.
+    for field in ('cash_balance', 'total_value', 'net_contributed',
+                  'xirr', 'twr_index'):
+        assert row[field] is None
+    assert row['transfer_fees'] == 0.0
+
+
 def test_accounts_carry_the_fourth_term_of_the_gain_per_account(tmp_path):
     """ADR-0018's identity **per account**, through the API (#722).
 
