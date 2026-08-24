@@ -2620,20 +2620,26 @@ def test_the_spa_catch_all_does_not_swallow_an_api_404(tmp_path):
 def test_the_catch_all_does_not_serve_html_at_metrics(tmp_path, monkeypatch):
     """Found by an existing #651 test the moment the SPA landed.
 
-    With SB_PROMETHEUS_ENABLED=false there is no /metrics mount, so the request
-    fell through to index.html and answered 200 with HTML. That is strictly
-    worse than the 404 it used to get: a Prometheus scraper reads 200 as a
-    healthy target and keeps reporting nothing wrong.
+    The endpoint is gone (ADR-0033) and this is the seam where its absence
+    could be hidden: an unknown path is answered with the shell, so a leftover
+    scraper would read **200 with HTML** and keep reporting nothing wrong.
+    The bundle is present on purpose — that is the install the owner runs, and
+    the one where the catch-all is in the way.
     """
     bundle = tmp_path / 'bundle'
     bundle.mkdir()
-    (bundle / 'index.html').write_text('<!doctype html>', encoding='utf-8')
+    (bundle / 'index.html').write_text(
+        '<!doctype html><div id=spa-shell>', encoding='utf-8')
     _serve_bundle_from(monkeypatch, bundle)
 
-    response = build_client(tmp_path).get('/metrics')
+    client = build_client(tmp_path)
 
-    assert response.status_code == 404
-    assert response.mimetype == 'application/problem+json'
+    assert client.get('/metrics').status_code == 404
+    assert client.get('/metrics/').status_code == 404
+    # And it is the shell specifically that must not be what came back: a 404
+    # carrying the SPA would still leave the front routing on a path that has
+    # no page, which is the same lie one status code later.
+    assert b'spa-shell' not in client.get('/metrics').data
 
 
 def test_health_still_wins_over_the_catch_all(tmp_path):

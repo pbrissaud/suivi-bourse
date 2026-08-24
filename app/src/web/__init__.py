@@ -16,9 +16,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, send_from_directory
-from prometheus_client import make_wsgi_app
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from flask import Flask, abort, send_from_directory
 
 import main
 import uploads
@@ -90,14 +88,15 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
         if path.startswith('api/'):
             return problem.not_found(f"No such API endpoint: /{path}")
 
-        # /metrics is server-owned too. When SB_PROMETHEUS_ENABLED is false the
-        # DispatcherMiddleware mount is absent, and without this guard the
-        # request would fall through to index.html and answer **200 with HTML**
-        # — which is worse than the 404 it used to get, because a scraper reads
-        # a 200 as a healthy target and goes on reporting nothing wrong.
+        # /metrics is gone (ADR-0033) and the catch-all is what would hide it:
+        # a client-side route that does not exist is answered with the shell, so
+        # without this line a leftover scraper would read **200 with HTML** and
+        # go on reporting nothing wrong — the one answer that is worse than the
+        # endpoint's absence. `abort` and not `problem.not_found`: the endpoint
+        # is not disabled by a setting, it does not exist, and Flask's own 404
+        # is what says exactly that with nothing added.
         if path == 'metrics' or path.startswith('metrics/'):
-            return problem.not_found(
-                "The Prometheus endpoint is disabled (SB_PROMETHEUS_ENABLED=false)")
+            abort(404)
 
         static_dir = _static_dir()
         if not static_dir.is_dir():
@@ -111,19 +110,10 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
             return send_from_directory(static_dir, path)
         return send_from_directory(static_dir, 'index.html')
 
-    # /metrics moves out of the exporter's own ThreadingHTTPServer and into this
-    # app (#651); gunicorn's `bind` list keeps it answering on its usual port, so
-    # existing scrapers see no change. `make_wsgi_app` must be handed the
-    # exporter's registry explicitly — PrometheusExporter uses a dedicated
-    # CollectorRegistry, and the global one is empty here.
-    #
-    # SB_PROMETHEUS_ENABLED therefore narrows in meaning: it no longer decides
-    # whether an HTTP server runs, only whether /metrics is mounted.
-    if runtime.prometheus is not None:
-        flask_app.wsgi_app = DispatcherMiddleware(
-            flask_app.wsgi_app,
-            {'/metrics': make_wsgi_app(runtime.prometheus.registry)})
-
+    # No second mount under this app, and therefore no middleware: `/metrics`
+    # went with the second interface (ADR-0033). A request for it is now an
+    # ordinary unknown path — it is not recognised, not redirected, and not
+    # answered with a 404 written specially for it.
     return flask_app
 
 

@@ -127,9 +127,10 @@ ENV XDG_CACHE_HOME=/tmp/.cache
 # nothing left to compensate for.
 USER appuser
 
-# 8080 serves the web UI and /health, 8081 keeps serving /metrics for existing
-# Prometheus scrapers. Both are sockets of a single gunicorn master (issue #651).
-EXPOSE 8080 8081
+# One port, because there is one socket (ADR-0033): 8080 serves the web UI, the
+# API and /health. The second one existed for /metrics alone, and a `docker run
+# -p` copied from the documentation would now publish a port nothing listens on.
+EXPOSE 8080
 
 # The probe lives in the image (issue #742, ADR-0015). In v4 it lived in
 # compose, so whoever followed the `docker run` page had none — and did not
