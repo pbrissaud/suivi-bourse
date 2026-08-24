@@ -132,8 +132,7 @@ def open_store(tmp_path):
 
 def _load_gunicorn_conf(monkeypatch, **env):
     """Execute ``src/gunicorn.conf.py`` under a controlled environment."""
-    for name in ("SB_WEB_PORT", "SB_METRICS_PORT", "SB_PROMETHEUS_ENABLED",
-                 "LOG_LEVEL"):
+    for name in ("SB_WEB_PORT", "LOG_LEVEL"):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
@@ -415,7 +414,7 @@ def test_start_background_reraises_rather_than_exiting(monkeypatch, mocker):
     death and be respawned forever, failing identically each time.
     """
     web.create_app(runtime=main.Runtime(_FakeConfigManager()))
-    boom = ValueError("Invalid value for SB_METRICS_PORT")
+    boom = ValueError("Invalid value for SB_WEB_PORT")
     monkeypatch.setattr(main, "start_runtime", mocker.Mock(side_effect=boom))
     fatal = mocker.patch.object(main.app_logger, "fatal")
 
@@ -599,11 +598,12 @@ def test_gunicorn_honours_the_web_port_dial(monkeypatch):
 
 
 def test_gunicorn_binds_nothing_beyond_the_web_port(monkeypatch):
-    """The metrics variables no longer add a socket, whatever they say.
+    """A v4 ``.env`` still carrying the metrics pair gets **one** socket.
 
-    Both of them are still in the environment at this point — they leave it with
-    the exporter — so the assertion is that they are *inert* here and not that
-    they are absent: an owner who kept them in a `.env` gets one socket.
+    The names are retired rather than absent from the world (they are in
+    ``boot_env.DELETED``, and the boot names them), so what is asserted is that
+    they are *inert*: nothing here reads them, and there is no branch left that
+    could append a second bind.
     """
     conf = _load_gunicorn_conf(
         monkeypatch, SB_PROMETHEUS_ENABLED="true", SB_METRICS_PORT="9091")

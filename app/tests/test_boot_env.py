@@ -1,4 +1,4 @@
-"""The six boot variables, and the names that went quiet (issue #740).
+"""The four boot variables, and the names that went quiet (#740, ADR-0033).
 
 Every test here reads a **dict**. That is the point of the module being pure:
 "nothing is set", "a blank value" and "a v4 ``.env`` in full" are three ordinary
@@ -14,10 +14,10 @@ import settings_registry
 
 
 # --------------------------------------------------------------------- #
-# The six values
+# The four values
 # --------------------------------------------------------------------- #
 
-def test_nothing_set_gives_the_six_container_defaults():
+def test_nothing_set_gives_the_four_container_defaults():
     """**The defaults describe the container**, and it is the Docker-less
     deployment that overrides them — the reverse of v4, where compose always
     rendered every variable and made the app's own defaults dead code."""
@@ -26,8 +26,6 @@ def test_nothing_set_gives_the_six_container_defaults():
     assert boot.store_dir == Path('/data')
     assert boot.import_dir == Path('/import')
     assert boot.web_port == 8080
-    assert boot.metrics_port == 8081
-    assert boot.prometheus_enabled is True
     assert boot.log_level == 'INFO'
     assert boot.unread == ()
 
@@ -51,10 +49,9 @@ def test_the_two_paths_are_directories_and_never_files():
 
 
 @pytest.mark.parametrize('name', [
-    'SB_STORE_DIR', 'SB_IMPORT_DIR', 'SB_WEB_PORT', 'SB_METRICS_PORT',
-    'SB_PROMETHEUS_ENABLED', 'LOG_LEVEL',
+    'SB_STORE_DIR', 'SB_IMPORT_DIR', 'SB_WEB_PORT', 'LOG_LEVEL',
 ])
-def test_a_blank_value_counts_as_unset_for_every_one_of_the_six(name):
+def test_a_blank_value_counts_as_unset_for_every_one_of_the_four(name):
     """Compose renders an undefined substitution as the **empty string** rather
     than omitting the variable, so ``SB_FOO=${FOO}`` with no ``FOO`` hands the
     container ``SB_FOO=""``. Read literally, every ``int()`` downstream blows up
@@ -62,15 +59,13 @@ def test_a_blank_value_counts_as_unset_for_every_one_of_the_six(name):
     assert boot_env.read({name: '   '}) == boot_env.read({})
 
 
-def test_a_flag_honours_both_spellings_and_keeps_the_default_on_a_blank():
-    """The three wrappers `main` held over these functions are gone (they had
-    no caller in the end), and this is the one assertion that came with them
-    rather than being a second copy of one already here."""
-    for raw in ('true', 'TRUE', '1', 'yes', 'on'):
-        assert boot_env.flag({'SB_TEST_FLAG': raw}, 'SB_TEST_FLAG', False) is True
-    for raw in ('false', '0', 'no', 'off'):
-        assert boot_env.flag({'SB_TEST_FLAG': raw}, 'SB_TEST_FLAG', True) is False
-    assert boot_env.flag({'SB_TEST_FLAG': ''}, 'SB_TEST_FLAG', True) is True
+def test_there_is_no_reader_of_booleans_left():
+    """The one name that was a flag was the metrics one, and it left with the
+    exporter (ADR-0033). A reader kept for the boolean variable that may never
+    come is a rule nothing exercises — the same reason the redaction rule left
+    with ``INFLUXDB_TOKEN`` rather than waiting for a second secret."""
+    assert not hasattr(boot_env, 'flag')
+    assert 'flag' not in boot_env.__all__
 
 
 def test_a_value_that_is_not_an_integer_names_the_variable_it_came_from():
@@ -85,8 +80,9 @@ def test_there_is_no_variable_that_turns_the_page_off():
     restart-scoped dial. What an operator stops serving is the page; never the
     API, which is the only non-interactive path to answering the currency.
 
-    ``SB_PROMETHEUS_ENABLED`` is not the counter-example it looks like: it
-    decides a **socket to bind**, and the list of binds is fixed at boot.
+    The one name that ever looked like the counter-example decided a **socket
+    to bind**, and the list of binds is fixed at boot — ADR-0033 took that
+    socket, so there is no longer even that to argue with.
     """
     for name in boot_env.READ:
         assert 'WEB_ENABLED' not in name
@@ -127,6 +123,26 @@ def test_a_variable_that_was_deleted_outright_is_told_it_has_no_successor():
 
     assert 'removed and have no replacement: SB_EXECUTOR_POOL' in message
     assert 'settings page' not in message
+
+
+@pytest.mark.parametrize('name', ['SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT'])
+def test_the_two_names_the_exporter_answered_for_have_no_successor(name):
+    """ADR-0033. An owner who had either of these written down must hear it
+    **named** at boot, or they go on believing a second socket is being served.
+
+    And it has to be the deleted clause. There is no dial that turns the gauges
+    back on — what replaced them is the health body and the runtime tab — so
+    *"turn it on the settings page"* would send its reader looking for a field
+    that has never existed, and silence would read as a typo.
+    """
+    names = boot_env.unread({name: 'true'})
+    message = boot_env.notice(names)
+
+    assert names == (name,)
+    assert name in boot_env.DELETED
+    assert f'removed and have no replacement: {name}' in message
+    assert 'settings page' not in message
+    assert 'ever read' not in message
 
 
 def test_the_four_never_read_names_stay_out_of_the_notice():
@@ -231,7 +247,7 @@ def test_the_read_set_is_exactly_the_inventory():
     """A name absent from the inventory but read somewhere would be reported as
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
-    assert len(boot_env.INVENTORY) == 6
+    assert len(boot_env.INVENTORY) == 4
 
 
 # --------------------------------------------------------------------- #
@@ -246,8 +262,8 @@ def test_the_source_is_factual_and_not_helpful():
 
     assert reported['SB_WEB_PORT']['source'] == 'environment'
     assert reported['SB_WEB_PORT']['set'] is True
-    assert reported['SB_METRICS_PORT']['source'] == 'default'
-    assert reported['SB_METRICS_PORT']['set'] is False
+    assert reported['SB_IMPORT_DIR']['source'] == 'default'
+    assert reported['SB_IMPORT_DIR']['set'] is False
 
 
 def test_the_log_level_reported_is_the_one_the_process_holds():

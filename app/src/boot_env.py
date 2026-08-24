@@ -1,4 +1,4 @@
-"""The six things the environment still says, and the names it no longer says.
+"""The four things the environment still says, and the names it no longer says.
 
 The line between what the environment configures and what the store owns is
 drawn by a **mechanical test** rather than by a judgement about nature
@@ -8,9 +8,9 @@ drawn by a **mechanical test** rather than by a judgement about nature
     store; everything else is a dial and lives in the store.
 
 It asks for no case-by-case arbitration, which is the whole reason it is written
-as a rule rather than as a list of six opinions. Two notes have to stay written
+as a rule rather than as a list of four opinions. Two notes have to stay written
 down, because both names look like counter-examples until the test is applied to
-them: the **two ports** pass it twice — gunicorn reads them in the master before
+them: the **web port** passes it twice — gunicorn reads it in the master before
 the app is even imported, *and* a port changed from the interface would cut the
 connection the interface arrived by, which is a nature and not only a boot
 sequence — and **``LOG_LEVEL``** is here because the most likely failure of this
@@ -20,13 +20,13 @@ cannot report that.
 **There is no ``SB_WEB_ENABLED``** (ADR-0015). Headless is a *usage*, not a
 setting: the page has no port of its own — it is served on the API's socket — so
 a switch for it would be a dial **of the store**, in a product that has just
-deleted its only restart-scoped dial. ``SB_PROMETHEUS_ENABLED`` looks like the
-counter-example and is not: it decides a **socket to bind**, and the list of
-binds is fixed when the master starts. What an operator stops serving is the
-page; **never the API**, which is the only non-interactive path to answering the
-reporting currency.
+deleted its only restart-scoped dial. The one name that ever looked like the
+counter-example decided a **socket to bind**, and the list of binds is fixed when
+the master starts — but ADR-0033 took that socket, and the flag and the port that
+described it went into :data:`DELETED` with it. There is one bind, and the whole
+application answers on it.
 
-Two of the six are new here (#740), and three rules come with them:
+Two of the four are new here (#740), and three rules come with them:
 
 * **they are directories, never files.** The app names its own store file and
   its write-ahead log, so pointing at a path whose parent is not mounted stops
@@ -51,7 +51,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 import settings_registry
 
 # --------------------------------------------------------------------------- #
-# The six names
+# The four names
 # --------------------------------------------------------------------------- #
 
 #: The directory the store lives in. The app owns the file name inside it, so
@@ -64,15 +64,9 @@ STORE_DIR = 'SB_STORE_DIR'
 #: refuses a path that does not exist.
 IMPORT_DIR = 'SB_IMPORT_DIR'
 
-#: The socket the app and its API are served on.
+#: The socket the app and its API are served on — the only one there is
+#: (ADR-0033).
 WEB_PORT = 'SB_WEB_PORT'
-
-#: The socket ``/metrics`` is served on.
-METRICS_PORT = 'SB_METRICS_PORT'
-
-#: Whether ``/metrics`` is mounted at all — and therefore whether the second
-#: socket is bound.
-PROMETHEUS_ENABLED = 'SB_PROMETHEUS_ENABLED'
 
 #: How loudly the app logs.
 LOG_LEVEL = 'LOG_LEVEL'
@@ -83,24 +77,24 @@ LOG_LEVEL = 'LOG_LEVEL'
 DEFAULT_STORE_DIR = '/data'
 DEFAULT_IMPORT_DIR = '/import'
 DEFAULT_WEB_PORT = 8080
-DEFAULT_METRICS_PORT = 8081
-DEFAULT_PROMETHEUS_ENABLED = True
 DEFAULT_LOG_LEVEL = 'INFO'
 
 #: Every variable this application reads, with the value it takes when nothing
-#: says otherwise — the list ``/api/config`` publishes. It is six long and there
-#: is no seventh: what is not here lives in the store.
+#: says otherwise — the list ``/api/config`` publishes. It is four long and there
+#: is no fifth: what is not here lives in the store, and the two names the
+#: exporter answered for left with it (ADR-0033).
 #:
 #: **No entry carries a secret flag any more** (#740). ``INFLUXDB_TOKEN`` was
 #: the environment's only credential and it left with the database (#700), so
 #: the redaction rule — redact *by name*, never by value (#654 trap 12) — has
-#: no subject and dies with it rather than waiting, unexercised, for one.
+#: no subject and dies with it rather than waiting, unexercised, for one. The
+#: boolean reader left the same way with ADR-0033: **none of the four is a
+#: flag**, and a reader kept for a name that may never come is a rule nothing
+#: exercises.
 INVENTORY: Tuple[Tuple[str, str], ...] = (
     (LOG_LEVEL, DEFAULT_LOG_LEVEL),
     (STORE_DIR, DEFAULT_STORE_DIR),
     (IMPORT_DIR, DEFAULT_IMPORT_DIR),
-    (PROMETHEUS_ENABLED, 'true'),
-    (METRICS_PORT, str(DEFAULT_METRICS_PORT)),
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
 )
 
@@ -138,14 +132,6 @@ def integer(env: Mapping[str, str], name: str, default: int) -> int:
     except ValueError:
         raise ValueError(
             f"Invalid value for {name}: {raw!r} is not an integer") from None
-
-
-def flag(env: Mapping[str, str], name: str, default: bool) -> bool:
-    """Read a boolean, tolerating blanks."""
-    raw = text(env, name)
-    if raw is None:
-        return default
-    return raw.lower() in ('1', 'true', 'yes', 'on')
 
 
 def directory(env: Mapping[str, str], name: str, default: str) -> Path:
@@ -195,10 +181,18 @@ NEVER_READ: frozenset = frozenset({
 #: because *six* is the complete list of what the environment says and an
 #: escape hatch for serving the bundle from elsewhere has no user left — one
 #: image, one path, and a checkout resolves it from the package.
+#:
+#: The last two are the newest, and the ones an owner is likeliest to still have
+#: written down. *No successor* is the whole of what there is to say about them:
+#: the gauges did not become a dial, they became the health body and the runtime
+#: tab (ADR-0033). Reported as *moved* they would send their owner looking for a
+#: field to re-enable, and left out of the notice altogether they would read as a
+#: typo — which is exactly the mistake this list exists to prevent.
 DELETED: frozenset = frozenset({
     'SB_EXECUTOR_POOL', 'SB_DYNAMIC_EXECUTOR_POOL', 'SB_PERF_INTERVAL',
     'SB_INGESTION_INTERVAL', 'SB_CONFIG_MODE', 'SB_STATIC_DIR',
     'INFLUXDB_HOST', 'INFLUXDB_TOKEN', 'INFLUXDB_DATABASE',
+    'SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT',
 })
 
 #: The one name whose dial is not its own name lower-cased: v4's deprecated
@@ -230,8 +224,8 @@ def moved_dial(name: str) -> Optional[str]:
 def unread(env: Mapping[str, str]) -> Tuple[str, ...]:
     """The ``SB_*``/``INFLUXDB_*`` names that are set and no longer read.
 
-    A **computed complement** — what is present, minus the six, minus the four
-    the app never read — and never a literal of fourteen, which would drift at
+    A **computed complement** — what is present, minus the four it reads, minus
+    the four it never read — and never a literal of fourteen, which would drift at
     the first rename: #701 removed one from the dials while this was being
     written. The day a name is added to :data:`INVENTORY` it leaves this list by
     construction, and the day a dial is added to the registry it changes clause
@@ -300,7 +294,7 @@ def notice(names: Tuple[str, ...]) -> Optional[str]:
 class BootEnvironment:
     """What the process knows before it opens the store, and what it ignores.
 
-    Frozen, and produced by one call: the six values and the muted names are one
+    Frozen, and produced by one call: the four values and the muted names are one
     reading of one mapping, so nothing downstream can hold two generations of
     an environment that cannot change under it anyway.
     """
@@ -308,14 +302,12 @@ class BootEnvironment:
     store_dir: Path
     import_dir: Path
     web_port: int
-    metrics_port: int
-    prometheus_enabled: bool
     log_level: str
     unread: Tuple[str, ...]
 
 
 def read(env: Mapping[str, str]) -> BootEnvironment:
-    """The six boot values and the muted names, from a mapping like ``os.environ``.
+    """The four boot values and the muted names, from a mapping like ``os.environ``.
 
     Takes the mapping rather than reading the process environment, which is what
     makes *"nothing set"*, *"a blank value"* and *"a v4 ``.env`` in full"* three
@@ -325,9 +317,6 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
         store_dir=directory(env, STORE_DIR, DEFAULT_STORE_DIR),
         import_dir=directory(env, IMPORT_DIR, DEFAULT_IMPORT_DIR),
         web_port=integer(env, WEB_PORT, DEFAULT_WEB_PORT),
-        metrics_port=integer(env, METRICS_PORT, DEFAULT_METRICS_PORT),
-        prometheus_enabled=flag(env, PROMETHEUS_ENABLED,
-                                DEFAULT_PROMETHEUS_ENABLED),
         log_level=text(env, LOG_LEVEL, DEFAULT_LOG_LEVEL),
         unread=unread(env),
     )
@@ -360,11 +349,10 @@ def effective(env: Mapping[str, str],
 
 
 __all__ = [
-    'STORE_DIR', 'IMPORT_DIR', 'WEB_PORT', 'METRICS_PORT',
-    'PROMETHEUS_ENABLED', 'LOG_LEVEL',
+    'STORE_DIR', 'IMPORT_DIR', 'WEB_PORT', 'LOG_LEVEL',
     'DEFAULT_STORE_DIR', 'DEFAULT_IMPORT_DIR', 'DEFAULT_WEB_PORT',
-    'DEFAULT_METRICS_PORT', 'DEFAULT_PROMETHEUS_ENABLED', 'DEFAULT_LOG_LEVEL',
+    'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ', 'DELETED', 'MOVED_ALIASES',
     'BootEnvironment', 'read', 'unread', 'notice', 'moved_dial', 'effective',
-    'text', 'integer', 'flag', 'directory',
+    'text', 'integer', 'directory',
 ]

@@ -161,7 +161,7 @@ _EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 # --------------------------------------------------------------------- #
 
 # Every environment variable **this application reads**, with its own default,
-# is :data:`boot_env.INVENTORY` — six names, and there is no seventh. The whole
+# is :data:`boot_env.INVENTORY` — four names, and there is no fifth. The whole
 # of the reasoning is in :mod:`boot_env`, which is also where the pure reading
 # of them lives (#740). This module used to re-export it under a second name,
 # "because the inventory is what the API resource is written against" — the API
