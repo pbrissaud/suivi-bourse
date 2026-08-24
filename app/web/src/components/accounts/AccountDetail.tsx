@@ -38,6 +38,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AccountCurve } from '@/components/accounts/AccountCurve'
 import { Band } from '@/components/Band'
 import { Explain } from '@/components/Explain'
+import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
@@ -675,20 +676,24 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
 /**
  * The split between securities and cash, drawn once and written twice under it.
  *
- * `aria-hidden`, because both figures are read out in full one line down — and
- * absent altogether where the total is not a figure: a bar over an unknown whole
- * is a drawing of nothing.
+ * It was the product's second hand-written share bar and it is `ShareBar` now
+ * (#800): the same track, the same fill, the same `aria-hidden` — both figures
+ * are read out in full one line down — and the same *nothing at all* where the
+ * total is not a figure, a bar over an unknown whole being a drawing of
+ * nothing. That condition is now a `null` share rather than an early return,
+ * which is the primitive's own rule and no longer this file's.
  */
 function Composition({ row }: { row: AccountRow }) {
   const total = row.total_value
-  if (total === null || total <= 0) return null
-  const securities = ((row.holdings_value ?? 0) / total) * 100
+  const share = total === null || total <= 0 ? null : (row.holdings_value ?? 0) / total
   return (
-    <span aria-hidden className="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-muted">
-      <span
-        className="bg-foreground/70"
-        style={{ width: `${Math.min(Math.max(securities, 0), 100)}%` }}
-      />
-    </span>
+    <ShareBar
+      share={share}
+      size="block"
+      className="mt-2"
+      // What `bg-foreground/70` compiled to, kept to the letter: the fill of a
+      // split nobody ranks is chrome, and the ramps stay where they are earned.
+      fill="color-mix(in oklab, var(--foreground) 70%, transparent)"
+    />
   )
 }
