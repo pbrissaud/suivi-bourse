@@ -194,7 +194,13 @@ Three nets hold a rule nothing made true by construction:
   theme JSON is versioned anywhere and that no third party is in the build.
 - **`lib/api.ts` is the only module that knows a URL**, and the paths it exports
   are what the test handlers fake.
-- The front branches on `problem.type` and renders `detail` nowhere.
+- The front branches on `problem.type` and renders `detail` nowhere. A refusal
+  whose sentence needs **values** — the oversell, which names a security and two
+  quantities (#824) — reads them off the problem's *extension members*, never off
+  the server's prose: `problemMessage` is `problemMessageKey`'s sibling and
+  returns `{ message, values }` on `receiptMessage`'s model, `problemSentence`
+  renders it, and a caller with nothing to interpolate goes on using the key
+  alone.
 
 ## Module map
 
@@ -209,7 +215,7 @@ src/
 │   ├── density.tsx           # the third preference: two states, same key shape
 │   ├── pageHeading.tsx       # what the header's `<h1>` says, declared by the page
 │   ├── alloc.ts format.ts    # the twelve allocation stops · the nine Intl sites
-│   ├── problem.ts status.ts  # problem.type → key · the dot's state, who says a band
+│   ├── problem.ts status.ts  # problem.type → key (+ values) · the dot's state, who says a band
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers

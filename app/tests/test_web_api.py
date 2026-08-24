@@ -31,7 +31,7 @@ import store
 import web as web_module
 from events import export as events_export
 from events.schemas import AccountMetricPoint, PortfolioTotalPoint
-from web import create_app
+from web import create_app, problem
 
 
 class FakeMetrics:
@@ -2271,6 +2271,94 @@ def test_a_removal_that_would_leave_an_oversell_is_refused(tmp_path):
 
     assert response.status_code == 409
     assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
+# --------------------------------------------------------------------- #
+# The oversell says its own name (issue #824, ADR-0024)
+#
+# Four write paths meet a ledger that does not replay, and all four used to
+# answer ``/problems/conflict`` — the type whose one sentence was written for
+# #698's refusals (*what this names is already there, or something still rests
+# on it*) and which describes nothing at all about a file selling shares that
+# were never bought. The status is right and stays; the identifier is what the
+# front branches on, so the identifier is what changes.
+# --------------------------------------------------------------------- #
+
+def test_an_oversell_answers_a_type_of_its_own_and_writes_nothing(tmp_path):
+    """The refusal names its subject as **data**, never as prose.
+
+    ``symbol``, ``wanted`` and ``owned`` are extension members — the three facts
+    the useful sentence needs — so the front can compose it in the reader's
+    language without rendering a word of the server's English. ``detail`` is
+    that English, unchanged: it is what a log and a ``curl`` read.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(quantity=10))
+
+    response = client.post('/api/events', json=_draft(
+        date='2024-06-10', event_type='SELL', quantity=12, unit_price=180.0))
+
+    assert response.status_code == 409
+    assert response.mimetype == 'application/problem+json'
+    body = response.get_json()
+    assert body['type'] == problem.TYPE_UNREPLAYABLE
+    assert body['title'] == 'Ledger does not replay'
+    assert (body['symbol'], body['wanted'], body['owned']) == ('AAPL', 12.0, 10.0)
+    assert body['day'] == '2024-06-10'
+    assert body['detail'] == (
+        'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-06-10')
+    # Refused whole: the sale is not half-written and the purchase is untouched.
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_refused_gesture_is_named_rather_than_deduced(tmp_path):
+    """*Your file oversells* and *what you are taking away is depended on*.
+
+    Two pieces of news, and no payload tells them apart: the oversell reached by
+    writing and the one reached by **withdrawing** carry the same three numbers.
+    So the route says which it was — ``write`` or ``remove`` — and the front
+    selects a sentence on it rather than guessing from the verb it used.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    bought = client.post('/api/events', json=_draft(quantity=10)).get_json()
+    client.post('/api/events',
+                json=_draft(date='2024-06-10', event_type='SELL', quantity=10))
+
+    # Writing: the purchase edited down under the sale that rests on it.
+    edited = client.patch(f"/api/events/{bought['id']}",
+                          json=_draft(quantity=1))
+    # Removing: the purchase taken away outright, and the same on the bulk
+    # gesture, whose subject is a reduction rather than a row.
+    removed = client.delete(f"/api/events/{bought['id']}")
+    reduced = client.delete('/api/events?type=BUY')
+
+    assert edited.get_json()['gesture'] == 'write'
+    assert edited.get_json()['owned'] == 1.0
+    assert removed.get_json()['gesture'] == 'remove'
+    assert reduced.get_json()['gesture'] == 'remove'
+    for response in (edited, removed, reduced):
+        assert response.status_code == 409
+        assert response.get_json()['type'] == problem.TYPE_UNREPLAYABLE
+        assert response.get_json()['symbol'] == 'AAPL'
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
+def test_a_declaration_conflict_keeps_the_conflict_type(tmp_path):
+    """What this ticket does **not** move.
+
+    An id already taken and an account an event still names are exactly what
+    ``/problems/conflict``'s sentence was written for, and it is true of them.
+    Only the case it described badly leaves.
+    """
+    client = build_client(tmp_path, events=ACCOUNTS_EVENTS,
+                          accounts=ACCOUNTS_FILE)
+
+    twice = client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'})
+    named = client.delete('/api/accounts/pea')
+
+    for response in (twice, named):
+        assert response.status_code == 409
+        assert response.get_json()['type'] == problem.TYPE_CONFLICT
 
 
 def test_a_typed_event_is_exported_like_any_other_row(tmp_path):

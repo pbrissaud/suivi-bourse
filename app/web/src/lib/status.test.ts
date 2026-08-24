@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiProblem } from '@/lib/api'
-import { PROBLEM_TYPES, problemMessageKey } from '@/lib/problem'
+import { formatMessage } from '@/lib/i18n'
+import { PROBLEM_TYPES, problemMessage, problemMessageKey } from '@/lib/problem'
 import { installationState, oneBand, readConditions, shellConditions } from '@/lib/status'
 import { aRuntime } from '@/test/factories'
 
@@ -138,5 +139,85 @@ describe('the front branches on problem.type, never on status', () => {
       .toBe('problem.internal')
     expect(problemMessageKey(new ApiProblem({ status: 502 }))).toBe('problem.unreachable')
     expect(problemMessageKey(new TypeError('Failed to fetch'))).toBe('problem.unreachable')
+  })
+})
+
+describe('the oversell says a sentence with values in it (#824)', () => {
+  const oversell = (members: Record<string, unknown>) =>
+    new ApiProblem({
+      status: 409,
+      type: PROBLEM_TYPES.unreplayableLedger,
+      title: 'Ledger does not replay',
+      detail: 'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15',
+      ...members,
+    })
+
+  it('selects the sentence on the gesture the server named', () => {
+    // The two are two pieces of news, and no payload distinguishes them: the
+    // same three numbers arrive whether the ledger stopped replaying because
+    // something was written or because something was taken away.
+    const values = { symbol: 'AAPL', wanted: 12, owned: 10 }
+    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
+      .toEqual({ message: 'problem.unreplayableLedger.write', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'remove' })))
+      .toEqual({ message: 'problem.unreplayableLedger.remove', values })
+  })
+
+  it('falls back to the sentence with no values when the facts did not travel', () => {
+    // `AggregationError` admits all four members being absent — a raise from
+    // somewhere that does not know them — so the front must have something true
+    // to say rather than render an ICU source with a hole in it.
+    expect(problemMessage(oversell({ gesture: 'write' })))
+      .toEqual({ message: 'problem.unreplayableLedger', values: {} })
+    // And a member of the wrong shape is an absent member, not a cast.
+    expect(problemMessage(oversell({ symbol: 'AAPL', wanted: '12', owned: 10 })))
+      .toEqual({ message: 'problem.unreplayableLedger', values: {} })
+  })
+
+  it('names the security in both catalogues, and renders the server’s prose in neither', () => {
+    const said = problemMessage(
+      oversell({ gesture: 'write', symbol: 'AAPL', wanted: 12, owned: 10.5 }),
+    )
+
+    for (const language of ['fr', 'en'] as const) {
+      const sentence = formatMessage(language, said.message, said.values)
+      expect(sentence).toContain('AAPL')
+      expect(sentence).not.toContain('Cannot sell')
+      // The quantities are formatted by the reader's own locale, out of the
+      // catalogue rather than by a caller that could forget to.
+      expect(sentence).not.toContain('{')
+    }
+    expect(formatMessage('fr', said.message, said.values)).toContain('10,5')
+    expect(formatMessage('en', said.message, said.values)).toContain('10.5')
+  })
+
+  it('agrees the counted noun with the quantity, from the catalogue', () => {
+    // A file selling one share of a security never bought is reachable, and
+    // *vend 1 parts* / *sells 1 shares* is the catalogue rendering its own
+    // hole. The branch lives in the message, where the language decides it —
+    // French counts 1,5 as singular and English does not.
+    const one = problemMessage(oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1, owned: 0 }))
+    expect(formatMessage('fr', one.message, one.values)).toContain('vend 1 part de AAPL')
+    expect(formatMessage('en', one.message, one.values)).toContain('sells 1 share of AAPL')
+
+    const many = problemMessage(oversell({ gesture: 'remove', symbol: 'AAPL', wanted: 2, owned: 0 }))
+    expect(formatMessage('fr', many.message, many.values)).toContain('vend 2 parts')
+    expect(formatMessage('en', many.message, many.values)).toContain('sells 2 shares')
+
+    const half = problemMessage(oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1.5, owned: 0 }))
+    expect(formatMessage('fr', half.message, half.values)).toContain('vend 1,5 part de AAPL')
+    expect(formatMessage('en', half.message, half.values)).toContain('sells 1.5 shares of AAPL')
+  })
+
+  it('carries what a refusal declares beside its four standard members', () => {
+    // RFC 9457's extension members, kept whole: the three numbers here, `key`
+    // on a `422`, `limit` on a `413`. `ApiProblem` used to drop all of them.
+    const problem = oversell({ gesture: 'write', symbol: 'AAPL', wanted: 12, owned: 10 })
+    expect(problem.members).toEqual({
+      gesture: 'write', symbol: 'AAPL', wanted: 12, owned: 10,
+    })
+    expect(problem.detail).toBe(
+      'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15',
+    )
   })
 })

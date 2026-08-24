@@ -60,7 +60,7 @@ import { Button } from '@/components/ui/button'
 import { api, type ImportReceipt } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { problemMessageKey } from '@/lib/problem'
+import { problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 /** The gesture, held by whoever survives the write it causes. */
@@ -284,7 +284,7 @@ export function UploadReceipt({ upload }: { upload: EventUpload }) {
         {upload.receipt && upload.receipt.duplicates > 0 ? (
           <Said>{known(t, upload.receipt.duplicates, false)}</Said>
         ) : null}
-        {upload.error ? <Said attention>{t(problemMessageKey(upload.error))}</Said> : null}
+        {upload.error ? <Said attention>{problemSentence(t, upload.error)}</Said> : null}
       </div>
 
       {forecast ? (

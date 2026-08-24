@@ -748,6 +748,43 @@ def test_the_preview_sees_the_oversell_the_write_would_refuse(tmp_path):
     assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
 
 
+def test_an_oversold_file_is_refused_in_its_own_words(tmp_path):
+    """The case #811 made ordinary, and the sentence it used to get (#824).
+
+    The owner exports 2024 at their broker and hands it over; every ``SELL`` of
+    a position opened in 2023 oversells, and the whole file is refused — which
+    is right. What was wrong is what they were told: ``/problems/conflict``'s
+    one sentence says *what this names is already there, or something still
+    rests on it*, and nothing here exists already and nothing rests on anything.
+
+    So the refusal carries its own type and the three facts the true sentence
+    needs, as data. ``gesture`` reads ``write``: a file that oversells is not
+    the news a withdrawal breaking a later sale is.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-02-01,SELL,AAPL,Apple Inc,25,190.00\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, filename="broker-2024.csv")
+
+    assert response.status_code == 409
+    assert response.mimetype == 'application/problem+json'
+    refusal = response.get_json()
+    assert refusal['type'] == problem.TYPE_UNREPLAYABLE
+    assert refusal['gesture'] == 'write'
+    assert (refusal['symbol'], refusal['wanted'], refusal['owned']) == (
+        'AAPL', 25.0, 10.0)
+    assert refusal['day'] == '2024-02-01'
+    # The server's own English, word for word — the ``detail`` a log and a
+    # ``curl`` read, and the one string ADR-0024 keeps off a page.
+    assert refusal['detail'] == (
+        'Cannot sell 25.0 shares of AAPL (only 10.0 owned) on 2024-02-01')
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
 def test_a_second_upload_of_the_same_file_writes_nothing(tmp_path):
     """The gesture this dedup exists for: the owner re-uploads their export.
 

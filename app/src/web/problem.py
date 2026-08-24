@@ -50,6 +50,14 @@ TYPE_INVALID_FILE = '/problems/invalid-file'
 #: — export a narrower range — the reader can make without reading a word of
 #: their file.
 TYPE_TOO_LARGE = '/problems/payload-too-large'
+#: A gesture that would leave a ledger which does not replay — an oversell
+#: (issue #824). Its **own** identifier and not :data:`TYPE_CONFLICT` for the
+#: reason that one exists at all: the front branches on the identifier, and
+#: *what this names is already there* describes a duplicate id and describes
+#: nothing whatsoever about a file that sells shares the ledger never bought.
+#: Same ``409`` — the request is well formed and the store's state refuses it —
+#: and a different sentence.
+TYPE_UNREPLAYABLE = '/problems/unreplayable-ledger'
 
 # #662's write-path vocabulary — a stale fingerprint, a read-only source, an
 # unwritable directory, a wrong mode — left with the apparatus that raised it
@@ -120,6 +128,53 @@ def conflict(detail: str):
     after removing what it rests on"* rather than *"fix your syntax"*.
     """
     return problem(409, 'Conflict', detail, TYPE_CONFLICT)
+
+
+#: The two gestures a ledger can refuse to replay under, and the only two values
+#: the ``gesture`` member below ever takes (issue #824). A closed set, because
+#: the front selects a sentence on it: *this sells shares you do not hold* and
+#: *taking this away leaves a later sale without its shares* are two pieces of
+#: news, and the route is the only place that knows which one it is — a payload
+#: does not say whether it was written or withdrawn.
+GESTURE_WRITE = 'write'
+GESTURE_REMOVE = 'remove'
+
+
+def unreplayable(detail: str, gesture: str, symbol: Optional[str] = None,
+                 wanted: Optional[float] = None,
+                 owned: Optional[float] = None,
+                 day: Optional[str] = None):
+    """409 — the ledger this gesture would leave does not replay (issue #824).
+
+    :func:`conflict`'s status and not its sentence. The four routes that meet an
+    oversell used to answer ``/problems/conflict``, whose one phrase was written
+    for issue #698's refusals — an id already taken, an account an event still
+    names — and is a plain untruth about a file that sells more shares than the
+    ledger holds: nothing exists already, and nothing rests on anything.
+
+    ``symbol``, ``wanted`` and ``owned`` travel as **extension members**, which
+    RFC 9457 explicitly allows and which ``key`` already does on the three
+    ``422``: they are the three facts the useful sentence needs, and handing
+    them over as data is what lets the front say it in the reader's language
+    rather than render the server's English (ADR-0024). ``day`` joins them for
+    the same reason, and all four may be ``None`` — an
+    :class:`~events.aggregator.AggregationError` raised somewhere that does not
+    know them must be answerable all the same.
+
+    ``detail`` stays the exception's own message, unchanged: it is what a log
+    and a ``curl`` read, and it is deliberately not what a page renders.
+    """
+    extra: Dict[str, Any] = {'gesture': gesture}
+    if symbol is not None:
+        extra['symbol'] = symbol
+    if wanted is not None:
+        extra['wanted'] = wanted
+    if owned is not None:
+        extra['owned'] = owned
+    if day is not None:
+        extra['day'] = day
+    return problem(
+        409, 'Ledger does not replay', detail, TYPE_UNREPLAYABLE, **extra)
 
 
 def unprocessable(detail: str, key: Optional[str] = None):
@@ -225,7 +280,7 @@ def internal_error(detail: str):
 
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
-    'unprocessable', 'unprocessable_parameter', 'unprocessable_entry',
-    'unprocessable_file', 'too_large', 'internal_error',
-    'CONTENT_TYPE',
+    'unreplayable', 'unprocessable', 'unprocessable_parameter',
+    'unprocessable_entry', 'unprocessable_file', 'too_large', 'internal_error',
+    'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
 ]

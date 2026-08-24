@@ -213,19 +213,43 @@ export function pricesPath(symbol: string, window: ChartWindow): string {
  * nowhere — that is what put a French title over an English sentence in the
  * prototype's most consequential alert.
  */
+export interface ProblemBody {
+  status: number
+  type?: string | null
+  title?: string | null
+  detail?: string | null
+  /** Everything else the server put in the object — see `members` below. */
+  [member: string]: unknown
+}
+
 export class ApiProblem extends Error {
   readonly status: number
   readonly type: string | null
   readonly title: string | null
   readonly detail: string | null
+  /**
+   * The **extension members** (#824). RFC 9457 lets a problem object carry any
+   * other member, and this app uses that for the facts a sentence needs as
+   * *data* rather than as prose: `key` names the field a `422` refused,
+   * `limit` the bound a `413` states, `symbol`/`wanted`/`owned` the three
+   * numbers an oversell is about.
+   *
+   * Kept whole and untyped on purpose: whoever branches on a `type` knows which
+   * members that type carries, and a union declared here would be a second copy
+   * of `problem.py`'s catalogue that nothing forces to stay in step. Read them
+   * through the narrowing helpers in `lib/problem.ts`, never by casting.
+   */
+  readonly members: Readonly<Record<string, unknown>>
 
-  constructor(init: { status: number; type?: string | null; title?: string | null; detail?: string | null }) {
-    super(init.title ?? `HTTP ${init.status}`)
+  constructor(init: ProblemBody) {
+    super(typeof init.title === 'string' ? init.title : `HTTP ${init.status}`)
     this.name = 'ApiProblem'
     this.status = init.status
-    this.type = init.type ?? null
-    this.title = init.title ?? null
-    this.detail = init.detail ?? null
+    this.type = typeof init.type === 'string' ? init.type : null
+    this.title = typeof init.title === 'string' ? init.title : null
+    this.detail = typeof init.detail === 'string' ? init.detail : null
+    const { status: _status, type: _type, title: _title, detail: _detail, ...rest } = init
+    this.members = rest
   }
 }
 
