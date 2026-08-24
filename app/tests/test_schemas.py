@@ -360,8 +360,8 @@ def test_a_future_row_is_still_a_position_to_current_and_that_is_named():
     What it costs is real and bounded: ``positions.write_state`` lays down a
     ``position`` row from ``current()``, so ``/api/positions`` serves the line and
     the dashboard sums its latent gain, ``main._held_symbols`` arms a live scrape
-    job, and the position gauges publish it — while ``account_metrics``, which
-    values through ``position_at(day)``, excludes it. It is **not a regression**:
+    job — while ``account_metrics``, which values through ``position_at(day)``,
+    excludes it. It is **not a regression**:
     that reading predates #766, and the perf horizon answered this case correctly
     before the settlement as well as after.
 
