@@ -3783,7 +3783,7 @@ def build_runtime() -> Runtime:
     """
     app_logger.info('SuiviBourse is running !')
 
-    # The environment, read **once** and as a whole (issue #740). Six values and
+    # The environment, read **once** and as a whole (issue #740). Four values and
     # the list of names that are set and no longer obeyed come out of the same
     # call, which is what keeps the two from being computed against different
     # readings of the same mapping.

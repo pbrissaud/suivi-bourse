@@ -50,7 +50,7 @@ STORE_FILENAME = 'suivi-bourse.duckdb'
 #: its own boot variable — it is one of the handful of things the environment
 #: still configures, because the process must know it *before* it can open the
 #: store and ask the store anything. The name and the default are
-#: :mod:`boot_env`'s since #740, which is where the six of them are said once;
+#: :mod:`boot_env`'s since #740, which is where the four of them are said once;
 #: these two aliases stay because the store is where a reader looks for them.
 STORE_DIR_VAR = boot_env.STORE_DIR
 DEFAULT_STORE_DIR = boot_env.DEFAULT_STORE_DIR

@@ -143,8 +143,8 @@ def _static_dir() -> Path:
     **It reads no environment variable** (issue #740). ``SB_STATIC_DIR`` used to
     override it for "anyone serving the bundle from elsewhere", and that person
     has no existence left: there is one image and it carries the bundle at that
-    path. The environment says six things and this was never one of them — a
-    seventh name would have to be documented, and the sentence it earns
+    path. The environment says four things and this was never one of them — a
+    fifth name would have to be documented, and the sentence it earns
     ("normally you leave this alone") is the sentence that says to delete it.
     """
     return Path(__file__).resolve().parent.parent / 'static'

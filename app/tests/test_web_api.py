@@ -2781,7 +2781,7 @@ def test_an_unreadable_store_fails_the_export_rather_than_emptying_it(tmp_path):
 # --------------------------------------------------------------------- #
 #
 # The bundle's location is resolved from the package and reads no environment
-# variable since #740 — the environment says six things and this was never one
+# variable since #740 — the environment says four things and this was never one
 # of them. The seam is therefore the resolver itself rather than
 # ``SB_STATIC_DIR``, which is what a test seam should have been all along: the
 # variable existed for an operator who does not exist.
