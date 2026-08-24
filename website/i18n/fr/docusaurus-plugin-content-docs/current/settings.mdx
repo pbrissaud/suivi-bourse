@@ -1,11 +1,11 @@
 ---
 title: Settings
-description: The dials that live in the store, the base currency, and the six boot variables
+description: The dials that live in the store, the base currency, and the boot variables
 ---
 
 Two halves, one page. The line between them is not *infrastructure on one side,
 preferences on the other* — that is an intention, and it decides nothing about a
-metrics port. The line is a test you can apply name by name:
+port number. The line is a test you can apply name by name:
 
 > What stays in the environment is what the process must know **before** it can
 > open the store. Everything else lives in the store.
@@ -32,8 +32,8 @@ deleted rather than moved, so the settings form has a single class of field.
 | `staleness_horizon`   | `900`   | seconds before a frozen price is reported as stale; `0` disables the check |
 
 That is the whole list. You turn them on the installation panel of the app, or
-with one call on the write API, which is always served — see
-[Headless: the gauges](./headless-gauges.mdx).
+with one call on the write API, which is always served on the same port as the
+page.
 
 ### The base currency
 
@@ -51,7 +51,7 @@ Until it is answered, nothing refuses: prices are still fetched in their native
 currency, nothing is converted, and no performance figure is written at all —
 not zeros, not blanks. The app says so on screen rather than showing you a
 number it cannot justify. An import that declares its own currency **sets** it,
-which is what lets a headless install answer the question without a single call.
+which is what lets an install answer the question without a single call.
 
 ### Two of these are not decorative
 
@@ -73,17 +73,15 @@ has the rest of the back-off.
 
 ## What the container imposes
 
-Six names. This is the complete list of what the app reads from its
+Four names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
-| Variable                | Default   | What it decides                                                    |
-| ----------------------- | --------- | ------------------------------------------------------------------ |
-| `SB_STORE_DIR`          | `/data`   | the directory the store lives in                                   |
-| `SB_IMPORT_DIR`         | `/import` | the directory the drop folder is read from                         |
-| `SB_WEB_PORT`           | `8080`    | the first socket the app is bound to                               |
-| `SB_METRICS_PORT`       | `8081`    | the second socket the app is bound to, added when `/metrics` is on |
-| `SB_PROMETHEUS_ENABLED` | `true`    | whether `/metrics` is mounted at all                               |
-| `LOG_LEVEL`             | `INFO`    | how loudly the app logs                                            |
+| Variable        | Default   | What it decides                            |
+| --------------- | --------- | ------------------------------------------ |
+| `SB_STORE_DIR`  | `/data`   | the directory the store lives in           |
+| `SB_IMPORT_DIR` | `/import` | the directory the drop folder is read from |
+| `SB_WEB_PORT`   | `8080`    | the socket the app is bound to             |
+| `LOG_LEVEL`     | `INFO`    | how loudly the app logs                    |
 
 * **The two paths are directories, never files.** The app names its own store
   file inside the one and reads whatever it finds in the other. That removes the
@@ -95,50 +93,43 @@ environment; nothing else in it is consulted.
   sets none of these.
 * **A blank value counts as unset.** An undefined substitution renders as an
   empty string, and an empty string is not an answer.
-* **The two ports pass the test twice.** They are read in the server's master
-  process before the app is even imported, so they cannot come from the store;
-  and a port changed from the interface would cut the connection the interface
-  arrived by. That is a nature, not only a sequence.
-* **They are two sockets, not two servers.** The server binds a *list*, and one
-  application answers behind both: `/metrics` is served on `8080` as well, and
-  the whole interface and API — `POST /api/events`, `PUT /api/settings`,
-  `DELETE /api/store/orphans` included — are served on `8081` as well. When both
-  variables name the same port there is simply one socket, which is the same
-  application again.
+* **The port passes the test twice.** It is read in the server's master process
+  before the app is even imported, so it cannot come from the store; and a port
+  changed from the interface would cut the connection the interface arrived by.
+  That is a nature, not only a sequence.
+* **There is one socket, and everything is behind it.** The page, the reads and
+  the writes — `POST /api/events`, `PUT /api/settings`,
+  `DELETE /api/store/orphans` included — and `/health` all answer on
+  `SB_WEB_PORT`. There is no second port to publish and no port that serves a
+  filtered view of the app.
 * **`LOG_LEVEL` is here because the most likely failure of this app is the store
   failing to open**, and a log level kept inside the store cannot report that.
 * **No secret lives in the environment any more.** There was exactly one, the
   database token, and it has no subject left.
 
-## There is no switch that turns the page off
+## There is no switch that turns a half of the app off
 
-Running headless is a **usage, not a setting**. There is no variable that
-disables the interface, and there will not be one: an install that publishes
-only the metrics port and never opens the other is a full install, not a variant
-to maintain. What an operator stops serving is the page — **never the API**,
-which is the only non-interactive way to post the base currency.
+There is no variable that disables the interface, and there will not be one.
+There used to be a second one — `/metrics`, on a socket of its own — and it is
+gone: one owner, one browser and one container paid for a second interface
+twice, once to build it and once in the shape it forced on the model. What is
+left is not a smaller version of it; it is the app's own pages, and they are
+where an installation now reports on itself.
 
-`SB_PROMETHEUS_ENABLED` looks like a counter-example and is not. It decides a
-**socket to bind**, and the list of sockets is fixed when the server starts, so
-it has to be answered before the store is open. Set it to `false` and
-`SB_METRICS_PORT` is simply never bound. The page has no port of its own — it is
-served on the API's — so there is nothing equivalent to turn off.
-
-**Which is why "publish only the metrics port" is not a way to hide the API.**
-An operator who runs `-p 8081:8081` alone has published the write API on `8081`:
-one application, two sockets, and neither of them is a filtered view of the
-other. Whoever reaches a port reaches everything — the page, the reads, and the
-writes. If the API must not be reachable from a network, that is a decision for
-the network: bind the container to `127.0.0.1`, or put it behind something that
-authenticates. The app itself has no half to serve.
+**So publishing the port publishes everything.** Whoever reaches it reaches the
+page, the reads *and* the writes — `POST /api/events` and `PUT /api/settings`
+included. There is no port that is a filtered view of another, because there is
+no other port. If the app must not be reachable from a network, that is a
+decision for the network: bind the container to `127.0.0.1`, or put it behind
+something that authenticates. The app itself has no half to serve.
 
 ## What version 4 said, and is no longer read
 
 Every `SB_*` or `INFLUXDB_*` variable that is present in the environment and is
-not one of the six above is **named at start-up and never obeyed**. It produces
+not one of those above is **named at start-up and never obeyed**. It produces
 **one grouped notice**, not one line per variable, saying which names were found
 and that these settings now live in the app. The list is computed — what is
-present, minus the six boot variables, minus the dials — so it cannot drift out
+present, minus the boot variables, minus the dials — so it cannot drift out
 of date the way a hard-coded list of names would.
 
 | No longer read             | Where it lives now                                                                                                                  |
