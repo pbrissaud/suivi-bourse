@@ -28,10 +28,10 @@ cadence for the other; a point is written because a quote was fetched, and the
 quote was fetched because the point was due.
 
 When a position closes, its job leaves. Nothing keeps polling a symbol you no
-longer hold — and its gauges go with it, because a missing gauge is readable
-whereas a frozen one is not (see
-[Headless: the gauges](./headless-gauges.mdx)). Its *history* stays: the rebuild
-still needs it, and it is still part of your returns. That is the subject of
+longer hold, and it stops appearing among the scrapes the app reports on —
+a symbol that is *absent* is readable, where one whose price never moves again
+is not. Its *history* stays: the rebuild still needs it, and it is still part of
+your returns. That is the subject of
 [Rebuild and resolution](./rebuild-and-resolution.mdx).
 
 ## A symbol that stops answering backs off
@@ -132,9 +132,9 @@ fails, no counter rises, and the chart looks like a flat market.
 
 A freshness sonde rides the live write path for that case: when a stored price
 stays frozen across consecutive open-market cycles while the live quote moves, it
-raises `sb_price_staleness` and logs a warning. It watches the **native** price,
-never a converted one — a conversion that is waiting on a rate must not read as a
-stale quote.
+logs a warning and marks that symbol's scrape as frozen where the app reports on
+its own jobs. It watches the **native** price, never a converted one — a
+conversion that is waiting on a rate must not read as a stale quote.
 
 It is purely diagnostic. It never changes the cadence, the writing, or the
 back-off above.
