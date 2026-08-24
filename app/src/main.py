@@ -210,7 +210,7 @@ def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
     *Once* is a property of **where this is called** rather than of a flag: it
     runs in :func:`build_runtime`, in the gunicorn master, under ``preload_app``
     — one call per process, before any fork. A condition that ends afterwards
-    (a currency answered, a first file dropped) is not re-announced and its line
+    (a currency answered, a first event recorded) is not re-announced and its line
     is not retracted; the live states are what ``/api/runtime`` and
     ``/api/config`` carry, and the terminal is a record of the boot.
 
