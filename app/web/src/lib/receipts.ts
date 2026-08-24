@@ -20,8 +20,10 @@
  *    that pretends to be a *record*: this one is said once, to the reader who
  *    made the gesture, and nothing keeps it.
  *
- * **Three gestures have one.** The currency answered, from the modal and from
- * the settings form alike; the export, since #796; and the import, since #811.
+ * **Four gestures have one.** The currency answered, from the modal and from
+ * the settings form alike; the export, since #796; the import, since #811; and
+ * since #814 the bulk removal, which is the one of the four with nothing behind
+ * it — the reader cannot undo it, so what it took is said rather than counted.
  *
  * **The export's receipt is two sentences and no timer**, which is the whole of
  * #796's criterion: it says what is being made at the click, and what is there
@@ -55,6 +57,16 @@ export type Receipt =
   | { kind: 'import.written'; count: number; from: string; to: string; accounts: number; symbols: number }
   /** It landed and wrote nothing: a header with no row under it. */
   | { kind: 'import.empty'; filename: string }
+  /**
+   * A reduction was deleted, and this is **what actually left** (#814).
+   *
+   * The count is the server's, not the table's: the confirmation said what the
+   * reduction retained *before* the click, and this says what the store removed.
+   * A gesture the reader made, whose end the app owes them — and there is no
+   * undo behind it, which is why the number is said out loud rather than left
+   * to be counted off a table that has just changed shape.
+   */
+  | { kind: 'events.removed'; count: number }
 
 /**
  * What the receipt says, as a catalogue key and its values. Pure, so the
@@ -89,5 +101,7 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
     // not carry, and no plural rule can invent the two days that are missing.
     case 'import.empty':
       return { message: 'receipt.import.empty', values: { file: receipt.filename } }
+    case 'events.removed':
+      return { message: 'receipt.events.removed', values: { count: receipt.count } }
   }
 }

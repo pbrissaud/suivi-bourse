@@ -1127,6 +1127,69 @@ def delete_event(event_id: str):
     return jsonify({'id': event_id, 'removed': True})
 
 
+@api_bp.delete('/events')
+def delete_events():
+    """Remove every event the ledger's own reduction retains (#814, ADR-0032).
+
+    The successor of *forget this import*, and it is worth more than what it
+    replaces: it undoes a whole import without resurrecting a batch identity to
+    delete by, and it also repairs the twelve rows somebody mistyped, which no
+    revocation ever reached. **The subject of the gesture is the reduction, not
+    the row** — so the predicate *this line came from a file* is not consulted
+    here, and it will not exist at all one ticket from now.
+
+    It takes **exactly the five parameters of the export routes**, period
+    included, off :func:`_selection`: one vocabulary arriving over one contract,
+    the one :mod:`events.export` already owns. The reduction the table shows is
+    the reduction this consumes, without a second spelling on the way.
+
+    **With no parameter at all it refuses** — ``422``, and nothing written.
+    Emptying the whole ledger stays possible, by reducing on something that
+    covers all of it and therefore deliberately; what must not be possible is a
+    truncated request, or a client that forgot its query string, destroying a
+    history. Blank counts as absent here as it does everywhere else on this
+    resource (``?type=&account=`` is a client with empty fields), which is why
+    the test is :attr:`events.export.Selection.reduces` rather than a count of
+    parameters that arrived.
+
+    A reduction that retains nothing removes nothing and answers ``200``: the
+    empty selection is a state, exactly as it is on the export, never an error.
+
+    ``409`` on a ledger that would not replay — a reduction can take the
+    purchases and leave the sales overselling, which is ``DELETE
+    /api/events/<id>``'s refusal met on a larger perimeter.
+
+    The replay follows the write, synchronously and in this process, and since
+    #812 it carries the performance series with it: whoever has just undone an
+    import sees their curves without waiting for a tick.
+    """
+    try:
+        selection = _selection()
+    except _InvalidParameter as exc:
+        return unprocessable_parameter(str(exc), key=exc.key)
+
+    if not selection.reduces:
+        return unprocessable_parameter(
+            "a bulk delete takes the ledger's own reduction: one of q, type, "
+            "account, symbol, since or until. Reduce on something that covers "
+            "the whole ledger to empty it")
+
+    runtime = current_runtime()
+    try:
+        # The writers' mutex, like every other write here: a Flask handler and
+        # the ingestion share one DuckDB connection.
+        with runtime.config_manager.writing() as opened:
+            removed = entries.remove_selection(opened, selection)
+    except AggregationError as exc:
+        return conflict(str(exc))
+
+    main.replay_after_write(runtime)
+    # ``events_removed`` and not a bare ``removed``: it is the unit the reader
+    # was shown before the gesture, and the name the revocation this replaces
+    # answered under — the count moves road without changing word.
+    return jsonify({'events_removed': removed})
+
+
 def _entry_key(event_id: str) -> Optional[int]:
     """The path segment as the ``event`` table's key, or ``None``.
 

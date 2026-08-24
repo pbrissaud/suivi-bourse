@@ -11,7 +11,11 @@
  *
  * What this tab owes is the journal itself, its reduction, the create form that
  * is the onboarding, and — as **one band above the table** since #794 — the
- * drop zone, the export menu and the sources with their revocation. The
+ * drop zone, the export menu and the sources with their revocation. Since #814
+ * the reduction earns a gesture of its own: **deleting everything it retains**,
+ * which is what makes losing the revocation by file survivable (ADR-0032). It
+ * sits beside the chips rather than in the band, because the chips are its
+ * subject — `BulkDelete.tsx` holds the argument. The
  * declaration of the accounts left at #793 (ADR-0028): a declaration is made
  * where its subject is looked at. The blocks read one ledger between them: the
  * count a refusal is made of, and the count a revocation announces, are that
@@ -37,6 +41,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
+import { BulkDelete } from '@/components/data/BulkDelete'
 import { EventForm } from '@/components/data/EventForm'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFilters } from '@/components/data/LedgerFilters'
@@ -342,9 +347,18 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               accounts={accountsNamed(all)}
               shown={shown.length}
             />
-            <Button type="button" onClick={() => setEditing(null)}>
-              {t('data.new')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* **The destructive gesture sits under the reduction it
+                  consumes** (#814, ADR-0032), and not in the band above where
+                  the export menu is: what it acts on is the chips, and a button
+                  one surface away from its subject is how somebody deletes two
+                  hundred rows believing they are removing one thing. It renders
+                  nothing at all while nothing is reduced. */}
+              <BulkDelete selection={filters} selected={shown.length} />
+              <Button type="button" onClick={() => setEditing(null)}>
+                {t('data.new')}
+              </Button>
+            </div>
           </div>
 
           {shown.length === 0 ? (

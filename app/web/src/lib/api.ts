@@ -962,6 +962,21 @@ export interface EventDraft {
   amount: number | null
 }
 
+/**
+ * What a bulk removal answers (#814): how many rows the reduction took with it.
+ *
+ * The **server's** count and not the table's. The front knows what the
+ * reduction retained before the click — that is what the confirmation is made
+ * of — and this is what actually left, read off the store: the two are two, and
+ * the second is the only one that is a fact.
+ *
+ * It is spelled `events_removed`, the word the revocation this gesture replaces
+ * already answered under: the unit did not change road, only the subject did.
+ */
+export interface BulkRemoval {
+  events_removed: number
+}
+
 // ------------------------------------------------------------------------- //
 // The installation (#724, ADR-0014, ADR-0020, ADR-0021)
 //
@@ -1218,6 +1233,20 @@ export const api = {
   events: () => get<EventsResponse>(ROUTES.events),
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
+  /**
+   * The reduction, deleted whole (#814, ADR-0032).
+   *
+   * It carries the **five export parameters** and never a list of ids: what the
+   * table shows is what the server retains, arrived at once over one contract —
+   * and a list assembled here would be a second reading of the reduction, made
+   * against a snapshot rather than against the store.
+   *
+   * An empty query string is refused by the server in `422`, deliberately: the
+   * caller is expected not to offer the gesture at all, and the route is the
+   * guard for the client that forgot its own.
+   */
+  deleteEvents: (params: URLSearchParams) =>
+    remove<BulkRemoval>(`${ROUTES.events}?${params.toString()}`),
   accountHistory: (account: string) =>
     get<AccountHistoryResponse>(accountHistoryPath(account)),
   positions: () => get<PositionsResponse>(ROUTES.positions),

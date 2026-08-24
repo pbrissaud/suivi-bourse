@@ -7,6 +7,13 @@
 > receipt is rendered under the zone and lasts as long as the gesture; it is the
 > surface #813's preview steps into. The drop folder and the list of sources
 > stay until #815 and #816.
+> **The reduction can be deleted** (#814, ADR-0032): `BulkDelete.tsx` sits
+> beside the chips — under the reduction it consumes, never in the band above —
+> sends the five export parameters to `DELETE /api/events`, and renders nothing
+> at all while nothing is reduced or nothing is retained. Its confirmation
+> **names the reduction and counts its rows**, dimension by dimension, and never
+> asks *are you sure* on its own; the receipt says the server's count, which is
+> what actually left. It is what makes losing the revocation by file survivable.
 > **The ⌘K palette has landed** (#797): it reads **on open** and never on mount,
 > its three data sections are optional — an absent read removes one instead of
 > holding the palette — and an event result leads to a ledger reduced by an
@@ -252,8 +259,12 @@ src/
   are the five the export resource already parses, so a reduced ledger's URL is
   the query string of its own export. A reduction that arrived that way names
   what it retains and offers the way out; the reader's first gesture on the chips
-  takes the address back off, an address being a description of the table — and
-  above it one band holding the **upload zone** (a real target since #811: a file
+  takes the address back off, an address being a description of the table. Since
+  #814 the reduction also has a **destructive gesture of its own**, beside the
+  chips: it deletes everything the reduction retains — the rows a file carried
+  included — behind a box that names the five dimensions in force and counts
+  them, and it is not offered at all while nothing is reduced. Above the table,
+  one band holding the **upload zone** (a real target since #811: a file
   dropped on it or chosen from it is handed to `POST /api/events/import`, and the
   receipt is said under it), the export menu — **four entries** since #796: every
   event, a workbook with one sheet per year, the filtered selection and the

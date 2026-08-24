@@ -530,6 +530,118 @@ describe('a reduction in force always has the chip that releases it', () => {
   })
 })
 
+describe('deleting the reduction, which is what replaces forgetting an import', () => {
+  it('is not offered while nothing is reduced, nor while nothing is retained', async () => {
+    // With no chip pressed the reduction is the **whole ledger**, so the button
+    // would read *delete everything* in the clothes of *delete this year* —
+    // told apart by a count the reader has to read first. Emptying the ledger
+    // stays possible, by reducing on something that covers it.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    expect(screen.queryByRole('button', { name: /Supprimer ces/ })).not.toBeInTheDocument()
+
+    // And a reduction that retains nothing has a subject and no rows: *delete
+    // these 0 events* beside *no event matches* is the same button saying two
+    // things at once.
+    await user.type(screen.getByLabelText('Rechercher'), 'zzzz')
+    expect(await screen.findByText('Aucun événement ne correspond')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Supprimer ces/ })).not.toBeInTheDocument()
+  })
+
+  it('names the reduction and counts its rows before destroying anything', async () => {
+    // Never a bare *are you sure*: the rule #794 wrote when three consecutive
+    // rows showed three identical red buttons — the reader has to read the
+    // **subject** of what they are destroying, and here the subject is the
+    // dimensions in force rather than a file name.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-01' } })
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+
+    await user.click(screen.getByRole('button', { name: 'Supprimer ces 2 événements' }))
+
+    const box = await screen.findByRole('dialog')
+    expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
+    // Both dimensions, each in the vocabulary its own chip carries — and the
+    // period reads the interval the chip reads, out of the same sentence.
+    expect(within(box).getByText('Type Achat')).toBeInTheDocument()
+    expect(within(box).getByText('Depuis le 1 janv. 2026')).toBeInTheDocument()
+  })
+
+  it('sends the reduction’s own five parameters, and says what actually left', async () => {
+    // What travels is the *question*, never a list of rows: the reduction is
+    // applied against the store, not against the snapshot this table drew.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let asked: string | null = null
+    server.use(
+      http.delete(ROUTES.events, ({ request }) => {
+        asked = new URL(request.url).search
+        // The re-read that follows: the two purchases are gone from the store.
+        server.use(
+          http.get(ROUTES.events, () =>
+            HttpResponse.json(aLedgerPayload(ledgerEvents().slice(2))),
+          ),
+        )
+        return HttpResponse.json({ events_removed: 2 })
+      }),
+    )
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+    )
+
+    await waitFor(() => expect(asked).toBe('?type=BUY'))
+    // The count in the receipt is the **server's** — what left — where the one
+    // in the box was the table's, what the reduction retained. Two counts,
+    // deliberately, and only the second is a fact about the store.
+    expect(await screen.findByText('2 événements supprimés.')).toBeInTheDocument()
+  })
+
+  it('keeps the box open on a refusal and says it in the reader’s language', async () => {
+    // A `422` the reader could not foresee — a client that lost its query
+    // string, or a reduction that emptied itself between the render and the
+    // click. The sentence is read by `problem.type`, never by the English
+    // `detail` the server wrote for a log (ADR-0024).
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.delete(ROUTES.events, () =>
+        HttpResponse.json(
+          { status: 422, type: PROBLEM_TYPES.badRequest, title: 'Invalid parameter' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+    )
+
+    const box = await screen.findByRole('dialog')
+    expect(await within(box).findByRole('status')).toHaveTextContent(
+      'L’application a refusé la requête faite par cette page.',
+    )
+    // The box stays open on the failure — everything behind the overlay is
+    // `aria-hidden`, so a band on the page would be a sentence nobody can read
+    // — and it still names the reduction it was opened on.
+    expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
+  })
+})
+
 describe('the editor, and where it does not appear', () => {
   it('never appears on an install that has only ever imported', async () => {
     // The real portfolio exactly: 285 imported rows, 0 typed. The read-only

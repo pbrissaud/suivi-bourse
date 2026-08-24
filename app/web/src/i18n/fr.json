@@ -158,6 +158,7 @@
   "receipt.import.running": "Lecture de {file}…",
   "receipt.import.written": "{count, plural, one {# événement écrit} other {# événements écrits}}, du {from} au {to}, sur {accounts, plural, one {# compte} other {# comptes}} et {symbols, plural, one {# titre} other {# titres}}.",
   "receipt.import.empty": "{file} ne portait aucun événement : rien n’a été écrit.",
+  "receipt.events.removed": "{count, plural, one {# événement supprimé} other {# événements supprimés}}.",
 
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",
@@ -393,6 +394,17 @@
   "data.export.workbook": "Un classeur, un onglet par année",
   "data.export.selection": "La sélection filtrée ({count, plural, one {# événement} other {# événements}})",
   "data.export.accounts": "Vos comptes",
+
+  "data.bulk.title": "Supprimer ces {count, plural, one {# événement} other {# événements}}",
+  "data.bulk.confirm.title": "Supprimer {count, plural, one {# événement} other {# événements}} ?",
+  "data.bulk.confirm.body": "Tout ce que la réduction ci-dessous retient quitte le grand livre, quelle qu’en soit l’origine — les lignes venues d’un fichier comprises.",
+  "data.bulk.confirm.on.query": "Recherche « {subject} »",
+  "data.bulk.confirm.on.type": "Type {type}",
+  "data.bulk.confirm.on.account": "Compte {account}",
+  "data.bulk.confirm.on.symbols": "{count, plural, one {Titre} other {Titres}} {symbols}",
+  "data.bulk.confirm.undo": "Il n’y a ni retour en arrière ni corbeille : votre sauvegarde est l’export.",
+  "data.bulk.confirm.submit": "Les supprimer",
+  "data.bulk.confirm.cancel": "Les garder",
 
   "installation.advisories": "Avis",
   "installation.advisory.seen": "Constaté le {date}",
