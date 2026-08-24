@@ -105,8 +105,9 @@ Four workloads write to the store, each owning its own tables:
 - **Performance** — replays the ledger and rewrites the return series.
 
 The front is a packaged SPA, served by Flask, which only ever talks to the app
-through `/api`. `/metrics` (Prometheus) is a first-class product: it is what makes
-the app usable with no interface at all.
+through `/api`. There is **one interface and one socket** (ADR-0033): the
+exporter and its second port are gone, and `/api` is the front's interface rather
+than a contract held for anybody else.
 
 ## The rules that are expensive to break
 
@@ -127,8 +128,8 @@ the app usable with no interface at all.
   doubles exist all the same, and for one thing only: **what the app decided not
   to do**, which leaves no trace to read. A job that was not armed, a query that
   was not run, a pass that ran once — those are asserted on the call, in
-  `test_scheduling_wiring.py` (the APScheduler and exporter spies) and eight
-  other files. Reach for one only when there is no row and no payload to look at.
+  `test_scheduling_wiring.py` (the APScheduler spy) and eight other files. Reach
+  for one only when there is no row and no payload to look at.
 - **A read in flight is not an absence** (ADR-0026): a block that waits renders
   nothing at all, title included.
 

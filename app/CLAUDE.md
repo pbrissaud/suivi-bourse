@@ -11,8 +11,8 @@ split in two by the `fork()`:
 
 - **master, under `preload_app`** — `main.build_runtime()`: the store (opened, DDL
   applied, seeded, **closed again**), `ConfigurationManager`, the first
-  publication of the config snapshot, the Prometheus registry. Pure work only: no
-  thread, no socket, no fd survives a fork. A failure here is `sys.exit(1)`.
+  publication of the config snapshot. Pure work only: no thread, no socket, no fd
+  survives a fork. A failure here is `sys.exit(1)`.
 - **`post_fork`** — `main.start_runtime()`: the store connection (its own), the
   `BackgroundScheduler`, the watcher, the first `ingest()`. A failure here
   **re-raises**: gunicorn reads an exception as `WORKER_BOOT_ERROR` and halts the
@@ -20,14 +20,12 @@ split in two by the `fork()`:
 - **`worker_exit`** — `main.shutdown_runtime()`, closing the store last.
 
 `workers = 1` is a property of the design, not a tuning default: N workers would
-be N schedulers. Concurrency comes from `threads`. One master, **two sockets, one
-application**: `gunicorn.conf.py` appends `SB_METRICS_PORT` to `bind`, which
-takes a list — so `/metrics` answers on `SB_WEB_PORT` too, and the whole API,
-writes included (`POST /api/events`, `PUT /api/settings`, `DELETE
-/api/store/orphans`), answers on `SB_METRICS_PORT` too. Neither port is a
-filtered view of the other, and "publish only the metrics port" hides nothing:
-whoever reaches a socket reaches the whole app. The second socket is bound only
-when `/metrics` is on and the two ports differ.
+be N schedulers. Concurrency comes from `threads`. One master, **one socket, one
+application** (ADR-0033): `bind` holds `SB_WEB_PORT` and nothing else, and the
+whole app — the page, `/api` writes included, `/health` — answers on it. The
+second socket the exporter used to be bound to is gone, and with it the "publish
+only the metrics port" that hid nothing anyway: whoever reaches the socket
+reaches the whole app.
 
 ## The store
 
@@ -68,8 +66,10 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
 - **Scrape** — one self-rescheduling job per **held** symbol, a fresh 0–30 s
   jitter at every arming (anti-herd), `misfire_grace_time=None`. A closed market
   sleeps to the next open; a dead ticker backs off at `regular_interval ×
-  2^(n−3)`. A freshness sonde (`sb_price_staleness`) watches for a writer that
-  persists frozen values — purely diagnostic.
+  2^(n−3)`. A freshness sonde watches for a writer that persists frozen values —
+  purely diagnostic, and it says so twice: a `WARNING` in the logs and the
+  *stale* field of the scrape record the runtime tab renders. Its threshold is
+  the `staleness_horizon` dial.
 - **Ingestion** — armed by the boot, by the drop-folder watcher, or by a write
   through the API. Each run reconciles the per-symbol scrape jobs.
 - **Backfill** — an interval job driven by the replay rather than by current
@@ -127,15 +127,17 @@ it can open the store (ADR-0014). `boot_env.py` says them once.
 |---|---|---|
 | `SB_STORE_DIR` | `/data` | Directory holding `suivi-bourse.duckdb` |
 | `SB_IMPORT_DIR` | `/import` | The drop folder — optional |
-| `SB_WEB_PORT` | `8080` | First socket the one app is bound to (API, `/health`, and `/metrics` too) |
-| `SB_PROMETHEUS_ENABLED` | `true` | Mounts `/metrics`; `false` leaves the second socket unbound |
-| `SB_METRICS_PORT` | `8081` | Second socket the **same** app is bound to — it serves the API as well |
+| `SB_WEB_PORT` | `8080` | The one socket the app is bound to — the page, `/api`, `/health` |
+| `SB_PROMETHEUS_ENABLED` | `true` | **Read and acted on by nothing** since ADR-0033 |
+| `SB_METRICS_PORT` | `8081` | **Read and acted on by nothing** since ADR-0033 |
 | `LOG_LEVEL` | `INFO` | Logging level (here, since the likeliest failure is the store) |
 
 They are **directories, never files**; the defaults describe the container;
 **blank counts as unset** (compose renders an undefined substitution as an empty
 string). Every retired `SB_*`/`INFLUXDB_*` variable still set is named at start-up
-in **one grouped notice**, and that list is *computed*, never written down.
+in **one grouped notice**, and that list is *computed*, never written down. The
+two inert names above are `boot_env`'s last readers of themselves: they join that
+computed list — and the count above drops — at #809.
 
 ### The dials — the store is the only source
 
@@ -224,25 +226,6 @@ the file's own size when it is read. What comes back on success is
 a **receipt** — rows written, the period covered, the accounts and securities
 touched — and the same object answers #813's preview before anything is written.
 
-## Prometheus
-
-`/metrics` is a first-class product (ADR-0012): it is what makes the app usable
-with no interface. Prefix `sb_`, labels `share_name`/`share_symbol`/`account`.
-
-**Never a gauge whose unit depends on a setting**: `sb_share_price` publishes the
-converted price, `sb_share_price_native` the raw quote, `sb_fx_rate` the rate
-between them. While the reporting currency is unanswered the converted one and the
-rate are **absent** (not zero — a zero is a figure every `sum()` counts), and so
-is every `sb_account_*` / `sb_portfolio_*` series.
-
-`sb_store_ephemeral` (no label) is `1` when the store lives in the container's
-writable layer, `0` on a mount that outlives it, and **absent** while the mount is
-unobservable: it is the only notice a headless install gets about the state of its
-*installation*.
-
-A gauge whose field goes away is **retracted**, never left at its last value: a
-scraper cannot tell a stale figure from a current one.
-
 ## Module map
 
 ```
@@ -271,7 +254,6 @@ src/
 ├── advisories.py       # the five advisories: predicate in code, the table holds the ack
 ├── runtime_state.py / runtime_view.py   # the jobs' last-pass records, and how they read
 ├── store_reads.py / portfolio_view.py   # the UI read primitives, and their page shapes
-├── prometheus_exporter.py   # the sb_* registry (no server)
 ├── web/                # Flask: create_app, the /api blueprint, problem.py (RFC 9457), health
 └── events/             # schemas · loader · export · validator · aggregator · watcher
 ```
@@ -289,15 +271,15 @@ replaced by a double for the sake of being replaced.
 
 **Internal spies exist, and their subject is the negative.** What the app decided
 *not* to do writes no row and returns no payload, so there is nothing else to
-assert on: 77 call-shaped assertions live in nine files, and they are overwhelmingly
+assert on: 75 call-shaped assertions live in nine files, and they are overwhelmingly
 `assert_not_called` and `call_count`. Where they are:
 
 | File | What is doubled, and what it proves |
 |---|---|
-| `test_scheduling_wiring.py` (36) | `MagicMock(spec=BackgroundScheduler)` and the exporter — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
+| `test_scheduling_wiring.py` (35) | `MagicMock(spec=BackgroundScheduler)` — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
 | `test_watcher.py` (13) | the watchdog observer — scheduled once, started once, **not** re-triggered |
 | `test_metrics.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
-| `test_web_boot.py` (5) | the runtime classes — **not constructed** before the fork, shut down once after it |
+| `test_web_boot.py` (4) | the runtime classes — **not constructed** before the fork, shut down once after it |
 | `test_quotes.py` (4), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
 
 The rule is therefore *"a spy is the last resort, and it is for an absence"*, not
