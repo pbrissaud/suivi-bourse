@@ -998,50 +998,6 @@ def test_an_emptied_ledger_empties_both_tables(store, declare_ledger, mocker):
     assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
 
 
-def test_an_emptied_ledger_takes_the_gauges_with_the_rows(
-        store, declare_ledger, mocker):
-    """Criterion 8 of #708, at the level of the **row** rather than the field.
-
-    The store and ``/metrics`` have to say the same thing in the same cycle. The
-    per-field rule lives inside ``update_account``, which is only ever reached
-    for a row the cycle produced — so an account that stops producing one is
-    never visited, and its seven gauges would keep the last values they ever had
-    for the life of the process while ``prune_account_metrics`` emptied the
-    table beside them. A stale *real* figure is worse than the zero the rule was
-    written against: a scraper cannot tell it from a current one. Same argument,
-    same cycle, for the unlabelled ``sb_portfolio_*``.
-    """
-    from prometheus_client import generate_latest
-    from prometheus_exporter import PrometheusExporter
-
-    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0,
-                    account="PEA")]
-    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
-    m = _metrics(store, declare_ledger, events, portfolio)
-    m.prometheus = PrometheusExporter()
-    _fixed_today(mocker, 2024, 1, 2)
-
-    m.update_account_metrics()
-    assert m.prometheus.registry.get_sample_value(
-        'sb_account_total_value', {'account': 'PEA'}) == 1000.0
-    assert m.prometheus.registry.get_sample_value(
-        'sb_portfolio_total_value', {}) == 1000.0
-
-    store.execute("DELETE FROM event")
-    m.update_account_metrics()
-
-    # A *labelled* family stays declared with no child, which is how Prometheus
-    # spells an absent series: `# HELP` and `# TYPE`, and not one sample. The
-    # unlabelled seven have no child to remove, so their absence is the family
-    # leaving the registry altogether — the mechanism #708 had to add.
-    samples = [sample.name
-               for metric in m.prometheus.registry.collect()
-               for sample in metric.samples
-               if sample.name.startswith(('sb_account_', 'sb_portfolio_'))]
-    assert samples == []
-    assert 'sb_portfolio_' not in generate_latest(m.prometheus.registry).decode()
-
-
 def test_a_failed_write_leaves_the_previous_cache_whole(
         store, declare_ledger, mocker):
     """One transaction for the upsert and the prune, so a failure rolls both back.
@@ -1064,43 +1020,6 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
         m.update_account_metrics()
 
     assert store.query("SELECT * FROM account_metrics ORDER BY day") == before
-
-
-def test_prometheus_update_portfolio_sets_unlabeled_gauges():
-    from prometheus_client import CollectorRegistry
-    from prometheus_exporter import PrometheusExporter
-
-    exp = PrometheusExporter(registry=CollectorRegistry())
-    exp.update_portfolio(PortfolioTotalPoint(
-        day=date(2024, 1, 2),
-        cash_balance=100.0, holdings_value=900.0, total_value=1000.0,
-        net_contributed=800.0, xirr=0.12, gain_absolu=200.0, twr_index=120.0,
-    ))
-    reg = exp.registry
-    assert reg.get_sample_value("sb_portfolio_total_value") == 1000.0
-    assert reg.get_sample_value("sb_portfolio_xirr") == 0.12
-    assert reg.get_sample_value("sb_portfolio_twr_index") == 120.0
-
-
-def test_prometheus_update_account_sets_gauges():
-    from prometheus_client import CollectorRegistry
-    from prometheus_exporter import PrometheusExporter
-
-    exp = PrometheusExporter(registry=CollectorRegistry())
-    exp.update_account(AccountMetricPoint(
-        account="PEA", account_type="PEA",
-        day=date(2024, 1, 15),
-        cash_balance=100.0, holdings_value=900.0,
-        total_value=1000.0, net_contributed=800.0,
-    ))
-
-    reg = exp.registry
-    assert reg.get_sample_value("sb_account_cash_balance", {"account": "PEA"}) == 100.0
-    assert reg.get_sample_value("sb_account_holdings_value", {"account": "PEA"}) == 900.0
-    assert reg.get_sample_value("sb_account_total_value", {"account": "PEA"}) == 1000.0
-    assert reg.get_sample_value("sb_account_net_contributed", {"account": "PEA"}) == 800.0
-    assert reg.get_sample_value("sb_account_info", {
-        "account": "PEA", "account_type": "PEA"}) == 1.0
 
 
 # --------------------------------------------------------------------------- #

@@ -58,9 +58,8 @@ class _FakeConfigManager:
                                    cache_key=None)
 
 
-def _metrics(store, mocker):
-    m = main.SuiviBourseMetrics(_FakeConfigManager(store),
-                                prometheus_exporter=mocker.MagicMock())
+def _metrics(store):
+    m = main.SuiviBourseMetrics(_FakeConfigManager(store))
     m.backfill_delay = 0
     m.backfill_chunk_days = 365
     return m
@@ -530,7 +529,7 @@ def test_the_perf_recompute_carries_a_terminal_symbol(
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
     quotes.record_window_tried(store, 'AAPL', date(2024, 1, 15))
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
 
     metrics.update_account_metrics()
@@ -572,7 +571,7 @@ def test_a_symbol_waiting_for_a_rate_is_not_written_at_zero(
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
     _record_unit(store)
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
 
     metrics.update_account_metrics()
@@ -603,7 +602,7 @@ def test_the_perf_recompute_carries_a_symbol_quoted_in_no_nameable_unit(
         'INSERT INTO price_point (symbol, ts, price_native, price_converted, '
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
 
     metrics.update_account_metrics()
@@ -661,7 +660,7 @@ def test_a_symbol_waiting_for_a_rate_holds_the_horizon_back(
         '                         fx_rate) VALUES (?, ?, ?, ?, ?)',
         ['AAPL', datetime(2024, 1, 15, 16, 0, tzinfo=UTC), 187.5, None, None])
     _record_unit(store)
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
 
     horizons = metrics.update_account_metrics()
@@ -690,7 +689,7 @@ def test_the_perf_recompute_writes_nothing_at_all_under_the_horizon(
     symbol, any day*.
     """
     declare_ledger(store, _BOUGHT_ON_A_DAY_NOBODY_PRICED, [PEA])
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
 
     horizons = metrics.update_account_metrics()
@@ -728,7 +727,7 @@ def test_carrying_is_never_invoked_under_the_horizon(
     quotes.record_history(store, 'AAPL', [{
         'timestamp': datetime(2024, 1, 18, 16, 0, tzinfo=UTC),
         'price': 110.0, 'converted': 110.0, 'rate': 1.0}])
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.base_currency = 'EUR'
     spy = mocker.spy(performance, 'carrying_price')
 
@@ -754,7 +753,7 @@ def test_the_backward_pass_never_asks_for_a_window_before_the_acquisition(
     cases is a convention that rots with no test noticing.
     """
     _declare_symbol(store, 'AAPL')
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     fetch = mocker.patch.object(metrics, '_fetch_historical_data',
                                 return_value=[])
     target = datetime(2024, 1, 15, tzinfo=UTC)
@@ -772,7 +771,7 @@ def test_the_backward_pass_never_asks_for_a_window_before_the_acquisition(
 def test_a_long_chunk_is_clamped_to_the_acquisition(store, mocker):
     """The clamp is what keeps a 365-day chunk from reaching back past the target."""
     _declare_symbol(store, 'AAPL')
-    metrics = _metrics(store, mocker)
+    metrics = _metrics(store)
     metrics.backfill_chunk_days = 3650
     fetch = mocker.patch.object(metrics, '_fetch_historical_data',
                                 return_value=[])

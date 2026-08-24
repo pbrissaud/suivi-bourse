@@ -9,12 +9,11 @@ pure ``scheduling`` module can't: re-arm delay, ingest() reconciliation (add /
 remove / revive / untouched + the race guard), the write-gate vs reschedule-gate
 split, and the fetch-success gate (#609).
 
-The Prometheus exporter used to be this file's **second observation point**:
-nine tests read the fetch-success gate, the freshness sonde and the departure
-cleanup off the calls a double had received. They read them off the scrape
-**record** now — the one the runtime tab renders — and no gauge is left in an
-assertion here (#806, ADR-0033). What is left of the exporter is the single test
-whose *subject* it is, and that one goes with the module rather than moving.
+The exporter used to be this file's **second observation point**: nine tests
+read the fetch-success gate, the freshness sonde and the departure cleanup off
+the calls a double had received. They read them off the scrape **record** now —
+the one the runtime tab renders (#806, ADR-0033) — and the module they observed
+is gone.
 """
 
 import threading
@@ -106,18 +105,16 @@ class _FakeConfigManager:
         yield self._store
 
 
-def _metrics(shares, store, mocker, prometheus=None):
+def _metrics(shares, store, mocker):
     """A metrics object over a real store, with the declaration it references.
 
     The two ``INSERT``s are the configuration path's rows the foreign keys ask
     for: the market writer never invents a declaration, which is the schema rule
     (one writer per row) seen from a test's side.
 
-    **No exporter double by default** (#806): the wiring's proofs are the rows
-    the pass wrote and the record it published, so the object is built the way
-    the app itself will be built once ADR-0033 lands — ``prometheus_exporter``
-    at ``None``, every gauge call short-circuited by its own guard. The
-    parameter stays for the single test whose subject *is* the exporter.
+    **No exporter at all** (#806, ADR-0033): the wiring's proofs are the rows the
+    pass wrote and the record it published, which is also the whole of what the
+    app itself carries now.
     """
     for share in shares:
         store.execute(
@@ -128,7 +125,7 @@ def _metrics(shares, store, mocker, prometheus=None):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store)
-    m = SuiviBourseMetrics(cfg, prometheus_exporter=prometheus)
+    m = SuiviBourseMetrics(cfg)
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m
@@ -546,8 +543,9 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
     ``stale`` flag. The signal needs a first cycle to baseline, then a later
     cycle past the horizon.
 
-    The two instruments the sonde ever had were the log line and the gauge; the
-    record is the third and the one the interface renders (#628, #806).
+    The sonde had three instruments and the gauge left with the exporter, so
+    what is asserted here is now the whole of it: the log line, and the record
+    the interface renders (#628, #806, #808).
     """
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
@@ -825,28 +823,6 @@ def test_selling_out_removes_the_scrape_job_and_forgets_its_last_pass(
     assert m.recorder.scrape_of("ALO") is None
 
 
-def test_a_failing_gauge_removal_never_aborts_the_reconcile(
-        store, mocker):
-    """The one test in this file whose **subject** is the exporter (#806).
-
-    It is not an observation point here: the double is the fault being injected,
-    and the assertion is on the pass carrying on. The behaviour has no successor
-    once ADR-0033 removes the module — there is nothing left in that loop that
-    can raise — so it is left standing while the exporter stands, and goes with
-    it rather than being re-anchored on nothing.
-    """
-    prom = mocker.MagicMock()
-    prom.forget_quotes.side_effect = RuntimeError("registry is unhappy")
-    m = _metrics([_share("AAPL", quantity=0), _share("MSFT", quantity=0)],
-                 store, mocker, prometheus=prom)
-    m.scheduler.get_jobs.return_value = [
-        _job(_scrape_job_id("AAPL")), _job(_scrape_job_id("MSFT"))]
-
-    m._reconcile_jobs()
-
-    assert m.scheduler.remove_job.call_count == 2
-
-
 def test_buying_back_re_arms_the_job_with_nothing_to_unset(store, mocker):
     """No flag was written, so the revival is the ordinary revive path (#672 D5)."""
     m = _metrics([_share("ALO", quantity=0)], store, mocker)
@@ -935,7 +911,7 @@ def test_ingest_reconciles_against_scheduler(
 
 def test_reconcile_noop_without_scheduler():
     cfg = _FakeConfigManager([_share("AAPL")])
-    m = SuiviBourseMetrics(cfg, prometheus_exporter=None)
+    m = SuiviBourseMetrics(cfg)
     # scheduler is None -> reconcile is a safe no-op (unit tests that never wire
     # a scheduler still exercise ingest()).
     assert m.scheduler is None

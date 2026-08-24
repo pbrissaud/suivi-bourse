@@ -118,14 +118,6 @@ def test_a_relative_path_is_unknown_rather_than_matched_on_the_root():
         == mounts.UNKNOWN
 
 
-def test_is_ephemeral_keeps_unknown_apart_from_persistent():
-    """``None`` is not ``False``. A gauge reading ``0`` states that the store
-    *is* kept, and an observer that could not look has no ground to state it."""
-    assert mounts.is_ephemeral(mounts.EPHEMERAL) is True
-    assert mounts.is_ephemeral(mounts.PERSISTENT) is False
-    assert mounts.is_ephemeral(mounts.UNKNOWN) is None
-
-
 # --------------------------------------------------------------------- #
 # The comparison is made on the resolved path
 # --------------------------------------------------------------------- #

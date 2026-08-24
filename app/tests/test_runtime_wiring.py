@@ -95,8 +95,7 @@ def _metrics(shares, store, mocker, **manager):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store, **manager)
-    m = main.SuiviBourseMetrics(
-        cfg, prometheus_exporter=mocker.MagicMock())
+    m = main.SuiviBourseMetrics(cfg)
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m

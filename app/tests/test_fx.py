@@ -451,7 +451,7 @@ class _FakeConfigManager:
         yield self._store
 
 
-def _metrics(store, mocker, shares=None, base_currency=None):
+def _metrics(store, shares=None, base_currency=None):
     shares = shares if shares is not None else [_share()]
     for share in shares:
         store.execute(
@@ -460,9 +460,7 @@ def _metrics(store, mocker, shares=None, base_currency=None):
             [share['account'], share['account']])
         store.execute("INSERT INTO symbol (symbol) VALUES (?) "
                       "ON CONFLICT (symbol) DO NOTHING", [share['symbol']])
-    metrics = main.SuiviBourseMetrics(
-        _FakeConfigManager(shares, store),
-        prometheus_exporter=mocker.MagicMock())
+    metrics = main.SuiviBourseMetrics(_FakeConfigManager(shares, store))
     metrics.base_currency = base_currency
     return metrics
 
@@ -485,7 +483,7 @@ def test_a_london_position_is_converted_from_pence_and_says_so(
     The row is a journal and is asserted as one: 250 pence at 1,20 €/£ is
     3,00 €, and `price_native × fx_rate` gives it back.
     """
-    metrics = _metrics(store, mocker, shares=[_share('VOD.L')],
+    metrics = _metrics(store, shares=[_share('VOD.L')],
                        base_currency='EUR')
     _fixed_rate(metrics, {'GBPEUR=X': 1.20})
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -507,7 +505,7 @@ def test_a_missing_rate_writes_the_point_with_no_converted_price(
     Yahoo gives nothing under the hour past 60 days — while the conversion can be
     repaired by the lateral pass, which is the only reason a `NULL` here is
     viable at all."""
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _fixed_rate(metrics, {})          # the pair resolves to nothing
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
@@ -526,7 +524,7 @@ def test_no_reporting_currency_scrapes_natively_and_converts_nothing(
         store, mocker, monkeypatch, fake_ticker):
     """Nothing refuses while the question is unanswered — that is the whole
     design. Prices go on being collected, so answering late costs no history."""
-    metrics = _metrics(store, mocker, base_currency=None)
+    metrics = _metrics(store, base_currency=None)
     fetched = []
     metrics.rates = fx.Rates(lambda pair: fetched.append(pair))
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -549,7 +547,7 @@ def test_answering_the_currency_converts_from_the_next_cycle_on(
     conversion — repairing those is #704's lateral pass — and the very next
     write carries all three columns. Nothing had to be replayed for that.
     """
-    metrics = _metrics(store, mocker, base_currency=None)
+    metrics = _metrics(store, base_currency=None)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
@@ -579,7 +577,7 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     into a chart of a share price — and the point is a journal, so the rate on
     each row has to be the one that row's figure came from.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     metrics._share_info_cache['AAPL'] = {'currency': 'USD'}
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
@@ -616,7 +614,7 @@ def test_an_event_amount_is_never_converted_because_it_is_already_the_debit(
     basis its file recorded, untouched, beside a price that is divided by a
     hundred and multiplied by a rate.
     """
-    metrics = _metrics(store, mocker, shares=[_share('VOD.L')],
+    metrics = _metrics(store, shares=[_share('VOD.L')],
                        base_currency='EUR')
     _fixed_rate(metrics, {'GBPEUR=X': 1.20})
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -640,7 +638,7 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
     produced, which is what a read-time join would have cost the hottest query
     of the product. And not a fifth job.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     metrics.scheduler = mocker.MagicMock()
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -673,7 +671,7 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     yfinance needs one test of its own, or the whole feature is green against a
     fetch nobody ever calls.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
         close=0.92, rows=3, start='2024-06-01'))
 
@@ -712,7 +710,7 @@ def test_the_freshness_sonde_still_watches_the_native_price(
     """A converted price moves whenever the rate does, so watching it would let
     a currency tick pass for a price that is still being refreshed — the sonde
     would answer *fresh* about a symbol frozen since Tuesday (spec #695 § 7)."""
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
     monkeypatch.setattr(main.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
@@ -808,7 +806,7 @@ def test_the_lateral_pass_repairs_by_update_and_never_by_insert(
     ever. Each day is converted at the rate of **its own day**, so the stored row
     stays a journal one can read back.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
@@ -840,7 +838,7 @@ def test_an_unanswered_reporting_currency_never_arms_unconvertible(
     here would make answering the dial change nothing for the whole stock
     already scraped — which is the one gesture the pass exists to honour.
     """
-    metrics = _metrics(store, mocker, base_currency=None)
+    metrics = _metrics(store, base_currency=None)
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch()
@@ -867,7 +865,7 @@ def test_a_pair_that_does_not_resolve_arms_unconvertible_and_names_itself(
     because a state word with no subject leaves a reader in front of an empty
     column with no explanation.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency='XYZ')
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
@@ -891,7 +889,7 @@ def test_a_failed_rate_fetch_backs_off_like_617_and_retries_indefinitely(
     then the wait doubles — and there is **no terminal**, ever: nothing was
     learnt about the pair, so nothing may be concluded about it.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(
@@ -926,7 +924,7 @@ def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
     ``failed=True`` would count a cycle nobody attempted. The previous record
     stands, which is the honest reading — the last pass *is* still the last one.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch(raises=RuntimeError('yahoo is down'))
@@ -945,7 +943,7 @@ def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
 def test_the_first_conversion_that_lands_resets_the_back_off(
         store, mocker, monkeypatch):
     """The reset #617 states, on the pass's own terms."""
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(
@@ -976,7 +974,7 @@ def test_a_symbol_yahoo_names_no_currency_for_says_so_instead_of_failing_at_it(
     #773's repair, and the question is put **once**: without that the pass would
     re-ask on every cycle, for ever, for a symbol Yahoo has nothing to say about.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={})
@@ -1006,7 +1004,7 @@ def test_the_pass_walks_one_chunk_a_cycle_from_the_oldest_missing_day(
     day still missing a conversion, so a stock of five years is repaired the way
     it was fetched: one chunk per cycle, on the backfill's cadence.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     quotes.record_history(store, 'AAPL', [
         {'timestamp': datetime(2022, 6, 1, 17, 0, tzinfo=UTC), 'price': 100.0},
         {'timestamp': datetime(2024, 6, 1, 17, 0, tzinfo=UTC), 'price': 200.0},
@@ -1035,7 +1033,7 @@ def test_answering_the_reporting_currency_starts_the_repair_of_the_whole_stock(
     than *the next cycle will read it*. The pass rides on the backfill, so
     triggering it is bringing that job's next run forward.
     """
-    metrics = _metrics(store, mocker, base_currency=None)
+    metrics = _metrics(store, base_currency=None)
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     scheduler = mocker.MagicMock()
@@ -1067,7 +1065,7 @@ def test_a_declared_currency_taken_from_an_import_triggers_it_too(
     takes it — which *is* the answer to the app's one question, so it owes the
     same repair as the one typed into the form.
     """
-    metrics = _metrics(store, mocker, base_currency=None)
+    metrics = _metrics(store, base_currency=None)
     scheduler = mocker.MagicMock()
     metrics.scheduler = scheduler
     store.execute(
@@ -1087,7 +1085,7 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
     history is what the account's returns are computed from, so an unconverted
     point there is a day missing from that computation.
     """
-    metrics = _metrics(store, mocker, shares=[_share(quantity=0)],
+    metrics = _metrics(store, shares=[_share(quantity=0)],
                        base_currency='EUR')
     _unconverted(store)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
@@ -1143,7 +1141,7 @@ def _sold_before_the_install(store, mocker, monkeypatch, closes, info=None):
         info={'currency': 'USD', 'exchange': 'NMS', 'quoteType': 'EQUITY'}
         if info is None else info,
         frame=frame)
-    metrics = _metrics(store, mocker, shares=[_share(quantity=0)],
+    metrics = _metrics(store, shares=[_share(quantity=0)],
                        base_currency='EUR')
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(main.yf, 'Ticker', instrument)
@@ -1199,7 +1197,7 @@ def test_the_learnt_currency_is_written_once_and_never_asked_for_again(
     answer lands in ``symbol_quote``, so the next cycle reads it instead of
     asking.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
@@ -1229,7 +1227,7 @@ def test_a_failed_attribute_fetch_backs_off_rather_than_concluding_anything(
     answer* memory either, or one flaky minute would silence the symbol for the
     life of the process.
     """
-    metrics = _metrics(store, mocker, base_currency='EUR')
+    metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(raises=RuntimeError('yahoo is down'))
