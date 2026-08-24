@@ -191,6 +191,24 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     expect(formatMessage('en', said.message, said.values)).toContain('10.5')
   })
 
+  it('agrees the counted noun with the quantity, from the catalogue', () => {
+    // A file selling one share of a security never bought is reachable, and
+    // *vend 1 parts* / *sells 1 shares* is the catalogue rendering its own
+    // hole. The branch lives in the message, where the language decides it —
+    // French counts 1,5 as singular and English does not.
+    const one = problemMessage(oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1, owned: 0 }))
+    expect(formatMessage('fr', one.message, one.values)).toContain('vend 1 part de AAPL')
+    expect(formatMessage('en', one.message, one.values)).toContain('sells 1 share of AAPL')
+
+    const many = problemMessage(oversell({ gesture: 'remove', symbol: 'AAPL', wanted: 2, owned: 0 }))
+    expect(formatMessage('fr', many.message, many.values)).toContain('vend 2 parts')
+    expect(formatMessage('en', many.message, many.values)).toContain('sells 2 shares')
+
+    const half = problemMessage(oversell({ gesture: 'write', symbol: 'AAPL', wanted: 1.5, owned: 0 }))
+    expect(formatMessage('fr', half.message, half.values)).toContain('vend 1,5 part de AAPL')
+    expect(formatMessage('en', half.message, half.values)).toContain('sells 1.5 shares of AAPL')
+  })
+
   it('carries what a refusal declares beside its four standard members', () => {
     // RFC 9457's extension members, kept whole: the three numbers here, `key`
     // on a `422`, `limit` on a `413`. `ApiProblem` used to drop all of them.
