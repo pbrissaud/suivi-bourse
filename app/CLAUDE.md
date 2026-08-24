@@ -29,7 +29,7 @@ reaches the whole app.
 
 ## The store
 
-`store.py` owns the file: the connection, the DDL of the twelve tables, the seed.
+`store.py` owns the file: the connection, the DDL of the eleven tables, the seed.
 
 - **One thread inside the connection at a time**, reentrant lock;
   `Store.transaction()` holds it from `BEGIN` to `COMMIT` (a transaction on one
@@ -37,9 +37,11 @@ reaches the whole app.
 - **DDL with `IF NOT EXISTS`, no migration machinery.** A new column would exist
   on no store created before it: derive at read time instead.
 - **Every table has exactly one writer** — the configuration path owns
-  `import_source`/`account`/`symbol`/`event`/`setting`/`advisory`, the ingestion
-  `position`/`account_state`, the market `symbol_quote`/`price_point`, the perf
-  job `account_metrics`/`portfolio_totals`.
+  `account`/`symbol`/`setting`/`advisory`, `entries.py` owns `event` **whole**
+  (ADR-0032, #816: one population, one writer, the named exception of
+  `reassignment.py` apart), the ingestion `position`/`account_state`, the market
+  `symbol_quote`/`price_point`, the perf job
+  `account_metrics`/`portfolio_totals`.
 - **`price_point` carries no primary key and no foreign key** (ADR-0007): a DuckDB
   ART index is a second copy of the data in resident memory (+563 MB on a 319 MB
   base). Uniqueness moves to the writers.
@@ -161,14 +163,17 @@ Only what actually changed is re-armed (`reschedule_job` recomputes from *now*).
 ### The ledger (CSV/XLSX)
 
 A file reaches the app **one way** (ADR-0032): `POST /api/events/import` takes
-one in a `multipart/form-data` body and writes its rows through `entries` — no
-source row, no provenance, nothing to revoke. The drop folder, its watcher and
-`SB_IMPORT_DIR` left with #815, so the app reads no directory at all and there
-is one mount. A file is an **accounts source** or an **event source**
-according to its *header*, never its name: `id` + `type` with no `event_type`
-makes it a declaration. No filename has a special meaning — except on the
-upload, where a v4 `config.yaml`/`settings.yaml` is recognised **by its name**
-and refused with the migration page, having no header to read.
+one in a `multipart/form-data` body and writes its rows through `entries`. The
+drop folder, its watcher and `SB_IMPORT_DIR` left with #815; `import_source`,
+`event.source_id`/`source_sheet`/`source_row` and the `409` on `PUT`/`DELETE`
+left with #816. **There is one population of rows and one writer**: a row a file
+laid down is corrected and deleted exactly like a row somebody typed, and
+*"the import path has no row-level write"* has nothing left to be true about.
+A file is still read for what it **is** — `id` + `type` with no `event_type` is
+a declaration of accounts, and the upload refuses it by name (ADR-0034) — and
+no filename has a special meaning, except a v4 `config.yaml`/`settings.yaml`,
+recognised **by its name** and refused with the migration page, having no header
+to read.
 
 ```csv
 date,event_type,symbol,name,quantity,unit_price,fee,amount,notes
@@ -193,9 +198,9 @@ means `default` **until something is declared**, and is an error afterwards), an
 the way in).
 
 Events are **sorted by date** before processing, whatever their order in the
-files. Accounts sources are imported **before** event sources. An event file
-naming an undeclared account is not imported at all. An account is **undeletable
-while an event names it** (`409`, the cascade is refused rather than performed).
+file. An event file naming an undeclared account is not imported at all. An
+account is **undeletable while an event names it** (`409`, the cascade is
+refused rather than performed).
 
 If ingestion fails, **the previous valid configuration is kept** and scraping
 continues: a snapshot is published only once complete and validated.
@@ -248,8 +253,9 @@ same two judgements the write runs (`entries.judge`: the validator over the whol
 file, then the replay of the ledger it would leave), answers the same shape with
 the same refusals — and **writes nothing at all**, which is why it is a `200`.
 It holds **no server state**: there is no pending-import id, because that
-identifier would be `import_source` under another name with a lifetime and a
-sweeper to write, so the front commits by re-uploading the same file.
+identifier would be the `import_source` table #816 deleted, under another name
+and with a lifetime and a sweeper to write, so the front commits by re-uploading
+the same file.
 
 **Duplicates are caught by content and never by a constraint.** The key is
 `entries.DUPLICATE_KEY_COLUMNS` — `(date, event_type, account, symbol, quantity,
@@ -268,7 +274,7 @@ puts a constraint where the error enters, which is at the import.
 src/
 ├── gunicorn.conf.py    # entrypoint AND boot sequence
 ├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
-├── store.py            # the connection, the DDL of the twelve tables, the seed
+├── store.py            # the connection, the DDL of the eleven tables, the seed
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
@@ -281,9 +287,9 @@ src/
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
-├── ledger.py           # the ledger's reads, and the provenance the next ticket retires
+├── ledger.py           # the ledger's reads: read_events, the stamp, the last write, the orphans
 ├── uploads.py          # the gesture: one file in, read once, refused by name
-├── entries.py          # the row's four gestures (source_id NULL only) + the bulk one, which reads no provenance
+├── entries.py          # the one writer of `event`: the row's four gestures + the bulk one
 │                       #   and the forecast that writes none: the content key, the split, the judgement
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
