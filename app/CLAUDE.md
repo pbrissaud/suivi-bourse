@@ -14,7 +14,7 @@ split in two by the `fork()`:
   publication of the config snapshot. Pure work only: no thread, no socket, no fd
   survives a fork. A failure here is `sys.exit(1)`.
 - **`post_fork`** — `main.start_runtime()`: the store connection (its own), the
-  `BackgroundScheduler`, the watcher, the first `ingest()`. A failure here
+  `BackgroundScheduler`, the first `ingest()`. A failure here
   **re-raises**: gunicorn reads an exception as `WORKER_BOOT_ERROR` and halts the
   arbiter, where an exit code would be respawned forever.
 - **`worker_exit`** — `main.shutdown_runtime()`, closing the store last.
@@ -57,9 +57,9 @@ reaches the whole app.
 
 ```text
 SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE (PERF_TICK)
-• yfinance.Ticker()    • boot / watcher /       • ladder collapse   • replays the Timeline
-• marketState→cadence    a write — never        • backward pass     • full recompute
-• REGULAR: poll+write    a timer                • forward pass      • upsert + bounded prune
+• yfinance.Ticker()    • boot or a write —      • ladder collapse   • replays the Timeline
+• marketState→cadence    never a timer          • backward pass     • full recompute
+• REGULAR: poll+write                           • forward pass      • upsert + bounded prune
 • closed: sleep to open                         • lateral pass
 ```
 
@@ -70,8 +70,10 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
   purely diagnostic, and it says so twice: a `WARNING` in the logs and the
   *stale* field of the scrape record the runtime tab renders. Its threshold is
   the `staleness_horizon` dial.
-- **Ingestion** — armed by the boot, by the drop-folder watcher, or by a write
-  through the API. Each run reconciles the per-symbol scrape jobs.
+- **Ingestion** — armed by the boot or by a write through the API, and by
+  nothing else since ADR-0032 took the drop folder and its watcher. Each run
+  reconciles the per-symbol scrape jobs; the write's own passes `force=True`,
+  because `ledger.stamp` does not move for an edit that changes no count.
 - **Backfill** — an interval job driven by the replay rather than by current
   holdings: the symbol set is the union over the *whole* timeline, each symbol
   carrying its own holding window (ADR-0009). Three independent passes plus the
@@ -83,11 +85,10 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
   never a `DELETE`+`INSERT`. The series is **dense over calendar days**. It also
   runs **on every write through `/api`**, inside `replay_after_write` and in the
   same shape (ADR-0032). The tick is what is left for the rest: a quote landing,
-  a backfill chunk — **and a file dropped in `/import`**, whose watcher is wired
-  straight to `ingest` and therefore still leaves the curves up to one
-  `PERF_TICK` behind. That last one is a gap rather than a design: ADR-0032
-  removes the drop folder, so it closes with the mount rather than by a second
-  spelling of the seam. **One pass at a time** (`_perf_lock`, reentrant): the
+  a backfill chunk. There was a third — a file dropped in `/import`, whose
+  watcher was wired straight to `ingest` and therefore left the curves up to one
+  `PERF_TICK` behind — and it closed with the mount rather than by a second
+  spelling of the seam (#815). **One pass at a time** (`_perf_lock`, reentrant): the
   pass computes outside the writers' mutex and the prune is bounded by its *own*
   spans, so a stale pass committing last would delete the days a fresh one just
   wrote. The lock order is `_perf_lock` then `writing()`, never the reverse.
@@ -118,7 +119,7 @@ quote is a number **and** a unit: with no nameable currency there is no quote.
 
 ## Configuration
 
-### Environment variables — four names, no fifth
+### Environment variables — three names, no fourth
 
 What is left in the environment is exactly what the process must know **before**
 it can open the store (ADR-0014). `boot_env.py` says them once.
@@ -126,18 +127,19 @@ it can open the store (ADR-0014). `boot_env.py` says them once.
 | Variable | Default | Role |
 |---|---|---|
 | `SB_STORE_DIR` | `/data` | Directory holding `suivi-bourse.duckdb` |
-| `SB_IMPORT_DIR` | `/import` | The drop folder — optional |
 | `SB_WEB_PORT` | `8080` | The one socket the app is bound to — the page, `/api`, `/health` |
 | `LOG_LEVEL` | `INFO` | Logging level (here, since the likeliest failure is the store) |
 
-They are **directories, never files**; the defaults describe the container;
+The path is **a directory, never a file**; the defaults describe the container;
 **blank counts as unset** (compose renders an undefined substitution as an empty
 string). Every retired `SB_*`/`INFLUXDB_*` variable still set is named at start-up
 in **one grouped notice**, and that list is *computed*, never written down.
 The two names the exporter answered for left this table with it (ADR-0033,
-#809) and are in `boot_env.DELETED`, so an install that still sets one hears it
-in that notice as **removed with no successor** — the gauges became the
-health body and the runtime tab, never a dial to turn them back on.
+#809) and `SB_IMPORT_DIR` with the drop folder (ADR-0032, #815); all three are
+in `boot_env.DELETED`, so an install that still sets one hears it in that notice
+as **removed with no successor** — the gauges became the health body and the
+runtime tab, and the folder became a gesture, never a dial to turn either back
+on.
 
 ### The dials — the store is the only source
 
@@ -158,11 +160,11 @@ Only what actually changed is re-armed (`reschedule_job` recomputes from *now*).
 
 ### The ledger (CSV/XLSX)
 
-A file reaches the app **two ways, and that is deliberate for two tickets**
-(ADR-0032): `POST /api/events/import` takes one in a `multipart/form-data` body
-and writes its rows through `entries` — no source row, no provenance, nothing to
-revoke — and the drop folder goes on importing whatever is in it until #815
-removes the mount. A file is an **accounts source** or an **event source**
+A file reaches the app **one way** (ADR-0032): `POST /api/events/import` takes
+one in a `multipart/form-data` body and writes its rows through `entries` — no
+source row, no provenance, nothing to revoke. The drop folder, its watcher and
+`SB_IMPORT_DIR` left with #815, so the app reads no directory at all and there
+is one mount. A file is an **accounts source** or an **event source**
 according to its *header*, never its name: `id` + `type` with no `event_type`
 makes it a declaration. No filename has a special meaning — except on the
 upload, where a v4 `config.yaml`/`settings.yaml` is recognised **by its name**
@@ -279,18 +281,18 @@ src/
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
-├── ledger.py           # the drop folder's import: provenance and revocation
+├── ledger.py           # the ledger's reads, and the provenance the next ticket retires
 ├── uploads.py          # the gesture: one file in, read once, refused by name
 ├── entries.py          # the row's four gestures (source_id NULL only) + the bulk one, which reads no provenance
 │                       #   and the forecast that writes none: the content key, the split, the judgement
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
-├── advisories.py       # the five advisories: predicate in code, the table holds the ack
+├── advisories.py       # the three advisories: predicate in code, the table holds the ack
 ├── runtime_state.py / runtime_view.py   # the jobs' last-pass records, and how they read
 ├── store_reads.py / portfolio_view.py   # the UI read primitives, and their page shapes
 ├── web/                # Flask: create_app, the /api blueprint, problem.py (RFC 9457), health
-└── events/             # schemas · loader · export · validator · aggregator · watcher
+└── events/             # schemas · loader · export · validator · aggregator
 ```
 
 ## The tests
@@ -306,19 +308,23 @@ replaced by a double for the sake of being replaced.
 
 **Internal spies exist, and their subject is the negative.** What the app decided
 *not* to do writes no row and returns no payload, so there is nothing else to
-assert on: 75 call-shaped assertions live in nine files, and they are overwhelmingly
+assert on: 62 call-shaped assertions live in eight files, and they are overwhelmingly
 `assert_not_called` and `call_count`. Where they are:
 
 | File | What is doubled, and what it proves |
 |---|---|
 | `test_scheduling_wiring.py` (35) | `MagicMock(spec=BackgroundScheduler)` — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
-| `test_watcher.py` (13) | the watchdog observer — scheduled once, started once, **not** re-triggered |
 | `test_metrics.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
 | `test_web_boot.py` (4) | the runtime classes — **not constructed** before the fork, shut down once after it |
 | `test_quotes.py` (4), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
 
 The rule is therefore *"a spy is the last resort, and it is for an absence"*, not
 *"there are no spies"*. If a row or a payload can answer the question, it answers it.
+
+`test_watcher.py` was the second-largest of them (13, the watchdog observer:
+scheduled once, started once, **not** re-triggered) and it left with no
+replacement — the observer no longer exists, so there is no absence left to
+prove (ADR-0032). It is the only place in the v5 rewrite where that is true.
 
 And **there is one clock, and it is the product's**: every read of it
 is UTC-qualified, and `test_suite_conventions.py` holds that on the source over

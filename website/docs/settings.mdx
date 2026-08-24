@@ -73,20 +73,21 @@ has the rest of the back-off.
 
 ## What the container imposes
 
-Four names. This is the complete list of what the app reads from its
+Three names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
 | Variable | Default | What it decides |
 |---|---|---|
 | `SB_STORE_DIR` | `/data` | the directory the store lives in |
-| `SB_IMPORT_DIR` | `/import` | the directory the drop folder is read from |
 | `SB_WEB_PORT` | `8080` | the socket the app is bound to |
 | `LOG_LEVEL` | `INFO` | how loudly the app logs |
 
-- **The two paths are directories, never files.** The app names its own store
-  file inside the one and reads whatever it finds in the other. That removes the
-  entire class of mistake where you point at a file whose parent directory is
-  not mounted.
+- **The path is a directory, never a file.** The app names its own store file
+  inside it. That removes the entire class of mistake where you point at a file
+  whose parent directory is not mounted.
+- **A variable that is set and no longer read is named at start-up**, in one
+  grouped line, and obeyed by nothing. `SB_IMPORT_DIR` is one of those: the
+  folder it named is gone, and a file is handed to the app instead.
 - **The defaults describe the container**, and it is the deployment *without*
   Docker that overrides them — see
   [Install without Docker](./install-without-docker.mdx). A plain `docker run`
