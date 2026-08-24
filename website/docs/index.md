@@ -27,8 +27,9 @@ returns — in one container, with nothing else to install.
 - **It shows you four pages** — a dashboard, your shares, your accounts, and
   the data you gave it — and each figure explains, on the figure itself, the
   convention it rests on.
-- **It exposes Prometheus gauges.** They are not a legacy: they are what makes
-  the app usable by someone who never opens the interface at all.
+- **It has one interface, and it is that one.** Everything the app knows about
+  itself it says on those pages; there is no second surface to scrape and no
+  second port to publish.
 
 ## What it is not
 

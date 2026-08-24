@@ -32,22 +32,21 @@ LABEL='suivi-bourse-contract=744'
 BARE=sb-contract-bare
 KEPT=sb-contract-kept
 PORTS=sb-contract-ports
-NOMETRICS=sb-contract-nometrics
 LEGACY=sb-contract-legacy
 STORE_VOLUME=sb-contract-store
 
 # Host ports, all in one place and all **below** the ephemeral range the runner
 # allocates from — Linux hands out 32768-60999 — so the kernel never gives one
 # of these to an outbound socket while the script is running. The container-side
-# ports differ per case on purpose: $PORTS is the one that proves
-# `SB_WEB_PORT`/`SB_METRICS_PORT` are *read* rather than merely defaulted.
+# ports differ per case on purpose: $PORTS is the one that proves `SB_WEB_PORT`
+# is *read* rather than merely defaulted.
+#
+# One host port per container, because the image publishes one (ADR-0033): a
+# second `-p` here would be the very dead mapping this script exists to keep out
+# of the documentation.
 BARE_WEB=18080
-BARE_METRICS=18081
 KEPT_WEB=18090
-KEPT_METRICS=18091
 PORTS_WEB=19090
-PORTS_METRICS=19091
-NOMETRICS_WEB=19080
 LEGACY_WEB=19081
 
 # How long a container may take to answer, and how long its own probe may take
@@ -157,31 +156,40 @@ condition_keys() {
     docker logs "$1" 2>&1 | grep -o 'condition="[a-z_]*"' | sort || true
 }
 
+# The store's persistence as the app itself publishes it (ADR-0033). Read from
+# `/api/runtime` and not from `/api/store`: it is the one that makes no query,
+# so it still answers on an install whose store will not open — which is exactly
+# when *"where did my data go?"* is asked. `tr` then `sed` rather than a JSON
+# parser, because the runner is not promised one and the member is a bare word.
+persistence_of() {
+    curl -s --max-time 10 "$1/api/runtime" \
+        | tr ',{}' '\n\n\n' \
+        | sed -n 's/^[[:space:]]*"persistence"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p'
+}
+
 # --------------------------------------------------------------------------- #
-# The five containers, started together
+# The four containers, started together
 # --------------------------------------------------------------------------- #
 #
 # Started before anything is asserted, because their boots are independent and
-# serialising five of them would spend a minute of a pull request's check on
+# serialising four of them would spend a minute of a pull request's check on
 # waiting alone.
 
 docker volume create --label "$LABEL" "$STORE_VOLUME" >/dev/null
 
 # Bare: no volume, no variable. The trial run of ADR-0015.
-start "$BARE" -p "$BARE_WEB:8080" -p "$BARE_METRICS:8081"
+start "$BARE" -p "$BARE_WEB:8080"
 
 # The same image with a named volume on /data — the installation that keeps
 # what it writes.
-start "$KEPT" -v "$STORE_VOLUME:/data" -p "$KEPT_WEB:8080" -p "$KEPT_METRICS:8081"
+start "$KEPT" -v "$STORE_VOLUME:/data" -p "$KEPT_WEB:8080"
 
-# Both ports moved, so the assertion is about the *variables* and not about two
-# numbers that happen to be the defaults.
-start "$PORTS" -e SB_WEB_PORT=9090 -e SB_METRICS_PORT=9091 \
-    -p "$PORTS_WEB:9090" -p "$PORTS_METRICS:9091"
-
-# /metrics unmounted, and with it the second socket (gunicorn.conf.py builds
-# `bind` from the same flag).
-start "$NOMETRICS" -e SB_PROMETHEUS_ENABLED=false -p "$NOMETRICS_WEB:8080"
+# The port moved, so the assertion is about the *variable* and not about a
+# number that happens to be the default. It is also the container assertion 5
+# goes looking for a second socket in, and moving the port is what makes that
+# search mean something: neither the number the image used to expose nor the one
+# next to the port actually in use is bound.
+start "$PORTS" -e SB_WEB_PORT=9090 -p "$PORTS_WEB:9090"
 
 # A v4 `.env` leftover: set, named at start-up, obeyed by nothing.
 start "$LEGACY" -e SB_INGESTION_INTERVAL=42 -p "$LEGACY_WEB:8080"
@@ -215,22 +223,23 @@ said="$(count_in_logs "$KEPT" 'condition="store_ephemeral"')"
 [ "$said" -eq 0 ] || { dump "$KEPT"; fail "assertion 4: a mounted store still logged the ephemeral condition $said time(s)"; }
 ok 'a mounted store says nothing about persistence'
 
-assertion '5 — /health on SB_WEB_PORT, /metrics on SB_METRICS_PORT, and false leaves the socket unbound'
+assertion '5 — /health on SB_WEB_PORT, and nothing answers on a second port'
 wait_serving "$PORTS" "http://127.0.0.1:$PORTS_WEB/health"
 code="$(http_code "http://127.0.0.1:$PORTS_WEB/health")"
 [ "$code" = '200' ] || fail "assertion 5: /health on SB_WEB_PORT=9090 answered $code"
-code="$(http_code "http://127.0.0.1:$PORTS_METRICS/metrics")"
-[ "$code" = '200' ] || fail "assertion 5: /metrics on SB_METRICS_PORT=9091 answered $code"
-ok 'both routes follow their variable rather than a hard-coded number'
-
-wait_serving "$NOMETRICS" "http://127.0.0.1:$NOMETRICS_WEB/health"
-code="$(http_code "http://127.0.0.1:$NOMETRICS_WEB/health")"
-[ "$code" = '200' ] || fail "assertion 5: with /metrics off, /health answered $code"
+# One socket, and this is where that is attested rather than read off the
+# `EXPOSE` line (ADR-0033). Three assertions collapse into this one — that a
+# second socket exists, that it answers, and that a variable silences it — and
+# what replaces them says the thing itself: nothing is bound but the web port.
+# `8081` is the number the image used to expose and the one a copied `docker run
+# -p` still carries; `9091` is the neighbour of the port in use, so neither a
+# hard-coded default nor an offset from `SB_WEB_PORT` can pass this.
+#
 # Asked from **inside** the container: a published host port whose upstream is
 # not listening still completes a TCP handshake with the userland proxy, so
-# probing 8081 from the runner would confuse *unbound* with *refused later*.
-# Python does the asking because the runtime image ships no curl (which is also
-# why the healthcheck is a `python -c`).
+# probing from the runner would confuse *unbound* with *refused later*. Python
+# does the asking because the runtime image ships no curl (which is also why the
+# healthcheck is a `python -c`).
 #
 # The instrument is proved before it is trusted, because the probe below reads
 # **any** failure of `docker exec` as "nothing is listening": no python, no
@@ -238,25 +247,32 @@ code="$(http_code "http://127.0.0.1:$NOMETRICS_WEB/health")"
 # refuses elsewhere — an assertion that passes on a broken sonde — so one
 # separate `docker exec` establishes that python answers at all, and only then
 # is its silence allowed to mean an unbound socket.
-docker exec "$NOMETRICS" python -c 'import socket' >/dev/null 2>&1 \
-    || { dump "$NOMETRICS"; fail 'assertion 5: python does not answer in the container, so nothing below could tell an unbound socket from a broken probe'; }
-if docker exec "$NOMETRICS" python -c "import socket; socket.create_connection(('127.0.0.1', 8081), timeout=5).close()" >/dev/null 2>&1; then
-    dump "$NOMETRICS"
-    fail 'assertion 5: SB_PROMETHEUS_ENABLED=false still left SB_METRICS_PORT bound'
-fi
-ok 'SB_PROMETHEUS_ENABLED=false leaves the metrics socket unbound'
+docker exec "$PORTS" python -c 'import socket' >/dev/null 2>&1 \
+    || { dump "$PORTS"; fail 'assertion 5: python does not answer in the container, so nothing below could tell an unbound socket from a broken probe'; }
+for dead_port in 8081 9091; do
+    if docker exec "$PORTS" python -c "import socket; socket.create_connection(('127.0.0.1', $dead_port), timeout=5).close()" >/dev/null 2>&1; then
+        dump "$PORTS"
+        fail "assertion 5: something is listening on $dead_port — the app binds a second socket again"
+    fi
+done
+ok 'the web port is the only socket the app binds'
 
-assertion '6 — sb_store_ephemeral is 1 bare and 0 mounted'
-# Published in both directions on purpose (#741): a series that *disappears*
-# reads as a scraper that lost its target, never as "off". So the mounted case
-# asserts the presence of a `0` and not the absence of a line.
-bare_gauge="$(curl -s --max-time 10 "http://127.0.0.1:$BARE_METRICS/metrics" | grep '^sb_store_ephemeral ' || true)"
-[ "$bare_gauge" = 'sb_store_ephemeral 1.0' ] \
-    || fail "assertion 6: the bare container published '${bare_gauge:-nothing}', expected 'sb_store_ephemeral 1.0'"
-kept_gauge="$(curl -s --max-time 10 "http://127.0.0.1:$KEPT_METRICS/metrics" | grep '^sb_store_ephemeral ' || true)"
-[ "$kept_gauge" = 'sb_store_ephemeral 0.0' ] \
-    || fail "assertion 6: the mounted container published '${kept_gauge:-nothing}', expected 'sb_store_ephemeral 0.0'"
-ok 'the one gauge that reports the installation rather than the portfolio'
+assertion '6 — the store says it is ephemeral bare and persistent mounted'
+# Read from the app's own resource and no longer from a gauge (ADR-0033): the
+# fact outlived its instrument, and this is the assertion that proves the
+# substitution rather than assuming it.
+#
+# Stated in both directions on purpose (#741): a member that *disappeared* would
+# read as an install that has nothing to say, never as "it keeps what it
+# writes". So the mounted case asserts the word `persistent` and not the absence
+# of `ephemeral`.
+bare_persistence="$(persistence_of "http://127.0.0.1:$BARE_WEB")"
+[ "$bare_persistence" = 'ephemeral' ] \
+    || fail "assertion 6: the bare container published '${bare_persistence:-nothing}', expected 'ephemeral'"
+kept_persistence="$(persistence_of "http://127.0.0.1:$KEPT_WEB")"
+[ "$kept_persistence" = 'persistent' ] \
+    || fail "assertion 6: the mounted container published '${kept_persistence:-nothing}', expected 'persistent'"
+ok 'the one fact that reports the installation rather than the portfolio'
 
 assertion '7 — not root, /data writable, /import readable'
 whoami="$(docker exec "$BARE" id -un)"

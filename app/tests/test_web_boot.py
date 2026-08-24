@@ -591,25 +591,20 @@ def test_health_fails_when_no_store_is_open():
     assert app.test_client().get("/health").status_code == 503
 
 
-def test_metrics_is_served_from_the_exporters_own_registry(mocker):
-    """PrometheusExporter keeps a dedicated registry; the global one is empty."""
-    exporter = PrometheusExporter()
-    app = web.create_app(
-        runtime=main.Runtime(_FakeConfigManager(), exporter))
+def test_metrics_is_not_served_even_with_an_exporter_on_the_runtime(open_store):
+    """`/metrics` is nothing to this app any more (ADR-0033).
 
-    response = app.test_client().get("/metrics")
-
-    assert response.status_code == 200
-    assert b"sb_share_price" in response.data
-
-
-def test_metrics_is_not_mounted_when_the_endpoint_is_disabled(open_store):
-    """SB_PROMETHEUS_ENABLED no longer stops a server; it unmounts a route."""
-    runtime = main.Runtime(_FakeConfigManager(), None)
+    Asserted with an exporter **present** on the runtime, because that is the
+    only state in which the route could come back: what was removed is the
+    mount, not the object. The 404 is the one the app gives any path it does
+    not know — there is no `/metrics` branch left to produce a made-up one.
+    """
+    runtime = main.Runtime(_FakeConfigManager(), PrometheusExporter())
     runtime.store = open_store
     app = web.create_app(runtime=runtime)
 
     assert app.test_client().get("/metrics").status_code == 404
+    assert app.test_client().get("/metrics/").status_code == 404
     assert app.test_client().get("/health").status_code == 200
 
 
@@ -617,35 +612,32 @@ def test_metrics_is_not_mounted_when_the_endpoint_is_disabled(open_store):
 # gunicorn.conf.py — executable configuration
 # ---------------------------------------------------------------------------
 
-def test_gunicorn_binds_the_web_port_and_keeps_the_metrics_port(monkeypatch):
-    """One master, two sockets: :8081 must answer exactly as it did before."""
+def test_gunicorn_binds_one_socket(monkeypatch):
+    """One socket, and no condition left to evaluate (ADR-0033)."""
     conf = _load_gunicorn_conf(monkeypatch)
 
-    assert conf.bind == ["0.0.0.0:8080", "0.0.0.0:8081"]
+    assert conf.bind == ["0.0.0.0:8080"]
     assert conf.workers == 1
     assert conf.preload_app is True
 
 
-def test_gunicorn_honours_both_port_dials(monkeypatch):
+def test_gunicorn_honours_the_web_port_dial(monkeypatch):
+    conf = _load_gunicorn_conf(monkeypatch, SB_WEB_PORT="9000")
+
+    assert conf.bind == ["0.0.0.0:9000"]
+
+
+def test_gunicorn_binds_nothing_beyond_the_web_port(monkeypatch):
+    """The metrics variables no longer add a socket, whatever they say.
+
+    Both of them are still in the environment at this point — they leave it with
+    the exporter — so the assertion is that they are *inert* here and not that
+    they are absent: an owner who kept them in a `.env` gets one socket.
+    """
     conf = _load_gunicorn_conf(
-        monkeypatch, SB_WEB_PORT="9000", SB_METRICS_PORT="9090")
-
-    assert conf.bind == ["0.0.0.0:9000", "0.0.0.0:9090"]
-
-
-def test_gunicorn_drops_the_metrics_socket_when_the_endpoint_is_off(monkeypatch):
-    """What the old exporter achieved by never starting its server."""
-    conf = _load_gunicorn_conf(monkeypatch, SB_PROMETHEUS_ENABLED="false")
+        monkeypatch, SB_PROMETHEUS_ENABLED="true", SB_METRICS_PORT="9091")
 
     assert conf.bind == ["0.0.0.0:8080"]
-
-
-def test_gunicorn_binds_once_when_both_dials_name_the_same_port(monkeypatch):
-    """Binding the same address twice is a boot failure, and one socket suffices."""
-    conf = _load_gunicorn_conf(
-        monkeypatch, SB_WEB_PORT="8081", SB_METRICS_PORT="8081")
-
-    assert conf.bind == ["0.0.0.0:8081"]
 
 
 def test_gunicorn_closes_the_control_socket(monkeypatch):

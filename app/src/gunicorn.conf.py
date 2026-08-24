@@ -22,22 +22,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import boot_env  # noqa: E402
 
-# --- Sockets ---------------------------------------------------------------
-# One master, two sockets, one application: ``bind`` takes a list, so this is not
-# two servers. The UI port is new; :8081 keeps answering /metrics exactly as the
-# retired ThreadingHTTPServer did, and that zero regression for existing
-# Prometheus scrapers is the whole reason for the second socket. It is dropped
-# when the endpoint is off, which is what the old exporter did by never starting
-# — and when both variables name the same port, one socket serves both.
+# --- The socket --------------------------------------------------------------
+# One, and there is no condition left to evaluate (ADR-0033). The second socket
+# existed for one reason — keeping /metrics answering on a port of its own for
+# the scrapers that read it — and it went with the endpoint. ``bind`` still
+# takes a list because that is gunicorn's shape, not because there is a choice
+# to make here.
 #
 # Read here, in the master, **before the application is imported**: that is one
-# half of why the two ports stay in the environment rather than becoming dials
+# half of why the port stays in the environment rather than becoming a dial
 # (issue #740, ADR-0014). The other half is that a port changed from the
 # interface would cut the connection the interface arrived by.
 _boot = boot_env.read(os.environ)
 bind = [f'0.0.0.0:{_boot.web_port}']
-if _boot.prometheus_enabled and _boot.metrics_port != _boot.web_port:
-    bind.append(f'0.0.0.0:{_boot.metrics_port}')
 
 # --- Workers ---------------------------------------------------------------
 # Exactly one worker, always — see ``on_starting`` for why it is a hard guard and

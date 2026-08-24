@@ -21,8 +21,8 @@ docker run -d \
 
 The `-v` is the whole difference between a trial and an install. Without it the
 container still starts — it simply keeps nothing, and it says so on every start,
-in its first log lines and in the `sb_store_ephemeral` gauge. That is a fair way
-to try the app for an evening. It is not a way to keep a portfolio: the store
+in its first log lines and on the installation panel of the app. That is a fair
+way to try the app for an evening. It is not a way to keep a portfolio: the store
 lives in the container's writable layer, and the first `docker rm` takes it.
 
 ## Open
@@ -37,10 +37,10 @@ is fixed, because changing it afterwards would reinterpret amounts you already
 recorded. Until it is answered, prices are still fetched, nothing is converted
 and no return is computed; the app says so on screen rather than refusing.
 
-If you never intend to open the page — you publish the metrics port and read
-the gauges — the same question is answered with one `curl` on the write API,
-which is always served. An import that declares its own currency answers it
-too, and then even that call is unnecessary.
+If you would rather not answer it by hand, the same question is answered with
+one `curl` on the write API, which is served on the same port as the page. An
+import that declares its own currency answers it too, and then even that call is
+unnecessary.
 
 Then record a position, or import the files you already have. Prices appear as
 they are fetched; the history behind them is rebuilt backwards while you use
