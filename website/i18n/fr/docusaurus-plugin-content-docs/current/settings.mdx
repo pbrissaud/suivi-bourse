@@ -73,20 +73,21 @@ has the rest of the back-off.
 
 ## What the container imposes
 
-Four names. This is the complete list of what the app reads from its
+Three names. This is the complete list of what the app reads from its
 environment; nothing else in it is consulted.
 
-| Variable        | Default   | What it decides                            |
-| --------------- | --------- | ------------------------------------------ |
-| `SB_STORE_DIR`  | `/data`   | the directory the store lives in           |
-| `SB_IMPORT_DIR` | `/import` | the directory the drop folder is read from |
-| `SB_WEB_PORT`   | `8080`    | the socket the app is bound to             |
-| `LOG_LEVEL`     | `INFO`    | how loudly the app logs                    |
+| Variable       | Default | What it decides                  |
+| -------------- | ------- | -------------------------------- |
+| `SB_STORE_DIR` | `/data` | the directory the store lives in |
+| `SB_WEB_PORT`  | `8080`  | the socket the app is bound to   |
+| `LOG_LEVEL`    | `INFO`  | how loudly the app logs          |
 
-* **The two paths are directories, never files.** The app names its own store
-  file inside the one and reads whatever it finds in the other. That removes the
-  entire class of mistake where you point at a file whose parent directory is
-  not mounted.
+* **The path is a directory, never a file.** The app names its own store file
+  inside it. That removes the entire class of mistake where you point at a file
+  whose parent directory is not mounted.
+* **A variable that is set and no longer read is named at start-up**, in one
+  grouped line, and obeyed by nothing. `SB_IMPORT_DIR` is one of those: the
+  folder it named is gone, and a file is handed to the app instead.
 * **The defaults describe the container**, and it is the deployment *without*
   Docker that overrides them — see
   [Install without Docker](./install-without-docker.mdx). A plain `docker run`
@@ -132,22 +133,22 @@ and that these settings now live in the app. The list is computed — what is
 present, minus the boot variables, minus the dials — so it cannot drift out
 of date the way a hard-coded list of names would.
 
-| No longer read             | Where it lives now                                                                                                                  |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `SB_REGULAR_INTERVAL`      | the `regular_interval` dial                                                                                                         |
-| `SB_BACKFILL_INTERVAL`     | the `backfill_interval` dial                                                                                                        |
-| `SB_BACKFILL_DELAY`        | the `backfill_delay` dial                                                                                                           |
-| `SB_BACKFILL_CHUNK_DAYS`   | the `backfill_chunk_days` dial                                                                                                      |
-| `SB_STALENESS_HORIZON`     | the `staleness_horizon` dial                                                                                                        |
-| `SB_INGESTION_INTERVAL`    | nowhere — there is no polling left: a replay follows the write that changed the ledger, and the drop folder is watched with no dial |
-| `SB_SCRAPING_INTERVAL`     | nowhere — already deprecated in version 4, and its heir is a dial                                                                   |
-| `SB_PERF_INTERVAL`         | nowhere — the performance series is a cache, rebuilt in full every two minutes; there is nothing left to trade off                  |
-| `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic                                                                                                |
-| `SB_EXECUTOR_POOL`         | nowhere — same reason; it was the one dial that needed a restart, so it was deleted rather than moved                               |
-| `SB_CONFIG_MODE`           | nowhere — there is one mode, and files are no longer the truth                                                                      |
-| `INFLUXDB_HOST`            | nowhere — the store is embedded                                                                                                     |
-| `INFLUXDB_TOKEN`           | nowhere — the app has no secret to be given                                                                                         |
-| `INFLUXDB_DATABASE`        | nowhere — same reason                                                                                                               |
+| No longer read             | Where it lives now                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `SB_REGULAR_INTERVAL`      | the `regular_interval` dial                                                                                        |
+| `SB_BACKFILL_INTERVAL`     | the `backfill_interval` dial                                                                                       |
+| `SB_BACKFILL_DELAY`        | the `backfill_delay` dial                                                                                          |
+| `SB_BACKFILL_CHUNK_DAYS`   | the `backfill_chunk_days` dial                                                                                     |
+| `SB_STALENESS_HORIZON`     | the `staleness_horizon` dial                                                                                       |
+| `SB_INGESTION_INTERVAL`    | nowhere — there is no polling left: a replay follows the write that changed the ledger                             |
+| `SB_SCRAPING_INTERVAL`     | nowhere — already deprecated in version 4, and its heir is a dial                                                  |
+| `SB_PERF_INTERVAL`         | nowhere — the performance series is a cache, rebuilt in full every two minutes; there is nothing left to trade off |
+| `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic                                                                               |
+| `SB_EXECUTOR_POOL`         | nowhere — same reason; it was the one dial that needed a restart, so it was deleted rather than moved              |
+| `SB_CONFIG_MODE`           | nowhere — there is one mode, and files are no longer the truth                                                     |
+| `INFLUXDB_HOST`            | nowhere — the store is embedded                                                                                    |
+| `INFLUXDB_TOKEN`           | nowhere — the app has no secret to be given                                                                        |
+| `INFLUXDB_DATABASE`        | nowhere — same reason                                                                                              |
 
 `SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID` and `SB_GID` are a different case
 again: they carry the prefix but were **never read by the app**. They belonged
