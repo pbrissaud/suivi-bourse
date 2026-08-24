@@ -61,11 +61,12 @@ read. For the recorded one that is the whole trick: *that the assertion was made
 is what no code can work out again, and it is therefore the row; *which events it
 was made about* is a join, and a join does not need a table of its own.
 
-**Not to be confused with the audit.** ``import_source(filename, kind,
-imported_at, fingerprint)`` is the provenance trail. Merging the two would give
-an advisory box that grows by one row per import and that one stops reading —
-both failures at once, the notices lost in the trace and the trace unreadable as
-notices.
+**And it is not a trace of what happened.** There was an ``import_source`` table
+holding one row per imported file, and merging the two would have given an
+advisory box that grows by one row per import and that one stops reading — both
+failures at once, the notices lost in the trace and the trace unreadable as
+notices. The table left with the mount (ADR-0032); the argument is kept because
+the next thing tempted to file itself here will be a trace too.
 """
 import logging
 from dataclasses import dataclass

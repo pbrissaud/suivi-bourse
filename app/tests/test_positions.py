@@ -16,8 +16,10 @@ from pathlib import Path
 
 import pytest
 
-import ledger
+import entries
 import positions
+from events import EventLoader
+from events import export as events_export
 from events.aggregator import AggregationError
 from events.schemas import CashState
 from main import ConfigurationManager
@@ -45,9 +47,14 @@ def _manager(store, tmp_path, csv_text=EVENTS_CSV):
     """
     events = tmp_path / "events"
     events.mkdir(exist_ok=True)
-    (events / "2024.csv").write_text(csv_text, encoding="utf-8")
-    ledger.sync_drop_folder(store, events)
+    _write(store, events / "2024.csv", csv_text)
     return ConfigurationManager(config_dir=str(tmp_path), opened_store=store)
+
+
+def _write(store, path, csv_text):
+    """One file's rows into the store, by the road the upload takes (#816)."""
+    path.write_text(csv_text, encoding="utf-8")
+    entries.create_many(store, EventLoader(str(path)).load())
 
 
 # --------------------------------------------------------------------------- #
@@ -104,14 +111,17 @@ def test_an_account_with_no_cash_event_has_no_state_row(store, tmp_path):
 # The replacement, and what it takes with it
 # --------------------------------------------------------------------------- #
 
-def test_forgetting_the_last_import_takes_the_positions_with_it(store, tmp_path):
+def test_emptying_the_ledger_takes_the_positions_with_it(store, tmp_path):
+    """What forgetting an import used to do, done by the gesture that replaced it.
+
+    The bulk deletion over the ledger's own reduction (ADR-0032, #814): the rows
+    go, and the two tables the replay owns go with them.
+    """
     manager = _manager(store, tmp_path)
     manager.current()
     assert positions.read_positions(store)
 
-    (source,) = ledger.list_imports(store)
-    (tmp_path / "events" / "2024.csv").unlink()
-    ledger.forget_import(store, source.id)
+    entries.remove_selection(store, events_export.Selection())
     manager.replay()
 
     assert positions.read_positions(store) == []
@@ -122,9 +132,12 @@ def test_a_position_the_ledger_no_longer_names_leaves(store, tmp_path):
     manager = _manager(store, tmp_path)
     manager.current()
 
-    (tmp_path / "events" / "2024.csv").write_text(
-        EVENTS_CSV.replace("AAPL,Apple Inc", "MSFT,Microsoft"), encoding="utf-8")
-    ledger.sync_drop_folder(store, tmp_path / "events")
+    # The ledger stops naming AAPL: the rows it holds are removed and the
+    # corrected ones written — which is what *re-drop the corrected file*
+    # became once a row could be reached one at a time (ADR-0032).
+    entries.remove_selection(store, events_export.Selection())
+    _write(store, tmp_path / "events" / "2024.csv",
+           EVENTS_CSV.replace("AAPL,Apple Inc", "MSFT,Microsoft"))
     manager.reload()
 
     assert [r['symbol'] for r in positions.read_positions(store)] == ['MSFT']

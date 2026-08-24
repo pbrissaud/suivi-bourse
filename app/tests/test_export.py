@@ -21,6 +21,7 @@ from datetime import date
 import pytest
 
 import accounts as accounts_module
+import entries
 import ledger
 import main
 import settings_registry
@@ -71,8 +72,11 @@ def install(root, files, currency=None):
     root.mkdir(parents=True, exist_ok=True)
     drop = root / 'events'
     drop.mkdir(exist_ok=True)
+    written = {}
     for name, text in files.items():
-        (drop / name).write_text(text, encoding='utf-8')
+        path = drop / name
+        path.write_text(text, encoding='utf-8')
+        written[name] = path
 
     opened = store_module.open_store(root / 'store.duckdb')
     if currency is not None:
@@ -80,10 +84,39 @@ def install(root, files, currency=None):
             'INSERT INTO setting (key, value) VALUES (?, ?) '
             'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
             ['base_currency', currency])
-    ledger.sync_drop_folder(opened, drop)
+    # **The header decides which road a file takes**, exactly as the product
+    # decides it (ADR-0032): a declaration is written by the accounts gestures,
+    # a ledger by :func:`entries.create_many` — which is what the upload route
+    # calls. The folder is a fixture's shape and nothing reads it on its own.
+    for path in written.values():
+        if accounts_module.is_accounts_file(path):
+            _declare_from(opened, path)
+    for path in written.values():
+        if not accounts_module.is_accounts_file(path):
+            _write_events(opened, path)
     manager = main.ConfigurationManager(config_dir=str(root), opened_store=opened)
     manager.reload()
     return manager, opened
+
+
+def _declare_from(opened, path):
+    """The file's accounts, declared the way the app declares them (ADR-0034)."""
+    for row in accounts_module.load_account_rows(path):
+        if row.id in accounts_module.account_ids(opened):
+            opened.execute(
+                'UPDATE account SET type = ?, label = ? WHERE id = ?',
+                [row.type, row.label, row.id])
+            continue
+        accounts_module.create_account(opened, row.id, row.type, row.label)
+
+
+def _write_events(opened, path):
+    """One event file into the store, by the road the upload takes."""
+    loader = EventLoader(str(path))
+    rows = loader.load()
+    entries.create_many(
+        opened, rows,
+        base_currency=ledger.currency_to_adopt(opened, loader.declared_currency))
 
 
 def export_of(opened):
@@ -303,14 +336,15 @@ def test_a_declaration_that_disagrees_with_a_recorded_ledger_is_refused(tmp_path
         "2024-11-02,BUY,pea,AI.PA,Air Liquide,1,170.00,,,,USD\n",
         encoding='utf-8')
 
+    before = opened.query('SELECT count(*) FROM event')[0][0]
+
     with pytest.raises(settings_registry.InvalidSetting) as raised:
-        ledger.import_file(opened, disagreeing)
+        _write_events(opened, disagreeing)
 
     assert raised.value.key == 'base_currency'
     assert opened.setting('base_currency') == 'EUR'
-    assert opened.query(
-        "SELECT count(*) FROM import_source WHERE filename = 'later.csv'"
-    )[0][0] == 0
+    # Refused **whole**: not one row of the file landed.
+    assert opened.query('SELECT count(*) FROM event')[0][0] == before
     opened.close()
 
 
@@ -330,7 +364,7 @@ def test_a_disagreement_is_taken_while_nothing_is_recorded(tmp_path):
         _DECLARING_HEADER +
         "2024-11-02,BUY,default,AI.PA,Air Liquide,1,170.00,,,,USD\n",
         encoding='utf-8')
-    ledger.import_file(opened, landing)
+    _write_events(opened, landing)
 
     assert opened.setting('base_currency') == 'USD'
     opened.close()
@@ -359,7 +393,7 @@ def test_a_declaration_that_is_not_a_currency_is_refused(tmp_path):
         encoding='utf-8')
 
     with pytest.raises(settings_registry.InvalidSetting):
-        ledger.import_file(opened, path)
+        _write_events(opened, path)
 
     assert opened.setting('base_currency') is None
     opened.close()
@@ -398,7 +432,7 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
         encoding='utf-8')
     # The shape of a write through the API since ADR-0032: the rows land in the
     # store, and the replay that follows carries the dial into the process.
-    ledger.import_file(opened, landing)
+    _write_events(opened, landing)
     metrics.ingest(force=True)
 
     assert metrics.base_currency == 'CHF'
@@ -533,11 +567,16 @@ def test_reimporting_the_workbook_rebuilds_the_same_ledger(tmp_path):
     source.close()
 
     restored_root = tmp_path / 'restored'
-    restored_root.mkdir(parents=True, exist_ok=True)
-    (restored_root / 'events').mkdir(exist_ok=True)
-    (restored_root / 'events' / 'suivi-bourse-events.xlsx').write_bytes(payload)
-    _, restored = install(restored_root,
-                          {'suivi-bourse-accounts.csv': accounts_csv})
+    manager, restored = install(restored_root,
+                                {'suivi-bourse-accounts.csv': accounts_csv})
+    workbook = restored_root / 'events' / 'suivi-bourse-events.xlsx'
+    workbook.write_bytes(payload)
+    # The workbook goes in the way a workbook goes in: through the road the
+    # upload takes, which is where the loader reads every worksheet of it —
+    # then the replay that follows every write, which is what fills the two
+    # tables ``figures`` reads.
+    _write_events(restored, workbook)
+    manager.replay()
     after = figures(restored)
     assert restored.setting('base_currency') == 'EUR'
     restored.close()

@@ -24,13 +24,14 @@ prevent. Two currency levels, two names.
 
 **It is a column repeated on every row, not a preamble.** A CSV has one header
 row and nowhere above it to put a fact about the file; a sidecar document would
-not be imported by the drop folder at all, and the export has to re-enter by the
+not be read on the way back in at all, and the export has to re-enter by the
 **normal** import path or it proves nothing. The cost — one repeated cell per
 row — buys a file that opens in a spreadsheet like every other one.
 
-**Provenance is not exported.** ``source_id`` / ``source_sheet`` /
-``source_row`` say which import carried a row, and the export *replaces* that
-import: carrying them out would describe a file the exported one is not.
+**There is no provenance left to leave out** (ADR-0032, #816). The three columns
+that said which import carried a row went with the second population, and the
+round trip is the plainer for it: what leaves is every column a row has, and
+what comes back is a row exactly like the one that left.
 
 Since #796 it renders **two more things**, and neither is a second format.
 A **workbook with one sheet per year** is the same rows and the same columns,

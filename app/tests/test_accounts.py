@@ -1,25 +1,26 @@
-"""Accounts are declared by a file, and a bad file does not get in (#698).
+"""Accounts are declared in the app, and a bad file does not get in (#698, #816).
 
-The seam is #695's: a **real** DuckDB store in ``tmp_path`` and the real import
-running on it. Nothing here asserts that a method was called — the ticket's
-rules are rules about *rows*, and about which gestures the store refuses:
+The seam is #695's: a **real** DuckDB store in ``tmp_path`` and the real writer
+running on it. Nothing here asserts that a method was called — the rules are
+rules about *rows*, and about which gestures the store refuses:
 
-1. an accounts file declares accounts, with its ``source_id``, and what came
-   from a file is read-only;
-2. **all** account sources are imported before **all** event sources;
-3. an event file naming an undeclared account is not imported **at all**, and
+1. an event file naming an undeclared account is not written **at all**, and
    the message names the account to declare;
-4. a blank ``account`` column means ``default`` until something is declared, and
+2. a blank ``account`` column means ``default`` until something is declared, and
    is an error afterwards;
-5. an account is undeletable while an event names it — and so, in cascade, is
-   the import that declared it;
-6. the v4 ``settings.yaml`` is named, never read (that half lives in
+3. an account is undeletable while an event names it (ADR-0013);
+4. the v4 ``settings.yaml`` is named, never read (that half lives in
    ``test_configuration_manager.py``, next to ``config.yaml``'s);
-7. the seeded ``default`` row is always there, so nothing branches on *"are
+5. the seeded ``default`` row is always there, so nothing branches on *"are
    accounts declared"*.
 
-The first test in the file is the last acceptance criterion — a v4 install's
-files importing untouched, and a multi-account file refused whole — and it is
+**The accounts-file half of this file left with ADR-0032** (#816): there is no
+``import_source`` to hang a declaration off, no revocation by source, and no
+re-drop that replaces. What survived the move is the **header reader** — the
+upload has to recognise a declaration in order to refuse it by name — and every
+rule above, which was never about the folder.
+
+The first test in the file is a v4 install's file landing untouched, and it is
 deliberately first: it is the one a user meets.
 """
 
@@ -28,7 +29,7 @@ from datetime import date
 import pytest
 
 import accounts as accounts_module
-import ledger
+import entries
 from events import EventAggregator, EventLoader, EventValidator, Portfolio, Account
 from events.schemas import Event, EventType, ShareState, DEFAULT_ACCOUNT
 from main import ConfigurationManager
@@ -56,13 +57,33 @@ ACCOUNTS_FILE = (
 )
 
 
-def _drop(tmp_path, **files):
-    """Write ``name.csv: text`` pairs into a drop folder and return it."""
+def _file(tmp_path, name, text):
+    """One file on disk, the way a reader hands one over."""
     folder = tmp_path / "drop"
     folder.mkdir(exist_ok=True)
-    for name, text in files.items():
-        (folder / name.replace('_', '.')).write_text(text, encoding="utf-8")
-    return folder
+    path = folder / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _upload(store, tmp_path, text, name='2024.csv'):
+    """One event file into the store, by the road the upload route takes."""
+    return entries.create_many(
+        store, EventLoader(str(_file(tmp_path, name, text))).load())
+
+
+def _declare(store, text):
+    """The accounts a fixture wants, declared the way the app declares them.
+
+    An account is born in the app and nowhere else (ADR-0034), so what a file
+    used to do in one gesture is three calls here. The file stays the fixture's
+    shape because it is what these tests spell — nothing reads it on its own.
+    """
+    import io
+    import csv as csv_module
+    for row in csv_module.DictReader(io.StringIO(text)):
+        accounts_module.create_account(store, row['id'], row['type'],
+                                       row.get('label'))
 
 
 def _accounts(store):
@@ -76,11 +97,6 @@ def _event_accounts(store):
         'SELECT account FROM event ORDER BY id')]
 
 
-def _refusal(outcomes, filename):
-    (outcome,) = [o for o in outcomes if o.filename == filename]
-    return outcome
-
-
 # --------------------------------------------------------------------------- #
 # The seam: coming from v4, with and without a declaration
 # --------------------------------------------------------------------------- #
@@ -92,12 +108,9 @@ def test_a_v4_single_account_install_imports_untouched(store, tmp_path):
     **minus its opt-in** — including on the cash events, where v4 demanded an
     account even with none declared.
     """
-    drop = _drop(tmp_path, **{'2024_csv': V4_SINGLE_ACCOUNT})
+    written = _upload(store, tmp_path, V4_SINGLE_ACCOUNT)
 
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.IMPORTED
-    assert outcome.rows == 2
+    assert len(written) == 2
     assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT]
     # The seeded row is the whole declaration, and nothing else appeared.
     assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
@@ -112,27 +125,23 @@ def test_a_multi_account_file_without_a_declaration_is_refused_whole(store, tmp_
     onto another silently. So the refusal is the answer, and it is the whole
     file's: the first row is as absent from the store as the second.
     """
-    drop = _drop(tmp_path, **{'2024_csv': TWO_ACCOUNTS_UNDECLARED})
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        _upload(store, tmp_path, TWO_ACCOUNTS_UNDECLARED)
 
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.REFUSED
-    assert "'pea' is not declared" in outcome.error
-    assert "id, type, label" in outcome.error       # how to declare it
+    assert "'pea' is not declared" in str(refusal.value)
     assert store.query('SELECT count(*) FROM event') == [(0,)]
-    assert ledger.list_imports(store) == []
 
 
 def test_declaring_the_accounts_lets_the_same_file_in(store, tmp_path):
-    """The gesture the refusal above asks for, and its effect on the ledger."""
-    drop = _drop(tmp_path,
-                 **{'2024_csv': TWO_ACCOUNTS_UNDECLARED,
-                    'accounts_csv': ACCOUNTS_FILE})
+    """The gesture the refusal above asks for, and its effect on the ledger.
 
-    outcomes = ledger.sync_drop_folder(store, drop)
+    It names the app because that is where an account is born (ADR-0034): the
+    refusal above says *declare it*, and this is what declaring it is.
+    """
+    _declare(store, ACCOUNTS_FILE)
 
-    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
-    assert _refusal(outcomes, '2024.csv').outcome == ledger.IMPORTED
+    _upload(store, tmp_path, TWO_ACCOUNTS_UNDECLARED)
+
     assert _event_accounts(store) == ['pea', 'cto']
 
 
@@ -140,72 +149,27 @@ def test_declaring_the_accounts_lets_the_same_file_in(store, tmp_path):
 # The order, and what a declaration arriving later does to what is already in
 # --------------------------------------------------------------------------- #
 
-def test_account_sources_are_imported_before_event_sources(store, tmp_path):
-    """All of them before all of them — never alphabetically.
-
-    ``zzz.csv`` declares what ``2024.csv`` names, so a folder walked in name
-    order would refuse the events on the first pass and accept them on the
-    second. A folder whose meaning depends on how many times it was scanned is
-    the bug this rule exists against.
-    """
-    drop = _drop(tmp_path,
-                 **{'2024_csv': TWO_ACCOUNTS_UNDECLARED,
-                    'zzz_csv': ACCOUNTS_FILE})
-
-    outcomes = ledger.sync_drop_folder(store, drop)
-
-    assert [o.filename for o in outcomes] == ['zzz.csv', '2024.csv']
-    assert all(o.outcome == ledger.IMPORTED for o in outcomes)
-
-
-def test_a_declaration_arriving_later_re_keys_the_events_it_names(store, tmp_path):
-    """The events were written under ``default``; declaring re-imports them.
-
-    Leaving them there would show the user the accounts they just declared next
-    to a ledger that ignores them — and the file's fingerprint has not moved, so
-    only the declaration having moved can be what re-imports it.
-    """
-    drop = _drop(tmp_path, **{'2024_csv': TWO_ACCOUNTS_UNDECLARED})
-    ledger.sync_drop_folder(store, drop)
-    assert store.query('SELECT count(*) FROM event') == [(0,)]
-
-    (drop / 'accounts.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    ledger.sync_drop_folder(store, drop)
-
-    assert _event_accounts(store) == ['pea', 'cto']
-
-
 def test_a_blank_column_becomes_an_error_once_an_account_is_declared(store, tmp_path):
     """The rule's second half, and the typo it keeps refusing.
 
-    The v4 file imported cleanly a moment ago; the declaration is what makes the
-    blank cell an omission rather than a choice. The rows it wrote before stay
-    exactly where they were — a refused import changes nothing.
+    The v4 file landed cleanly a moment ago; the declaration is what makes the
+    blank cell an omission rather than a choice. The rows written before stay
+    exactly where they were — a refused import changes nothing — and the fix is
+    the reader's: a file with the column filled in goes straight in.
     """
-    drop = _drop(tmp_path, **{'2024_csv': V4_SINGLE_ACCOUNT})
-    ledger.sync_drop_folder(store, drop)
+    _upload(store, tmp_path, V4_SINGLE_ACCOUNT, name='old.csv')
+    _declare(store, ACCOUNTS_FILE)
 
-    (drop / 'accounts.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    outcomes = ledger.sync_drop_folder(store, drop)
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        _upload(store, tmp_path, V4_SINGLE_ACCOUNT, name='again.csv')
 
-    refused = _refusal(outcomes, '2024.csv')
-    assert refused.outcome == ledger.REFUSED
-    assert "account is required" in refused.error
+    assert "account is required" in str(refusal.value)
     assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT]
 
-    # And the forced pass happens **once**: the rollback left the fingerprint
-    # where it was, so the next scan reports the folder unchanged rather than
-    # re-parsing every file on every filesystem event. The retry rides on the
-    # user's fix — writing the account column is what moves the fingerprint.
-    again = _refusal(ledger.sync_drop_folder(store, drop), '2024.csv')
-    assert again.outcome == ledger.UNCHANGED
-
-    (drop / '2024.csv').write_text(
-        "date,event_type,symbol,name,quantity,unit_price,account\n"
-        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n", encoding="utf-8")
-    fixed = _refusal(ledger.sync_drop_folder(store, drop), '2024.csv')
-    assert fixed.outcome == ledger.IMPORTED
-    assert _event_accounts(store) == ['pea']
+    _upload(store, tmp_path,
+            "date,event_type,symbol,name,quantity,unit_price,account\n"
+            "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n", name='fixed.csv')
+    assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT, 'pea']
 
 
 # --------------------------------------------------------------------------- #
@@ -213,181 +177,41 @@ def test_a_blank_column_becomes_an_error_once_an_account_is_declared(store, tmp_
 # --------------------------------------------------------------------------- #
 
 def test_the_header_says_what_a_file_is_not_its_name(store, tmp_path):
-    """No filename has a special meaning in v5 (spec #695 § 6)."""
-    drop = _drop(tmp_path, **{'ui_csv': ACCOUNTS_FILE})
+    """No filename has a special meaning in v5 (spec #695 § 6).
 
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.kind == ledger.KIND_ACCOUNTS
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea', 'cto'}
-
-
-def test_an_imported_account_carries_its_source_and_is_read_only(store, tmp_path):
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE})
-    ledger.sync_drop_folder(store, drop)
-
-    (source,) = ledger.list_imports(store, kind=ledger.KIND_ACCOUNTS)
-    pea = next(a for a in accounts_module.read_accounts(store) if a.id == 'pea')
-
-    assert pea.source_id == source.id
-    assert pea.editable is False
-    assert (pea.type, pea.label) == ('PEA', 'PEA Bourso')
-
-    with pytest.raises(accounts_module.ReadOnlyAccount):
-        accounts_module.update_account(store, 'pea', label="Renamed")
-
-
-def test_a_re_drop_removes_the_accounts_the_file_stopped_declaring(store, tmp_path):
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE})
-    ledger.sync_drop_folder(store, drop)
-
-    (drop / 'accounts.csv').write_text("id,type,label\npea,PEA,PEA Bourso\n",
-                                       encoding="utf-8")
-    ledger.sync_drop_folder(store, drop)
-
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea'}
-
-
-def test_a_declaration_is_corrected_by_re_dropping_it_while_events_name_it(
-        store, tmp_path):
-    """The repair ``ReadOnlyAccount`` tells the user to make has to work.
-
-    *"Correct the file and drop it again"* is the only way to fix a label or a
-    type that came from a file, and the accounts worth fixing are precisely the
-    ones a year of events already names. The first version of this module wrote
-    the row with one upsert, ``source_id`` included, and DuckDB executes a write
-    to a foreign-key column as a delete plus an insert — so the re-drop came back
-    ``refused`` with the engine's own ``still referenced`` message and the wrong
-    label stayed on screen. The key is gone from the DDL and the update writes
-    what changed; this is the test that was missing when that shipped.
+    The rule the upload still leans on: a declaration is recognised by its
+    header so it can be **refused by name** (ADR-0034), and ``ui.csv`` is a file
+    like any other.
     """
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE,
-                              '2024_csv': TWO_ACCOUNTS_UNDECLARED})
-    ledger.sync_drop_folder(store, drop)
-    assert _event_accounts(store) == ['pea', 'cto']
-
-    (drop / 'accounts.csv').write_text(
-        "id,type,label\npea,PEA,PEA Boursorama\ncto,CTO,CTO Degiro\n",
-        encoding="utf-8")
-    outcomes = ledger.sync_drop_folder(store, drop)
-
-    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
-    assert _accounts(store) == [
-        ('cto', 'CTO', 'CTO Degiro', 1),
-        (DEFAULT_ACCOUNT, 'OTHER', 'Default account', None),
-        ('pea', 'PEA', 'PEA Boursorama', 1),
-    ]
-    # The events are still where they were: a correction of the declaration is
-    # not a migration of the ledger.
-    assert _event_accounts(store) == ['pea', 'cto']
+    assert accounts_module.is_accounts_file(
+        _file(tmp_path, 'ui.csv', ACCOUNTS_FILE)) is True
+    assert accounts_module.is_accounts_file(
+        _file(tmp_path, 'accounts.csv', V4_SINGLE_ACCOUNT)) is False
 
 
-def test_a_declaration_grows_after_the_events_that_rest_on_it(store, tmp_path):
-    """Declaring a second account later is the whole point of multi-account.
-
-    Same cause as the correction above and a worse symptom: the file was refused
-    **whole**, so the account being added never entered either — an install could
-    declare accounts only before its first event, which empties headless
-    multi-account of its object.
-    """
-    drop = _drop(tmp_path, **{
-        'accounts_csv': "id,type,label\npea,PEA,PEA Bourso\n",
-        '2024_csv': ("date,event_type,symbol,name,quantity,unit_price,account\n"
-                     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n")})
-    ledger.sync_drop_folder(store, drop)
-
-    (drop / 'accounts.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    outcomes = ledger.sync_drop_folder(store, drop)
-
-    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea', 'cto'}
-    assert _event_accounts(store) == ['pea']
-
-
-def test_overwriting_an_accounts_file_with_events_retires_its_accounts(store, tmp_path):
-    """A source declares one kind of thing at a time.
-
-    Overwriting the file is a re-drop like any other, so the accounts go with
-    the declaration that named them — and if an event named one, the re-drop is
-    refused whole, which is the cascade refusal seen from its other side.
-    """
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE})
-    ledger.sync_drop_folder(store, drop)
-
-    (drop / 'accounts.csv').write_text(V4_SINGLE_ACCOUNT, encoding="utf-8")
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.IMPORTED
-    assert [row[0] for row in _accounts(store)] == [DEFAULT_ACCOUNT]
-    assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT]
-
-
-def test_a_steady_folder_imports_nothing_twice(store, tmp_path):
-    """The always-on watch costs one hash per file per event, and no write.
-
-    It matters here beyond #697's fingerprint: the declaration is compared
-    before and after the accounts pass, so a second scan that found it unmoved
-    must **not** force the event files through again.
-    """
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE,
-                              '2024_csv': TWO_ACCOUNTS_UNDECLARED})
-    ledger.sync_drop_folder(store, drop)
-
-    outcomes = ledger.sync_drop_folder(store, drop)
-
-    assert [o.outcome for o in outcomes] == [ledger.UNCHANGED, ledger.UNCHANGED]
-
-
-def test_the_label_falls_back_to_the_id(store, tmp_path):
+def test_the_label_falls_back_to_the_id(store):
     """``label`` is ``NOT NULL``: a row cannot decline to name itself."""
-    drop = _drop(tmp_path, **{'accounts_csv': "id,type\npea,PEA\n"})
-    ledger.sync_drop_folder(store, drop)
+    accounts_module.create_account(store, 'pea', 'PEA')
 
     pea = next(a for a in accounts_module.read_accounts(store) if a.id == 'pea')
     assert pea.label == 'pea'
 
 
-def test_a_file_declaring_one_id_twice_is_refused(store, tmp_path):
-    drop = _drop(tmp_path, **{
-        'accounts_csv': "id,type,label\npea,PEA,First\npea,CTO,Second\n"})
+def test_a_declaration_with_no_id_is_refused_by_name(store, tmp_path):
+    """The header reader still judges the file it recognises."""
+    path = _file(tmp_path, 'accounts.csv', "id,type,label\n,PEA,No id\n")
 
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.REFUSED
-    assert "declared twice" in outcome.error
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
-
-
-def test_two_files_declaring_one_id_is_refused(store, tmp_path):
-    """Two declarations of one account cannot both be the truth."""
-    drop = _drop(tmp_path,
-                 **{'a_csv': "id,type,label\npea,PEA,From A\n",
-                    'b_csv': "id,type,label\npea,PEA,From B\n"})
-
-    outcomes = ledger.sync_drop_folder(store, drop)
-
-    assert _refusal(outcomes, 'a.csv').outcome == ledger.IMPORTED
-    assert "already declared" in _refusal(outcomes, 'b.csv').error
-    assert next(a for a in accounts_module.read_accounts(store)
-                if a.id == 'pea').label == 'From A'
-
-
-def test_an_accounts_file_that_cannot_stand_leaves_no_import_behind(store, tmp_path):
-    """All-or-nothing, the same contract an event file gets."""
-    drop = _drop(tmp_path, **{'accounts_csv': "id,type,label\n,PEA,No id\n"})
-
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.REFUSED
-    assert "id is required" in outcome.error
-    assert ledger.list_imports(store) == []
+    assert accounts_module.is_accounts_file(path) is True
+    with pytest.raises(accounts_module.AccountSourceError,
+                       match="id is required"):
+        accounts_module.load_account_rows(path)
 
 
 def test_an_accounts_file_can_be_a_workbook(store, tmp_path):
-    """The events' format, both halves of it."""
+    """The events' format, both halves of it — recognised, so refusable."""
     openpyxl = pytest.importorskip("openpyxl")
     folder = tmp_path / "drop"
-    folder.mkdir()
+    folder.mkdir(exist_ok=True)
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Comptes"
@@ -395,10 +219,9 @@ def test_an_accounts_file_can_be_a_workbook(store, tmp_path):
     sheet.append(["pea", "PEA", "PEA Bourso"])
     workbook.save(folder / "accounts.xlsx")
 
-    (outcome,) = ledger.sync_drop_folder(store, folder)
-
-    assert outcome.outcome == ledger.IMPORTED
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea'}
+    assert accounts_module.is_accounts_file(folder / "accounts.xlsx") is True
+    assert [row.id for row in
+            accounts_module.load_account_rows(folder / "accounts.xlsx")] == ['pea']
 
 
 # --------------------------------------------------------------------------- #
@@ -406,184 +229,48 @@ def test_an_accounts_file_can_be_a_workbook(store, tmp_path):
 # --------------------------------------------------------------------------- #
 
 def test_an_account_an_event_names_cannot_be_removed(store, tmp_path):
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE,
-                              '2024_csv': TWO_ACCOUNTS_UNDECLARED})
-    ledger.sync_drop_folder(store, drop)
+    """ADR-0013's rule, and it is the one that does **not** move (#816)."""
+    _declare(store, ACCOUNTS_FILE)
+    _upload(store, tmp_path, TWO_ACCOUNTS_UNDECLARED)
 
     with pytest.raises(accounts_module.AccountInUse):
         accounts_module.delete_account(store, 'pea')
 
 
-def test_forgetting_an_accounts_import_is_refused_in_cascade(store, tmp_path):
-    """The cascade is **refused**, never performed.
-
-    Forgetting is meant to be undone by re-dropping the file; one that took a
-    year of events with it on the way out would not be. The user's move is to
-    forget the event imports first, and the message says so.
-    """
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE,
-                              '2024_csv': TWO_ACCOUNTS_UNDECLARED})
-    ledger.sync_drop_folder(store, drop)
-    declaring = next(i for i in ledger.list_imports(store)
-                     if i.kind == ledger.KIND_ACCOUNTS)
-
-    with pytest.raises(accounts_module.AccountInUse,
-                       match="while an event names it"):
-        ledger.forget_import(store, declaring.id)
-
-    # Nothing moved: not the accounts, not the events, not the import row.
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea', 'cto'}
-    assert len(ledger.list_imports(store)) == 2
-
-    # Forget what rests on it, and the declaration goes.
-    events_import = next(i for i in ledger.list_imports(store)
-                         if i.kind == ledger.KIND_EVENTS)
-    ledger.forget_import(store, events_import.id)
-    ledger.forget_import(store, declaring.id)
-
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
-
-
-def test_a_refused_cascade_removes_nothing_at_all(store, tmp_path):
-    """The refusal is decided before the first deletion, not during.
-
-    ``forget_import`` runs outside a transaction, so a refusal raised halfway
-    through the accounts would leave the earlier ones deleted **and** the
-    gesture refused — and the file's fingerprint being unchanged, no later scan
-    would ever bring them back. ``aaa`` sorts before ``zzz``, so it is the one a
-    loop-and-raise would have taken with it.
-    """
-    drop = _drop(tmp_path, **{
-        'accounts_csv': "id,type,label\naaa,CTO,First\nzzz,PEA,Last\n",
-        '2024_csv': (
-            "date,event_type,symbol,name,quantity,unit_price,account\n"
-            "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,zzz\n")})
-    ledger.sync_drop_folder(store, drop)
-    declaring = next(i for i in ledger.list_imports(store)
-                     if i.kind == ledger.KIND_ACCOUNTS)
-
-    with pytest.raises(accounts_module.AccountInUse):
-        ledger.forget_import(store, declaring.id)
-
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'aaa', 'zzz'}
-
-
-def test_a_file_that_becomes_a_declaration_leaves_no_events_behind(store, tmp_path):
-    """The mirror of the retiring above: the events go with the kind.
-
-    Otherwise they would hang off a source marked ``accounts``, invisible to
-    every gesture that reasons about kinds.
-    """
-    drop = _drop(tmp_path, **{'book_csv': V4_SINGLE_ACCOUNT})
-    ledger.sync_drop_folder(store, drop)
-    assert store.query('SELECT count(*) FROM event') == [(2,)]
-
-    (drop / 'book.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    (outcome,) = ledger.sync_drop_folder(store, drop)
-
-    assert outcome.outcome == ledger.IMPORTED
-    assert outcome.kind == ledger.KIND_ACCOUNTS
-    assert store.query('SELECT count(*) FROM event') == [(0,)]
-
-
-def test_a_declaration_that_would_break_the_ledger_is_refused(store, tmp_path):
-    """Dropping a source's events can leave another file's SELLs unbacked.
-
-    Committing that is a store that raises on every reload — and the raise is
-    fatal at boot, so the API that could forget the import would never come up
-    to be asked. It is refused inside the transaction instead.
-    """
-    drop = _drop(tmp_path, **{
-        'buys_csv': (
-            "date,event_type,symbol,name,quantity,unit_price\n"
-            "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n"),
-        'sells_csv': (
-            "date,event_type,symbol,name,quantity,unit_price\n"
-            "2024-06-15,SELL,AAPL,Apple Inc,10,180.00\n")})
-    ledger.sync_drop_folder(store, drop)
-    assert store.query('SELECT count(*) FROM event') == [(2,)]
-
-    (drop / 'buys.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    (outcome,) = [o for o in ledger.sync_drop_folder(store, drop)
-                  if o.filename == 'buys.csv']
-
-    assert outcome.outcome == ledger.REFUSED
-    assert store.query('SELECT count(*) FROM event') == [(2,)]
-    assert [row[0] for row in _accounts(store)] == [DEFAULT_ACCOUNT]
-
-
 def test_an_excel_utf8_export_is_recognised_despite_its_byte_order_mark(store, tmp_path):
     """Excel's own "CSV UTF-8" writes a BOM, and it must not hide the header.
 
-    Under plain ``utf-8`` the first column reads ``﻿id``, so the file is
-    not even taken for a declaration — it is refused as an event file missing
-    the ``date`` column it never claimed to have.
+    Under plain ``utf-8`` the first column reads ``﻿id``, so the file would not
+    even be taken for a declaration — and the upload would refuse it as an event
+    file missing the ``date`` column it never claimed to have, which is the one
+    refusal that teaches nothing.
     """
     folder = tmp_path / "drop"
-    folder.mkdir()
+    folder.mkdir(exist_ok=True)
     (folder / "accounts.csv").write_text(ACCOUNTS_FILE, encoding="utf-8-sig")
 
-    (outcome,) = ledger.sync_drop_folder(store, folder)
+    assert accounts_module.is_accounts_file(folder / "accounts.csv") is True
+    assert {row.id for row in
+            accounts_module.load_account_rows(folder / "accounts.csv")} == \
+        {'pea', 'cto'}
 
-    assert outcome.outcome == ledger.IMPORTED
-    assert outcome.kind == ledger.KIND_ACCOUNTS
-    assert {row[0] for row in _accounts(store)} == {DEFAULT_ACCOUNT, 'pea', 'cto'}
 
-
-def test_the_default_account_is_never_removed(store, tmp_path):
+def test_the_default_account_is_never_removed(store):
     """There is always at least one account; sometimes it is called ``default``.
 
-    Even when a file takes it over and is then forgotten: the ownership goes,
-    the row stays. Nothing in the app may branch on "are accounts declared", so
-    nothing may be able to empty the table.
+    Nothing in the app may branch on "are accounts declared", so nothing may be
+    able to empty the table — including a rename, which is how an install with a
+    page and no file declares its one account.
     """
     with pytest.raises(accounts_module.AccountInUse):
         accounts_module.delete_account(store, DEFAULT_ACCOUNT)
 
-    drop = _drop(tmp_path, **{
-        'accounts_csv': "id,type,label\ndefault,CTO,Renamed\n"})
-    ledger.sync_drop_folder(store, drop)
-    (source,) = ledger.list_imports(store)
-    ledger.forget_import(store, source.id)
+    accounts_module.update_account(store, DEFAULT_ACCOUNT, label='Renamed')
+    with pytest.raises(accounts_module.AccountInUse):
+        accounts_module.delete_account(store, DEFAULT_ACCOUNT)
 
-    # The **whole** row comes back, not only its id: an account nobody declares
-    # must not go on wearing the name a forgotten file gave it.
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
     assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
 
-
-def test_the_default_row_is_handed_back_while_events_name_it(store, tmp_path):
-    """The hand-back is a write to ``source_id`` on a row events reference.
-
-    The case is ordinary — a v4 install's events land under ``default``, a file
-    later declares it alongside a real account — and it is the one the seeded row
-    cannot refuse its way out of: ``default`` is exempt from *"an account an event
-    names cannot go"*, so the forget has to succeed. It runs outside a
-    transaction, so failing here left the import half forgotten with nothing able
-    to restore it.
-    """
-    drop = _drop(tmp_path, **{
-        '2024_csv': ("date,event_type,symbol,name,quantity,unit_price,account\n"
-                     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,default\n")})
-    ledger.sync_drop_folder(store, drop)
-
-    (drop / 'accounts.csv').write_text(
-        "id,type,label\naaa,CTO,First\ndefault,CTO,Renamed\n", encoding="utf-8")
-    outcomes = ledger.sync_drop_folder(store, drop)
-    assert _refusal(outcomes, 'accounts.csv').outcome == ledger.IMPORTED
-
-    declaring = next(i for i in ledger.list_imports(store)
-                     if i.kind == ledger.KIND_ACCOUNTS)
-    ledger.forget_import(store, declaring.id)
-
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
-    assert _event_accounts(store) == [DEFAULT_ACCOUNT]
-    assert [i.kind for i in ledger.list_imports(store)] == [ledger.KIND_EVENTS]
-
-
-# --------------------------------------------------------------------------- #
-# Declared in the app
-# --------------------------------------------------------------------------- #
 
 def test_an_account_created_in_the_app_is_editable(store):
     created = accounts_module.create_account(store, 'pea', 'PEA', 'PEA Bourso')
@@ -612,12 +299,12 @@ def test_creating_an_account_makes_a_blank_column_an_error(store, tmp_path):
     onto the first.
     """
     accounts_module.create_account(store, 'pea', 'PEA')
-    drop = _drop(tmp_path, **{'2024_csv': V4_SINGLE_ACCOUNT})
 
-    (outcome,) = ledger.sync_drop_folder(store, drop)
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        _upload(store, tmp_path, V4_SINGLE_ACCOUNT)
 
-    assert outcome.outcome == ledger.REFUSED
-    assert "account is required" in outcome.error
+    assert "account is required" in str(refusal.value)
+    assert store.query('SELECT count(*) FROM event') == [(0,)]
 
 
 # --------------------------------------------------------------------------- #
@@ -635,10 +322,9 @@ def test_the_declaration_is_none_until_something_is_declared(store):
     assert accounts_module.accounts_are_declared(store) is False
 
 
-def test_the_unnamed_default_stays_out_of_the_published_declaration(store, tmp_path):
+def test_the_unnamed_default_stays_out_of_the_published_declaration(store):
     """An install that declared two accounts must not grow a phantom third."""
-    drop = _drop(tmp_path, **{'accounts_csv': ACCOUNTS_FILE})
-    ledger.sync_drop_folder(store, drop)
+    _declare(store, ACCOUNTS_FILE)
 
     portfolio = accounts_module.declared_portfolio(store)
     assert portfolio.ids() == {'pea', 'cto'}
@@ -647,14 +333,12 @@ def test_the_unnamed_default_stays_out_of_the_published_declaration(store, tmp_p
 def test_a_default_bucket_that_holds_events_is_published(store, tmp_path):
     """The mixed state a late declaration leaves: it is a real account there.
 
-    ``2024.csv`` was imported before anything was declared, so its rows sit in
-    ``default``; it is then refused (its column is blank), so they stay. Hiding
-    the bucket would hide a third of the portfolio.
+    ``2024.csv`` landed before anything was declared, so its rows sit in
+    ``default``; a second upload of it would be refused now (its column is
+    blank), so they stay. Hiding the bucket would hide a third of the portfolio.
     """
-    drop = _drop(tmp_path, **{'2024_csv': V4_SINGLE_ACCOUNT})
-    ledger.sync_drop_folder(store, drop)
-    (drop / 'accounts.csv').write_text(ACCOUNTS_FILE, encoding="utf-8")
-    ledger.sync_drop_folder(store, drop)
+    _upload(store, tmp_path, V4_SINGLE_ACCOUNT)
+    _declare(store, ACCOUNTS_FILE)
 
     portfolio = accounts_module.declared_portfolio(store)
     assert portfolio.ids() == {'pea', 'cto', DEFAULT_ACCOUNT}
@@ -667,13 +351,9 @@ def test_the_manager_publishes_the_declaration_from_the_store(tmp_path):
     directory since ADR-0032, so what a snapshot is built from is the store and
     only the store.
     """
-    events = tmp_path / "events"
-    events.mkdir()
-    (events / "accounts.csv").write_text(ACCOUNTS_FILE, encoding="utf-8")
-    (events / "2024.csv").write_text(TWO_ACCOUNTS_UNDECLARED, encoding="utf-8")
-
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    ledger.sync_drop_folder(cm.store, events)
+    _declare(cm.store, ACCOUNTS_FILE)
+    _upload(cm.store, tmp_path, TWO_ACCOUNTS_UNDECLARED)
     snapshot = cm.current()
 
     assert snapshot.accounts.ids() == {'pea', 'cto'}

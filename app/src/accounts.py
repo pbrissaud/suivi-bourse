@@ -1,39 +1,31 @@
-"""Accounts are declared by a file, and a bad file does not get in (issue #698).
+"""The ``account`` table: what is declared, and what may not be undone (#698).
 
-An account is **user data with provenance, not a setting** (ADR-0013). So it is
-declared the way an event is — by a file, in the events' own format, or from the
-UI — and it is revoked **file by file**.
+An account is **user data, not a setting** (ADR-0013). The provenance half of
+that record is superseded: there is no accounts file any more, an account is
+declared in the app and nowhere else (ADR-0034), and what is left of the file
+half here is a header reader — :func:`is_accounts_file` — kept because the
+**upload** has to recognise a declaration in order to refuse it by name.
 
-Four decisions carry the module.
-
-**The file is what multi-account needs in the UI and headless alike.** An install
-with no interface has nothing to click, so reserving the declaration to the UI
-would forbid multi-account to every headless install — and with it the import of
-a broker export that names accounts. The headless principle of the roadmap is
-what bites here, not what decorates.
-
-**The format is the events' format** (``.csv``/``.xlsx``), not a third one:
-nobody should have to learn YAML to declare two accounts. The columns are the
-columns of the ``account`` table — ``id``, ``type``, ``label`` — and **no
-filename has a special meaning**: a file is an accounts source because of what
-its header says, never because of what it is called.
+Two decisions carry the module.
 
 **There is always at least one account.** The seeded ``default`` row is the one
 row every install owns, so nothing in the app branches on *"are accounts
-declared"* (ADR-0013): an empty ``account`` column means ``default`` until an
-accounts source exists, and an error afterwards. That is v4's rule **minus the
+declared"* (ADR-0013): an empty ``account`` column means ``default`` until
+something is declared, and an error afterwards. That is v4's rule **minus the
 opt-in**, and it is what makes a single-account v4's event files import without
 a single edit.
 
-**An account is undeletable while an event names it.** Whether the gesture is
-"delete this account" or "forget the file that declared it", the answer is the
-same refusal, and it retires by construction the historical residue the earlier
-design merely tolerated. Cascade forgetting is therefore refused, not performed.
+**An account is undeletable while an event names it.** The refusal is the same
+whatever asks, and it retires by construction the historical residue the earlier
+design merely tolerated. The cascade is refused, never performed.
 
-**Not in this module**: ``import_source`` itself and the event rows, which are
-:mod:`ledger`'s (issue #697). This module is handed a ``source_id`` and owns the
-``account`` table alone — one writer per row, as the schema's generating rule
-requires.
+**Not in this module**: the event rows, which are :mod:`entries`' — the one
+writer of them since #816. This module owns the ``account`` table alone, one
+writer per row, as the schema's generating rule requires.
+
+``account.source_id`` is an inert residue on a store that predates ADR-0032 and
+leaves with the rest of the accounts' provenance at #817; nothing writes it any
+more except the seed, which writes ``NULL``.
 """
 import csv
 from dataclasses import dataclass, replace
@@ -448,67 +440,6 @@ def source_account_ids(store, source_id: int) -> List[str]:
 # Writing the table — the file's half
 # --------------------------------------------------------------------------- #
 
-def apply_source(store, source_id: int, rows: Sequence[AccountRow]) -> int:
-    """Make ``source_id``'s accounts exactly ``rows``. Returns how many.
-
-    Called **inside** :mod:`ledger`'s import transaction, which is what makes a
-    refusal here a refusal of the whole file: the rollback takes the
-    ``import_source`` row with it, so a bad accounts file is not imported at all
-    (issue #698) and the previous declaration stands untouched.
-
-    Three refusals, and each one is a mistake that would otherwise become a
-    silent divergence:
-
-    * the same id twice **in one file** — the PK would refuse it anyway, but not
-      with a message naming both rows;
-    * an id another source already declares, or one created in the app — two
-      declarations of one account cannot both be the truth, and taking it over
-      silently would make forgetting the other import delete a row it did not
-      write;
-    * an id this source declared before and no longer does, while an event names
-      it (:class:`AccountInUse`) — the cascade ADR-0013 refuses.
-
-    **A row that is already there is updated, never rewritten.** The upsert this
-    replaced wrote the three columns unconditionally, ``source_id`` included, and
-    that last one is why correcting a label and dropping the file again — the
-    repair :class:`ReadOnlyAccount` tells the user to make — was impossible for
-    every account an event named: DuckDB turns a write to a foreign-key column
-    into a delete plus an insert, and the delete trips ``event.account``. The
-    key is gone from the DDL for that reason (see :mod:`store`), and the write
-    is split here for the other half of it: a re-drop of the same file finds its
-    own ``import_source`` row, so ``source_id`` does not move, and the statement
-    that does not move it is the one that says what actually changed.
-    """
-    _refuse_duplicates(rows)
-    _refuse_taken(store, source_id, rows)
-
-    incoming = {row.id for row in rows}
-    declared = set(source_account_ids(store, source_id))
-    retired = [i for i in declared if i not in incoming]
-    _retire(store, retired)
-
-    # Read after `_retire`: the ids it removed are gone, and an id this file now
-    # declares that it did not declare before is an insert even when the row
-    # existed a moment ago.
-    existing = account_ids(store)
-    for row in rows:
-        if row.id in existing:
-            store.execute(
-                'UPDATE account SET type = ?, label = ? WHERE id = ?',
-                [row.type, row.label, row.id])
-            if row.id not in declared:
-                # Ownership moves. `_refuse_taken` has already refused every id
-                # another source or the app declares, so what reaches this line
-                # is the seeded `default` row a file is allowed to take over.
-                store.execute('UPDATE account SET source_id = ? WHERE id = ?',
-                              [source_id, row.id])
-            continue
-        store.execute(
-            'INSERT INTO account (id, type, label, source_id) '
-            'VALUES (?, ?, ?, ?)', [row.id, row.type, row.label, source_id])
-    return len(rows)
-
-
 def forget_source(store, source_id: int) -> List[str]:
     """Drop the accounts an import declared. Returns the ids it removed.
 
@@ -523,48 +454,15 @@ def forget_source(store, source_id: int) -> List[str]:
     return retired
 
 
-def _refuse_duplicates(rows: Sequence[AccountRow]) -> None:
-    seen = {}
-    for row in rows:
-        if row.id in seen:
-            raise AccountSourceError(
-                f"Account {row.id!r} is declared twice ({seen[row.id].where()} "
-                f"and {row.where()}); an id names one account")
-        seen[row.id] = row
-
-
-def _refuse_taken(store, source_id: int, rows: Sequence[AccountRow]) -> None:
-    """Refuse an id another source declares, or one created in the app."""
-    owners = {
-        row[0]: row[1] for row in store.query(
-            'SELECT a.id, s.filename FROM account a '
-            'LEFT JOIN import_source s ON s.id = a.source_id '
-            'WHERE a.source_id IS DISTINCT FROM ?', [source_id])
-    }
-    for row in rows:
-        if row.id not in owners:
-            continue
-        # `default` is the seeded row every install owns, not a declaration
-        # somebody else made: a file is allowed to name it and take it over.
-        if row.id == DEFAULT_ACCOUNT:
-            continue
-        by = f"by {owners[row.id]}" if owners[row.id] else "in the app"
-        raise AccountSourceError(
-            f"Account {row.id!r} ({row.where()}) is already declared {by}; "
-            f"forget that declaration first, or rename this one")
-
-
 def _retire(store, ids: Iterable[str]) -> None:
     """Remove accounts a source no longer declares — unless an event names one.
 
     **Every refusal is decided before the first deletion**, and that ordering is
-    the whole correctness of the function: :func:`forget_source` is called
-    outside a transaction by :func:`ledger.forget_import`, so raising halfway
-    through the loop would commit the deletions already made and refuse the
-    gesture — an import that is both refused and partly forgotten, with no way
-    back (the file's fingerprint is unchanged, so a re-scan reports it
-    unchanged and never restores what went). Checking first makes the refusal
-    all-or-nothing without a transaction to lean on.
+    the whole correctness of the function: it may be called outside a
+    transaction, so raising halfway through the loop would commit the deletions
+    already made and refuse the gesture — a state that is both refused and
+    partly applied. Checking first makes the refusal all-or-nothing without a
+    transaction to lean on.
 
     ``default`` is never removed and never refused. It is the row every install
     has (ADR-0013: *there is always at least one account*), so a file that
@@ -697,7 +595,6 @@ __all__ = [
     'is_accounts_file', 'header_of', 'load_account_rows',
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
-    'is_named_by_events', 'source_account_ids',
-    'apply_source', 'forget_source',
+    'is_named_by_events', 'source_account_ids', 'forget_source',
     'create_account', 'update_account', 'delete_account',
 ]

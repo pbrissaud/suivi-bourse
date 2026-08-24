@@ -54,12 +54,11 @@ them is a flag:
 * **It closes by running.** Afterwards no event carries ``default``, so a second
   call moves nothing at all. The exception is spent by the repair it exists for.
 
-It is a module of its own for the reason :mod:`entries` is one. ``event`` is
-written by the import path (:mod:`ledger`) and by the app (:mod:`entries`), and
-each keeps its rule true *by inspection*: the import has no row-level write, and
-:mod:`entries` writes only ``source_id NULL`` rows. A third writer that lived in
-either would quietly falsify the sentence its host is asserted on — so the
-exception is named, and it is named here.
+It is a module of its own for the reason it always was, said the other way round
+since #816: ``event`` has **one** writer (:mod:`entries`), and a gesture that
+rewrites a column of it in bulk is not one of that module's four. Folding it in
+would make *the four gestures and what they refuse* read as five, one of which
+answers to no key at all — so the exception is named, and it is named here.
 
 **Not in this module**: the declaration itself (:mod:`accounts`), and the replay
 that follows the write (:func:`main.replay_after_write`). What is here is the
@@ -112,11 +111,10 @@ def unassigned_events(store) -> int:
 def reassign_unassigned(store, account_id: str) -> int:
     """Move every event naming ``default`` onto ``account_id``. Returns how many.
 
-    **The caller owns the transaction**, the way :func:`accounts.apply_source`
-    is called inside :mod:`ledger`'s import transaction — because the gesture
-    this serves is sometimes *declare an account and reassign in the same
-    breath*, and a declaration committed without the reassignment the owner
-    asked for in the same click is a half gesture nobody asked for.
+    **The caller owns the transaction** — because the gesture this serves is
+    sometimes *declare an account and reassign in the same breath*, and a
+    declaration committed without the reassignment the owner asked for in the
+    same click is a half gesture nobody asked for.
 
     Raises:
         NotReassignable: the target is the seeded row, or is blank.

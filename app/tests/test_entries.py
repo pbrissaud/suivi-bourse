@@ -1,22 +1,24 @@
-"""The event somebody typed here, and the gestures it earns (issue #764).
+"""The one writer of the ledger, and the gestures a row earns (#764, #816).
 
-The seam is :mod:`test_ledger`'s: a **real** DuckDB store in ``tmp_path``, the
-real ingestion beside it, and every assertion a ``SELECT`` against the store —
-never the fact that a function was called.
+The seam is :mod:`test_ledger`'s: a **real** DuckDB store in ``tmp_path`` and
+every assertion a ``SELECT`` against it — never the fact that a function was
+called.
 
-What this file is about is the **population**, because that is the whole of what
-the ticket settles. :mod:`ledger` writes rows a file provisioned and offers no
-row-level gesture on them, on purpose (#697). :mod:`entries` writes rows nobody
-provisioned and offers three, on purpose (ADR-0005: the create form is the
-onboarding, so a typo in it must not be permanent). Each test below names which
-of the two it is looking at.
+What this file was about was the **population**, and since #816 there is one.
+A row a file laid down and a row somebody typed are the same row: one writer
+wrote them, they carry the same columns, and the three gestures that address a
+row by its key reach both. So the tests that used to prove the *split* prove its
+absence instead — an uploaded row is corrected and removed exactly like a typed
+one, which is ADR-0032's whole point and this ticket's own seam.
 """
 from datetime import date
 
 import pytest
 
+import accounts as accounts_module
 import entries
 import ledger
+from events import EventLoader
 from events import export as events_export
 from events.aggregator import AggregationError
 from events.schemas import Event, EventType
@@ -27,11 +29,11 @@ ONE_BUY = (
     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,Initial purchase\n"
 )
 
-#: An accounts source (issue #698) — what turns a blank ``account`` column from
-#: *means default* into an error, on both roads.
-ACCOUNTS_FILE = (
-    "id,type,label\n"
-    "pea,PEA,Plan d'épargne en actions\n"
+#: Two more rows of the same file, so a gesture on one line can be shown to
+#: leave the others exactly where they were — which is story 14's whole point.
+TWO_MORE = (
+    "2024-02-15,BUY,MSFT,Microsoft,4,380.00,2.50,,Second\n"
+    "2024-03-15,BUY,MSFT,Microsoft,1,390.00,2.50,,Third\n"
 )
 
 
@@ -50,30 +52,43 @@ def _draft(**overrides) -> Event:
     return Event(**fields)
 
 
-def _drop(store, tmp_path, body=ONE_BUY, name='2024.csv'):
-    folder = tmp_path / 'events'
-    folder.mkdir(exist_ok=True)
-    (folder / name).write_text(body, encoding='utf-8')
-    ledger.sync_drop_folder(store, folder)
+def _upload(store, tmp_path, body=ONE_BUY, name='2024.csv'):
+    """One file into the store, by the road ``POST /api/events/import`` takes.
+
+    :func:`entries.create_many` is what the route calls, so what lands here is
+    what an upload lands — and nothing about these rows says they arrived in
+    company.
+    """
+    path = tmp_path / name
+    path.write_text(body, encoding='utf-8')
+    return entries.create_many(store, EventLoader(str(path)).load())
+
+
+def _declare(store, account_id='pea', account_type='PEA',
+             label="Plan d'épargne en actions"):
+    """One account, declared the way the app declares it (ADR-0034)."""
+    return accounts_module.create_account(store, account_id, account_type,
+                                          label)
 
 
 # --------------------------------------------------------------------------- #
 # What a typed row is, and is not
 # --------------------------------------------------------------------------- #
 
-def test_a_typed_row_carries_no_provenance_at_all(store):
-    """``source_id NULL`` is what *created in the app* **is** (spec #695 § 6).
+def test_a_row_carries_no_provenance_at_all(store):
+    """There is no column left to carry one (ADR-0032, #816).
 
-    The same column that makes it editable, and the same one the export
-    deliberately does not carry (#710).
+    Asserted on the **schema** and not on a value: three provenance columns all
+    reading ``NULL`` is what a typed row used to be, and what this states is that
+    the columns are gone — so nothing can put a value back into them.
     """
     created = entries.create(store, _draft())
 
-    assert store.query(
-        'SELECT source_id, source_sheet, source_row FROM event') == [
-            (None, None, None)]
+    columns = {row[0] for row in store.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'event'")}
+    assert columns.isdisjoint({'source_id', 'source_sheet', 'source_row'})
     assert created.id is not None
-    assert created.source_id is None
 
 
 def test_the_name_comes_off_the_ledger_or_falls_back(store, tmp_path):
@@ -83,18 +98,18 @@ def test_the_name_comes_off_the_ledger_or_falls_back(store, tmp_path):
     the next build — in the gunicorn master, i.e. a boot nobody can repair from
     an app that is down.
     """
-    _drop(store, tmp_path)
+    _upload(store, tmp_path)
 
     entries.create(store, _draft())
     entries.create(store, _draft(symbol='MSFT'))
 
     assert set(store.query(
-        'SELECT symbol, name FROM event WHERE source_id IS NULL')) == {
-            ('AAPL', 'Apple Inc'), ('MSFT', 'MSFT')}
+        'SELECT symbol, name FROM event WHERE notes = ?',
+        ['Typed here'])) == {('AAPL', 'Apple Inc'), ('MSFT', 'MSFT')}
 
 
 def test_a_blank_account_is_the_seeded_bucket(store):
-    """One expression, no branch — :func:`ledger._insert_events`' own rule."""
+    """One expression and no branch — ``event.account or DEFAULT_ACCOUNT``."""
     entries.create(store, _draft(account=''))
 
     assert store.query('SELECT account FROM event') == [('default',)]
@@ -105,10 +120,11 @@ def test_a_blank_account_is_refused_once_something_is_declared(store, tmp_path):
 
     A blank ``account`` means ``default`` until something is declared and is an
     error afterwards. Resolving the blank before the validator runs is how this
-    road loses the case: the file path refuses the same row whole, and an install
-    that declared ``pea`` grows the phantom ``default`` the rule exists against.
+    gesture would lose the case: the same row inside a file is refused whole, and
+    an install that declared ``pea`` would grow the phantom ``default`` the rule
+    exists against.
     """
-    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
+    _declare(store)
 
     for blank in (None, '', '   '):
         with pytest.raises(entries.InvalidEntry) as refusal:
@@ -120,17 +136,25 @@ def test_a_blank_account_is_refused_once_something_is_declared(store, tmp_path):
         "SELECT count(*) FROM account WHERE id = 'default'") == [(1,)]
 
 
-def test_the_file_road_refuses_that_same_blank(store, tmp_path):
-    """The comparison the test above is only half of — one product, one rule."""
-    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
-    _drop(store, tmp_path, body=ONE_BUY, name='2024.csv')
+def test_a_whole_file_is_refused_for_that_same_blank(store, tmp_path):
+    """One product, one rule — and a file is refused **whole** for it.
 
+    The comparison the test above is only half of, and since #816 it is the same
+    function refusing on both sides: nothing is written, the other rows the file
+    carried included.
+    """
+    _declare(store)
+
+    with pytest.raises(entries.InvalidEntry) as refusal:
+        _upload(store, tmp_path, body=ONE_BUY + TWO_MORE)
+
+    assert refusal.value.field == 'account'
     assert store.query('SELECT count(*) FROM event') == [(0,)]
 
 
 def test_a_declared_account_is_written_as_it_was_named(store, tmp_path):
     """The refusal above is about the blank, never about naming an account."""
-    _drop(store, tmp_path, body=ACCOUNTS_FILE, name='accounts.csv')
+    _declare(store)
 
     created = entries.create(store, _draft(account='pea'))
 
@@ -160,7 +184,6 @@ def test_a_typed_row_is_read_back_with_its_key(store):
 
     (event,) = ledger.read_events(store)
     assert event.id == created.id
-    assert event.source_filename is None
 
 
 # --------------------------------------------------------------------------- #
@@ -226,29 +249,30 @@ def test_a_removal_that_oversells_is_refused_the_same_way(store):
 # The population: what came from a file is refused by name
 # --------------------------------------------------------------------------- #
 
-def test_an_imported_row_is_refused_and_the_refusal_names_it(store, tmp_path):
-    """Read-only is unchanged for the rows it was written for (#697).
+def test_an_uploaded_row_is_corrected_and_removed_like_any_other(store, tmp_path):
+    """**The ticket's seam** (ADR-0032, #816, stories 13 and 14).
 
-    The refusal carries the file **and** the source id, because the gesture the
-    owner has instead is forgetting that import — and a page linking to it needs
-    the id rather than a sentence to re-parse.
+    A row a file laid down used to be refused by both gestures — ``409``, naming
+    the import to forget — so a typo in one line cost the revocation of every
+    other line of the file. It is corrected in place now, and removed on its own,
+    and the two rows beside it are not consulted.
     """
-    _drop(store, tmp_path)
-    ((key,),) = store.query('SELECT id FROM event')
+    _upload(store, tmp_path, body=ONE_BUY + TWO_MORE)
+    keys = [row[0] for row in store.query('SELECT id FROM event ORDER BY id')]
+    assert len(keys) == 3
 
-    with pytest.raises(entries.ImportedEntry) as refusal:
-        entries.update(store, key, _draft())
-    assert refusal.value.filename == '2024.csv'
-    assert refusal.value.source_id is not None
+    entries.update(store, keys[0],
+                   _draft(date=date(2024, 1, 15), quantity=12.0))
+    assert store.query(
+        'SELECT quantity FROM event WHERE id = ?', [keys[0]]) == [(12.0,)]
 
-    with pytest.raises(entries.ImportedEntry):
-        entries.remove(store, key)
-
-    assert store.query('SELECT count(*) FROM event') == [(1,)]
+    entries.remove(store, keys[0])
+    assert [row[0] for row in
+            store.query('SELECT id FROM event ORDER BY id')] == keys[1:]
 
 
 def test_an_unknown_id_is_its_own_refusal(store):
-    """*No such row* and *this row came from a file* are two pieces of news."""
+    """*No such row* is the one thing a gesture on a key is refused for."""
     with pytest.raises(entries.UnknownEntry):
         entries.remove(store, 9999)
 
@@ -276,22 +300,17 @@ def test_an_update_rewrites_the_whole_row(store):
             ('DEPOSIT', None, None, 500.0)]
 
 
-def test_an_update_cannot_forge_a_provenance(store, tmp_path):
-    """The store decides where a row came from, never the caller.
+def test_a_draft_cannot_choose_its_own_key(store):
+    """The store decides the address of a row, never the caller.
 
-    A draft carrying a ``source_id`` is not a row that becomes read-only: those
-    members are stripped on the way in, which is what keeps *"a row that carries
-    a provenance came from a file"* (ADR-0020) a true statement rather than a
-    convention a client could break.
+    ``id`` is stripped on the way in, so a body naming one does not overwrite the
+    row that already answers to it: it lands as the next row, like every other.
     """
-    _drop(store, tmp_path)
-    ((source_id,),) = store.query('SELECT id FROM import_source')
-    created = entries.create(store, _draft(source_id=source_id,
-                                           source_row=7, id=1))
+    first = entries.create(store, _draft())
+    second = entries.create(store, _draft(id=first.id, quantity=3.0))
 
-    assert store.query(
-        'SELECT source_id, source_row FROM event WHERE id = ?',
-        [created.id]) == [(None, None)]
+    assert second.id != first.id
+    assert store.query('SELECT count(*) FROM event') == [(2,)]
 
 
 def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
@@ -317,17 +336,20 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
     ``?dry_run=1`` that had left a row behind would fail this file's own
     subject, so they are listed here to be counted rather than to be excused.
     """
-    _drop(store, tmp_path)
-    ((imported,),) = store.query('SELECT id FROM event')
+    import re
+    from pathlib import Path
 
-    for gesture in (lambda: entries.update(store, imported, _draft()),
-                    lambda: entries.remove(store, imported)):
-        with pytest.raises(entries.ImportedEntry):
-            gesture()
+    src = Path(__file__).resolve().parents[1] / 'src'
+    pattern = re.compile(
+        r"(?:INSERT INTO event|UPDATE event|DELETE FROM event)\b")
+    writers = sorted(path.relative_to(src).as_posix()
+                     for path in src.rglob('*.py')
+                     if pattern.search(path.read_text()))
 
+    assert writers == ['entries.py', 'reassignment.py']
     assert set(entries.__all__) == {
         'DUPLICATE_KEY_COLUMNS',
-        'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
+        'UnknownEntry', 'InvalidEntry',
         'create', 'create_many', 'update', 'remove', 'remove_selection',
         'content_key', 'split_duplicates', 'judge'}
 
@@ -336,16 +358,14 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
 # The bulk removal: the reduction is the subject, and the row's origin is not
 # --------------------------------------------------------------------------- #
 
-def test_the_bulk_removal_takes_an_imported_row_like_any_other(store, tmp_path):
-    """What ``update`` and ``remove`` refuse by name, this one simply removes.
+def test_the_bulk_removal_takes_an_uploaded_row_like_any_other(store, tmp_path):
+    """The whole of ADR-0032's *the removal is the gesture*.
 
-    The whole of ADR-0032's *the removal is the gesture*: undoing an import has
-    to reach the rows the import laid down, and a bulk delete that stopped at
-    each of them would leave the reader exactly where losing ``forget_import``
-    put them. The typed row beside it is untouched, so what is asserted is the
-    **reduction** and not *everything*.
+    Undoing an import reaches the rows the import laid down without asking any of
+    them where they came from. The typed row beside them is untouched, so what is
+    asserted is the **reduction** and not *everything*.
     """
-    _drop(store, tmp_path)
+    _upload(store, tmp_path)
     entries.create(store, _draft(date=date(2024, 8, 1), symbol='MSFT'))
 
     removed = entries.remove_selection(

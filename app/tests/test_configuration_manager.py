@@ -34,8 +34,9 @@ from datetime import date
 
 import pytest
 
-import ledger
+import entries
 import main
+from events import EventLoader
 from main import ConfigurationManager
 from events.validator import EventValidationError
 
@@ -56,8 +57,22 @@ def seeded(config_dir, drop=None):
     """
     cm = ConfigurationManager(config_dir=str(config_dir))
     if drop is not None:
-        ledger.sync_drop_folder(cm.store, drop)
+        for path in sorted(drop.iterdir()):
+            entries.create_many(cm.store, EventLoader(str(path)).load())
     return cm
+
+
+def _correct_one_row(cm, symbol='AAPL', quantity=11.0):
+    """Rewrite the ledger's first row of ``symbol``, as ``PATCH`` would.
+
+    The gesture that replaced *re-drop the corrected file* (ADR-0032): a
+    correction addresses **one row by its key** now, whatever laid it down.
+    """
+    import ledger as ledger_module
+    row = next(event for event in ledger_module.read_events(cm.store)
+               if event.symbol == symbol)
+    from dataclasses import replace
+    entries.update(cm.store, row.id, replace(row, quantity=quantity))
 
 
 # --------------------------------------------------------------------------- #
@@ -116,24 +131,21 @@ def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
     assert str(tmp_path) not in key
 
 
-def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
-    """A touch changes nothing; a changed line changes the key."""
+def test_cache_key_follows_the_rows_and_nothing_else(tmp_path, events_dir):
+    """A rebuild that wrote nothing changes nothing; **one edited cell does**.
+
+    The second half is what #816 makes load-bearing: a correction in place moves
+    no count and no source, so a key built from either would republish the ledger
+    as it was. It is built from the rows.
+    """
     cm = seeded(tmp_path, events_dir)
     cm.load_shares()
     key_before = cm._compute_cache_key()
 
-    csv_file = events_dir / "2024.csv"
-    st = csv_file.stat()
-    os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
-    ledger.sync_drop_folder(cm.store, events_dir)
     cm.reload()
     assert cm._compute_cache_key() == key_before
 
-    csv_file.write_text(
-        csv_file.read_text(encoding="utf-8").replace(
-            "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
-        encoding="utf-8")
-    ledger.sync_drop_folder(cm.store, events_dir)
+    _correct_one_row(cm)
     cm.reload()
     assert cm._compute_cache_key() != key_before
 
@@ -176,24 +188,24 @@ def test_force_reload_bypasses_cache(tmp_path, events_dir):
     assert forced == first
 
 
-def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
-    """A corrected file replaces its rows, so the next load rebuilds."""
+def test_a_corrected_row_invalidates_the_cache(tmp_path, events_dir):
+    """One row rewritten in place, and the next load rebuilds on it.
+
+    This is *re-drop the corrected file* after #816: a typo is repaired where it
+    is, so the cache has to notice a change that moves neither the row count nor
+    anything about a source.
+    """
     cm = seeded(tmp_path, events_dir)
 
     first = cm.load_shares()
     aapl_before = next(s for s in first if s["symbol"] == "AAPL")
 
-    csv_file = events_dir / "2024.csv"
-    csv_file.write_text(
-        csv_file.read_text(encoding="utf-8").replace(
-            "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
-        encoding="utf-8")
-    ledger.sync_drop_folder(cm.store, events_dir)
+    _correct_one_row(cm)
 
     second = cm.load_shares()
     assert second is not first
     aapl_after = next(s for s in second if s["symbol"] == "AAPL")
-    # Replaced, not doubled: 10 BUY + 5 BUY + 1 GRANT - 3 SELL = 13 became 14.
+    # Corrected, not doubled: 10 BUY + 5 BUY + 1 GRANT - 3 SELL = 13 became 14.
     assert aapl_before["quantity"] == 13.0
     assert aapl_after["quantity"] == 14.0
 

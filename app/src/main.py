@@ -739,9 +739,9 @@ class ConfigurationManager:
 
         The mtime fingerprint of #658 moved to its new subject. The files are no
         longer the truth, so what a published snapshot has to be invalidated
-        against is the store: :func:`ledger.stamp` moves when a re-drop changed
-        content, when an import is forgotten, when the declaration changes, and
-        on nothing else.
+        against is the store: :func:`ledger.stamp` fingerprints the event rows
+        themselves and the declaration, so it moves on every write and on
+        nothing else.
 
         **One part, and no file left in it** (issue #698). ``settings.yaml``'s
         mtime used to join the key because the ``accounts:`` block was re-read
@@ -749,7 +749,7 @@ class ConfigurationManager:
         alone says whether a snapshot is stale — and a v4 file being touched can
         no longer invalidate anything.
 
-        ``None`` when nothing has been imported and nothing declared — a fresh
+        ``None`` when nothing has been recorded and nothing declared — a fresh
         install with nothing to fingerprint yet.
         """
         return ledger.stamp(self._require_store())
@@ -779,10 +779,9 @@ class ConfigurationManager:
         skipped after a revocation, or it would import the revoked file straight
         back in the same request. There is no folder to scan, so the flag went
         with its reason and what is left is a **forced** rebuild — which is what
-        a write through the API needs, and it is not the same argument at all:
-        :func:`ledger.stamp` counts the events and fingerprints the sources, so
-        an edit that changes one row's price moves nothing in it and a
-        cache-honouring rebuild would republish the ledger as it was.
+        a write through the API asks for, and for a reason of its own: the
+        caller has just moved the ledger, so recomputing the fingerprint in
+        order to be told so is work with one possible answer.
         """
         return self.reload(force=True)
 
@@ -2002,10 +2001,9 @@ class SuiviBourseMetrics:
 
         **``force`` is not the flag that left** (ADR-0032). ``import_files``
         said *scan the drop folder or do not*, and it went with the folder;
-        what is left is whether the fingerprint may be honoured, and a write
-        must not honour it: :func:`ledger.stamp` counts the events, so an edit
-        that changes one row's price moves nothing in it and the published
-        snapshot would go on describing the ledger as it was.
+        what is left is whether the fingerprint may be honoured, and the write
+        path says it need not be — it has just moved the ledger and has no
+        reason to ask.
 
         ``SB_INGESTION_INTERVAL`` is gone with the polling it paced, and there
         is no timer anywhere that re-reads a file on its own.
@@ -2151,7 +2149,7 @@ class SuiviBourseMetrics:
 
         An **import** is the third writer of one of them, and of one only: an
         exported file states its reporting currency, and a store that has none
-        takes it (``ledger._currency_to_adopt``, ADR-0021). Without this line the
+        takes it (``ledger.currency_to_adopt``, ADR-0021). Without this line the
         row would be in the store and the running process would go on converting
         nothing until the next restart — and that is the one dial where the
         symptom is invisible, since a missing currency writes ``NULL``

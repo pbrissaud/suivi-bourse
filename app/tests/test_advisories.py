@@ -391,22 +391,24 @@ def test_forgetting_the_events_takes_the_notice_with_them(store):
 # --------------------------------------------------------------------------- #
 
 def test_the_table_never_grows_with_the_imports(store, tmp_path):
-    """``import_source`` is the provenance trail; this is not a second one.
+    """This table is not a trace of what happened, and three imports prove it.
 
-    Merged, the advisory box would grow by a row per import and stop being read
-    — both failures at once. The check is on the row count, because that is what
-    "not a journal" means.
+    ``import_source`` was the trace and it is gone (ADR-0032); merged into this
+    one, the advisory box would have grown by a row per import and stopped being
+    read — both failures at once. The check is on the row count, because that is
+    what "not a journal" means, and it holds for the gesture that replaced the
+    folder just as it held for the folder.
     """
-    import ledger
+    import entries
+    from events import EventLoader
 
-    events_dir = tmp_path / 'events'
-    events_dir.mkdir()
     header = ('date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n')
     for year in (2022, 2023, 2024):
-        (events_dir / f'{year}.csv').write_text(
+        path = tmp_path / f'{year}.csv'
+        path.write_text(
             header + f'{year}-01-15,BUY,AAPL,Apple Inc,1,150.00,,,\n',
             encoding='utf-8')
+        entries.create_many(store, EventLoader(str(path)).load())
 
-    ledger.sync_drop_folder(store, events_dir)
-    assert len(store.query('SELECT id FROM import_source')) == 3
+    assert store.query('SELECT count(*) FROM event') == [(3,)]
     assert _row_count(store) == 0

@@ -20,15 +20,16 @@ database reports as correct.
 No network is ever touched.
 """
 
-from pathlib import Path
-
 import pytest
 
+import entries
 import ledger
 import main
 import portfolio_view
 import quotes
 import store_reads
+from events import EventLoader
+from events.aggregator import AggregationError
 from main import ConfigurationManager, SuiviBourseMetrics
 
 from datetime import datetime, timezone
@@ -102,10 +103,11 @@ def _config_with_a_ledger(tmp_path, csv_text=EVENTS_CSV, imported=True):
     config_dir = tmp_path / "config"
     events_dir = config_dir / "events"
     events_dir.mkdir(parents=True)
-    (events_dir / "2024.csv").write_text(csv_text, encoding="utf-8")
+    path = events_dir / "2024.csv"
+    path.write_text(csv_text, encoding="utf-8")
     manager = ConfigurationManager(config_dir=str(config_dir))
     if imported:
-        ledger.sync_drop_folder(manager.store, events_dir)
+        entries.create_many(manager.store, EventLoader(str(path)).load())
     return manager
 
 
@@ -252,7 +254,8 @@ def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
     ledger it would make before it commits, so an oversell rolls the whole file
     back. What the user gets is not an exception through ``load_shares`` but an
     unchanged store — including the BUY on the line above the bad one, which is
-    the point of refusing a file whole.
+    the point of refusing a file whole. Since #816 that refusal comes out of
+    :func:`entries.create_many`, which is the one road a file has.
     """
     bad_csv = (
         "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
@@ -266,9 +269,8 @@ def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
 
     opened = config_manager._require_store()
     assert ledger.read_events(opened) == []
-    assert ledger.list_imports(opened) == []
 
-    (outcome,) = ledger.sync_drop_folder(
-        opened, Path(tmp_path / "config" / "events"))
-    assert outcome.outcome == ledger.REFUSED
-    assert "Cannot sell" in outcome.error or "sell" in outcome.error.lower()
+    rows = EventLoader(str(tmp_path / "config" / "events" / "2024.csv")).load()
+    with pytest.raises(AggregationError) as refused:
+        entries.create_many(opened, rows)
+    assert "sell" in str(refused.value).lower()
