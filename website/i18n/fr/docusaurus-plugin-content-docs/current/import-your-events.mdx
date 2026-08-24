@@ -222,7 +222,17 @@ curl -O http://localhost:8080/api/export/accounts.csv
 # `symbol` may be repeated; anything left out is simply not narrowed.
 # `-OJ` rather than `-O`: the name is the server's, and it is not the one in the URL.
 curl -OJ 'http://localhost:8080/api/export/events.csv?type=BUY&account=pea&q=liquide&symbol=AI.PA'
+
+# One year, which is `since` and `until` — both days included, and either one
+# on its own opens the interval on the other side.
+curl -OJ 'http://localhost:8080/api/export/events.csv?since=2024-01-01&until=2024-12-31'
 ```
+
+`since` and `until` rather than `from` and `to`: the filters on the page and the
+parameters here are one vocabulary, and `from` is a word the app cannot spell on
+its own side. A bound that is not a calendar day — `?since=yesterday`, or a 31st
+of February — is refused rather than ignored: a backup that comes back quietly
+short is worse than one that fails.
 
 A selection is saved as `suivi-bourse-selection.csv` and never under the whole
 ledger's name: **a partial file must not replace a complete one**, either in
