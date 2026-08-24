@@ -37,7 +37,16 @@
  * markers, where *a day carrying three events is one marker announcing three*
  * and never three points merged in silence.
  */
-import { absenceCase, type AbsenceCase, type PositionAbsenceInput } from '@/lib/absence'
+import {
+  absenceCase,
+  isQuoted,
+  positionRenderings,
+  DASH,
+  FIGURE,
+  type AbsenceCase,
+  type PositionAbsenceInput,
+  type Rendering,
+} from '@/lib/absence'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
 import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
@@ -203,22 +212,123 @@ export function buildShareRows(
   return Array.from(rows.values())
 }
 
+// ------------------------------------------------------------------------- //
+// The order (#791)
+// ------------------------------------------------------------------------- //
+
 /**
- * The live table, heaviest first. Value is the only ordering a portfolio reads
- * naturally, and a line whose rate has not resolved has none — so it goes last
- * rather than pretending to be worth nothing.
+ * What the reader may order the live table by — **one name per column**, the
+ * ten of them.
+ *
+ * `weight` is in the list and it orders on the **value**, not on the share: the
+ * share is that value divided by one whole for the whole table, so the two
+ * orders are the same order and computing the division to compare it would be
+ * arithmetic performed to reach a conclusion already in hand.
  */
-export function heldRows(rows: readonly ShareRow[]): ShareRow[] {
-  return rows
-    .filter((row) => !isClosed(row))
-    .sort((a, b) => {
-      const left = marketValue(a)
-      const right = marketValue(b)
-      if (left === right) return a.symbol.localeCompare(b.symbol)
-      if (left === null) return 1
-      if (right === null) return -1
-      return right - left
-    })
+export type SortColumn =
+  | 'symbol'
+  | 'price'
+  | 'quantity'
+  | 'avgCost'
+  | 'value'
+  | 'weight'
+  | 'unrealised'
+  | 'realised'
+  | 'dividends'
+  | 'account'
+
+export interface ShareSort {
+  column: SortColumn
+  direction: 'asc' | 'desc'
+}
+
+/**
+ * Heaviest first, which is what the page opened on before it could be ordered
+ * at all: value is the only ordering a portfolio reads naturally, so it stays
+ * what the reader is handed before making a gesture.
+ */
+export const DEFAULT_SORT: ShareSort = { column: 'value', direction: 'desc' }
+
+/**
+ * The direction a column takes when it is **first** pressed.
+ *
+ * Money descends and a name ascends, because that is the reading each of them
+ * is asked for: *which line is the biggest* and *where is the line called Z*.
+ * A single rule for both would make one of the two gestures cost two clicks
+ * every time.
+ */
+export function firstDirection(column: SortColumn): ShareSort['direction'] {
+  return column === 'symbol' || column === 'account' ? 'asc' : 'desc'
+}
+
+/** Pressing the column in force turns it round; pressing another starts it. */
+export function nextSort(current: ShareSort, column: SortColumn): ShareSort {
+  if (current.column !== column) return { column, direction: firstDirection(column) }
+  return { column, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+}
+
+/** The text a column orders on, or the number — whichever the column is. */
+function sortKey(row: ShareRow, column: SortColumn): string | number | null {
+  switch (column) {
+    case 'symbol':
+      // What is **written** in the cell, not the ticker under it: a reader
+      // ordering by `Titre` is ordering the names they can see.
+      return row.name ?? row.symbol
+    case 'price':
+      // The native quote, and only where there is one to compare: a number in
+      // no nameable unit is not a price (#774), so it sorts as an absence.
+      return isQuoted(row.price) ? (row.price?.value ?? null) : null
+    case 'quantity':
+      return row.quantity
+    case 'avgCost':
+      return unitCost(row)
+    case 'value':
+    case 'weight':
+      return marketValue(row)
+    case 'unrealised':
+      return unrealised(row)
+    case 'realised':
+      return row.realised
+    case 'dividends':
+      return row.dividends
+    case 'account':
+      return row.accounts.join(', ')
+  }
+}
+
+/**
+ * The live table in the reader's own order — **and an absence never rises**.
+ *
+ * A row with nothing to compare goes last in *both* directions, which is the
+ * rule the default order already carried for the rate that has not resolved: a
+ * line with no value has no rank, and letting the direction float it to the top
+ * would put the lines the reader knows least about above the ones they came
+ * for. Ties fall back on the symbol, so the order is total and a re-sort never
+ * shuffles equal rows.
+ */
+export function sortRows(rows: readonly ShareRow[], sort: ShareSort): ShareRow[] {
+  const sign = sort.direction === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const left = sortKey(a, sort.column)
+    const right = sortKey(b, sort.column)
+    if (left === null && right === null) return a.symbol.localeCompare(b.symbol)
+    if (left === null) return 1
+    if (right === null) return -1
+    // One column answers one type — `sortKey` is a closed switch — so the two
+    // keys can never be a string and a number.
+    const order =
+      typeof left === 'string' && typeof right === 'string'
+        ? left.localeCompare(right)
+        : Number(left) - Number(right)
+    return order === 0 ? a.symbol.localeCompare(b.symbol) : order * sign
+  })
+}
+
+/**
+ * The live table, in the order asked for — heaviest first until one is.
+ */
+export function heldRows(rows: readonly ShareRow[], sort: ShareSort = DEFAULT_SORT): ShareRow[] {
+  return sortRows(rows.filter((row) => !isClosed(row)), sort)
 }
 
 /**
@@ -235,6 +345,120 @@ export function closedRows(rows: readonly ShareRow[]): ShareRow[] {
       if (b.closedAt === null) return -1
       return a.closedAt < b.closedAt ? 1 : -1
     })
+}
+
+// ------------------------------------------------------------------------- //
+// The grouping by account (#791)
+// ------------------------------------------------------------------------- //
+
+/**
+ * One block of the live table: its rows, and the positions its header sums.
+ *
+ * `account` is `null` when nothing is grouped — the table is then **one** group
+ * with no header of its own, which is what keeps the ungrouped and the grouped
+ * table one component rather than two renderings of nine columns each.
+ */
+export interface ShareGroup {
+  account: string | null
+  /** The rows under the header, already ordered. */
+  rows: ShareRow[]
+  /**
+   * The positions those rows fold, which is what the group header's subtotal is
+   * computed from — the page header's own argument, one level down: a header
+   * states the sum of the lines it sits above, so it is handed exactly them.
+   */
+  positions: readonly Position[]
+}
+
+/**
+ * The live table split by account — **a partition, and never a filter**.
+ *
+ * That is the whole difficulty and it is the page's own rule met one axis over.
+ * A row of this table is a *symbol* across its accounts, so splitting it by
+ * account has to put every part of every line somewhere: a symbol still held on
+ * one account and sold out on another carries that second account's **realised
+ * gain and dividends**, and a group built out of *the accounts that still hold
+ * something* would drop that slice — leaving the page header summing a figure
+ * no row on screen accounts for, which is the second correct figure ADR-0017
+ * exists to prevent, one level down.
+ *
+ * So the split is over the symbols the table is showing, and an account named
+ * by one of them gets a row for it whatever its own quantity is. Summed over
+ * the groups, the figures are the ungrouped line's, exactly.
+ *
+ * The accounts come out in **their id's order**, which is what the `Compte`
+ * column already renders: there is no fifth read here to fetch a label with,
+ * and an order taken from the weights would be a second ranking on a table the
+ * reader has just been given ten of their own.
+ */
+export function accountGroups(
+  positions: readonly Position[],
+  failures: ReadonlyMap<string, number>,
+  sort: ShareSort = DEFAULT_SORT,
+): ShareGroup[] {
+  const accounts = Array.from(new Set(positions.map((position) => position.account))).sort((a, b) =>
+    a.localeCompare(b),
+  )
+  return accounts
+    .map((account) => {
+      const own = positions.filter((position) => position.account === account)
+      return {
+        account,
+        rows: sortRows(buildShareRows(own, failures), sort),
+        positions: own,
+      }
+    })
+    .filter((group) => group.rows.length > 0)
+}
+
+// ------------------------------------------------------------------------- //
+// The weight (#791)
+// ------------------------------------------------------------------------- //
+
+/**
+ * The whole the `Poids` column divides — **the value of the lines it can
+ * place**, which is `allocation`'s rule one page over (`lib/dashboard.ts`) and
+ * not a second answer to the same question.
+ *
+ * A held line whose rate has not resolved has no value in the reporting
+ * currency. Counting it as nothing would make every other percentage silently
+ * wrong; refusing the whole column for it would put one line's absence on ten
+ * rows, which is the noise ADR-0016 deletes markers for. So it is left out of
+ * the whole and **named on its own row**, by the rendering below.
+ */
+export function placedValue(rows: readonly ShareRow[]): number {
+  let total = 0
+  for (const row of rows) {
+    const value = marketValue(row)
+    if (value !== null) total += value
+  }
+  return total
+}
+
+/** A line's share of that whole, `0`…`1`, or `null` where there is none. */
+export function weightShare(row: ShareRow, whole: number): number | null {
+  const value = marketValue(row)
+  if (value === null || whole <= 0) return null
+  return value / whole
+}
+
+/**
+ * How the `Poids` cell reads — **the rendering of the valuation it divides**.
+ *
+ * It cannot be decided on its own: the weight is `Valorisation ÷ Valorisation
+ * totale`, so whatever empties the first empties this one for the same reason
+ * and has the same sentence already written for it (`lib/absence.ts`). Deciding
+ * here would be a second classification of one absence, and a second
+ * classification of one absence is how the four renderings become five.
+ *
+ * The one case of its own is a whole of nothing — a table whose every line is
+ * worth zero — where there is genuinely nothing to divide, and that is the em
+ * dash's own sentence.
+ */
+export function weightRendering(row: ShareRow, whole: number): Rendering {
+  const { valuation } = positionRenderings(row)
+  if (valuation.kind !== 'figure') return valuation
+  return weightShare(row, whole) === null ? DASH : FIGURE
 }
 
 /**
