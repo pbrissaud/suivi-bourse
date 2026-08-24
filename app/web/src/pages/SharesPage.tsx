@@ -24,6 +24,14 @@
  *    information rather than as a void.
  *  - **No *hide the closed ones* switch, anywhere.** It is the whole point.
  *
+ * **Two gestures on the table itself** (#791), and neither of them removes a
+ * line — which is what lets the header go on stating the sum of what is under
+ * it without a word of explanation. **The order** is the reader's, by any of the
+ * ten columns, and it moves rows about; **the grouping by account** cuts the
+ * same rows into blocks, each with its subtotal in its own header. A partition
+ * and a permutation both leave the set alone, and that is the property the page
+ * is built on.
+ *
  * **And one reduction, `?compte=`** (#722), which an account's panel leads to in
  * place of a positions table of its own. It is not the switch this page refuses:
  * that one hid a *part of the table the header summed*, silently and with
@@ -55,7 +63,19 @@ import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { buildShareRows, closedRows, heldRows, isAnomalous } from '@/lib/shares'
+import {
+  DEFAULT_SORT,
+  accountGroups,
+  buildShareRows,
+  closedRows,
+  heldRows,
+  isAnomalous,
+  nextSort,
+  placedValue,
+  type ShareGroup,
+  type ShareSort,
+  type SortColumn,
+} from '@/lib/shares'
 import { oneBand, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
@@ -63,6 +83,14 @@ export default function SharesPage() {
   const { t } = useI18n()
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
+  // The order and the grouping are **states of the page**, exactly like the
+  // fold and the anomaly lens beside them — not addresses. `?titre=` and
+  // `?compte=` are in the URL because something outside this page leads to
+  // them (⌘K, an account's panel); nobody leads to *this table sorted by PRU*,
+  // and a search parameter nothing links to is a shape to maintain for no
+  // reader.
+  const [sort, setSort] = useState<ShareSort>(DEFAULT_SORT)
+  const [grouped, setGrouped] = useState(false)
   const { compte = null, titre = null } = useSearch({ from: '/titres' })
   const navigate = useNavigate()
   // **Which sheet is open is a URL** (#797), the same clause as the reduction
@@ -117,11 +145,17 @@ export default function SharesPage() {
     readConditions({ shellError: runtime.error, errors: [positions.error] }),
   )
 
-  const held = heldRows(rows)
+  const held = heldRows(rows, sort)
   const closed = closedRows(rows)
   const anomalies = held.filter(isAnomalous)
   const shown = onlyAnomalies ? anomalies : held
   const currency = positions.data?.base_currency ?? null
+
+  // The accounts the reduction actually holds. Below two there is nothing to
+  // group — one group would repeat the page header line for line, which is the
+  // reason `accountBreakdown` does not exist at one account either — so the
+  // control is not offered rather than offered and inert.
+  const accountCount = new Set(reduced.map((position) => position.account)).size
 
   // **What the header sums**, and it is the literal sentence of ADR-0017: the
   // rows it sits above. The folded ones are in that set — a fold is not a
@@ -137,6 +171,24 @@ export default function SharesPage() {
   // a row on each, and summing both under a header naming one account is the
   // *other correct figure* again, one axis over.
   const summed = reduced.filter((position) => onScreenSymbols.has(position.symbol))
+
+  // What the live table is made of — **one block, or one per account**. The
+  // grouping is a partition of the very same lines, which is why the header
+  // above does not move when it is turned on: `summed` is untouched by it.
+  //
+  // The positions handed to `accountGroups` are those of the **shown** symbols,
+  // so a group header sums the lines it sits above exactly as the page header
+  // does, the anomaly lens included.
+  const shownSymbols = new Set(shown.map((row) => row.symbol))
+  const shownPositions = reduced.filter((position) => shownSymbols.has(position.symbol))
+  const groups: ShareGroup[] = grouped
+    ? accountGroups(shownPositions, failures, sort)
+    : [{ account: null, rows: shown, positions: shownPositions }]
+
+  // The whole the `Poids` column divides, for the **whole** table: grouping
+  // partitions the rows and never the whole, so two accounts' bars stay
+  // comparable and the column goes on saying *of this table*.
+  const whole = placedValue(shown)
 
   // The freshest quote the page holds — one instant for the whole table. There
   // is nothing to date when nothing has ever been quoted, and an invented
@@ -187,6 +239,25 @@ export default function SharesPage() {
               )}
             >
               {t('shares.anomaly.count', { count: anomalies.length })}
+            </button>
+          )}
+
+          {/* **A partition, offered only where there is something to partition.**
+              At one account the group header would repeat the page header line
+              for line, which is the argument `accountBreakdown` already makes
+              one file over — and a control that cannot change anything is the
+              per-row marker rule met at the level of a button. */}
+          {accountCount < 2 ? null : (
+            <button
+              type="button"
+              aria-pressed={grouped}
+              onClick={() => setGrouped((previous) => !previous)}
+              className={cn(
+                'rounded underline underline-offset-4',
+                grouped ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {t('shares.group.toggle')}
             </button>
           )}
         </div>
@@ -244,7 +315,14 @@ export default function SharesPage() {
               rule, and handing it the held lines alone is what printed the
               other correct figure. */}
           <SharesHead positions={summed} rows={onScreen} currency={currency} />
-          <SharesTable rows={shown} currency={currency} onSelect={select} />
+          <SharesTable
+            groups={groups}
+            whole={whole}
+            currency={currency}
+            sort={sort}
+            onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
+            onSelect={select}
+          />
           <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}
