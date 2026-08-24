@@ -118,7 +118,7 @@ quote is a number **and** a unit: with no nameable currency there is no quote.
 
 ## Configuration
 
-### Environment variables — six names, no seventh
+### Environment variables — four names, no fifth
 
 What is left in the environment is exactly what the process must know **before**
 it can open the store (ADR-0014). `boot_env.py` says them once.
@@ -128,16 +128,16 @@ it can open the store (ADR-0014). `boot_env.py` says them once.
 | `SB_STORE_DIR` | `/data` | Directory holding `suivi-bourse.duckdb` |
 | `SB_IMPORT_DIR` | `/import` | The drop folder — optional |
 | `SB_WEB_PORT` | `8080` | The one socket the app is bound to — the page, `/api`, `/health` |
-| `SB_PROMETHEUS_ENABLED` | `true` | **Read and acted on by nothing** since ADR-0033 |
-| `SB_METRICS_PORT` | `8081` | **Read and acted on by nothing** since ADR-0033 |
 | `LOG_LEVEL` | `INFO` | Logging level (here, since the likeliest failure is the store) |
 
 They are **directories, never files**; the defaults describe the container;
 **blank counts as unset** (compose renders an undefined substitution as an empty
 string). Every retired `SB_*`/`INFLUXDB_*` variable still set is named at start-up
-in **one grouped notice**, and that list is *computed*, never written down. The
-two inert names above are `boot_env`'s last readers of themselves: they join that
-computed list — and the count above drops — at #809.
+in **one grouped notice**, and that list is *computed*, never written down.
+The two names the exporter answered for left this table with it (ADR-0033,
+#809) and are in `boot_env.DELETED`, so an install that still sets one hears it
+in that notice as **removed with no successor** — the gauges became the
+health body and the runtime tab, never a dial to turn them back on.
 
 ### The dials — the store is the only source
 
@@ -253,7 +253,7 @@ src/
 ├── gunicorn.conf.py    # entrypoint AND boot sequence
 ├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
 ├── store.py            # the connection, the DDL of the twelve tables, the seed
-├── boot_env.py         # pure: the six boot variables, the computed list of the quiet ones
+├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
 ├── scheduling.py       # pure: cadence, market context, back-off, pool sizing,
