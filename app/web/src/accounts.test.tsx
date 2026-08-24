@@ -43,10 +43,28 @@ function rail() {
 }
 
 /** The bar's own legend, one card up: it is where a share is written. */
+function weightRows() {
+  return within(screen.getByRole('list', { name: 'Poids de vos comptes' })).getAllByRole('listitem')
+}
+
 function weights() {
-  return within(screen.getByRole('list', { name: 'Poids de vos comptes' }))
-    .getAllByRole('listitem')
-    .map((row) => row.textContent ?? '')
+  return weightRows().map((row) => row.textContent ?? '')
+}
+
+/**
+ * The share a weight row **draws**, in per cent — `null` where it draws none.
+ *
+ * The written half of a row is `weights()`, and the two are not the same
+ * assertion (#800): a bar is `aria-hidden` and carries no word, so every
+ * equality on `textContent` above holds identically whether the row draws the
+ * right bar, the wrong one or nothing at all. `data-share-bar` is the handle
+ * `ShareBar` carries for exactly this, and the fill's own width is what it
+ * claims.
+ */
+function drawnWeight(index: number): number | null {
+  const bar = weightRows()[index].querySelector('[data-share-bar]')
+  if (bar === null) return null
+  return Number.parseFloat((bar.firstElementChild as HTMLElement).style.width)
 }
 
 function entries() {
@@ -80,6 +98,9 @@ describe('the rail', () => {
     // drawn under this row is `aria-hidden`, and an equality is how that stays
     // true: were it ever announced, the row would read its own weight twice.
     expect(weights()[0].replace(/\s/g, '')).toBe('Alpha54,55%')
+    // And the row **draws** that share as well as writing it, which is the
+    // ticket itself: `1 800 / 3 300`, the same figure the line reads out.
+    expect(drawnWeight(0)).toBeCloseTo(54.55, 1)
   })
 
   it('weighs an account on its securities where no cash ledger was ever kept', async () => {
@@ -106,6 +127,12 @@ describe('the rail', () => {
     // draws nothing at all.
     expect(weights()[3].replace(/\s/g, '')).toBe(`Delta${ABSENT}`)
     expect(weights()[3]).not.toMatch(/0,00\s%/)
+    // Not an empty track either, and only the DOM can say so: the equality
+    // above passes on a row that draws a bar at zero, that bar having no word.
+    expect(drawnWeight(3)).toBeNull()
+    // The rows that *have* a share keep theirs, so this is the absent share
+    // drawing nothing and not the bars having gone.
+    expect(drawnWeight(0)).toBeCloseTo(54.55, 1)
   })
 
   it('names the reason an account has no figures, and never a progress', async () => {

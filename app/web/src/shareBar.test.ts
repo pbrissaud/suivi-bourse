@@ -40,6 +40,23 @@ const PRIMITIVE = path.join(SOURCE, 'components', 'ShareBar.tsx')
  */
 const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
 
+/**
+ * The surfaces that draw a share, spelled out — the other half of the rule.
+ *
+ * Refusing hand-written bars everywhere says nothing about there being a bar at
+ * all: delete `<ShareBar />` from the allocation's legend and every other test
+ * still passes, the drawing carrying no word for a rendering test to miss. The
+ * rail's own bar is read in the DOM by `accounts.test.tsx`, which is the
+ * stronger assertion of the two and is why this list is a *floor* rather than a
+ * replacement for it. #791's shares table joins it when its `Poids` column
+ * lands.
+ */
+const MOUNTS = [
+  'src/components/dashboard/Allocation.tsx',
+  'src/components/accounts/AccountsRail.tsx',
+  'src/components/accounts/AccountDetail.tsx',
+]
+
 function sources(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name)
@@ -76,6 +93,10 @@ describe('one component draws a share', () => {
     // Exactly the stacked bar, and nothing beside it: the `Poids` column of the
     // shares table (#791) mounts `ShareBar` or it fails here.
     expect(offenders).toEqual([STACKED_BAR])
+  })
+
+  it.each(MOUNTS)('is mounted by %s, which draws a share', (file) => {
+    expect(fs.readFileSync(path.join(ROOT, file), 'utf8')).toContain('<ShareBar')
   })
 
   it('reads the widths it is supposed to be reading', () => {

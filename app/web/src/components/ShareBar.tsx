@@ -78,12 +78,19 @@ export function ShareBar({ share, fill, size = 'line', className }: ShareBarProp
   return (
     <span
       aria-hidden
+      // The one handle a rendering test has on it: the bar is `aria-hidden` and
+      // carries no word, so a suite that reads what is announced walks past it
+      // exactly as `EmptyState` needed `data-empty` to be seen at all
+      // (ADR-0026). `accounts.test.tsx` reads the drawn share through it.
+      data-share-bar
       className={cn('block w-full overflow-hidden rounded-full bg-muted', HEIGHTS[size], className)}
     >
-      <span
-        className="block h-full rounded-full"
-        style={{ width: `${percent}%`, backgroundColor: fill }}
-      />
+      {/* The fill is not rounded and does not need to be: the track rounds the
+          left edge and clips the right, which is what a share drawn short of
+          its whole looked like before this component existed. Rounding it here
+          would round the right edge too, and the composition bar this replaced
+          would have changed shape on a refactor that promised not to. */}
+      <span className="block h-full" style={{ width: `${percent}%`, backgroundColor: fill }} />
     </span>
   )
 }
