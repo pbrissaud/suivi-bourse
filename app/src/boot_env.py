@@ -178,7 +178,7 @@ NEVER_READ: frozenset = frozenset({
 #:
 #: ``SB_STATIC_DIR`` is the fifteenth name and not one of the fourteen a v4
 #: ``.env`` carries: it never appeared in one. It leaves with #740 all the same,
-#: because *six* is the complete list of what the environment says and an
+#: because *four* is the complete list of what the environment says and an
 #: escape hatch for serving the bundle from elsewhere has no user left — one
 #: image, one path, and a checkout resolves it from the package.
 #:
