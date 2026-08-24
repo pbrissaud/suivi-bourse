@@ -167,6 +167,37 @@ def test_removing_an_event_erases_the_points_it_made(tmp_path, mocker):
     assert _cash_on(opened, _TODAY) == pytest.approx(1000.0)
 
 
+def test_a_bulk_removal_carries_the_series_and_the_positions_with_it(
+        tmp_path, mocker):
+    """``DELETE /api/events?…`` — the fourth write, and the same seam (#814).
+
+    Undoing a whole import is the gesture that moves the most history at once,
+    so it is the one where a series left to the next ``PERF_TICK`` would be most
+    visibly wrong. Nothing here asserts a call: the rows are read back off
+    ``account_metrics`` and ``account_state``, and no scheduler exists in this
+    module to have written them.
+    """
+    client, opened = _build(tmp_path, mocker)
+    client.post('/api/events', json=_deposit())
+    client.post('/api/events', json=_deposit(date='2022-07-04', amount=250.0))
+    assert _days(opened)[0] == date(2022, 6, 3)
+    assert _cash_on(opened, _TODAY) == pytest.approx(1750.0)
+
+    # The reduction the reader is looking at: everything typed on that account
+    # before the drop folder's own deposit. Both rows leave in one gesture.
+    removed = client.delete('/api/events?until=2023-12-31')
+    assert removed.status_code == 200
+    assert removed.get_json() == {'events_removed': 2}
+
+    # The series is back to the ledger that is left — its span, its figures —
+    # and the replay's own tables with it.
+    assert _days(opened)[0] == date(2024, 1, 10)
+    assert _days(opened, 'portfolio_totals')[0] == date(2024, 1, 10)
+    assert _cash_on(opened, _TODAY) == pytest.approx(1000.0)
+    assert opened.query(
+        'SELECT cash_balance FROM account_state') == [(1000.0,)]
+
+
 # --------------------------------------------------------------------------- #
 # Integral, and that is the decision (ADR-0011)
 # --------------------------------------------------------------------------- #

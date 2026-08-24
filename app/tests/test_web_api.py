@@ -2568,6 +2568,166 @@ def test_a_reduction_on_the_period_alone_takes_the_selection_name(tmp_path):
     opened.close()
 
 
+# --------------------------------------------------------------------- #
+# The bulk removal — the reduction is the subject (issue #814, ADR-0032)
+# --------------------------------------------------------------------- #
+
+#: Each of the five reductions, and the days the ledger is left holding.
+#: Written as *what survives* rather than as *what leaves*: the assertion is on
+#: the store's own contents, and a gesture that removed one row too many is
+#: only visible from the side that stayed.
+_BULK_REDUCTIONS = (
+    ('type=BUY', [date(2024, 3, 1), date(2025, 2, 2)]),
+    ('account=pea', [date(2025, 2, 2)]),
+    ('symbol=AAPL', [date(2025, 2, 2)]),
+    # Accents folded, as the search field on the table folds them.
+    ('q=FEVRIER', [date(2024, 1, 15), date(2024, 3, 1)]),
+    ('since=2025-01-01', [date(2024, 1, 15), date(2024, 3, 1)]),
+)
+
+
+def _bulk_client(tmp_path, name):
+    """A client and a store of its own, so five deletions do not share one."""
+    room = tmp_path / name
+    room.mkdir()
+    return build_client_and_store(
+        room, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+
+def test_the_bulk_delete_takes_the_five_reduction_parameters(tmp_path):
+    """``DELETE /api/events`` speaks the export routes' own vocabulary.
+
+    One vocabulary over one contract: the reduction the table shows is the one
+    the deletion consumes, so *undo this import* is the chips the reader is
+    already looking at rather than a second spelling of them.
+
+    **Every row here came from a file**, which is the other half of the case:
+    the predicate *this line was imported* is not consulted by this gesture,
+    and one ticket from now it will not exist at all.
+    """
+    for index, (query, survivors) in enumerate(_BULK_REDUCTIONS):
+        client, opened = _bulk_client(tmp_path, f'case{index}')
+
+        response = client.delete(f'/api/events?{query}')
+
+        assert response.status_code == 200
+        assert response.get_json() == {'events_removed': 3 - len(survivors)}
+        assert [row[0] for row in
+                opened.query('SELECT date FROM event ORDER BY date')] == \
+            survivors
+        opened.close()
+
+
+def test_a_bulk_delete_with_no_reduction_is_refused_and_writes_nothing(tmp_path):
+    """A truncated request must not be able to empty a history (issue #814).
+
+    Emptying the whole ledger stays possible — by reducing on something that
+    covers all of it, and therefore deliberately. A client that forgot its query
+    string is not that.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.delete('/api/events')
+
+    assert response.status_code == 422
+    assert response.mimetype == 'application/problem+json'
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+    opened.close()
+
+
+def test_blank_parameters_are_no_reduction_and_are_refused_too(tmp_path):
+    """``?type=&account=&since=`` is a client with empty fields.
+
+    Blank counts as absent on this resource — ADR-0014's rule one level out, and
+    the one the export already follows — so a form submitted with nothing in it
+    reaches exactly the refusal an empty query string reaches, rather than
+    deleting the ledger it retained by reducing on nothing.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.delete('/api/events?q=&type=&account=&symbol=&since=&until=')
+
+    assert response.status_code == 422
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+    opened.close()
+
+
+def test_a_bulk_delete_that_retains_nothing_removes_nothing_and_is_no_error(
+        tmp_path):
+    """Zero is a state, exactly as an export of no row is a valid file."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    response = client.delete('/api/events?account=zzz')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'events_removed': 0}
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+    opened.close()
+
+
+def test_a_bound_that_is_not_a_day_is_refused_by_the_bulk_delete_too(tmp_path):
+    """The parameters are read by one function, so they refuse by one sentence.
+
+    ``?since=hier`` names no interval, and a deletion answered under it would be
+    a perimeter nobody can state — worse here than on the export by exactly the
+    difference between a wrong file and a missing history.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_SELECTABLE)
+
+    for query, key in (('type=ACHAT', 'type'), ('since=hier', 'since'),
+                       ('until=2024-02-31', 'until')):
+        response = client.delete(f'/api/events?{query}')
+
+        assert response.status_code == 422
+        assert response.get_json()['key'] == key
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+    opened.close()
+
+
+def test_a_bulk_delete_that_would_leave_an_oversell_is_refused_whole(tmp_path):
+    """A reduction can take the purchases away and leave the sales.
+
+    ``DELETE /api/events/<id>``'s ``409`` on a wider perimeter, and it rolls the
+    whole reduction back: a ledger committed half-deleted raises on every
+    reload, and that raise is fatal in the gunicorn master.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(quantity=10))
+    client.post('/api/events',
+                json=_draft(date='2024-06-10', event_type='SELL', quantity=10))
+
+    response = client.delete('/api/events?type=BUY')
+
+    assert response.status_code == 409
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+    opened.close()
+
+
+def test_the_bulk_delete_reaches_what_the_row_gesture_refuses(tmp_path):
+    """The two answers about one row, side by side (ADR-0032).
+
+    ``DELETE /api/events/<id>`` still refuses an imported row in ``409``, naming
+    the import to forget; the bulk gesture takes it, because its subject is the
+    reduction. That contrast is the whole of *the removal is the gesture*: what
+    replaces losing ``forget_import`` has to reach the rows a file laid down.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    ((key,),) = opened.query('SELECT id FROM event')
+
+    assert client.delete(f'/api/events/{key}').status_code == 409
+
+    removed = client.delete('/api/events?symbol=AAPL')
+
+    assert removed.status_code == 200
+    assert removed.get_json() == {'events_removed': 1}
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+    opened.close()
+
+
 def test_an_unreadable_store_fails_the_workbook_too(tmp_path):
     """Same contract as the CSV: a query error is a ``503``, never a file."""
     client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)

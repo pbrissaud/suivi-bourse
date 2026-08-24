@@ -196,6 +196,20 @@ while an event names it** (`409`, the cascade is refused rather than performed).
 If ingestion fails, **the previous valid configuration is kept** and scraping
 continues: a snapshot is published only once complete and validated.
 
+**The way back out of an import is `DELETE /api/events`** (#814, ADR-0032). It
+takes **exactly the five reduction parameters of the export routes** — `q`,
+`type`, `account`, repeated `symbol`, and the `since`/`until` period — read by
+one function (`web.api._selection`) so the reduction the table shows is the one
+the deletion consumes. Its subject is the **reduction and never the row**: the
+predicate *this line came from a file* is not consulted, which is what lets it
+undo a whole import and repair a dozen mistyped rows with one gesture. With no
+parameter at all — or with all of them blank — it answers `422` and **writes
+nothing**: emptying the ledger stays possible by reducing on something that
+covers it, and a truncated request cannot destroy a history. A reduction that
+retains nothing removes nothing and is a `200`. The answer is
+`{"events_removed": n}`, and the replay follows it like every other write, the
+performance series included.
+
 The upload's own refusals are all `422` and **none of them writes**: an
 unrecognised header (naming the column), an undeclared account (naming the
 account), a v4 file (naming it, with the migration page), a declaration of
@@ -250,7 +264,7 @@ src/
 ├── positions.py        # the replay's two tables — position/account_state
 ├── ledger.py           # the drop folder's import: provenance and revocation
 ├── uploads.py          # the gesture: one file in, read once, refused by name
-├── entries.py          # the row's four gestures (source_id NULL only)
+├── entries.py          # the row's four gestures (source_id NULL only) + the bulk one, which reads no provenance
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path

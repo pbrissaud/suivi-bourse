@@ -1,4 +1,4 @@
-"""The event somebody typed here, and the three gestures it earns (issue #764).
+"""The event somebody typed here, and the gestures it earns (issue #764).
 
 :mod:`ledger` owns the **import**: whole files in, whole files out, and no
 row-level write anywhere in it. That rule is #697's second and it is right about
@@ -47,8 +47,18 @@ for.
 validity is a property of the row; **overselling is a property of the ledger**,
 so a `SELL` that is legal on its own can be illegal in company — and a `BUY`
 whose removal makes a later `SELL` an oversell is the same fact seen from the
-other side. So every one of the three gestures ends by replaying the ledger it
+other side. So every one of the gestures ends by replaying the ledger it
 would leave, inside the transaction, exactly as an import does.
+
+**The bulk removal is the one gesture that does not read the split** (issue
+#814, ADR-0032). :func:`remove_selection` deletes what the ledger's own
+reduction retains, *whatever* laid the rows down: the subject of the gesture is
+the reduction, and asking of each row whether a file carried it would make the
+reader's *undo this import* stop halfway through the very import they are
+undoing. It is what makes losing ``forget_import`` survivable — and it repairs
+the twelve events somebody mistyped as well, which no revocation ever reached.
+The split above stays exactly what it is: it is about the three gestures that
+address **one row by its key**, and this one addresses none.
 
 **Not in this module**: the ``import_source`` row, the drop folder, and the
 symbol's own price history. A symbol row is created here when an event needs one
@@ -65,6 +75,7 @@ import accounts as accounts_module
 import ledger
 import settings_registry
 from events import EventAggregator, EventValidator
+from events import export as events_export
 from events.schemas import DEFAULT_ACCOUNT, Event
 
 logger = getLogger("entries")
@@ -302,8 +313,53 @@ def remove(store, event_id: int) -> None:
         logger.info(f"Removed event {event_id}")
 
 
+def remove_selection(store, selection: events_export.Selection) -> int:
+    """Delete every event a reduction retains. Returns how many left (#814).
+
+    The gesture ADR-0032 makes the successor of ``forget_import``, and it is a
+    better one: it undoes a whole import without ever naming an import, and it
+    reaches the twelve rows somebody mistyped, which no revocation could. What
+    it is *about* is the reduction — so **no row is asked where it came from**,
+    and there is no :class:`ImportedEntry` to raise here. That predicate goes
+    away entirely at the next ticket; it is already out of this road's way.
+
+    The reduction is :class:`events.export.Selection`, the export routes' own,
+    read by :func:`events.export.select` and by nothing written a second time
+    here: the reduction the table shows is the reduction the deletion consumes,
+    and one vocabulary arriving over one contract is what keeps the two from
+    drifting a chip apart. Whether the reduction reduces **anything** is the
+    HTTP boundary's question, not this function's — an empty ``Selection``
+    retains the whole ledger, which is a perfectly good thing to ask of a
+    library and a request the route refuses.
+
+    **The reduction is read inside the transaction**, so what is deleted is what
+    the reduction retained at the instant of the delete and not a set assembled
+    against a ledger another writer has moved since.
+
+    A reduction that retains nothing removes nothing and does not complain: the
+    empty selection is a *state* — the same one an export answers with a header
+    and no row under it — and never an error.
+
+    Raises:
+        events.aggregator.AggregationError: the ledger it would leave does not
+            replay. Removing a `BUY` can leave a later `SELL` overselling, and
+            in bulk that is likelier than one row at a time, not less — a
+            reduction on one account can take away the purchases and leave the
+            sales. Nothing is written when it does.
+    """
+    with store.transaction():
+        keys = [event.id for event
+                in events_export.select(ledger.read_events(store), selection)
+                if event.id is not None]
+        store.executemany('DELETE FROM event WHERE id = ?',
+                          [[key] for key in keys])
+        _replays(store)
+        logger.info(f"Removed {len(keys)} event(s) on a reduction")
+    return len(keys)
+
+
 # --------------------------------------------------------------------------- #
-# What the three are made of
+# What the gestures are made of
 # --------------------------------------------------------------------------- #
 
 def _require_typed(store, event_id: int) -> None:
@@ -452,5 +508,5 @@ def _replays(store) -> None:
 
 __all__ = [
     'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
-    'create', 'create_many', 'update', 'remove',
+    'create', 'create_many', 'update', 'remove', 'remove_selection',
 ]

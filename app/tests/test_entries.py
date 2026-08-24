@@ -1,4 +1,4 @@
-"""The event somebody typed here, and the three gestures it earns (issue #764).
+"""The event somebody typed here, and the gestures it earns (issue #764).
 
 The seam is :mod:`test_ledger`'s: a **real** DuckDB store in ``tmp_path``, the
 real ingestion beside it, and every assertion a ``SELECT`` against the store —
@@ -17,6 +17,7 @@ import pytest
 
 import entries
 import ledger
+from events import export as events_export
 from events.aggregator import AggregationError
 from events.schemas import Event, EventType
 
@@ -296,13 +297,18 @@ def test_an_update_cannot_forge_a_provenance(store, tmp_path):
 def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
     """The split is structural, and this is the assertion of it on the surface.
 
-    Every gesture goes through the same refusal, so no future caller can reach
-    an imported row by picking a different entry point.
+    Every gesture that **addresses one row by its key** goes through the same
+    refusal, so no future caller can reach an imported row by picking a
+    different entry point.
 
     ``create_many`` joins the surface at #811 and needs no refusal of its own:
     it only ever **inserts**, and what it inserts carries ``source_id NULL`` like
-    everything else here. What would break the split is a fifth name that
-    addressed a row by its key, which is what this set is here to notice.
+    everything else here. ``remove_selection`` joins it at #814 and is the one
+    name deliberately outside the split (ADR-0032): its subject is the
+    reduction, it addresses no key, and it is asserted just below on what it
+    does rather than on a refusal it does not make. What would break the split
+    is a *sixth* name addressing a row by its key, which is what this set is
+    here to notice.
     """
     _drop(store, tmp_path)
     ((imported,),) = store.query('SELECT id FROM event')
@@ -314,4 +320,55 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
 
     assert set(entries.__all__) == {
         'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
-        'create', 'create_many', 'update', 'remove'}
+        'create', 'create_many', 'update', 'remove', 'remove_selection'}
+
+
+# --------------------------------------------------------------------------- #
+# The bulk removal: the reduction is the subject, and the row's origin is not
+# --------------------------------------------------------------------------- #
+
+def test_the_bulk_removal_takes_an_imported_row_like_any_other(store, tmp_path):
+    """What ``update`` and ``remove`` refuse by name, this one simply removes.
+
+    The whole of ADR-0032's *the removal is the gesture*: undoing an import has
+    to reach the rows the import laid down, and a bulk delete that stopped at
+    each of them would leave the reader exactly where losing ``forget_import``
+    put them. The typed row beside it is untouched, so what is asserted is the
+    **reduction** and not *everything*.
+    """
+    _drop(store, tmp_path)
+    entries.create(store, _draft(date=date(2024, 8, 1), symbol='MSFT'))
+
+    removed = entries.remove_selection(
+        store, events_export.Selection(symbols=('AAPL',)))
+
+    assert removed == 1
+    assert store.query('SELECT symbol FROM event') == [('MSFT',)]
+
+
+def test_a_reduction_that_retains_nothing_removes_nothing(store):
+    """Zero is a state, not a complaint — the export's empty file, one road over."""
+    entries.create(store, _draft())
+
+    assert entries.remove_selection(
+        store, events_export.Selection(account='zzz')) == 0
+    assert store.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_a_bulk_removal_that_would_oversell_is_refused_whole(store):
+    """A reduction can take the purchases and leave the sales (issue #814).
+
+    The single-row refusal on a wider perimeter, and it has to roll back the
+    **whole** reduction: a ledger committed half-deleted is one that raises on
+    every reload, and that raise is fatal in the gunicorn master.
+    """
+    entries.create(store, _draft(quantity=10.0))
+    entries.create(store, _draft(date=date(2024, 6, 10),
+                                 event_type=EventType.SELL, quantity=10.0,
+                                 unit_price=120.0))
+
+    with pytest.raises(AggregationError):
+        entries.remove_selection(
+            store, events_export.Selection(event_type='BUY'))
+
+    assert store.query('SELECT count(*) FROM event') == [(2,)]
