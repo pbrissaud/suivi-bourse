@@ -36,6 +36,15 @@
  *    reads. Filtering on *the entry has a string key* is what keeps it out,
  *    rather than a name test that would break the day a curve is renamed.
  *
+ *  - **The two series are the page's read, not the block's** (#799), and they
+ *    cross as `readonly X[] | null`. `null` is *not answered* — in flight, or
+ *    failed — and the block renders **nothing at all, title included**: a frame
+ *    with an empty body is a hand-written skeleton (ADR-0026), and a plot drawn
+ *    on an empty array reads as *the portfolio is worth nothing*. The two are
+ *    told apart one level up, where the page's band names the failure without
+ *    emptying the head, which is what it did while this block's `settled` made
+ *    a failed series and an unanswered one the same silence.
+ *
  * Without a cash ledger the perf series does not exist — `total_value`,
  * `net_contributed` and `twr_index` are `NULL` by #708's per-field rule — so
  * *Amounts* falls back to valuation against cost and is **the only reading**:
@@ -44,7 +53,6 @@
  * empty.
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
   Area,
   CartesianGrid,
@@ -60,14 +68,13 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api } from '@/lib/api'
+import type { PerfPoint, ValuationPoint } from '@/lib/api'
 import {
   amountsFromTotals,
   amountsFromValuation,
   amountsValues,
   DASHBOARD_RANGES,
   DEFAULT_DASHBOARD_RANGE,
-  hasCashLedger,
   performanceRows,
   windowFloor,
   yFloor,
@@ -80,42 +87,46 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
-export function PortfolioChart() {
+export interface PortfolioChartProps {
+  /**
+   * Whether the install has a cash ledger — which is at once the discriminant
+   * of the reading and of the series that is read (`hasCashLedger`).
+   */
+  ledger: boolean
+  currency: string | null
+  /**
+   * The two series, exactly one of which is read. `null` is *the read has not
+   * answered* — in flight, or failed — and never an empty payload, which is a
+   * fact about the reader's own history (ADR-0026).
+   */
+  performance: readonly PerfPoint[] | null
+  valuation: readonly ValuationPoint[] | null
+}
+
+export function PortfolioChart({ ledger, currency, performance, valuation }: PortfolioChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const [chosen, setChosen] = useState<Reading>('amounts')
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
-  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
-  const ledger = hasCashLedger(totals.data?.totals ?? null)
-  // Exactly one of the two series is read, and the discriminant is the same one
-  // that decides the reading: an install with no cash event has no perf series
-  // at all, and one with a cash ledger has no use for the valuation curve.
-  const perf = useQuery({
-    queryKey: ['portfolio-totals-history'],
-    queryFn: api.portfolioTotalsHistory,
-    enabled: totals.isSuccess && ledger,
-  })
-  const valuation = useQuery({
-    queryKey: ['positions-history'],
-    queryFn: api.positionsHistory,
-    enabled: totals.isSuccess && !ledger,
-  })
+  // **Nothing at all, title included** (ADR-0026): the block's one series has
+  // not answered, and a frame carrying two tab labels and a range control over
+  // an empty plot is a skeleton written by hand. A **failed** series lands here
+  // too, and it is not silenced: the page's band names it one level up, which
+  // is the whole of #799 — said in the block it would be a second announcer of
+  // a fact `lib/status.ts` allows exactly one of.
+  if ((ledger ? performance : valuation) === null) return null
 
-  // A read that has not landed is not a fact, and a failed one is the head's
-  // band to name: this block draws nothing rather than an empty plot, which
-  // would read as *the portfolio is worth nothing*.
-  if (!totals.data) return null
-
-  const currency = totals.data.base_currency
   const reading: Reading = ledger ? chosen : 'amounts'
   const floor = windowFloor(range, new Date())
+  // The `?? []` below are `tsc`'s bookkeeping and not a flattening: the guard
+  // above has already returned from the branch each one fills, and the series
+  // the *other* reading would draw is not read on this install at all.
   const rows = ledger
-    ? amountsFromTotals(perf.data?.points ?? [], floor)
-    : amountsFromValuation(valuation.data?.points ?? [], floor)
-  const performance = performanceRows(perf.data?.points ?? [], floor)
-  const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performance
-  const settled = ledger ? perf.isSuccess : valuation.isSuccess
+    ? amountsFromTotals(performance ?? [], floor)
+    : amountsFromValuation(valuation ?? [], floor)
+  const performanceSeries = performanceRows(performance ?? [], floor)
+  const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performanceSeries
 
   return (
     <Card className="gap-4">
@@ -156,9 +167,9 @@ export function PortfolioChart() {
         </div>
 
         {drawn.length === 0 ? (
-          settled ? (
-            <EmptyState title={t('dashboard.chart.empty')} />
-          ) : null
+          // A **fact**: the series answered and says nothing over this window.
+          // *Not answered* never reaches here — the guard above returned.
+          <EmptyState title={t('dashboard.chart.empty')} />
         ) : (
           <>
             <div className="h-72">
@@ -186,7 +197,7 @@ export function PortfolioChart() {
                     domain={[
                       reading === 'amounts'
                         ? yFloor(amountsValues(rows))
-                        : yFloor(performance.map((row) => row.performance)),
+                        : yFloor(performanceSeries.map((row) => row.performance)),
                       'auto',
                     ]}
                     hide

@@ -9,12 +9,19 @@
  * exist for this installation is not a missing value. A sentence under the head
  * names what a ledger would add.
  *
- * **And a read that fails is named here, in a band.** It is the one absence the
- * shell cannot cover: `/api/runtime` answers from process memory and never
- * opens the store, so an unreadable store leaves the banner silent while these
- * two reads return `503`. `lib/status.ts` keeps the causal order — this block
- * says nothing while the shell's band is up — so there is still one band on
- * screen or none.
+ * **A read that fails is named by the page, not here** (#799). The band used to
+ * be mounted in this block and rendered *instead* of it, which was right for the
+ * two reads the head is made of and wrong for every other read on the page: a
+ * `/api/positions/history` that failed would have wiped the total gain and its
+ * four terms to say so. The band therefore went one step up, above the two
+ * tracks, where it names any of the page's reads without emptying a block it is
+ * not about (`pages/DashboardPage.tsx`). `lib/status.ts` still keeps the causal
+ * order, and there is still one band on screen or none.
+ *
+ * **The block reads nothing of its own** since the same ticket. The five reads
+ * it renders are the page's, handed down as props, and the two shapes that can
+ * be *not answered yet* cross the boundary as `readonly X[] | null` — never as
+ * `[]` (ADR-0026).
  *
  * **The gain is computed, never read.** `portfolio_totals.gain_absolu` rides in
  * the payload and is ignored: it is the same number written down elsewhere, and
@@ -54,19 +61,17 @@
  * definition over another window — so the two pills answer one question twice
  * and never two questions once.
  *
- * The series it reduces is the chart's, read under the chart's own condition
- * and therefore costing no request of its own: one key, one read, two
+ * The series it reduces is the chart's, read once by the page under the chart's
+ * own condition and therefore costing no request of its own: one read, two
  * consumers.
  */
 import { Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { Card, CardContent } from '@/components/ui/card'
-import { api } from '@/lib/api'
+import type { Account, PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import {
@@ -80,10 +85,9 @@ import {
   termRendering,
   type GainTermName,
 } from '@/lib/gain'
-import { dayMove, hasCashLedger } from '@/lib/dashboard'
+import { dayMove } from '@/lib/dashboard'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
-import { oneBand, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 const TERM_LABELS: Record<GainTermName, MessageKey> = {
@@ -93,33 +97,37 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
   transferFees: 'gain.term.transferFees',
 }
 
-export function DashboardHead() {
+export interface DashboardHeadProps {
+  /**
+   * The two reads the block is **made of**, `null` while either is in flight —
+   * or while one of them has failed, which the page's band is what names.
+   */
+  positions: PositionsResponse | null
+  totals: PortfolioTotalsResponse | null
+  /**
+   * The perimeter the consolidated figures name. `null` is *unknown*, and an
+   * unknown perimeter is not written down at all (ADR-0026).
+   */
+  accounts: readonly Account[] | null
+  /** Whether the reconstruction is running. `null` — nothing says yet. */
+  rebuilding: boolean | null
+  /**
+   * The portfolio's series — the chart's own read, shared rather than asked for
+   * twice. `null` and never `[]`: a series that has not answered is not a day
+   * on which nothing moved, and the pill it feeds is then simply not drawn.
+   */
+  history: readonly PerfPoint[] | null
+}
+
+export function DashboardHead({
+  positions,
+  totals,
+  accounts,
+  rebuilding,
+  history,
+}: DashboardHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
-  const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
-  const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  // The chart's series, under the chart's own condition — same key, so the two
-  // consumers share one request. Without a cash ledger there is no series at
-  // all (#708), and the pill it feeds is then simply not drawn.
-  const history = useQuery({
-    queryKey: ['portfolio-totals-history'],
-    queryFn: api.portfolioTotalsHistory,
-    enabled: totals.isSuccess && hasCashLedger(totals.data?.totals ?? null),
-  })
-
-  // A failed read is **named here**, and it has to be: `/api/runtime` answers
-  // from process memory and never opens the store, so the shell's band stays
-  // silent on the one failure that empties this block — an unreadable store.
-  // `readConditions` keeps the causal order, so while the app itself is not
-  // answering this says nothing and the band at the top of the column owns the
-  // sentence. Rendering `null` here was *"the database is unreadable"* and
-  // *"you own nothing yet"* on one screen, in its worst form: a blank one.
-  const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [positions.error, totals.error] }),
-  )
-  if (failure) return <Band>{t(failure.message)}</Band>
 
   // **A read that has not landed is not a fact**, and the two the block *needs*
   // are waited for together. Absence of data with no error is the first load,
@@ -130,11 +138,11 @@ export function DashboardHead() {
   // that has one, for as long as the second request took, and then swapped the
   // headline for a different number. The two optional reads below are not in
   // this rule: their absence removes a line rather than falsifying one.
-  if (!positions.data || !totals.data) return null
+  if (!positions || !totals) return null
 
-  const rows = positions.data.positions
-  const totalsRow = totals.data.totals
-  const currency = positions.data.base_currency ?? totals.data.base_currency ?? null
+  const rows = positions.positions
+  const totalsRow = totals.totals
+  const currency = positions.base_currency ?? totals.base_currency ?? null
 
   // The two empties are not the same (spec #712 §6). *No events at all* is a
   // sentence and a way to the Data page — this page reads, it is not where one
@@ -189,7 +197,7 @@ export function DashboardHead() {
   // make on silence. So absence keeps the rebuild's sentence, which names
   // something the app is doing and is repaired by waiting.
   const ytdPending = t(
-    runtime.data?.rebuilding === false ? 'dashboard.ytd.noPreviousYear' : 'dashboard.ytd.pending',
+    rebuilding === false ? 'dashboard.ytd.noPreviousYear' : 'dashboard.ytd.pending',
   )
   // Base 100 leaves this page and the mock-up's `TWR 202,89 (+102,9 %)` with it.
   // An index on base 100 is an instrument for putting two series side by side,
@@ -209,11 +217,12 @@ export function DashboardHead() {
   // the statement of their perimeter. A read that has not landed, or one that
   // failed, means the perimeter is *unknown*, and an unknown perimeter is not
   // written down at all: the figures above it are exact either way.
-  const accountCount = accounts.data?.accounts.length ?? null
+  const accountCount = accounts?.length ?? null
 
-  // `?? null` and never `?? []`: a series that has not answered is not a day
-  // on which nothing moved (ADR-0026).
-  const today = dayMove(history.data?.points ?? null, new Date())
+  // The series reaches here as `readonly PerfPoint[] | null` and the `null` is
+  // load-bearing: a series that has not answered is not a day on which nothing
+  // moved (ADR-0026).
+  const today = dayMove(history, new Date())
 
   return (
     // The hero card, and the one gradient in the product (#787): it is the
@@ -399,7 +408,7 @@ export function DashboardHead() {
               {/* The base date rides the origin scalar **only while it moves**.
                   Once the reconstruction is done the base stops moving, and a
                   date that never changes again is not news. */}
-              {runtime.data?.rebuilding && totalsRow?.twr_since ? (
+              {rebuilding && totalsRow?.twr_since ? (
                 <p className="text-xs text-muted-foreground">
                   {t('dashboard.twr.since', { date: f.date(totalsRow.twr_since) })}
                 </p>

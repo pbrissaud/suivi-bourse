@@ -21,6 +21,28 @@
  *  - **The four states are one decision** (`lib/dashboard.ts`), not a `?.length`
  *    per block: *no events* is a sentence and a link, while *events and nothing
  *    held* is an ordinary page whose blocks each say why they are empty.
+ *  - **The page reads, the blocks render** (#799). Every read the dashboard
+ *    makes is declared here and handed down; what may be *not answered yet*
+ *    crosses as `readonly X[] | null` and never as `[]` (ADR-0026). It is not a
+ *    tidying: a read declared inside the block that consumes it is a read whose
+ *    failure nothing above it can name, which is exactly how a `503` on
+ *    `/api/portfolio-totals/history` took the chart off the dashboard on every
+ *    load without a word on screen.
+ *  - **And the band is the page's, above both tracks.** It used to be the
+ *    head's, and the head rendered it *instead* of itself — right for the two
+ *    reads the head is made of, wrong for the four the page's other blocks are
+ *    made of, since a failed sparkline would have wiped the total gain and its
+ *    four terms to say so. Raised here it names **any** read of the page while
+ *    every block that did answer keeps its figures. The alternative — a sentence
+ *    inside each block, which is not a band and therefore does not compete with
+ *    the shell's — was refused: an unreadable store fails every store read at
+ *    once, so it would put three sentences on one screen where `oneBand` puts
+ *    one, and *one band on screen or none* is a rule about announcers rather
+ *    than about a component's name.
+ *  - **What empties the page and what is merely named are two lists.** The band
+ *    takes every read; `dashboardState` takes the two the page is *made of*.
+ *    Folded into one, a failed accounts read would put the page in `failed` and
+ *    empty it — the very disappearance being repaired, one level up.
  *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`, and
  *    the split is *drawn against read down*: the wide one carries the three
  *    figures that are **drawn** — the head, the value/performance chart, and the
@@ -37,15 +59,16 @@
  *    would be a third of the page held empty beside one sentence.
  */
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 
+import { Band } from '@/components/Band'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { Allocation } from '@/components/dashboard/Allocation'
 import { DashboardHead } from '@/components/dashboard/Head'
 import { Movers } from '@/components/dashboard/Movers'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
-import { api } from '@/lib/api'
-import { dashboardState } from '@/lib/dashboard'
+import { api, type PerfPoint } from '@/lib/api'
+import { dashboardState, hasCashLedger } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
@@ -60,7 +83,11 @@ export default function DashboardPage() {
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
 
+  // **The two reads the page is made of, and them alone.** A block's own read
+  // failing removes that block and is named in the band below; it never puts
+  // the page in `failed`, which is a screen with nothing on it but a sentence.
   const state = dashboardState({
     failed: Boolean(
       oneBand(readConditions({ shellError: runtime.error, errors: [positions.error, totals.error] })),
@@ -68,6 +95,54 @@ export default function DashboardPage() {
     positions: positions.data,
     totals: totals.data,
   })
+
+  // Exactly one of the two series is read, and the discriminant is the same one
+  // that decides the chart's reading: an install with no cash event has no perf
+  // series at all, and one with a cash ledger has no use for the valuation
+  // curve. The head reduces the first for its *today* pill, so there is one
+  // read here and two consumers below.
+  const ledger = hasCashLedger(totals.data?.totals ?? null)
+  const perf = useQuery({
+    queryKey: ['portfolio-totals-history'],
+    queryFn: api.portfolioTotalsHistory,
+    enabled: state === 'portfolio' && ledger,
+  })
+  const valuation = useQuery({
+    queryKey: ['positions-history'],
+    queryFn: api.positionsHistory,
+    enabled: state === 'portfolio' && !ledger,
+  })
+
+  const declared = accounts.data?.accounts ?? []
+  // One read per account, and the whole series each time: the bound the card
+  // applies is a `max` over the accounts' openings, and no payload states an
+  // opening. Two accounts is where a comparison starts — and where the reads
+  // do: ADR-0013 seeds a `default` row that is never removed, so gated on the
+  // rendering alone every load would fetch that one account's whole daily
+  // series to throw it away.
+  const histories = useQueries({
+    queries:
+      state === 'portfolio' && declared.length > 1
+        ? declared.map((account) => ({
+            queryKey: ['account-history', account.id],
+            queryFn: () => api.accountHistory(account.id),
+          }))
+        : [],
+  })
+
+  // `?? null` and never `?? []`: an empty series is a **payload** — an account
+  // whose perf cache says nothing — and a request that has not answered is not
+  // one. `useQueries` hands back a new array on every render, so the flattening
+  // is memoised against what actually moved: when each read landed, and which
+  // accounts there are.
+  const stamp = `${histories.map((one) => one.dataUpdatedAt).join('|')} ${declared
+    .map((account) => account.id)
+    .join('|')}`
+  const series: readonly (readonly PerfPoint[] | null)[] = useMemo(
+    () => histories.map((one) => one.data?.points ?? null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stamp],
+  )
 
   // The rows are the shares page's, folded by symbol: one arithmetic for what a
   // line is worth (ADR-0004's carrying convention included), so the allocation
@@ -92,6 +167,31 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
+  // **One band, for every read the page makes** — and one is the count, not the
+  // maximum: `readConditions` short-circuits under the shell's own band and
+  // `oneBand` keeps the first of what is left, so an unreadable store, which
+  // fails every one of them at once, is still one sentence on screen.
+  //
+  // The order is **causal down the page**: the two reads the page is made of
+  // first, a store that will not answer them being the cause of every failed
+  // read under them, then the block reads in the order the blocks are read in.
+  // The movers are here too, for the defect's own reason one block along: the
+  // block renders nothing on `null` and a failed read reaches it as one.
+  const failure = oneBand(
+    readConditions({
+      shellError: runtime.error,
+      errors: [
+        positions.error,
+        totals.error,
+        perf.error,
+        valuation.error,
+        accounts.error,
+        movers.error,
+        ...histories.map((one) => one.error),
+      ],
+    }),
+  )
+
   // The freshest quote the page holds — one instant for the whole screen, and
   // nothing at all when nothing has ever been quoted: an invented *now* is
   // exactly the reading this mention exists to prevent.
@@ -113,43 +213,60 @@ export default function DashboardPage() {
   )
 
   return (
-    <div
-      className={cn(
-        'grid grid-cols-1 items-start gap-6',
-        state === 'portfolio' && 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]',
-      )}
-    >
-      {/* The wide track: what the page leads with, then what it draws. */}
-      <div className="space-y-6 lg:col-start-1">
-        <DashboardHead />
+    <div className="space-y-6">
+      {/* Above both tracks, so that naming a failed read never costs the page a
+          block that did answer (#799). */}
+      {failure ? <Band>{t(failure.message)}</Band> : null}
 
+      <div
+        className={cn(
+          'grid grid-cols-1 items-start gap-6',
+          state === 'portfolio' && 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]',
+        )}
+      >
+        {/* The wide track: what the page leads with, then what it draws. */}
+        <div className="space-y-6 lg:col-start-1">
+          <DashboardHead
+            positions={positions.data ?? null}
+            totals={totals.data ?? null}
+            accounts={accounts.data?.accounts ?? null}
+            rebuilding={runtime.data?.rebuilding ?? null}
+            history={perf.data?.points ?? null}
+          />
+
+          {state !== 'portfolio' ? null : (
+            <>
+              <PortfolioChart
+                ledger={ledger}
+                currency={totals.data?.base_currency ?? null}
+                performance={perf.data?.points ?? null}
+                valuation={valuation.data?.points ?? null}
+              />
+              <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
+            </>
+          )}
+        </div>
+
+        {/* The rail: two blocks that are read down rather than across. */}
         {state !== 'portfolio' ? null : (
-          <>
-            <PortfolioChart />
-            <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
-          </>
+          <div className="space-y-6 lg:col-start-2 lg:row-start-1">
+            <Movers
+              // `?? null` and never `?? []`: this read is armed only once the
+              // page reaches `portfolio`, so there is a real window in which an
+              // empty array would state *« Rien à comparer »* about movements
+              // nobody has answered for (ADR-0026).
+              movers={movers.data?.movers ?? null}
+              reference={movers.data?.reference ?? null}
+              rows={rows}
+              currency={positions.data?.base_currency ?? null}
+            />
+            {/* Last, and it is allowed to render nothing at all: at one account
+                a comparison is the head's own figure with a border round it, so
+                the rail then holds the movers alone. */}
+            <AccountsCard accounts={accounts.data?.accounts ?? null} series={series} />
+          </div>
         )}
       </div>
-
-      {/* The rail: two blocks that are read down rather than across. */}
-      {state !== 'portfolio' ? null : (
-        <div className="space-y-6 lg:col-start-2 lg:row-start-1">
-          <Movers
-            // `?? null` and never `?? []`: this read is armed only once the
-            // page reaches `portfolio`, so there is a real window in which an
-            // empty array would state *« Rien à comparer »* about movements
-            // nobody has answered for (ADR-0026).
-            movers={movers.data?.movers ?? null}
-            reference={movers.data?.reference ?? null}
-            rows={rows}
-            currency={positions.data?.base_currency ?? null}
-          />
-          {/* Last, and it is allowed to render nothing at all: at one account a
-              comparison is the head's own figure with a border round it, so the
-              rail then holds the movers alone. */}
-          <AccountsCard />
-        </div>
-      )}
     </div>
   )
 }
