@@ -678,9 +678,11 @@ describe('the file handed over', () => {
     ).toBeInTheDocument()
   })
 
-  it('offers to write the duplicates anyway, and only when there are some', async () => {
+  it('offers to write the duplicates anyway', async () => {
     // Story 6: the owner who really did place the same order twice. The app
-    // reports and offers — it never decides on their behalf.
+    // reports and offers — it never decides on their behalf. That the offer is
+    // *only* made when there are duplicates is the next test's assertion, on a
+    // receipt that carries none.
     const asked: string[] = []
     server.use(
       http.post(ROUTES.eventsImport, ({ request }) => {
