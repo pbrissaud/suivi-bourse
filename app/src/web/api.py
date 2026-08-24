@@ -35,7 +35,6 @@ import main
 import portfolio_view
 import quotes
 import reassignment
-import runtime_state
 import runtime_view
 import settings as settings_module
 import settings_registry
@@ -1761,7 +1760,9 @@ def get_runtime():
     The row set comes from the configuration snapshot and the records are fetched
     one ``get`` per key — never an iteration of a dict the scrape threads are
     writing, which raises ``RuntimeError: dictionary changed size during
-    iteration`` and only ever does so in production with forty symbols.
+    iteration`` and only ever does so in production with forty symbols. That
+    read is :meth:`runtime_state.RuntimeRecorder.records_for`, shared with
+    ``/health``'s body since #818 rather than written twice.
     """
     from web import current_runtime
 
@@ -1769,19 +1770,7 @@ def get_runtime():
     recorder = runtime.recorder
     snapshot = runtime.config_manager.current()
 
-    scrape = {}
-    backfill = {}
-    for share in snapshot.shares:
-        symbol = share.get('symbol')
-        if not symbol:
-            continue
-        scrape.setdefault(symbol, recorder.scrape_of(symbol))
-        # Every direction the recorder knows, from its own list (issue #704):
-        # the pair spelled out here is what left the lateral pass out of this
-        # payload on the day it landed.
-        for direction in runtime_state.DIRECTIONS:
-            backfill[(symbol, direction)] = recorder.backfill_of(
-                symbol, direction)
+    scrape, backfill = recorder.records_for(snapshot.shares)
 
     return jsonify(runtime_view.build_runtime(
         shares=snapshot.shares,
