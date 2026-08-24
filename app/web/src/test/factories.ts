@@ -1064,16 +1064,15 @@ export function defaultSettings(): SettingDescription[] {
 }
 
 /**
- * The four boot variables — a **description**, never a form (ADR-0014, #740).
+ * The three boot variables — a **description**, never a form (ADR-0014, #740).
  *
- * Four and not six since ADR-0033: the metrics flag and its port left with the
- * exporter, and this fixture is the API's answer, so it is where the tab's list
- * shortens.
+ * Three and not six: the metrics flag and its port left with the exporter
+ * (ADR-0033) and the drop folder's own with the mount (ADR-0032), and this
+ * fixture is the API's answer, so it is where the tab's list shortens.
  */
 export function defaultEnvironment(): EnvironmentVariable[] {
   return [
     { name: 'SB_STORE_DIR', value: '/data', set: false, source: 'default' },
-    { name: 'SB_IMPORT_DIR', value: '/import', set: false, source: 'default' },
     { name: 'SB_WEB_PORT', value: '8080', set: true, source: 'environment' },
     { name: 'LOG_LEVEL', value: 'INFO', set: true, source: 'environment' },
   ]
@@ -1131,13 +1130,20 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   }
 }
 
-/** A notice about a file on disk: outside the app's reach, so no gesture in it. */
-export function aLegacyFileAdvisory(overrides: Partial<Advisory> = {}): Advisory {
+/**
+ * A notice about the environment: outside the app's reach, so no gesture in it.
+ *
+ * It was a v4 `config.yaml` found on disk until ADR-0032 took the folder that
+ * made finding one possible. The kind is what these tests need — a standing,
+ * acknowledgeable notice the block renders and the badge counts — and this is
+ * the one that is left with an owner able to end it.
+ */
+export function anEnvironmentAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   return anAdvisory({
-    key: 'legacy_config_file',
+    key: 'unread_environment',
     message:
-      '/config/config.yaml is still there and this version does not read it: a portfolio is a dated event ledger and nothing else.',
-    detail: { path: '/config/config.yaml' },
+      '1 environment variable(s) are set and read by nothing: SB_EXECUTOR_POOL. Unset them, or acknowledge this notice.',
+    detail: { variables: ['SB_EXECUTOR_POOL'] },
     ...overrides,
   })
 }

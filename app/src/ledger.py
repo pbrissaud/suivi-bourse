@@ -411,10 +411,11 @@ def sync_drop_folder(store, directory,
                      now: Optional[datetime] = None) -> List[SyncOutcome]:
     """Import every file the drop folder holds, accounts first. Idempotent.
 
-    Called on every write that could have changed the folder — the watcher's
-    callback and the boot — and it is safe to call on a filesystem event that
-    changed nothing, because an unchanged fingerprint costs one hash and no
-    write at all.
+    **Nothing in the application calls it any more** (ADR-0032): the drop
+    folder, its watcher and the boot-time scan left with the mount, and what is
+    left here is the provenance apparatus itself — ``import_source`` and the
+    revocation — which goes in the ticket that retires it. Until then it is
+    reached from the suite alone, where it seeds a store from a file.
 
     **A folder that does not exist is a fresh install**, not a broken one: the
     user has not dropped a file into what the mount will create for them. Same

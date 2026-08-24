@@ -11,17 +11,18 @@ from .schemas import (
     CashFlow, CashState, AccountMetricPoint, PortfolioTotalPoint,
 )
 
-#: The four names that are **not** imported eagerly, and where each lives.
+#: The three names that are **not** imported eagerly, and where each lives.
 #:
 #: ``schemas`` above is the domain's vocabulary and imports nothing but the
-#: standard library. The four below are its machinery, and each drags a heavy
-#: edge in with it: ``loader`` pulls pandas and openpyxl, ``watcher`` pulls
-#: watchdog. Imported here at module level, they were pulled by **anything that
-#: touched this package** — including ``performance.py``, ``carrying.py`` and
-#: ``retention.py``, which the root ``CLAUDE.md`` lists among the modules that
-#: stay pure: no store, no yfinance, ``now`` injected. ``import performance``
-#: failed with ``ModuleNotFoundError: watchdog`` outside the full venv, which is
-#: as plain a statement as there is that the rule was not being kept.
+#: standard library. The three below are its machinery, and each drags a heavy
+#: edge in with it: ``loader`` pulls pandas and openpyxl. Imported here at
+#: module level, they were pulled by **anything that touched this package** —
+#: including ``performance.py``, ``carrying.py`` and ``retention.py``, which the
+#: root ``CLAUDE.md`` lists among the modules that stay pure: no store, no
+#: yfinance, ``now`` injected. ``import performance`` failed with
+#: ``ModuleNotFoundError: watchdog`` outside the full venv, which was as plain a
+#: statement as there is that the rule was not being kept — the fourth name was
+#: the drop folder's watcher, and it left with the folder (ADR-0032).
 #:
 #: :pep:`562` is what lets the call sites stay as they are —
 #: ``from events import EventAggregator`` still works, and pays for the
@@ -33,7 +34,6 @@ _LAZY = {
     'EventValidator': '.validator',
     'ValidationIssue': '.validator',
     'EventAggregator': '.aggregator',
-    'EventWatcher': '.watcher',
 }
 
 
@@ -76,5 +76,4 @@ __all__ = [
     'EventValidator',
     'ValidationIssue',
     'EventAggregator',
-    'EventWatcher',
 ]

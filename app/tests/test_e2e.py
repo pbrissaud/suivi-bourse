@@ -91,31 +91,22 @@ def _no_sleep(monkeypatch):
     monkeypatch.setattr(main.time, "sleep", lambda *a, **k: None)
 
 
-def _config_with_declared_source(tmp_path):
-    """Real ConfigurationManager reading a source settings.yaml names."""
-    config_dir = tmp_path / "config"
-    events_dir = config_dir / "events"
-    events_dir.mkdir(parents=True)
-    (events_dir / "2024.csv").write_text(EVENTS_CSV, encoding="utf-8")
-    (config_dir / "settings.yaml").write_text(
-        "events:\n"
-        f"  source: {events_dir}\n",
-        encoding="utf-8",
-    )
-    return ConfigurationManager(config_dir=str(config_dir))
+def _config_with_a_ledger(tmp_path, csv_text=EVENTS_CSV, imported=True):
+    """A real ConfigurationManager over a store holding one file's rows.
 
-
-def _config_with_default_source(tmp_path, csv_text=EVENTS_CSV):
-    """Real ConfigurationManager on the default ``<config_dir>/events`` source.
-
-    No settings.yaml at all — the setup every install that never declared one
-    runs, and since #711 the only one there is.
+    The manager scans no directory since ADR-0032, so the file is read into the
+    store here — which is what a ``POST /api/events/import`` does before the
+    replay it triggers. ``imported=False`` leaves the file unread, for the one
+    test whose subject is a file the ledger refuses.
     """
     config_dir = tmp_path / "config"
     events_dir = config_dir / "events"
     events_dir.mkdir(parents=True)
     (events_dir / "2024.csv").write_text(csv_text, encoding="utf-8")
-    return ConfigurationManager(config_dir=str(config_dir))
+    manager = ConfigurationManager(config_dir=str(config_dir))
+    if imported:
+        ledger.sync_drop_folder(manager.store, events_dir)
+    return manager
 
 
 # --------------------------------------------------------------------------- #
@@ -129,9 +120,7 @@ def test_the_full_chain_writes_the_position_and_the_quote(
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
-    config_manager = _config_with_declared_source(tmp_path)
-
-    assert config_manager.get_events_source().endswith("/events")
+    config_manager = _config_with_a_ledger(tmp_path)
 
     sb = SuiviBourseMetrics(config_manager)
     # The one question the app asks (#702, ADR-0021). The fake quotes in USD and
@@ -212,7 +201,7 @@ def test_backfill_writes_the_price_and_only_the_price(
     _no_sleep(monkeypatch)
     _patch_ticker(monkeypatch, fake_ticker)
 
-    config_manager = _config_with_default_source(tmp_path)
+    config_manager = _config_with_a_ledger(tmp_path)
     sb = SuiviBourseMetrics(config_manager)
 
     intermediate = datetime(2024, 6, 20, 15, 0, tzinfo=timezone.utc)
@@ -270,7 +259,8 @@ def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
         "2024-01-15,BUY,AAPL,Apple Inc,5,150.00,2.50,,Buy five\n"
         "2024-02-15,SELL,AAPL,Apple Inc,10,190.00,2.00,,Oversell ten\n"
     )
-    config_manager = _config_with_default_source(tmp_path, csv_text=bad_csv)
+    config_manager = _config_with_a_ledger(tmp_path, csv_text=bad_csv,
+                                           imported=False)
 
     assert config_manager.load_shares() == []
 
@@ -279,6 +269,6 @@ def test_oversell_csv_is_refused_at_import_and_nothing_lands(tmp_path):
     assert ledger.list_imports(opened) == []
 
     (outcome,) = ledger.sync_drop_folder(
-        opened, Path(config_manager.get_events_source()))
+        opened, Path(tmp_path / "config" / "events"))
     assert outcome.outcome == ledger.REFUSED
     assert "Cannot sell" in outcome.error or "sell" in outcome.error.lower()

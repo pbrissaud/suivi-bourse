@@ -38,23 +38,23 @@ uv sync
 `uv sync` reads the lockfile, so the versions you get are the versions the
 release was built and tested against.
 
-## The two directories
+## The one directory
 
-The app reads two paths from the environment, and **both are directories, never
-files** — the app names the store file and its write-ahead log itself. Pointing
-at a directory is what removes the whole class of mistake where the path exists
-but its parent does not.
+The app reads one path from the environment, and it is **a directory, never a
+file** — the app names the store file and its write-ahead log itself. Pointing at
+a directory is what removes the whole class of mistake where the path exists but
+its parent does not.
 
 | Variable | Container default | What it holds |
 |---|---|---|
 | `SB_STORE_DIR` | `/data` | the store — everything the app writes |
-| `SB_IMPORT_DIR` | `/import` | the drop folder — files you put there to be imported |
 
-**The defaults describe the container**, which is the deployment that has no
-choice; a Docker-less install is the one that overrides them. Give
-`SB_STORE_DIR` a directory of your own, and `SB_IMPORT_DIR` one only if you have
-files to drop — an install with nothing to import is a normal install, not a
-degraded one.
+**The default describes the container**, which is the deployment that has no
+choice; a Docker-less install is the one that overrides it. Give `SB_STORE_DIR` a
+directory of your own.
+
+There is nowhere to put a file for the app to find: you hand it one from the
+app, and it reads it once. See [Import your events](./import-your-events.mdx).
 
 The other boot variables — the web port and the log level — are the same here as
 anywhere, and they are listed once, on [Settings](./settings.mdx). Everything

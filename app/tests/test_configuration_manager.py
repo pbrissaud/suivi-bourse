@@ -2,7 +2,6 @@
 Unit tests for main.ConfigurationManager.
 
 These tests exercise ConfigurationManager in isolation:
-  * events-source resolution (always <config_dir>/events since #698)
   * naming the two v4 files this version no longer reads — `config.yaml`
     (issue #711) and `settings.yaml` (issue #698)
   * _compute_cache_key behaviour (the store's stamp, and no file at all)
@@ -18,6 +17,14 @@ yfinance.
 
 There is **one loading path** since #711 — the event ledger — so no test here
 selects a mode, and none can.
+
+And since ADR-0032 the manager **reads no directory at all**: a file is handed
+to the app, written through ``entries``, and the manager replays the store. The
+three tests that asked *where does it look* and *can a v4 file move it* went
+with the question; what a v4 ``settings.yaml`` must not be able to do is still
+held, on the ledger it would change (``test_a_v4_accounts_block_declares_nothing``)
+and on the cache key it must not move. ``seeded`` below is how a test that wants
+a populated ledger gets one.
 """
 
 import os
@@ -27,6 +34,7 @@ from datetime import date
 
 import pytest
 
+import ledger
 import main
 from main import ConfigurationManager
 from events.validator import EventValidationError
@@ -37,42 +45,19 @@ def _write_settings(config_dir, text):
     (config_dir / "settings.yaml").write_text(text, encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- #
-# Where the events are read from
-# --------------------------------------------------------------------------- #
-def test_events_source_defaults_to_config_dir_events(tmp_path):
-    """With no settings.yaml at all, the source is <config_dir>/events."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_events_source() == str(tmp_path / "events")
+def seeded(config_dir, drop=None):
+    """A manager over its own store, holding whatever ``drop`` contains.
 
-
-def test_events_source_ignores_a_v4_settings_yaml(tmp_path):
-    """``events.source`` was the last thing settings.yaml was read for (#698).
-
-    A v5 that still honoured it would let a v4 file decide where the product
-    looks — and the file also carries an ``accounts:`` block v5 must not read,
-    so reading half of it would be the harder rule to explain, not the softer
-    one. The drop folder is ``<config_dir>/events`` here and a mount in the
-    container (ADR-0015).
+    The rows are put in the **store**, because that is where the manager reads
+    them from and, since ADR-0032, the only place they can come from: a file is
+    handed to the app and written through ``entries``, and nothing scans a
+    directory on a build. Which door wrote the rows is not this file's subject —
+    every test below is about what a snapshot does with a ledger that is there.
     """
-    _write_settings(tmp_path, f"events:\n  source: {tmp_path / 'my_events'}\n")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    assert cm.get_events_source() == str(tmp_path / "events")
-
-
-def test_the_watch_dial_is_gone_and_a_stale_one_is_ignored(tmp_path):
-    """``events.watch`` has no heir and no reader (issue #697).
-
-    The folder is watched always: dropping a file is how a headless install
-    imports, and a dial on that would be a dial on whether the product works
-    without a UI. A v4 settings.yaml that still carries ``watch: false`` must
-    therefore not be able to switch it off — the value is not read at all.
-    """
-    _write_settings(tmp_path, "events:\n  watch: false\n")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_events_source()
-
-    assert not hasattr(cm, "_watch_enabled")
+    cm = ConfigurationManager(config_dir=str(config_dir))
+    if drop is not None:
+        ledger.sync_drop_folder(cm.store, drop)
+    return cm
 
 
 # --------------------------------------------------------------------------- #
@@ -94,7 +79,9 @@ def test_a_config_yaml_is_named_at_startup(tmp_path, mocker):
     warn.assert_called_once()
     message = warn.call_args.args[0]
     assert "config.yaml" in message
-    assert str(tmp_path / "events") in message   # says where it *does* look
+    # It names no folder any more (ADR-0032): there is nowhere to look, so the
+    # sentence says what a portfolio is made of instead of where it is found.
+    assert str(tmp_path / "events") not in message
     assert legacy.exists()                       # and touches nothing
 
 
@@ -117,7 +104,7 @@ def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
     them would invalidate on a ``touch`` and miss a re-drop that changed
     content under an older timestamp.
     """
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.load_shares()
 
     key = cm._compute_cache_key()
@@ -131,13 +118,14 @@ def test_cache_key_reflects_the_ledger_not_the_files(tmp_path, events_dir):
 
 def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
     """A touch changes nothing; a changed line changes the key."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.load_shares()
     key_before = cm._compute_cache_key()
 
     csv_file = events_dir / "2024.csv"
     st = csv_file.stat()
     os.utime(csv_file, (st.st_atime, st.st_mtime + 100))
+    ledger.sync_drop_folder(cm.store, events_dir)
     cm.reload()
     assert cm._compute_cache_key() == key_before
 
@@ -145,6 +133,7 @@ def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
         csv_file.read_text(encoding="utf-8").replace(
             "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
         encoding="utf-8")
+    ledger.sync_drop_folder(cm.store, events_dir)
     cm.reload()
     assert cm._compute_cache_key() != key_before
 
@@ -152,8 +141,7 @@ def test_cache_key_follows_content_not_mtime(tmp_path, events_dir):
 def test_cache_key_none_when_the_ledger_is_empty(tmp_path):
     """Nothing imported and no settings.yaml yields a None key."""
     cm = ConfigurationManager(config_dir=str(tmp_path))
-    cm.get_events_source()
-    # <config_dir>/events was never created, so nothing was ever imported.
+    # Nothing was ever written to this store, so there is nothing to fingerprint.
     assert cm._compute_cache_key() is None
 
 
@@ -162,7 +150,7 @@ def test_cache_key_none_when_the_ledger_is_empty(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_events_load_produces_expected_shares(tmp_path, events_dir):
     """The real events pipeline runs and yields AAPL + MSFT shares."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     shares = cm.load_shares()
     assert isinstance(shares, list)
@@ -170,8 +158,8 @@ def test_events_load_produces_expected_shares(tmp_path, events_dir):
 
 
 def test_second_load_returns_same_cached_object(tmp_path, events_dir):
-    """A second load with no file change returns the identical cached object."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    """A second load with no ledger change returns the identical cached object."""
+    cm = seeded(tmp_path, events_dir)
 
     first = cm.load_shares()
     second = cm.load_shares()
@@ -180,7 +168,7 @@ def test_second_load_returns_same_cached_object(tmp_path, events_dir):
 
 def test_force_reload_bypasses_cache(tmp_path, events_dir):
     """force=True re-runs the pipeline, returning a fresh (equal) object."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     first = cm.load_shares()
     forced = cm.load_shares(force=True)
@@ -190,7 +178,7 @@ def test_force_reload_bypasses_cache(tmp_path, events_dir):
 
 def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
     """A corrected file replaces its rows, so the next load rebuilds."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     first = cm.load_shares()
     aapl_before = next(s for s in first if s["symbol"] == "AAPL")
@@ -200,6 +188,7 @@ def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
         csv_file.read_text(encoding="utf-8").replace(
             "2024-01-15,BUY,AAPL,Apple Inc,10", "2024-01-15,BUY,AAPL,Apple Inc,11"),
         encoding="utf-8")
+    ledger.sync_drop_folder(cm.store, events_dir)
 
     second = cm.load_shares()
     assert second is not first
@@ -214,7 +203,7 @@ def test_a_re_drop_that_changes_content_invalidates_cache(tmp_path, events_dir):
 # --------------------------------------------------------------------------- #
 def test_get_first_acquisition_date_earliest_acquisition(tmp_path, events_dir):
     """Returns the earliest acquisition date for a symbol (ignores later ones)."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.load_shares()
 
     # AAPL has BUYs on 2024-01-15 and 2024-06-15 -> earliest is 2024-01-15.
@@ -230,7 +219,7 @@ def test_get_first_acquisition_date_none_when_no_events_loaded(tmp_path):
 
 def test_get_first_acquisition_date_none_for_absent_symbol(tmp_path, events_dir):
     """A symbol the ledger never acquired returns None."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.load_shares()
     assert cm.get_first_acquisition_date("GOOG") is None
 
@@ -249,7 +238,7 @@ def test_a_grant_is_an_acquisition_and_opens_the_window(tmp_path):
         "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
         "2021-03-04,GRANT,GRT,Granted Co,10,,,,\n",
         encoding="utf-8")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events)
     cm.load_shares()
 
     assert cm.get_first_acquisition_date("GRT") == date(2021, 3, 4)
@@ -266,7 +255,7 @@ def test_get_events_none_before_load(tmp_path):
 
 def test_get_events_returns_cached_events(tmp_path, events_dir):
     """After an events load, get_events returns the published snapshot's events."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.load_shares()
 
     events = cm.get_events()
@@ -280,7 +269,7 @@ def test_get_events_returns_cached_events(tmp_path, events_dir):
 # --------------------------------------------------------------------------- #
 def test_current_publishes_on_first_use_and_then_returns_the_same_object(tmp_path, events_dir):
     """The read path is one attribute read, so it must be stable between loads."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     first = cm.current()
     assert first is cm.current()
@@ -291,7 +280,7 @@ def test_current_publishes_on_first_use_and_then_returns_the_same_object(tmp_pat
 
 def test_snapshot_is_swapped_whole_when_the_ledger_changes(tmp_path, events_dir):
     """A reload replaces the snapshot; it never edits the published one."""
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     before = cm.current()
     after = cm.reload(force=True)
@@ -313,7 +302,7 @@ def test_a_reload_never_exposes_a_half_built_configuration(tmp_path, events_dir)
     reader hammers the read path while a writer rebuilds; every observation must
     be a complete configuration.
     """
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     cm.current()  # first publication
 
     # Make the rebuild slow enough that the reader is guaranteed to observe the
@@ -371,7 +360,7 @@ def test_a_rejected_config_changes_nothing_anywhere(tmp_path, events_dir):
     reached with ``force``: the ledger's own fingerprint is what invalidates a
     snapshot now, and this test is about the rebind, not about the key.
     """
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
     published = cm.current()
 
     def _refuse(opened_store):
@@ -453,7 +442,7 @@ def test_a_v4_accounts_block_declares_nothing(tmp_path, events_dir):
     _write_settings(
         tmp_path,
         "accounts:\n  - id: PEA\n    type: PEA\n    currency: EUR\n")
-    cm = ConfigurationManager(config_dir=str(tmp_path))
+    cm = seeded(tmp_path, events_dir)
 
     snapshot = cm.reload()
     assert snapshot.accounts is None

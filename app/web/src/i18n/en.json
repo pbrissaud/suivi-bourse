@@ -150,7 +150,6 @@
   "firstRun.ephemeral": "This container keeps nothing: the store sits in its own writable layer and disappears the next time it is recreated. That is a fine way to try the app out — mount a volume to keep it.",
   "firstRun.save": "Save",
   "firstRun.refused": "The app refused this value and wrote nothing.",
-  "firstRun.entry.file.body": "Hand the app a .csv or an .xlsx of your events, from the data page — or drop one into {path}, which it also reads. Either way it is read once, whatever the file is called.",
 
   "receipt.currency.saved": "Base currency saved: {currency}.",
   "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} accounts {Preparing your accounts…} other {Preparing your file…}}",
@@ -288,7 +287,7 @@
   "accounts.form.cancel": "Cancel",
 
   "accounts.empty.title": "No account declared",
-  "accounts.empty.body": "Every install owns one account, so this screen means the declaration has not been read rather than that you have none. Declare one here, or drop a file in your import folder.",
+  "accounts.empty.body": "Every install owns one account, so this screen means the declaration has not been read rather than that you have none. Declare one here, or hand the app a file that names your accounts.",
 
   "event.type.BUY": "Buy",
   "event.type.SELL": "Sell",
@@ -419,10 +418,6 @@
   "installation.advisory.seen": "Noticed on {date}",
   "installation.advisory.acknowledge": "Acknowledge",
   "installation.advisory.showEvents": "See the events concerned",
-  "installation.advisory.legacy_config_file": "{path} is still there and this version does not read it: a portfolio is a dated event ledger and nothing else. Nothing has been erased — describe those positions as dated events in the drop folder, or acknowledge this notice to keep the file exactly where it is without being reminded of it again.",
-  "installation.advisory.legacy_config_file.unobserved": "A v4 config.yaml sits in the configuration directory and is not read.",
-  "installation.advisory.legacy_settings_file": "{path} is still there and this version does not read it: accounts are declared by a file in the events' format (id, type, label) or from the app, and the drop folder is no longer named by a setting. Nothing has been erased — re-declare the accounts it holds, or acknowledge this notice.",
-  "installation.advisory.legacy_settings_file.unobserved": "A v4 settings.yaml sits in the configuration directory and is not read.",
   "installation.advisory.unread_environment": "{count, plural, one {# environment variable is set and read by nothing} other {# environment variables are set and read by nothing}}: {variables}. The settings they named live in the store since v5 — set them on the settings page, or with one PUT /api/settings — and those that were removed have no replacement at all. Unset them, or acknowledge this notice.",
   "installation.advisory.unread_environment.unobserved": "Environment variables are set that this version reads for nothing.",
   "installation.advisory.reconstruction_running": "The historical reconstruction is running: {complete, plural, one {# series has reached its first acquisition} other {# series have reached their first acquisition}} out of {total, number}. Your performance figures are computed from the history stored so far and will keep moving until it is complete.",

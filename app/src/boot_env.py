@@ -1,4 +1,4 @@
-"""The four things the environment still says, and the names it no longer says.
+"""The three things the environment still says, and the names it no longer says.
 
 The line between what the environment configures and what the store owns is
 drawn by a **mechanical test** rather than by a judgement about nature
@@ -8,7 +8,7 @@ drawn by a **mechanical test** rather than by a judgement about nature
     store; everything else is a dial and lives in the store.
 
 It asks for no case-by-case arbitration, which is the whole reason it is written
-as a rule rather than as a list of four opinions. Two notes have to stay written
+as a rule rather than as a list of three opinions. Two notes have to stay written
 down, because both names look like counter-examples until the test is applied to
 them: the **web port** passes it twice — gunicorn reads it in the master before
 the app is even imported, *and* a port changed from the interface would cut the
@@ -26,13 +26,13 @@ the master starts — but ADR-0033 took that socket, and the flag and the port t
 described it went into :data:`DELETED` with it. There is one bind, and the whole
 application answers on it.
 
-Two of the four are new here (#740), and three rules come with them:
+One of the three is a path (#740), and three rules come with it:
 
-* **they are directories, never files.** The app names its own store file and
+* **it is a directory, never a file.** The app names its own store file and
   its write-ahead log, so pointing at a path whose parent is not mounted stops
   being expressible at all — and that is also what makes the mount observation
-  of the next ticket decidable, since it interrogates a *directory* rather than
-  a file that does not exist yet;
+  decidable, since it interrogates a *directory* rather than a file that does
+  not exist yet;
 * **the defaults describe the container**, and it is the deployment *without*
   Docker that overrides them. That is the reverse of v4, where compose always
   rendered every variable and made the app's own defaults dead code;
@@ -51,18 +51,13 @@ from typing import Dict, List, Mapping, Optional, Tuple
 import settings_registry
 
 # --------------------------------------------------------------------------- #
-# The four names
+# The three names
 # --------------------------------------------------------------------------- #
 
 #: The directory the store lives in. The app owns the file name inside it, so
 #: two installs pointed at one directory get two files rather than one silently
 #: shared database.
 STORE_DIR = 'SB_STORE_DIR'
-
-#: The directory the drop folder is read from. **Optional**: an install with no
-#: file to import is a complete install, not a degraded one, so nothing here
-#: refuses a path that does not exist.
-IMPORT_DIR = 'SB_IMPORT_DIR'
 
 #: The socket the app and its API are served on — the only one there is
 #: (ADR-0033).
@@ -71,30 +66,30 @@ WEB_PORT = 'SB_WEB_PORT'
 #: How loudly the app logs.
 LOG_LEVEL = 'LOG_LEVEL'
 
-#: The container's own paths (ADR-0015). ``/data`` is the named volume, and it
-#: is a *default* rather than a requirement: a bare ``docker run`` starts, and
-#: what it lacks is a volume rather than a variable.
+#: The container's own path (ADR-0015, ADR-0032). ``/data`` is the named volume
+#: and it is the **only** mount left, and it is a *default* rather than a
+#: requirement: a bare ``docker run`` starts, and what it lacks is a volume
+#: rather than a variable.
 DEFAULT_STORE_DIR = '/data'
-DEFAULT_IMPORT_DIR = '/import'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
 
 #: Every variable this application reads, with the value it takes when nothing
-#: says otherwise — the list ``/api/config`` publishes. It is four long and there
-#: is no fifth: what is not here lives in the store, and the two names the
-#: exporter answered for left with it (ADR-0033).
+#: says otherwise — the list ``/api/config`` publishes. It is three long and
+#: there is no fourth: what is not here lives in the store, the two names the
+#: exporter answered for left with it (ADR-0033), and the drop folder's own left
+#: with the mount (ADR-0032).
 #:
 #: **No entry carries a secret flag any more** (#740). ``INFLUXDB_TOKEN`` was
 #: the environment's only credential and it left with the database (#700), so
 #: the redaction rule — redact *by name*, never by value (#654 trap 12) — has
 #: no subject and dies with it rather than waiting, unexercised, for one. The
-#: boolean reader left the same way with ADR-0033: **none of the four is a
+#: boolean reader left the same way with ADR-0033: **none of the three is a
 #: flag**, and a reader kept for a name that may never come is a rule nothing
 #: exercises.
 INVENTORY: Tuple[Tuple[str, str], ...] = (
     (LOG_LEVEL, DEFAULT_LOG_LEVEL),
     (STORE_DIR, DEFAULT_STORE_DIR),
-    (IMPORT_DIR, DEFAULT_IMPORT_DIR),
     (WEB_PORT, str(DEFAULT_WEB_PORT)),
 )
 
@@ -135,7 +130,7 @@ def integer(env: Mapping[str, str], name: str, default: int) -> int:
 
 
 def directory(env: Mapping[str, str], name: str, default: str) -> Path:
-    """Read one of the two paths. ``expanduser`` because a Docker-less install
+    """Read the one path. ``expanduser`` because a Docker-less install
     writes ``~/…`` and gets a literal ``~`` directory otherwise."""
     return Path(text(env, name, default)).expanduser()
 
@@ -178,21 +173,25 @@ NEVER_READ: frozenset = frozenset({
 #:
 #: ``SB_STATIC_DIR`` is the fifteenth name and not one of the fourteen a v4
 #: ``.env`` carries: it never appeared in one. It leaves with #740 all the same,
-#: because *four* is the complete list of what the environment says and an
+#: because *three* is the complete list of what the environment says and an
 #: escape hatch for serving the bundle from elsewhere has no user left — one
 #: image, one path, and a checkout resolves it from the package.
 #:
-#: The last two are the newest, and the ones an owner is likeliest to still have
-#: written down. *No successor* is the whole of what there is to say about them:
-#: the gauges did not become a dial, they became the health body and the runtime
-#: tab (ADR-0033). Reported as *moved* they would send their owner looking for a
+#: The three last are the newest, and the ones an owner is likeliest to still
+#: have written down. *No successor* is the whole of what there is to say about
+#: them: the gauges did not become a dial, they became the health body and the
+#: runtime tab (ADR-0033), and ``SB_IMPORT_DIR`` did not become a dial either —
+#: the folder it named is gone and a file is **handed** to the app instead
+#: (ADR-0032). Reported as *moved* they would send their owner looking for a
 #: field to re-enable, and left out of the notice altogether they would read as a
-#: typo — which is exactly the mistake this list exists to prevent.
+#: typo — which is exactly the mistake this list exists to prevent. This is the
+#: whole of the service the list renders: a variable still set is **named** as
+#: read by nothing, rather than believed to act.
 DELETED: frozenset = frozenset({
     'SB_EXECUTOR_POOL', 'SB_DYNAMIC_EXECUTOR_POOL', 'SB_PERF_INTERVAL',
     'SB_INGESTION_INTERVAL', 'SB_CONFIG_MODE', 'SB_STATIC_DIR',
     'INFLUXDB_HOST', 'INFLUXDB_TOKEN', 'INFLUXDB_DATABASE',
-    'SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT',
+    'SB_PROMETHEUS_ENABLED', 'SB_METRICS_PORT', 'SB_IMPORT_DIR',
 })
 
 #: The one name whose dial is not its own name lower-cased: v4's deprecated
@@ -224,7 +223,7 @@ def moved_dial(name: str) -> Optional[str]:
 def unread(env: Mapping[str, str]) -> Tuple[str, ...]:
     """The ``SB_*``/``INFLUXDB_*`` names that are set and no longer read.
 
-    A **computed complement** — what is present, minus the four it reads, minus
+    A **computed complement** — what is present, minus the three it reads, minus
     the four it never read — and never a literal of fourteen, which would drift at
     the first rename: #701 removed one from the dials while this was being
     written. The day a name is added to :data:`INVENTORY` it leaves this list by
@@ -294,20 +293,19 @@ def notice(names: Tuple[str, ...]) -> Optional[str]:
 class BootEnvironment:
     """What the process knows before it opens the store, and what it ignores.
 
-    Frozen, and produced by one call: the four values and the muted names are one
-    reading of one mapping, so nothing downstream can hold two generations of
+    Frozen, and produced by one call: the three values and the muted names are
+    one reading of one mapping, so nothing downstream can hold two generations of
     an environment that cannot change under it anyway.
     """
 
     store_dir: Path
-    import_dir: Path
     web_port: int
     log_level: str
     unread: Tuple[str, ...]
 
 
 def read(env: Mapping[str, str]) -> BootEnvironment:
-    """The four boot values and the muted names, from a mapping like ``os.environ``.
+    """The three boot values and the muted names, from a mapping like ``os.environ``.
 
     Takes the mapping rather than reading the process environment, which is what
     makes *"nothing set"*, *"a blank value"* and *"a v4 ``.env`` in full"* three
@@ -315,7 +313,6 @@ def read(env: Mapping[str, str]) -> BootEnvironment:
     """
     return BootEnvironment(
         store_dir=directory(env, STORE_DIR, DEFAULT_STORE_DIR),
-        import_dir=directory(env, IMPORT_DIR, DEFAULT_IMPORT_DIR),
         web_port=integer(env, WEB_PORT, DEFAULT_WEB_PORT),
         log_level=text(env, LOG_LEVEL, DEFAULT_LOG_LEVEL),
         unread=unread(env),
@@ -349,9 +346,8 @@ def effective(env: Mapping[str, str],
 
 
 __all__ = [
-    'STORE_DIR', 'IMPORT_DIR', 'WEB_PORT', 'LOG_LEVEL',
-    'DEFAULT_STORE_DIR', 'DEFAULT_IMPORT_DIR', 'DEFAULT_WEB_PORT',
-    'DEFAULT_LOG_LEVEL',
+    'STORE_DIR', 'WEB_PORT', 'LOG_LEVEL',
+    'DEFAULT_STORE_DIR', 'DEFAULT_WEB_PORT', 'DEFAULT_LOG_LEVEL',
     'INVENTORY', 'READ', 'PREFIXES', 'NEVER_READ', 'DELETED', 'MOVED_ALIASES',
     'BootEnvironment', 'read', 'unread', 'notice', 'moved_dial', 'effective',
     'text', 'integer', 'directory',

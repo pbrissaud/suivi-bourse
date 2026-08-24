@@ -24,6 +24,7 @@ from datetime import date, datetime
 
 import pytest
 
+import ledger
 import main
 import store as store_module
 import web as web_module
@@ -92,6 +93,10 @@ def _build(tmp_path, mocker):
     (events_dir / '2024.csv').write_text(_LEDGER, encoding='utf-8')
 
     opened = store_module.open_store(tmp_path / 'store.duckdb')
+    # The rows land in the store before the first publication: the manager scans
+    # no directory since ADR-0032, and what every test below asserts on is what
+    # a *write through a route* does to the series afterwards.
+    ledger.sync_drop_folder(opened, events_dir)
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
@@ -250,6 +255,7 @@ def test_a_runtime_with_no_metrics_still_replays_and_writes_no_series(
     events_dir.mkdir(exist_ok=True)
     (events_dir / '2024.csv').write_text(_LEDGER, encoding='utf-8')
     opened = store_module.open_store(tmp_path / 'store.duckdb')
+    ledger.sync_drop_folder(opened, events_dir)
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
@@ -283,13 +289,13 @@ def test_a_file_that_declares_the_currency_gets_a_series_from_that_write(
 
     ``POST /api/events/import`` writes ``base_currency`` into ``setting``, and
     the perf gate reads the **attribute**. It was refreshed only on a drop-folder
-    scan, and the replay that follows the write scans nothing — so the row landed
-    and the process went on holding ``None``, which made this recompute *and
-    every later tick* write no series at all. An install whose first gesture is
-    an import had an empty dashboard until a restart.
+    scan, and the replay that follows the write scanned nothing — so the row
+    landed and the process went on holding ``None``, which made this recompute
+    *and every later tick* write no series at all. An install whose first gesture
+    is an import had an empty dashboard until a restart. There is no scan left to
+    be the exception (ADR-0032): the refresh is unconditional.
     """
     _fixed_today(mocker)
-    (tmp_path / 'events').mkdir(exist_ok=True)
     opened = store_module.open_store(tmp_path / 'store.duckdb')
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)

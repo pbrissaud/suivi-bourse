@@ -5,9 +5,8 @@ Issue #709, spec #695 § 14, ADR-0008 / ADR-0014 / ADR-0021.
 ``advisory(key, first_seen_at, acknowledged_at)`` is **not a journal**: no
 history, no row per occurrence, a closed list of keys in the whole product. The
 sort is made on one question — *can the app work this out again later?* — and
-almost nothing survives it. Four advisories are **derivable states**: a ``stat``
-on a file for a v4's ``config.yaml`` and its ``settings.yaml``, a read of the
-environment for the variables nothing obeys any more, and the process's own
+almost nothing survives it. Two advisories are **derivable states**: a read of
+the environment for the variables nothing obeys any more, and the process's own
 memory for how far the reconstruction has got. **One is a real event**: *"v5
 asserted that your v4 amounts were already in your reporting currency"*. It
 happens once, at the end of the first reconstruction, by comparing the observed
@@ -15,7 +14,14 @@ quote currency to the reporting one — deferred, because at import time no symb
 has been fetched and the app does not know what a line is quoted in — and since
 the reconstruction never happens twice, **it is lost if it is not written**.
 
-**Five keys and not six** (ADR-0021, which amends spec #695 § 14 on precisely
+**Three keys, and the two that left are ADR-0032's.** ``legacy_config_file``
+and ``legacy_settings_file`` were a ``stat`` on a v4 file *found in a folder the
+app read*, and that folder is gone: a file is handed to the app, parsed once and
+never seen again. The sentence did not disappear with them — it is **said at the
+refusal of the upload**, by name and at the instant of the gesture, which beats a
+notice discovered later.
+
+**And not six** (ADR-0021, which amends spec #695 § 14 on precisely
 this point). A missing base currency is a **live condition**, not an advisory,
 and the rule that separates them is the ADR's: *the banner shows conditions the
 owner can end; the badge counts facts they can only acknowledge*. Counting it
@@ -24,10 +30,10 @@ and the two predicates it needs are published already (``/api/config``'s
 ``stored`` flag and the head's ``currency``), so nothing is lost by its absence.
 
 Logs would be cheaper, and they are not enough, for one reason only: **a log
-cannot be acknowledged**. Someone may want to keep their v4 ``config.yaml``
-beside their events for ever, and an app that reproaches them for it at every
-boot becomes noise one learns to ignore — which would kill the fifth advisory
-too, on the day it counts.
+cannot be acknowledged**. Someone may want to keep a v4 ``.env`` sourced into
+their container for ever, and an app that reproaches them for it at every boot
+becomes noise one learns to ignore — which would kill the recorded advisory too,
+on the day it counts.
 
 Four properties of the mechanism are decisions rather than details.
 
@@ -64,7 +70,6 @@ notices.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from logfmt_logger import getLogger
@@ -87,10 +92,8 @@ RECORDED = 'recorded'
 #: docstring.
 UNOBSERVED = object()
 
-#: The five keys, and there are no others. They are published over the API and a
-#: client may branch on them, so they are stable identifiers rather than prose.
-LEGACY_CONFIG_FILE = 'legacy_config_file'
-LEGACY_SETTINGS_FILE = 'legacy_settings_file'
+#: The three keys, and there are no others. They are published over the API and
+#: a client may branch on them, so they are stable identifiers rather than prose.
 UNREAD_ENVIRONMENT = 'unread_environment'
 RECONSTRUCTION_RUNNING = 'reconstruction_running'
 ASSUMED_BASE_CURRENCY = 'assumed_base_currency'
@@ -101,7 +104,7 @@ class UnknownAdvisory(KeyError):
 
 
 class AdvisoryNotStanding(LookupError):
-    """The key is one of the five, and nothing is standing under it right now.
+    """The key is one of the three, and nothing is standing under it right now.
 
     Its own class because the API's answer differs from :class:`UnknownAdvisory`
     only in the sentence, never in the status: both are a ``404``, and both mean
@@ -114,19 +117,15 @@ class Context:
     """What the derivable observations read, gathered by the caller.
 
     The predicates live here (:data:`SPECS`) and the *sources* live where they
-    belong — the configuration directory on the manager, the environment
-    inventory in :mod:`main`, the reconstruction's progress in the scheduler's
-    own memory. This dataclass is the seam between them, and it is a frozen bag
-    of values rather than a set of callbacks so that a test can state a
-    situation in one line.
+    belong — the environment inventory in :mod:`main`, the reconstruction's
+    progress in the scheduler's own memory. This dataclass is the seam between
+    them, and it is a frozen bag of values rather than a set of callbacks so that
+    a test can state a situation in one line.
 
     Every field defaults to *unobservable* rather than to *absent*, which is the
     same rule as :data:`UNOBSERVED` one level down: a caller that cannot see a
     source says nothing about it, instead of asserting it is not there.
     """
-
-    #: The configuration directory the two v4 files would sit in.
-    config_dir: Optional[Path] = None
 
     #: The ``SB_*`` / ``INFLUXDB_*`` variables that are set and read by nothing
     #: (``main.unread_environment``). ``None`` when the caller did not look.
@@ -193,7 +192,7 @@ class AdvisorySpec:
     ``level`` is the log level the arming line is emitted at, and it is per
     advisory rather than uniform: a reconstruction in progress is the app working
     as designed, and a ``WARNING`` for it would teach an operator to filter out
-    the level the other four need.
+    the level the other two need.
     """
 
     key: str
@@ -238,27 +237,8 @@ class Advisory:
 
 
 # --------------------------------------------------------------------------- #
-# The five observations
+# The three observations
 # --------------------------------------------------------------------------- #
-
-def _legacy_file(filename: str):
-    """Observe one v4 file the app names and never reads (ADR-0008).
-
-    A ``stat`` and nothing else, which is the whole reason this advisory has no
-    stored existence: the file is either there or it is not, and the app has no
-    business remembering an answer it can get in a system call. Deleting the
-    file is therefore a way of dismissing the notice, and acknowledging it is the
-    way of keeping *both* the file and a quiet screen.
-    """
-    def observe(opened, context: Context):
-        if context.config_dir is None:
-            return UNOBSERVED
-        path = Path(context.config_dir) / filename
-        if not path.exists():
-            return None
-        return {'path': str(path)}
-    return observe
-
 
 def _observe_unread_environment(opened, context: Context):
     """The ``SB_*`` / ``INFLUXDB_*`` variables that are set and obeyed by nothing.
@@ -359,26 +339,8 @@ def _observe_assumed_base_currency(opened, context: Context):
 
 
 # --------------------------------------------------------------------------- #
-# The five sentences
+# The three sentences
 # --------------------------------------------------------------------------- #
-
-def _say_legacy_config(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['path']} is still there and this version does not read it: a "
-        f"portfolio is a dated event ledger and nothing else. Nothing has been "
-        f"erased — describe those positions as dated events in the drop folder, "
-        f"or acknowledge this notice to keep the file exactly where it is "
-        f"without being reminded of it again.")
-
-
-def _say_legacy_settings(detail: Mapping[str, Any]) -> str:
-    return (
-        f"{detail['path']} is still there and this version does not read it: "
-        f"accounts are declared by a file in the events' format (id, type, "
-        f"label) or from the app, and the drop folder is no longer named by a "
-        f"setting. Nothing has been erased — re-declare the accounts it holds, "
-        f"or acknowledge this notice.")
-
 
 def _say_unread_environment(detail: Mapping[str, Any]) -> str:
     variables = detail['variables']
@@ -417,14 +379,6 @@ def _say_assumed_base_currency(detail: Mapping[str, Any]) -> str:
 #: because a badge whose contents reshuffle between two reads is a badge nobody
 #: trusts.
 SPECS: Tuple[AdvisorySpec, ...] = (
-    AdvisorySpec(
-        LEGACY_CONFIG_FILE, DERIVED, _legacy_file('config.yaml'),
-        _say_legacy_config,
-        'A v4 config.yaml sits in the configuration directory and is not read.'),
-    AdvisorySpec(
-        LEGACY_SETTINGS_FILE, DERIVED, _legacy_file('settings.yaml'),
-        _say_legacy_settings,
-        'A v4 settings.yaml sits in the configuration directory and is not read.'),
     AdvisorySpec(
         UNREAD_ENVIRONMENT, DERIVED, _observe_unread_environment,
         _say_unread_environment,
@@ -466,7 +420,7 @@ class _Row:
 
 
 def _rows(opened) -> Dict[str, _Row]:
-    """Every row the table holds, by key. It has five at the very most."""
+    """Every row the table holds, by key. It has three at the very most."""
     return {
         key: _Row(key, _utc(first_seen_at), _utc(acknowledged_at))
         for key, first_seen_at, acknowledged_at in opened.query(
@@ -478,7 +432,7 @@ def refresh(opened, context: Context,
             now: Optional[datetime] = None) -> List[Advisory]:
     """Re-observe every advisory, arm what stands, drop what no longer does.
 
-    The one function that writes rows for the derivable four, and the reason it
+    The one function that writes rows for the derivable two, and the reason it
     both arms *and* drops is the criterion it serves: an advisory has no stored
     existence beyond its acknowledgement, so a predicate that goes false takes
     its row — and its acknowledgement — with it, and a predicate that comes back
@@ -583,7 +537,7 @@ def acknowledge(opened, key: str, context: Optional[Context] = None,
     """Acknowledge one advisory. The only gesture the table offers.
 
     Raises:
-        UnknownAdvisory: the key is not one of the five.
+        UnknownAdvisory: the key is not one of the three.
         AdvisoryNotStanding: it is, and nothing stands under it — there is
             nothing to acknowledge, and pretending otherwise would write a row
             whose predicate has never been observed.
@@ -678,7 +632,7 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 __all__ = [
     'Advisory', 'AdvisorySpec', 'Context', 'UnknownAdvisory',
     'AdvisoryNotStanding', 'DERIVED', 'RECORDED', 'UNOBSERVED',
-    'LEGACY_CONFIG_FILE', 'LEGACY_SETTINGS_FILE', 'UNREAD_ENVIRONMENT',
+    'UNREAD_ENVIRONMENT',
     'RECONSTRUCTION_RUNNING', 'ASSUMED_BASE_CURRENCY',
     'SPECS', 'BY_KEY', 'spec_for',
     'refresh', 'record', 'listing', 'acknowledge',

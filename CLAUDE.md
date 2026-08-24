@@ -77,15 +77,16 @@ There is **no compose stack** — `docker run` is the canonical form.
 ```bash
 docker build -t suivi-bourse:dev ./app
 docker run -d --name suivi-bourse -p 8080:8080 \
-  -v suivi-bourse:/data -v "$PWD/my-events:/import:ro" suivi-bourse:dev
+  -v suivi-bourse:/data suivi-bourse:dev
 
 # The image contract is asserted in CI and runnable here:
 IMAGE=suivi-bourse:dev .github/scripts/container-contract.sh
 ```
 
-`/data` holds the store, `/import` is the drop folder (optional, read-only).
-Dropping a `.csv`/`.xlsx` in it imports it; with no `/import` at all, the first
-event is typed in the app.
+**One mount** (ADR-0032): `/data` holds the store, and there is no second one.
+A `.csv`/`.xlsx` is handed to the app by `POST /api/events/import` — from the
+page or by `curl` — read once and never seen again; the first event can also
+simply be typed.
 
 ## The architecture in one page
 
@@ -99,7 +100,7 @@ Four workloads write to the store, each owning its own tables:
 
 - **Scrape** — one self-rescheduling job per held symbol, cadenced by the
   market's `marketState`;
-- **Ingestion** — not a job: the boot, the drop-folder watcher, or a write;
+- **Ingestion** — not a job: the boot or a write;
 - **Backfill** — reconstructs history (backward, forward and lateral passes) and
   applies the retention ladder;
 - **Performance** — replays the ledger and rewrites the return series.
@@ -128,7 +129,7 @@ than a contract held for anybody else.
   doubles exist all the same, and for one thing only: **what the app decided not
   to do**, which leaves no trace to read. A job that was not armed, a query that
   was not run, a pass that ran once — those are asserted on the call, in
-  `test_scheduling_wiring.py` (the APScheduler spy) and eight other files. Reach
+  `test_scheduling_wiring.py` (the APScheduler spy) and seven other files. Reach
   for one only when there is no row and no payload to look at.
 - **A read in flight is not an absence** (ADR-0026): a block that waits renders
   nothing at all, title included.

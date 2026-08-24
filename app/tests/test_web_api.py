@@ -89,14 +89,12 @@ class FakeMetrics:
         self.repair_calls += 1
         return self.repair_result
 
-    def ingest(self, import_files=True):
+    def ingest(self, force=False):
         self.ingest_calls += 1
         if self._config_manager is None:
             return
-        if import_files:
-            self._config_manager.reload()
-        else:
-            self._config_manager.replay()
+        self._config_manager.replay() if force \
+            else self._config_manager.reload()
 
     def recompute_perf(self):
         """The other half of the replay that follows the write (issue #812).
@@ -132,9 +130,11 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     which the reconstruction is genuinely *unobservable* (issue #709), and it is
     a missing object rather than a metrics object answering ``None``.
 
-    ``accounts`` is a **file in the drop folder** since #698, not a
-    ``settings.yaml``: the declaration is user data with provenance, so the
-    setup a test writes is the setup a user writes.
+    ``accounts`` and ``events`` are **files**, and they are read into the store
+    before the first publication rather than by it: the manager scans no
+    directory since ADR-0032, so a fixture that wants rows puts them there
+    itself. What a route then reads is the store, which is the only thing these
+    tests ever assert on.
 
     ``seed`` runs **after** the first publication, and it has to: the replay
     rewrites ``position`` wholesale, so a row laid down before it would be
@@ -159,14 +159,15 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     # here would mean the routes read a different ledger from the one the
     # snapshot was published from.
     opened = store.open_store(tmp_path / 'store.duckdb')
+    if accounts is not None or events is not None:
+        ledger.sync_drop_folder(opened, events_dir)
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
     runtime.store = opened
-    # The first publication, as ``build_runtime`` performs it in the master.
-    # Since #697 it is also the **first import**: the drop folder lands in the
-    # store here, so a route that reads the ledger reads the same one the
-    # snapshot was published from.
+    # The first publication, as ``build_runtime`` performs it in the master. It
+    # reads the store and nothing else (ADR-0032), so what the fixture wrote
+    # above is what a route reading the ledger reads.
     manager.reload()
     if seed is not None:
         seed(opened)
@@ -1884,10 +1885,10 @@ def test_the_reassignment_is_reachable_when_a_file_declared(tmp_path):
     route is that gesture, and nothing in it names the road taken.
     """
     def declare_by_file(opened):
-        # The watcher's own gesture, and the ordering #698 guarantees: the
-        # accounts source is imported, the event file beside it is re-read
-        # under the new rule and **refused** for the blank column it was right
-        # to carry, so its rows stay exactly where they were.
+        # The ordering #698 guarantees: the accounts source is imported, the
+        # event file beside it is re-read under the new rule and **refused** for
+        # the blank column it was right to carry, so its rows stay exactly where
+        # they were.
         (tmp_path / 'events' / 'accounts.csv').write_text(
             "id,type,label\npea,PEA,PEA Bourso\n", encoding='utf-8')
         ledger.sync_drop_folder(opened, tmp_path / 'events')
@@ -3710,30 +3711,31 @@ def test_an_install_with_nothing_to_say_answers_an_empty_collection(tmp_path):
     assert response.get_json() == []
 
 
-def test_an_advisory_is_listed_with_what_it_names(tmp_path):
+def test_an_advisory_is_listed_with_what_it_names(tmp_path, monkeypatch):
+    monkeypatch.setenv('SB_EXECUTOR_POOL', '10')
     client, opened = build_client_and_store(tmp_path)
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    advisories.refresh(opened, advisories.Context(config_dir=tmp_path))
+    advisories.refresh(opened, main.advisory_context(
+        main.ConfigurationManager(config_dir=str(tmp_path))))
 
     (advisory,) = client.get('/api/advisories').get_json()
 
-    assert advisory['key'] == advisories.LEGACY_CONFIG_FILE
+    assert advisory['key'] == advisories.UNREAD_ENVIRONMENT
     assert advisory['acknowledged'] is False
     assert advisory['acknowledged_at'] is None
     assert advisory['first_seen_at'] is not None
     # The detail is **re-derived** by the read: the table has three columns.
-    assert advisory['detail']['path'] == str(tmp_path / 'config.yaml')
-    assert 'config.yaml' in advisory['message']
+    assert advisory['detail']['variables'] == ['SB_EXECUTOR_POOL']
+    assert 'SB_EXECUTOR_POOL' in advisory['message']
 
 
-def test_a_get_never_arms_an_advisory(tmp_path):
+def test_a_get_never_arms_an_advisory(tmp_path, monkeypatch):
     """The observation belongs to the jobs, never to somebody opening a page.
 
     A ``GET`` that armed them would date every advisory with the moment a
     browser arrived — and log it there too.
     """
+    monkeypatch.setenv('SB_EXECUTOR_POOL', '10')
     client, opened = build_client_and_store(tmp_path)
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
 
     assert client.get('/api/advisories').get_json() == []
     assert opened.query('SELECT count(*) FROM advisory')[0][0] == 0
@@ -3762,11 +3764,11 @@ def test_a_request_never_drops_what_a_running_scheduler_armed(tmp_path):
 
 def test_acknowledging_hides_it_and_the_acknowledgement_persists(tmp_path):
     client, opened = build_client_and_store(tmp_path)
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    advisories.refresh(opened, advisories.Context(config_dir=tmp_path))
+    advisories.refresh(
+        opened, advisories.Context(unread_variables=('SB_EXECUTOR_POOL',)))
 
     response = client.post(
-        f'/api/advisories/{advisories.LEGACY_CONFIG_FILE}/acknowledgement')
+        f'/api/advisories/{advisories.UNREAD_ENVIRONMENT}/acknowledgement')
 
     assert response.status_code == 200
     assert response.get_json()['acknowledged'] is True
@@ -3787,7 +3789,7 @@ def test_acknowledging_an_unknown_advisory_is_a_404_not_a_503(tmp_path):
 def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
     """The key is real and nothing stands under it: same answer to the client."""
     response = build_client(tmp_path).post(
-        f'/api/advisories/{advisories.LEGACY_CONFIG_FILE}/acknowledgement')
+        f'/api/advisories/{advisories.UNREAD_ENVIRONMENT}/acknowledgement')
 
     assert response.status_code == 404
 

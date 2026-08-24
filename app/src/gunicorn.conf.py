@@ -101,12 +101,12 @@ def on_starting(server):
 
 
 def post_fork(server, worker):
-    """Open the store and start the scheduler and the watcher."""
+    """Open the store, arm the jobs and start the scheduler."""
     from web import start_background
     start_background()
 
 
 def worker_exit(server, worker):
-    """Stop the scheduler, the watcher, and close the store."""
+    """Stop the scheduler and close the store."""
     from web import stop_background
     stop_background()

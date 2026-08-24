@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ROUTES, type Advisory } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { aLegacyFileAdvisory, anAdvisory, aRuntime, aStore } from '@/test/factories'
+import { anEnvironmentAdvisory, anAdvisory, aRuntime, aStore } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -82,13 +82,13 @@ describe('the tab exists whether or not there is anything in it', () => {
   })
 
   it('keeps the tab when the last notice is acknowledged', async () => {
-    const { user } = await openNotices([aLegacyFileAdvisory()])
+    const { user } = await openNotices([anEnvironmentAdvisory()])
     await screen.findByRole('heading', { name: 'Avis' })
 
     server.use(
       http.get(ROUTES.advisories, () =>
         HttpResponse.json([
-          aLegacyFileAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+          anEnvironmentAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
         ]),
       ),
     )
@@ -107,10 +107,9 @@ describe('the badge on the tab', () => {
       http.get(ROUTES.advisories, () =>
         HttpResponse.json([
           anAdvisory(),
-          aLegacyFileAdvisory(),
+          anEnvironmentAdvisory(),
           // Acknowledged: gone from the block, so gone from the count.
-          aLegacyFileAdvisory({
-            key: 'legacy_settings_file',
+          anEnvironmentAdvisory({
             acknowledged: true,
             acknowledged_at: '2026-02-01T00:00:00.000Z',
           }),
@@ -150,7 +149,7 @@ describe('the badge on the tab', () => {
 
 describe('the notices', () => {
   it('offers no « acknowledge all », whatever the count', async () => {
-    await openNotices([anAdvisory(), aLegacyFileAdvisory()])
+    await openNotices([anAdvisory(), anEnvironmentAdvisory()])
 
     await screen.findByRole('heading', { name: 'Avis' })
     // Five at the very most, and a bulk acknowledgement is exactly how the one
@@ -160,13 +159,13 @@ describe('the notices', () => {
   })
 
   it('makes an acknowledged notice disappear rather than grey it out', async () => {
-    const { user } = await openNotices([aLegacyFileAdvisory()])
+    const { user } = await openNotices([anEnvironmentAdvisory()])
 
     await screen.findByRole('heading', { name: 'Avis' })
     server.use(
       http.get(ROUTES.advisories, () =>
         HttpResponse.json([
-          aLegacyFileAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+          anEnvironmentAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
         ]),
       ),
     )
@@ -182,12 +181,12 @@ describe('the notices', () => {
   })
 
   it('re-arms when its predicate becomes true again', async () => {
-    const { user } = await openNotices([aLegacyFileAdvisory()])
+    const { user } = await openNotices([anEnvironmentAdvisory()])
     await screen.findByRole('heading', { name: 'Avis' })
 
     server.use(
       http.get(ROUTES.advisories, () =>
-        HttpResponse.json([aLegacyFileAdvisory({ acknowledged: true })]),
+        HttpResponse.json([anEnvironmentAdvisory({ acknowledged: true })]),
       ),
     )
     await user.click(screen.getByRole('button', { name: 'Acquitter' }))
@@ -200,7 +199,7 @@ describe('the notices', () => {
     // being true must not make its next occurrence invisible.
     server.use(
       http.get(ROUTES.advisories, () =>
-        HttpResponse.json([aLegacyFileAdvisory({ first_seen_at: '2026-03-02T11:00:00.000Z' })]),
+        HttpResponse.json([anEnvironmentAdvisory({ first_seen_at: '2026-03-02T11:00:00.000Z' })]),
       ),
     )
     await user.click(screen.getByRole('tab', { name: /Le grand livre/ }))
@@ -238,15 +237,16 @@ describe('the notices', () => {
   })
 
 
-  it('gives a notice about a file on disk no button it cannot honour', async () => {
-    await openNotices([aLegacyFileAdvisory()])
+  it('gives a notice about the environment no button it cannot honour', async () => {
+    await openNotices([anEnvironmentAdvisory()])
     await screen.findByRole('heading', { name: 'Avis' })
 
-    // A file on disk is outside the app's reach, and the sentence — which names
-    // this installation's own path — says what to do out there.
+    // A variable in the container's environment is outside the app's reach, and
+    // the sentence — which names this installation's own — says what to do out
+    // there.
     const notices = block('Avis')
     expect(within(notices).queryByRole('button', { name: /Voir les événements/ })).not.toBeInTheDocument()
-    expect(notices).toHaveTextContent('/config/config.yaml')
+    expect(notices).toHaveTextContent('SB_EXECUTOR_POOL')
   })
 })
 
@@ -270,13 +270,13 @@ describe('the language of a notice', () => {
   }
 
   it('reads French for a French reader, and never the server’s English', async () => {
-    await inLanguage([aLegacyFileAdvisory(), anAdvisory()], ['fr-FR'])
+    await inLanguage([anEnvironmentAdvisory(), anAdvisory()], ['fr-FR'])
 
     const notices = block('Avis')
-    // The path is the server's — it names *this* installation — and everything
-    // around it is the catalogue's.
+    // The variable is the server's — it names *this* installation — and
+    // everything around it is the catalogue's.
     expect(notices).toHaveTextContent(
-      /\/config\/config\.yaml est toujours là et cette version ne le lit pas/,
+      /1 variable d’environnement est définie et n’est lue par rien : SB_EXECUTOR_POOL/,
     )
     expect(notices).toHaveTextContent(/Vos montants ont été lus en EUR/)
     // Plurals through ICU, and an enumeration the language closes on *et* —
@@ -287,11 +287,11 @@ describe('the language of a notice', () => {
   })
 
   it('reads English for an English reader, plurals and list included', async () => {
-    await inLanguage([aLegacyFileAdvisory(), anAdvisory()], ['en-GB'])
+    await inLanguage([anEnvironmentAdvisory(), anAdvisory()], ['en-GB'])
 
     const notices = screen.getByRole('region', { name: 'Notices' })
     expect(notices).toHaveTextContent(
-      /\/config\/config\.yaml is still there and this version does not read it/,
+      /1 environment variable is set and read by nothing: SB_EXECUTOR_POOL/,
     )
     expect(notices).toHaveTextContent(/4 events on 3 lines quoted in GBP and USD \(ZZA, ZZB and ZZC\)/)
     // The English catalogue is the source, not a copy of the payload: the `(s)`
@@ -300,20 +300,15 @@ describe('the language of a notice', () => {
     expect(notices).not.toHaveTextContent('line(s)')
   })
 
-  it('says the four the block owns, and each of them in French', async () => {
-    // Not only the one that is easy to provoke. The fifth key,
+  it('says the two the block owns, and each of them in French', async () => {
+    // Not only the one that is easy to provoke. The third key,
     // `reconstruction_running`, has exactly one announcer and it is the banner
     // (#724) — its sentence is in the same catalogue and composed by the same
-    // function, pinned in `lib/advisories.test.ts` in both languages.
+    // function, pinned in `lib/advisories.test.ts` in both languages. It was
+    // four until ADR-0032 took the two that watched a folder.
     await inLanguage(
       [
-        aLegacyFileAdvisory(),
-        aLegacyFileAdvisory({
-          key: 'legacy_settings_file',
-          detail: { path: '/config/settings.yaml' },
-        }),
-        anAdvisory({
-          key: 'unread_environment',
+        anEnvironmentAdvisory({
           detail: { variables: ['SB_PERF_INTERVAL', 'INFLUXDB_TOKEN'] },
         }),
         anAdvisory(),
@@ -322,8 +317,6 @@ describe('the language of a notice', () => {
     )
 
     const notices = block('Avis')
-    expect(notices).toHaveTextContent(/un grand livre d’événements datés/)
-    expect(notices).toHaveTextContent(/les comptes se déclarent par un fichier/)
     expect(notices).toHaveTextContent(
       /2 variables d’environnement sont définies et ne sont lues par rien : SB_PERF_INTERVAL et INFLUXDB_TOKEN/,
     )
@@ -333,13 +326,13 @@ describe('the language of a notice', () => {
   it('says what the notice *is* when this process observed nothing', async () => {
     // `detail: null` is #709's third answer — a runtime that cannot see the
     // source — and the server does the same thing one level up, falling back to
-    // `AdvisorySpec.doc`. A paragraph with `undefined` where a path belongs
+    // `AdvisorySpec.doc`. A paragraph with `undefined` where a list belongs
     // would be the alternative.
-    await inLanguage([aLegacyFileAdvisory({ detail: null })], ['fr-FR'])
+    await inLanguage([anEnvironmentAdvisory({ detail: null })], ['fr-FR'])
 
     const notices = block('Avis')
     expect(notices).toHaveTextContent(
-      'Un config.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.',
+      'Des variables d’environnement sont définies et cette version n’en lit aucune.',
     )
     expect(notices).not.toHaveTextContent('undefined')
   })

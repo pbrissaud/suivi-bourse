@@ -110,8 +110,6 @@ export function FirstRun() {
   if (!stands) return null
 
   const ephemeral = runtime.data?.store.persistence === 'ephemeral'
-  const dropFolder =
-    config.data?.environment.find((variable) => variable.name === 'SB_IMPORT_DIR')?.value ?? null
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
@@ -174,18 +172,17 @@ export function FirstRun() {
         </form>
 
         {/* The ledger's own two entrances, the same component and no primary
-            action. The drop folder is named rather than observed: whether the
-            bind is mounted is not published anywhere, and this ticket adds no
-            API state — an absent `/import` is an ordinary state (ADR-0015), so
-            the entry keeps its place and says so instead of disappearing, which
-            would read as a breakage. */}
+            action — and **both are always available** (ADR-0032). The file entry
+            used to name the drop folder when one was mounted and fall back to a
+            generic sentence when none was: an install that never mounted
+            anything read as an install missing half the product. There is
+            nothing left to mount, so the sentence is one sentence, and it is
+            true of every install. */}
         <EntryPair
           entries={[
             {
               title: t('data.empty.file.title'),
-              body: dropFolder
-                ? t('firstRun.entry.file.body', { path: dropFolder })
-                : t('data.empty.file.body'),
+              body: t('data.empty.file.body'),
             },
             {
               title: t('data.empty.manual.title'),

@@ -42,7 +42,7 @@ import settings as settings_module
 import settings_registry
 import store
 from events import (
-    EventValidator, EventAggregator, EventWatcher,
+    EventValidator, EventAggregator,
     AccountMetricPoint, PortfolioTotalPoint,
 )
 from events.loader import EventLoaderError
@@ -210,7 +210,7 @@ def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
     *Once* is a property of **where this is called** rather than of a flag: it
     runs in :func:`build_runtime`, in the gunicorn master, under ``preload_app``
     — one call per process, before any fork. A condition that ends afterwards
-    (a currency answered, a first file dropped) is not re-announced and its line
+    (a currency answered, a first event recorded) is not re-announced and its line
     is not retracted; the live states are what ``/api/runtime`` and
     ``/api/config`` carry, and the terminal is a record of the boot.
 
@@ -223,8 +223,7 @@ def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
             store_dir=boot.store_dir,
             base_currency=base_currency,
             recorded_events=recorded_events,
-            web_port=boot.web_port,
-            import_dir=boot.import_dir):
+            web_port=boot.web_port):
         app_logger.log(condition.level, condition.message,
                        extra={'context': condition.context})
         said.append(condition.key)
@@ -236,8 +235,8 @@ def effective_environment() -> List[Dict]:
 
     Not a settings view any more (#701): the dials moved into the store and are
     served by :func:`settings.describe`, so what is left here is the half that
-    genuinely cannot be answered from the store — the two directories, the
-    sockets, the log level. None of it is writable from in here and none of it
+    genuinely cannot be answered from the store — the store's directory, the
+    socket, the log level. None of it is writable from in here and none of it
     claims to be.
 
     **No entry is redacted, and there is no flag saying one could be** (#740).
@@ -256,11 +255,11 @@ def advisory_context(config_manager, metrics=None) -> advisories.Context:
 
     The seam between :mod:`advisories`, which holds the predicates and the log's
     text — a reader is served the front's catalogue since #768, so *the* text is
-    no longer one text — and the three places their sources actually live: the
-    configuration directory on the manager, the environment inventory here, and
-    the reconstruction's progress in the scheduler's own memory. **One builder**, so the observation a
-    job makes and the one a request renders cannot come from two different
-    readings of the same three sources.
+    no longer one text — and the two places their sources actually live: the
+    environment inventory here, and the reconstruction's progress in the
+    scheduler's own memory. **One builder**, so the observation a job makes and
+    the one a request renders cannot come from two different readings of the same
+    two sources.
 
     A caller with no ``metrics`` — the gunicorn master, a web request on a
     runtime that has not started its scheduler — reports the reconstruction as
@@ -269,7 +268,6 @@ def advisory_context(config_manager, metrics=None) -> advisories.Context:
     row a running scheduler armed.
     """
     return advisories.Context(
-        config_dir=config_manager.config_dir,
         unread_variables=tuple(unread_environment()),
         reconstruction=(None if metrics is None
                         else metrics.reconstruction_state()),
@@ -289,8 +287,8 @@ def register_interval_jobs(scheduler, sb_metrics,
     **Two, not three** (issue #697). The ``ingest`` job left with
     ``SB_INGESTION_INTERVAL``: it polled the drop folder because the files were
     the truth, and the store is the truth now. The ingestion still happens — it
-    is armed by the boot and by the always-on watcher, and it follows a write
-    instead of a timer.
+    is armed by the boot and it follows a write instead of a timer, the folder
+    it used to poll having left the product altogether (ADR-0032).
 
     **One interval, not two** (issue #701). The backfill's cadence is a dial in
     the store and arrives as an argument; the perf job's is
@@ -556,9 +554,9 @@ class ConfigurationManager:
     * **Never mutate published state in place.** ``_config`` is rebound, never
       edited, so the read path takes no lock at all — a reader holding a
       snapshot is holding a consistent one for as long as it needs it. One
-      mutex, ``_write_lock``, serialises the writers (the ingestion job, the
-      watchdog callback, and — once it exists — a web handler reloading
-      synchronously after a file edit).
+      mutex, ``_write_lock``, serialises the writers — which since ADR-0032 are
+      the boot and the web handlers, the drop folder's watcher having left with
+      the folder.
     * **Never publish what is not validated.** Loading, validating and
       aggregating all run *inside* snapshot construction, so a rejected
       configuration never becomes a snapshot and therefore cannot be read by
@@ -579,8 +577,7 @@ class ConfigurationManager:
     LEGACY_MANUAL_FILE = 'config.yaml'
     LEGACY_SETTINGS_FILE = 'settings.yaml'
 
-    def __init__(self, config_dir: Optional[str] = None, opened_store=None,
-                 import_dir: Optional[str] = None):
+    def __init__(self, config_dir: Optional[str] = None, opened_store=None):
         """
         Initialize the configuration manager.
 
@@ -591,11 +588,12 @@ class ConfigurationManager:
                 on the master's side of the fork, ``start_runtime`` on the
                 worker's, via :meth:`attach_store`. When it is omitted, one is
                 opened lazily under ``config_dir``.
-            import_dir: The drop folder. Production passes what
-                ``SB_IMPORT_DIR`` resolved to (issue #740); this manager reads
-                no environment of its own, which is what keeps *one* place in
-                the process reading ``os.environ``. Omitted, it falls back to
-                ``config_dir/events`` — v4's shape, and what every test uses.
+
+        **No drop folder any more** (ADR-0032). The manager took one directory
+        to scan on every build; a file now reaches the app through
+        ``POST /api/events/import``, is parsed once and is never seen again, so
+        there is no second path to hand in and no environment left for this
+        class to be given a reading of.
         """
         if config_dir:
             self.config_dir = Path(config_dir).expanduser()
@@ -605,9 +603,6 @@ class ConfigurationManager:
         # Named, never read (issue #698). The attribute survives so the startup
         # observation has a path to name and the tests have one to write to.
         self.settings_path = self.config_dir / self.LEGACY_SETTINGS_FILE
-        self._events_source: Optional[str] = str(
-            import_dir if import_dir else self.config_dir / 'events')
-        self._watcher: Optional[EventWatcher] = None
         self._store = opened_store
 
         # The published snapshot, and the mutex that serialises publishers.
@@ -696,8 +691,8 @@ class ConfigurationManager:
         Two files now, and the second one is #698's. ``settings.yaml`` held a
         deployment setting (``events.source``) *and* user data (the ``accounts:``
         block) in one document, which is the seam v5 separates: the accounts are
-        declared by a file in the events' format, and the drop folder is a mount.
-        Reading it would keep a v4 format alive in v5 indefinitely.
+        declared in the app, and there is no folder left for a setting to name
+        (ADR-0032). Reading it would keep a v4 format alive in v5 indefinitely.
 
         Returns the paths it named, so a caller can test the observation rather
         than the log line.
@@ -710,18 +705,18 @@ class ConfigurationManager:
             app_logger.warning(
                 f"Found {legacy}, and this version does not read it: a "
                 f"portfolio is described by dated events only. Your positions "
-                f"are loaded from {self.get_events_source()} — the file above "
-                f"is left untouched.")
+                f"come from the events you record in the app or hand it in a "
+                f"file — the one above is left untouched.")
 
         settings = self.config_dir / self.LEGACY_SETTINGS_FILE
         if settings.exists():
             named.append(str(settings))
             app_logger.warning(
                 f"Found {settings}, and this version does not read it: "
-                f"accounts are declared by a file in the events' format "
-                f"({', '.join(accounts_module.ACCOUNT_COLUMNS)}) or in the app, "
-                f"and the drop folder is {self.get_events_source()}. The file "
-                f"above is left untouched.")
+                f"accounts are declared in the app "
+                f"({', '.join(accounts_module.ACCOUNT_COLUMNS)}), and no "
+                f"setting names where a file is read from any more — you hand "
+                f"the app one. The file above is left untouched.")
 
         return named
 
@@ -738,18 +733,6 @@ class ConfigurationManager:
         if snap is not None:
             return snap.accounts
         return accounts_module.declared_portfolio(self._require_store())
-
-    def get_events_source(self) -> str:
-        """Where files are dropped to be imported.
-
-        ``SB_IMPORT_DIR``, resolved once at boot and handed in (issue #740), or
-        the configuration directory's ``events/`` folder when nothing named one.
-        No file decides it: ``events.source`` was the last thing
-        ``settings.yaml`` was read for, and a v5 that read it would let a v4
-        file decide where the product looks (issue #698). The container names
-        the mount instead (ADR-0015).
-        """
-        return self._events_source
 
     def _compute_cache_key(self) -> Optional[str]:
         """Fingerprint the **ledger** a snapshot is built from (issue #697).
@@ -788,28 +771,22 @@ class ConfigurationManager:
         return self.reload()
 
     def replay(self) -> ConfigSnapshot:
-        """Republish from the ledger **without** scanning the drop folder.
+        """Republish from the ledger, whatever the fingerprint says.
 
-        The one caller that must not import (issue #697). Importing is a write
-        to the ledger and replaying is a read of it; every other caller wants
-        both, because a file sitting in the folder is what an inbox means. The
-        exception is the replay that follows a write *through the API*: after
-        forgetting an import, a scan would find the file still on disk and
-        import it straight back, so the revocation would undo itself in the same
-        request that made it.
-
-        The consequence is worth naming rather than hiding: a forgotten import
-        whose file is still in the drop folder does come back the next time the
-        folder is scanned — a restart, or any filesystem event there. That is
-        the inbox reading of the folder, and it is what keeps *"a mistakenly
-        forgotten import stays reversible"* (#695 § 10) true. The store carries
-        no tombstone for a filename, and the DDL — which is authoritative —
-        declares none.
+        **The distinction this method used to carry is gone** (ADR-0032).
+        *Replaying* and *replaying while importing* were two things because a
+        file could have moved on disk between two replays: the scan had to be
+        skipped after a revocation, or it would import the revoked file straight
+        back in the same request. There is no folder to scan, so the flag went
+        with its reason and what is left is a **forced** rebuild — which is what
+        a write through the API needs, and it is not the same argument at all:
+        :func:`ledger.stamp` counts the events and fingerprints the sources, so
+        an edit that changes one row's price moves nothing in it and a
+        cache-honouring rebuild would republish the ledger as it was.
         """
-        return self.reload(force=True, do_import=False)
+        return self.reload(force=True)
 
-    def reload(self, force: bool = False,
-               do_import: bool = True) -> ConfigSnapshot:
+    def reload(self, force: bool = False) -> ConfigSnapshot:
         """Build a candidate snapshot and, if it is new, publish it.
 
         The only writer. Everything fallible — reading, parsing, aggregating,
@@ -831,7 +808,7 @@ class ConfigurationManager:
         """
         with self._write_lock:
             published = self._config
-            candidate = self._build_snapshot(published, force, do_import)
+            candidate = self._build_snapshot(published, force)
             if candidate is not published:
                 # The publication. A single rebind, so a concurrent reader sees
                 # either the whole previous snapshot or the whole new one.
@@ -839,7 +816,7 @@ class ConfigurationManager:
             return candidate
 
     def _build_snapshot(self, published: Optional[ConfigSnapshot],
-                        force: bool, do_import: bool = True) -> ConfigSnapshot:
+                        force: bool) -> ConfigSnapshot:
         """Assemble a validated snapshot, or return ``published`` on a cache hit.
 
         Runs under ``_write_lock``. Never touches ``self._config``: publication
@@ -847,20 +824,10 @@ class ConfigurationManager:
         """
         opened = self._require_store()
 
-        # The import. Idempotent and fingerprinted, so running it on every
-        # build costs one hash per unchanged file — which is what lets the
-        # watcher fire on any filesystem event without a dial deciding whether
-        # it should have. Skipped by :meth:`replay` alone, and only because a
-        # scan there would re-import the file a revocation has just revoked
-        # (issue #697).
-        #
-        # It is also what **declares the accounts**, which is why nothing is
-        # read before it: an accounts source in the folder is imported first
-        # (issue #698), so the declaration this build publishes is the one the
-        # events were just validated against, not the one from before the scan.
-        if do_import:
-            self._import_drop_folder(opened)
-
+        # **Nothing is read from disk here** (ADR-0032). This is where the drop
+        # folder was scanned on every build, which is why the accounts had to be
+        # declared after it; a file is now written through ``entries`` before
+        # anything replays, so a build reads the store and only the store.
         accounts = accounts_module.declared_portfolio(opened)
 
         cache_key = self._compute_cache_key()
@@ -869,8 +836,8 @@ class ConfigurationManager:
             return published
 
         # An empty portfolio is a legitimate state, not a broken ledger: an
-        # install starts life with an empty drop folder and must keep running
-        # (with a warning) until the first file lands.
+        # install starts life with nothing recorded and must keep running (with
+        # a warning) until the first event lands.
         shares, events = self._load_from_store(opened)
 
         accounts_are_new = published is None or published.accounts != accounts
@@ -881,38 +848,6 @@ class ConfigurationManager:
 
         return ConfigSnapshot(shares=shares, events=events, accounts=accounts,
                               cache_key=cache_key)
-
-    def _import_drop_folder(self, opened_store) -> None:
-        """Bring the drop folder into the store, and say what happened.
-
-        A folder that does not exist yet is a **fresh install**, not a broken
-        one: the user has not dropped a file into what the mount will create for
-        them. :func:`ledger.sync_drop_folder` answers ``[]`` for it, same as for
-        an empty folder, rather than turning a first boot into a failure that
-        would respawn forever.
-
-        A refused file is logged and *not* raised, which is the one place this
-        differs from v4 and deliberately so. With the files as the truth a bad
-        file had to stop the load, because the alternative was running on half a
-        portfolio. With the store as the truth the refused file simply never
-        entered it, so the ledger standing behind it is whole and the app goes
-        on serving it.
-
-        The account sources in the same folder are imported first and by the
-        same call (issue #698) — the ordering is a property of the sync, not of
-        its caller, so no caller can get it wrong.
-        """
-        source = Path(self._events_source).expanduser()
-        outcomes = ledger.sync_drop_folder(opened_store, source)
-
-        tally = ledger.import_counts(outcomes)
-        if tally[ledger.IMPORTED]:
-            app_logger.info(
-                f"Imported {tally[ledger.IMPORTED]} file(s) from {source}")
-        for refused in (o for o in outcomes if o.outcome == ledger.REFUSED):
-            app_logger.error(
-                f"Refused {refused.filename}, nothing from it was imported: "
-                f"{refused.error}")
 
     def _load_from_store(self, opened_store) -> Tuple[List[Dict], List]:
         """Replay the ledger the store holds. Returns ``(shares, events)``.
@@ -940,8 +875,8 @@ class ConfigurationManager:
 
         if not events:
             app_logger.warning(
-                f"The ledger is empty; running on an empty portfolio until a "
-                f".csv/.xlsx lands in {self._events_source}")
+                "The ledger is empty; running on an empty portfolio until a "
+                "first event is recorded or a .csv/.xlsx is handed to the app")
             # Emptiness is a result and is written as one: forgetting the last
             # import has to take the positions with it, and a table left
             # standing would go on describing a portfolio nobody declares.
@@ -995,57 +930,6 @@ class ConfigurationManager:
         """
         snap = self._config
         return snap.events if snap is not None else None
-
-    def start_watcher(self, reload_callback: callable) -> None:
-        """Watch the drop folder. **Always**, and with no dial (issue #697).
-
-        The ``events.watch`` setting is gone and has no heir. Watching used to
-        be optional because the files were the truth and re-reading them was the
-        expensive part; now the ledger is the store, the import is idempotent
-        and fingerprinted, and watching is simply *how a headless install
-        imports* — there is nobody there to press a button. A dial on it would
-        be a dial on whether the product works without a UI.
-
-        The folder is created if it is missing, for the same reason: a first
-        boot must end with something watching the place the user is about to
-        drop a file into, not with a warning they will never read.
-
-        Args:
-            reload_callback: Function to call when files change.
-        """
-        if self._watcher is not None:
-            return
-
-        source = Path(self.get_events_source()).expanduser()
-        try:
-            source.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            # A read-only or unreachable mount. Not fatal — the app runs on
-            # whatever the store already holds, which is the whole point of the
-            # store being the truth — but it is the one case where dropping a
-            # file will not do anything, so it is said out loud.
-            app_logger.warning(
-                f"Cannot create the drop folder {source} ({exc}); files dropped "
-                f"there will not be imported")
-            return
-
-        def on_change():
-            app_logger.info("Event files changed, triggering reload...")
-            try:
-                reload_callback()
-            except Exception as e:
-                app_logger.error(f"Error during hot-reload: {e}")
-
-        self._watcher = EventWatcher(str(source), on_change)
-        self._watcher.start()
-        app_logger.info(f"Started watching for event file changes: {source}")
-
-    def stop_watcher(self) -> None:
-        """Stop the file watcher."""
-        if self._watcher is not None:
-            self._watcher.stop()
-            self._watcher = None
-            app_logger.info("Stopped event file watcher")
 
 
 class SuiviBourseMetrics:
@@ -2100,26 +1984,31 @@ class SuiviBourseMetrics:
                 at=datetime.now(timezone.utc), verdict=verdict, error=error,
                 horizons=horizons))
 
-    def ingest(self, import_files: bool = True):
-        """Import the drop folder, replay the ledger, reconcile the scrape jobs.
+    def ingest(self, force: bool = False):
+        """Replay the ledger and reconcile the scrape jobs.
 
         **No longer a polled job** (issue #697). In v4 this ran every 300 s
         because the files were the truth and nothing else could notice they had
         changed. The ledger now changes only when a write changes it, so this is
         the *replay that follows the write* — a quiet, synchronous, in-process
-        gesture with exactly three callers:
+        gesture with exactly two callers:
 
         * the boot, in ``start_runtime``, where it is also what arms the
-          per-symbol scrape jobs for the first time;
-        * the drop-folder watcher, which is on always and has no dial;
-        * a write through the API (forgetting an import), via
-          :func:`replay_after_write` — and that one passes
-          ``import_files=False``, because the ledger has just been changed by
-          hand and re-scanning the folder would import the revoked file straight
-          back.
+          per-symbol scrape jobs for the first time. It publishes nothing new:
+          the master built the snapshot before the fork, so this is a cache hit
+          on :func:`ledger.stamp` that only arms the jobs;
+        * a write through the API, via :func:`replay_after_write`, which passes
+          ``force=True``.
+
+        **``force`` is not the flag that left** (ADR-0032). ``import_files``
+        said *scan the drop folder or do not*, and it went with the folder;
+        what is left is whether the fingerprint may be honoured, and a write
+        must not honour it: :func:`ledger.stamp` counts the events, so an edit
+        that changes one row's price moves nothing in it and the published
+        snapshot would go on describing the ledger as it was.
 
         ``SB_INGESTION_INTERVAL`` is gone with the polling it paced, and there
-        is no timer anywhere that re-reads the folder on its own.
+        is no timer anywhere that re-reads a file on its own.
 
         Errors are logged but not raised to avoid blocking the scraping job.
         The previous valid configuration is kept until the error is fixed —
@@ -2131,18 +2020,18 @@ class SuiviBourseMetrics:
         now = datetime.now(timezone.utc)
         try:
             before = self.config_manager.current().shares
-            snapshot = (self.config_manager.reload() if import_files
-                        else self.config_manager.replay())
-            # **On every ingest, not only on a folder scan** (issue #812). The
+            snapshot = (self.config_manager.replay() if force
+                        else self.config_manager.reload())
+            # **On every ingest, and that was a defect once** (issue #812). The
             # condition here used to be ``if import_files``, which was right
             # while the only file that could carry a reporting currency arrived
             # through the drop folder. ``POST /api/events/import`` writes that
             # setting too (:func:`entries.create_many`) and comes through the
-            # replay that follows the write, i.e. with ``import_files=False`` —
-            # so the row landed in the store and the running process went on
-            # holding ``None``. Since the perf gate reads the *attribute*, every
-            # later tick was blind as well: an install whose first gesture is an
-            # import had no performance series at all until a restart.
+            # replay that follows the write — so the row landed in the store and
+            # the running process went on holding ``None``. Since the perf gate
+            # reads the *attribute*, every later tick was blind as well: an
+            # install whose first gesture is an import had no performance series
+            # at all until a restart.
             self._adopt_declared_currency()
             after = snapshot.shares
             if after != before:
@@ -3713,8 +3602,9 @@ class Runtime:
     :func:`build_runtime` supplies the pure half — the configuration manager and
     the *path* the store was proved openable at — and :func:`start_runtime` then
     attaches the half that could not have survived a fork: the store connection,
-    the scheduler and its threads, the watchdog observer. The registry it also
-    used to carry across the fork left with ``/metrics`` (ADR-0033).
+    the scheduler and its threads. The registry it also used to carry across the
+    fork left with ``/metrics`` (ADR-0033), and the filesystem observer with the
+    drop folder (ADR-0032).
     """
 
     def __init__(self, config_manager: ConfigurationManager,
@@ -3819,8 +3709,7 @@ def build_runtime() -> Runtime:
     # cannot write at all still dies of the one cause that matters.
     persistence = mounts.store_persistence(boot.store_dir)
 
-    config_manager = ConfigurationManager(opened_store=opened,
-                                          import_dir=str(boot.import_dir))
+    config_manager = ConfigurationManager(opened_store=opened)
 
     # Before anything is loaded, name what is *not* going to be (issue #711).
     # An install coming from a manual v4 has a config.yaml and no events, so
@@ -3835,10 +3724,10 @@ def build_runtime() -> Runtime:
     # worker inherits the published snapshot through the fork and starts on it;
     # ``post_fork``'s ``ingest()`` is then a cache hit that only arms the jobs.
     #
-    # Since #697 this is also the **first import**: the drop folder lands in the
-    # store here, which keeps a file the ledger refuses a master-side event —
-    # logged before anything has been forked — rather than a surprise in the
-    # worker.
+    # It reads the store and nothing else (ADR-0032): the drop folder used to be
+    # scanned here, so that a file the ledger refuses was a master-side event —
+    # logged before anything had been forked — and there is no longer a file to
+    # be found anywhere at boot.
     try:
         config_manager.reload()
         # The three lines (issue #741), here rather than before the load: two of
@@ -3869,9 +3758,9 @@ def build_runtime() -> Runtime:
 def start_runtime(runtime: Runtime) -> Runtime:
     """Worker-side boot (``post_fork``): everything a fork would have broken.
 
-    The store connection, the scheduler's threads, the watchdog observer, and
-    the first ``ingest()`` — which is also what arms the per-symbol scrape jobs
-    (issue #616), their immediate first fire being the bootstrap.
+    The store connection, the scheduler's threads, and the first ``ingest()`` —
+    which is also what arms the per-symbol scrape jobs (issue #616), their
+    immediate first fire being the bootstrap.
     """
     # The worker's own store connection (issue #696). The master proved the file
     # openable and closed it; this is the connection that lives for the process,
@@ -3903,10 +3792,6 @@ def start_runtime(runtime: Runtime) -> Runtime:
     sb_metrics.apply_dials(dials)
     runtime.metrics = sb_metrics
 
-    # Watch the drop folder. Always, and with no dial (issue #697): dropping a
-    # file is how a headless install imports, and there is nobody there to
-    # click. The callback is the replay itself.
-    runtime.config_manager.start_watcher(sb_metrics.ingest)
     # Size the executor pool, always automatically (issue #701, formula #619).
     # The fixed dial was deleted rather than moved into the store: the executor
     # is built once here and a ThreadPoolExecutor does not shrink hot, so it was
@@ -3975,15 +3860,15 @@ def replay_after_write(runtime: Runtime) -> None:
     because a false day left behind a frontier is invisible.
 
     The periodic job does not move: it stays the net for the changes that go
-    through no write at all — a quote landing, a backfill chunk arriving, and a
-    file dropped in the folder, whose watcher is wired straight to ``ingest``
-    rather than through here. That last one keeps the tick's old symptom on the
-    headless road, and it is left there deliberately: ADR-0032 removes the drop
-    folder, so it goes with the mount rather than by a second spelling of this
-    seam.
+    through no write at all — a quote landing, a backfill chunk arriving. The
+    third one it used to be the net for was a file dropped in the folder, whose
+    watcher was wired straight to ``ingest`` rather than through here and which
+    therefore kept the tick's old symptom on the headless road; the folder is
+    gone (ADR-0032), and with it the one path into this ledger that did not
+    come through a write.
     """
     if runtime.metrics is not None:
-        runtime.metrics.ingest(import_files=False)
+        runtime.metrics.ingest(force=True)
         runtime.metrics.recompute_perf()
     else:
         runtime.config_manager.replay()
@@ -3999,7 +3884,6 @@ def shutdown_runtime(runtime: Runtime) -> None:
     """
     if runtime.scheduler is not None and runtime.scheduler.running:
         runtime.scheduler.shutdown(wait=False)
-    runtime.config_manager.stop_watcher()
     if runtime.metrics is not None:
         runtime.metrics.close()
     # The store last: it is the thing every job was writing into, so it closes

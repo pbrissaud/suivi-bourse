@@ -4,7 +4,7 @@ Three conditions, each printed **once and only when it is true**, in logfmt:
 
 1. **no persistence** — this container keeps nothing;
 2. **no reporting currency** — so nothing is converted and nothing is computed;
-3. **no portfolio** — so the URL to open, or the drop folder if headless.
+3. **no portfolio** — so the URL where the first event is recorded.
 
 They are **conditions**, in ADR-0021's exact sense — *the banner shows
 conditions the owner can end; the badge counts facts they can only
@@ -56,8 +56,7 @@ class Condition:
 
 
 def observe(persistence: str, store_dir, base_currency: Optional[str],
-            recorded_events: int, web_port: int,
-            import_dir) -> Tuple[Condition, ...]:
+            recorded_events: int, web_port: int) -> Tuple[Condition, ...]:
     """The conditions that stand, in order. An empty tuple says nothing at all.
 
     ``persistence`` is :mod:`mounts`' three-valued observation, and only
@@ -97,17 +96,19 @@ def observe(persistence: str, store_dir, base_currency: Optional[str],
         ))
 
     if not recorded_events:
-        # The drop folder rather than a ``curl``: a portfolio is a dated event
-        # ledger (#711) and the API has no write path for one, so naming a
-        # request that answers 404 would be worse than naming nothing.
+        # **The place the gesture is made, and nothing else** (ADR-0032). The
+        # line used to offer a drop folder as its second half, which stopped
+        # being information the day the folder stopped being read: there is one
+        # ledger and two entrances to it, and both are on the page named here —
+        # a file handed to the app, or a first position typed.
         conditions.append(Condition(
             key=NO_PORTFOLIO,
             level=logging.INFO,
             message=(
                 f"No event recorded yet: open http://localhost:{web_port}/ and "
-                f"record a first position, or drop a .csv/.xlsx into "
-                f"{import_dir}."),
-            context={'condition': NO_PORTFOLIO, 'import_dir': str(import_dir)},
+                f"record a first position, or hand the app a .csv/.xlsx of your "
+                f"events from the same page."),
+            context={'condition': NO_PORTFOLIO},
         ))
 
     return tuple(conditions)

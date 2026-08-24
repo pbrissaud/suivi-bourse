@@ -162,11 +162,10 @@ def is_accounts_file(path: Path) -> bool:
 def header_of(path: Path) -> Set[str]:
     """The column names of the first row, lowercased and stripped.
 
-    **One row, never the file.** This runs for every droppable file on every
-    filesystem event, next to the fingerprint hash the always-on watch is
-    budgeted around (issue #697), so a workbook is opened read-only and its
-    first row pulled lazily — materialising every sheet here would put a full
-    parse of the drop folder behind a watcher that exists to cost one hash.
+    **One row, never the file.** It is what decides the kind of an uploaded
+    file before anything of it is loaded (:mod:`uploads`), so a workbook is
+    opened read-only and its first row pulled lazily — materialising every sheet
+    here would put a full parse behind a question answered by one line.
     """
     suffix = path.suffix.lower()
     if suffix == '.csv':

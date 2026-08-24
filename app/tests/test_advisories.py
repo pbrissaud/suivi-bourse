@@ -43,20 +43,27 @@ def _row_count(opened) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# The registry: five keys, the predicate and the log's text in code
+# The registry: three keys, the predicate and the log's text in code
 # --------------------------------------------------------------------------- #
 
-def test_the_registry_is_closed_at_five_keys():
-    """ADR-0021 amends spec #695 § 14: the currency is a condition, not an advisory."""
+def test_the_registry_is_closed_at_three_keys():
+    """ADR-0021 amends spec #695 § 14: the currency is a condition, not an advisory.
+
+    And ADR-0032 took two: ``legacy_config_file`` and ``legacy_settings_file``
+    were a ``stat`` on a v4 file found in the folder the app read, and there is
+    no folder. Their sentence is said at the refusal of the upload instead, at
+    the instant of the gesture — so the keys are gone from the catalogue and
+    from the listing alike, rather than moved.
+    """
     assert [spec.key for spec in advisories.SPECS] == [
-        advisories.LEGACY_CONFIG_FILE,
-        advisories.LEGACY_SETTINGS_FILE,
         advisories.UNREAD_ENVIRONMENT,
         advisories.RECONSTRUCTION_RUNNING,
         advisories.ASSUMED_BASE_CURRENCY,
     ]
     assert 'base_currency' not in advisories.BY_KEY
-    # Exactly one of them is an event; the other four are recomputed.
+    assert 'legacy_config_file' not in advisories.BY_KEY
+    assert 'legacy_settings_file' not in advisories.BY_KEY
+    # Exactly one of them is an event; the other two are recomputed.
     assert [spec.key for spec in advisories.SPECS
             if spec.kind == advisories.RECORDED] == [
         advisories.ASSUMED_BASE_CURRENCY]
@@ -82,29 +89,25 @@ def test_an_unknown_key_is_refused_rather_than_invented(store):
 
 
 # --------------------------------------------------------------------------- #
-# The four derivable ones: recomputed from their source, no stored existence
+# The two derivable ones: recomputed from their source, no stored existence
 # --------------------------------------------------------------------------- #
 
-def test_a_v4_config_file_arms_and_its_deletion_disarms(store, tmp_path):
-    legacy = tmp_path / 'config.yaml'
-    legacy.write_text('shares: []\n', encoding='utf-8')
-    context = advisories.Context(config_dir=tmp_path)
+def test_a_retired_variable_arms_and_its_unsetting_disarms(store):
+    """The state is derivable, so unsetting the variable removes the row.
+
+    Nothing of the advisory survives its own predicate — the property the two
+    ``stat``-based advisories used to carry, held here by the one derivable
+    observation that is left with a subject the owner can end (ADR-0032).
+    """
+    context = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
 
     found = advisories.refresh(store, context)
-    assert advisories.LEGACY_CONFIG_FILE in _keys(found)
-    assert str(legacy) in dict(found[0].detail)['path']
+    assert advisories.UNREAD_ENVIRONMENT in _keys(found)
+    assert dict(found[0].detail)['variables'] == ['SB_EXECUTOR_POOL']
 
-    # The state is derivable, so removing the file removes the row: nothing of
-    # the advisory survives its own predicate.
-    legacy.unlink()
-    assert _keys(advisories.refresh(store, context)) == []
+    gone = advisories.Context(unread_variables=())
+    assert _keys(advisories.refresh(store, gone)) == []
     assert _row_count(store) == 0
-
-
-def test_a_v4_settings_file_arms_on_its_own(store, tmp_path):
-    (tmp_path / 'settings.yaml').write_text('accounts: []\n', encoding='utf-8')
-    found = advisories.refresh(store, advisories.Context(config_dir=tmp_path))
-    assert _keys(found) == [advisories.LEGACY_SETTINGS_FILE]
 
 
 def test_unread_variables_arm_and_are_named(store):
@@ -178,9 +181,8 @@ def test_a_source_this_process_cannot_see_neither_arms_nor_disarms(store):
 # Logged once, in logfmt, when it happens
 # --------------------------------------------------------------------------- #
 
-def test_an_advisory_is_logged_once_and_carries_its_key(store, tmp_path, caplog):
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    context = advisories.Context(config_dir=tmp_path)
+def test_an_advisory_is_logged_once_and_carries_its_key(store, caplog):
+    context = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
 
     with caplog.at_level(logging.INFO, logger='advisories'):
         advisories.refresh(store, context)
@@ -188,28 +190,25 @@ def test_an_advisory_is_logged_once_and_carries_its_key(store, tmp_path, caplog)
         advisories.refresh(store, context)
 
     lines = [record for record in caplog.records
-             if record.context.get('advisory') == advisories.LEGACY_CONFIG_FILE]
+             if record.context.get('advisory') == advisories.UNREAD_ENVIRONMENT]
     assert len(lines) == 1
     # ``context`` is what ``logfmt_logger`` renders as key=value pairs, so the
     # headless channel is parseable rather than a sentence to grep.
     assert lines[0].context['first_seen_at']
-    assert str(tmp_path / 'config.yaml') in lines[0].getMessage()
+    assert 'SB_EXECUTOR_POOL' in lines[0].getMessage()
 
 
-def test_a_readvised_predicate_is_logged_again(store, tmp_path, caplog):
-    legacy = tmp_path / 'config.yaml'
-    context = advisories.Context(config_dir=tmp_path)
+def test_a_readvised_predicate_is_logged_again(store, caplog):
+    standing = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
+    gone = advisories.Context(unread_variables=())
 
     with caplog.at_level(logging.INFO, logger='advisories'):
-        legacy.write_text('shares: []\n', encoding='utf-8')
-        advisories.refresh(store, context)
-        legacy.unlink()
-        advisories.refresh(store, context)
-        legacy.write_text('shares: []\n', encoding='utf-8')
-        advisories.refresh(store, context)
+        advisories.refresh(store, standing)
+        advisories.refresh(store, gone)
+        advisories.refresh(store, standing)
 
     lines = [record for record in caplog.records
-             if record.context.get('advisory') == advisories.LEGACY_CONFIG_FILE]
+             if record.context.get('advisory') == advisories.UNREAD_ENVIRONMENT]
     assert len(lines) == 2
 
 
@@ -217,12 +216,11 @@ def test_a_readvised_predicate_is_logged_again(store, tmp_path, caplog):
 # The acknowledgement: it persists, it hides, and it re-arms
 # --------------------------------------------------------------------------- #
 
-def test_an_acknowledged_advisory_disappears_from_the_listing(store, tmp_path):
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    context = advisories.Context(config_dir=tmp_path)
+def test_an_acknowledged_advisory_disappears_from_the_listing(store):
+    context = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
     advisories.refresh(store, context)
 
-    acknowledged = advisories.acknowledge(store, advisories.LEGACY_CONFIG_FILE)
+    acknowledged = advisories.acknowledge(store, advisories.UNREAD_ENVIRONMENT)
     assert acknowledged.acknowledged is True
     assert acknowledged.acknowledged_at is not None
 
@@ -240,13 +238,12 @@ def test_the_acknowledgement_survives_a_restart(tmp_path):
     """
     import store as store_module
 
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    context = advisories.Context(config_dir=tmp_path)
+    context = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
 
     opened = store_module.open_store(tmp_path / 'store.duckdb')
     try:
         advisories.refresh(opened, context)
-        advisories.acknowledge(opened, advisories.LEGACY_CONFIG_FILE)
+        advisories.acknowledge(opened, advisories.UNREAD_ENVIRONMENT)
     finally:
         opened.close()
 
@@ -259,43 +256,39 @@ def test_the_acknowledgement_survives_a_restart(tmp_path):
         reopened.close()
 
 
-def test_an_acknowledged_advisory_rearms_when_its_predicate_comes_back(store, tmp_path):
-    legacy = tmp_path / 'config.yaml'
-    legacy.write_text('shares: []\n', encoding='utf-8')
-    context = advisories.Context(config_dir=tmp_path)
+def test_an_acknowledged_advisory_rearms_when_its_predicate_comes_back(store):
+    context = advisories.Context(unread_variables=('SB_EXECUTOR_POOL',))
 
     advisories.refresh(store, context)
-    advisories.acknowledge(store, advisories.LEGACY_CONFIG_FILE)
+    advisories.acknowledge(store, advisories.UNREAD_ENVIRONMENT)
     first_seen = store.query(
         'SELECT first_seen_at FROM advisory WHERE key = ?',
-        [advisories.LEGACY_CONFIG_FILE])[0][0]
+        [advisories.UNREAD_ENVIRONMENT])[0][0]
 
-    legacy.unlink()
-    advisories.refresh(store, context)
+    advisories.refresh(store, advisories.Context(unread_variables=()))
     assert _row_count(store) == 0
 
-    legacy.write_text('shares: []\n', encoding='utf-8')
     advisories.refresh(store, context)
 
     standing = advisories.listing(store, context)
-    assert _keys(standing) == [advisories.LEGACY_CONFIG_FILE]
+    assert _keys(standing) == [advisories.UNREAD_ENVIRONMENT]
     assert standing[0].acknowledged is False
     assert standing[0].first_seen_at >= first_seen.replace(tzinfo=timezone.utc)
 
 
 def test_acknowledging_what_is_not_standing_is_refused(store):
     with pytest.raises(advisories.AdvisoryNotStanding):
-        advisories.acknowledge(store, advisories.LEGACY_CONFIG_FILE)
+        advisories.acknowledge(store, advisories.UNREAD_ENVIRONMENT)
     with pytest.raises(advisories.UnknownAdvisory):
         advisories.acknowledge(store, 'no_such_key')
 
 
-def test_acknowledging_twice_does_not_move_the_date(store, tmp_path):
-    (tmp_path / 'config.yaml').write_text('shares: []\n', encoding='utf-8')
-    advisories.refresh(store, advisories.Context(config_dir=tmp_path))
+def test_acknowledging_twice_does_not_move_the_date(store):
+    advisories.refresh(
+        store, advisories.Context(unread_variables=('SB_EXECUTOR_POOL',)))
 
-    first = advisories.acknowledge(store, advisories.LEGACY_CONFIG_FILE)
-    second = advisories.acknowledge(store, advisories.LEGACY_CONFIG_FILE)
+    first = advisories.acknowledge(store, advisories.UNREAD_ENVIRONMENT)
+    second = advisories.acknowledge(store, advisories.UNREAD_ENVIRONMENT)
     assert first.acknowledged_at == second.acknowledged_at
 
 

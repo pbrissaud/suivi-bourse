@@ -5,8 +5,8 @@
  * Under the page seam, and it is not a second seam: entries in, verdicts out.
  * What is pinned here is the exclusion list, because each of its three members
  * looks countable and is not — and, since #768, **the sentence itself**, on all
- * five keys and in both languages: the notice of a French reader was entirely
- * English, and only one of the five is easy to provoke.
+ * three keys and in both languages: the notice of a French reader was entirely
+ * English, and only one of the three is easy to provoke.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -24,7 +24,7 @@ import type { Language } from '@/lib/i18n'
 
 function advisory(overrides: Partial<Advisory> = {}): Advisory {
   return {
-    key: 'legacy_config_file',
+    key: 'unread_environment',
     first_seen_at: '2026-03-01T09:00:00.000Z',
     acknowledged: false,
     acknowledged_at: null,
@@ -38,29 +38,33 @@ describe('what the block shows', () => {
   it('drops an acknowledged notice rather than greying it out', () => {
     const shown = shownAdvisories([
       advisory(),
-      advisory({ key: 'legacy_settings_file', acknowledged: true }),
+      advisory({ key: 'assumed_base_currency', acknowledged: true }),
     ])
 
-    // Greyed out, the notice of somebody who decided to keep their v4 file for
-    // ever would be a permanent fixture of their screen.
-    expect(shown.map((entry) => entry.key)).toEqual(['legacy_config_file'])
+    // Greyed out, the notice of somebody who decided to live with what it names
+    // for ever would be a permanent fixture of their screen.
+    expect(shown.map((entry) => entry.key)).toEqual(['unread_environment'])
   })
 
   it('leaves the reconstruction to the banner, its one announcer', () => {
     const shown = shownAdvisories([advisory(), advisory({ key: 'reconstruction_running' })])
 
-    expect(shown.map((entry) => entry.key)).toEqual(['legacy_config_file'])
+    expect(shown.map((entry) => entry.key)).toEqual(['unread_environment'])
   })
 
   it('keeps the server’s declared order rather than sorting by date', () => {
     const shown = shownAdvisories([
-      advisory({ key: 'unread_environment', first_seen_at: '2026-03-02T00:00:00.000Z' }),
-      advisory({ key: 'legacy_config_file', first_seen_at: '2026-01-01T00:00:00.000Z' }),
+      advisory({ key: 'assumed_base_currency', first_seen_at: '2026-03-02T00:00:00.000Z' }),
+      advisory({ key: 'unread_environment', first_seen_at: '2026-01-01T00:00:00.000Z' }),
     ])
 
     // A badge whose contents reshuffle between two reads is a badge nobody
-    // trusts, and the order is the one `advisories.SPECS` declares.
-    expect(shown.map((entry) => entry.key)).toEqual(['unread_environment', 'legacy_config_file'])
+    // trusts: the list comes out in the order the server declared it, and the
+    // older of the two does **not** climb to the front.
+    expect(shown.map((entry) => entry.key)).toEqual([
+      'assumed_base_currency',
+      'unread_environment',
+    ])
   })
 })
 
@@ -68,8 +72,8 @@ describe('what the badge counts', () => {
   it('counts exactly what the block shows', () => {
     const entries = [
       advisory(),
-      advisory({ key: 'unread_environment' }),
-      advisory({ key: 'legacy_settings_file', acknowledged: true }),
+      advisory({ key: 'assumed_base_currency' }),
+      advisory({ key: 'assumed_base_currency', acknowledged: true }),
       advisory({ key: 'reconstruction_running' }),
     ]
 
@@ -99,11 +103,12 @@ describe('the gesture a notice carries', () => {
     expect(gesture).toEqual({ kind: 'ledger', symbols: ['ZZA', 'ZZB', 'ZZC'] })
   })
 
-  it('is nothing for a notice about a file the app cannot touch', () => {
-    // Its own sentence — which names this installation's path — already says
-    // what to do out there. A button would be a power the app does not have.
-    expect(advisoryGesture(advisory({ key: 'legacy_config_file' }))).toBeNull()
+  it('is nothing for a notice about what lies outside the app', () => {
+    // Its own sentence — which names this installation's variables — already
+    // says what to do out there. A button would be a power the app does not
+    // have: unsetting a variable is a `docker run` away from here.
     expect(advisoryGesture(advisory({ key: 'unread_environment' }))).toBeNull()
+    expect(advisoryGesture(advisory({ key: 'reconstruction_running' }))).toBeNull()
   })
 
   it('is nothing when this process could not observe what it names', () => {
@@ -117,7 +122,7 @@ describe('the gesture a notice carries', () => {
 })
 
 /**
- * The sentence, on the five keys and in the two languages (#768).
+ * The sentence, on the three keys and in the two languages (#768).
  *
  * The composer and the catalogue are exercised together, deliberately: a key
  * that composes fine against a message that does not exist is exactly the defect
@@ -131,8 +136,6 @@ function say(language: Language, entry: Advisory): string {
 }
 
 const DETAILS: Record<string, Record<string, unknown>> = {
-  legacy_config_file: { path: '/config/config.yaml' },
-  legacy_settings_file: { path: '/config/settings.yaml' },
   unread_environment: { variables: ['SB_PERF_INTERVAL', 'INFLUXDB_TOKEN'] },
   reconstruction_running: { complete: 7, total: 19, remaining: 12 },
   assumed_base_currency: {
@@ -144,13 +147,12 @@ const DETAILS: Record<string, Record<string, unknown>> = {
 }
 
 describe('the sentence a notice is read in', () => {
-  it('says all five in the reader’s language, and none of them in the other’s', () => {
-    // Five keys, not the one that is easy to provoke: the whole block was
-    // English on a French installation, and four of the five sentences had no
-    // rendering surface at all before #724 gave them one.
+  it('says all three in the reader’s language, and none of them in the other’s', () => {
+    // Three keys, not the one that is easy to provoke: the whole block was
+    // English on a French installation, and most of these sentences had no
+    // rendering surface at all before #724 gave them one. It was five until
+    // ADR-0032 took the two that were a `stat` on a folder nothing reads.
     expect(ADVISORY_KEYS).toEqual([
-      'legacy_config_file',
-      'legacy_settings_file',
       'unread_environment',
       'reconstruction_running',
       'assumed_base_currency',
@@ -173,9 +175,12 @@ describe('the sentence a notice is read in', () => {
   })
 
   it('interpolates what this installation names, so the notice stays actionable', () => {
-    const path = advisory({ key: 'legacy_config_file', detail: DETAILS.legacy_config_file })
-    expect(say('fr', path)).toContain('/config/config.yaml')
-    expect(say('en', path)).toContain('/config/config.yaml')
+    const named = advisory({
+      key: 'unread_environment',
+      detail: DETAILS.unread_environment,
+    })
+    expect(say('fr', named)).toContain('INFLUXDB_TOKEN')
+    expect(say('en', named)).toContain('INFLUXDB_TOKEN')
 
     const assumed = advisory({
       key: 'assumed_base_currency',
@@ -251,12 +256,12 @@ describe('the sentence a notice is read in', () => {
     // `detail: null` is #709's third answer, and the server does the same thing
     // one level up: its `message` becomes `AdvisorySpec.doc`. A paragraph with
     // `undefined` where a path should be would be the alternative.
-    const unobserved = advisory({ key: 'legacy_config_file', detail: null })
+    const unobserved = advisory({ key: 'unread_environment', detail: null })
     expect(say('fr', unobserved)).toBe(
-      'Un config.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.',
+      'Des variables d’environnement sont définies et cette version n’en lit aucune.',
     )
     expect(say('en', unobserved)).toBe(
-      'A v4 config.yaml sits in the configuration directory and is not read.',
+      'Environment variables are set that this version reads for nothing.',
     )
 
     // Same answer for a detail that is there and does not carry what the
