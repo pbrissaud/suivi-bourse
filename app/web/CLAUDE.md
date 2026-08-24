@@ -1,5 +1,13 @@
 # app/web/ — the front
 
+> **A share is drawn now, and by one component** (#800): `ShareBar` puts a bar
+> under every line that carries a share of a total — the allocation's legend,
+> the accounts rail, the account's composition split, and the `Poids` column of
+> the shares table when #791 lands, which is the surface this primitive was
+> written ahead of. It takes a share and a fill and decides neither the colour
+> nor the order, so ADR-0023's rank ramp and the rail's identity wheel each stay
+> the business of the surface that earned them. `src/shareBar.test.ts` is what
+> keeps the count at one.
 > **The upload has landed** (#811, ADR-0032): the rectangle above the ledger is
 > a **target** rather than the name of a folder — dropped on, or chosen from the
 > picker — and the empty state's first entry carries the same gesture, so an
@@ -87,7 +95,7 @@ quote with no currency). No fixture carries a real symbol, amount or label.
 **Assertions are on the accessible rendering** — never a class, a component name,
 or a DOM snapshot.
 
-Three nets hold a rule nothing made true by construction:
+Four nets hold a rule nothing made true by construction:
 
 - `src/readsInFlight.test.tsx` — for each of eight surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
@@ -102,6 +110,12 @@ Three nets hold a rule nothing made true by construction:
   own program from `tsconfig.app.json` and asks the checker what each slot was
   **declared** to hold. `tsc` does not close the `readonly X[] | null` shape
   (`?? []` satisfies it); this test is what closes it.
+- `src/shareBar.test.ts` — on the *source*, and for the same blind spot as the
+  spinner's: a bar is `aria-hidden` and carries no word. A percentage width
+  written into a `style` is what a hand-written share bar is made of, and it is
+  refused outside `ShareBar.tsx` — the rail's **stacked** bar apart, which the
+  net names one by one so that a second bar in that same file fails like a bar
+  anywhere else.
 
 ## The rules
 
@@ -126,6 +140,18 @@ Three nets hold a rule nothing made true by construction:
   Zero is not absence (`lib/sign.ts`).
 - **A rule is written once.** `lib/gain.ts` calls `absenceCase` rather than holding
   a second copy — written twice, the copy loses a branch (it did).
+- **One component draws a share** (#800, `components/ShareBar.tsx`). A share of a
+  total gets a bar under the name it is written beside — the percentage is exact
+  and comparing two of them is arithmetic, the bar is the glance. It is
+  `aria-hidden` on every surface, because the figure is written out one line up;
+  a **null** share draws nothing at all where a **zero** share draws an empty
+  track, which is ADR-0021's difference and not a nicety; and it **chooses no
+  colour and no order** — the allocation hands it a rank stop (ADR-0023, the
+  ramp only being licensed by a sorted, legended list) and the rail hands it the
+  identity wheel, so the two ramps stay where they are earned. The rail's
+  **stacked** bar is not the same figure and stays beside the per-line ones: it
+  says *these parts close this whole*, which no per-line bar claims, and it is
+  the one thing the net exempts.
 - **A convention is explained on the figure** (ADR-0016): `Explain`, the bubble
   that opens **on click and never on hover** (hover does not exist on a finger),
   closes on scroll, and links to the versioned, localised docs (`lib/docs.ts`).
@@ -227,7 +253,8 @@ src/
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
 ├── components/
-│   ├── Explain · Stat · EmptyState · Band · EntryPair · FirstRun · CurrencyField
+│   ├── Explain · Stat · EmptyState · Band · EntryPair · ShareBar
+│   ├── FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
 │   ├── Shell · ContentHeader (the title, the dot, ⌘K, the three preferences)
 │   ├── Palette                # ⌘K: five sections, three of them optional reads
