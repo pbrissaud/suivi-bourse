@@ -1,13 +1,24 @@
 # app/web/ — the front
 
+> **The shares table has its three gestures** (#791): it **sorts on any of its
+> ten columns**, it **groups by account** with each subtotal in the group
+> header, and its `Poids` column draws its bar with `ShareBar` — the third
+> surface, which closes #800's first criterion. None of the three removes a
+> line: an order is a permutation and a grouping is a partition, so the header
+> goes on stating the sum of what is under it, ADR-0017 untouched. Two
+> decisions the ticket left to this page were taken here: the weight bar's fill
+> **encodes nothing** (a ramp says a rank, and a table the reader may order by
+> `PRU` is no longer in one), and the grouping is offered only above one
+> account, `accountBreakdown`'s own argument one surface over. The order and the
+> grouping are page **state** and not an address: nothing outside the page leads
+> to *this table sorted by PRU*, where ⌘K does lead to `?titre=`.
 > **A share is drawn now, and by one component** (#800): `ShareBar` puts a bar
 > under every line that carries a share of a total — the allocation's legend,
 > the accounts rail, the account's composition split, and the `Poids` column of
-> the shares table when #791 lands, which is the surface this primitive was
-> written ahead of. It takes a share and a fill and decides neither the colour
-> nor the order, so ADR-0023's rank ramp and the rail's identity wheel each stay
-> the business of the surface that earned them. `src/shareBar.test.ts` is what
-> keeps the count at one.
+> the shares table since #791. It takes a share and a fill and decides neither
+> the colour nor the order, so ADR-0023's rank ramp and the rail's identity
+> wheel each stay the business of the surface that earned them.
+> `src/shareBar.test.ts` is what keeps the count at one.
 > **The upload has landed** (#811, ADR-0032): the rectangle above the ledger is
 > a **target** rather than the name of a folder — dropped on, or chosen from the
 > picker — and the empty state's first entry carries the same gesture, so an
@@ -147,8 +158,11 @@ Four nets hold a rule nothing made true by construction:
   a **null** share draws nothing at all where a **zero** share draws an empty
   track, which is ADR-0021's difference and not a nicety; and it **chooses no
   colour and no order** — the allocation hands it a rank stop (ADR-0023, the
-  ramp only being licensed by a sorted, legended list) and the rail hands it the
-  identity wheel, so the two ramps stay where they are earned. The rail's
+  ramp only being licensed by a sorted, legended list), the rail hands it the
+  identity wheel, and the shares table hands it **one fill for every row**,
+  because a table the reader may order by any of ten columns is not a sorted
+  list and a ramp there would spell a rank that is not on screen (#791). The
+  rail's
   **stacked** bar is not the same figure and stays beside the per-line ones: it
   says *these parts close this whole*, which no per-line bar claims, and it is
   the one thing the net exempts.
@@ -245,6 +259,7 @@ src/
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
+│   │                         # the ten orders, the partition by account, the weight
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what a revocation removes
@@ -282,10 +297,18 @@ src/
   zero events included.
 - **Shares** (`/titres`) — ten columns since the weight bar, the header sums its
   lines, so the closed positions **fold** rather than being filtered (the fold is
-  not a filter, and the header does not move when the section opens). Grouping by
-  account puts each
+  not a filter, and the header does not move when the section opens). **Every
+  column sorts** since #791 — the control is the label, the state is `aria-sort`
+  on the cell, and an absence never rises whichever way the column is pointed,
+  a line with no value having no rank. Grouping by account puts each
   subtotal in the **group header**, never in a footer row: a total and its terms
-  never share a row, one level down. One sheet per share, where a
+  never share a row, one level down — and the split is over the **symbols on
+  screen**, so an account that sold out keeps the realised gain it carries
+  rather than dropping it off a page whose header still counts it. The `Poids`
+  column divides the whole the header states, minus what it cannot place, which
+  is `allocation`'s rule and not a second one. One sheet per share, opened by a
+  click **anywhere on the row** (the name stays a button, which is the
+  keyboard's way in), where a
   selection links the chart to the event list — and **which sheet is open is a
   URL** (`?titre=`) since #797, the same clause as the `?compte=` reduction beside
   it, because ⌘K reaches a held title from any of the four routes.
