@@ -24,10 +24,7 @@ import {
   aLongLedger,
   anAccountsPayload,
   anEvent,
-  anImport,
-  anImportsPayload,
   aTypedEvent,
-  importedOnly,
   ledgerEvents,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
@@ -106,10 +103,12 @@ describe('the three tabs under one route', () => {
 })
 
 describe('the columns of the ledger', () => {
-  it('are the eight, plus the provenance, in that order', async () => {
+  it('are the eight, and there is no ninth', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
+    // `Provenance` was the ninth and it left with its subject (#816,
+    // ADR-0032): there is no source to name and no revocation to lead to.
     expect(columnNames(ledger())).toEqual([
       'Date',
       'Type',
@@ -119,18 +118,19 @@ describe('the columns of the ledger', () => {
       'Frais',
       'Montant',
       'Compte',
-      'Provenance',
     ])
   })
 
-  it('has no `Nom`, and no padlock column of any kind', async () => {
+  it('has no `Nom`, no padlock column and no provenance of any kind', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // `Nom` is an attribute of the security, not of each of its 285 events. And
     // read-only per row rendered 285 identical locks on 285 rows: a marker that
-    // does not discriminate is noise however correct it is.
-    for (const absent of ['Nom', 'Symbole', 'Notes', 'Lecture seule', 'Verrou']) {
+    // does not discriminate is noise however correct it is — which is now true
+    // of the provenance too, every row having the same nothing to say about it.
+    for (const absent of ['Nom', 'Symbole', 'Notes', 'Lecture seule', 'Verrou',
+                          'Provenance']) {
       expect(within(ledger()).queryByRole('columnheader', { name: absent })).not.toBeInTheDocument()
     }
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
@@ -153,15 +153,14 @@ describe('the columns of the ledger', () => {
     expect(within(cash).queryByText('ZZA')).not.toBeInTheDocument()
   })
 
-  it('renders the provenance as a label and never as an address', async () => {
+  it('names no file anywhere, and leads to no source', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The file's name and its line. Never a path, never its presence on disk —
-    // the drop folder is an optional bind, so *not found* would be a permanent
-    // false defect. Since #728 the label leads to its source; what it must never
-    // carry is the gesture, which lives once where its subject is.
-    expect(within(ledger()).getAllByText('zeta-events_2.csv · l. 118')).toHaveLength(1)
+    // What was *« zeta-events_2.csv · l. 118 »*, a label leading to the file's
+    // revocation, is nothing at all (#816): a row that came out of a file is a
+    // row, so there is no name to render and no gesture to lead to.
+    expect(within(ledger()).queryByText(/zeta-events_2\.csv/)).not.toBeInTheDocument()
     expect(within(ledger()).queryAllByRole('link')).toHaveLength(0)
     expect(within(ledger()).queryByRole('button', { name: /oublier/i })).not.toBeInTheDocument()
   })
@@ -182,18 +181,17 @@ describe('the columns of the ledger', () => {
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
   })
 
-  it('says a row typed in the app was entered by hand, and never with a dash', async () => {
+  it('ends on the account, which is the last thing a row says about itself', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The em dash is refused here by ADR-0016: it means *there is nothing to
-    // compute*, and there is something — the row was typed here, which is the
-    // fact the padlock column was trying to carry 285 times.
-    const typed = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    const cells = within(typed).getAllByRole('cell')
-    expect(cells[cells.length - 1]).toHaveTextContent('Saisie manuelle')
-    // The dashes elsewhere on that row are ADR-0016's own — a grant raises no
-    // question of a fee — and it is the provenance cell that must not carry one.
+    // The cell that used to close a row said *« Saisie manuelle »* or named a
+    // file; both halves went with the population they told apart (#816). What
+    // closes it now is the account, and the dashes elsewhere on the row are
+    // ADR-0016's own — a grant raises no question of a fee.
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[cells.length - 1]).toHaveTextContent('alpha')
     expect(cells[cells.length - 1]).not.toHaveTextContent('—')
   })
 })
@@ -262,7 +260,7 @@ describe('the reduction, which is what pays for no pagination', () => {
     // cannot filter, which is the defect a column that cannot discriminate is.
     expect(screen.queryByRole('group', { name: 'Compte' })).not.toBeInTheDocument()
 
-    const two = [...ledgerEvents(), anEvent({ date: '2026-02-11', account: 'beta', source_row: 12 })]
+    const two = [...ledgerEvents(), anEvent({ id: '12', date: '2026-02-11', account: 'beta' })]
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(two))))
     await user.click(screen.getByRole('tab', { name: /L’installation/ }))
     await user.click(screen.getByRole('tab', { name: 'Le grand livre' }))
@@ -440,7 +438,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
           quantity: null,
           unit_price: null,
           amount: 100,
-          source_row: 200 + index,
+          id: String(200 + index),
         }),
       ),
     ]
@@ -466,23 +464,26 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
 })
 
 describe('a reduction in force always has the chip that releases it', () => {
-  it('keeps the account chip after the import that named that account is forgotten', async () => {
+  it('keeps the account chip after the rows naming that account are deleted', async () => {
     // The ledger is what names the accounts, and the ledger changes under the
-    // reader: forgetting the file that carried every `beta` row takes `beta` out
-    // of the list while the filter still holds it. With the group gone the table
-    // is simply shorter than it should be, with nothing on screen saying why or
-    // how to get the rest back — #724's defect, arrived from the other side.
+    // reader: deleting every `beta` row takes `beta` out of the list while the
+    // filter still holds it. With the group gone the table is simply shorter
+    // than it should be, with nothing on screen saying why or how to get the
+    // rest back — #724's defect, arrived from the other side.
+    //
+    // The gesture was *forget this import* until #816; it is the deletion on
+    // the reduction now (ADR-0032), which is a **better** subject for this
+    // case: the rows that leave are exactly the rows the chip retains.
     const withBeta = [
       ...ledgerEvents(),
-      anEvent({ date: '2026-02-11', account: 'beta', source_row: 12 }),
+      anEvent({ id: '12', date: '2026-02-11', account: 'beta' }),
     ]
     server.use(
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(withBeta))),
-      http.get(ROUTES.imports, () => HttpResponse.json(anImportsPayload([anImport({ events: 4 })]))),
-      http.delete(ROUTES.importSource, () => {
-        // The re-read that follows the revocation: `beta` is named by nothing.
+      http.delete(ROUTES.events, () => {
+        // The re-read that follows the write: `beta` is named by nothing.
         server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))))
-        return HttpResponse.json({ id: 1, events_removed: 4 })
+        return HttpResponse.json({ events_removed: 1 })
       }),
     )
     const { user } = renderApp({ url: '/donnees' })
@@ -492,13 +493,9 @@ describe('a reduction in force always has the chip that releases it', () => {
     await user.click(within(accounts).getByRole('button', { name: 'beta' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
+    await user.click(screen.getByRole('button', { name: 'Supprimer ces 1 événement' }))
     await user.click(
-      within(screen.getByRole('table', { name: 'Import et export' })).getByRole('button', {
-        name: 'Oublier cet import',
-      }),
-    )
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Oublier cet import' }),
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
 
     // The reduction survives the re-read, so the way out has to survive it too.
@@ -686,24 +683,21 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
 })
 
 describe('the editor, and where it does not appear', () => {
-  it('never appears on an install that has only ever imported', async () => {
-    // The real portfolio exactly: 285 imported rows, 0 typed. The read-only
-    // rule needs no column to state itself — a row carrying a provenance came
-    // from a file, and its own name is not pressable.
-    renderData(importedOnly())
+  it('appears on every row of an install that has only ever imported', async () => {
+    // **The ticket's criterion** (#816, story 13). The real portfolio exactly —
+    // 285 rows that came out of a file, 0 typed — and every one of them is now
+    // correctable: the read-only population is gone with the mount that
+    // justified it, so the row's own name is pressable everywhere.
+    renderData(ledgerEvents().map((event) => ({ ...event })))
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The one thing a row of that install carries is its provenance (#728),
-    // which leads to its source and edits nothing.
-    const pressable = within(ledger()).getAllByRole('button')
-    expect(pressable.map((button) => button.textContent)).toEqual([
-      'zeta-events_2.csv · l. 118',
-      'zeta-events_2.csv · l. 96',
-      'zeta-events_2.csv · l. 71',
-    ])
+    const rows = within(ledger()).getAllByRole('row').slice(1)
+    for (const row of rows) {
+      expect(within(row).getAllByRole('button').length).toBeGreaterThan(0)
+    }
   })
 
-  it('opens on a row that carries no provenance, prefilled and shaped for its type', async () => {
+  it('opens on a row, prefilled and shaped for its type', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
@@ -961,7 +955,6 @@ describe('the page in English', () => {
       'Fee',
       'Amount',
       'Account',
-      'Provenance',
     ])
     // `Free shares`, `Cash in`, `Cash out` — the effect, not the six codes at a
     // difference of case.
@@ -971,6 +964,5 @@ describe('the page in English', () => {
     expect(screen.getByRole('group', { name: 'Type' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All types' })).toBeInTheDocument()
     expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()
-    expect(within(table).getByText('Entered by hand')).toBeInTheDocument()
   })
 })

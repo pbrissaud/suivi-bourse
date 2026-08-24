@@ -163,17 +163,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     setEditing(null)
     onComposed?.()
   }, [compose, onComposed])
-  // The source a provenance cell asked to see. A fresh object per gesture, the
-  // `focus` prop's own rule: following two rows of the same file in a row has to
-  // mark it twice, and the reader may have scrolled away in between.
-  const [highlighted, setHighlighted] = useState<{ id: number } | undefined>(undefined)
-
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
-  // The sources. A **needed** read of the block below and of nothing else: with
-  // it in flight that block renders nothing at all, which is ADR-0026's rule and
-  // not a local decision — *you have imported nothing* is a claim about the
-  // reader's own data.
-  const imports = useQuery({ queryKey: ['imports'], queryFn: api.imports })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The reporting currency is an **optional** read here: the ledger is a
@@ -255,20 +245,17 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     <div className="space-y-6">
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
-      {/* **Above the table, and one band** (#794, ADR-0030): the drop zone, the
-          export menu and the sources with their revocation. It renders beside
-          the two others and at every N, the empty ledger included — an install
-          that has imported an accounts file and no event has a source to
-          forget, and one that has only ever typed has something to export. What
-          it renders on nothing at all is nothing, and the drop zone is then the
-          empty state's own entry, one line below. */}
+      {/* **Above the table, and one band** (#794, ADR-0030, ADR-0032): the drop
+          zone and the export menu. The sources with their revocation were the
+          third and left with the population they described (#816) — undoing an
+          import is the deletion on the reduction, below. What this renders on
+          nothing at all is nothing, and the drop zone is then the empty state's
+          own entry, one line below. */}
       {failure || !events.data ? null : (
         <ImportsBlock
           upload={upload}
-          imports={imports.data ?? null}
           events={all}
           accounts={accounts.data ?? null}
-          highlight={highlighted}
           // The chips, at the instant the menu is clicked (#796). They live
           // here because they reduce the table, and the export's third entry is
           // the same reduction asked of the store — which is why what travels
@@ -369,18 +356,6 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                 events={page.rows}
                 currency={currency}
                 onEdit={setEditing}
-                // Offered only once the list it leads to is on screen: a label
-                // that marked a block nobody can see would be a click that does
-                // nothing, and it is the same rule one notch down as the block
-                // rendering nothing while its own read is in flight.
-                onShowImport={
-                  imports.data
-                    ? (id) => {
-                        setHighlighted({ id })
-                        document.getElementById(`import-${id}`)?.scrollIntoView({ block: 'center' })
-                      }
-                    : null
-                }
               />
 
               {/* **The reveal speaks, and the read did not** (ADR-0031). Both

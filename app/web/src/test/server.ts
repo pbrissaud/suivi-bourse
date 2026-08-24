@@ -29,7 +29,6 @@ import {
   aPositionsHistory,
   aPositionsPayload,
   aPriceSeries,
-  anImportsPayload,
   aReceipt,
   aRuntime,
   aStore,
@@ -124,15 +123,6 @@ export function defaultHandlers() {
       return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
     }),
 
-    // The sources, and the one gesture that reaches an imported row (#728).
-    // The revocation answers what it removed, which is what the store knows —
-    // the front counts *before*, off the ledger it has already read, and the two
-    // are deliberately two: the box has to say what will happen, and the server
-    // says what did.
-    http.get(ROUTES.imports, () => HttpResponse.json(anImportsPayload())),
-    http.delete(ROUTES.importSource, ({ params }) =>
-      HttpResponse.json({ id: Number(params.id), events_removed: 3 }),
-    ),
 
     // The way back out (#710, #796). It is fetched by the client since the
     // receipt has to last as long as the operation, so it is a faked edge like

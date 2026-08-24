@@ -76,8 +76,6 @@ import type {
   EventsResponse,
   Fundamentals,
   ImportReceipt,
-  ImportRecord,
-  ImportsResponse,
   LedgerEvent,
   Mover,
   MoversResponse,
@@ -750,27 +748,28 @@ export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
     unit_price: 120,
     fee: 1.5,
     amount: null,
-    source_id: 1,
-    source_sheet: null,
-    source_row: 118,
-    provenance: 'zeta-events_2.csv, row 118',
-    source_filename: 'zeta-events_2.csv',
-    id: null,
+    id: '1',
   }
   return { ...base, ...overrides }
 }
 
-/** A row typed in the app: no source, and a key to address it by. */
+/**
+ * A row with **no key**, which since #816 is the one row the app cannot edit.
+ *
+ * It is a shape today's server never sends — every row of `event` has a primary
+ * key — and the type allows it, so the fixture exists to prove the editor is not
+ * offered on a row it could not address. What it is *not* any more is *a row a
+ * file laid down*: there is one population (ADR-0032).
+ */
+export function anUnaddressableEvent(
+  overrides: Partial<LedgerEvent> = {},
+): LedgerEvent {
+  return anEvent({ id: null, ...overrides })
+}
+
+/** A row of the ledger, with the key it is addressed by. */
 export function aTypedEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
-  return anEvent({
-    source_id: null,
-    source_sheet: null,
-    source_row: null,
-    provenance: null,
-    source_filename: null,
-    id: 'typed-1',
-    ...overrides,
-  })
+  return anEvent({ id: 'typed-1', ...overrides })
 }
 
 export function ledgerEvents(): LedgerEvent[] {
@@ -779,15 +778,15 @@ export function ledgerEvents(): LedgerEvent[] {
     // Same security, same account, same amounts to a euro: the label is the only
     // thing that tells the two apart.
     anEvent({
+      id: '2',
       date: '2026-01-12',
       notes: 'Versement programmé mensuel',
       quantity: 3,
       unit_price: 118,
-      source_row: 96,
-      provenance: 'zeta-events_2.csv, row 96',
     }),
     // No security at all — the label is the identity.
     anEvent({
+      id: '3',
       date: '2026-01-05',
       event_type: 'DEPOSIT',
       symbol: null,
@@ -797,10 +796,7 @@ export function ledgerEvents(): LedgerEvent[] {
       unit_price: null,
       fee: 0.35,
       amount: 500,
-      source_row: 71,
-      provenance: 'zeta-events_2.csv, row 71',
     }),
-    // Typed in the app: no provenance, and therefore the one editable row.
     aTypedEvent({
       date: '2025-12-24',
       event_type: 'GRANT',
@@ -825,15 +821,17 @@ export function ledgerEvents(): LedgerEvent[] {
  * then carries the entire history, and the accounts page shows a line its owner
  * never created — undeletable the moment an event names it.
  *
- * Every row here is **imported**, which is the population the exception is
- * about: the file was right under the rule in force when it was dropped, and the
- * application is what changed the rule underneath it.
+ * Every row here carries the seeded account, which is the population the
+ * exception is about: the blank column was right under the rule in force when
+ * they landed, and the application is what changed the rule underneath them.
+ * Where they came from is not part of it — since #816 there is one kind of row.
  */
 export function unassignedLedger(): LedgerEvent[] {
   return [
     anEvent({ date: '2026-02-10', account: 'default' }),
-    anEvent({ date: '2026-01-12', account: 'default', source_row: 96 }),
+    anEvent({ id: '2', date: '2026-01-12', account: 'default' }),
     anEvent({
+      id: '3',
       date: '2026-01-05',
       account: 'default',
       event_type: 'DEPOSIT',
@@ -842,7 +840,6 @@ export function unassignedLedger(): LedgerEvent[] {
       quantity: null,
       unit_price: null,
       amount: 500,
-      source_row: 71,
     }),
   ]
 }
@@ -868,19 +865,19 @@ export function unassignedLedger(): LedgerEvent[] {
  */
 export function shareLedger(): LedgerEvent[] {
   return [
-    anEvent({ date: '2026-02-28', quantity: 2, unit_price: 126, source_row: 10 }),
-    anEvent({ date: '2026-03-01', quantity: 1, unit_price: 128, source_row: 11 }),
-    anEvent({ date: '2026-03-01', quantity: 3, unit_price: 129, source_row: 12 }),
+    anEvent({ id: '10', date: '2026-02-28', quantity: 2, unit_price: 126 }),
+    anEvent({ id: '11', date: '2026-03-01', quantity: 1, unit_price: 128 }),
+    anEvent({ id: '12', date: '2026-03-01', quantity: 3, unit_price: 129 }),
     anEvent({
+      id: '13',
       date: '2026-03-01',
       event_type: 'DIVIDEND',
       quantity: null,
       unit_price: null,
       amount: 12,
-      source_row: 13,
     }),
-    anEvent({ date: '2025-01-05', quantity: 5, unit_price: 90, source_row: 14 }),
-    anEvent({ date: '2026-03-01', symbol: 'ZZC', name: 'Zeta Gamma', source_row: 15 }),
+    anEvent({ id: '14', date: '2025-01-05', quantity: 5, unit_price: 90 }),
+    anEvent({ id: '15', date: '2026-03-01', symbol: 'ZZC', name: 'Zeta Gamma' }),
   ]
 }
 
@@ -895,59 +892,21 @@ export function shareLedger(): LedgerEvent[] {
  *
  * The dates walk **backwards** one day at a time from the fixture's own, so the
  * order the table sorts into is the order this list is written in and a row can
- * be named by its rank. The line numbers walk **forwards** for the plain reason
- * that a file has no line −57: at 176 rows a decreasing count would hand the
- * first test that reveals past the first packet a provenance no import could
- * ever have written.
+ * be named by its rank.
  */
 export function aLongLedger(count: number): LedgerEvent[] {
   const start = Date.UTC(2026, 1, 10)
   return Array.from({ length: count }, (_, index) =>
     anEvent({
+      id: String(index + 1),
       date: new Date(start - index * 86_400_000).toISOString().slice(0, 10),
       notes: `Ordre num\u00e9ro ${index + 1}`,
-      source_row: 118 + index,
-      provenance: `zeta-events_2.csv, row ${118 + index}`,
     }),
   )
 }
 
-/** The real portfolio's own shape: everything imported, nothing typed. */
-export function importedOnly(): LedgerEvent[] {
-  return ledgerEvents().filter((event) => event.source_id !== null)
-}
-
 export function aLedgerPayload(events: LedgerEvent[] = ledgerEvents()): EventsResponse {
   return events
-}
-
-/**
- * THE IMPORTS — the sources the ledger above came from (#728).
- *
- * Two of them, and the pair is the shape the block exists for: an **events**
- * source carrying the three imported rows, and an **accounts** source carrying
- * the declaration `beta`. That second one is what makes the coupling visible —
- * an accounts import cannot be forgotten while an event names one of its
- * accounts, and forgetting an *events* source is what frees it.
- *
- * The `fingerprint` is here because the payload carries one; **no fixture reads
- * it**, and that is the criterion: nobody reads a hexadecimal, so it is never a
- * column.
- */
-export function anImport(overrides: Partial<ImportRecord> = {}): ImportRecord {
-  return {
-    id: 1,
-    filename: 'zeta-events_2.csv',
-    kind: 'events',
-    imported_at: '2026-03-01T09:12:00.000Z',
-    fingerprint: '9f2b7c1d4e6a8b0c',
-    events: 3,
-    ...overrides,
-  }
-}
-
-export function anImportsPayload(imports: ImportRecord[] = defaultImports()): ImportsResponse {
-  return imports
 }
 
 /**
@@ -973,20 +932,6 @@ export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt 
     symbols: ['ZETA', 'ZZX'],
     ...overrides,
   }
-}
-
-export function defaultImports(): ImportRecord[] {
-  return [
-    anImport(),
-    anImport({
-      id: 2,
-      filename: 'zeta-accounts.csv',
-      kind: 'accounts',
-      imported_at: '2026-02-28T18:04:00.000Z',
-      fingerprint: '1a3c5e7f9b2d4f60',
-      events: 0,
-    }),
-  ]
 }
 
 export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {

@@ -66,11 +66,13 @@ describe('the identity of a row', () => {
     expect(identityOf(anEvent({ notes: '  ' })).label).toBeNull()
   })
 
-  it('says which rows the app may edit, and it is provenance that decides', () => {
-    expect(isEditable(anEvent())).toBe(false)
+  it('says which rows the app may edit, and it is the key that decides', () => {
+    // **Every** row is editable since #816 (ADR-0032): the other half of the
+    // predicate was `source_id === null`, and there is no second population for
+    // it to have named. What is left is *addressable*.
+    expect(isEditable(anEvent())).toBe(true)
     expect(isEditable(aTypedEvent())).toBe(true)
-    // A row with no source and no key is not editable either: an install whose
-    // store has no write path yet offers nothing to press.
+    // A row with no key is not editable: there is nothing to address it by.
     expect(isEditable(aTypedEvent({ id: null }))).toBe(false)
   })
 
