@@ -30,6 +30,11 @@
  *    accessible tree: one named group, read *Titres, 2 300,00 €*. That is why
  *    the primitive gained an alignment rather than this file gaining a fifth
  *    copy of it.
+ *  - **Each legend row draws its share as well as writing it** (#800). The
+ *    percentage is exact and comparing two of them is arithmetic; the bar is
+ *    the glance. It is `ShareBar`, the one component that draws a share, and it
+ *    is handed the slice's own rank stop — the ramp is ADR-0023's and the bar
+ *    picks no colour of its own.
  *  - **It names what it could not place.** A position quoted in a currency whose
  *    rate has not resolved has no value in the reporting currency, so summing it
  *    would make every other percentage silently wrong — the exclusion was
@@ -39,6 +44,7 @@
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
+import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { allocation, type AllocationSlice } from '@/lib/dashboard'
@@ -127,24 +133,28 @@ export function Allocation({ rows, currency }: AllocationProps) {
               className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm xl:grid-cols-2"
             >
               {slices.map((slice, rank) => (
-                <li
-                  key={slice.symbol ?? 'others'}
-                  className="flex items-baseline justify-between gap-3"
-                >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span
-                      aria-hidden
-                      className="inline-block size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: stop(rank) }}
-                    />
-                    <span className="truncate">{name(slice)}</span>
+                <li key={slice.symbol ?? 'others'} className="flex flex-col gap-1">
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span
+                        aria-hidden
+                        className="inline-block size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: stop(rank) }}
+                      />
+                      <span className="truncate">{name(slice)}</span>
+                    </span>
+                    {/* A share of a whole, never a change: `formatPercent` signs
+                        what it renders (`+56,52 %`), which is right for a
+                        movement and reads as one here. */}
+                    <span className="tabular shrink-0 text-muted-foreground">
+                      {f.percentPoints(slice.share * 100)}
+                    </span>
                   </span>
-                  {/* A share of a whole, never a change: `formatPercent` signs
-                      what it renders (`+56,52 %`), which is right for a movement
-                      and reads as one here. */}
-                  <span className="tabular shrink-0 text-muted-foreground">
-                    {f.percentPoints(slice.share * 100)}
-                  </span>
+                  {/* The same figure, drawn (#800). The percentages are exact
+                      and comparing two of them is arithmetic; the bars are the
+                      glance, and they are in the ramp the slice already wears,
+                      so the row and its arc stay one object. */}
+                  <ShareBar share={slice.share} fill={stop(rank)} />
                 </li>
               ))}
             </ul>
