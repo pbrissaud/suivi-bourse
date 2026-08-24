@@ -109,12 +109,12 @@ app. The columns are the columns of an account, and there are three.
 | `type`  | `PEA`, `CTO`, … — free text, used for grouping and display    |
 | `label` | the name shown on screen, e.g. `PEA Boursorama`               |
 
-It is a file rather than an interface-only gesture for one reason: an install
-whose owner never opens the page has nothing to click. Reserving accounts to
-the interface would forbid multi-account to every headless install — and with
-it the import of any broker export that names accounts. It is the same format
-as the events rather than a third one because nobody should have to learn YAML
-to declare two accounts.
+It is a file rather than an interface-only gesture for one reason: the accounts
+have to exist before the events that name them land. Reserving accounts to the
+interface would mean clicking through them first every time — and would forbid
+the import of any broker export that names accounts to arrive whole. It is the
+same format as the events rather than a third one because nobody should have to
+learn YAML to declare two accounts.
 
 A few rules follow, and each of them exists to keep a mistake a refusal:
 
@@ -211,7 +211,7 @@ this same app reads, with no conversion and no special path.
 In the app, the export menu is under **Data → Import and export**, and it offers
 four files: every event, the same events as a **workbook with one sheet per
 year**, the **selection your filters hold** at the moment you click, and your
-accounts. Headless, they are requests:
+accounts. Away from the page, they are requests:
 
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
@@ -261,8 +261,8 @@ refuses the portfolio rather than itself — see
 [Going back](./coming-from-v4.mdx#going-back).
 
 It is an HTTP route rather than a button only, for the reason every write path
-in this app is: *headless means without an interface, not without HTTP*. One
-`curl` is a complete backup, and the page is one client of it.
+in this app is: the page is one client of the API and never a privileged one.
+One `curl` is a complete backup.
 
 **The exported file states its reporting currency**, in a `base_currency` column
 repeated on every row. It has to: event amounts are the debit *in your base
