@@ -27,11 +27,11 @@
  *  - **At one account there is no card, and no read either.** A comparison of
  *    one account against nothing is the head's own figure with a border around
  *    it, and *a block with nothing in it does not exist*. The guard is on the
- *    **queries** rather than on the rendering, because ADR-0013 seeds a
- *    `default` row that is never removed: the single-account install is the
- *    ordinary one, and gated on the rendering alone every dashboard load
- *    fetched that account's whole daily series — some 2 500 points — to throw
- *    it away.
+ *    **queries** — in the page, with them — rather than on the rendering here,
+ *    because ADR-0013 seeds a `default` row that is never removed: the
+ *    single-account install is the ordinary one, and gated on the rendering
+ *    alone every dashboard load fetched that account's whole daily series —
+ *    some 2 500 points — to throw it away.
  *  - **Nothing drawable is said, not dashed.** `windowStart` answers `null` on
  *    `SINCE_OPENING` alone, so an empty perf cache — a fresh install whose
  *    backfill has not run — left the other three presets rendering an em dash
@@ -41,11 +41,16 @@
  *    performance is *nothing to compare over this range*, which is a named
  *    absence. Per row the em dash stands, and there it is right — an account
  *    with no cash movement has no index at all (#708).
- *  - **A series that failed to read makes the card vanish rather than speak**,
- *    which is `PortfolioChart`'s own behaviour on its two series and follows
- *    from `lib/status.ts`: there is one band on screen or none, and the head's
- *    is the announcer of a store that will not answer — these N reads open no
- *    store the two the head waits for have not opened first.
+ *  - **A series that failed to read makes the card vanish, and the page says
+ *    why** (#799). The vanishing is right — one band on screen or none, and a
+ *    card cannot draw a comparison it has not read — but it used to be *all*
+ *    that happened: the head's band named the two reads the head is made of and
+ *    nothing else, so a `/api/accounts/:id/history` coming back `503` removed
+ *    the comparison from the dashboard for ever, without a word. The band is the
+ *    page's now, above both tracks, and these N reads are in it.
+ *  - **The reads are the page's** for that reason, and they cross as
+ *    `readonly PerfPoint[] | null` per account: *failed* and *in flight* are one
+ *    silence in the block, and are told apart one level up.
  *
  * The curve is stroked in `--foreground` and never in the mint, which is the
  * rule the dashboard's own performance reading already holds: a rebased index
@@ -58,7 +63,6 @@
  * the period in the sentence this card's percentage rests on.
  */
 import { useMemo, useState } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
 import { Line, LineChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
@@ -73,58 +77,58 @@ import {
   windowStart,
   type Range,
 } from '@/lib/accounts'
-import { api, type PerfPoint } from '@/lib/api'
+import type { Account, PerfPoint } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
-export function AccountsCard() {
+export interface AccountsCardProps {
+  /**
+   * What is declared. `null` while `/api/accounts` has not answered — in flight
+   * or failed — and never `[]`, which would be an install with no account at
+   * all, a state ADR-0013 declares impossible.
+   */
+  accounts: readonly Account[] | null
+  /**
+   * One series per declared account, in the accounts' own order. Each is `null`
+   * while its own read has not answered, and the card waits for **all** of them
+   * (see {@link settledSeries}): the comparison *is* the object.
+   */
+  series: readonly (readonly PerfPoint[] | null)[]
+}
+
+export function AccountsCard({ accounts, series }: AccountsCardProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const [range, setRange] = useState<Range>(DEFAULT_RANGE)
 
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const declared = accounts.data?.accounts ?? []
-  /** Two accounts is where a comparison starts — and where the reads do. */
+  const declared = accounts ?? []
+  /** Two accounts is where a comparison starts — and where the page's reads do. */
   const comparable = declared.length > 1
 
-  // One read per account, and the whole series each time — the same arrangement
-  // the accounts page has, and for the same reason: the bound this card applies
-  // is a `max` over the accounts' openings, and no payload states an opening.
-  const histories = useQueries({
-    queries: comparable
-      ? declared.map((account) => ({
-          queryKey: ['account-history', account.id],
-          queryFn: () => api.accountHistory(account.id),
-        }))
-      : [],
-  })
-
-  // `?? null` and never `?? []`: an empty series is a **payload** — an account
-  // whose perf cache says nothing — and a request in flight is not one.
-  const points: (readonly PerfPoint[] | null)[] = histories.map((one) => one.data?.points ?? null)
-  const landed = settledSeries(points)
+  const landed = settledSeries(series)
   const from = landed === null ? null : windowStart(range, new Date(), landed)
 
-  // `useQueries` hands back a new array on every render, so the rebasing is
-  // memoised against what actually moved: when each read landed, which accounts
-  // there are, and the window.
-  const stamp = `${histories.map((one) => one.dataUpdatedAt).join('|')} ${declared
-    .map((account) => account.id)
-    .join('|')} ${from}`
-  const rebased = useMemo(
-    () =>
-      from === null || landed === null
-        ? []
-        : declared.map((account, index) => rebase(account.id, landed[index] ?? [], from)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stamp],
-  )
+  // The rebasing is memoised against what actually moved: the series the page
+  // hands down — itself memoised there against when each read landed, which is
+  // what makes this array a stable dependency — the accounts, and the window.
+  //
+  // `settledSeries` is called a second time **inside** rather than closed over,
+  // and it is not a duplication for its own sake: it answers a fresh array on
+  // every call, so a dependency on it would move on every render and the memo
+  // would compute the rebasing each time. It is a loop over a handful of reads;
+  // `rebase` is a loop over some two and a half thousand days per account.
+  const rebased = useMemo(() => {
+    const settled = settledSeries(series)
+    if (from === null || settled === null || accounts === null) return []
+    return accounts.map((account, index) => rebase(account.id, settled[index] ?? [], from))
+  }, [series, accounts, from])
 
   // Nothing at all while any of it is in flight, title included (ADR-0026) —
-  // and nothing either where there is only one account to compare.
-  if (!accounts.data || !comparable || landed === null) return null
+  // nothing either when one of the reads failed, which the page's band names —
+  // and nothing where there is only one account to compare.
+  if (accounts === null || !comparable || landed === null) return null
 
   /** How many accounts the window actually says something about. */
   const drawn = rebased.filter((series) => series.performance !== null).length

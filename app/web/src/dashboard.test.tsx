@@ -470,6 +470,139 @@ describe('a read that fails is named, and named once', () => {
   })
 })
 
+/**
+ * **A secondary read that fails is named, and it costs no other block** (#799).
+ *
+ * The band used to be the head's and to render *instead* of it, so it could only
+ * ever name the two reads the head is made of. The four others — the portfolio
+ * series, the valuation series, the accounts and the N account series — entered
+ * no condition at all: the block that consumed one rendered `null` and the graph,
+ * or the comparison, left the dashboard **on every load, without a word**.
+ *
+ * The net in `readsInFlight.test.tsx` makes a read **hang**; it does not make one
+ * **fail**, and a silent disappearance is what it *requires* during the flight. So
+ * it cannot see this, it is not modified to, and the distinction between the two
+ * states — which is the whole of the repair — is asserted here, on the rendering.
+ */
+describe('a secondary read that fails is named, and the head keeps its figures', () => {
+  const STORAGE_DOWN = {
+    status: 503,
+    type: PROBLEM_TYPES.storageUnavailable,
+    title: 'storage unavailable',
+  }
+
+  /** The one sentence a store that will not answer is entitled to. */
+  const unreadable = (route: string) => problemHandler(route, STORAGE_DOWN)
+
+  /**
+   * What the head is worth on the fixture — the total and its four terms — and
+   * it is worth it whatever else on the page failed to read. This is the half
+   * the repair had to buy: pouring the four other reads into the head's own
+   * band would have replaced every figure below with one sentence.
+   */
+  async function theHeadStandsWhole() {
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/370,00/)
+    expect(figure('Plus-value latente')).toHaveTextContent(/300,00/)
+    expect(figure('Plus-value réalisée')).toHaveTextContent(/50,00/)
+    expect(figure('Dividendes reçus')).toHaveTextContent(/25,00/)
+    expect(figure('Frais de versement')).toHaveTextContent(/5,00/)
+  }
+
+  it('names a failed portfolio series, and the chart alone goes', async () => {
+    server.use(unreadable(ROUTES.portfolioTotalsHistory))
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    await theHeadStandsWhole()
+    // The block the read belongs to renders nothing at all, title included:
+    // its range control is the surest proof the card is gone rather than empty.
+    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+  })
+
+  it('names a failed valuation series, which only an install with no cash ledger reads', async () => {
+    // #708's per-field rule sends the chart to the second series, so this one
+    // is armed under a condition false by default — and it disappeared exactly
+    // as silently.
+    server.use(
+      totalsOf({
+        total_value: null,
+        cash_balance: null,
+        net_contributed: null,
+        twr_index: null,
+        ytd: null,
+      }),
+      unreadable(ROUTES.positionsHistory),
+    )
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    await theHeadStandsWhole()
+    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+  })
+
+  it('names a failed accounts read, and keeps the figures whose perimeter it states', async () => {
+    server.use(unreadable(ROUTES.accounts))
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    await theHeadStandsWhole()
+    // The perimeter is *unknown*, which is not written down (ADR-0026) — and
+    // the comparison has no list of accounts to be a comparison of.
+    expect(screen.queryByText(/compte/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument()
+  })
+
+  it('names one account’s failed series, the comparison being all of them at once', async () => {
+    // The N series are waited for together because the comparison *is* the
+    // object (ADR-0028), so one `503` out of three removes the card — which is
+    // right, and used to be the whole of what happened.
+    server.use(
+      http.get(ROUTES.accountHistory, ({ params }) =>
+        String(params.account) === 'beta'
+          ? HttpResponse.json(STORAGE_DOWN, {
+              status: 503,
+              headers: { 'Content-Type': 'application/problem+json' },
+            })
+          : HttpResponse.json(anAccountHistory(String(params.account))),
+      ),
+    )
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    await theHeadStandsWhole()
+    expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument()
+  })
+
+  it('says nothing at all while that same read is merely in flight', async () => {
+    // **The repair distinguishes the failure from the flight, it does not
+    // flatten them** (ADR-0026). The band is composed out of an error and never
+    // out of a silence, so a read that has not answered still takes its block
+    // away without a word — title, sentence and band included.
+    server.use(http.get(ROUTES.portfolioTotalsHistory, () => new Promise<never>(() => {})))
+    renderApp()
+
+    await theHeadStandsWhole()
+    // The comparison waits on three reads of its own, so its list standing is
+    // the proof the page has otherwise settled and the band is not merely late.
+    await screen.findByRole('list', { name: 'Vos comptes, comparés' })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+  })
+
+  it('keeps one band on screen when several of its reads fail at once', async () => {
+    // *One band on screen or none* is unchanged, and it is a rule about
+    // announcers: the four reads are one more list handed to `readConditions`,
+    // whose causal order — and `oneBand` after it — does the rest.
+    server.use(unreadable(ROUTES.portfolioTotalsHistory), unreadable(ROUTES.accounts))
+    renderApp()
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(1))
+    await theHeadStandsWhole()
+  })
+})
+
 describe('the statistics shrink instead of filling with dashes', () => {
   it('drops what does not exist for this installation, and names what a ledger would add', async () => {
     server.use(http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(null))))

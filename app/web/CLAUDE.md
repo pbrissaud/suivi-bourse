@@ -56,10 +56,12 @@ it did on the branch was nothing below 1 536 px and an off-centre page above it
 
 **`lint` is the type-checker and nothing else** — there is no ESLint here. One
 `// eslint-disable-next-line react-hooks/exhaustive-deps` survives from the
-prototype (`AccountsCard`); it documents a deliberate dependency and **enforces
-nothing**, so a hook's dependency array is held by review alone. It sits on a
-`useMemo` keyed by a hand-built stamp, and the stamp is the thing to read when
-touching it.
+prototype; it documents a deliberate dependency and **enforces nothing**, so a
+hook's dependency array is held by review alone. It sits on a `useMemo` keyed by
+a hand-built stamp, and the stamp is the thing to read when touching it. It moved
+with the read it guards, from `AccountsCard` to `DashboardPage` (#799): the N
+account series are the page's now, and the stamp is what makes the array it hands
+down a stable dependency for the card's own memo — which needs no such comment.
 
 The *why* of each screen is in `docs/adr/` (0016 through 0026), then in
 `docs/v5-decisions.md`.
@@ -149,6 +151,15 @@ Three nets hold a rule nothing made true by construction:
   the reconstruction left the band for the **dot**, which gained a fifth state
   for it, and its detail — the bar and the lagging account — is a block on the
   installation tab, where the dot leads.
+- **A page's band belongs to the page, above its blocks** (#799). Mounted inside
+  a block it renders *instead* of it, so it can only ever name the reads that
+  block is made of — and the dashboard's four other reads therefore entered no
+  condition at all: a `503` on a series took the chart, or the comparison, off
+  the page on every load without a word. The page reads and the blocks render;
+  `readConditions` is handed **every** read, and `oneBand` after it is why an
+  unreadable store is still one sentence. What empties a page and what is merely
+  named stay two lists: only the reads a page is *made of* reach
+  `dashboardState`.
 - **Green means the quotes are read *and* the performance is up to date** (#787).
   The dot used to hold one predicate, the scheduler, and stayed green while a red
   band announced a rebuild on every page — two surfaces disagreeing about one
