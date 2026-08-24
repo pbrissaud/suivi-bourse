@@ -85,8 +85,8 @@ export function defaultHandlers() {
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
     // The two writes echo the row back, which is the contract's own shape: the
-    // id and the provenance are the store's to decide, so a client cannot send
-    // them and the answer is where they come from.
+    // id is the store's to decide, so a client cannot send one and the answer is
+    // where it comes from.
     http.post(ROUTES.events, async ({ request }) => {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: 'created', ...draft }), { status: 201 })

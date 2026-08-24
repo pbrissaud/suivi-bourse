@@ -3012,14 +3012,25 @@ def test_the_file_era_routes_are_gone_rather_than_refusing(tmp_path):
     because **the file was the address**. Neither has a successor.
 
     The row-level writes on ``/api/events`` are **not** in that list any more
-    (issue #764): they came back for the population no revocation reaches, and
-    what they refuse they refuse by name rather than by absence — see
-    ``test_an_imported_row_is_refused_by_both_row_gestures``.
+    (issue #764): they came back for every row there is, and they refuse nothing
+    for its origin — see
+    ``test_an_uploaded_row_is_taken_by_both_row_gestures``.
+
+    **The two import routes join the list at #816** (criterion 3, ADR-0032).
+    ``GET /api/imports`` listed the sources and ``DELETE /api/imports/<id>``
+    revoked one; nothing persists that could be named any more, so they are
+    demolished rather than answering an empty collection — which would be a
+    resource claiming to exist.
     """
     client = ledger_client(tmp_path)
 
     assert client.get('/api/events/files').status_code == 404
     assert client.put('/api/accounts', json={'accounts': []}).status_code == 405
+    assert client.get('/api/imports').status_code == 404
+    # ``405`` and not ``404`` for the same reason ``PUT /api/accounts`` gets one,
+    # one line up: the catch-all takes the path and not the verb. What both
+    # answers say is *no such route*.
+    assert client.delete('/api/imports/1').status_code == 405
 
 
 # --------------------------------------------------------------------------- #
@@ -3146,17 +3157,27 @@ def test_the_store_resource_states_its_size_and_its_last_ledger_write(tmp_path):
     finds the number — and the explanation is what stops the purge button beside
     it reading as a way to get bytes back.
 
-    ``ledger_last_write`` is the newest **import**, and never the newest observed
-    price. The second is liveness and belongs to the banner; shown here it would
-    make a store whose last import was a year ago read as freshly written.
+    ``ledger_last_write`` is when the **ledger** last moved, and never the newest
+    observed price. The second is liveness and belongs to the banner; shown here
+    it would make a store whose last write was a year ago read as freshly
+    written. It was ``max(import_source.imported_at)`` while a file was a row;
+    the writer stamps the instant since #816, so a correction and a deletion
+    move it too — which the old query, being about imports, never did.
     """
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     body = client.get('/api/store').get_json()
 
     assert body['size_bytes'] > 0
-    assert body['ledger_last_write'] is not None
+    first = body['ledger_last_write']
+    assert first is not None
+
+    ((key,),) = opened.query('SELECT id FROM event ORDER BY id LIMIT 1')
+    assert client.delete(f'/api/events/{key}').status_code == 200
+
+    after = client.get('/api/store').get_json()['ledger_last_write']
+    assert after is not None and after >= first
     assert body['orphans'] == []
 
 

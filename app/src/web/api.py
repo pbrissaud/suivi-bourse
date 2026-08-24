@@ -1756,14 +1756,16 @@ def get_store():
       number is still there for anyone who runs ``du``. What must travel with it
       is what a purge does *not* do — measured, 79 % of a real store's rows
       purged for zero bytes returned.
-    * ``ledger_last_write`` — the newest import, and **never the newest observed
-      price**. The second is liveness, it belongs to the banner, and shown here
-      it would make a store whose last import was a year ago read as freshly
-      written.
+    * ``ledger_last_write`` — when the ledger last moved, and **never the newest
+      observed price**. The second is liveness, it belongs to the banner, and
+      shown here it would make a store whose last write was a year ago read as
+      freshly written. It was the newest import while a file was a row; the
+      writer stamps the instant since #816, so a correction and a deletion count
+      as the writes they are.
     * ``orphans`` — the symbols no event names any more, with the size of the
-      series each one holds. Kept deliberately (#695 § 10): forgetting an import
-      is reversible and a reconstructed series is not. A **sold position is not
-      one of them** — its events are still recorded.
+      series each one holds. Kept deliberately (#695 § 10): a row can be recorded
+      again and a reconstructed series cannot. A **sold position is not one of
+      them** — its events are still recorded.
     """
     runtime = current_runtime()
     opened = _store()

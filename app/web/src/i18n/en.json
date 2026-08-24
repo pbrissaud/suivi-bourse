@@ -432,7 +432,7 @@
   "installation.store.size": "Size on disk",
   "installation.store.size.note": "Purging returns rows, not bytes: the store reuses its own blocks, so this figure does not go down when something is removed from it.",
   "installation.store.lastWrite": "Last write to your ledger",
-  "installation.store.lastWrite.never": "Nothing has been imported yet",
+  "installation.store.lastWrite.never": "Nothing has been recorded yet",
   "installation.store.orphans": "{count, plural, one {# share nothing declares any more} other {# shares nothing declares any more}}",
   "installation.store.orphans.body": "Their price history was kept when their events left, because forgetting an import can be undone by dropping the file again and a rebuilt history cannot. A position you have sold is not one of these — its events are still recorded.",
   "installation.store.orphans.points": "{count, plural, one {# price} other {# prices}}",

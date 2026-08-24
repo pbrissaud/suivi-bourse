@@ -729,12 +729,9 @@ export function aPriceSeries(
  *  - **a cash movement with no symbol at all** (`Apple Pay Top up` on the real
  *    portfolio). Its label is its whole identity, which is why the identity
  *    column is not `Titre`.
- *  - **a row with no provenance**, the only kind the app may edit. On the real
- *    portfolio there are 285 imported rows and 0 of these, which is exactly what
- *    the padlock column rendered 285 times.
- *
- * Every imported row carries a file **name** and a line, never a path: the
- * provenance is worth a label and a revocation unit, never an address.
+ *  - **a row addressed by a key**, which since #816 is every row and therefore
+ *    every row the app may edit (ADR-0032). The fourth used to be *a row with no
+ *    provenance*, told apart from the other three by a column that is gone.
  */
 export function anEvent(overrides: Partial<LedgerEvent> = {}): LedgerEvent {
   const base: LedgerEvent = {
