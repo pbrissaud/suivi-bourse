@@ -4,7 +4,7 @@ Event aggregator for computing portfolio state from events.
 
 import copy
 from datetime import date
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .schemas import (
     CASH_EVENT_TYPES, DEFAULT_ACCOUNT, Event, EventType, ShareState,
@@ -25,8 +25,35 @@ DUST_FRACTION = 1e-9
 
 
 class AggregationError(Exception):
-    """Exception raised when aggregation fails."""
-    pass
+    """Exception raised when aggregation fails.
+
+    It carries **what it names** (issue #824), and the message stays exactly
+    what it was. The sentence — ``Cannot sell 12.0 shares of AAPL (only 10.0
+    owned) on 2024-09-15`` — is English the server writes for a log and for the
+    ``detail`` a ``curl`` reads, and ADR-0024 forbids rendering it to a reader;
+    the four members below are the same facts **as data**, which a front can put
+    in its own language. Re-deriving them by parsing the message would be the
+    prose becoming a contract.
+
+    All four are optional and default to ``None``: the oversell in
+    :meth:`EventAggregator._process_sell` is the only place that knows them
+    today, and a later raise from somewhere that does not must be able to say
+    so rather than promise a symbol it has not got.
+    """
+
+    def __init__(self, message: str, *, symbol: Optional[str] = None,
+                 wanted: Optional[float] = None,
+                 owned: Optional[float] = None,
+                 day: Optional[date] = None):
+        super().__init__(message)
+        #: The security the refusal is about.
+        self.symbol = symbol
+        #: The quantity the ledger asked to sell.
+        self.wanted = wanted
+        #: The quantity it held at that instant.
+        self.owned = owned
+        #: The calendar day of the sale that does not replay.
+        self.day = day
 
 
 class EventAggregator:
@@ -258,9 +285,16 @@ class EventAggregator:
         # side and none on the other is not caution, it is a coin toss on the
         # last bit of a float.
         if quantity > state.quantity + DUST_FRACTION * acquired:
+            # The message is **word for word** what it has always been: it goes
+            # into the logs and into the problem's ``detail``, and changing it
+            # would break the sentence a `curl` reads. The four members beside
+            # it are the same facts as data (issue #824), posted here because
+            # this is the only place that holds all four.
             raise AggregationError(
                 f"Cannot sell {quantity} shares of {event.symbol} "
-                f"(only {state.quantity} owned) on {event.date}")
+                f"(only {state.quantity} owned) on {event.date}",
+                symbol=event.symbol, wanted=quantity, owned=state.quantity,
+                day=event.date)
         quantity = min(quantity, state.quantity)
 
         unit = unit_cost(state.quantity, state.cost_basis) or 0.0

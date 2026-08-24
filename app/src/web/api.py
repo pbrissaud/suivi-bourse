@@ -46,6 +46,8 @@ from events import export as events_export
 from events.aggregator import AggregationError
 from store_reads import PortfolioReader, chart_window
 from web.problem import (
+    GESTURE_REMOVE,
+    GESTURE_WRITE,
     bad_request,
     conflict,
     internal_error,
@@ -56,6 +58,7 @@ from web.problem import (
     unprocessable_entry,
     unprocessable_file,
     unprocessable_parameter,
+    unreplayable,
 )
 
 logger = getLogger("web.api")
@@ -132,6 +135,26 @@ def current_runtime():
     """The process's runtime, imported late to avoid a cycle at import time."""
     from web import current_runtime as _current
     return _current()
+
+
+def _unreplayable(exc: AggregationError, gesture: str):
+    """The one answer every route gives an oversell (issue #824).
+
+    Written once, because it is one refusal met from several sides and the
+    mapping — the exception's four members onto the problem's four extension
+    members — must not exist in seven copies that can drift apart. What each
+    caller supplies is the only thing it alone knows: which **gesture** was
+    refused, ``write`` or ``remove``. The reader is told two different pieces of
+    news by the two, and no payload distinguishes them.
+
+    The day is rendered here rather than in :mod:`web.problem`: a
+    :class:`datetime.date` is not JSON, and ``isoformat`` is the same spelling
+    every other calendar day on this blueprint travels under.
+    """
+    return unreplayable(
+        str(exc), gesture,
+        symbol=exc.symbol, wanted=exc.wanted, owned=exc.owned,
+        day=exc.day.isoformat() if exc.day is not None else None)
 
 
 @api_bp.errorhandler(Exception)
@@ -662,7 +685,7 @@ def create_account():
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account)), 201
@@ -702,7 +725,7 @@ def reassign_unassigned_events(account_id: str):
     except reassignment.NotReassignable as exc:
         return conflict(str(exc))
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
     return jsonify({'account': account_id, 'reassigned': moved})
@@ -915,7 +938,9 @@ def create_event():
     ``409`` when the ledger it would make does not replay: overselling is a
     property of the *ledger*, not of a row, so a `SELL` that is legal alone can
     be illegal in company. Well formed, and the store's state refuses it — which
-    is what that status is for.
+    is what that status is for. The **type** is
+    ``/problems/unreplayable-ledger`` and not ``/problems/conflict`` (#824): the
+    two are one status and two pieces of news.
 
     The replay follows the write, synchronously and in this process, exactly as
     on ``DELETE /imports/<id>``: whoever just recorded an event must not wait
@@ -941,7 +966,7 @@ def create_event():
     except entries.InvalidEntry as exc:
         return unprocessable_entry(str(exc), key=exc.field)
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
     return jsonify(_event_to_dict(created)), 201
@@ -1059,7 +1084,7 @@ def import_events():
     except entries.InvalidEntry as exc:
         return unprocessable_file(str(exc))
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_WRITE)
 
     if not dry_run:
         main.replay_after_write(runtime)
@@ -1162,7 +1187,7 @@ def update_event(event_id: str):
     except entries.InvalidEntry as exc:
         return unprocessable_entry(str(exc), key=exc.field)
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_WRITE)
 
     main.replay_after_write(runtime)
     return jsonify(_event_to_dict(updated))
@@ -1180,7 +1205,11 @@ def delete_event(event_id: str):
 
     The ``409`` on a ledger that would not replay is not symmetry either: taking
     a purchase away can leave a later sale overselling, which is the same fact
-    ``POST`` meets from the other side.
+    ``POST`` meets from the other side — and it is answered as the same
+    ``/problems/unreplayable-ledger``, with ``gesture`` reading ``remove``
+    rather than ``write`` (#824). What is refused here is a withdrawal and what
+    it breaks is elsewhere in the ledger, which is not the sentence a file that
+    oversells earns.
     """
     key = _entry_key(event_id)
     if key is None:
@@ -1195,7 +1224,7 @@ def delete_event(event_id: str):
     except entries.ImportedEntry as exc:
         return conflict(str(exc))
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_REMOVE)
 
     main.replay_after_write(runtime)
     return jsonify({'id': event_id, 'removed': True})
@@ -1255,7 +1284,7 @@ def delete_events():
         with runtime.config_manager.writing() as opened:
             removed = entries.remove_selection(opened, selection)
     except AggregationError as exc:
-        return conflict(str(exc))
+        return _unreplayable(exc, GESTURE_REMOVE)
 
     main.replay_after_write(runtime)
     # ``events_removed`` and not a bare ``removed``: it is the unit the reader

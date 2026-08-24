@@ -226,6 +226,20 @@ the file's own size when it is read. What comes back on success is
 a **receipt** — what the file holds, what of it the ledger already had, what was
 written, the period covered, the accounts and securities touched.
 
+**A ledger that does not replay is a `409` of its own** (#824,
+`/problems/unreplayable-ledger`). The oversell is not `/problems/conflict`: that
+type's one sentence was written for #698's refusals — *what this names is already
+there, or something still rests on it* — and it describes nothing whatsoever
+about a file that sells shares nobody ever bought, which since #811 is the
+ordinary case (an export starting mid-history). Every write path that replays
+answers it — the four on the events, the bulk delete, and the two account
+gestures that move rows — carrying `gesture` (`write` or `remove`, because a
+payload cannot say whether the ledger broke on the way in or on the way out) and
+`symbol`/`wanted`/`owned` as **extension members**, which is what lets the front
+compose the sentence in the reader's language (ADR-0024). `detail` stays
+`AggregationError`'s own English, word for word: it is what a log and a `curl`
+read, and it is deliberately not what a page renders.
+
 **The receipt is answered at two moments and the object is one** (#813,
 ADR-0032). `?dry_run=1` reads the store through the lock-free accessor, runs the
 same two judgements the write runs (`entries.judge`: the validator over the whole
