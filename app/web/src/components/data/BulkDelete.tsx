@@ -55,7 +55,7 @@ import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { selectionParams, type LedgerFilters } from '@/lib/ledger'
-import { problemMessageKey } from '@/lib/problem'
+import { problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
 
 export interface BulkDeleteProps {
@@ -133,7 +133,7 @@ export function BulkDelete({ selection, selected }: BulkDeleteProps) {
               failure, and Radix marks everything behind the overlay
               `aria-hidden`, so a band outside it is a sentence nobody can read
               while the only thing on screen is the box that produced it. */}
-          {remove.error ? <Band>{t(problemMessageKey(remove.error))}</Band> : null}
+          {remove.error ? <Band>{problemSentence(t, remove.error)}</Band> : null}
 
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>

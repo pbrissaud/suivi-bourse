@@ -78,7 +78,7 @@ import {
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { FIELDS, identityOf } from '@/lib/ledger'
-import { problemMessageKey } from '@/lib/problem'
+import { problemSentence } from '@/lib/problem'
 import { buildShareRows, heldRows, marketValue, unrealisedRatio } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
@@ -666,7 +666,7 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
             {t('accounts.reassign.submit')}
           </Button>
         </div>
-        {move.error ? <Band>{t(problemMessageKey(move.error))}</Band> : null}
+        {move.error ? <Band>{problemSentence(t, move.error)}</Band> : null}
       </CardContent>
     </Card>
   )

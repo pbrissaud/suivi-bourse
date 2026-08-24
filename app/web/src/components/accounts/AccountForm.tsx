@@ -58,7 +58,7 @@ import {
 } from '@/lib/accounts'
 import { api, type Account, type AccountDraft } from '@/lib/api'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { problemMessageKey } from '@/lib/problem'
+import { problemMessageKey, problemSentence } from '@/lib/problem'
 
 /**
  * The three refusals, in `accounts.delete_account`'s own order.
@@ -329,7 +329,7 @@ export function AccountForm({
             </div>
           ) : null}
 
-          {write.error ? <Band>{t(problemMessageKey(write.error))}</Band> : null}
+          {write.error ? <Band>{problemSentence(t, write.error)}</Band> : null}
 
           <div className="flex gap-2">
             <Button type="submit" disabled={write.isPending || waiting}>

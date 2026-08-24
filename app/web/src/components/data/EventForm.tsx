@@ -66,7 +66,7 @@ import {
 } from '@/lib/accounts'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { accountOf, FIELDS, parseDay, parseDecimal } from '@/lib/ledger'
-import { problemMessageKey } from '@/lib/problem'
+import { problemSentence } from '@/lib/problem'
 import { cn } from '@/lib/utils'
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
@@ -475,7 +475,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 )}
               </Field>
 
-              {write.error ? <Band>{t(problemMessageKey(write.error))}</Band> : null}
+              {write.error ? <Band>{problemSentence(t, write.error)}</Band> : null}
 
               <div className="flex gap-2">
                 {/* Withheld rather than offered and refused — the same rule the

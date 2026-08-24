@@ -815,6 +815,48 @@ describe('the file handed over', () => {
     expect(screen.queryByText(/is not declared/)).not.toBeInTheDocument()
   })
 
+  it('names the security when the file sells shares the ledger does not hold', async () => {
+    // The common case #811 made ordinary: the owner exports 2024 at their
+    // broker, and every `SELL` of a position opened in 2023 oversells. The file
+    // is refused whole — which is right — and what they used to be told was
+    // *what this names is already there*, which describes nothing that just
+    // happened. The true sentence names a security and two quantities, and they
+    // travel as extension members so the front can say it in French (#824).
+    server.use(
+      http.post(ROUTES.eventsImport, () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.unreplayableLedger,
+            title: 'Ledger does not replay',
+            status: 409,
+            detail: 'Cannot sell 12.0 shares of AAPL (only 10.0 owned) on 2024-09-15',
+            gesture: 'write',
+            symbol: 'AAPL',
+            wanted: 12,
+            owned: 10,
+            day: '2024-09-15',
+          },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    expect(
+      await screen.findByText(
+        'L’application a refusé et n’a rien écrit : ce geste vend 12 parts de AAPL, ' +
+          'et votre grand livre n’en porte que 10 ce jour-là.',
+      ),
+    ).toBeInTheDocument()
+    // Neither the sentence of `problem.conflict` — the one this refusal used to
+    // borrow — nor a word of the server's English (ADR-0024).
+    expect(screen.queryByText(/existe déjà/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Cannot sell/)).not.toBeInTheDocument()
+  })
+
   it('names the bound rather than the generic refusal when the file is too big', async () => {
     server.use(
       http.post(ROUTES.eventsImport, () =>

@@ -640,6 +640,49 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     // — and it still names the reduction it was opened on.
     expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
   })
+
+  it('says a withdrawal a later sale rests on in its own words (#824)', async () => {
+    // A reduction can take the purchases away and leave the sales — and that is
+    // **not** the news a file that oversells is: what is refused here is a
+    // withdrawal, and what it would break is elsewhere in the ledger. The
+    // server names the gesture, because no payload distinguishes the two, and
+    // the catalogue holds a sentence for each.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.delete(ROUTES.events, () =>
+        HttpResponse.json(
+          {
+            status: 409,
+            type: PROBLEM_TYPES.unreplayableLedger,
+            title: 'Ledger does not replay',
+            detail: 'Cannot sell 10.0 shares of AAPL (only 0.0 owned) on 2026-02-10',
+            gesture: 'remove',
+            symbol: 'AAPL',
+            wanted: 10,
+            owned: 0,
+            day: '2026-02-10',
+          },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+    )
+
+    const box = await screen.findByRole('dialog')
+    expect(await within(box).findByRole('status')).toHaveTextContent(
+      'L’application a refusé et n’a rien retiré : une vente postérieure de AAPL repose ' +
+        'dessus — elle vend 10 parts, et il n’en resterait que 0.',
+    )
+    expect(within(box).queryByText(/Cannot sell/)).not.toBeInTheDocument()
+  })
 })
 
 describe('the editor, and where it does not appear', () => {

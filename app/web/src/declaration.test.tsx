@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_ACCOUNT_ID } from '@/lib/accounts'
 import { accountPath, ROUTES, type LedgerEvent } from '@/lib/api'
+import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   aFileAccount,
   aLedgerPayload,
@@ -205,6 +206,33 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     await waitFor(() =>
       expect(within(rail()).queryByRole('link', { name: /Gamma/ })).not.toBeInTheDocument(),
     )
+  })
+
+  it('still says `conflict`’s own sentence on a refusal of declaration (#824)', async () => {
+    // What the oversell's new type does **not** take with it. *What this names
+    // is already there, or something still rests on it* was written for exactly
+    // this refusal — an account an event names — and is true of it. Only the
+    // case it described badly left.
+    server.use(
+      http.delete(accountPath('gamma'), () =>
+        HttpResponse.json(
+          { status: 409, type: PROBLEM_TYPES.conflict, title: 'Conflict' },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderAccounts()
+    const panel = await openPanel(user, 'Gamma')
+
+    const removal = within(panel).getByRole('region', { name: 'Supprimer ce compte' })
+    await user.click(within(removal).getByRole('button', { name: 'Supprimer' }))
+
+    expect(
+      await within(panel).findByText(
+        'L’application a refusé : ce que ce geste nomme existe déjà, ou quelque chose ' +
+          'repose encore dessus.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('offers nothing at all while the ledger has not landed', async () => {
