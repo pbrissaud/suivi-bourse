@@ -2030,6 +2030,30 @@ def test_a_typed_event_lands_with_no_provenance_and_is_visible_at_once(tmp_path)
         "SELECT quantity FROM position WHERE symbol = 'AAPL'") == [(12.0,)]
 
 
+def test_two_strictly_identical_posts_both_succeed(tmp_path):
+    """An order filled twice stays recordable at the keyboard (#813, story 7).
+
+    The criterion is a **negative about the schema** read from the outside: the
+    content key the import deduplicates on is declared in no constraint, so the
+    same body sent twice lands twice, with two keys and two rows. A `UNIQUE` over
+    those eight columns would answer the second one with a `409` nobody asked
+    for — which is why the comparison lives at the import and nowhere else.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    body = _draft()
+
+    first = client.post('/api/events', json=body)
+    second = client.post('/api/events', json=body)
+
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert first.get_json()['id'] != second.get_json()['id']
+    assert opened.query(
+        "SELECT count(*) FROM event WHERE date = '2024-06-03'") == [(2,)]
+    # And the replay counted both: ten held before, two typed twice.
+    assert opened.query(
+        "SELECT quantity FROM position WHERE symbol = 'AAPL'") == [(14.0,)]
+
+
 def test_a_security_nothing_has_named_yet_is_called_by_its_ticker(tmp_path):
     """The form does not ask for a name, so a first purchase carries the ticker.
 

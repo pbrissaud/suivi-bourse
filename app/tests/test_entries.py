@@ -309,6 +309,13 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
     does rather than on a refusal it does not make. What would break the split
     is a *sixth* name addressing a row by its key, which is what this set is
     here to notice.
+
+    The forecast's three names join it at #813 and are outside the split for a
+    reason stronger than ``remove_selection``'s: they address no row **and write
+    none**. ``content_key`` is a pure function of one event, ``split_duplicates``
+    reads the ledger, and ``judge`` runs the two refusals over a list — a
+    ``?dry_run=1`` that had left a row behind would fail this file's own
+    subject, so they are listed here to be counted rather than to be excused.
     """
     _drop(store, tmp_path)
     ((imported,),) = store.query('SELECT id FROM event')
@@ -319,8 +326,10 @@ def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
             gesture()
 
     assert set(entries.__all__) == {
+        'DUPLICATE_KEY_COLUMNS',
         'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
-        'create', 'create_many', 'update', 'remove', 'remove_selection'}
+        'create', 'create_many', 'update', 'remove', 'remove_selection',
+        'content_key', 'split_duplicates', 'judge'}
 
 
 # --------------------------------------------------------------------------- #
@@ -372,3 +381,96 @@ def test_a_bulk_removal_that_would_oversell_is_refused_whole(store):
             store, events_export.Selection(event_type='BUY'))
 
     assert store.query('SELECT count(*) FROM event') == [(2,)]
+
+
+# --------------------------------------------------------------------------- #
+# The duplicate key: at the import, and in no constraint anywhere (#813)
+# --------------------------------------------------------------------------- #
+
+def test_the_duplicate_key_is_the_eight_members_and_not_the_other_two(store):
+    """``name`` and ``notes`` are out, and that is the whole decision.
+
+    Asserted on the function rather than through a file, because it is the one
+    place the rule is *stated*: two events differing only in what a reader wrote
+    on them key alike, and two differing in any of the eight do not.
+    """
+    typed = _draft()
+
+    assert entries.content_key(typed) == entries.content_key(
+        _draft(name='Apple Incorporated', notes='ordre du matin'))
+    for member in ('quantity', 'unit_price', 'fee'):
+        assert entries.content_key(typed) != entries.content_key(
+            _draft(**{member: 999.0}))
+    assert entries.content_key(typed) != entries.content_key(
+        _draft(date=date(2024, 6, 4)))
+    assert entries.content_key(typed) != entries.content_key(
+        _draft(symbol='MSFT'))
+
+
+def test_a_blank_account_keys_as_the_default_row_it_becomes(store):
+    """The one member the key resolves instead of reading.
+
+    A draft with no account is written as ``default``; read back out of the
+    store it says ``default``. The key has to see one thing there or a stored
+    row would never match the file it came from.
+    """
+    created = entries.create(store, _draft(account=None))
+    (read_back,) = ledger.read_events(store)
+
+    assert created.account == 'default'
+    assert entries.content_key(_draft(account=None)) == \
+        entries.content_key(read_back)
+    assert entries.content_key(_draft(account='  ')) == \
+        entries.content_key(read_back)
+
+
+def test_the_split_reads_the_ledger_and_the_file_and_writes_nothing(store):
+    """``(fresh, duplicates)`` partitions the file, and the store is untouched.
+
+    Three drafts against a ledger holding the first: one is already there, one
+    repeats a line of the file itself, one is new. The partition is exhaustive —
+    nothing is dropped between the two lists — and no row is written by asking.
+    """
+    entries.create(store, _draft())
+    repeated = _draft(date=date(2024, 7, 1), symbol='MSFT')
+
+    fresh, duplicates = entries.split_duplicates(
+        store, [_draft(), repeated, repeated])
+
+    assert len(fresh) == 1 and len(duplicates) == 2
+    assert fresh[0].symbol == 'MSFT'
+    assert store.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_two_strictly_identical_typed_events_both_land(store):
+    """An order filled twice stays recordable **from the keyboard** (story 7).
+
+    The reason the key is not a constraint, asserted where the constraint would
+    have bitten: :func:`entries.create` asks nothing about duplicates, and the
+    ledger carries the two rows with two keys of its own.
+    """
+    first = entries.create(store, _draft())
+    second = entries.create(store, _draft())
+
+    assert first.id != second.id
+    assert store.query('SELECT count(*) FROM event') == [(2,)]
+    assert entries.content_key(first) == entries.content_key(second)
+
+
+def test_the_duplicate_key_is_declared_in_no_constraint_of_the_store(store):
+    """The criterion, read off a **real** store rather than off a string.
+
+    DuckDB publishes what it was actually asked to enforce, so this is the
+    schema answering rather than the DDL's text: the ``event`` table has exactly
+    one uniqueness constraint, it is the surrogate primary key, and none of the
+    eight members of the content key takes part in one. A `UNIQUE` over them
+    would make an order filled twice impossible to record at all.
+    """
+    enforced = store.query(
+        "SELECT constraint_type, constraint_column_names "
+        "FROM duckdb_constraints() WHERE table_name = 'event' "
+        "AND constraint_type IN ('PRIMARY KEY', 'UNIQUE')")
+
+    assert enforced == [('PRIMARY KEY', ['id'])]
+    keyed = {column for _, columns in enforced for column in columns}
+    assert keyed.isdisjoint(entries.DUPLICATE_KEY_COLUMNS)

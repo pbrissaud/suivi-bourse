@@ -10,9 +10,11 @@ indistinguishable from typed ones: same table, same writer, no column of
 provenance written by this road.
 
 This module therefore **reads and judges, and never writes**: what it hands back
-is a list of events and, afterwards, the receipt for the ones that landed. The
-split is not tidiness — it is what lets #813's preview run the first half alone
-and answer the same receipt without a transaction.
+is a list of events and, afterwards, the receipt for the file they came out of.
+The split is not tidiness — it is what lets #813's preview run the first half
+alone and answer the same receipt without a transaction. Which of those rows the
+ledger already holds is not decided here: that comparison needs the ledger, and
+this module has no store (:func:`entries.split_duplicates` owns it).
 
 Three things are decisions rather than plumbing.
 
@@ -125,13 +127,31 @@ class Receipt:
     receipt with a second shape would make the forecast and the fact two things
     to compare rather than one to read twice.
 
-    ``first_day``/``last_day`` are ``None`` together, and only on a file that
-    wrote nothing — a header with no row under it. There is no period to state
-    then, and stating today's would be a figure nobody's file carries.
+    **Three numbers, and they are the glossary's three** (`CONTEXT.md`
+    § Receipt): *what the file holds* (:attr:`rows`), *what of it the ledger
+    already has* (:attr:`duplicates`), and *what was — or will be — added*
+    (:attr:`written`). They close: ``rows == written + duplicates``, whichever
+    moment it is read at, and the flag that writes the duplicates anyway moves
+    the same rows from one column to the other rather than inventing a fourth.
+    A count of *refused* rows is deliberately not a fourth number: a refusal is
+    whole-file here (the loader's rule, at the door), so it is a ``422`` with no
+    receipt at all rather than a zero standing in every successful one.
+
+    The **period, the accounts and the securities describe the file**, not the
+    subset that landed. That is story 3 read literally — *see before writing
+    what the file contains* — and it is what keeps the forecast and the fact one
+    sentence: a second upload of the same export skips every row and still says
+    which period and which accounts that export covers.
+
+    ``first_day``/``last_day`` are ``None`` together, and only on a file with no
+    row in it — a header and nothing under it. There is no period to state then,
+    and stating today's would be a figure nobody's file carries.
     """
 
     filename: str
+    rows: int
     written: int
+    duplicates: int
     first_day: Optional[date]
     last_day: Optional[date]
     accounts: Tuple[str, ...]
@@ -207,24 +227,34 @@ def read(filename: str, stream) -> Upload:
     return loaded
 
 
-def receipt(filename: str, written: Sequence[Event]) -> Receipt:
-    """The receipt for what was written, in the order a reader reads it.
+def receipt(filename: str, rows: Sequence[Event], *,
+            written: int, duplicates: int) -> Receipt:
+    """The receipt for one file, in the order a reader reads it.
+
+    ``rows`` is **the file**, whole, duplicates included — the period, the
+    accounts and the securities are read off it, and the two counts say what
+    became of it. Handed the subset that landed instead, the preview and the
+    write would state two different periods for one file the moment a single row
+    of it was already in the ledger, which is the one thing the *same object,
+    two moments* rule exists to stop.
 
     The accounts and the symbols are **sorted sets** rather than the file's own
     order: they answer *which*, not *how many times*, and a list repeating
     ``AAPL`` fourteen times would be a count wearing a list's clothes.
     """
-    days = sorted(event.date for event in written if event.date)
+    days = sorted(event.date for event in rows if event.date)
     return Receipt(
         # A **name**, never a path: what a browser sends is the file's own name
         # on the reader's disk, and the receipt says the file back to them.
         filename=Path(filename or '').name,
-        written=len(written),
+        rows=len(rows),
+        written=written,
+        duplicates=duplicates,
         first_day=days[0] if days else None,
         last_day=days[-1] if days else None,
         accounts=tuple(sorted({event.account or DEFAULT_ACCOUNT
-                               for event in written})),
-        symbols=tuple(sorted({event.symbol for event in written
+                               for event in rows})),
+        symbols=tuple(sorted({event.symbol for event in rows
                               if event.symbol})),
     )
 
