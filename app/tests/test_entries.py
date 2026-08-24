@@ -313,28 +313,22 @@ def test_a_draft_cannot_choose_its_own_key(store):
     assert store.query('SELECT count(*) FROM event') == [(2,)]
 
 
-def test_the_module_writes_only_rows_it_may_write(store, tmp_path):
-    """The split is structural, and this is the assertion of it on the surface.
+def test_this_module_is_the_writer_of_the_event_table(store, tmp_path):
+    """**Criterion 4 of #816**, checked on the source rather than promised.
 
-    Every gesture that **addresses one row by its key** goes through the same
-    refusal, so no future caller can reach an imported row by picking a
-    different entry point.
+    Every ``INSERT INTO event`` / ``UPDATE event`` / ``DELETE FROM event`` in
+    ``src/`` is below, or in :mod:`reassignment` — which is the **named, bounded
+    exception** ADR-0032 keeps by name: it rewrites one column in bulk, it
+    addresses no row by its key, and it is a module of its own precisely so that
+    a reader counting the writers finds it. What is gone is the *second* writer:
+    :mod:`ledger` wrote whole files in and whole files out, and the sentence
+    *"the import path has no row-level write"* was a rule two modules had to keep
+    true between them. There is one population now, so there is nothing left for
+    it to be true about.
 
-    ``create_many`` joins the surface at #811 and needs no refusal of its own:
-    it only ever **inserts**, and what it inserts carries ``source_id NULL`` like
-    everything else here. ``remove_selection`` joins it at #814 and is the one
-    name deliberately outside the split (ADR-0032): its subject is the
-    reduction, it addresses no key, and it is asserted just below on what it
-    does rather than on a refusal it does not make. What would break the split
-    is a *sixth* name addressing a row by its key, which is what this set is
-    here to notice.
-
-    The forecast's three names join it at #813 and are outside the split for a
-    reason stronger than ``remove_selection``'s: they address no row **and write
-    none**. ``content_key`` is a pure function of one event, ``split_duplicates``
-    reads the ledger, and ``judge`` runs the two refusals over a list — a
-    ``?dry_run=1`` that had left a row behind would fail this file's own
-    subject, so they are listed here to be counted rather than to be excused.
+    The surface below is the second half of the same statement: five gestures and
+    three forecasts, and **no exception among them named after where a row came
+    from**. ``ImportedEntry`` was the sixth name here and it is not one any more.
     """
     import re
     from pathlib import Path
