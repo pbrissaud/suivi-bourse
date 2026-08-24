@@ -31,9 +31,9 @@ const FeatureList = [
     title: 'One container, or none at all',
     description: (
       <>
-        A single image with its own store and its own interface. Read it on four
-        pages, or never open them and read the Prometheus gauges instead — both
-        are the whole product.
+        A single image with its own store and its own interface — four pages,
+        one port, nothing to compose. Or the same app installed with uv, on a
+        machine that runs no container at all.
       </>
     ),
   },

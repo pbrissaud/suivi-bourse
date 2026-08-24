@@ -8,10 +8,9 @@ is no stack to assemble either way: the app is one process, and what it keeps it
 keeps in one file it names itself. Without Docker, that means `uv sync`, a
 directory, and — if you want it to come back after a reboot — a service unit.
 
-It is also what makes the headless half credible. A machine that does not run
-Docker can still be scraped for its
-[`sb_*` gauges](./headless-gauges.mdx): no container runtime, no daemon, one
-Python process.
+It is the whole product either way. A machine that does not run Docker serves
+the same four pages, the same API and the same `/health` as the image does: no
+container runtime, no daemon, one Python process.
 
 ## What you need
 
@@ -57,10 +56,9 @@ choice; a Docker-less install is the one that overrides them. Give
 files to drop — an install with nothing to import is a normal install, not a
 degraded one.
 
-The other four boot variables — the two ports, the metrics switch and the log
-level — are the same here as anywhere, and they are listed once, on
-[Settings](./settings.mdx). Everything that is not in that list of six lives in
-the store and is set in the app.
+The other boot variables — the web port and the log level — are the same here as
+anywhere, and they are listed once, on [Settings](./settings.mdx). Everything
+that is not in that list lives in the store and is set in the app.
 
 ## Run it
 
@@ -72,7 +70,7 @@ uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
 ```
 
 `gunicorn.conf.py` is not a server tuning file, it is the boot sequence: it opens
-the store, binds the web port and the metrics port, and refuses to start with
+the store, binds the one socket the app has, and refuses to start with
 more than one worker. Raise `threads` if you ever need to; never `workers` —
 each extra worker would run a second scheduler, and every scrape and every
 rebuild would happen twice.
