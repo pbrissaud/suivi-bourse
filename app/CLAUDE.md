@@ -37,11 +37,16 @@ reaches the whole app.
 - **DDL with `IF NOT EXISTS`, no migration machinery.** A new column would exist
   on no store created before it: derive at read time instead.
 - **Every table has exactly one writer** — the configuration path owns
-  `account`/`symbol`/`setting`/`advisory`, `entries.py` owns `event` **whole**
+  `account`/`symbol`/`advisory`, `entries.py` owns `event` **whole**
   (ADR-0032, #816: one population, one writer, the named exception of
   `reassignment.py` apart), the ingestion `position`/`account_state`, the market
   `symbol_quote`/`price_point`, the perf job
   `account_metrics`/`portfolio_totals`.
+- **`setting` is the one table with two named writers**: the configuration path
+  answers for a human's choice, and `entries.py` upserts two keys of its own —
+  the reporting currency a file declares, and `ledger_last_write` (`_stamp_write`,
+  inside the gesture's own transaction, since #816 left no `import_source` row to
+  read the instant off).
 - **`price_point` carries no primary key and no foreign key** (ADR-0007): a DuckDB
   ART index is a second copy of the data in resident memory (+563 MB on a 319 MB
   base). Uniqueness moves to the writers.

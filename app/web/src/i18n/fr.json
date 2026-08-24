@@ -434,7 +434,7 @@
   "installation.store.lastWrite": "Dernière écriture du grand livre",
   "installation.store.lastWrite.never": "Rien n’a encore été enregistré",
   "installation.store.orphans": "{count, plural, one {# titre que plus rien ne déclare} other {# titres que plus rien ne déclarent}}",
-  "installation.store.orphans.body": "Leur historique de cours a été gardé quand leurs événements sont partis, parce qu’oublier un import se défait en redéposant le fichier et qu’un historique reconstruit, non. Une position que vous avez soldée n’en fait pas partie : ses événements sont toujours enregistrés.",
+  "installation.store.orphans.body": "Leur historique de cours a été gardé quand leurs événements sont partis, parce qu’un événement peut être réenregistré et qu’un historique reconstruit, non. Une position que vous avez soldée n’en fait pas partie : ses événements sont toujours enregistrés.",
   "installation.store.orphans.points": "{count, plural, one {# cours} other {# cours}}",
   "installation.store.purge": "Purger ces historiques",
 
