@@ -486,8 +486,7 @@ _HELD = {'symbol': 'AAPL', 'name': 'Apple Inc', 'quantity': 10,
 
 
 def _metrics(opened, **kwargs):
-    return main.SuiviBourseMetrics(_Manager(opened, **kwargs),
-                                   prometheus_exporter=None)
+    return main.SuiviBourseMetrics(_Manager(opened, **kwargs))
 
 
 def test_the_ladder_runs_as_a_step_of_the_backfill(store):

@@ -65,7 +65,7 @@ EPHEMERAL = 'ephemeral'
 
 #: Not observable from here. ``/proc/self/mountinfo`` is absent or unreadable,
 #: or it says nothing about this path. **Nothing is printed** on this answer,
-#: and the ``sb_store_ephemeral`` gauge stays absent rather than reading ``0``.
+#: and the resources publish ``unknown`` rather than one of the two real states.
 UNKNOWN = 'unknown'
 
 #: Where the kernel publishes this process's mount table.
@@ -79,8 +79,8 @@ MOUNTINFO = '/proc/self/mountinfo'
 #: ``fuse.fuse-overlayfs`` are the same union filesystem under the three other
 #: names a storage driver has used — the last being what a **rootless** Docker
 #: or Podman container reports for its own root, so leaving it out would have a
-#: bare rootless container publish ``sb_store_ephemeral 0``, i.e. state that a
-#: store nothing keeps *is* kept. ``tmpfs``/``ramfs`` are here for a different
+#: bare rootless container publish ``persistent``, i.e. state that a store
+#: nothing keeps *is* kept. ``tmpfs``/``ramfs`` are here for a different
 #: reason and not for symmetry: a store on ``--tmpfs /data`` **is** a mount, so
 #: the mount test alone would call it persistent while it is the most ephemeral
 #: thing there is.
@@ -211,20 +211,6 @@ def observe(mountinfo: Optional[str], path,
     return EPHEMERAL if mount.filesystem in VOLATILE_FILESYSTEMS else PERSISTENT
 
 
-def is_ephemeral(state: str) -> Optional[bool]:
-    """The observation as a tri-state boolean — ``None`` for :data:`UNKNOWN`.
-
-    What the ``sb_store_ephemeral`` gauge takes. ``None`` is not ``False``: a
-    gauge reading ``0`` states that the store *is* kept, and an observer that
-    could not look has no ground to state it.
-    """
-    if state == EPHEMERAL:
-        return True
-    if state == PERSISTENT:
-        return False
-    return None
-
-
 # --------------------------------------------------------------------------- #
 # The one impure line
 # --------------------------------------------------------------------------- #
@@ -258,6 +244,6 @@ def store_persistence(store_dir, mountinfo_path: str = MOUNTINFO) -> str:
 
 __all__ = [
     'PERSISTENT', 'EPHEMERAL', 'UNKNOWN', 'MOUNTINFO', 'VOLATILE_FILESYSTEMS',
-    'Mount', 'parse', 'enclosing', 'observe', 'is_ephemeral',
+    'Mount', 'parse', 'enclosing', 'observe',
     'read_mountinfo', 'store_persistence',
 ]

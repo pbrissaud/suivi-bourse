@@ -389,8 +389,7 @@ class RuntimeRecorder:
     def retain(self, symbols: Iterable[str]) -> None:
         """Keep only the records of symbols the ledger still names.
 
-        The counterpart of :meth:`forget_scrape`, and the parallel of
-        ``PrometheusExporter.retain_positions``: what takes a *backfill* record
+        The counterpart of :meth:`forget_scrape`: what takes a *backfill* record
         away is the symbol leaving the ledger — a forgotten import — and nothing
         else. Invisible to a reader either way (the row set comes from the
         snapshot), but a process running for months through many portfolio edits

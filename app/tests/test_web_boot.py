@@ -36,7 +36,6 @@ import main
 import store
 import web
 from events.validator import EventValidationError
-from prometheus_exporter import PrometheusExporter
 
 
 _GUNICORN_CONF = Path(__file__).resolve().parent.parent / "src" / "gunicorn.conf.py"
@@ -151,9 +150,8 @@ def _load_gunicorn_conf(monkeypatch, **env):
 # ---------------------------------------------------------------------------
 
 def test_build_runtime_validates_the_config_without_starting_anything(
-        fake_config, mocker, monkeypatch):
+        fake_config, mocker):
     """The master's whole job: read the config, hold nothing that a fork breaks."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     metrics_cls = mocker.patch.object(main, "SuiviBourseMetrics")
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
     threads_before = threading.active_count()
@@ -175,15 +173,13 @@ def test_build_runtime_validates_the_config_without_starting_anything(
 
 
 def test_build_runtime_opens_the_store_and_hands_on_its_path_not_its_connection(
-        fake_config, monkeypatch):
+        fake_config):
     """The store is created in the master — and left closed behind it (#696).
 
     Opening it here is what makes an unreadable store a single named exit. Not
     *keeping* it open is the other half: DuckDB refuses a second process, and a
     worker forked from a master still holding the file is precisely that.
     """
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
-
     runtime = main.build_runtime()
 
     assert runtime.store_path.exists()
@@ -204,7 +200,6 @@ def test_build_runtime_reads_the_environment_once_and_wires_both_paths(
     process reaching for the environment — the thing this ticket exists to make
     exactly one.
     """
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
     monkeypatch.setenv("SB_IMPORT_DIR", str(tmp_path / "drop"))
     seen = {}
@@ -243,22 +238,6 @@ def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
     assert fake_config.load_calls == 0
 
 
-def test_build_runtime_builds_the_exporter_registry_only(fake_config, monkeypatch):
-    """The gauges are pure Python; the HTTP server they used to run is gone."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
-
-    runtime = main.build_runtime()
-
-    assert isinstance(runtime.prometheus, PrometheusExporter)
-    assert not hasattr(runtime.prometheus, "start")
-
-
-def test_build_runtime_skips_the_exporter_when_disabled(fake_config, monkeypatch):
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
-
-    assert main.build_runtime().prometheus is None
-
-
 # ---------------------------------------------------------------------------
 # The mount observation and the three lines (issue #741, ADR-0015)
 # ---------------------------------------------------------------------------
@@ -275,7 +254,6 @@ def test_a_bare_container_says_the_three_lines_once_each(
     refused to start. The fake config publishes no event and the store has no
     ``base_currency`` row, so all three conditions stand at once — which is
     exactly the state of ``docker run`` with nothing attached to it."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
     caplog.set_level(logging.INFO)
@@ -293,7 +271,6 @@ def test_a_mounted_container_says_nothing_at_all_about_persistence(
         fake_config, monkeypatch, caplog):
     """The criterion, stated on the boot rather than on the pure function: a
     container whose store is on a volume must not be told to mount one."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.PERSISTENT)
     caplog.set_level(logging.INFO)
@@ -311,10 +288,10 @@ def test_an_unobservable_mount_prints_nothing_and_answers_unknown(
 
     ``store_persistence`` on the runtime is where that third answer lives: it is
     what the runtime and store resources publish, and it says ``unknown``
-    rather than picking one of the two real answers. The gauge said the same
-    thing by being absent, and it is the redundant half (#806, ADR-0033).
+    rather than picking one of the two real answers. The gauge that said the
+    same thing by being absent was the redundant half, and it has since gone
+    (#806, #808, ADR-0033).
     """
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.UNKNOWN)
     caplog.set_level(logging.INFO)
@@ -333,7 +310,6 @@ def test_the_boot_carries_the_persistence_in_both_directions(
     the worker inherits — and carried in both directions, because *"the store is
     kept"* is as much of an answer as *"it is not"* and the resources that serve
     it have to be able to say either."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: state)
 
@@ -347,7 +323,6 @@ def test_the_observation_interrogates_the_store_directory_it_was_given(
     """The **directory**, never the file: the store file does not exist yet on a
     first boot, and #740's *"they are directories, never files"* is what makes
     the question answerable at all."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
     asked = []
 
@@ -366,7 +341,6 @@ def test_the_conditions_are_not_said_when_the_boot_fails_on_the_config(
         monkeypatch, caplog):
     """A boot that ends in an exception has a fatal message to say instead of
     three conditions about a portfolio it never managed to read."""
-    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "false")
     monkeypatch.setattr(main.mounts, "store_persistence",
                         lambda *_args, **_kwargs: main.mounts.EPHEMERAL)
     monkeypatch.setattr(
@@ -385,7 +359,7 @@ def test_the_runtime_answers_unknown_until_something_observed_it():
     """The default on ``Runtime`` is not *persistent*. A test runtime, and the
     one a Docker-less checkout builds, has observed nothing — and there is no
     honest reading of that other than :data:`mounts.UNKNOWN`."""
-    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime = main.Runtime(_FakeConfigManager())
 
     assert runtime.store_persistence == main.mounts.UNKNOWN
 
@@ -440,7 +414,7 @@ def test_start_background_reraises_rather_than_exiting(monkeypatch, mocker):
     halts the whole arbiter; an ``exit(1)`` would read as an ordinary worker
     death and be respawned forever, failing identically each time.
     """
-    web.create_app(runtime=main.Runtime(_FakeConfigManager(), None))
+    web.create_app(runtime=main.Runtime(_FakeConfigManager()))
     boom = ValueError("Invalid value for SB_METRICS_PORT")
     monkeypatch.setattr(main, "start_runtime", mocker.Mock(side_effect=boom))
     fatal = mocker.patch.object(main.app_logger, "fatal")
@@ -463,12 +437,11 @@ def test_start_background_refuses_to_run_without_a_preloaded_runtime():
 
 def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     cfg = _FakeConfigManager()
-    exporter = mocker.MagicMock()
-    runtime = main.Runtime(cfg, exporter)
+    runtime = main.Runtime(cfg)
 
     metrics = mocker.MagicMock()
     metrics.shares = []
-    metrics_cls = mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
     scheduler = mocker.MagicMock()
     mocker.patch.object(main, "BackgroundScheduler", return_value=scheduler)
 
@@ -478,9 +451,6 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
 
     main.start_runtime(runtime)
 
-    # The exporter built in the master is handed down, never rebuilt: the gauges
-    # the Flask app already serves must be the ones the scrape path updates.
-    assert metrics_cls.call_args.kwargs["prometheus_exporter"] is exporter
     assert runtime.metrics is metrics
     assert runtime.scheduler is scheduler
     assert metrics.scheduler is scheduler
@@ -502,7 +472,7 @@ def test_start_runtime_opens_the_workers_own_store(mocker, tmp_path):
     metrics.shares = []
     mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
     mocker.patch.object(main, "BackgroundScheduler")
-    runtime = main.Runtime(_FakeConfigManager(), None,
+    runtime = main.Runtime(_FakeConfigManager(),
                            store_path=tmp_path / "worker.duckdb")
 
     main.start_runtime(runtime)
@@ -521,7 +491,7 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
     mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
 
-    main.start_runtime(main.Runtime(_FakeConfigManager(), None))
+    main.start_runtime(main.Runtime(_FakeConfigManager()))
 
     scheduler_cls.assert_called_once()
     assert "executors" in scheduler_cls.call_args.kwargs
@@ -529,7 +499,7 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
 
 def test_shutdown_runtime_stops_the_scheduler_the_watcher_and_the_client(mocker):
     cfg = _FakeConfigManager()
-    runtime = main.Runtime(cfg, None)
+    runtime = main.Runtime(cfg)
     runtime.scheduler = mocker.MagicMock(running=True)
     runtime.metrics = mocker.MagicMock()
 
@@ -542,11 +512,11 @@ def test_shutdown_runtime_stops_the_scheduler_the_watcher_and_the_client(mocker)
     runtime.metrics.close.assert_called_once()
 
 
-def test_shutdown_runtime_tolerates_a_worker_that_never_booted(mocker):
+def test_shutdown_runtime_tolerates_a_worker_that_never_booted():
     """worker_exit runs even when post_fork died on its first line."""
     cfg = _FakeConfigManager()
 
-    main.shutdown_runtime(main.Runtime(cfg, None))
+    main.shutdown_runtime(main.Runtime(cfg))
 
     assert cfg.watcher_stopped
 
@@ -557,7 +527,7 @@ def test_shutdown_runtime_tolerates_a_worker_that_never_booted(mocker):
 
 def test_health_answers_when_the_store_answers(open_store):
     """The probe reaches the store (#696) — there is no longer anyone else."""
-    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime = main.Runtime(_FakeConfigManager())
     runtime.store = open_store
     app = web.create_app(runtime=runtime)
 
@@ -573,7 +543,7 @@ def test_health_fails_when_the_store_does_not_answer(open_store):
     The old rule — never touch the database, an outage is someone else's — lost
     its subject when the database became a file this process opens.
     """
-    runtime = main.Runtime(_FakeConfigManager(), None)
+    runtime = main.Runtime(_FakeConfigManager())
     runtime.store = open_store
     app = web.create_app(runtime=runtime)
     open_store.close()
@@ -586,20 +556,21 @@ def test_health_fails_when_the_store_does_not_answer(open_store):
 
 def test_health_fails_when_no_store_is_open():
     """Before ``post_fork`` there is nothing to be healthy about."""
-    app = web.create_app(runtime=main.Runtime(_FakeConfigManager(), None))
+    app = web.create_app(runtime=main.Runtime(_FakeConfigManager()))
 
     assert app.test_client().get("/health").status_code == 503
 
 
-def test_metrics_is_not_served_even_with_an_exporter_on_the_runtime(open_store):
+def test_metrics_is_not_served(open_store):
     """`/metrics` is nothing to this app any more (ADR-0033).
 
-    Asserted with an exporter **present** on the runtime, because that is the
-    only state in which the route could come back: what was removed is the
-    mount, not the object. The 404 is the one the app gives any path it does
-    not know — there is no `/metrics` branch left to produce a made-up one.
+    The seam is the highest one there is — the Flask app by its test client, on
+    the single socket — because the 404 is the only fact about the departure
+    that is visible from outside. It is the one the app gives any path it does
+    not know: there is no `/metrics` branch left to produce a made-up one, and
+    since #808 there is no registry left to serve either.
     """
-    runtime = main.Runtime(_FakeConfigManager(), PrometheusExporter())
+    runtime = main.Runtime(_FakeConfigManager())
     runtime.store = open_store
     app = web.create_app(runtime=runtime)
 

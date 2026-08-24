@@ -49,7 +49,6 @@ from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
 from events.schemas import EventType, Portfolio
-from prometheus_exporter import PrometheusExporter
 
 # Blank counts as unset throughout (``boot_env.text``): compose renders an
 # undefined substitution as an empty string rather than omitting the variable.
@@ -64,7 +63,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 #: cannot accidentally turn a dependency's own logger up with it.
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
-    'quotes', 'perf_series', 'ledger', 'positions', 'prometheus_exporter',
+    'quotes', 'perf_series', 'ledger', 'positions',
     'advisories', 'web.api',
     # Four names the list had never caught up with. `PUT /api/config/log-level`
     # turned the app to DEBUG and left them at the boot level — `fx` above all,
@@ -1055,7 +1054,6 @@ class SuiviBourseMetrics:
     """
 
     def __init__(self, config_manager: ConfigurationManager,
-                 prometheus_exporter: Optional[PrometheusExporter] = None,
                  recorder: Optional[runtime_state.RuntimeRecorder] = None):
         self.config_manager = config_manager
 
@@ -1066,18 +1064,11 @@ class SuiviBourseMetrics:
         # transaction whole, and a second handle here would be a second answer to
         # "which generation of the ledger is this job looking at".
 
-        # The ``sb_*`` registry — a first-class product and not a legacy half
-        # (ADR-0012). It is **handed in**: ``build_runtime`` constructs it in the
-        # master and ``start_runtime`` passes it, and it passes ``None`` in
-        # exactly the state where ``SB_PROMETHEUS_ENABLED`` is false. A
-        # fallback that re-read the environment here could therefore never
-        # construct one in production — the two conditions coincide — while
-        # making this class a second reader of ``os.environ``, which
-        # :mod:`boot_env` claims to be the only one of. It also said "the HTTP
-        # server is started separately", which stopped being true at #651: the
-        # exporter's own ``ThreadingHTTPServer`` is gone and ``/metrics`` is a
-        # mount on the Flask app.
-        self.prometheus = prometheus_exporter
+        # The ``sb_*`` registry used to be handed in here (ADR-0012). It left
+        # with ``/metrics`` (ADR-0033), and every ``is not None`` guard this
+        # class carried around it left too: what a pass did is read off the rows
+        # it wrote and off the record it published, which are the two surfaces
+        # the interface renders.
 
         # The dials (issue #701, ADR-0014). Constructed at the **code's** values
         # and overwritten by the store in ``start_runtime``, which is the only
@@ -1449,52 +1440,6 @@ class SuiviBourseMetrics:
         """
         return fx.convert(price, currency, self.base_currency, self.rates, at)
 
-    def _update_share_prometheus(self, share, last_quote, info,
-                                 converted=None, fx_rate=None) -> None:
-        """Update one share's **market** gauges from a fetched quote.
-
-        Kept independent of the store write so ``/metrics`` stays populated
-        even if the store errors, and gated by the caller on **fetch success**
-        (price present) rather than the write/REGULAR gate — a closed-market
-        restart must still leave the share gauges populated (design #609).
-
-        The position half left with #699: it is fed by the replay
-        (:meth:`_publish_position_gauges`), because a sold position's figures
-        change at the very instant its scrape stops.
-
-        ``converted`` / ``fx_rate`` ride through untouched (issue #702): the
-        exporter publishes the native price always and the converted one only
-        when there is one, because *never a gauge whose unit depends on a
-        setting*.
-        """
-        if self.prometheus is None:
-            return
-        try:
-            self.prometheus.update_quote(share, last_quote, info,
-                                         converted, fx_rate)
-        except Exception as e:
-            app_logger.error(
-                f"Failed to update Prometheus metrics for {share['symbol']}: {e}")
-
-    def _publish_position_gauges(self, shares) -> None:
-        """Publish every position's state gauges after a replay (issue #699).
-
-        Every position, sold ones included — ``sb_realized_gain`` and
-        ``sb_received_dividend`` are what a sold line has left to say, and the
-        scrape that used to carry them is gone by then. It is a **retain**: a
-        position the replay no longer produces (a forgotten import) has its
-        series removed rather than left standing at its last value.
-
-        Guarded like every other Prometheus call: ``/metrics`` is a mirror, and
-        a mirror must never be able to abort the ingestion it reflects.
-        """
-        if self.prometheus is None:
-            return
-        try:
-            self.prometheus.retain_positions(shares)
-        except Exception as e:
-            app_logger.error(f"Failed to publish the position gauges: {e}")
-
     @staticmethod
     def _quote_attributes(info: Dict) -> Dict:
         """The ``symbol_quote`` columns a fetched ``info`` supplies.
@@ -1533,8 +1478,8 @@ class SuiviBourseMetrics:
 
         The conversion arrives from the caller rather than being worked out here
         (issue #702), so the rate stored beside the price is provably the one
-        the price was multiplied by — and so the same pair of numbers reaches
-        ``/metrics`` and the store without being computed twice at two instants.
+        the price was multiplied by — computed once for the pass rather than at
+        two instants a TTL apart.
         Both ``None`` writes the point with a ``NULL`` converted price, which is
         the ordinary state while the reporting currency is unanswered.
 
@@ -1567,12 +1512,11 @@ class SuiviBourseMetrics:
         Yahoo.
         """
         # One snapshot for the whole pass, like every other job (issue #658):
-        # the symbol set and the holdings it publishes gauges for have to come
-        # from the same generation. The *instant*, on the other hand, is taken
-        # per symbol: a pass over forty tickers takes minutes, and one ``now``
-        # for all of them would stamp the last ones at a moment they were not
-        # observed at — on the table whose whole subject is when a price was
-        # seen.
+        # the symbol set and the rows it writes have to come from the same
+        # generation. The *instant*, on the other hand, is taken per symbol: a
+        # pass over forty tickers takes minutes, and one ``now`` for all of them
+        # would stamp the last ones at a moment they were not observed at — on
+        # the table whose whole subject is when a price was seen.
         shares = self.shares
         held = sorted({share['symbol'] for share in shares
                        if share.get('symbol') and share.get('quantity')})
@@ -1580,14 +1524,6 @@ class SuiviBourseMetrics:
             last_quote, info = self._fetch_ticker_data(symbol)
             converted, rate = self._convert(
                 last_quote, (info or {}).get('currency'))
-
-            # The Prometheus quote gauges stay per holding: a series identity
-            # there carries the account, and it is what tells two positions in
-            # the same share apart on a headless dashboard.
-            for share in shares:
-                if share.get('symbol') == symbol and share.get('quantity'):
-                    self._update_share_prometheus(
-                        share, last_quote, info, converted, rate)
 
             if last_quote is None or info is None:
                 app_logger.warning(
@@ -1878,18 +1814,8 @@ class SuiviBourseMetrics:
                 # permanently. What drops a backfill record is the symbol
                 # leaving the ledger, and that is `recorder.retain` in `ingest`.
                 self.recorder.forget_scrape(symbol)
-                # And the market gauges (issue #699, #672 D6). Nothing will
-                # ever fetch this symbol again, so ``sb_share_price`` would sit
-                # at its last observed value for the life of the process,
-                # indistinguishable from a price that is simply not moving.
-                if self.prometheus is not None:
-                    try:
-                        self.prometheus.forget_quotes(symbol)
-                    except Exception as e:
-                        app_logger.error(
-                            f"Failed to remove quote gauges for {symbol}: {e}")
 
-    def _check_price_freshness(self, symbol: str, holdings: List[dict],
+    def _check_price_freshness(self, symbol: str,
                                live_price, now: datetime) -> bool:
         """Price-freshness liveness sonde (issue #628, design #626).
 
@@ -1898,15 +1824,18 @@ class SuiviBourseMetrics:
         ``scheduling.price_freshness_step`` against this symbol's remembered
         state. When the stored price has stayed frozen across consecutive
         ``REGULAR`` cycles for at least ``staleness_horizon`` while the live
-        quote has moved, the writer is silently stale — emit a WARNING and raise
-        the ``sb_price_staleness`` gauge (cleared to 0 otherwise so it
-        auto-recovers). Measuring over consecutive polling (not the stored
-        point's raw age) is what keeps the first tick after an overnight/weekend
-        close — legitimately hours old — from firing a false positive.
+        quote has moved, the writer is silently stale — emit a WARNING and hand
+        the flag back for the scrape record. Measuring over consecutive polling
+        (not the stored point's raw age) is what keeps the first tick after an
+        overnight/weekend close — legitimately hours old — from firing a false
+        positive.
 
         **Per symbol since #700**, where it was per ``(symbol, account)``: the
         series it watches has no account dimension left, so the same value would
-        have been compared against the same memory once per holding.
+        have been compared against the same memory once per holding. The
+        holdings themselves left the signature with the gauge that was labelled
+        by account (ADR-0033): the two surfaces this sonde reaches now — the
+        ``WARNING`` and the record's *stale* field — are both per symbol.
 
         **It reads ``price_native``**, and that is a rule rather than an
         implementation detail (spec #695 § 7). The question is whether the
@@ -1916,8 +1845,8 @@ class SuiviBourseMetrics:
         about a symbol frozen since Tuesday.
 
         **Diagnostic only** — never changes scrape cadence, write gating, or the
-        #617 dead-ticker backoff. Fully guarded: a read or metric error here must
-        never disturb the surrounding scrape cycle. Called *before* this cycle's
+        #617 dead-ticker backoff. Fully guarded: a read error here must never
+        disturb the surrounding scrape cycle. Called *before* this cycle's
         write so it reads the coverage as it stood, not the point the write is
         about to refresh.
 
@@ -1947,12 +1876,6 @@ class SuiviBourseMetrics:
                     f"frozen at {stored_price} across REGULAR polling while the "
                     f"live quote is {live_price} — the writer may be silently "
                     f"stale")
-            if self.prometheus is not None:
-                # The gauge keeps its per-holding identity: it is labelled by
-                # account like every other share gauge, so a headless dashboard
-                # can join it to the position gauges beside it.
-                for share in holdings:
-                    self.prometheus.update_price_staleness(share, stale)
         except Exception as e:
             app_logger.debug(f"Price-freshness sonde failed for {symbol}: {e}")
         return stale
@@ -2007,27 +1930,20 @@ class SuiviBourseMetrics:
             last_quote, info = self._fetch_ticker_data(symbol)
             price_present = last_quote is not None and info is not None
 
-            # The conversion, computed **once** for this pass (issue #702) and used
-            # by both the gauges and the write: two calls would be two rates for one
-            # observation the moment a TTL expired between them, and the row would
-            # then say a price was produced by a rate it was not.
+            # The conversion, computed **once** for this pass (issue #702): two
+            # calls would be two rates for one observation the moment a TTL
+            # expired between them, and the row would then say a price was
+            # produced by a rate it was not.
             converted, rate = self._convert(last_quote, (info or {}).get('currency'))
 
             # The holdings this symbol has, which since #700 decide **whether** to
             # write and no longer **how many times**: the price series carries no
             # account, so a symbol held in three accounts is one point. What the
-            # list is still needed for is the Prometheus gauges, whose series
-            # identity does carry the account, and the "is anyone still holding
-            # this" question the write gate asks (issue #699).
+            # list is still needed for is the "is anyone still holding this"
+            # question the write gate asks (issue #699) — the per-account gauges
+            # that were its other reader left with the exporter (ADR-0033).
             holdings = [s for s in self.shares
                         if s.get('symbol') == symbol and s.get('quantity')]
-
-            # Prometheus sb_share_* gauges stay on the fetch-success gate (#609),
-            # never the write/REGULAR gate.
-            if price_present:
-                for share in holdings:
-                    self._update_share_prometheus(
-                        share, last_quote, info, converted, rate)
 
             if info is not None:
                 state, next_open = scheduling.extract_market_context(
@@ -2057,7 +1973,7 @@ class SuiviBourseMetrics:
                 # Price-freshness liveness sonde (issue #628): read the stored price
                 # *before* this cycle's write refreshes it, so a silently stale writer
                 # is caught. Purely diagnostic — never gates the write below.
-                stale = self._check_price_freshness(symbol, holdings, last_quote, now)
+                stale = self._check_price_freshness(symbol, last_quote, now)
 
                 # One write, and only while something is held: a symbol whose last
                 # holding was sold between this cycle's fetch and here has nothing
@@ -2229,10 +2145,6 @@ class SuiviBourseMetrics:
             # import had no performance series at all until a restart.
             self._adopt_declared_currency()
             after = snapshot.shares
-            # The gauges the replay owns (issue #699). Published on every
-            # ingest, not only on a change: a restart replays an unchanged
-            # ledger and must still leave ``/metrics`` populated.
-            self._publish_position_gauges(after)
             if after != before:
                 app_logger.info("Shares configuration updated from events")
             else:
@@ -3327,9 +3239,9 @@ class SuiviBourseMetrics:
 
         **The per-field rule is applied here, once** (issue #708): a field the
         entity may not publish is written as ``None`` — therefore as ``NULL``,
-        therefore as an absent Prometheus series — rather than as a zero that
-        every ``sum()`` would count. One site for the two tables, because the
-        rule is by *field* and the account and the global carry the same seven.
+        therefore as a ``null`` on the wire — rather than as a zero that every
+        ``sum()`` would count. One site for the two tables, because the rule is
+        by *field* and the account and the global carry the same seven.
         """
         writable = performance.writable_fields(
             perf.has_cash_ledger, perf.has_external_flow)
@@ -3745,40 +3657,12 @@ class SuiviBourseMetrics:
                     f"Account '{acc}' has a negative cash balance "
                     f"({p.cash_balance:.2f}) — insufficient recorded cash")
 
-        # Prometheus: expose the latest (today) value per account + global.
-        #
-        # **What a cycle publishes, and nothing more** (issue #708). The two
-        # retracts below are the same gesture ``retain_positions`` makes on the
-        # replay's side, and they are the row-level half of *"a gauge whose field
-        # is absent is not published"*: the per-field rule lives inside
-        # :meth:`PrometheusExporter.update_account`, which is only ever reached
-        # for a row this cycle produced. An account that stops producing rows —
-        # its import forgotten, its events withdrawn — is never visited, so
-        # without the retract its seven gauges would keep the last values they
-        # ever had for the life of the process, while ``prune_account_metrics``
-        # took its days out of the store in this very transaction. A stale real
-        # figure is worse than the zero the rule was written against: a scraper
-        # has no way to tell it from a current one.
-        if self.prometheus is not None:
-            for acc, p in latest_by_account.items():
-                try:
-                    self.prometheus.update_account(p)
-                except Exception as e:
-                    app_logger.error(
-                        f"Failed to update Prometheus account metrics for {acc}: {e}")
-            try:
-                self.prometheus.retain_accounts(latest_by_account.keys())
-            except Exception as e:
-                app_logger.error(f"Failed to retract Prometheus accounts: {e}")
-            try:
-                # ``None`` says *this cycle produced no global series at all*,
-                # which is a different call from a point whose fields are absent
-                # — and it is the one an emptied ledger makes.
-                self.prometheus.update_portfolio(
-                    total_points[-1]
-                    if total is not None and total.daily else None)
-            except Exception as e:
-                app_logger.error(f"Failed to update Prometheus portfolio totals: {e}")
+        # The gauges that mirrored ``latest_by_account`` and the global point
+        # left with the exporter (ADR-0033). What they were guarding against —
+        # *"an entity that stops producing rows must stop publishing figures"* —
+        # is guarded by the two prunes in the transaction above and by nothing
+        # else now: the store holds only what this cycle produced, and the API
+        # serves the store.
 
         # The horizons, handed back rather than stored: ``/api/runtime`` publishes
         # them from **process memory** (issue #708), and the record the perf job
@@ -3826,19 +3710,17 @@ class SuiviBourseMetrics:
 class Runtime:
     """The application's long-lived objects, filled in on both sides of the fork.
 
-    :func:`build_runtime` supplies the pure half — configuration manager,
-    Prometheus registry, and the *path* the store was proved openable at — and
-    :func:`start_runtime` then attaches the half that could not have survived a
-    fork: the store connection, the scheduler and its threads, the watchdog
-    observer.
+    :func:`build_runtime` supplies the pure half — the configuration manager and
+    the *path* the store was proved openable at — and :func:`start_runtime` then
+    attaches the half that could not have survived a fork: the store connection,
+    the scheduler and its threads, the watchdog observer. The registry it also
+    used to carry across the fork left with ``/metrics`` (ADR-0033).
     """
 
     def __init__(self, config_manager: ConfigurationManager,
-                 prometheus: Optional[PrometheusExporter],
                  store_path: Optional[Path] = None,
                  store_persistence: str = mounts.UNKNOWN):
         self.config_manager = config_manager
-        self.prometheus = prometheus
         self.metrics: Optional['SuiviBourseMetrics'] = None
         self.scheduler: Optional[BackgroundScheduler] = None
 
@@ -3975,21 +3857,12 @@ def build_runtime() -> Runtime:
         config_manager.attach_store(None)
         opened.close()
 
-    # Registry and gauges only: pure Python, no fd, no thread. The exporter's own
-    # ThreadingHTTPServer is gone, replaced by a /metrics mount on the Flask app,
-    # so SB_PROMETHEUS_ENABLED now means "do not mount /metrics" rather than
-    # "run no HTTP server".
-    prometheus = PrometheusExporter() if boot.prometheus_enabled else None
-    if prometheus is not None:
-        # ``sb_store_ephemeral``, published in the master so it crosses the fork
-        # with the registry the Flask app serves. It is **the only form of
-        # notice a headless install receives** (#741): the three lines above go
-        # to a terminal nobody is watching, and ADR-0012's "Prometheus stays"
-        # would otherwise serve the portfolio's figures and never the state of
-        # the installation itself.
-        prometheus.update_store_persistence(mounts.is_ephemeral(persistence))
-
-    return Runtime(config_manager, prometheus, store_path=store_path,
+    # The exporter used to be built here, and the ephemerality gauge raised with
+    # it. Both left with ``/metrics`` (ADR-0033): the fact the gauge carried is
+    # published by the runtime and store resources under their *persistence*
+    # member, and said again by the boot lines above — so it changed instrument
+    # rather than status.
+    return Runtime(config_manager, store_path=store_path,
                    store_persistence=persistence)
 
 
@@ -4021,14 +3894,11 @@ def start_runtime(runtime: Runtime) -> Runtime:
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']
 
-    # Init SuiviBourseMetrics. The exporter comes from the master so the gauges
-    # the Flask app already publishes are the ones the scrape path updates;
-    # passing None when it is disabled leaves it disabled. The store is not
-    # passed at all — the manager owns it, and with it the mutex that keeps a
-    # write whole against a concurrent ingestion.
+    # Init SuiviBourseMetrics. The store is not passed at all — the manager owns
+    # it, and with it the mutex that keeps a write whole against a concurrent
+    # ingestion.
     sb_metrics = SuiviBourseMetrics(
         runtime.config_manager,
-        prometheus_exporter=runtime.prometheus,
         recorder=runtime.recorder)
     sb_metrics.apply_dials(dials)
     runtime.metrics = sb_metrics
