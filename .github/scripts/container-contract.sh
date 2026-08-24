@@ -274,24 +274,29 @@ kept_persistence="$(persistence_of "http://127.0.0.1:$KEPT_WEB")"
     || fail "assertion 6: the mounted container published '${kept_persistence:-nothing}', expected 'persistent'"
 ok 'the one fact that reports the installation rather than the portfolio'
 
-assertion '7 — not root, /data writable, /import readable'
+assertion '7 — not root, and /data — the one mount — is writable'
 whoami="$(docker exec "$BARE" id -un)"
 uid="$(docker exec "$BARE" id -u)"
 [ "$uid" != '0' ] || fail "assertion 7: the container runs as root (uid 0)"
 [ "$whoami" = 'appuser' ] || fail "assertion 7: the effective user is '$whoami', expected 'appuser'"
-# An actual write and an actual listing, not the permission bits: a fresh named
-# volume inherits the image directory's ownership (ADR-0015), and that is the
-# mechanism the whole uid apparatus was removed in favour of. An empty
-# /import is an ordinary state — an install with nothing to import is complete.
+# An actual write, not the permission bits: a fresh named volume inherits the
+# image directory's ownership (ADR-0015), and that is the mechanism the whole
+# uid apparatus was removed in favour of.
+#
+# **One mount, and this is where that is attested** (ADR-0032). The drop folder
+# was the second, and the assertion that read it is gone rather than softened:
+# every container this script starts runs with no `-v` on `/import` at all, so
+# a `/import` reappearing in the image would be a directory nothing reads.
 docker exec "$BARE" python -c "
 import os
 probe = '/data/.contract-probe'
 with open(probe, 'w') as handle:
     handle.write('x')
 os.unlink(probe)
-os.listdir('/import')
-" >/dev/null || { dump "$BARE"; fail 'assertion 7: /data is not writable or /import is not readable'; }
-ok 'a non-root user owns what it writes'
+if os.path.isdir('/import'):
+    raise SystemExit('/import is back in the image')
+" >/dev/null || { dump "$BARE"; fail 'assertion 7: /data is not writable, or /import is back in the image'; }
+ok 'a non-root user owns what it writes, and there is one mount to own'
 
 assertion '8 — a HEALTHCHECK is declared in the image, and the container reaches healthy'
 # The first element of `Test` and not the mere presence of the object:

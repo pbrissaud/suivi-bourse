@@ -77,24 +77,24 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # invoking uid landing on `1000:1000` by accident — closes with the cause rather
 # than by being handled: there is no uid to guess left.
 RUN useradd --create-home appuser \
-    # The two directories the environment names by default (issue #740,
-    # ADR-0015): `/data` is where the store is written, `/import` is the drop
-    # folder and is read-only in use. They exist in the image because a bare
-    # `docker run` must **start** — `appuser` cannot create a directory at the
-    # filesystem root, and a store that cannot be created is a named exit, not
-    # a degraded mode. They are **owned by appuser**, and that is what replaces
+    # The **one** directory the environment names by default (issue #740,
+    # ADR-0015, ADR-0032): `/data` is where the store is written, and it is the
+    # only mount there is — the drop folder left with the watcher that read it,
+    # a file being handed to the app instead. It exists in the image because a
+    # bare `docker run` must **start** — `appuser` cannot create a directory at
+    # the filesystem root, and a store that cannot be created is a named exit,
+    # not a degraded mode. It is **owned by appuser**, and that is what replaces
     # everything above: Docker initialises a fresh named volume with the
     # content *and the permissions* of the image directory it covers, so a
     # non-root container writes into a brand-new volume with not one uid
-    # gesture anywhere. An unmounted `/import` is an ordinary state — an
-    # install with nothing to import is a complete install.
+    # gesture anywhere.
     #
     # And no `VOLUME` instruction: it would have Docker create an anonymous
     # volume on every bare `docker run`, making the trial run persist behind
     # the user's back into a volume they cannot name — the opposite of what a
     # trial run is, and the notice #741 prints would be a lie.
-    && mkdir -p /data /import \
-    && chown appuser:appuser /data /import
+    && mkdir -p /data \
+    && chown appuser:appuser /data
 WORKDIR /home/appuser
 COPY ./src /home/appuser
 
