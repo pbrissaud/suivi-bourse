@@ -20,7 +20,7 @@
  *    fields it invites the click and reads as a form that refused. It is a
  *    key/value list, nothing in it is focusable, and *changes when the container
  *    is recreated* is written **once for the section** rather than under each of
- *    six rows.
+ *    four rows.
  *  - **The cadence says who it reaches.** A portfolio-wide dial that reaches
  *    three symbols out of twelve has to say so, or the reader concludes the
  *    other nine are misconfigured. The count comes from `/api/runtime` and it is
@@ -269,7 +269,7 @@ function Environment({ config }: { config: ConfigResponse }) {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-medium">{t('installation.settings.imposed')}</h3>
-      {/* Written once for the section, never under each of six rows. */}
+      {/* Written once for the section, never under each of four rows. */}
       <p className="text-sm text-muted-foreground">{t('installation.settings.imposed.note')}</p>
 
       <dl className="divide-y rounded-lg border text-sm">

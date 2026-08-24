@@ -1063,14 +1063,18 @@ export function defaultSettings(): SettingDescription[] {
   ]
 }
 
-/** The six boot variables — a **description**, never a form (ADR-0014, #740). */
+/**
+ * The four boot variables — a **description**, never a form (ADR-0014, #740).
+ *
+ * Four and not six since ADR-0033: the metrics flag and its port left with the
+ * exporter, and this fixture is the API's answer, so it is where the tab's list
+ * shortens.
+ */
 export function defaultEnvironment(): EnvironmentVariable[] {
   return [
     { name: 'SB_STORE_DIR', value: '/data', set: false, source: 'default' },
     { name: 'SB_IMPORT_DIR', value: '/import', set: false, source: 'default' },
     { name: 'SB_WEB_PORT', value: '8080', set: true, source: 'environment' },
-    { name: 'SB_PROMETHEUS_ENABLED', value: 'true', set: false, source: 'default' },
-    { name: 'SB_METRICS_PORT', value: '8081', set: false, source: 'default' },
     { name: 'LOG_LEVEL', value: 'INFO', set: true, source: 'environment' },
   ]
 }

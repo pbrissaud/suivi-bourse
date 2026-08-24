@@ -192,8 +192,16 @@ describe('the settings, which are one surface', () => {
     const imposed = within(settings).getByText('Ce que le conteneur impose').parentElement as HTMLElement
     expect(within(imposed).queryAllByRole('textbox')).toHaveLength(0)
     expect(imposed.querySelectorAll('input, select, textarea, button')).toHaveLength(0)
-    expect(within(imposed).getByText('SB_STORE_DIR')).toBeInTheDocument()
-    // Written once for the section, never under each of six rows.
+    // The list is the API's and never a hard-written one, which is what makes
+    // this an assertion about *the tab*: four names since ADR-0033, and the two
+    // the exporter answered for are gone from the payload rather than hidden
+    // here.
+    for (const name of ['SB_STORE_DIR', 'SB_IMPORT_DIR', 'SB_WEB_PORT', 'LOG_LEVEL']) {
+      expect(within(imposed).getByText(name)).toBeInTheDocument()
+    }
+    expect(within(imposed).queryByText('SB_PROMETHEUS_ENABLED')).not.toBeInTheDocument()
+    expect(within(imposed).queryByText('SB_METRICS_PORT')).not.toBeInTheDocument()
+    // Written once for the section, never under each of four rows.
     expect(within(imposed).getAllByText(/En changer une, c’est recréer le conteneur/)).toHaveLength(1)
   })
 })
