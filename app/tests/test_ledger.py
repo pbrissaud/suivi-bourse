@@ -524,10 +524,15 @@ def test_validation_lives_in_the_ddl_and_in_validator_py_and_nowhere_else():
 # files exercise one wiring.
 # --------------------------------------------------------------------------- #
 
-def _upload(client, body, filename="2024.csv"):
-    """Hand one file to the route, as a browser's own form would."""
+def _upload(client, body, filename="2024.csv", query=""):
+    """Hand one file to the route, as a browser's own form would.
+
+    ``query`` is the gesture's two parameters (#813) spelled as a client sends
+    them: ``?dry_run=1`` previews, ``?write_duplicates=1`` writes what the ledger
+    already has.
+    """
     return client.post(
-        '/api/events/import',
+        f'/api/events/import{query}',
         data={'file': (io.BytesIO(body), filename)},
         content_type='multipart/form-data')
 
@@ -646,6 +651,274 @@ def test_a_file_that_writes_nothing_has_a_receipt_with_no_period(tmp_path):
     assert receipt['written'] == 0
     assert receipt['period'] is None
     assert receipt['symbols'] == []
+
+
+# --------------------------------------------------------------------------- #
+# The receipt before the write, and the duplicates caught by content (#813)
+#
+# Two features and one subject: what the owner is told *before* the file costs
+# anything. The assertions are on the store's contents and on the receipt's
+# payload — never on a call — because both features are claims about rows: the
+# preview's is that there are none, the dedup's is which ones there are.
+# --------------------------------------------------------------------------- #
+
+#: Three lines, three days, two securities — a file that is worth previewing.
+THREE_LINES = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,\n"
+    "2024-06-01,BUY,MSFT,Microsoft,5,380.00,2.50,\n"
+    "2024-09-15,DIVIDEND,AAPL,Apple Inc,,,,8.50\n"
+).encode('utf-8')
+
+
+def test_a_dry_run_answers_the_receipt_and_writes_nothing(tmp_path):
+    """The criterion, and the assertion is on the table rather than on a call.
+
+    ``?dry_run=1`` reads, judges and answers; the store is exactly as it stood.
+    The status is ``200`` and not ``201`` for the plainest of reasons: nothing
+    was created, and there is nothing to come back to — the preview holds no
+    server state at all (ADR-0032).
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _upload(client, THREE_LINES, filename="broker.csv",
+                       query="?dry_run=1")
+
+    assert response.status_code == 200
+    receipt = response.get_json()
+    assert receipt['filename'] == "broker.csv"
+    assert receipt['written'] == 3
+    assert receipt['period'] == {'from': '2024-01-15', 'to': '2024-09-15'}
+    assert receipt['accounts'] == ["default"]
+    assert receipt['symbols'] == ["AAPL", "MSFT"]
+    # The whole of it: the ledger has not moved, and neither has anything the
+    # ingestion derives from it.
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+    assert opened.query('SELECT count(*) FROM symbol') == [(0,)]
+
+
+def test_the_forecast_and_the_fact_are_the_same_object(tmp_path):
+    """One shape, read twice — so the reader recognises after what they read
+    before (ADR-0032). The two payloads are compared member for member."""
+    client = build_client(tmp_path)
+
+    forecast = _upload(client, THREE_LINES, query="?dry_run=1").get_json()
+    fact = _upload(client, THREE_LINES).get_json()
+
+    assert forecast == fact
+
+
+def test_the_preview_refuses_what_the_write_would_refuse(tmp_path):
+    """A forecast the commit could contradict is not a forecast (story 9).
+
+    The file names an account nobody declared. The preview answers the same
+    ``422``, with the same sentence naming the same account — and writes nothing,
+    which on this road is not a rollback but the absence of a write.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,pea\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, query="?dry_run=1")
+
+    assert response.status_code == 422
+    assert "'pea' is not declared" in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_the_preview_sees_the_oversell_the_write_would_refuse(tmp_path):
+    """The second judgement, and it is a property of the **ledger**.
+
+    The preview replays the ledger the file would leave, so a sale of shares
+    nobody holds is a ``409`` before it costs anything — the same status the
+    write answers, from the same exception.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price\n"
+        "2024-02-01,SELL,AAPL,Apple Inc,999,190.00\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, filename="sale.csv", query="?dry_run=1")
+
+    assert response.status_code == 409
+    assert _events(opened) == [(date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
+def test_a_second_upload_of_the_same_file_writes_nothing(tmp_path):
+    """The gesture this dedup exists for: the owner re-uploads their export.
+
+    Zero lines written, every one of them counted as a duplicate, and the
+    ledger's row count unmoved — *the common case asks for no vigilance*
+    (story 5). The receipt still describes the **file**, period and securities
+    included, because that is what the reader is looking at.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, THREE_LINES, filename="broker.csv")
+
+    receipt = _upload(client, THREE_LINES, filename="broker.csv").get_json()
+
+    assert receipt['rows'] == 3
+    assert receipt['written'] == 0
+    assert receipt['duplicates'] == 3
+    assert receipt['period'] == {'from': '2024-01-15', 'to': '2024-09-15'}
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+
+
+def test_two_overlapping_files_write_only_the_difference(tmp_path):
+    """What the filename could never see (ADR-0032).
+
+    The replaced-by-name rule the drop folder had would have taken these for two
+    unrelated files and recorded the January row twice. The content key sees the
+    overlap for what it is: one row already held, one row new.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    january = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50\n"
+    ).encode('utf-8')
+    january_and_february = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50\n"
+        "2024-02-01,BUY,MSFT,Microsoft,5,380.00,2.50\n"
+    ).encode('utf-8')
+    _upload(client, january, filename="export-2024-01.csv")
+
+    receipt = _upload(client, january_and_february,
+                      filename="export-2024-02.csv").get_json()
+
+    assert receipt['written'] == 1
+    assert receipt['duplicates'] == 1
+    assert _events(opened) == [
+        (date(2024, 1, 15), "BUY", "AAPL", 10.0),
+        (date(2024, 2, 1), "BUY", "MSFT", 5.0)]
+
+
+def test_a_line_the_file_repeats_is_a_duplicate_of_itself(tmp_path):
+    """Compared against the ledger **and** against the file itself.
+
+    An export appended to itself is the case, and nothing in the bytes tells it
+    from an order filled twice — which is exactly why the second line is
+    reported rather than decided upon, and why the flag below exists.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    twice = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50\n"
+    ).encode('utf-8')
+
+    receipt = _upload(client, twice).get_json()
+
+    assert receipt['rows'] == 2
+    assert receipt['written'] == 1
+    assert receipt['duplicates'] == 1
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_explicit_flag_writes_the_duplicates_anyway(tmp_path):
+    """Story 6: the owner really did place the same order twice.
+
+    The app does not decide on their behalf what is a duplicate — it reports,
+    skips, and offers. With the flag the comparison is not made at all, and the
+    ledger carries both lines.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    one_buy = ONE_BUY.encode('utf-8')
+    _upload(client, one_buy)
+
+    receipt = _upload(client, one_buy,
+                      query="?write_duplicates=1").get_json()
+
+    assert receipt['written'] == 1
+    assert receipt['duplicates'] == 0
+    assert _events(opened) == [
+        (date(2024, 1, 15), "BUY", "AAPL", 10.0),
+        (date(2024, 1, 15), "BUY", "AAPL", 10.0)]
+
+
+def test_the_preview_counts_the_duplicates_without_writing_either(tmp_path):
+    """The two features meet: *what of it the ledger already has*, before a row.
+
+    This is the sentence the owner reads to decide, and the store must be
+    exactly as unchanged as it is on an empty preview.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, THREE_LINES)
+
+    receipt = _upload(client, THREE_LINES, query="?dry_run=1").get_json()
+
+    assert receipt['written'] == 0
+    assert receipt['duplicates'] == 3
+    assert opened.query('SELECT count(*) FROM event') == [(3,)]
+
+
+def test_the_name_and_the_notes_are_not_part_of_the_key(tmp_path):
+    """Annotating a row must not make it re-importable (ADR-0032).
+
+    The second file is the first with a note added and the security renamed —
+    the two members the key deliberately leaves out. It is the same purchase, and
+    it is skipped.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    plain = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,notes\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,\n"
+    ).encode('utf-8')
+    annotated = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,notes\n"
+        "2024-01-15,BUY,AAPL,Apple Incorporated,10,150.00,2.50,"
+        "PEA - ordre du matin\n"
+    ).encode('utf-8')
+    _upload(client, plain)
+
+    receipt = _upload(client, annotated).get_json()
+
+    assert receipt['duplicates'] == 1
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_a_blank_account_column_keys_as_the_default_it_becomes(tmp_path):
+    """The one member the key resolves rather than reads.
+
+    A file with no ``account`` column writes ``default``, so a re-import of that
+    same file has to hash to what the store holds or every account-less export
+    would land twice. The two files below differ only in **carrying** the column.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    without = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50\n"
+    ).encode('utf-8')
+    with_default = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,default\n"
+    ).encode('utf-8')
+    _upload(client, without)
+
+    receipt = _upload(client, with_default).get_json()
+
+    assert receipt['duplicates'] == 1
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_receipt_counts_close_on_the_file(tmp_path):
+    """``rows == written + duplicates``, at both moments and under the flag.
+
+    The glossary's three numbers (`CONTEXT.md` § Receipt), asserted as an
+    identity rather than as three separate figures: a client renders the skipped
+    lines without subtracting anything, and a fourth column would have to come
+    from somewhere.
+    """
+    client = build_client(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+
+    for query in ("", "?dry_run=1", "?write_duplicates=1"):
+        receipt = _upload(client, THREE_LINES, query=query).get_json()
+        assert receipt['rows'] == receipt['written'] + receipt['duplicates']
 
 
 # --------------------------------------------------------------------------- #

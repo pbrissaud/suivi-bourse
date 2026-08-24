@@ -4,9 +4,16 @@
 > a **target** rather than the name of a folder — dropped on, or chosen from the
 > picker — and the empty state's first entry carries the same gesture, so an
 > install that mounted nothing is not an install missing half the product. The
-> receipt is rendered under the zone and lasts as long as the gesture; it is the
-> surface #813's preview steps into. The drop folder and the list of sources
-> stay until #815 and #816.
+> receipt is rendered under the zone and lasts as long as the gesture. The drop
+> folder and the list of sources stay until #815 and #816.
+> **And the receipt is now said twice** (#813): handing a file over **previews**
+> it (`?dry_run=1`) — the same sentence, tense apart, plus how many of its lines
+> the ledger already holds — and the reader presses *Importer* or puts the file
+> down. Confirming **re-uploads the same file**: `useEventUpload` holds the
+> `File` for as long as the forecast stands, because the server remembers no
+> import and a pending-import id would be `import_source` under another name.
+> Duplicates are skipped by default and a checkbox — offered only when the file
+> has some — writes them anyway.
 > **The reduction can be deleted** (#814, ADR-0032): `BulkDelete.tsx` sits
 > beside the chips — under the reduction it consumes, never in the band above —
 > sends the five export parameters to `DELETE /api/events`, and renders nothing
@@ -136,7 +143,10 @@ Three nets hold a rule nothing made true by construction:
   which is a property of what they answer rather than an inconsistency: the
   export says one sentence and says it in a toast, while the **import** says
   what it produced — rows, period, accounts, securities — under the zone that
-  made it (`UploadZone`), where #813's forecast will stand beside it. The export
+  made it (`UploadZone`), and says it **twice** since #813: once as a forecast
+  the reader may refuse, once as the fact. Same members, same order, only the
+  tense moves (`lib/receipts.ts`), so the reader recognises afterwards what they
+  read before. The export
   is therefore a **fetch** and not an `<a download>`: a link hands the request to the browser, which settles at no
   observable moment, so anything said over it would be a guess with a timer on
   it. `lib/save.ts` is the two lines that hand the bytes to the reader's own

@@ -980,6 +980,25 @@ def import_events():
     The replay follows the write, synchronously and in this process, exactly as
     on ``POST /api/events``: whoever just imported a file must not wait for a
     timer to see their own gesture.
+
+    **Two query parameters, and both of them are the owner's** (#813, ADR-0032).
+
+    ``?dry_run=1`` answers the receipt and **writes nothing at all** — no row, no
+    setting, not even a lock taken: the preview reads the store through the
+    lock-free accessor, judges the file exactly as the write would, and returns
+    ``200`` rather than ``201`` because nothing was created. It holds **no server
+    state**: there is no pending-import id to come back with, because that
+    identifier would be the table this lot has just deleted, under another name,
+    with a lifetime and a sweeper to write. The front commits by **re-uploading
+    the same file**, and a few hundred kilobytes on a local hop is the price of
+    *the server remembers no import, ever*.
+
+    ``?write_duplicates=1`` says *these are real orders, write them*. Without it
+    the rows the ledger already holds are counted at the receipt and skipped, so
+    the common case — the owner re-uploading their own export — needs no
+    vigilance at all; with it the comparison is not made and the file lands
+    whole. The app never decides on the owner's behalf what is a duplicate: it
+    reports, skips, and offers.
     """
     if uploads.oversize(request.content_length):
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
@@ -989,6 +1008,9 @@ def import_events():
         return bad_request(
             "a file is required, as the 'file' part of a multipart/form-data "
             "body")
+
+    dry_run = _asked('dry_run')
+    write_duplicates = _asked('write_duplicates')
 
     try:
         # Read and parsed **outside** the writers' mutex: the parse is the slow
@@ -1003,16 +1025,35 @@ def import_events():
 
     runtime = current_runtime()
     try:
-        # The writers' mutex, like every other write here: a Flask handler and
-        # the ingestion share one DuckDB connection. It is **not** a transaction
-        # (``ConfigurationManager.writing``), which is what lets the currency be
-        # decided here — against the ledger as it stands, exactly where
-        # ``ledger.import_file`` decides it — and written inside the one
-        # transaction that also writes the rows.
-        with runtime.config_manager.writing() as opened:
-            adopted = ledger.currency_to_adopt(opened, parsed.declared_currency)
-            written = entries.create_many(opened, parsed.events,
-                                          base_currency=adopted)
+        if dry_run:
+            # **The lock-free accessor, and that is the assertion itself**: a
+            # preview takes no writers' mutex because it has nothing to write,
+            # so it cannot serialise against an ingestion and cannot leave a
+            # row behind. Everything below it reads.
+            opened = runtime.config_manager.store
+            ledger.currency_to_adopt(opened, parsed.declared_currency)
+            fresh, duplicates = _to_write(opened, parsed.events,
+                                          write_duplicates)
+            entries.judge(opened, fresh)
+            written = len(fresh)
+        else:
+            # The writers' mutex, like every other write here: a Flask handler
+            # and the ingestion share one DuckDB connection. It is **not** a
+            # transaction (``ConfigurationManager.writing``), which is what lets
+            # the currency be decided here — against the ledger as it stands,
+            # exactly where ``ledger.import_file`` decides it — and written
+            # inside the one transaction that also writes the rows.
+            with runtime.config_manager.writing() as opened:
+                adopted = ledger.currency_to_adopt(opened,
+                                                   parsed.declared_currency)
+                # The split is read **inside** the mutex, for
+                # ``remove_selection``'s reason: what is skipped is what the
+                # ledger held at the instant of the write, never a set assembled
+                # against a ledger another writer has moved since.
+                fresh, duplicates = _to_write(opened, parsed.events,
+                                              write_duplicates)
+                written = len(entries.create_many(opened, fresh,
+                                                  base_currency=adopted))
     except settings_registry.InvalidSetting as exc:
         return unprocessable_file(str(exc))
     except entries.InvalidEntry as exc:
@@ -1020,24 +1061,57 @@ def import_events():
     except AggregationError as exc:
         return conflict(str(exc))
 
-    main.replay_after_write(runtime)
-    return jsonify(_receipt_to_dict(
-        uploads.receipt(parsed.filename, written))), 201
+    if not dry_run:
+        main.replay_after_write(runtime)
+    return jsonify(_receipt_to_dict(uploads.receipt(
+        parsed.filename, parsed.events,
+        written=written, duplicates=len(duplicates)))), 200 if dry_run else 201
+
+
+def _to_write(opened, events, write_duplicates: bool):
+    """The file cut in two, or not cut at all because the owner said so."""
+    if write_duplicates:
+        return list(events), []
+    return entries.split_duplicates(opened, events)
+
+
+def _asked(name: str) -> bool:
+    """One query parameter read as *the caller asked for this*.
+
+    Named apart from :func:`_flag`, which is the same question of a **JSON
+    body**: a body member arrives typed and is read strictly (``true``, and
+    nothing else), while a query string has no types at all and its blank is a
+    client's cleared checkbox rather than a value.
+
+    Present and not one of the three spellings of *no* — which is what a client
+    assembling a query string out of a checkbox sends when the box is clear, and
+    ADR-0014's *blank counts as unset* read at the HTTP boundary. Anything else,
+    ``1`` and ``true`` included, is the flag being set: a caller who typed
+    ``?dry_run=yes`` means it, and answering *nothing was previewed* to that
+    would be the worst reading of an unambiguous request.
+    """
+    value = request.args.get(name)
+    return value is not None and value.strip().lower() not in ('', '0', 'false')
 
 
 def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
     """One :class:`uploads.Receipt`, on the wire.
 
     ``period`` is an object or ``null`` rather than two nullable members: the two
-    days are absent **together** — a file that wrote nothing covers nothing — and
+    days are absent **together** — a file with no row in it covers nothing — and
     two members would let a client render half a period nobody's file carries.
 
     The shape is the preview's shape (#813): one object, answered before the
     write and after it, so the forecast and the fact are one thing read twice.
+    ``rows``, ``written`` and ``duplicates`` are the glossary's three numbers and
+    they close — ``rows == written + duplicates`` — so a client renders the
+    skipped lines without subtracting anything.
     """
     return {
         'filename': receipt.filename,
+        'rows': receipt.rows,
         'written': receipt.written,
+        'duplicates': receipt.duplicates,
         'period': None if receipt.first_day is None else {
             'from': receipt.first_day.isoformat(),
             'to': receipt.last_day.isoformat(),

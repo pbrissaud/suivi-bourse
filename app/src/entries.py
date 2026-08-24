@@ -60,6 +60,18 @@ the twelve events somebody mistyped as well, which no revocation ever reached.
 The split above stays exactly what it is: it is about the three gestures that
 address **one row by its key**, and this one addresses none.
 
+**A duplicate is caught by content, and never by a constraint** (issue #813,
+ADR-0032). :data:`DUPLICATE_KEY_COLUMNS` is the key; :func:`split_duplicates`
+compares it against the ledger and against the file itself, and the import skips
+what it finds unless the caller says otherwise. It is declared **nowhere in the
+DDL**, and that is the point rather than an omission: two `BUY` of ten shares at
+the same price on the same day are one order filled twice, and a unique index
+over those eight columns would make that impossible to record **from the
+keyboard as well** — :func:`create` asks nothing about duplicates, and two
+strictly identical `POST /api/events` both land. ADR-0007's rule decides it from
+the other side too: the error a constraint would catch does not enter here, it
+enters at the import, and it is caught there.
+
 **Not in this module**: the ``import_source`` row, the drop folder, and the
 symbol's own price history. A symbol row is created here when an event needs one
 (the foreign key wants it), and never removed — the orphan is #695 § 10's
@@ -67,7 +79,7 @@ deliberate one, named and purgeable, because a forget is reversible and a price
 series is not.
 """
 from dataclasses import replace
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
@@ -79,6 +91,19 @@ from events import export as events_export
 from events.schemas import DEFAULT_ACCOUNT, Event
 
 logger = getLogger("entries")
+
+#: **What makes two rows the same purchase** (issue #813, ADR-0032). Eight
+#: members, and the two that are missing are the whole decision: ``name`` and
+#: ``notes`` are excluded, or annotating a row would make it re-importable — the
+#: reader who writes *"PEA, ordre du matin"* on line 42 would find line 42 landing
+#: a second time at the next upload of the same export.
+#:
+#: It is named here rather than spelled inline because a second spelling of it is
+#: how the preview and the write come to disagree about what a duplicate is; and
+#: it is a **tuple of column names** so a test can say *these eight, and no
+#: constraint over them* against the DDL.
+DUPLICATE_KEY_COLUMNS = ('date', 'event_type', 'account', 'symbol', 'quantity',
+                         'unit_price', 'fee', 'amount')
 
 
 class UnknownEntry(Exception):
@@ -213,22 +238,8 @@ def create_many(store, drafts: Sequence[Event], *,
             logger.info(f"The file declares {base_currency} as the reporting "
                         f"currency; taking it up")
 
-        # **The index is updated as the file is walked**, not read once and
-        # frozen: a security named on the first row and left blank on the tenth
-        # is the same security, and ``create`` called ten times would have found
-        # the name — it re-queries per row. What the prefetch buys is the scan,
-        # never a different answer.
-        known = _known_names(store)
-        settled = []
-        for draft in drafts:
-            event = _settled(store, draft, known)
-            if event.symbol and event.name:
-                known[event.symbol] = event.name
-            settled.append(event)
-
-        issues = _validator(store).issues(settled)
-        if issues:
-            raise InvalidEntry(issues[0].message, field=issues[0].field)
+        settled = _settled_all(store, drafts)
+        _refuse_all(store, settled)
 
         if not settled:
             return []
@@ -359,8 +370,141 @@ def remove_selection(store, selection: events_export.Selection) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# The forecast: what the gesture would do, decided without doing it (#813)
+#
+# Neither function below writes a row, and that is the property, not a side
+# effect: ``?dry_run=1`` answers the receipt off these two and the store is
+# **unchanged** — no import row to sweep, no pending token, nothing with a
+# lifetime. It is the whole of ADR-0032's *the preview holds no server state*.
+# --------------------------------------------------------------------------- #
+
+def content_key(event: Event) -> Tuple:
+    """What makes two rows the same purchase — :data:`DUPLICATE_KEY_COLUMNS`.
+
+    **The account is resolved here and the name is not read at all.** A blank
+    ``account`` means ``default``, which is the value the write puts in the row
+    (``event.account or DEFAULT_ACCOUNT``), so a file that omits the column and
+    a ledger that stores ``default`` have to hash to the same thing or every
+    re-import of an account-less export would land twice. ``name`` and ``notes``
+    are absent for the reason the constant states.
+
+    The type travels as its ``value`` rather than as the enum: an event read
+    back out of the store and one just parsed out of a file must key alike, and
+    the string is what both of them agree on.
+    """
+    return (
+        event.date,
+        event.event_type.value,
+        (event.account or '').strip() or DEFAULT_ACCOUNT,
+        event.symbol,
+        event.quantity,
+        event.unit_price,
+        event.fee,
+        event.amount,
+    )
+
+
+def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
+                                                              List[Event]]:
+    """One file, cut in two: what is new, and what the ledger already has.
+
+    Returns ``(fresh, duplicates)`` in the file's own order, and the two lists
+    partition ``drafts`` — nothing is dropped and nothing is counted twice.
+
+    **The comparison is against the ledger and against the file itself**, in one
+    pass: the set starts as every key the store holds and grows as the file is
+    walked, so a row the ledger already has *and* a row the file repeats are
+    both duplicates. Set semantics rather than a multiset is the decision, and
+    it is story 6 that pays for it: two `BUY` of ten shares at the same price on
+    the same day **are** flagged, because nothing in the file distinguishes one
+    order filled twice from an export appended to itself — and the owner, who is
+    the only one who knows, has the flag that writes them anyway.
+
+    The store is only read. Whether the caller then writes what comes back is
+    the caller's business, and ``?dry_run=1`` is exactly the caller that does
+    not.
+    """
+    seen = {content_key(event) for event in ledger.read_events(store)}
+    fresh: List[Event] = []
+    duplicates: List[Event] = []
+    for draft in drafts:
+        key = content_key(draft)
+        if key in seen:
+            duplicates.append(draft)
+        else:
+            seen.add(key)
+            fresh.append(draft)
+    return fresh, duplicates
+
+
+def judge(store, drafts: Sequence[Event]) -> None:
+    """Refuse what :func:`create_many` would refuse, **without writing a row**.
+
+    A forecast that only counted lines would be a forecast the commit could
+    contradict: the reader would read *twelve events will be written*, press the
+    button, and get a ``422`` naming an account nobody declared. So the preview
+    runs the same two judgements the write runs — the validator over the whole
+    file, then the replay of the ledger it would leave — and raises the same two
+    exceptions, which the route turns into the same two statuses.
+
+    The replay is the only part that is not literally the same code, and it is
+    the same assertion: :func:`_replays` aggregates the ledger **after** the
+    insert, which is this list merged into the stored one. Merged by date and by
+    a stable sort, because that is the order the insert would produce — the new
+    ids come from ``max(id) + 1``, so on a day the ledger already has rows for,
+    the file's rows follow them.
+
+    Raises:
+        InvalidEntry, events.aggregator.AggregationError: as
+            :func:`create_many`, and for the same reasons.
+    """
+    settled = _settled_all(store, drafts)
+    _refuse_all(store, settled)
+    if not settled:
+        return
+
+    would_be = [replace(event, account=event.account or DEFAULT_ACCOUNT)
+                for event in settled]
+    EventAggregator().aggregate(
+        sorted(ledger.read_events(store) + would_be,
+               key=lambda event: event.date))
+
+
+# --------------------------------------------------------------------------- #
 # What the gestures are made of
 # --------------------------------------------------------------------------- #
+
+def _settled_all(store, drafts: Sequence[Event]) -> List[Event]:
+    """A whole file settled, on **one** read of what the ledger calls things.
+
+    **The index is updated as the file is walked**, not read once and frozen: a
+    security named on the first row and left blank on the tenth is the same
+    security, and :func:`create` called ten times would have found the name — it
+    re-queries per row. What the prefetch buys is the scan, never a different
+    answer.
+    """
+    known = _known_names(store)
+    settled = []
+    for draft in drafts:
+        event = _settled(store, draft, known)
+        if event.symbol and event.name:
+            known[event.symbol] = event.name
+        settled.append(event)
+    return settled
+
+
+def _refuse_all(store, settled: Sequence[Event]) -> None:
+    """:func:`_refuse` over a whole file, on one build of the validator.
+
+    Only the first issue is raised, for :func:`_refuse`'s own reason: a form
+    marks one input at a time. What matters is that *nothing is written* when
+    there is one, and on the write path that is the transaction's doing — on the
+    preview's it is that there is no write to undo.
+    """
+    issues = _validator(store).issues(settled)
+    if issues:
+        raise InvalidEntry(issues[0].message, field=issues[0].field)
+
 
 def _require_typed(store, event_id: int) -> None:
     """Refuse anything that is not a row this module may write.
@@ -507,6 +651,8 @@ def _replays(store) -> None:
 
 
 __all__ = [
+    'DUPLICATE_KEY_COLUMNS',
     'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
     'create', 'create_many', 'update', 'remove', 'remove_selection',
+    'content_key', 'split_duplicates', 'judge',
 ]

@@ -221,8 +221,28 @@ it is `413`, and that bound is held in three places because each sees what the
 others cannot: the declared `Content-Length`, Flask's `MAX_CONTENT_LENGTH` (on
 the *envelope*, `MAX_BODY_BYTES` — the only one that stops bytes in flight), and
 the file's own size when it is read. What comes back on success is
-a **receipt** — rows written, the period covered, the accounts and securities
-touched — and the same object answers #813's preview before anything is written.
+a **receipt** — what the file holds, what of it the ledger already had, what was
+written, the period covered, the accounts and securities touched.
+
+**The receipt is answered at two moments and the object is one** (#813,
+ADR-0032). `?dry_run=1` reads the store through the lock-free accessor, runs the
+same two judgements the write runs (`entries.judge`: the validator over the whole
+file, then the replay of the ledger it would leave), answers the same shape with
+the same refusals — and **writes nothing at all**, which is why it is a `200`.
+It holds **no server state**: there is no pending-import id, because that
+identifier would be `import_source` under another name with a lifetime and a
+sweeper to write, so the front commits by re-uploading the same file.
+
+**Duplicates are caught by content and never by a constraint.** The key is
+`entries.DUPLICATE_KEY_COLUMNS` — `(date, event_type, account, symbol, quantity,
+unit_price, fee, amount)`; `name` and `notes` are out, or annotating a row would
+make it re-importable. `entries.split_duplicates` compares it against the ledger
+**and** against the file itself, the receipt counts what it finds, the import
+skips it, and `?write_duplicates=1` writes it anyway — the owner is the only one
+who knows whether two identical `BUY` are one order filled twice. The key is
+declared **nowhere in the DDL**: a `UNIQUE` over those eight columns would make
+that order impossible to record from the keyboard as well, and ADR-0007's rule
+puts a constraint where the error enters, which is at the import.
 
 ## Prometheus
 
@@ -265,6 +285,7 @@ src/
 ├── ledger.py           # the drop folder's import: provenance and revocation
 ├── uploads.py          # the gesture: one file in, read once, refused by name
 ├── entries.py          # the row's four gestures (source_id NULL only) + the bulk one, which reads no provenance
+│                       #   and the forecast that writes none: the content key, the split, the judgement
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
