@@ -1721,6 +1721,15 @@ class SuiviBourseMetrics:
         by account (ADR-0033): the two surfaces this sonde reaches now — the
         ``WARNING`` and the record's *stale* field — are both per symbol.
 
+        **The record is where the signal is read from now, and it is the whole
+        of it** (issue #818). The gauge was the surface an install with no
+        interface watched, and it left with the exporter; the flag it hands back
+        is rendered as the ``frozen`` pill on ``/api/runtime`` *and* folded into
+        ``/health``'s body, where a ``curl`` finds it without a dashboard. So
+        this method keeps filling the record for the same reason it always did,
+        with one more reader downstream — and the amber it produces there is
+        deliberately not a failing status code (ADR-0036).
+
         **It reads ``price_native``**, and that is a rule rather than an
         implementation detail (spec #695 § 7). The question is whether the
         *writer* has gone silently stale; a converted price moves whenever the

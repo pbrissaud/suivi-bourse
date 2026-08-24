@@ -510,7 +510,82 @@ def test_health_answers_when_the_store_answers(open_store):
     response = app.test_client().get("/health")
 
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok"}
+    # The two registers, on the one answer (#818, ADR-0036): the code above is
+    # the orchestrator's, and the body below names the three jobs for a person.
+    body = response.get_json()
+    assert set(body["jobs"]) == {"scrape", "backfill", "performance"}
+    for job in body["jobs"].values():
+        assert set(job) >= {"status", "at", "verdict"}
+
+
+def test_health_says_a_stopped_scheduler_in_its_body(open_store):
+    """A worker whose scheduler is gone will not run a job again.
+
+    It is the one problem the sidebar's dot could already detect before this
+    body existed, and it survives it — in the body, where every other reason to
+    look now lives, and not in the code: an arbiter cannot repair a scheduler
+    that stopped for a reason a restart will reproduce.
+    """
+    runtime = main.Runtime(_FakeConfigManager())
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
+
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 200
+    assert response.get_json()["scheduler_running"] is False
+    assert response.get_json()["status"] == "attention"
+
+
+def test_a_body_that_cannot_be_built_does_not_fail_the_probe(open_store):
+    """The two registers held apart at their sharpest point (#818).
+
+    The status code answers one question — *should this container be restarted*
+    — and the body is not part of it. A defect in the shaping is not an answer
+    to that question, and letting one through would restart a container for a
+    reason a restart reproduces exactly. ``runtime_view._utc`` writes down what
+    that failure looks like when it happens: an exception deep in the
+    arithmetic, surfacing one storey up as a verdict on the store that is not
+    true. So what the body cannot say, it says it could not say.
+    """
+    class _UnreadableConfig(_FakeConfigManager):
+        def current(self):
+            raise RuntimeError("the snapshot is not there")
+
+    runtime = main.Runtime(_UnreadableConfig())
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
+
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 200
+    assert response.get_json()["jobs"] is None
+    assert "the snapshot is not there" in response.get_json()["error"]
+
+
+def test_healthz_is_not_the_name_of_this_route(open_store):
+    """`/healthz` was examined and declined (ADR-0036).
+
+    A Kubernetes idiom addressed to a reader this product does not have: it
+    ships as one self-hosted container whose probe is written into its own
+    image. What #818 changed is what the route **answers**, not what it is
+    called, and the rename stays refused rather than merely unperformed.
+
+    Asserted on the **URL map** and not on a status code, because a status code
+    would be lying about the wrong thing: `/healthz` is an unknown client-side
+    path, so a build carrying the front answers it with the SPA shell and a
+    `200` — as it does every path it does not know. What is true in both builds
+    is that no rule is registered under that name, and that the probe's body is
+    reachable under one name only.
+    """
+    runtime = main.Runtime(_FakeConfigManager())
+    runtime.store = open_store
+    app = web.create_app(runtime=runtime)
+
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/health" in rules
+    assert "/healthz" not in rules
+    assert "jobs" in app.test_client().get("/health").get_json()
 
 
 def test_health_fails_when_the_store_does_not_answer(open_store):
