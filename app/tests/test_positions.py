@@ -37,10 +37,16 @@ SOLD_CSV = EVENTS_CSV + (
 
 
 def _manager(store, tmp_path, csv_text=EVENTS_CSV):
-    """A real manager whose drop folder holds one events file."""
+    """A real manager over a store that already holds one file's rows.
+
+    The rows are read in here rather than by the manager, which scans no
+    directory since ADR-0032. What the replay is asserted on below is the
+    ledger, and the ledger is in the store either way.
+    """
     events = tmp_path / "events"
     events.mkdir(exist_ok=True)
     (events / "2024.csv").write_text(csv_text, encoding="utf-8")
+    ledger.sync_drop_folder(store, events)
     return ConfigurationManager(config_dir=str(tmp_path), opened_store=store)
 
 
@@ -118,6 +124,7 @@ def test_a_position_the_ledger_no_longer_names_leaves(store, tmp_path):
 
     (tmp_path / "events" / "2024.csv").write_text(
         EVENTS_CSV.replace("AAPL,Apple Inc", "MSFT,Microsoft"), encoding="utf-8")
+    ledger.sync_drop_folder(store, tmp_path / "events")
     manager.reload()
 
     assert [r['symbol'] for r in positions.read_positions(store)] == ['MSFT']

@@ -661,13 +661,19 @@ def test_a_default_bucket_that_holds_events_is_published(store, tmp_path):
 
 
 def test_the_manager_publishes_the_declaration_from_the_store(tmp_path):
-    """End to end through ``ConfigurationManager``: a file, then a snapshot."""
+    """End to end through ``ConfigurationManager``: a ledger, then a snapshot.
+
+    The rows reach the store first and the manager replays them: it scans no
+    directory since ADR-0032, so what a snapshot is built from is the store and
+    only the store.
+    """
     events = tmp_path / "events"
     events.mkdir()
     (events / "accounts.csv").write_text(ACCOUNTS_FILE, encoding="utf-8")
     (events / "2024.csv").write_text(TWO_ACCOUNTS_UNDECLARED, encoding="utf-8")
 
     cm = ConfigurationManager(config_dir=str(tmp_path))
+    ledger.sync_drop_folder(cm.store, events)
     snapshot = cm.current()
 
     assert snapshot.accounts.ids() == {'pea', 'cto'}

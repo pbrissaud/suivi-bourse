@@ -1,4 +1,4 @@
-"""The four boot variables, and the names that went quiet (#740, ADR-0033).
+"""The three boot variables, and the names that went quiet (#740, ADR-0033).
 
 Every test here reads a **dict**. That is the point of the module being pure:
 "nothing is set", "a blank value" and "a v4 ``.env`` in full" are three ordinary
@@ -14,33 +14,30 @@ import settings_registry
 
 
 # --------------------------------------------------------------------- #
-# The four values
+# The three values
 # --------------------------------------------------------------------- #
 
-def test_nothing_set_gives_the_four_container_defaults():
+def test_nothing_set_gives_the_three_container_defaults():
     """**The defaults describe the container**, and it is the Docker-less
     deployment that overrides them — the reverse of v4, where compose always
     rendered every variable and made the app's own defaults dead code."""
     boot = boot_env.read({})
 
     assert boot.store_dir == Path('/data')
-    assert boot.import_dir == Path('/import')
     assert boot.web_port == 8080
     assert boot.log_level == 'INFO'
     assert boot.unread == ()
 
 
-def test_the_two_paths_are_directories_and_never_files():
+def test_the_one_path_is_a_directory_and_never_a_file():
     """The app names its own store file and its write-ahead log inside the one
     it is given. That is what removes the whole class of mistake where the path
     exists but its parent is not mounted — and it is what makes the mount
     observation decidable, since a *directory* can be interrogated before the
     file it will hold exists."""
-    boot = boot_env.read({'SB_STORE_DIR': '/var/lib/suivi-bourse',
-                          'SB_IMPORT_DIR': '/srv/drop'})
+    boot = boot_env.read({'SB_STORE_DIR': '/var/lib/suivi-bourse'})
 
     assert boot.store_dir == Path('/var/lib/suivi-bourse')
-    assert boot.import_dir == Path('/srv/drop')
     # The store file is named by the app, beneath the directory it was given.
     import store
 
@@ -49,9 +46,9 @@ def test_the_two_paths_are_directories_and_never_files():
 
 
 @pytest.mark.parametrize('name', [
-    'SB_STORE_DIR', 'SB_IMPORT_DIR', 'SB_WEB_PORT', 'LOG_LEVEL',
+    'SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL',
 ])
-def test_a_blank_value_counts_as_unset_for_every_one_of_the_four(name):
+def test_a_blank_value_counts_as_unset_for_every_one_of_the_three(name):
     """Compose renders an undefined substitution as the **empty string** rather
     than omitting the variable, so ``SB_FOO=${FOO}`` with no ``FOO`` hands the
     container ``SB_FOO=""``. Read literally, every ``int()`` downstream blows up
@@ -159,7 +156,27 @@ def test_the_four_never_read_names_stay_out_of_the_notice():
 
 def test_a_variable_the_app_still_reads_is_not_in_the_notice():
     assert boot_env.unread({'SB_WEB_PORT': '9000',
-                            'SB_IMPORT_DIR': '/srv/drop'}) == ()
+                            'SB_STORE_DIR': '/srv/store'}) == ()
+
+
+def test_the_drop_folders_variable_is_named_as_removed_without_a_successor():
+    """ADR-0032, user story 29. The folder ``SB_IMPORT_DIR`` named is gone and a
+    file is handed to the app instead, so an install that still sets it must
+    hear it **named** at boot — or its owner goes on believing that dropping a
+    file somewhere imports it.
+
+    And it has to be the *deleted* clause: there is no dial that brings the
+    folder back, so *"turn it on the settings page"* would send its reader
+    looking for a field that has never existed, and silence would read as a typo.
+    """
+    names = boot_env.unread({'SB_IMPORT_DIR': '/srv/drop'})
+    message = boot_env.notice(names)
+
+    assert names == ('SB_IMPORT_DIR',)
+    assert 'SB_IMPORT_DIR' in boot_env.DELETED
+    assert 'removed and have no replacement: SB_IMPORT_DIR' in message
+    assert 'settings page' not in message
+    assert 'ever read' not in message
 
 
 def test_a_blank_retired_variable_is_not_reported():
@@ -247,7 +264,7 @@ def test_the_read_set_is_exactly_the_inventory():
     """A name absent from the inventory but read somewhere would be reported as
     ignored while being obeyed, which is the one thing worse than silence."""
     assert boot_env.READ == {name for name, _ in boot_env.INVENTORY}
-    assert len(boot_env.INVENTORY) == 4
+    assert len(boot_env.INVENTORY) == 3
 
 
 # --------------------------------------------------------------------- #
@@ -262,8 +279,8 @@ def test_the_source_is_factual_and_not_helpful():
 
     assert reported['SB_WEB_PORT']['source'] == 'environment'
     assert reported['SB_WEB_PORT']['set'] is True
-    assert reported['SB_IMPORT_DIR']['source'] == 'default'
-    assert reported['SB_IMPORT_DIR']['set'] is False
+    assert reported['SB_STORE_DIR']['source'] == 'default'
+    assert reported['SB_STORE_DIR']['set'] is False
 
 
 def test_the_log_level_reported_is_the_one_the_process_holds():

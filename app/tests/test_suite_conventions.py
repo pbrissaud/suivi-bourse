@@ -78,12 +78,14 @@ _PURE = ('scheduling', 'performance', 'carrying', 'retention', 'fx',
          'boot_env', 'mounts')
 
 #: The edges a pure module must not reach — the store, the market, and the two
-#: file readers. `watchdog` is on the list because it is what the violation
-#: actually was: `events/__init__.py` imported the drop-folder watcher at module
-#: level, so `from events.schemas import Timeline` — which is how `performance`
-#: gets the domain's vocabulary — pulled it in, and `import performance` failed
-#: with `ModuleNotFoundError: watchdog` outside the full venv.
-_HEAVY = ('duckdb', 'yfinance', 'pandas', 'openpyxl', 'watchdog')
+#: file readers. There was a fifth, and it is how the violation was found:
+#: `events/__init__.py` imported the drop-folder watcher at module level, so
+#: `from events.schemas import Timeline` — which is how `performance` gets the
+#: domain's vocabulary — pulled it in, and `import performance` failed with
+#: `ModuleNotFoundError: watchdog` outside the full venv. The watcher and its
+#: dependency left the project with the folder (ADR-0032), so guarding against
+#: a package that is not installed anywhere would be guarding against nothing.
+_HEAVY = ('duckdb', 'yfinance', 'pandas', 'openpyxl')
 
 
 def test_the_pure_modules_are_pure_at_the_import():

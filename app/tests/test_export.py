@@ -60,12 +60,13 @@ _DECLARING_HEADER = (
 
 
 def install(root, files, currency=None):
-    """A real install: a drop folder, a store, and one publication.
+    """A real install: a store with those files' rows in it, and one publication.
 
-    The gesture a user makes, in the order they make it — files first, then the
-    app opens the store and imports them. ``currency`` writes the dial the way
-    ``PUT /api/settings`` would, before any import, so a test can set up an
-    install that has already answered the question.
+    ``currency`` writes the dial the way ``PUT /api/settings`` would, before the
+    rows land, so a test can set up an install that has already answered the
+    question. The files are read into the store here rather than by the manager,
+    which scans no directory since ADR-0032 — what is asserted downstream is the
+    ledger, and the ledger is in the store either way.
     """
     root.mkdir(parents=True, exist_ok=True)
     drop = root / 'events'
@@ -79,6 +80,7 @@ def install(root, files, currency=None):
             'INSERT INTO setting (key, value) VALUES (?, ?) '
             'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
             ['base_currency', currency])
+    ledger.sync_drop_folder(opened, drop)
     manager = main.ConfigurationManager(config_dir=str(root), opened_store=opened)
     manager.reload()
     return manager, opened
@@ -389,11 +391,15 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
     metrics.apply_dials(settings_registry.defaults())
     assert metrics.base_currency is None
 
-    (root / 'events' / 'restore.csv').write_text(
+    landing = root / 'events' / 'restore.csv'
+    landing.write_text(
         _DECLARING_HEADER +
         "2024-11-02,BUY,default,AI.PA,Air Liquide,1,170.00,,,,CHF\n",
         encoding='utf-8')
-    metrics.ingest()
+    # The shape of a write through the API since ADR-0032: the rows land in the
+    # store, and the replay that follows carries the dial into the process.
+    ledger.import_file(opened, landing)
+    metrics.ingest(force=True)
 
     assert metrics.base_currency == 'CHF'
     opened.close()

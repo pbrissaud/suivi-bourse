@@ -49,8 +49,6 @@ class _FakeConfigManager:
         self._load_error = load_error
         self.load_calls = 0
         self.named_unread = 0
-        self.watcher_started_with = None
-        self.watcher_stopped = False
         # The store the ledger is read through (issue #697): handed in on the
         # master's side of the fork and again, as the worker's own connection,
         # on the far side. Recorded rather than used, so the boot's handling of
@@ -82,12 +80,6 @@ class _FakeConfigManager:
 
     def get_events(self):
         return []
-
-    def start_watcher(self, reload_callback):
-        self.watcher_started_with = reload_callback
-
-    def stop_watcher(self):
-        self.watcher_stopped = True
 
 
 @pytest.fixture(autouse=True)
@@ -163,7 +155,6 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert fake_config.load_calls == 1
     assert fake_config.named_unread == 1
     # ... and nothing else is.
-    assert fake_config.watcher_started_with is None
     assert metrics_cls.call_count == 0
     assert scheduler_cls.call_count == 0
     assert runtime.metrics is None
@@ -190,14 +181,15 @@ def test_build_runtime_opens_the_store_and_hands_on_its_path_not_its_connection(
     reopened.close()
 
 
-def test_build_runtime_reads_the_environment_once_and_wires_both_paths(
+def test_build_runtime_reads_the_environment_once_and_hands_no_folder_on(
         monkeypatch, tmp_path):
-    """#740. The store directory and the drop folder are read **together**.
+    """#740, ADR-0032. **One** read of ``os.environ``, and one path in it.
 
-    Two reads of ``os.environ`` at two moments would be two readings of one
-    mapping, and the manager reading its own would put a second place in the
-    process reaching for the environment — the thing this ticket exists to make
-    exactly one.
+    Two reads at two moments would be two readings of one mapping, and the
+    manager reading its own would put a second place in the process reaching for
+    the environment — the thing #740 exists to make exactly one. The second path
+    left with the drop folder: the manager is handed a store and nothing else,
+    so there is no directory for it to be told about.
     """
     monkeypatch.setenv(store.STORE_DIR_VAR, str(tmp_path / "vol"))
     monkeypatch.setenv("SB_IMPORT_DIR", str(tmp_path / "drop"))
@@ -212,17 +204,7 @@ def test_build_runtime_reads_the_environment_once_and_wires_both_paths(
     runtime = main.build_runtime()
 
     assert runtime.store_path == tmp_path / "vol" / store.STORE_FILENAME
-    assert seen["import_dir"] == str(tmp_path / "drop")
-
-
-def test_the_drop_folder_is_the_import_directory_it_was_handed(tmp_path):
-    """``events.source`` was the last thing ``settings.yaml`` was read for; the
-    container names the mount instead (ADR-0015), and it arrives as an argument
-    rather than being fetched from the environment down here."""
-    manager = main.ConfigurationManager(config_dir=str(tmp_path),
-                                        import_dir=str(tmp_path / "drop"))
-
-    assert manager.get_events_source() == str(tmp_path / "drop")
+    assert set(seen) == {"opened_store"}
 
 
 def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
@@ -453,14 +435,14 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     assert runtime.metrics is metrics
     assert runtime.scheduler is scheduler
     assert metrics.scheduler is scheduler
-    assert cfg.watcher_started_with == metrics.ingest
     # ingest() arms the per-symbol scrape jobs (#616), so it must land before the
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
     # ... plus the fixed-cadence interval jobs, of which there are now **two**:
     # the ``ingest`` job left with SB_INGESTION_INTERVAL (issue #697). The
-    # ingestion still happens — it is the ``ingest()`` above and the always-on
-    # drop-folder watcher — but nothing polls the folder on a timer.
+    # ingestion still happens — it is the ``ingest()`` above and the replay that
+    # follows a write — but nothing polls anything on a timer, and since
+    # ADR-0032 there is no folder left to poll.
     assert {c.kwargs["id"] for c in scheduler.add_job.call_args_list} == \
         {"backfill", "perf"}
 
@@ -496,7 +478,7 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
     assert "executors" in scheduler_cls.call_args.kwargs
 
 
-def test_shutdown_runtime_stops_the_scheduler_the_watcher_and_the_client(mocker):
+def test_shutdown_runtime_stops_the_scheduler_and_the_metrics(mocker):
     cfg = _FakeConfigManager()
     runtime = main.Runtime(cfg)
     runtime.scheduler = mocker.MagicMock(running=True)
@@ -507,17 +489,12 @@ def test_shutdown_runtime_stops_the_scheduler_the_watcher_and_the_client(mocker)
     # wait=False: the worker is already leaving, and an in-flight scrape must not
     # hold the shutdown open for a whole yfinance timeout.
     runtime.scheduler.shutdown.assert_called_once_with(wait=False)
-    assert cfg.watcher_stopped
     runtime.metrics.close.assert_called_once()
 
 
 def test_shutdown_runtime_tolerates_a_worker_that_never_booted():
     """worker_exit runs even when post_fork died on its first line."""
-    cfg = _FakeConfigManager()
-
-    main.shutdown_runtime(main.Runtime(cfg))
-
-    assert cfg.watcher_stopped
+    main.shutdown_runtime(main.Runtime(_FakeConfigManager()))
 
 
 # ---------------------------------------------------------------------------

@@ -12,12 +12,11 @@ import mounts
 
 
 def observe(persistence=mounts.PERSISTENT, store_dir='/data',
-            base_currency='EUR', recorded_events=3, web_port=8080,
-            import_dir='/import'):
+            base_currency='EUR', recorded_events=3, web_port=8080):
     return boot_conditions.observe(
         persistence=persistence, store_dir=store_dir,
         base_currency=base_currency, recorded_events=recorded_events,
-        web_port=web_port, import_dir=import_dir)
+        web_port=web_port)
 
 
 def keys(conditions):
@@ -94,17 +93,21 @@ def test_the_currency_line_carries_the_one_non_interactive_path():
     assert line.level == logging.WARNING
 
 
-def test_the_empty_portfolio_line_names_the_page_and_the_drop_folder():
-    """The drop folder rather than a ``curl``: a portfolio is a dated event
-    ledger (#711) and the API has **no write path** for one, so naming a
-    request that answers 404 would be worse than naming nothing."""
-    line, = observe(recorded_events=0, web_port=9090, import_dir='/inbox')
+def test_the_empty_portfolio_line_names_the_page_and_no_folder():
+    """**It names where the gesture is made, and nothing else** (ADR-0032).
+
+    The line used to offer a drop folder as its second half; the folder is gone,
+    and a sentence that still sent a reader to a directory would be sending them
+    somewhere nothing is read. Both entrances to the ledger — a file handed to
+    the app, a first position typed — are on the page it names.
+    """
+    line, = observe(recorded_events=0, web_port=9090)
 
     assert 'localhost:9090' in line.message
-    assert '/inbox' in line.message
+    assert '/import' not in line.message
+    assert 'import_dir' not in line.context
     # An empty ledger is an ordinary state on a fresh install, not a fault.
     assert line.level == logging.INFO
-    assert line.context['import_dir'] == '/inbox'
 
 
 def test_every_line_carries_its_key_in_the_logfmt_context():

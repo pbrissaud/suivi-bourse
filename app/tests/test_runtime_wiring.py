@@ -508,19 +508,19 @@ def test_compose_only_variables_are_not_in_the_list(monkeypatch):
     assert "COMPOSE_PROJECT_NAME" not in names
 
 
-def test_the_inventory_is_the_four_and_no_fifth():
-    """#740, ADR-0033. The environment says four things; everything else is a
-    dial, and the two the exporter answered for left with it.
+def test_the_inventory_is_the_three_and_no_fourth():
+    """#740, ADR-0033, ADR-0032. The environment says three things; everything
+    else is a dial, the two the exporter answered for left with it, and the drop
+    folder's own left with the mount.
 
     Named here rather than only in ``test_boot_env.py`` because this is the list
-    ``/api/config`` publishes: a fifth name appearing in the payload is a fifth
+    ``/api/config`` publishes: a fourth name appearing in the payload is a fourth
     name the documentation would have to explain.
     """
     names = [s["name"] for s in main.effective_environment()]
 
-    assert len(names) == 4
-    assert set(names) == {
-        "LOG_LEVEL", "SB_STORE_DIR", "SB_IMPORT_DIR", "SB_WEB_PORT"}
+    assert len(names) == 3
+    assert set(names) == {"LOG_LEVEL", "SB_STORE_DIR", "SB_WEB_PORT"}
 
 
 def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):
