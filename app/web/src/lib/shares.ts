@@ -218,12 +218,12 @@ export function buildShareRows(
 
 /**
  * What the reader may order the live table by — **one name per column**, the
- * ten of them.
+ * nine of them.
  *
- * `weight` is in the list and it orders on the **value**, not on the share: the
- * share is that value divided by one whole for the whole table, so the two
- * orders are the same order and computing the division to compare it would be
- * arithmetic performed to reach a conclusion already in hand.
+ * `weight` was here while the table carried a `Poids` column, and left with it:
+ * a sort key for a column nobody renders is a control the reader cannot reach.
+ * It cost nothing to keep and said something false — that the table has ten
+ * columns. The weight itself is untouched below.
  */
 export type SortColumn =
   | 'symbol'
@@ -231,7 +231,6 @@ export type SortColumn =
   | 'quantity'
   | 'avgCost'
   | 'value'
-  | 'weight'
   | 'unrealised'
   | 'realised'
   | 'dividends'
@@ -283,7 +282,6 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
     case 'avgCost':
       return unitCost(row)
     case 'value':
-    case 'weight':
       return marketValue(row)
     case 'unrealised':
       return unrealised(row)

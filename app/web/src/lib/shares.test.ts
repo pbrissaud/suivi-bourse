@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Position } from '@/lib/api'
+import { positionRenderings } from '@/lib/absence'
 import {
   accountBreakdown,
   buildShareRows,
@@ -18,11 +19,14 @@ import {
   isAnomalous,
   isClosed,
   marketValue,
+  placedValue,
   shareEvents,
   unitCost,
   unrealised,
   unrealisedRatio,
   valuationTotal,
+  weightRendering,
+  weightShare,
 } from '@/lib/shares'
 import {
   aClosedPosition,
@@ -288,5 +292,67 @@ describe('a share’s own events', () => {
     expect(events.every((event) => event.symbol === 'ZZA')).toBe(true)
     expect(events[0].date).toBe('2026-03-01')
     expect(events.at(-1)?.date).toBe('2025-01-05')
+  })
+})
+
+// ------------------------------------------------------------------------- //
+// The weight — a figure with no column
+//
+// `Poids` was a column of the live table at #791 and left again; the figure it
+// rendered stayed, deliberately, for a surface that has not been written yet.
+// Its only cover used to be that column's rendering tests, so it is held here
+// instead — a kept function with no reader and no test is the one that rots.
+// ------------------------------------------------------------------------- //
+
+describe('the weight of a line', () => {
+  it('divides the value of the lines that can be placed, and not the whole table', () => {
+    // The line **awaiting its rate** is out of the whole rather than counted as
+    // nothing: counting it would make every other percentage silently wrong. It
+    // is `allocation`'s rule one page over, reused rather than re-decided. A
+    // line that was never quoted at all is a different case — ADR-0004 carries
+    // it at its cost, so it has a value and belongs in the whole.
+    const rows = rowsOf([
+      aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 500, price: 130 }),
+      aPosition({ symbol: 'ZZB', quantity: 10, cost_basis: 500, price: 70 }),
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+    ])
+    const whole = placedValue(rows)
+
+    expect(whole).toBeCloseTo(2000, 6)
+    expect(weightShare(rows[0], whole)).toBeCloseTo(0.65, 6)
+    expect(weightShare(rows[1], whole)).toBeCloseTo(0.35, 6)
+    // The three shares close on the placed lines alone.
+    expect((weightShare(rows[0], whole) ?? 0) + (weightShare(rows[1], whole) ?? 0)).toBeCloseTo(1, 6)
+  })
+
+  it('has no share where the line has no value, and none where the whole is nothing', () => {
+    const [awaitingRate] = rowsOf([
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+    ])
+    expect(weightShare(awaitingRate, 2000)).toBeNull()
+
+    // A table every line of which is worth zero: there is genuinely nothing to
+    // divide, and dividing by it would answer `Infinity` or `NaN`.
+    const [worthless] = rowsOf([
+      aPosition({ symbol: 'ZZA', quantity: 0, cost_basis: 0, price: 130 }),
+    ])
+    expect(weightShare(worthless, 0)).toBeNull()
+  })
+
+  it('reads as the valuation it divides, and never classifies an absence twice', () => {
+    // Whatever empties `Valorisation` empties this for the same reason and has
+    // the same sentence already written for it: a second classification of one
+    // absence is how four renderings become five.
+    const [priced, awaitingRate] = rowsOf([
+      aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 500, price: 130 }),
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: 125, currency: 'USD', rate: null }),
+    ])
+
+    expect(weightRendering(priced, 1300).kind).toBe('figure')
+    expect(weightRendering(awaitingRate, 1300)).toEqual(
+      positionRenderings(awaitingRate).valuation,
+    )
+    // The one case of its own: a figure of a valuation, over a whole of nothing.
+    expect(weightRendering(priced, 0).kind).toBe('dash')
   })
 })

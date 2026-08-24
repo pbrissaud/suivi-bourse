@@ -27,7 +27,7 @@
  * **Two gestures on the table itself** (#791), and neither of them removes a
  * line — which is what lets the header go on stating the sum of what is under
  * it without a word of explanation. **The order** is the reader's, by any of the
- * ten columns, and it moves rows about; **the grouping by account** cuts the
+ * nine columns, and it moves rows about; **the grouping by account** cuts the
  * same rows into blocks, each with its subtotal in its own header. A partition
  * and a permutation both leave the set alone, and that is the property the page
  * is built on.
@@ -71,7 +71,6 @@ import {
   heldRows,
   isAnomalous,
   nextSort,
-  placedValue,
   type ShareGroup,
   type ShareSort,
   type SortColumn,
@@ -184,11 +183,6 @@ export default function SharesPage() {
   const groups: ShareGroup[] = grouped
     ? accountGroups(shownPositions, failures, sort)
     : [{ account: null, rows: shown, positions: shownPositions }]
-
-  // The whole the `Poids` column divides, for the **whole** table: grouping
-  // partitions the rows and never the whole, so two accounts' bars stay
-  // comparable and the column goes on saying *of this table*.
-  const whole = placedValue(shown)
 
   // The freshest quote the page holds — one instant for the whole table. There
   // is nothing to date when nothing has ever been quoted, and an invented
@@ -317,7 +311,6 @@ export default function SharesPage() {
           <SharesHead positions={summed} rows={onScreen} currency={currency} />
           <SharesTable
             groups={groups}
-            whole={whole}
             currency={currency}
             sort={sort}
             onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}

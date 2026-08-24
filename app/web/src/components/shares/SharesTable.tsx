@@ -1,7 +1,7 @@
 /**
- * The live table — **ten columns** (#684 D3, #791, ADR-0016, ADR-0017).
+ * The live table — **nine columns** (#684 D3, #791, ADR-0016, ADR-0017).
  *
- *     Titre · Cours · Détenu · PRU · Valorisation · Poids · Latente ·
+ *     Titre · Cours · Détenu · PRU · Valorisation · Latente ·
  *     Réalisée · Dividendes · Compte
  *
  * with the percentage on a **second line under the latent gain** rather than in
@@ -18,17 +18,10 @@
  *    a total never shares a row with its terms (ADR-0016): five numeric columns
  *    of equal weight say nothing about the last four being *inside* the first.
  *
- * **`Poids` sits beside the figure it divides** (#791). The percentage is exact
- * and comparing two of them is arithmetic; the bar is the glance — and it is
- * drawn by `ShareBar`, the one component that draws a share (#800), never by
- * markup written here. `src/shareBar.test.ts` is what holds that.
- *
- * **The bar's fill encodes nothing, and that is the decision this table had to
- * take.** ADR-0023's ramp encodes *rank*, redundantly with an angle, and it is
- * licensed only by a list that is **sorted and legended** — which this table
- * stops being the moment the reader orders it by `PRU` or groups it by account.
- * A ramp mounted here would spell a rank the rows are no longer in. So one
- * fill, the brand's own accent, saying only *this is the weight*.
+ * **`Poids` is not a column here.** It was one at #791 and it left again: the
+ * share of the table a line carries is a figure this page owns — `weightShare`
+ * and `weightRendering` are still in `lib/shares.ts`, still tested — but the
+ * table is not where it is read. What replaces it is decided elsewhere.
  *
  * **Every column sorts, and an absence never rises** (`lib/shares.ts`). The
  * order lives on the `<th>` as `aria-sort`, where a reader who cannot see the
@@ -54,7 +47,6 @@
 import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
 
 import { Explain } from '@/components/Explain'
-import { ShareBar } from '@/components/ShareBar'
 import {
   Table,
   TableBody,
@@ -75,8 +67,6 @@ import {
   unrealised,
   unrealisedRatio,
   valuationTotal,
-  weightRendering,
-  weightShare,
   type ShareGroup,
   type ShareRow,
   type ShareSort,
@@ -89,19 +79,6 @@ import { cn } from '@/lib/utils'
 function toneOf(rendering: Rendering, value: number | null): string {
   return rendering.kind === 'figure' ? signClass(value) : signClass(null)
 }
-
-/**
- * The weight bar's fill, and it is **one colour for every row**.
- *
- * The two ramps of the product are earned by what their surface guarantees —
- * ADR-0023's rank ramp by a sorted, legended list, the rail's wheel by a stable
- * identity — and this table guarantees neither: its order is the reader's, by
- * any of ten columns, and its rows are partitioned by account on request. A
- * third ramp invented here would say a rank that is not on screen. What is
- * left is the brand's own accent, which carries no rank and no identity — the
- * two ramps live in `--alloc-*` and neither of them is this.
- */
-const WEIGHT_FILL = 'var(--primary)'
 
 /**
  * The four column headers that rest on a convention — and only four. `Cours`
@@ -169,15 +146,9 @@ export interface SharesTableProps {
   /**
    * The blocks the table is made of — **one** when nothing is grouped, and one
    * per account when it is. A group with no header is the ungrouped table, so
-   * there is one rendering of ten columns rather than two.
+   * there is one rendering of nine columns rather than two.
    */
   groups: readonly ShareGroup[]
-  /**
-   * What the `Poids` column divides, for the **whole** table: a weight is a
-   * share of what the header above states, so grouping partitions the rows and
-   * never the whole — the bars of two groups stay comparable.
-   */
-  whole: number
   currency: string | null
   sort: ShareSort
   onSort: (column: SortColumn) => void
@@ -186,7 +157,6 @@ export interface SharesTableProps {
 
 export function SharesTable({
   groups,
-  whole,
   currency,
   sort,
   onSort,
@@ -210,17 +180,6 @@ export function SharesTable({
           />
           <ColumnHead label="shares.column.avgCost" column="avgCost" sort={sort} onSort={onSort} numeric />
           <ColumnHead label="shares.column.value" column="value" sort={sort} onSort={onSort} numeric />
-          {/* Narrow on purpose: the bar under the figure is `w-full` of its
-              cell, so the column has to be the reader's ruler and not the
-              longest string that ever lands in it. */}
-          <ColumnHead
-            label="shares.column.weight"
-            column="weight"
-            sort={sort}
-            onSort={onSort}
-            numeric
-            className="w-20"
-          />
           <ColumnHead
             label="shares.column.unrealised"
             column="unrealised"
@@ -249,7 +208,6 @@ export function SharesTable({
             <ShareLine
               key={`${group.account ?? ''}·${row.symbol}`}
               row={row}
-              whole={whole}
               currency={currency}
               onSelect={onSelect}
             />
@@ -280,7 +238,7 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
 
   return (
     <TableRow className="bg-muted/40 hover:bg-muted/40">
-      <th scope="rowgroup" colSpan={10} className="px-3 py-2 text-left [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5">
+      <th scope="rowgroup" colSpan={9} className="px-3 py-2 text-left [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5">
         <span className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="text-sm font-medium">{group.account}</span>
           <span className="text-xs text-muted-foreground">
@@ -311,19 +269,17 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
 
 interface ShareLineProps {
   row: ShareRow
-  whole: number
   currency: string | null
   onSelect: (symbol: string) => void
 }
 
-function ShareLine({ row, whole, currency, onSelect }: ShareLineProps) {
+function ShareLine({ row, currency, onSelect }: ShareLineProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const renderings = positionRenderings(row)
   const value = marketValue(row)
   const gain = unrealised(row)
   const ratio = unrealisedRatio(row)
-  const weight = weightShare(row, whole)
 
   return (
     // **The whole row opens the sheet** (#791). The button on the name stays,
@@ -376,24 +332,6 @@ function ShareLine({ row, whole, currency, onSelect }: ShareLineProps) {
 
       <TableCell className={`text-right tabular ${toneOf(renderings.valuation, value)}`}>
         {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
-      </TableCell>
-
-      {/* The share of the table's own whole, written and drawn. The bar is
-          `aria-hidden` and it is the percentage above it that is announced —
-          two announcers for one figure is the defect this page refuses
-          everywhere else. A **null** share draws nothing at all, which is not
-          the same claim as a zero share's empty track.
-
-          **A stated width, and the one cell of the row that wraps.** The bar
-          is `w-full` of this cell, so a column sized by its longest string
-          would rescale every bar in it the day one line names its absence —
-          *en attente du taux* is longer than any percentage and, left
-          `nowrap`, it would take that width off the nine columns beside it at
-          976 px. The `?? 0` is unreachable: the figure branch is taken only
-          where `weightRendering` found a share. */}
-      <TableCell className="w-20 text-right tabular whitespace-normal">
-        {renderFigure(weightRendering(row, whole), () => f.percentPoints((weight ?? 0) * 100), t)}
-        <ShareBar share={weight} fill={WEIGHT_FILL} className="mt-1" />
       </TableCell>
 
       <TableCell className={`text-right tabular ${toneOf(renderings.unrealised, gain)}`}>

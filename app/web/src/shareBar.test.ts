@@ -48,14 +48,14 @@ const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
  * still passes, the drawing carrying no word for a rendering test to miss. The
  * rail's own bar is read in the DOM by `accounts.test.tsx`, which is the
  * stronger assertion of the two and is why this list is a *floor* rather than a
- * replacement for it. The shares table's `Poids` column joined it at #791,
- * which is the third surface the primitive was written ahead of.
+ * replacement for it. The shares table's `Poids` column joined the list at #791
+ * and left again when the column did — the primitive it was written ahead of is
+ * mounted on the three surfaces below and nowhere else.
  */
 const MOUNTS = [
   'src/components/dashboard/Allocation.tsx',
   'src/components/accounts/AccountsRail.tsx',
   'src/components/accounts/AccountDetail.tsx',
-  'src/components/shares/SharesTable.tsx',
 ]
 
 function sources(directory: string): string[] {

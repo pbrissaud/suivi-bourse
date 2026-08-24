@@ -181,7 +181,6 @@
   "shares.column.quantity": "Held",
   "shares.column.avgCost": "Avg. cost",
   "shares.column.value": "Value",
-  "shares.column.weight": "Weight",
   "shares.column.unrealised": "Unrealised",
   "shares.column.realised": "Realised",
   "shares.column.dividends": "Dividends",

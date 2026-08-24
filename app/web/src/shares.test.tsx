@@ -179,20 +179,17 @@ describe('the folded section', () => {
   })
 })
 
-describe('the ten columns of the live table', () => {
-  it('are exactly those ten, in that order', async () => {
+describe('the nine columns of the live table', () => {
+  it('are exactly those nine, in that order', async () => {
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
 
-    // `Poids` sits beside the figure it divides, which is what makes it
-    // checkable by eye: this row's `Valorisation` over the header's.
     expect(columnNames(liveTable())).toEqual([
       'Titre',
       'Cours',
       'Détenu',
       'PRU',
       'Valorisation',
-      'Poids',
       'Latente',
       'Réalisée',
       'Dividendes',
@@ -232,11 +229,11 @@ describe('the ten columns of the live table', () => {
     await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
 
     // 1 300,00 − 1 000,00 = +300,00, which is +30,00 % of the basis — and it is
-    // not a tenth column.
+    // not a ninth column.
     const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
     expect(row).toHaveTextContent(/300,00/)
     expect(row).toHaveTextContent(/\+30,00\D?%/)
-    expect(columnNames(liveTable())).toHaveLength(10)
+    expect(columnNames(liveTable())).toHaveLength(9)
   })
 
   it('keeps the four renderings of absence apart, on one screen', async () => {
@@ -294,12 +291,12 @@ describe('the ten columns of the live table', () => {
     ) as HTMLElement
     // Its cost, and a latent gain of exactly zero — the first row of the absence
     // table, not a fifth rendering of its own. Both are read **on their own
-    // cell**: `Cours` is the second and `Latente` the seventh of the ten, and a
+    // cell**: `Cours` is the second and `Latente` the sixth of the nine, and a
     // `0,00` sought anywhere in the row is already satisfied by the valuation
     // `600,00` and the PRU `100,00` beside it, i.e. it could not fail alone.
     const cells = within(row).getAllByRole('cell')
     expect(row).toHaveTextContent(/600,00/)
-    expect(cells[6]).toHaveTextContent(/^0,00/)
+    expect(cells[5]).toHaveTextContent(/^0,00/)
     expect(row).not.toHaveTextContent(/en attente du taux/)
     // And no number under a unit nothing named: 130 is not 130 €.
     expect(row).not.toHaveTextContent(/130,00/)
@@ -330,7 +327,7 @@ describe('the exception marker and the date', () => {
 
     // No column for it, and the reader is told the count rather than *never*,
     // which is not computable.
-    expect(columnNames(liveTable())).toHaveLength(10)
+    expect(columnNames(liveTable())).toHaveLength(9)
     const row = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
     expect(row).toHaveTextContent(/3 relevés consécutifs, aucun cours/)
 
@@ -577,7 +574,6 @@ describe('the page in English', () => {
       'Held',
       'Avg. cost',
       'Value',
-      'Weight',
       'Unrealised',
       'Realised',
       'Dividends',
@@ -678,66 +674,14 @@ describe('the reduction to one account', () => {
 })
 
 // ------------------------------------------------------------------------- //
-// The three gestures the table gained at #791 — the weight, the order and the
-// grouping — plus the row that opens the sheet.
+// The two gestures the table kept from #791 — the order and the grouping —
+// plus the row that opens the sheet. The weight column left again (its figure
+// lives on in `lib/shares.ts`, read by nothing here).
 //
 // None of them removes a line, and that is the property the page is built on:
 // a permutation and a partition both leave the set alone, so the header goes
 // on stating the sum of what is under it without a word of explanation.
 // ------------------------------------------------------------------------- //
-
-/** The `Poids` cell of a row, which is the sixth of the ten. */
-function weightCell(name: string) {
-  const row = screen.getByRole('button', { name }).closest('tr') as HTMLElement
-  return within(row).getAllByRole('cell')[5]
-}
-
-describe('the weight column', () => {
-  it('writes each line’s share of the table’s own total, and draws it', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
-
-    // 1 300 + 400 + 600 = 2 300, which is the `Valorisation` the header above
-    // states — so the column is checkable against a figure on the same screen.
-    expect(weightCell('Zeta Alpha')).toHaveTextContent('56,52 %')
-    expect(weightCell('Zeta Beta')).toHaveTextContent('17,39 %')
-    expect(weightCell('Zeta Gamma')).toHaveTextContent('26,09 %')
-
-    // And the bar is beside the figure, not instead of it: the percentage is
-    // exact and the drawing is the glance. It carries no word — the attribute
-    // is the one handle a rendering test has on it (`ShareBar`).
-    expect(weightCell('Zeta Alpha').querySelector('[data-share-bar]')).not.toBeNull()
-  })
-
-  it('names the absence it inherits, and draws nothing at all for it', async () => {
-    // A held line whose rate has not resolved has no value in the reporting
-    // currency, so it has no share of one either — and the sentence is the
-    // one the `Valorisation` beside it already says, never a fifth rendering
-    // of its own (ADR-0021).
-    renderShares([
-      ...defaultPositions(),
-      aPosition({
-        account: 'delta',
-        symbol: 'ZZI',
-        name: 'Zeta Iota',
-        quantity: 3,
-        cost_basis: 300,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-    ])
-
-    const cell = await waitFor(() => weightCell('Zeta Iota'))
-    expect(cell).toHaveTextContent('en attente du taux')
-    expect(cell.querySelector('[data-share-bar]')).toBeNull()
-
-    // The lines that *can* be placed go on dividing a whole that is theirs —
-    // the allocation's own rule (`lib/dashboard.ts`), and not a column saying
-    // *waiting* on every row for one line's sake.
-    expect(weightCell('Zeta Alpha')).toHaveTextContent('56,52 %')
-  })
-})
 
 describe('every column sorts', () => {
   /** The names in the live table, in the order the table is showing them. */
@@ -748,15 +692,15 @@ describe('every column sorts', () => {
       .map((row) => within(row).getAllByRole('cell')[0].textContent?.replace(/Z[A-Z]+$/, ''))
   }
 
-  it('gives all ten a control of their own, and its name is the column’s', async () => {
+  it('gives all nine a control of their own, and its name is the column’s', async () => {
     // *Every* column, which is the criterion — and the control is the label
-    // itself rather than a tenth *Trier par …* saying what the cell it sits in
+    // itself rather than a ninth *Trier par …* saying what the cell it sits in
     // already says.
     renderShares()
     await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
 
     const headers = within(liveTable()).getAllByRole('columnheader')
-    expect(headers).toHaveLength(10)
+    expect(headers).toHaveLength(9)
     for (const header of headers) {
       const label = header.textContent?.trim() as string
       expect(within(header).getByRole('button', { name: label })).toBeInTheDocument()
@@ -887,7 +831,7 @@ describe('the grouping by account', () => {
     expect(lines).toHaveLength(2)
     // Summed over the two, the figures are the ungrouped line's, exactly.
     const realised = lines.map(
-      (line) => within(line.closest('tr') as HTMLElement).getAllByRole('cell')[7].textContent,
+      (line) => within(line.closest('tr') as HTMLElement).getAllByRole('cell')[6].textContent,
     )
     expect(realised.join(' ')).toMatch(/70,00/)
     expect(head()).toHaveTextContent(/470,00/)
@@ -981,7 +925,7 @@ describe('the absences of this page, one screen apart', () => {
     // colour of text and never the grey of absence (`lib/sign.ts`).
     const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
-    expect(cells[7]).toHaveTextContent(/^0,00/)
-    expect(cells[7]).not.toHaveTextContent('—')
+    expect(cells[6]).toHaveTextContent(/^0,00/)
+    expect(cells[6]).not.toHaveTextContent('—')
   })
 })
