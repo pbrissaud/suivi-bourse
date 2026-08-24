@@ -1,9 +1,9 @@
 """Liveness route for SuiviBourse (issue #651, deepened by #696).
 
 It answers for *this* process — and, since #696, for the store, which is the
-same thing. The container healthcheck used to probe ``/metrics``, which turned
-trivially green whenever ``SB_PROMETHEUS_ENABLED=false``; this route closed that
-blind spot, and it now closes the second one.
+same thing. The container healthcheck used to probe the exporter's endpoint,
+which turned trivially green whenever that endpoint was switched off; this route
+closed that blind spot, and it now closes the second one.
 
 The rule it used to follow — *never touch the database, a healthcheck that
 depends on it would restart the app for someone else's outage* — has **lost its
