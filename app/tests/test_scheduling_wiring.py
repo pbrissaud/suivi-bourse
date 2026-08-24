@@ -1026,6 +1026,31 @@ def test_the_notice_separates_what_moved_from_what_was_deleted(
     assert "removed and have no replacement: SB_EXECUTOR_POOL" in message
 
 
+def test_a_start_up_that_kept_the_metrics_pair_names_both_of_them(
+        monkeypatch, mocker):
+    """ADR-0033, and the reason the pair had to reach this list rather than
+    simply disappear from the inventory.
+
+    An owner who wrote ``SB_PROMETHEUS_ENABLED`` and ``SB_METRICS_PORT`` into a
+    ``.env`` gets nothing on the second socket and no line about it unless the
+    boot names them — and the clause has to be the deleted one, since the gauges
+    became the health body and the runtime tab rather than a dial to turn back
+    on. One line for the two, like every other retired name.
+    """
+    monkeypatch.setenv("SB_PROMETHEUS_ENABLED", "true")
+    monkeypatch.setenv("SB_METRICS_PORT", "8081")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    found = main.report_unread_environment()
+
+    assert "SB_PROMETHEUS_ENABLED" in found and "SB_METRICS_PORT" in found
+    warn.assert_called_once()
+    message = warn.call_args.args[0]
+    assert ("removed and have no replacement: "
+            "SB_METRICS_PORT, SB_PROMETHEUS_ENABLED") in message
+    assert "settings page" not in message
+
+
 def test_a_name_the_app_never_read_gets_no_instruction(monkeypatch, mocker):
     """A typo must not send its author hunting for a dial that never existed."""
     monkeypatch.setenv("SB_REGULAR_INTERVALL", "600")

@@ -1049,7 +1049,7 @@ export interface SettingDescription {
 
 /**
  * One boot variable — what the process had to know before it could open the
- * store (ADR-0014). **Six and no seventh** (#740).
+ * store (ADR-0014). **Four and no fifth** (#740, ADR-0033).
  *
  * It is a *description*: rendered as greyed-out fields it invites the click and
  * reads as a form that refused, when the honest statement is that nothing here
