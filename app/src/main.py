@@ -1478,8 +1478,8 @@ class SuiviBourseMetrics:
 
         The conversion arrives from the caller rather than being worked out here
         (issue #702), so the rate stored beside the price is provably the one
-        the price was multiplied by — and so the same pair of numbers reaches
-        ``/metrics`` and the store without being computed twice at two instants.
+        the price was multiplied by — computed once for the pass rather than at
+        two instants a TTL apart.
         Both ``None`` writes the point with a ``NULL`` converted price, which is
         the ordinary state while the reporting currency is unanswered.
 

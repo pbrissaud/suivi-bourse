@@ -417,8 +417,8 @@ class Timeline:
         costs is visible and is written down rather than repaired:
         ``positions.write_state`` lays down a ``position`` row, so
         ``/api/positions`` serves the line and the dashboard sums its latent gain,
-        ``main._held_symbols`` arms a live scrape job and the position gauges
-        publish it — while ``account_metrics.holdings_value``, which reads
+        ``main._held_symbols`` arms a live scrape job — while
+        ``account_metrics.holdings_value``, which reads
         ``position_at(day)``, excludes it. It is **not a regression**: that
         reading predates #766 and is untouched by it, and the horizon answered
         this case correctly before and after (``account_horizon``'s empty-block
