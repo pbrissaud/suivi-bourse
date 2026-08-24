@@ -574,19 +574,149 @@ describe('the file handed over', () => {
     return new File(['date,event_type\n'], name, { type: 'text/csv' })
   }
 
-  it('takes a file from the picker and renders the receipt', async () => {
+  /**
+   * The whole gesture, both halves (#813): hand the file over, read the
+   * forecast, press *Importer*. A test that only cares about what landed says
+   * so in one line rather than spelling the confirmation out five times.
+   */
+  async function handOver(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
+    await user.upload(screen.getByLabelText('Choisir un fichier'), file)
+    await user.click(await screen.findByRole('button', { name: 'Importer' }))
+  }
+
+  it('previews the file before writing it, and writes on the confirmation', async () => {
+    // **The criterion, in the order the reader lives it** (#813, ADR-0032): the
+    // file is read back *before* it costs anything, in the same sentence the
+    // fact will be said in — only the tense moves — and the write happens when
+    // the reader says so.
+    const seen: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const previewing = new URL(request.url).searchParams.has('dry_run')
+        seen.push(previewing ? 'preview' : 'write')
+        return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
+      }),
+    )
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
 
-    // What the gesture produced, in the units the owner counts in — and read by
-    // its accessible text, like every other assertion here.
+    expect(
+      await screen.findByText(
+        /3 événements seront écrits, du 5 janv\. 2026 au 27 févr\. 2026, sur 1 compte et 2 titres\./,
+      ),
+    ).toBeInTheDocument()
+    // Nothing has been written yet, and the app has asked for nothing but the
+    // forecast — which is the property the server side asserts on the table.
+    expect(seen).toEqual(['preview'])
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
     expect(
       await screen.findByText(
         /3 événements écrits, du 5 janv\. 2026 au 27 févr\. 2026, sur 1 compte et 2 titres\./,
       ),
     ).toBeInTheDocument()
+    // **The same file, sent again** — the server holds no import to commit, so
+    // the second call carries the payload exactly as the first did.
+    expect(seen).toEqual(['preview', 'write'])
+    // And the forecast is gone: the fact replaces it rather than joining it.
+    expect(screen.queryByText(/seront écrits/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Importer' })).not.toBeInTheDocument()
+  })
+
+  it('puts the file down without writing it when the reader refuses', async () => {
+    // What the preview is *for*: refusing a file the reader did not mean to
+    // import, before it costs anything at all.
+    const seen: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const previewing = new URL(request.url).searchParams.has('dry_run')
+        seen.push(previewing ? 'preview' : 'write')
+        return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.click(await screen.findByRole('button', { name: 'Annuler' }))
+
+    expect(screen.queryByText(/seront écrits/)).not.toBeInTheDocument()
+    expect(seen).toEqual(['preview'])
+  })
+
+  it('says how many lines of the file the ledger already has, at both moments', async () => {
+    // Story 4 and story 5: the count is stated, and the rows are skipped
+    // without the reader having to do anything about them.
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const previewing = new URL(request.url).searchParams.has('dry_run')
+        return HttpResponse.json(aReceipt({ rows: 3, written: 1, duplicates: 2 }), {
+          status: previewing ? 200 : 201,
+        })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+
+    expect(
+      await screen.findByText(
+        /2 lignes de ce fichier sont déjà dans votre grand livre et seront ignorées\./,
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    expect(
+      await screen.findByText(
+        /2 lignes étaient déjà dans votre grand livre et n’ont pas été réécrites\./,
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('offers to write the duplicates anyway, and only when there are some', async () => {
+    // Story 6: the owner who really did place the same order twice. The app
+    // reports and offers — it never decides on their behalf.
+    const asked: string[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        const previewing = params.has('dry_run')
+        if (!previewing) asked.push(params.get('write_duplicates') ?? 'no')
+        return HttpResponse.json(aReceipt({ rows: 3, written: 1, duplicates: 2 }), {
+          status: previewing ? 200 : 201,
+        })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.click(
+      await screen.findByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
+    )
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(asked).toEqual(['1']))
+  })
+
+  it('asks nothing about duplicates when the file has none', async () => {
+    // A box about rows that do not exist is a question the reader cannot
+    // answer — the default receipt carries no duplicate at all.
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await screen.findByRole('button', { name: 'Importer' })
+
+    expect(
+      screen.queryByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/déjà dans votre grand livre/)).not.toBeInTheDocument()
   })
 
   it('sends the file to the gesture, and never to a resource', async () => {
@@ -600,29 +730,42 @@ describe('the file handed over', () => {
     server.use(
       http.post(ROUTES.eventsImport, ({ request }) => {
         seen.push(request.headers.get('content-type') ?? 'no content type')
-        return HttpResponse.json(aReceipt(), { status: 201 })
+        const previewing = new URL(request.url).searchParams.has('dry_run')
+        return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
       }),
     )
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile('broker.csv'))
+    await handOver(user, aFile('broker.csv'))
     await screen.findByText(/3 événements écrits/)
 
-    expect(seen).toHaveLength(1)
+    // **Twice, and that is the design** (#813): the preview and the write are
+    // one file sent two times, because the server keeps no import between them.
+    expect(seen).toHaveLength(2)
     // The boundary is the browser's, never ours: a hand-written `Content-Type`
     // is a multipart body no server can split.
-    expect(seen[0]).toMatch(/^multipart\/form-data; boundary=/)
+    for (const contentType of seen) {
+      expect(contentType).toMatch(/^multipart\/form-data; boundary=/)
+    }
   })
 
   it('says a file that wrote nothing wrote nothing, and states no period', async () => {
     // *0 événements écrits, du — au —* would state a period the file does not
     // carry, and no plural rule can invent the two days that are missing.
     server.use(
-      http.post(ROUTES.eventsImport, () =>
+      http.post(ROUTES.eventsImport, ({ request }) =>
         HttpResponse.json(
-          aReceipt({ filename: 'vide.csv', written: 0, period: null, accounts: [], symbols: [] }),
-          { status: 201 },
+          aReceipt({
+            filename: 'vide.csv',
+            rows: 0,
+            written: 0,
+            duplicates: 0,
+            period: null,
+            accounts: [],
+            symbols: [],
+          }),
+          { status: new URL(request.url).searchParams.has('dry_run') ? 200 : 201 },
         ),
       ),
     )
@@ -630,6 +773,13 @@ describe('the file handed over', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.upload(screen.getByLabelText('Choisir un fichier'), aFile('vide.csv'))
+
+    // The forecast says it first, in its own tense — there is nothing to write.
+    expect(
+      await screen.findByText('vide.csv ne porte aucun événement : il n’y a rien à écrire.'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
 
     expect(
       await screen.findByText('vide.csv ne portait aucun événement : rien n’a été écrit.'),
@@ -694,7 +844,7 @@ describe('the file handed over', () => {
     // registered is the one that answers.
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())))
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await handOver(user)
 
     // The table the import produced is there, and so is the sentence saying
     // what produced it.
@@ -718,7 +868,7 @@ describe('the file handed over', () => {
       }),
     )
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await handOver(user)
     await screen.findByText(/3 événements écrits/)
 
     await waitFor(() => expect(reads).toBeGreaterThan(0))

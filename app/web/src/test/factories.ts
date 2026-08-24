@@ -962,7 +962,12 @@ export function anImportsPayload(imports: ImportRecord[] = defaultImports()): Im
 export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt {
   return {
     filename: 'zeta-events_2.csv',
+    // The three numbers close — `rows === written + duplicates` (#813) — and
+    // the default file has nothing the ledger already holds, which is the case
+    // a test that does not care about duplicates should not have to think about.
+    rows: 3,
     written: 3,
+    duplicates: 0,
     period: { from: '2026-01-05', to: '2026-02-27' },
     accounts: ['beta'],
     symbols: ['ZETA', 'ZZX'],

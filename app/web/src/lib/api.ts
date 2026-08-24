@@ -279,13 +279,21 @@ async function send<T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unk
  * refusal is read exactly as every other refusal is — `problem+json`, and a
  * `type` the caller branches on — so an upload has no second error contract.
  */
-async function upload<T>(path: string, file: File): Promise<T> {
+async function upload<T>(path: string, file: File, params: string[] = []): Promise<T> {
   const body = new FormData()
   // The **third argument is the filename**, and it is not optional in practice:
   // the receipt is named after the file, and an implementation that reads the
   // `File`'s own name rather than the part's states `blob` back at the reader.
   body.append('file', file, file.name)
-  return unwrap<T>(await fetch(path, { method: 'POST', headers: { Accept: 'application/json' }, body }), path)
+  // The gesture's own parameters travel on the query string and never in the
+  // form (#813): they are *how* the file is to be read, not part of it, and a
+  // second part in the body would make the route parse the reader's intention
+  // out of the same multipart payload it parses their ledger out of.
+  const target = params.length === 0 ? path : `${path}?${params.join('&')}`
+  return unwrap<T>(
+    await fetch(target, { method: 'POST', headers: { Accept: 'application/json' }, body }),
+    path,
+  )
 }
 
 /**
@@ -1194,18 +1202,35 @@ export interface ImportPeriod {
  * securities they touched.
  *
  * `period` is an object or `null` and never two nullable members: the two days
- * are absent **together**, on a file that wrote nothing, and half a period is a
+ * are absent **together**, on a file with no row in it, and half a period is a
  * figure nobody's file carries.
  *
  * The same shape answers the preview of #813 before anything is written — one
  * object, two moments — so the forecast and the fact are one thing read twice.
+ *
+ * **Three numbers, and they close**: `rows === written + duplicates`. `rows` is
+ * what the file holds, `duplicates` what of it the ledger already has, `written`
+ * what was — or will be — added. The period, the accounts and the securities
+ * describe the **file**, not the subset that landed, which is what lets the
+ * forecast and the fact say the same thing about a file that is half already
+ * imported.
  */
 export interface ImportReceipt {
   filename: string
+  rows: number
   written: number
+  duplicates: number
   period: ImportPeriod | null
   accounts: string[]
   symbols: string[]
+}
+
+/** How the file is to be read — the gesture's two parameters (#813). */
+export interface ImportOptions {
+  /** Judge and count, and **write nothing**: the forecast the owner may refuse. */
+  dryRun?: boolean
+  /** *These are real orders, write them* — the rows the ledger already has. */
+  writeDuplicates?: boolean
 }
 
 /** What the revocation answers: the source, and the rows that went with it. */
@@ -1267,7 +1292,15 @@ export const api = {
   imports: () => get<ImportsResponse>(ROUTES.imports),
   // The way in (#811). One file, one gesture, one receipt — and no id, because
   // the store keeps no memory of the file it just read.
-  importEvents: (file: File) => upload<ImportReceipt>(ROUTES.eventsImport, file),
+  // The way in (#811), and since #813 it is made twice on purpose: once with
+  // `dryRun` for the forecast, once without it to commit — **the same file**,
+  // re-sent. There is no pending-import id to hold instead, because holding one
+  // would be the table this lot deleted under another name.
+  importEvents: (file: File, options: ImportOptions = {}) =>
+    upload<ImportReceipt>(ROUTES.eventsImport, file, [
+      ...(options.dryRun ? ['dry_run=1'] : []),
+      ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
+    ]),
   // The **only** gesture that reaches an imported row, and the only one there
   // will be: read-only forbids editing line 42 of `broker.csv`, it does not
   // forbid revoking the file.

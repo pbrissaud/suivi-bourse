@@ -19,9 +19,18 @@
  * **The receipt lasts as long as the operation, and it therefore does not live
  * in this component** (`CONTEXT.md` § Receipt). It says what the gesture
  * produced — lines written, the period covered, the accounts and securities
- * touched — which is more than a passing sentence carries, and it is the surface
- * #813's preview steps into. A toast would have to be read in three seconds and
- * would leave nowhere for that forecast to stand.
+ * touched — which is more than a passing sentence carries. A toast would have to
+ * be read in three seconds and would leave nowhere for the forecast to stand.
+ *
+ * **And since #813 the gesture has two halves.** Handing a file over *previews*
+ * it: the server judges it, counts what of it the ledger already holds, and
+ * answers the receipt having written nothing. What writes is the reader pressing
+ * *Import*, which **re-uploads the same file** — the `File` is held in the hook
+ * for as long as the forecast stands, and no identifier is held anywhere else.
+ * That double upload is deliberate and it is ADR-0032's: a pending-import id
+ * would be the table this lot deleted, under another name, with a lifetime and a
+ * sweeper to write. A few hundred kilobytes on a local hop is the price of *the
+ * server remembers no import, ever*.
  *
  * The reason it is not held here is the **first import**, which is the gesture
  * this whole ticket exists for: an empty ledger renders the zone inside
@@ -56,26 +65,56 @@ import { receiptMessage } from '@/lib/receipts'
 
 /** The gesture, held by whoever survives the write it causes. */
 export interface EventUpload {
-  /** Hand one file over, whichever way it arrived. */
+  /**
+   * Hand one file over, whichever way it arrived. It is **previewed**, not
+   * written (#813): what comes back is the forecast below.
+   */
   hand: (file: File | null | undefined) => void
+  /**
+   * Write the file that was previewed — by **re-uploading it** (ADR-0032).
+   *
+   * The `File` the reader chose is held in this hook for exactly as long as
+   * their forecast stands, and it is sent again. There is no import id to
+   * commit instead, because the server remembers no import: a pending-import
+   * token would be `import_source` under another name, with a lifetime and a
+   * sweeper to write.
+   */
+  commit: (options?: { writeDuplicates?: boolean }) => void
+  /** Put the file down without writing it — the refusal the preview is for. */
+  discard: () => void
   pending: boolean
   /** The file on its way in — the running sentence names it. */
   filename: string | undefined
+  /** What *would* be written, while a file stands unwritten. */
+  forecast: ImportReceipt | undefined
   receipt: ImportReceipt | undefined
   error: unknown
 }
 
 export function useEventUpload(): EventUpload {
   const queryClient = useQueryClient()
-  const upload = useMutation({
-    mutationFn: (file: File) => api.importEvents(file),
+  // The file itself, held between the two halves of the gesture. It is the one
+  // piece of state the double upload costs, and it lives in the browser — which
+  // is the point: nothing on the server outlives the preview.
+  const [held, setHeld] = useState<File | null>(null)
+  const preview = useMutation({
+    mutationFn: (file: File) => api.importEvents(file, { dryRun: true }),
+  })
+  const write = useMutation({
+    mutationFn: ({ file, writeDuplicates }: { file: File; writeDuplicates?: boolean }) =>
+      api.importEvents(file, { writeDuplicates }),
     onSuccess: () => {
       // Every figure in the product is downstream of the ledger, and the server
       // replays synchronously before answering (#697), so what is invalidated
       // is everything rather than a list of keys somebody has to keep in step.
       void queryClient.invalidateQueries()
+      // The file has landed; nothing is holding it any more. What stays on
+      // screen is the receipt, which is a sentence and not a pending gesture.
+      setHeld(null)
     },
   })
+
+  const pending = preview.isPending || write.isPending
 
   return {
     hand: (file) => {
@@ -83,13 +122,31 @@ export function useEventUpload(): EventUpload {
       // in flight; a drop does not go through the control, and two POSTs racing
       // the server's writer mutex would show the reader whichever receipt
       // resolved last — the other import having written rows nothing says.
-      if (!file || upload.isPending) return
-      upload.mutate(file)
+      if (!file || pending) return
+      // A second file handed over replaces the first outright: the forecast on
+      // screen must never describe a file other than the one the button would
+      // send, which is the whole reason the preview is worth reading.
+      write.reset()
+      setHeld(file)
+      preview.mutate(file)
     },
-    pending: upload.isPending,
-    filename: upload.variables?.name,
-    receipt: upload.isPending ? undefined : upload.data,
-    error: upload.isPending ? undefined : upload.error,
+    commit: (options) => {
+      if (!held || pending) return
+      write.mutate({ file: held, writeDuplicates: options?.writeDuplicates })
+    },
+    discard: () => {
+      setHeld(null)
+      preview.reset()
+      write.reset()
+    },
+    pending,
+    filename: (write.isPending ? write.variables?.file.name : preview.variables?.name) ?? held?.name,
+    // **The forecast stands only while nothing has been written**: the fact
+    // replaces it rather than joining it, or the reader would read one file's
+    // future beside its past and have to work out which is which.
+    forecast: pending || write.data ? undefined : preview.data,
+    receipt: pending ? undefined : write.data,
+    error: pending ? undefined : (write.error ?? preview.error),
   }
 }
 
@@ -184,25 +241,76 @@ export function UploadZone({ upload, compact = false }: UploadZoneProps) {
 }
 
 /**
- * What the gesture is doing, or what it produced — mounted where it outlives
- * the write.
+ * What the gesture is doing, what it *would* do, or what it produced — mounted
+ * where it outlives the write.
  *
- * One polite region for the three states: they are answers to one gesture, and
- * a reader who cannot see the rectangle has to hear whichever came. A block
- * with nothing in it does not exist, so it renders nothing at all while nothing
- * has been handed over.
+ * One polite region for the four states: they are answers to one gesture, and a
+ * reader who cannot see the rectangle has to hear whichever came. A block with
+ * nothing in it does not exist, so it renders nothing at all while nothing has
+ * been handed over.
+ *
+ * **The forecast is the one state that carries controls** (#813). It is the
+ * moment the reader may still refuse the file, so it offers the two answers —
+ * *import it* and *put it down* — and, only when there are duplicates to argue
+ * about, the box that says *these are real orders*. The sentence above them is
+ * `import.written`'s with its tense moved: the reader recognises afterwards what
+ * they read before, which is the whole of *one object, two moments*.
  */
 export function UploadReceipt({ upload }: { upload: EventUpload }) {
   const { t } = useI18n()
   const f = useFormatters()
+  // Cleared by the swap below: a box ticked for one file must not survive into
+  // the forecast of the next, which would write duplicates nobody looked at.
+  const [writeDuplicates, setWriteDuplicates] = useState(false)
+  const forecast = upload.forecast
+  const previewed = forecast?.filename
+  const [lastPreviewed, setLastPreviewed] = useState(previewed)
+  if (lastPreviewed !== previewed) {
+    setLastPreviewed(previewed)
+    setWriteDuplicates(false)
+  }
 
-  if (!upload.pending && !upload.receipt && !upload.error) return null
+  if (!upload.pending && !forecast && !upload.receipt && !upload.error) return null
 
   return (
-    <div role="status" aria-live="polite">
-      {upload.pending ? <Said>{running(t, upload.filename)}</Said> : null}
-      {upload.receipt ? <Said>{written(t, f, upload.receipt)}</Said> : null}
-      {upload.error ? <Said attention>{t(problemMessageKey(upload.error))}</Said> : null}
+    <div className="space-y-3">
+      <div role="status" aria-live="polite">
+        {upload.pending ? <Said>{running(t, upload.filename)}</Said> : null}
+        {forecast ? <Said>{foreseen(t, f, forecast)}</Said> : null}
+        {forecast && forecast.duplicates > 0 ? (
+          <Said>{known(t, forecast.duplicates, true)}</Said>
+        ) : null}
+        {upload.receipt ? <Said>{written(t, f, upload.receipt)}</Said> : null}
+        {upload.receipt && upload.receipt.duplicates > 0 ? (
+          <Said>{known(t, upload.receipt.duplicates, false)}</Said>
+        ) : null}
+        {upload.error ? <Said attention>{t(problemMessageKey(upload.error))}</Said> : null}
+      </div>
+
+      {forecast ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" onClick={() => upload.commit({ writeDuplicates })}>
+            {t('data.import.confirm')}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => upload.discard()}>
+            {t('data.import.cancel')}
+          </Button>
+          {/* Offered only when the file has duplicates in it: a box asking about
+              rows that do not exist is a question the reader cannot answer, and
+              story 6 is about the owner who *knows* they placed the order
+              twice — nobody else has to be asked. */}
+          {forecast.duplicates > 0 ? (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={writeDuplicates}
+                onChange={(event) => setWriteDuplicates(event.target.checked)}
+              />
+              {t('data.import.duplicates')}
+            </label>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -242,5 +350,33 @@ function written(
           accounts: receipt.accounts.length,
           symbols: receipt.symbols.length,
         })
+  return t(said.message, said.values)
+}
+
+/** The same sentence, one moment earlier — `written`'s twin, tense apart. */
+function foreseen(
+  t: ReturnType<typeof useI18n>['t'],
+  f: ReturnType<typeof useFormatters>,
+  receipt: ImportReceipt,
+): string {
+  const said =
+    receipt.period === null
+      ? receiptMessage({ kind: 'import.forecast.empty', filename: receipt.filename })
+      : receiptMessage({
+          kind: 'import.forecast',
+          count: receipt.written,
+          from: f.date(receipt.period.from),
+          to: f.date(receipt.period.to),
+          accounts: receipt.accounts.length,
+          symbols: receipt.symbols.length,
+        })
+  return t(said.message, said.values)
+}
+
+/** What of the file the ledger already has, said at whichever moment it is. */
+function known(t: ReturnType<typeof useI18n>['t'], count: number, forecast: boolean): string {
+  const said = receiptMessage(
+    forecast ? { kind: 'import.known.forecast', count } : { kind: 'import.known', count },
+  )
   return t(said.message, said.values)
 }

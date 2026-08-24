@@ -25,6 +25,12 @@
  * since #814 the bulk removal, which is the one of the four with nothing behind
  * it — the reader cannot undo it, so what it took is said rather than counted.
  *
+ * **The import's is said twice**, and that is #813's whole shape: once as a
+ * forecast the owner may refuse, once as the fact. Same members, same order,
+ * only the tense moves — the reader has to recognise afterwards what they read
+ * before, or the preview is a second screen to compare rather than the same one
+ * read again.
+ *
  * **The export's receipt is two sentences and no timer**, which is the whole of
  * #796's criterion: it says what is being made at the click, and what is there
  * when it is there. The rule above still holds — nothing here is given an
@@ -45,6 +51,28 @@ export type Receipt =
   | { kind: 'export.saved'; file: ExportFile }
   /** A file is on its way in, and this names it (#811). */
   | { kind: 'import.running'; filename: string }
+  /**
+   * **The same sentence, one moment earlier** (#813, `CONTEXT.md` § Receipt).
+   *
+   * An import is read back before it is written as well as after: the members
+   * are `import.written`'s to the letter, and only the tense moves. Two shapes
+   * would make the forecast and the fact two things to compare rather than one
+   * to read twice — which is why this is a second *kind* and not a second
+   * *shape*.
+   */
+  | { kind: 'import.forecast'; count: number; from: string; to: string; accounts: number; symbols: number }
+  /** The forecast for a file with no row in it: there is nothing to write. */
+  | { kind: 'import.forecast.empty'; filename: string }
+  /**
+   * **What of the file the ledger already has** — said in both moments (#813).
+   *
+   * Its own sentence rather than a member of the two above, because it is the
+   * one figure that changes what the reader does: it is what tells them they are
+   * re-uploading an export they already imported, and it is rendered only when
+   * there is one to state. Zero duplicates says nothing, out loud.
+   */
+  | { kind: 'import.known'; count: number }
+  | { kind: 'import.known.forecast'; count: number }
   /**
    * It landed: what the gesture produced, in the units the owner counts in.
    *
@@ -96,11 +124,29 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
           symbols: receipt.symbols,
         },
       }
+    // The same five values, one moment earlier — see the type above.
+    case 'import.forecast':
+      return {
+        message: 'receipt.import.forecast',
+        values: {
+          count: receipt.count,
+          from: receipt.from,
+          to: receipt.to,
+          accounts: receipt.accounts,
+          symbols: receipt.symbols,
+        },
+      }
     // **A file that wrote nothing has its own sentence**, not the other one at
     // zero: *0 lines written, from — to —* would state a period the file does
     // not carry, and no plural rule can invent the two days that are missing.
     case 'import.empty':
       return { message: 'receipt.import.empty', values: { file: receipt.filename } }
+    case 'import.forecast.empty':
+      return { message: 'receipt.import.forecast.empty', values: { file: receipt.filename } }
+    case 'import.known':
+      return { message: 'receipt.import.known', values: { count: receipt.count } }
+    case 'import.known.forecast':
+      return { message: 'receipt.import.known.forecast', values: { count: receipt.count } }
     case 'events.removed':
       return { message: 'receipt.events.removed', values: { count: receipt.count } }
   }

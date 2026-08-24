@@ -113,7 +113,16 @@ export function defaultHandlers() {
     // `blob` and empty. What is observable here is the request the app made,
     // which is what these tests are about; what the server reads out of a real
     // multipart body is asserted on the Python side, over the real route.
-    http.post(ROUTES.eventsImport, () => HttpResponse.json(aReceipt(), { status: 201 })),
+    //
+    // **The gesture is made twice** since #813, and this handler answers both
+    // with the same object: `?dry_run=1` is the forecast, and it is a `200`
+    // because nothing was created; the second call, with no parameter, is the
+    // write and answers `201`. The receipt is the fixture's at both moments,
+    // which is what *one object, two moments* means seen from a client.
+    http.post(ROUTES.eventsImport, ({ request }) => {
+      const previewing = new URL(request.url).searchParams.has('dry_run')
+      return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
+    }),
 
     // The sources, and the one gesture that reaches an imported row (#728).
     // The revocation answers what it removed, which is what the store knows —
