@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import type { Account } from '@/lib/api'
+import { ABSENT } from '@/lib/format'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccount,
@@ -75,6 +76,10 @@ describe('the rail', () => {
     // gain on a weight.
     expect(weights()[0]).toMatch(/54,55\s%/)
     expect(weights()[0]).not.toContain('+54,55')
+    // **The name and the share, and nothing a second time** (#800). The bar
+    // drawn under this row is `aria-hidden`, and an equality is how that stays
+    // true: were it ever announced, the row would read its own weight twice.
+    expect(weights()[0].replace(/\s/g, '')).toBe('Alpha54,55%')
   })
 
   it('weighs an account on its securities where no cash ledger was ever kept', async () => {
@@ -87,6 +92,20 @@ describe('the rail', () => {
     expect(entries()[2]).toContain('Gamma')
     expect(entries()[2]).toMatch(/600,00/)
     expect(weights()[2]).toMatch(/18,18\s%/)
+  })
+
+  it('states no share at all where there is none, and never a zero', async () => {
+    renderAccounts([...defaultAccounts(), anAccountWithoutSeries({ id: 'delta', label: 'Delta' })])
+    await settled()
+
+    // The em dash and nothing else (ADR-0021): an account nothing has been
+    // written about has no share of the whole to state, and `0,00 %` would be a
+    // *figure* — the fifth rendering of absence the product refuses. The bar
+    // #800 put under each of these rows answers the same way and for the same
+    // reason: a drawing at zero makes that claim silently, so an absent share
+    // draws nothing at all.
+    expect(weights()[3].replace(/\s/g, '')).toBe(`Delta${ABSENT}`)
+    expect(weights()[3]).not.toMatch(/0,00\s%/)
   })
 
   it('names the reason an account has no figures, and never a progress', async () => {

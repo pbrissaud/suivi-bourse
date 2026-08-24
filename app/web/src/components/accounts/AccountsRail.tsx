@@ -28,9 +28,23 @@
  *  - **The bar is `aria-hidden`.** Every share it draws is written beside its
  *    name one line down, so announcing the drawing too would read the same
  *    twelve figures twice.
+ *  - **The stacked bar stays, and each line gains one of its own** (#800). The
+ *    question the second bar raises is whether it replaces the first, and the
+ *    answer has to be the same here and on the allocation, which draws a ring
+ *    over a legend for exactly the same reason. It is *complements*: the two
+ *    are not one figure drawn twice. A stacked bar says *these are the parts of
+ *    one whole and they close it*, which is a claim about the total and is what
+ *    no per-line bar makes. What it cannot answer is *is this account bigger
+ *    than that one* — its segments start wherever the segment before them
+ *    ended, so comparing the third against the sixth is comparing two lengths
+ *    with no common origin, which is the ring's own weakness one figure down.
+ *    Every per-line bar starts at the same edge and runs on the same scale.
+ *    They are also two `aria-hidden` drawings of figures that are written out
+ *    in full, so neither adds an announcement to the other.
  */
 import { Link } from '@tanstack/react-router'
 
+import { ShareBar } from '@/components/ShareBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
@@ -154,23 +168,29 @@ export function AccountsRail({
             {rows.map((row, index) => {
               const share = weights.get(row.id) ?? null
               return (
-                <li
-                  key={row.id}
-                  className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="inline-block size-2 shrink-0 rounded-sm"
-                      style={{ backgroundColor: segmentColour(index) }}
-                    />
-                    <span className="truncate">
-                      {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                <li key={row.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        aria-hidden
+                        className="inline-block size-2 shrink-0 rounded-sm"
+                        style={{ backgroundColor: segmentColour(index) }}
+                      />
+                      <span className="truncate">
+                        {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                      </span>
+                    </span>
+                    <span className="tabular shrink-0">
+                      {share === null ? ABSENT : f.percentPoints(share * 100)}
                     </span>
                   </span>
-                  <span className="tabular shrink-0">
-                    {share === null ? ABSENT : f.percentPoints(share * 100)}
-                  </span>
+                  {/* And nothing at all where there is no share: an account
+                      nothing has been written about keeps its place and its em
+                      dash, and a bar at zero beside that dash would be the
+                      fifth rendering of absence ADR-0021 refuses. `ShareBar`
+                      answers `null` with no bar, which is why the condition is
+                      not spelled again here. */}
+                  <ShareBar share={share} fill={segmentColour(index)} />
                 </li>
               )
             })}
