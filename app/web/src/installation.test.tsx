@@ -25,7 +25,7 @@ import { PROBLEM_TYPES } from '@/lib/problem'
 import type { Advisory, StoreState } from '@/lib/api'
 import {
   aConfig,
-  aLegacyFileAdvisory,
+  anEnvironmentAdvisory,
   aRuntime,
   aStore,
 } from '@/test/factories'
@@ -57,7 +57,7 @@ describe('the two blocks, in one order', () => {
   })
 
   it('says nothing about the notices, which are a tab of their own', async () => {
-    await openInstallation([aLegacyFileAdvisory()])
+    await openInstallation([anEnvironmentAdvisory()])
     await screen.findByRole('heading', { name: 'Réglages' })
 
     // A notice is prose — a date, an acknowledgement, a link to the events
@@ -193,10 +193,10 @@ describe('the settings, which are one surface', () => {
     expect(within(imposed).queryAllByRole('textbox')).toHaveLength(0)
     expect(imposed.querySelectorAll('input, select, textarea, button')).toHaveLength(0)
     // The list is the API's and never a hard-written one, which is what makes
-    // this an assertion about *the tab*: four names since ADR-0033, and the two
-    // the exporter answered for are gone from the payload rather than hidden
-    // here.
-    for (const name of ['SB_STORE_DIR', 'SB_IMPORT_DIR', 'SB_WEB_PORT', 'LOG_LEVEL']) {
+    // this an assertion about *the tab*: three names — the two the exporter
+    // answered for (ADR-0033) and the drop folder's own (ADR-0032) are gone from
+    // the payload rather than hidden here.
+    for (const name of ['SB_STORE_DIR', 'SB_WEB_PORT', 'LOG_LEVEL']) {
       expect(within(imposed).getByText(name)).toBeInTheDocument()
     }
     expect(within(imposed).queryByText('SB_PROMETHEUS_ENABLED')).not.toBeInTheDocument()

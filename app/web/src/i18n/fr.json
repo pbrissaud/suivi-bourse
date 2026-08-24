@@ -150,7 +150,6 @@
   "firstRun.ephemeral": "Ce conteneur ne garde rien : le magasin est dans sa propre couche inscriptible et disparaît à sa prochaine recréation. C’est très bien pour essayer l’application — montez un volume pour la conserver.",
   "firstRun.save": "Enregistrer",
   "firstRun.refused": "L’application a refusé cette valeur et n’a rien écrit.",
-  "firstRun.entry.file.body": "Remettez à l’application un .csv ou un .xlsx de vos événements depuis la page des données — ou déposez-en un dans {path}, qu’elle lit aussi. Dans les deux cas il est lu une fois, quel que soit son nom.",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
   "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} accounts {Préparation de vos comptes…} other {Préparation de votre fichier…}}",
@@ -288,7 +287,7 @@
   "accounts.form.cancel": "Annuler",
 
   "accounts.empty.title": "Aucun compte déclaré",
-  "accounts.empty.body": "Toute installation possède un compte : cet écran dit donc que la déclaration n’a pas été lue, et non que vous n’en avez aucun. Déclarez-en un ici, ou déposez un fichier dans votre dossier d’import.",
+  "accounts.empty.body": "Toute installation possède un compte : cet écran dit donc que la déclaration n’a pas été lue, et non que vous n’en avez aucun. Déclarez-en un ici, ou remettez à l’application un fichier qui les nomme.",
 
   "event.type.BUY": "Achat",
   "event.type.SELL": "Vente",
@@ -419,10 +418,6 @@
   "installation.advisory.seen": "Constaté le {date}",
   "installation.advisory.acknowledge": "Acquitter",
   "installation.advisory.showEvents": "Voir les événements concernés",
-  "installation.advisory.legacy_config_file": "{path} est toujours là et cette version ne le lit pas : un portefeuille est un grand livre d’événements datés, et rien d’autre. Rien n’a été effacé — décrivez ces positions comme des événements datés dans le dossier d’import, ou acquittez cet avis pour garder le fichier exactement où il est sans qu’on vous le rappelle.",
-  "installation.advisory.legacy_config_file.unobserved": "Un config.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.",
-  "installation.advisory.legacy_settings_file": "{path} est toujours là et cette version ne le lit pas : les comptes se déclarent par un fichier au format des événements (id, type, label) ou depuis l’application, et le dossier d’import n’est plus nommé par un réglage. Rien n’a été effacé — redéclarez les comptes qu’il contient, ou acquittez cet avis.",
-  "installation.advisory.legacy_settings_file.unobserved": "Un settings.yaml de la v4 se trouve dans le dossier de configuration et n’est pas lu.",
   "installation.advisory.unread_environment": "{count, plural, one {# variable d’environnement est définie et n’est lue par rien} other {# variables d’environnement sont définies et ne sont lues par rien}} : {variables}. Les réglages qu’elles nommaient vivent dans le magasin depuis la v5 — renseignez-les sur la page des réglages, ou par un seul PUT /api/settings — et celles qui ont été supprimées n’ont aucun remplaçant. Retirez-les, ou acquittez cet avis.",
   "installation.advisory.unread_environment.unobserved": "Des variables d’environnement sont définies et cette version n’en lit aucune.",
   "installation.advisory.reconstruction_running": "La reconstruction de l’historique est en cours : {complete, plural, one {# série a atteint sa première acquisition} other {# séries ont atteint leur première acquisition}} sur {total, number}. Vos chiffres de performance sont calculés à partir de l’historique enregistré jusqu’ici et continueront de bouger jusqu’à ce qu’elle soit terminée.",

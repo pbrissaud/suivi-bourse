@@ -19,7 +19,7 @@
  *  - **the orphan symbols** — a choice, not a waste. Nobody is being told
  *    anything;
  *  - **the reconstruction** — it has exactly **one** announcer, the banner
- *    (#726). It is one of the five keys, and that is precisely why it has to be
+ *    (#726). It is one of the three keys, and that is precisely why it has to be
  *    named here: dropping it from the badge alone would leave it in the block
  *    and make the badge under-count what the reader can see, while leaving it in
  *    both would put two announcers on one fact.
@@ -38,9 +38,9 @@ export const BANNER_ADVISORY = 'reconstruction_running'
  * one the banner announces.
  *
  * **An acknowledged notice disappears.** Kept greyed out it would make the
- * notice of somebody who decided to keep their `config.yaml` for ever a
- * permanent fixture of their screen — which is the acknowledgement being
- * refused after the fact. The server keeps the row while the predicate stands
+ * notice of somebody who decided to keep a v4 `.env` sourced into their
+ * container for ever a permanent fixture of their screen — which is the
+ * acknowledgement being refused after the fact. The server keeps the row while the predicate stands
  * (that is what makes a predicate coming back true **re-arm** the notice, with
  * a fresh date and a fresh log line); what the interface owes is not to show it.
  *
@@ -120,9 +120,9 @@ export function advisoryGesture(advisory: Advisory): AdvisoryGesture {
  *  - **removing `message` from the payload** is cleaner on paper and takes from
  *    a client with no interface the one sentence that says what to do — and
  *    *headless means without an interface, not without HTTP* (ADR-0015). The
- *    five keys are stable identifiers a client may branch on, but a key is not
- *    a sentence, and asking every consumer to write five of its own is asking
- *    each of them to redo this file;
+ *    three keys are stable identifiers a client may branch on, but a key is
+ *    not a sentence, and asking every consumer to write three of its own is
+ *    asking each of them to redo this file;
  *  - **negotiating the language on the server** (`Accept-Language`) has no
  *    subject: the reader's language is a three-state `localStorage` preference
  *    with **no dial in the store** (ADR-0024), so the server does not have that
@@ -166,7 +166,7 @@ interface Sentence {
   values: (detail: Record<string, unknown>, list: ListFormatter) => MessageValues | null
 }
 
-/** A member that has to be a non-empty string — a path, a currency code. */
+/** A member that has to be a non-empty string — a currency code. */
 function text(detail: Record<string, unknown>, member: string): string | null {
   const value = detail[member]
   return typeof value === 'string' && value !== '' ? value : null
@@ -186,28 +186,17 @@ function items(detail: Record<string, unknown>, member: string): string[] | null
 }
 
 /**
- * The five keys and their two sentences each. A closed list (ADR-0021), written
+ * The three keys and their two sentences each. A closed list (ADR-0021), written
  * out rather than derived: `MessageKey` is `keyof typeof en`, so a catalogue key
  * that does not exist — or a French catalogue that drifts from the English one —
  * is a compile error rather than a notice rendering as its own key.
+ *
+ * It was five, and the two that left are ADR-0032's: `legacy_config_file` and
+ * `legacy_settings_file` were a `stat` on a v4 file found in a folder the app
+ * read, and there is no folder. Their sentence is said at the refusal of the
+ * upload instead, where it is read at the instant of the gesture.
  */
 const SENTENCES: Record<string, Sentence> = {
-  legacy_config_file: {
-    named: 'installation.advisory.legacy_config_file',
-    unobserved: 'installation.advisory.legacy_config_file.unobserved',
-    values: (detail) => {
-      const path = text(detail, 'path')
-      return path === null ? null : { path }
-    },
-  },
-  legacy_settings_file: {
-    named: 'installation.advisory.legacy_settings_file',
-    unobserved: 'installation.advisory.legacy_settings_file.unobserved',
-    values: (detail) => {
-      const path = text(detail, 'path')
-      return path === null ? null : { path }
-    },
-  },
   unread_environment: {
     named: 'installation.advisory.unread_environment',
     unobserved: 'installation.advisory.unread_environment.unobserved',
@@ -251,8 +240,8 @@ const SENTENCES: Record<string, Sentence> = {
  * What the reader is told, in their own language — or `null`.
  *
  * `null` has exactly one cause and it is not an absence of translation: a key
- * outside the closed list of five. The caller then renders the server's
- * `message`, which is the honest degradation — a sixth advisory shipping before
+ * outside the closed list of three. The caller then renders the server's
+ * `message`, which is the honest degradation — a fourth advisory shipping before
  * its catalogue entry says its English sentence rather than nothing at all, and
  * an empty notice is the one outcome a block that exists to be read cannot
  * afford.
@@ -270,5 +259,5 @@ export function advisoryText(advisory: Advisory, list: ListFormatter): AdvisoryT
   return values === null ? { key: sentence.unobserved } : { key: sentence.named, values }
 }
 
-/** The five keys the catalogues answer for, in the server's declared order. */
+/** The three keys the catalogues answer for, in the server's declared order. */
 export const ADVISORY_KEYS = Object.keys(SENTENCES)

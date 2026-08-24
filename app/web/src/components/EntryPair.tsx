@@ -16,8 +16,11 @@
  *    it is not addressed to.
  *  - **an unavailable entry keeps its place and says why**, instead of
  *    disappearing. A pair that renders as one entry reads as a breakage, and the
- *    reader cannot tell a missing drop folder (ADR-0015: the bind is optional)
- *    from a product that never offered the file route at all.
+ *    reader cannot tell an entrance this install happens to lack from a product
+ *    that never offered it at all. It has **no case left** since ADR-0032 — the
+ *    one it had was a drop folder nobody mounted, and both entrances are now
+ *    available on every install — and the property stays because it is the
+ *    component's, not because something is using it today.
  *  - **it is not an `EmptyState`.** That primitive says *this is empty* in one
  *    sentence with at most one way out; here emptiness is not the news — the two
  *    ways out are.

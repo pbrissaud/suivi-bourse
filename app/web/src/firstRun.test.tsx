@@ -414,12 +414,13 @@ describe('the last step is the ledger’s own pair of entrances', () => {
     const pair = within(modal())
     expect(pair.getByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument()
     expect(pair.getByRole('region', { name: 'Saisir un premier événement' })).toBeInTheDocument()
-    // Both entries are **available**, and since #811 that is a property of the
-    // product rather than of this install: a file is handed to the app by a
-    // gesture, so there is no mount left whose absence could take an entrance
-    // away. What the sentence still names is the folder, which is read too
-    // while it exists (#815 takes it).
-    expect(pair.getByText(/depuis la page des données/)).toBeInTheDocument()
+    // Both entries are **available**, and that is a property of the product
+    // rather than of this install (#811, ADR-0032): a file is handed to the app
+    // by a gesture, so there is no mount left whose absence could take an
+    // entrance away — and the sentence names no folder, there being none left
+    // to name.
+    expect(pair.getByText(/Remettez à l’application un .csv ou un .xlsx/)).toBeInTheDocument()
+    expect(within(modal()).queryByText(/\/import/)).not.toBeInTheDocument()
     // No primary action: a filled button beside an outlined one is a
     // recommendation, and it would be wrong for whichever reader it misses.
     const entry = pair.getByRole('link', { name: 'Saisir un événement' })
