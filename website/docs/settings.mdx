@@ -140,7 +140,7 @@ of date the way a hard-coded list of names would.
 | `SB_BACKFILL_DELAY` | the `backfill_delay` dial |
 | `SB_BACKFILL_CHUNK_DAYS` | the `backfill_chunk_days` dial |
 | `SB_STALENESS_HORIZON` | the `staleness_horizon` dial |
-| `SB_INGESTION_INTERVAL` | nowhere — there is no polling left: a replay follows the write that changed the ledger, and the drop folder is watched with no dial |
+| `SB_INGESTION_INTERVAL` | nowhere — there is no polling left: a replay follows the write that changed the ledger |
 | `SB_SCRAPING_INTERVAL` | nowhere — already deprecated in version 4, and its heir is a dial |
 | `SB_PERF_INTERVAL` | nowhere — the performance series is a cache, rebuilt in full every two minutes; there is nothing left to trade off |
 | `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic |
