@@ -1,6 +1,6 @@
 ---
 title: Import your events
-description: The file format, the six kinds of event, declaring accounts, the drop folder, and exporting it all back out
+description: Handing a file to the app, the format, the six kinds of event, correcting a line, undoing an import, and exporting it all back out
 ---
 
 This page is for people who already have files — a broker export, the event
@@ -9,13 +9,77 @@ step of the installation.** A new install needs no file at all: you record your
 first position in the app, and the form that records it is the onboarding.
 [Get started](./get-started.mdx) never shows a file, and that is deliberate.
 
+## The gesture
+
+**You hand the app a file; it reads it once and never looks at it again.** There
+is no folder to mount and nothing to watch. Under **Data → The ledger** there is
+a rectangle above the table: drop a `.csv` or an `.xlsx` on it, or click it and
+pick one.
+
+Three steps, and the middle one is the point:
+
+1. **You hand over the file.** The app parses it whole — a file is imported
+   entirely or not at all.
+2. **You read the receipt, before anything is written.** How many rows the file
+   holds, how many of them your ledger already has, the period they cover, the
+   accounts and the securities they touch. Nothing has been written at this
+   point: this is what the file *would* do.
+3. **You confirm, or you put the file down.** Confirming writes it and answers
+   the same receipt in the past tense — same figures, same order — so what you
+   read afterwards is what you agreed to. Refusing writes nothing at all.
+
+Confirming sends the file a second time. That is deliberate: **the app keeps no
+memory of an import**, not even a pending one, so there is no half-written state
+to sweep up if you close the tab. The price is a few hundred kilobytes on a
+local connection.
+
+The same gesture is one request away, which is what makes it work on an install
+with no browser open:
+
+```bash
+# The receipt, and nothing written.
+curl -F 'file=@2024.csv' 'http://localhost:8080/api/events/import?dry_run=1'
+
+# The import.
+curl -F 'file=@2024.csv' http://localhost:8080/api/events/import
+```
+
+### Rows your ledger already has
+
+A row you are re-importing is recognised **by its content** — its date, type,
+account, security, quantity, unit price, fee and amount. Its label and its notes
+are deliberately not part of that comparison: annotating a line would otherwise
+make it importable a second time.
+
+Those rows are **counted in the receipt and skipped by default**, so re-handing
+the app the same export is the quiet case it ought to be. If you really did pass
+two identical orders on one day, tick *import them anyway* — you are the only
+one who knows, and the app never decides it for you. Typing two identical events
+by hand is not refused either, for the same reason.
+
+### When a file is refused
+
+Every refusal names its subject, and **none of them writes a single row**:
+
+* a header the app does not recognise — the message names the column that is
+  missing;
+* an account no declaration names — the message names the account;
+* a version 4 `config.yaml` or `settings.yaml`, refused by name, with a pointer
+  to [Coming from v4](./coming-from-v4.mdx);
+* a declaration of accounts: an account is declared in the app, not imported;
+* a file this app does not read at all;
+* a `base_currency` this install can no longer take (see
+  [below](#the-reporting-currency));
+* a file that would leave the ledger unable to replay — an export starting
+  mid-history sells shares no earlier row bought.
+
 ## The format
 
 An event file is a `.csv` or an `.xlsx` with one header row and one event per
-row. Every file in the drop folder is read, and every sheet of a workbook; the
-rows are merged and **sorted by date**, so the order inside a file — and the
-split across files — is yours to choose. Organise by year, by broker, by
-account, or not at all.
+row. Every sheet of a workbook is read, and the rows are **sorted by date**, so
+the order inside a file is yours to choose. Organise by year, by broker, by
+account, or not at all — and hand the app as many files as you like, one after
+another.
 
 | Column       | Required                                 | What it holds                                   |
 | ------------ | ---------------------------------------- | ----------------------------------------------- |
@@ -99,101 +163,71 @@ ignored, because a deposit that names a ticker means something was misfiled.
 
 ## Declaring your accounts
 
-An account is user data with a source and a history — not a setting. So it is
-declared the way an event is: **by a file, in the same format**, or from the
-app. The columns are the columns of an account, and there are three.
+An account is user data — not a setting, and not something a file brings with
+it. **It is declared in the app**, on the accounts page, and nowhere else. It
+has three fields, and they are the three columns your events name it by.
 
-| Column  | What it holds                                                 |
+| Field   | What it holds                                                 |
 | ------- | ------------------------------------------------------------- |
 | `id`    | the id your events name in their `account` column, e.g. `pea` |
 | `type`  | `PEA`, `CTO`, … — free text, used for grouping and display    |
 | `label` | the name shown on screen, e.g. `PEA Boursorama`               |
 
-It is a file rather than an interface-only gesture for one reason: the accounts
-have to exist before the events that name them land. Reserving accounts to the
-interface would mean clicking through them first every time — and would forbid
-the import of any broker export that names accounts to arrive whole. It is the
-same format as the events rather than a third one because nobody should have to
-learn YAML to declare two accounts.
+Declaring an account before importing the file that names it is the whole of
+what you have to remember. A few rules follow, and each of them exists to keep a
+mistake a refusal:
 
-A few rules follow, and each of them exists to keep a mistake a refusal:
-
-* **Account files are imported before event files**, always. An event naming an
-  account that does not exist yet has nothing to attach to.
 * **An event file naming an undeclared account is not imported at all** — not
   partially — and the message names the account you have to declare.
 * **An empty `account` column means `default`** for as long as no *real*
-  account exists — real meaning any account that is not the seeded `default`,
-  whether a file declared it or you created it in the interface (ADR-0008,
-  ADR-0013). From the moment one does, an empty column is an **error**: at that
-  point a blank cell is far more likely to be an omission than a choice, and
-  guessing would silently pile a second account's events onto the first. Note
-  the two edges: an accounts file that declares nothing but `default` is not a
-  declaration and changes nothing, and an account created from the interface
-  arms the rule with no file imported at all.
+  account exists — real meaning any account that is not the seeded `default`
+  (ADR-0008, ADR-0013). From the moment one does, an empty column is an
+  **error**: at that point a blank cell is far more likely to be an omission
+  than a choice, and guessing would silently pile a second account's events onto
+  the first.
 * **There is always at least one account.** When you have declared none, it is
   called `default`. Nothing in the app branches on whether accounts exist.
 * **An account cannot be removed while an event names it.** Nothing is left
   behind as a residue you can neither read nor delete.
-* What came from a file is **read-only** in the app; what you create in the app
-  is editable. Where a row came from is always visible.
 * **The one exception is the account column, at the moment you declare your
-  first account.** Events imported before that point carry `default`, and they
+  first account.** Events recorded before that point carry `default`, and they
   were right to: the column meant `default` under the rule then in force, and it
   is the app that changed the rule underneath them. So declaring your first
   account offers, in the same gesture, to move those events onto it — ticked by
   default, and never a condition of the declaration. The same offer stands on
-  the *Données* page for as long as any event still carries `default`, which is
-  what you get when the declaration arrives by a file rather than by the form.
-  Afterwards an imported event names its account for good. Your files are not
+  the seeded account's own page for as long as any event still carries
+  `default`. Afterwards an event names its account for good. Your files are not
   rewritten; nothing is asked of them.
 
 Version 4's `settings.yaml` is **named and never read**. Its `accounts:` block
 mixed deployment settings with user data, which is exactly the seam v5 separates;
-redeclaring two or three accounts in a three-column file costs less than keeping
-a version 4 format alive forever. See [Coming from v4](./coming-from-v4.mdx).
+redeclaring two or three accounts in the app costs less than keeping a version 4
+format alive forever. See [Coming from v4](./coming-from-v4.mdx).
 
-## The drop folder
+## Correcting a line, and undoing an import
 
-The drop folder is a directory you mount **read-only** on `/import`. Drop a
-file in it and it is imported — no click, no dial, no interval. It is watched
-that way permanently, because an install with no interface has nobody to press
-*Import*.
+**A row that came out of a file is a row.** There is one kind of line in your
+ledger, whether you typed it or handed the app a file that held it, and the same
+three gestures reach all of them.
 
-**It is optional, and its absence is a normal state rather than a degraded
-one.** The app never creates it, never writes to it, and never complains about
-it. An install that has no file to drop is a complete install; the only thing a
-missing drop folder means is that you record your events in the app.
+* **Correct one line.** Click its name in the ledger table, change what is
+  wrong, save. A typo on line 14 of a two-hundred-line export costs a
+  correction — and nothing else.
+* **Remove one line.** The same panel removes it. One line, on its own, with the
+  199 around it untouched.
+* **Undo a whole import.** Reduce the ledger to what the import laid down — by
+  period, by account, by type, by security, or by searching the label — and
+  delete the reduction in one gesture. The confirmation names every dimension of
+  the reduction in force and counts the rows it holds, so you can see exactly
+  what is about to go.
 
-Three rules govern what a file does, and the third is the one that surprises:
+That last gesture is the general one, which is why it replaced the *forget this
+import* button of earlier versions: it also repairs the dozen rows you mistyped,
+and it does not need a batch to have been recorded anywhere. Reducing on nothing
+at all is refused — emptying the whole ledger stays possible, by reducing on
+something that covers it, so a truncated request cannot destroy a history.
 
-1. **Dropping the same file name again replaces its rows.** A source is
-   identified by its file name, so a re-drop corrects rather than duplicates —
-   fix a line, drop the file again, done. Renaming the file makes it a *new*
-   source, which is repaired by forgetting the old one.
-2. **You forget a whole import, never a single row.** Read-only rules out
-   editing one line in place, so the unit of revocation is the import. Without
-   that, a row provisioned by a file would be both unalterable and
-   indestructible.
-3. **Removing the file from disk does nothing.** The store is the truth once the
-   import has happened; the file is where the rows came from, not where they
-   live. Backups, therefore, are of the store — or of your exported events, which
-   is the other form and re-imports cleanly.
-
-Where a row came from is kept and shown — *line 14 of `2024.csv`* — so you can
-find the source of a figure. It is provenance for reading, never an address the
-app writes back to. In the app it is also a **link**: it takes you to that file
-under **Data → Import and export**, which is where the single *forget this
-import* button lives. There is deliberately no such button on a row — the
-subject of the gesture is the file, and one repeated on 214 lines reads as a
-gesture on the line you are looking at.
-
-Before it happens, the confirmation counts what will go: *removes 214 events, 8
-securities and 1 account from your allocation*. It also says the thing you
-cannot foresee — forgetting a source of **events** can make an account
-removable without touching it, because an account is undeletable while an event
-names it. And it never says *reversible*: re-importing works, but the drop
-folder is optional and the app cannot tell whether you still have the file.
+There is **no undo and no bin**: your backup is the export.
 
 :::note Coming from a single-account version 4
 Your event files import **without a single edit**. That is the one continuity
@@ -208,10 +242,10 @@ Your portfolio can leave the way it came in. **The export format is the import
 format**, so the round trip is round by construction: what comes out is a file
 this same app reads, with no conversion and no special path.
 
-In the app, the export menu is under **Data → Import and export**, and it offers
-four files: every event, the same events as a **workbook with one sheet per
-year**, the **selection your filters hold** at the moment you click, and your
-accounts. Away from the page, they are requests:
+In the app, the export menu is beside the upload zone, and it offers four files:
+every event, the same events as a **workbook with one sheet per year**, the
+**selection your filters hold** at the moment you click, and your accounts.
+Away from the page, they are requests:
 
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
@@ -235,9 +269,8 @@ of February — is refused rather than ignored: a backup that comes back quietly
 short is worse than one that fails.
 
 A selection is saved as `suivi-bourse-selection.csv` and never under the whole
-ledger's name: **a partial file must not replace a complete one**, either in
-your downloads folder or in a drop folder, where a re-import identifies a source
-by its file name. The whole file is what a backup is; the selection is for
+ledger's name: **a partial file must not replace a complete one** in your
+downloads folder. The whole file is what a backup is; the selection is for
 sending a year to your accountant.
 
 The workbook is importable too — the app reads every sheet of it. The plain
@@ -249,20 +282,16 @@ The accounts file is offered only once you have declared something: on an
 install that has not, it would be a header row with no rows under it, and a
 version 4 install refuses a whole directory over one.
 
-Two files, because that is the format — a file is an accounts source or an
-event source according to its header, never both. Drop them into the drop folder
-of another install and it rebuilds the same ledger: the same positions, the same
-cash, the same realized gains.
-
-**Both belong in a version 5 drop folder; only `events.csv` belongs in a version
-4 one.** Version 4 has no accounts file and refuses a whole directory over a
-header it does not recognise, so `accounts.csv` sitting beside the events there
-refuses the portfolio rather than itself — see
-[Going back](./coming-from-v4.mdx#going-back).
+**Only `events.csv` belongs in a version 4 directory.** Version 4 has no accounts
+file and refuses a whole directory over a header it does not recognise, so
+`accounts.csv` sitting beside the events there refuses the portfolio rather than
+itself — see [Going back](./coming-from-v4.mdx#going-back).
 
 It is an HTTP route rather than a button only, for the reason every write path
 in this app is: the page is one client of the API and never a privileged one.
 One `curl` is a complete backup.
+
+### The reporting currency
 
 **The exported file states its reporting currency**, in a `base_currency` column
 repeated on every row. It has to: event amounts are the debit *in your base
@@ -289,13 +318,8 @@ An install that never answered exports a **blank** column, which is the honest
 answer: it has interpreted nothing, so its file states nothing — and a file that
 states nothing imports everywhere.
 
-Two things the export deliberately does not carry. **Provenance** — *line 14 of
-`2024.csv`* — because the export *replaces* those imports and would otherwise
-describe files that are not the exported one; an account you created in the
-interface therefore comes back as a **file-declared**, read-only account, its
-provenance being the file you just restored from. And **prices**: they are
-re-fetched and rebuilt, never part of your ledger. Only what you recorded
-leaves.
+One thing the export deliberately does not carry: **prices**. They are re-fetched
+and rebuilt, never part of your ledger. Only what you recorded leaves.
 
 :::tip Your backup does not have to be a binary
 The store is one DuckDB file, so copying it is a complete backup — but it is a
