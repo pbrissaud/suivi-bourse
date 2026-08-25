@@ -2,11 +2,11 @@
 
 The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
 
-**Two of the five exist.** The right-hand column below says what `gh label list` actually knows, and three roles have no label at all — they are not missing by accident, nothing in this tracker has ever applied them.
+**Three of the five exist.** The right-hand column below says what `gh label list` actually knows, and two roles have no label at all — they are not missing by accident, nothing in this tracker has ever applied them.
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |
 | -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | — (does not exist)   | Maintainer needs to evaluate this issue  |
+| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
 | `needs-info`               | — (does not exist)   | Waiting on reporter for more information |
 | `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
 | `ready-for-human`          | — (does not exist)   | Requires human implementation            |
