@@ -22,7 +22,7 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import accounts as accounts_module
-import advisories
+import installation_facts
 import entries
 import ledger
 import main
@@ -3935,40 +3935,41 @@ _THREE_LINES = (
 
 def test_an_install_with_nothing_to_say_answers_an_empty_collection(tmp_path):
     """``200`` + ``[]``. Silence is the ordinary state, not a missing resource."""
-    response = build_client(tmp_path).get('/api/advisories')
+    response = build_client(tmp_path).get('/api/installation-facts')
 
     assert response.status_code == 200
     assert response.get_json() == []
 
 
-def test_an_advisory_is_listed_with_what_it_names(tmp_path, monkeypatch):
+def test_an_installation_fact_is_listed_with_what_it_names(
+        tmp_path, monkeypatch):
     monkeypatch.setenv('SB_EXECUTOR_POOL', '10')
     client, opened = build_client_and_store(tmp_path)
-    advisories.refresh(opened, main.advisory_context(
+    installation_facts.refresh(opened, main.installation_fact_context(
         main.ConfigurationManager(config_dir=str(tmp_path))))
 
-    (advisory,) = client.get('/api/advisories').get_json()
+    (fact,) = client.get('/api/installation-facts').get_json()
 
-    assert advisory['key'] == advisories.UNREAD_ENVIRONMENT
-    assert advisory['acknowledged'] is False
-    assert advisory['acknowledged_at'] is None
-    assert advisory['first_seen_at'] is not None
+    assert fact['key'] == installation_facts.UNREAD_ENVIRONMENT
+    assert fact['acknowledged'] is False
+    assert fact['acknowledged_at'] is None
+    assert fact['first_seen_at'] is not None
     # The detail is **re-derived** by the read: the table has three columns.
-    assert advisory['detail']['variables'] == ['SB_EXECUTOR_POOL']
-    assert 'SB_EXECUTOR_POOL' in advisory['message']
+    assert fact['detail']['variables'] == ['SB_EXECUTOR_POOL']
+    assert 'SB_EXECUTOR_POOL' in fact['message']
 
 
-def test_a_get_never_arms_an_advisory(tmp_path, monkeypatch):
+def test_a_get_never_arms_an_installation_fact(tmp_path, monkeypatch):
     """The observation belongs to the jobs, never to somebody opening a page.
 
-    A ``GET`` that armed them would date every advisory with the moment a
-    browser arrived — and log it there too.
+    A ``GET`` that armed them would date every installation fact with the
+    moment a browser arrived — and log it there too.
     """
     monkeypatch.setenv('SB_EXECUTOR_POOL', '10')
     client, opened = build_client_and_store(tmp_path)
 
-    assert client.get('/api/advisories').get_json() == []
-    assert opened.query('SELECT count(*) FROM advisory')[0][0] == 0
+    assert client.get('/api/installation-facts').get_json() == []
+    assert opened.query('SELECT count(*) FROM installation_fact')[0][0] == 0
 
 
 def test_a_request_never_drops_what_a_running_scheduler_armed(tmp_path):
@@ -3983,34 +3984,58 @@ def test_a_request_never_drops_what_a_running_scheduler_armed(tmp_path):
     and ``(0, 0)`` is an observation that disarms rather than a silence.
     """
     client, opened = build_client_and_store(tmp_path, with_scheduler=False)
-    advisories.refresh(opened, advisories.Context(reconstruction=(1, 3)))
+    installation_facts.refresh(
+        opened, installation_facts.Context(reconstruction=(1, 3)))
 
-    (advisory,) = client.get('/api/advisories').get_json()
+    (fact,) = client.get('/api/installation-facts').get_json()
 
-    assert advisory['key'] == advisories.RECONSTRUCTION_RUNNING
-    assert advisory['detail'] is None
-    assert opened.query('SELECT count(*) FROM advisory')[0][0] == 1
+    assert fact['key'] == installation_facts.RECONSTRUCTION_RUNNING
+    assert fact['detail'] is None
+    assert opened.query('SELECT count(*) FROM installation_fact')[0][0] == 1
 
 
 def test_acknowledging_hides_it_and_the_acknowledgement_persists(tmp_path):
     client, opened = build_client_and_store(tmp_path)
-    advisories.refresh(
-        opened, advisories.Context(unread_variables=('SB_EXECUTOR_POOL',)))
+    installation_facts.refresh(
+        opened, installation_facts.Context(unread_variables=('SB_EXECUTOR_POOL',)))
 
     response = client.post(
-        f'/api/advisories/{advisories.UNREAD_ENVIRONMENT}/acknowledgement')
+        f'/api/installation-facts/'
+        f'{installation_facts.UNREAD_ENVIRONMENT}/acknowledgement')
 
     assert response.status_code == 200
     assert response.get_json()['acknowledged'] is True
-    assert client.get('/api/advisories').get_json() == []
+    assert client.get('/api/installation-facts').get_json() == []
     # The row stays — that is what survives a restart, and what a toast cannot.
     assert opened.query(
-        'SELECT acknowledged_at FROM advisory')[0][0] is not None
+        'SELECT acknowledged_at FROM installation_fact')[0][0] is not None
 
 
-def test_acknowledging_an_unknown_advisory_is_a_404_not_a_503(tmp_path):
+def test_acknowledging_twice_over_the_route_is_not_an_error(tmp_path):
+    """The second gesture asserts what the first already did (issue #820).
+
+    Held on the HTTP seam and not only under it, because the renamed resource is
+    what a reader's second click reaches: a browser that retries, a page that is
+    reopened, a ``curl`` run twice. The date is the row's, and the row does not
+    move.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    installation_facts.refresh(
+        opened, installation_facts.Context(unread_variables=('SB_EXECUTOR_POOL',)))
+    route = (f'/api/installation-facts/'
+             f'{installation_facts.UNREAD_ENVIRONMENT}/acknowledgement')
+
+    first = client.post(route)
+    second = client.post(route)
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert first.get_json()['acknowledged_at'] == \
+        second.get_json()['acknowledged_at']
+
+
+def test_acknowledging_an_unknown_fact_is_a_404_not_a_503(tmp_path):
     response = build_client(tmp_path).post(
-        '/api/advisories/no_such_notice/acknowledgement')
+        '/api/installation-facts/no_such_notice/acknowledgement')
 
     assert response.status_code == 404
     assert response.mimetype == 'application/problem+json'
@@ -4019,7 +4044,8 @@ def test_acknowledging_an_unknown_advisory_is_a_404_not_a_503(tmp_path):
 def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
     """The key is real and nothing stands under it: same answer to the client."""
     response = build_client(tmp_path).post(
-        f'/api/advisories/{advisories.UNREAD_ENVIRONMENT}/acknowledgement')
+        f'/api/installation-facts/'
+        f'{installation_facts.UNREAD_ENVIRONMENT}/acknowledgement')
 
     assert response.status_code == 404
 

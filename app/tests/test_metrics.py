@@ -63,9 +63,10 @@ class FakeConfigManager:
     snapshot readable.
     """
 
-    #: Where the two v4 files an advisory names would sit (issue #709). ``None``
-    #: is *unobservable* rather than *absent*, which is what a fake that has no
-    #: directory at all owes them — see ``advisories.UNOBSERVED``.
+    #: Where the two v4 files an installation fact names would sit (issue
+    #: #709). ``None`` is *unobservable* rather than *absent*, which is what a
+    #: fake that has no directory at all owes them — see
+    #: ``installation_facts.UNOBSERVED``.
     config_dir = None
 
     def __init__(self, shares, opened_store=None, mode="manual",
@@ -1152,7 +1153,7 @@ def test_the_forward_pass_fills_the_gap_of_a_position_bought_back(
 
 
 # ---------------------------------------------------------------------------
-# The advisories, and the one the reconstruction produces (issue #709)
+# The installation facts, and the one the reconstruction produces (issue #709)
 # ---------------------------------------------------------------------------
 
 def test_the_reconstruction_state_is_process_memory(store):
@@ -1181,23 +1182,23 @@ def test_the_reconstruction_state_is_process_memory(store):
 def test_nothing_ever_held_is_an_observation_and_not_an_absence(store):
     """``(0, 0)``, never ``None``: *nothing to reconstruct* is an answer.
 
-    ``None`` across this seam means ``UNOBSERVED`` — *this process cannot see the
-    scheduler* — and a runtime that holds one always can. Answering it here made
-    the two indistinguishable, and the advisory read it as "do not touch": see
-    the regression below.
+    ``None`` across this seam means ``UNOBSERVED`` — *this process cannot see
+    the scheduler* — and a runtime that holds one always can. Answering it here
+    made the two indistinguishable, and the installation fact read it as "do
+    not touch": see the regression below.
     """
     metrics, _ = _build_metrics([], store, mode="events", events=[])
 
     assert metrics.reconstruction_state() == (0, 0)
 
 
-def test_forgetting_every_import_takes_the_reconstruction_advisory_with_it(
+def test_forgetting_every_import_takes_the_reconstruction_fact_with_it(
         store, mocker):
     """The notice cannot outlive the portfolio it describes.
 
     The composition the two halves used to make: a reconstruction is armed, the
     owner forgets every import, ``backfill_windows()`` empties — and because
-    "nothing was ever held" was spelt ``None``, the advisory read it as
+    "nothing was ever held" was spelt ``None``, the installation fact read it as
     *unobservable* and left the row standing for ever, on an install that names
     no symbol at all. That is exactly the permanent noise #709 exists against.
     """
@@ -1211,8 +1212,8 @@ def test_forgetting_every_import_takes_the_reconstruction_advisory_with_it(
     mocker.patch.object(metrics, "_fetch_historical_data", return_value=[])
 
     metrics.backfill()
-    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
-        [main.advisories.RECONSTRUCTION_RUNNING]
+    assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
+        [main.installation_facts.RECONSTRUCTION_RUNNING]
 
     # Every import forgotten: the ledger names nothing, so no symbol has a
     # holding window any more.
@@ -1221,9 +1222,9 @@ def test_forgetting_every_import_takes_the_reconstruction_advisory_with_it(
     assert metrics.config_manager.current().backfill_windows() == {}
     assert metrics.reconstruction_state() == (0, 0)
 
-    metrics.review_advisories()
+    metrics.review_installation_facts()
 
-    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
+    assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
 
 def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
@@ -1239,20 +1240,21 @@ def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
 
     metrics.backfill()
 
-    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
-        [main.advisories.RECONSTRUCTION_RUNNING]
+    assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
+        [main.installation_facts.RECONSTRUCTION_RUNNING]
 
     # Two chunks later the backward pass has reached its acquisition, and the
-    # advisory has no subject left.
+    # installation fact has no subject left.
     for _ in range(3):
         metrics.backfill()
 
-    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
+    assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
 
-def test_the_end_of_the_reconstruction_produces_the_assumed_currency_advisory(
+def test_the_end_of_the_reconstruction_produces_the_assumed_currency_fact(
         store, mocker):
-    """The one advisory that is an event, born where the comparison first can be.
+    """The one installation fact that is an event, born where the
+    comparison first can be.
 
     At import time no symbol has been fetched, so the app does not know what a
     line is quoted in; the last backward pass reaching its first acquisition is
@@ -1277,14 +1279,14 @@ def test_the_end_of_the_reconstruction_produces_the_assumed_currency_advisory(
 
     metrics.backfill()
 
-    keys = {row[0] for row in store.query("SELECT key FROM advisory")}
-    assert main.advisories.ASSUMED_BASE_CURRENCY in keys
+    keys = {row[0] for row in store.query("SELECT key FROM installation_fact")}
+    assert main.installation_facts.ASSUMED_BASE_CURRENCY in keys
     # And it is produced once, however many cycles conclude the same way.
     metrics.backfill()
     metrics.backfill()
     assert store.query(
-        "SELECT count(*) FROM advisory WHERE key = ?",
-        [main.advisories.ASSUMED_BASE_CURRENCY])[0][0] == 1
+        "SELECT count(*) FROM installation_fact WHERE key = ?",
+        [main.installation_facts.ASSUMED_BASE_CURRENCY])[0][0] == 1
 
 
 def test_the_ingest_and_the_backfill_read_the_same_memory(store):
@@ -1292,7 +1294,7 @@ def test_the_ingest_and_the_backfill_read_the_same_memory(store):
 
     The ingest is the *boot's* review — it runs before the first backfill cycle —
     and it reads ``_backfill_complete`` from the same object, so it arms the
-    reconstruction advisory rather than saying nothing about it.
+    reconstruction installation fact rather than saying nothing about it.
     """
     events = [Event(date(2022, 1, 3), EventType.BUY, "AAPL", "Apple",
                     quantity=10, unit_price=150.0)]
@@ -1301,20 +1303,20 @@ def test_the_ingest_and_the_backfill_read_the_same_memory(store):
 
     metrics.ingest()
 
-    assert [row[0] for row in store.query("SELECT key FROM advisory")] == \
-        [main.advisories.RECONSTRUCTION_RUNNING]
+    assert [row[0] for row in store.query("SELECT key FROM installation_fact")] == \
+        [main.installation_facts.RECONSTRUCTION_RUNNING]
 
     metrics._backfill_complete["AAPL"] = datetime(2022, 1, 3, tzinfo=timezone.utc)
     metrics.ingest()
 
-    assert store.query("SELECT count(*) FROM advisory")[0][0] == 0
+    assert store.query("SELECT count(*) FROM installation_fact")[0][0] == 0
 
 
-def test_a_store_failure_never_takes_a_job_with_the_advisories(store, mocker):
+def test_a_store_failure_never_takes_a_job_with_the_facts(store, mocker):
     """A missed review costs one cycle; the next one re-observes from scratch."""
     metrics, _ = _build_metrics(
         [_valid_shares("AAPL", "Apple")], store, mode="events", events=[])
-    mocker.patch.object(main.advisories, "refresh",
+    mocker.patch.object(main.installation_facts, "refresh",
                         side_effect=RuntimeError("the file is gone"))
 
-    metrics.review_advisories()  # must not raise
+    metrics.review_installation_facts()  # must not raise

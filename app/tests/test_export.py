@@ -290,8 +290,8 @@ def test_a_declared_currency_is_taken_by_a_store_that_has_none(tmp_path):
     """The app *reads* a declaration rather than *asserting* one (ADR-0021).
 
     Which is what distinguishes it from the "your v4 amounts are in your
-    reporting currency" advisory, and what makes the headless round trip work
-    without a single ``curl``.
+    reporting currency" installation fact, and what makes the headless round
+    trip work without a single ``curl``.
     """
     _, source = install(tmp_path / 'source',
                         {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
