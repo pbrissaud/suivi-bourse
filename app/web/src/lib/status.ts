@@ -15,7 +15,13 @@
  * reconstruction has no figure to excuse either — answering frees the slot
  * (#726).
  */
-import type { RuntimeAccount, RuntimeState } from '@/lib/api'
+import {
+  BACKFILL_RUNNING,
+  HEALTH_STATUSES,
+  type HealthState,
+  type RuntimeAccount,
+  type RuntimeState,
+} from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
 
@@ -24,6 +30,35 @@ import { problemMessageKey } from '@/lib/problem'
  * install is the noise the rule was written against.
  */
 export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 'unreachable'
+
+/**
+ * A health payload, or `null` for *the route answered and said nothing this
+ * function can read* (#819).
+ *
+ * The narrowing exists because the dot's whole job is to stay true when the
+ * detail disappears, and the detail can disappear in more ways than a failed
+ * request: a proxy answering `200` with its own JSON, an image whose body has
+ * moved on, a route the SPA catch-all served. `get` throws on anything that is
+ * not JSON at all, so what is left for this to catch is JSON that is not *this*
+ * object — read at the wire and not at the compiler, which is the only place
+ * the question is actually asked.
+ *
+ * A **word this front does not know** is refused here too, and deliberately:
+ * `unknown` means *nothing has been observed yet*, so borrowing it for *the
+ * server said something else* would put a grey dot on a claim nobody made.
+ */
+function readHealth(payload: unknown): HealthState | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  const status = (payload as { status?: unknown }).status
+  if (typeof status !== 'string') return null
+  if (!(HEALTH_STATUSES as readonly string[]).includes(status)) return null
+  return payload as HealthState
+}
+
+/** Is the reconstruction still covering windows? A member of the backfill job. */
+function isRebuilding(health: HealthState): boolean {
+  return health.jobs?.backfill?.verdict === BACKFILL_RUNNING
+}
 
 /**
  * **Green means the quotes are read *and* the performance is up to date** — and
@@ -42,24 +77,44 @@ export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 
  * in, one glance answers it — and three pages lost the dated mention they
  * carried to answer it themselves, because the dot now does.
  *
+ * **And it reads `/health` since #819** (ADR-0036), which repairs the half
+ * #787 could not reach. The five states were derived from `/api/runtime`, whose
+ * only detectable problem is the **scheduler being stopped** — so a scrape
+ * frozen since Tuesday, a backfill wedged on yfinance, a perf pass raising
+ * every cycle all left the dot **green**, on an install where nothing on screen
+ * had moved for days. `status` is the server's own fold over the three jobs and
+ * the scheduler, so those four facts are one word now, and the dot says
+ * *attention* on all of them.
+ *
  * The order is causal, like the banner's: the app not answering is stronger
- * than a stopped scheduler, which is stronger than a rebuild — a scheduler that
- * has stopped is *why* a rebuild would never finish, so naming the rebuild there
- * would name the symptom over the cause.
+ * than anything the body could say, and *attention* is stronger than a rebuild —
+ * a stopped scheduler is *why* a rebuild would never finish, so naming the
+ * rebuild there would name the symptom over the cause.
  *
  * **Rebuilding is its own state and not `attention`**, because the two ask
- * opposite things of the reader: *attention* is a stopped scheduler, which needs
- * a hand, and a rebuild needs only time. One word for both would make the dot's
- * own sentence wrong half the time — which is the defect it is being fixed of.
+ * opposite things of the reader: *attention* needs a hand, and a rebuild needs
+ * only time. One word for both would make the dot's own sentence wrong half the
+ * time — which is the defect it is being fixed of. It is read off the backfill's
+ * **verdict** rather than off `status`, that job being deliberately `ok` while
+ * it runs: a reconstruction is not something to look at, and the fold is right
+ * to say so.
  */
 export function installationState(input: {
-  runtime?: RuntimeState
+  health?: unknown
   error?: unknown
 }): InstallationState {
+  // The `503` of a store that will not open, and every other failed read. This
+  // is the trade ADR-0036 states in as many words: the body goes when the store
+  // goes, and red is the one colour that needs no body to be true.
   if (input.error) return 'unreachable'
-  if (!input.runtime) return 'unknown'
-  if (!input.runtime.scheduler_running) return 'attention'
-  return input.runtime.rebuilding ? 'rebuilding' : 'ok'
+  if (input.health === undefined) return 'unknown'
+  const health = readHealth(input.health)
+  // The route answered and there is nothing readable in it. Red rather than
+  // grey: grey is *nobody has looked yet*, and somebody has.
+  if (health === null) return 'unreachable'
+  if (health.status === 'attention') return 'attention'
+  if (isRebuilding(health)) return 'rebuilding'
+  return health.status === 'unknown' ? 'unknown' : 'ok'
 }
 
 /**

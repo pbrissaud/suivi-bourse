@@ -33,8 +33,8 @@
   "sidebar.rail": "Replier ou déplier la navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
-  "sidebar.status.title": "{state, select, ok {Système opérationnel} attention {Ordonnanceur arrêté} rebuilding {Reconstruction en cours} unreachable {Application injoignable} other {}}",
-  "sidebar.status.body": "{state, select, ok {Les cours sont relevés et l’historique reconstruit à leur cadence.} attention {Plus rien n’est relevé ni reconstruit tant qu’il n’a pas redémarré.} rebuilding {Les cours sont relevés ; les chiffres consolidés rattrapent encore votre historique.} unreachable {Rien n’a répondu, donc rien à l’écran n’est frais.} other {}}",
+  "sidebar.status.title": "{state, select, ok {Système opérationnel} attention {Quelque chose s’est arrêté} rebuilding {Reconstruction en cours} unreachable {Application injoignable} other {}}",
+  "sidebar.status.body": "{state, select, ok {Les cours sont relevés et l’historique reconstruit à leur cadence.} attention {Un relevé, une reconstruction ou un calcul de performance ne tourne plus ou ne rapporte plus rien : ce qui est à l’écran n’avance plus.} rebuilding {Les cours sont relevés ; les chiffres consolidés rattrapent encore votre historique.} unreachable {Rien n’a répondu, donc rien à l’écran n’est frais.} other {}}",
   "sheet.close": "Fermer",
   "dialog.close": "Fermer",
 

@@ -116,12 +116,18 @@ export function AppSidebar() {
  * a real state of the dot, because a grey dot claims nothing; a sentence cannot
  * be grey, and *the installation state is unknown* written out in the sidebar
  * is a claim about the reader's install made before anybody looked.
+ *
+ * It reads **the same route, through the same derivation, off the same tone
+ * table** as the dot (#819). That is what *development* means here and it is a
+ * rule rather than an economy: a card deciding for itself what *attention*
+ * covers would be a second opinion on the reader's own installation, said one
+ * column away from the first.
  */
 function StatusCard() {
   const t = useT()
   const { state: sidebar, isMobile } = useSidebar()
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const state = installationState({ runtime: runtime.data, error: runtime.error })
+  const health = useQuery({ queryKey: ['health'], queryFn: api.health })
+  const state = installationState({ health: health.data, error: health.error })
 
   if (isMobile || sidebar === 'collapsed' || state === 'unknown') return null
 
