@@ -152,8 +152,8 @@
   "firstRun.refused": "L’application a refusé cette valeur et n’a rien écrit.",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
-  "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} accounts {Préparation de vos comptes…} other {Préparation de votre fichier…}}",
-  "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} accounts {Vos comptes sont sur votre disque.} other {Votre fichier est sur votre disque.}}",
+  "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} other {Préparation de votre fichier…}}",
+  "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} other {Votre fichier est sur votre disque.}}",
   "receipt.import.running": "Lecture de {file}…",
   "receipt.import.written": "{count, plural, one {# événement écrit} other {# événements écrits}}, du {from} au {to}, sur {accounts, plural, one {# compte} other {# comptes}} et {symbols, plural, one {# titre} other {# titres}}.",
   "receipt.import.empty": "{file} ne portait aucun événement : rien n’a été écrit.",

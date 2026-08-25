@@ -152,8 +152,8 @@
   "firstRun.refused": "The app refused this value and wrote nothing.",
 
   "receipt.currency.saved": "Base currency saved: {currency}.",
-  "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} accounts {Preparing your accounts…} other {Preparing your file…}}",
-  "receipt.export.saved": "{file, select, events {Your events are on your disk.} workbook {Your workbook is on your disk.} selection {Your selection is on your disk.} accounts {Your accounts are on your disk.} other {Your file is on your disk.}}",
+  "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} other {Preparing your file…}}",
+  "receipt.export.saved": "{file, select, events {Your events are on your disk.} workbook {Your workbook is on your disk.} selection {Your selection is on your disk.} other {Your file is on your disk.}}",
   "receipt.import.running": "Reading {file}…",
   "receipt.import.written": "{count, plural, one {# event written} other {# events written}}, from {from} to {to}, over {accounts, plural, one {# account} other {# accounts}} and {symbols, plural, one {# security} other {# securities}}.",
   "receipt.import.empty": "{file} carried no event: nothing was written.",
