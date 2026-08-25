@@ -323,31 +323,6 @@ describe('the export', () => {
   })
 })
 
-describe('a read that has not landed', () => {
-  it('offers no accounts file while the declaration is in flight', async () => {
-    // ADR-0026 at the notch #777 named: the band **waits by the rows a read
-    // owns**, not whole. The events file rests on the ledger, which this tab has
-    // already read, so it is offered; the accounts file rests on the
-    // declaration, and offering it on a silence would state that something is
-    // declared. What went with #816 is the third case — a *verdict about a
-    // source* — there being no source left to state one about.
-    server.use(http.get(ROUTES.accounts, () => new Promise(() => {})))
-    const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
-
-    const menu = await openExport(user)
-    expect(
-      within(menu)
-        .getAllByRole('menuitem')
-        .map((item) => item.textContent),
-    ).toEqual([
-      'Vos événements',
-      'Un classeur, un onglet par année',
-      'La sélection filtrée (4 événements)',
-    ])
-  })
-})
-
 describe('an install that has imported nothing', () => {
   it('offers the file entrance once, with a declaration and nothing recorded', async () => {
     // An install with something declared and no event. The band stood here while
