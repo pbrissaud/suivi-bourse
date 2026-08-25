@@ -97,7 +97,10 @@ polled on a short cadence, a symbol whose market is closed sleeps until it reope
 Fetching a symbol's *past* prices. Three independent passes: **backward** (toward the
 start of the holding window), **forward** (recovering a session missed while the app
 was down), and **lateral** (repairing a point whose currency conversion failed — and,
-once per symbol, learning the unit a line the live scrape never polls is quoted in).
+once per symbol, learning the unit a line the live scrape has never *written* is quoted
+in: a line it never polls at all, or one it met with its market shut). The two are
+triggers of their own: a symbol quoted in the reporting currency has nothing to convert
+and its unit is learnt all the same.
 
 **Terminal**:
 Said of a backfill that will never fetch anything more for a symbol — either it
