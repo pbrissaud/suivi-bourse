@@ -1,7 +1,12 @@
 """The reassignment — *réaffecter, jamais refuser* (issue #725, ADR-0013, ADR-0006).
 
 The seam is :mod:`test_entries`': a **real** DuckDB store in ``tmp_path``, the
-real ingestion beside it, and every assertion a ``SELECT`` against the store.
+real writer beside it, and every assertion a ``SELECT`` against the store.
+
+Since #816 the population this gesture moves is named by the ``account`` column
+and by nothing else: there is one kind of row, so *"a row a file laid down"* and
+*"a row somebody typed"* are the same subject seen twice, and the tests that
+told them apart tell them apart no longer.
 
 The state this file is about **cannot be reached on the real portfolio** — its
 285 events all name an account, so ``default`` is nowhere — and the ticket makes
@@ -17,6 +22,7 @@ import accounts as accounts_module
 import entries
 import ledger
 import reassignment
+from events import EventLoader
 from events.schemas import DEFAULT_ACCOUNT, Event, EventType
 
 
@@ -29,28 +35,17 @@ UNASSIGNED_CSV = (
     "2024-03-01,DIVIDEND,AAPL,Apple Inc,,,,2.40,Q1 2024 dividend\n"
 )
 
-ACCOUNTS_FILE = (
-    "id,type,label\n"
-    "pea,PEA,Plan d'épargne en actions\n"
-    "cto,CTO,Compte-titres\n"
-)
 
-
-def _folder(tmp_path):
-    folder = tmp_path / 'events'
-    folder.mkdir(exist_ok=True)
-    return folder
-
-
-def _drop(store, tmp_path, body, name):
-    folder = _folder(tmp_path)
-    (folder / name).write_text(body, encoding='utf-8')
-    ledger.sync_drop_folder(store, folder)
+def _upload(store, tmp_path, body=UNASSIGNED_CSV, name='2024.csv'):
+    """One file into the store, by the road ``POST /api/events/import`` takes."""
+    path = tmp_path / name
+    path.write_text(body, encoding='utf-8')
+    return entries.create_many(store, EventLoader(str(path)).load())
 
 
 def _the_month_before_declaring(store, tmp_path):
-    """The fabricated state: three imported events, all under ``default``."""
-    _drop(store, tmp_path, UNASSIGNED_CSV, '2024.csv')
+    """The fabricated state: three uploaded events, all under ``default``."""
+    _upload(store, tmp_path)
     assert reassignment.unassigned_events(store) == 3
     return store
 
@@ -82,25 +77,28 @@ def test_reassignment_moves_every_unassigned_event_onto_the_declaration(
     assert reassignment.unassigned_events(store) == 0
 
 
-def test_the_imported_row_is_the_population(store, tmp_path):
-    """Not *a row the app wrote*: the file was right under the rule then."""
+def test_the_column_is_the_whole_population(store, tmp_path):
+    """The subject is ``account = 'default'`` and nothing else (#816).
+
+    It used to be worth saying that an *uploaded* row was in it too, the file
+    having been right under the rule then in force. There is one kind of row
+    now, so what this states is the ``WHERE``: every row carrying the seeded id
+    moves, and it moves whatever wrote it.
+    """
     _the_month_before_declaring(store, tmp_path)
-    sources = store.query(
-        'SELECT count(*) FROM event WHERE source_id IS NOT NULL')[0][0]
-    assert sources == 3
+    assert store.query(
+        'SELECT count(*) FROM event WHERE account = ?', [DEFAULT_ACCOUNT]
+    )[0][0] == 3
 
     accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
-    still_imported = store.query(
-        'SELECT count(*) FROM event '
-        'WHERE source_id IS NOT NULL AND account = ?', ['pea'])[0][0]
-    assert still_imported == 3
+    assert _accounts_of(store) == ['pea'] * 3
 
 
 def test_a_row_typed_here_carrying_default_goes_with_them(store, tmp_path):
-    """One population, and it is the column's value — not the row's provenance."""
+    """One population, and it is the column's value — never where a row came from."""
     _the_month_before_declaring(store, tmp_path)
     entries.create(store, Event(date(2024, 4, 1), EventType.BUY, 'AAPL',
                                 'Apple Inc', quantity=1, unit_price=10.0))
@@ -115,7 +113,7 @@ def test_a_row_typed_here_carrying_default_goes_with_them(store, tmp_path):
 # … and the window that never reopens
 # --------------------------------------------------------------------------- #
 
-def test_after_the_reassignment_nothing_moves_an_imported_row_again(
+def test_after_the_reassignment_nothing_moves_a_row_again(
         store, tmp_path):
     """*Jamais ensuite* — and it is the ``WHERE`` that says so, not a flag."""
     _the_month_before_declaring(store, tmp_path)
@@ -131,20 +129,28 @@ def test_after_the_reassignment_nothing_moves_an_imported_row_again(
     assert _accounts_of(store) == ['pea'] * 3
 
 
-def test_an_imported_row_is_still_refused_by_the_row_level_gesture(
-        store, tmp_path):
-    """The exception is this module's alone: :mod:`entries` refuses as before."""
+def test_a_reassigned_row_is_then_an_ordinary_row(store, tmp_path):
+    """The exception is this module's alone, and it changes nothing about a row.
+
+    What used to be here was the other half of the split — :mod:`entries`
+    refusing that same row — and it is gone with the split (#816). What is worth
+    asserting instead is that this gesture leaves the row reachable: it is
+    rewritten in place afterwards, like any other.
+    """
     _the_month_before_declaring(store, tmp_path)
     accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
+    accounts_module.create_account(store, 'cto', 'CTO', 'Titres')
     with store.transaction():
         reassignment.reassign_unassigned(store, 'pea')
 
     (event_id,) = store.query(
-        'SELECT id FROM event WHERE source_id IS NOT NULL LIMIT 1')[0]
+        'SELECT id FROM event ORDER BY id LIMIT 1')[0]
     draft = Event(date(2024, 1, 15), EventType.BUY, 'AAPL', 'Apple Inc',
                   quantity=10, unit_price=150.0, account='cto')
-    with pytest.raises(entries.ImportedEntry):
-        entries.update(store, event_id, draft)
+    entries.update(store, event_id, draft)
+
+    assert store.query(
+        'SELECT account FROM event WHERE id = ?', [event_id]) == [('cto',)]
 
 
 # --------------------------------------------------------------------------- #
@@ -223,24 +229,6 @@ def test_the_ledger_it_leaves_is_replayed_before_the_commit(store, tmp_path):
     assert {share['account'] for share in shares} == {'pea'}
 
 
-def test_a_declaration_by_file_reaches_the_same_window(store, tmp_path):
-    """The other road (issue #698): the accounts source declares, the event
-    file is refused for its now-blank column, and the rows stay under
-    ``default`` — which is the exact state this gesture exists for."""
-    _the_month_before_declaring(store, tmp_path)
-    _drop(store, tmp_path, ACCOUNTS_FILE, 'accounts.csv')
-
-    assert accounts_module.accounts_are_declared(store) is True
-    assert reassignment.unassigned_events(store) == 3
-
-    with store.transaction():
-        assert reassignment.reassign_unassigned(store, 'pea') == 3
-
-
-# --------------------------------------------------------------------------- #
-# … and the row that stopped being the seed
-# --------------------------------------------------------------------------- #
-
 def test_a_renamed_seed_is_a_declaration_and_its_events_are_assigned(
         store, tmp_path):
     """The N = 1 gesture #729 exists for, and it changes what these rows *are*.
@@ -270,18 +258,6 @@ def test_a_retyped_seed_is_a_declaration_too(store, tmp_path):
     accounts_module.update_account(store, DEFAULT_ACCOUNT, account_type='PEA')
 
     assert reassignment.unassigned_events(store) == 0
-
-
-def test_a_file_that_took_the_seeded_row_over_declares_it(store, tmp_path):
-    """#698 lets a file name ``default`` and take it over; that is a
-    declaration like any other, and its events are assigned."""
-    _the_month_before_declaring(store, tmp_path)
-    _drop(store, tmp_path,
-          "id,type,label\ndefault,PEA,Mon PEA\npea,PEA,Second\n", 'accounts.csv')
-
-    assert reassignment.unassigned_events(store) == 0
-    with store.transaction():
-        assert reassignment.reassign_unassigned(store, 'pea') == 0
 
 
 def test_the_seed_wearing_the_seed_s_own_words_is_not_a_declaration(

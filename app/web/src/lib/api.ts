@@ -65,16 +65,6 @@ export const ROUTES = {
    */
   eventsImport: '/api/events/import',
   /**
-   * The sources, which are the **unit of revocation** (#728, ADR-0020).
-   *
-   * A provenance is worth exactly two things: a displayable label, and this.
-   * It is never an address to write at — that was #662's opaque token over
-   * `(file, sheet, row)`, and it died with the file being the truth.
-   */
-  imports: '/api/imports',
-  /** One of them, forgotten whole. A **pattern**, like {@link ROUTES.prices}. */
-  importSource: '/api/imports/:id',
-  /**
    * The ledger back out, in the format it came in by (#710) — **two files**,
    * because a file is an accounts source *or* an event source according to its
    * header and never both. Exporting the events alone would restore a
@@ -152,7 +142,6 @@ export const WRITE_ONLY_ROUTES = [
   'accountReassignment',
   'advisoryAcknowledgement',
   'storeOrphans',
-  'importSource',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
@@ -180,10 +169,6 @@ export function accountPath(id: string): string {
 
 export function accountReassignmentPath(id: string): string {
   return `${accountPath(id)}/reassignment`
-}
-
-export function importPath(id: number): string {
-  return `/api/imports/${encodeURIComponent(String(id))}`
 }
 
 export function advisoryAcknowledgementPath(key: string): string {
@@ -902,32 +887,26 @@ export interface RuntimeState {
 // server renders the page whole, and each is what one criterion of #723 rests
 // on:
 //
-//  - **`source_filename`** — the provenance is worth exactly two things
-//    (ADR-0020): a displayable label and the unit of revocation. Never an
-//    address, and never the file's presence on disk — the drop folder is an
-//    optional read-only bind (ADR-0015), so *file not found* would be a
-//    permanent false defect on every install without one. The store renders a
-//    label of its own (`2024.csv, row 14`) and the front cannot use it: a
-//    rendering follows the **reader's** language (ADR-0024), so what the front
-//    needs is the file's name, not a sentence about it. Absent, the served
-//    label is shown rather than an em dash — which would say *typed here*, and
-//    that is a different row.
-//  - **`id`** — a row the app itself created is the one kind it may edit, and
-//    editing needs an address. That address is a **primary key**, which is the
-//    whole of what killed #662's apparatus: the opaque token over `(file, sheet,
-//    row)`, the content fingerprint as an `ETag` and its `409` existed because
-//    the *file* was the address and a file address goes stale between the read
-//    and the write. Absent — today, on every row — the editor is not offered at
-//    all, which is exactly what the criterion says happens on an install that
-//    has only ever imported.
+//  - **`id`** — every row is editable and editing needs an address. That
+//    address is a **primary key**, which is the whole of what killed #662's
+//    apparatus: the opaque token over `(file, sheet, row)`, the content
+//    fingerprint as an `ETag` and its `409` existed because the *file* was the
+//    address and a file address goes stale between the read and the write.
+//    Absent, the editor is not offered on that row — a shape today's server
+//    never sends, and one the type has to allow all the same.
+//
+// **And the provenance is gone** (#816, ADR-0032): the three columns and the
+// sentence composed from them described a row a *mounted* file had provisioned,
+// and they existed because that file was re-read. A file is a payload now, so
+// there is one population of rows and nothing on the wire that could tell two
+// apart.
 //
 // And one route is genuinely new: **`POST /api/events`**, without which the
 // create form has nowhere to write. It is ADR-0005's onboarding rather than a
 // convenience — manual mode is gone, so typing a position *is* creating dated
 // events — and it is announced here, in the one module that knows a URL.
-// `PATCH` is its bounded sibling: `web/api.py` states that no sibling edits an
-// *imported* event, and that argument is about a file being read-only, not
-// about a row somebody typed here a minute ago.
+// `PATCH` is its sibling, and since #816 it is bounded by nothing: the `409`
+// that refused a row a file had laid down went with the mount that justified it.
 // ------------------------------------------------------------------------- //
 
 /**
@@ -958,15 +937,7 @@ export interface LedgerEvent {
   notes: string | null
   /** Blank means `default`, which is the aggregator's own rule. */
   account: string
-  /** The import this row came from — `null` is *typed in the app*. */
-  source_id: number | null
-  source_sheet: string | null
-  source_row: number | null
-  /** The store's own label. A fallback, never the rendering (ADR-0024). */
-  provenance: string | null
-  /** #723: the file's **name**, so the label follows the reader's language. */
-  source_filename?: string | null
-  /** #723: the key a row typed here is addressed by. Absent on an import. */
+  /** #723: the key a row is addressed by. Optional, never absent in practice. */
   id?: string | null
 }
 
@@ -975,8 +946,8 @@ export type EventsResponse = LedgerEvent[]
 
 /**
  * What the form sends. Deliberately **not** a `LedgerEvent` minus a few fields:
- * the row's key and its provenance are the store's to write, and a client that
- * could name either would be a client that could forge one.
+ * the row's key is the store's to write, and a client that could name one would
+ * be a client that could forge one.
  *
  * `name` is not a member either. It is an attribute of the *security*, not of
  * each of its events — the reason `Nom` left the table is the reason it never
@@ -1176,43 +1147,14 @@ export interface PurgeResult {
 }
 
 // ------------------------------------------------------------------------- //
-// The imports — the unit of revocation (#728, ADR-0020, ADR-0015)
+// The import — a gesture, and no resource behind it (#811, #813, ADR-0032)
+//
+// There was a `GET /api/imports` and a `DELETE /api/imports/<id>` here, with a
+// record type and a revocation to go with them. They left with the population
+// they existed for (#816): nothing persists that could be listed, and undoing an
+// import is `deleteEvents` over the ledger's own reduction. What is left is the
+// receipt, which describes a gesture and outlives nothing.
 // ------------------------------------------------------------------------- //
-
-/**
- * Which of the two a source is, read off its **header** and never off its name:
- * no filename has a special meaning in v5. It is also the ordering the list
- * renders in — accounts first — because `event.account` references `account(id)`
- * and that is the order the foreign key imposes on an import, not a taste.
- */
-export const IMPORT_KINDS = ['accounts', 'events'] as const
-
-export type ImportKind = (typeof IMPORT_KINDS)[number]
-
-export interface ImportRecord {
-  id: number
-  /**
-   * The file's **name**, never a path — and never its presence on disk either.
-   * The drop folder is an optional read-only bind (ADR-0015), so *file not
-   * found* would be a permanent false defect on every install without one, and
-   * the store is the truth in any case.
-   */
-  filename: string
-  kind: ImportKind
-  imported_at: string | null
-  /**
-   * The content hash the store keeps to notice a re-drop. **Never a column**
-   * (#728): nobody reads a hexadecimal, and what it has to say — *the same file
-   * was dropped again, nothing moved* — is a message at the instant of the
-   * import, which is where the server says it.
-   */
-  fingerprint: string
-  /** How many events it laid down. `0` on an accounts source, which lays none. */
-  events: number
-}
-
-/** A bare collection, as served: `200` + `[]` on an install that has imported nothing. */
-export type ImportsResponse = ImportRecord[]
 
 /** The period an import covered — its two days, or nothing at all. */
 export interface ImportPeriod {
@@ -1257,18 +1199,11 @@ export interface ImportOptions {
   writeDuplicates?: boolean
 }
 
-/** What the revocation answers: the source, and the rows that went with it. */
-export interface ForgottenImport {
-  id: number
-  events_removed: number
-}
-
 export const api = {
   accounts: () => get<AccountsResponse>(ROUTES.accounts),
   // The declaration's three gestures (#698, served since that ticket; read by a
   // client since #729). They are the accounts half of the pair
-  // `POST`/`PATCH`/`DELETE /api/events` is the ledger half of, down to the
-  // column that decides them: `source_id NULL`.
+  // `POST`/`PATCH`/`DELETE /api/events` is the ledger half of.
   createAccount: (draft: AccountDraft) => send<Account>(ROUTES.accounts, 'POST', draft),
   updateAccount: (id: string, draft: AccountDraft) =>
     send<Account>(accountPath(id), 'PATCH', draft),
@@ -1313,9 +1248,6 @@ export const api = {
   advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
   acknowledgeAdvisory: (key: string) =>
     send<Advisory>(advisoryAcknowledgementPath(key), 'POST', {}),
-  imports: () => get<ImportsResponse>(ROUTES.imports),
-  // The way in (#811). One file, one gesture, one receipt — and no id, because
-  // the store keeps no memory of the file it just read.
   // The way in (#811), and since #813 it is made twice on purpose: once with
   // `dryRun` for the forecast, once without it to commit — **the same file**,
   // re-sent. There is no pending-import id to hold instead, because holding one
@@ -1325,10 +1257,6 @@ export const api = {
       ...(options.dryRun ? ['dry_run=1'] : []),
       ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
     ]),
-  // The **only** gesture that reaches an imported row, and the only one there
-  // will be: read-only forbids editing line 42 of `broker.csv`, it does not
-  // forbid revoking the file.
-  forgetImport: (id: number) => remove<ForgottenImport>(importPath(id)),
   store: () => get<StoreState>(ROUTES.store),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),
   // The way back out (#710, #796). It answers bytes and a name rather than a

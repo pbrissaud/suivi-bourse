@@ -24,10 +24,11 @@ from datetime import date, datetime
 
 import pytest
 
-import ledger
+import entries
 import main
 import store as store_module
 import web as web_module
+from events import EventLoader
 from web import create_app
 
 
@@ -90,13 +91,15 @@ def _build(tmp_path, mocker):
     _fixed_today(mocker)
     events_dir = tmp_path / 'events'
     events_dir.mkdir(exist_ok=True)
-    (events_dir / '2024.csv').write_text(_LEDGER, encoding='utf-8')
+    path = events_dir / '2024.csv'
+    path.write_text(_LEDGER, encoding='utf-8')
 
     opened = store_module.open_store(tmp_path / 'store.duckdb')
-    # The rows land in the store before the first publication: the manager scans
-    # no directory since ADR-0032, and what every test below asserts on is what
-    # a *write through a route* does to the series afterwards.
-    ledger.sync_drop_folder(opened, events_dir)
+    # The rows land in the store before the first publication, by the road the
+    # upload takes: the manager scans no directory since ADR-0032, and what
+    # every test below asserts on is what a *write through a route* does to the
+    # series afterwards.
+    entries.create_many(opened, EventLoader(str(path)).load())
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
@@ -253,9 +256,10 @@ def test_a_runtime_with_no_metrics_still_replays_and_writes_no_series(
     _fixed_today(mocker)
     events_dir = tmp_path / 'events'
     events_dir.mkdir(exist_ok=True)
-    (events_dir / '2024.csv').write_text(_LEDGER, encoding='utf-8')
+    path = events_dir / '2024.csv'
+    path.write_text(_LEDGER, encoding='utf-8')
     opened = store_module.open_store(tmp_path / 'store.duckdb')
-    ledger.sync_drop_folder(opened, events_dir)
+    entries.create_many(opened, EventLoader(str(path)).load())
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)

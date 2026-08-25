@@ -390,13 +390,14 @@ export function accountsNamed(events: readonly LedgerEvent[]): string[] {
 }
 
 /**
- * A row typed in the app is the only one the app may edit (ADR-0020) — and it
- * has to be **addressable** to be edited, which is the second half of the same
- * sentence. On an install that has only ever imported, this is false on every
- * row and the editor is therefore never rendered at all.
+ * **Every row is editable** (ADR-0032, #816) — provided it is *addressable*,
+ * which is all that is left of the predicate. The other half was
+ * `source_id === null`: a row a mounted file had provisioned was refused by the
+ * server in `409`, so offering the editor on it was offering a refusal. There is
+ * one population now, and a key is the whole of what an edit needs.
  */
 export function isEditable(event: LedgerEvent): boolean {
-  return event.source_id === null && typeof event.id === 'string'
+  return typeof event.id === 'string'
 }
 
 /**

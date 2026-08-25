@@ -1,8 +1,8 @@
 /**
- * The ledger — **eight columns plus the provenance** (#723, ADR-0020).
+ * The ledger — **eight columns** (#723, ADR-0020, ADR-0032).
  *
  *     Date · Type · De quoi il s'agit · Quantité · Prix unitaire · Frais ·
- *     Montant · Compte          (+ Provenance)
+ *     Montant · Compte
  *
  * Two decisions were taken here **against** the interview, both in front of a
  * board mounted on the 285 real events:
@@ -19,13 +19,12 @@
  *    security, not of each of its 285 events; repeating it is declaration
  *    duplicated, and the ticker already identifies the line.
  *
- * **And there is no padlock column.** Rendered, read-only-per-row gave 285 rows
- * out of 285 carrying an identical lock — a per-row marker that does not
- * discriminate is noise however correct it is (ADR-0016). Nothing replaces it,
- * because nothing has to: *a row that carries a provenance came from a file; a
- * row that carries none was typed here*. The information was already in the one
- * column that actually discriminates, and it is that same column that says
- * `Saisie manuelle` on the rows the app may edit.
+ * **And there is no padlock column**, which the table proved before ADR-0032
+ * settled it: rendered, read-only-per-row gave 285 rows out of 285 carrying an
+ * identical lock, and a per-row marker that does not discriminate is noise
+ * however correct it is (ADR-0016). Since #816 there is nothing left for it to
+ * have discriminated on — **every** row is editable — so the lock, and the
+ * `Provenance` column that carried the same fact more usefully, are both gone.
  *
  * Since #795 the table is also **bounded and revealed** (ADR-0031): the header
  * is sticky, the body scrolls inside its own container, and how many rows are in
@@ -34,18 +33,13 @@
  * money columns are set in the mono face, both for the same reason: forty rows
  * are read by scanning down a column, not across a row.
  *
- * **The provenance is a label, never an address** — the file's *name* and its
- * line, never a path, and never its presence on disk: the drop folder is an
- * optional read-only bind (ADR-0015), so *file not found* would be a permanent
- * false defect on every install without one.
- *
- * Since #728 it is also a **link**, and that is the whole of what it is worth
- * besides the label: it names the **unit of revocation**, and it leads to the
- * one place that unit can be acted on. What it does *not* carry is the gesture
- * itself — three consecutive lines showed three identical red *Oublier cet
- * import (214)* buttons and somebody deletes 214 events believing they are
- * removing one. A row carries information; the mass action attached to it lives
- * where its subject is, once.
+ * **The ninth column left with its subject** (#816). It said *"row 14 of
+ * 2024.csv"* and linked to the file's revocation, and both halves rested on the
+ * same thing: a mounted file was re-read, so its rows had to be named and
+ * revoked whole rather than corrected. A file is handed over once now. There is
+ * no source to name, no revocation to lead to, and a row that came out of a file
+ * is a row — so what the column would carry on all 285 lines is the same
+ * nothing the padlock carried.
  *
  * **Zero explanation icons.** The page's two live on the create form, where the
  * sentence can still change a behaviour (#684 D7).
@@ -116,18 +110,11 @@ const TYPE_BADGE: Record<LedgerEventType, string> = {
 export interface LedgerTableProps {
   events: readonly LedgerEvent[]
   currency: string | null
-  /** Opens the panel on a row. Offered for editable rows only. */
+  /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
-  /**
-   * Marks this row's source in *Import et export*, where the one forget is —
-   * and **`null` while that list has not landed**: a label that leads to a
-   * block which is not on screen is a promise the page cannot keep, so it stays
-   * the plain label it has always been.
-   */
-  onShowImport: ((id: number) => void) | null
 }
 
-export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTableProps) {
+export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -154,7 +141,6 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
           <TableHead className={cn(head, 'text-right')}>{t('data.column.fee')}</TableHead>
           <TableHead className={cn(head, 'text-right')}>{t('data.column.amount')}</TableHead>
           <TableHead className={head}>{t('data.column.account')}</TableHead>
-          <TableHead className={head}>{t('data.column.provenance')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -205,9 +191,6 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
                   says so, and it is the one the accounts page already sets an
                   id in (`AccountDetail`, `AccountsRail`). */}
               <TableCell className="font-mono text-xs">{accountOf(event)}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                <Provenance event={event} onShowImport={onShowImport} />
-              </TableCell>
             </TableRow>
           )
         })}
@@ -218,10 +201,9 @@ export function LedgerTable({ events, currency, onEdit, onShowImport }: LedgerTa
 
 /**
  * The row's own name — and the **only** editing affordance on the page. It is a
- * button exactly where a row may be edited, which is where the inline editor of
- * #662 survives and nowhere else: on an install that has only ever imported, it
- * is never rendered at all. A column for it would fail the same test the padlock
- * failed, one heading appearing on a table where no row can use it.
+ * button exactly where a row may be edited, which since #816 is every row that
+ * has a key. A column for it would fail the same test the padlock failed: one
+ * heading repeating on 285 rows what 285 rows already share.
  */
 function Identity({
   event,
@@ -244,56 +226,4 @@ function Identity({
       {name}
     </button>
   )
-}
-
-/**
- * The label, composed **here** rather than read off the wire. The store renders
- * one of its own (`2024.csv, row 14`) and it is kept as a fallback only: a
- * rendering follows the reader's language (ADR-0024), and a sentence built in
- * the server's is a French page with an English cell in it.
- *
- * A row with no source says so in words. The em dash was refused: by ADR-0016 it
- * means *there is nothing to compute*, and there is something here — the row was
- * typed in the app, which is precisely the fact the padlock column was trying to
- * carry 285 times.
- */
-function Provenance({
-  event,
-  onShowImport,
-}: {
-  event: LedgerEvent
-  onShowImport: ((id: number) => void) | null
-}) {
-  const { t } = useI18n()
-  const source = event.source_id
-  if (source === null) return <>{t('data.provenance.app')}</>
-  if (onShowImport === null) return <>{label(event, t)}</>
-
-  // Its accessible name is the label itself: a second one would be a second
-  // rendering of the provenance, and the two would drift.
-  return (
-    <button
-      type="button"
-      className="text-left underline-offset-4 hover:underline"
-      title={t('data.imports.show')}
-      onClick={() => onShowImport(source)}
-    >
-      {label(event, t)}
-    </button>
-  )
-}
-
-/** The label, composed in the reader's language, the store's own as a fallback. */
-function label(event: LedgerEvent, t: ReturnType<typeof useI18n>['t']): string {
-  const file = event.source_filename
-  if (!file) return event.provenance ?? ''
-  if (event.source_row === null) return t('data.provenance.file', { file })
-  if (event.source_sheet) {
-    return t('data.provenance.sheet', {
-      file,
-      sheet: event.source_sheet,
-      line: event.source_row,
-    })
-  }
-  return t('data.provenance.line', { file, line: event.source_row })
 }

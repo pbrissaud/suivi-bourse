@@ -32,9 +32,29 @@ import store as store_module
 # A fresh file, and a second boot on it
 # --------------------------------------------------------------------------- #
 
-def test_a_new_file_carries_the_twelve_tables(store):
+def test_a_new_file_carries_the_eleven_tables(store):
     assert sorted(store.table_names()) == sorted(store_module.TABLES)
-    assert len(store_module.TABLES) == 12
+    assert len(store_module.TABLES) == 11
+
+
+def test_a_new_file_declares_no_provenance_at_all(store):
+    """**Criterion 2 of #816**, on a store the DDL has just created (ADR-0032).
+
+    ``import_source`` existed because a mounted file was re-read and had to be
+    named to be revoked; the three columns on ``event`` existed to point at it.
+    A file is a payload now, so a fresh store declares neither — and there is no
+    migration machinery, deliberately: an older store keeps them as inert
+    residue that nothing reads and nothing writes.
+    """
+    assert 'import_source' not in store.table_names()
+
+    columns = {row[0] for row in store.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'event'")}
+    assert columns.isdisjoint({'source_id', 'source_sheet', 'source_row'})
+    # And nothing in the DDL text mentions the table either, so no foreign key
+    # can be pointing at one that is not created.
+    assert 'import_source' not in store_module.DDL
 
 
 def test_a_new_file_is_seeded_with_the_default_account(store):
@@ -153,15 +173,14 @@ def test_an_account_can_change_hands_while_an_event_names_it(store):
 
     DuckDB runs an ``UPDATE`` that touches a foreign-key column as a delete plus
     an insert, and the delete then trips the *incoming* ``event.account`` key. A
-    key here would therefore freeze the ownership of exactly the accounts that
-    are in use: an accounts file could not be corrected and re-dropped, could not
-    grow a second account, and the seeded ``default`` row it took over could
-    never be handed back — the forget raising halfway, outside any transaction.
-    Integrity moves to the writer, as it does for ``price_point``.
+    key here would therefore freeze exactly the accounts that are in use: no
+    write to this column on a row an event names would succeed. Integrity moves
+    to the writer, as it does for ``price_point``.
+
+    The column itself is an inert residue since ADR-0032 and leaves at #817;
+    what this holds until then is that writing it does not trip the incoming
+    key, which is a property of the **schema** and not of who writes it.
     """
-    store.execute(
-        "INSERT INTO import_source (id, filename, kind, imported_at, fingerprint) "
-        "VALUES (1, 'accounts.csv', 'accounts', now(), 'abc')")
     store.execute("UPDATE account SET source_id = 1 WHERE id = 'default'")
     store.execute(
         "INSERT INTO event (id, date, event_type, account, amount) "
@@ -187,7 +206,7 @@ def test_an_observed_instant_is_timestamptz_and_a_calendar_day_is_a_date(store):
     }
 
     instants = [
-        ('import_source', 'imported_at'), ('symbol_quote', 'fetched_at'),
+        ('symbol_quote', 'fetched_at'),
         ('symbol_quote', 'last_price_ts'), ('price_point', 'ts'),
         ('advisory', 'first_seen_at'), ('advisory', 'acknowledged_at'),
     ]

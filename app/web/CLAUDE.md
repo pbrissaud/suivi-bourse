@@ -26,7 +26,14 @@
 > picker — and the empty state's first entry carries the same gesture, so an
 > install that mounted nothing is not an install missing half the product. The
 > receipt is rendered under the zone and lasts as long as the gesture. The drop
-> folder and the list of sources stay until #815 and #816.
+> folder left with #815 and **the list of sources with its revocation left with
+> #816**: the band above the ledger is the zone and the export menu, and nothing
+> else.
+> **One population of lines** (#816, ADR-0032): the `Provenance` column and the
+> link it carried are gone, `isEditable` asks only for a key, and **every row
+> opens the editor** — a line that came out of a file is corrected and removed
+> exactly like a typed one. `lib/imports.ts` is down to `exportable`, and
+> `/api/imports` is not a route the front knows.
 > **And the receipt is now said twice** (#813): handing a file over **previews**
 > it (`?dry_run=1`) — the same sentence, tense apart, plus how many of its lines
 > the ledger already holds — and the reader presses *Importer* or puts the file
@@ -41,7 +48,8 @@
 > at all while nothing is reduced or nothing is retained. Its confirmation
 > **names the reduction and counts its rows**, dimension by dimension, and never
 > asks *are you sure* on its own; the receipt says the server's count, which is
-> what actually left. It is what makes losing the revocation by file survivable.
+> what actually left. It is what makes losing the revocation by file survivable —
+> which is what #816 then did.
 > **The ⌘K palette has landed** (#797): it reads **on open** and never on mount,
 > its three data sections are optional — an absent read removes one instead of
 > holding the palette — and an event result leads to a ledger reduced by an
@@ -261,7 +269,7 @@ src/
 │   │                         # the nine orders, the partition by account, the weight
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
-│   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what a revocation removes
+│   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what there is to export
 │   ├── advisories.ts         # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
@@ -343,7 +351,8 @@ src/
   receipt is said under it), the export menu — **four entries** since #796: every
   event, a workbook with one sheet per year, the filtered selection and the
   accounts, the middle two server-side because the importable form belongs to
-  `events/export.py` and a rule written twice loses a branch — and the imported
-  files with their revocation), *The notices* — **always mounted**, saying so when
-  there is nothing, because the status dot must have one destination — and *The
-  installation* (settings, the store and its orphans).
+  `events/export.py` and a rule written twice loses a branch — and **no third
+  entry** since #816: nothing persists that could be listed or revoked, so the
+  band is the zone and the menu), *The notices* — **always mounted**, saying so
+  when there is nothing, because the status dot must have one destination — and
+  *The installation* (settings, the store and its orphans).

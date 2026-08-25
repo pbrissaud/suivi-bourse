@@ -1,26 +1,21 @@
-"""The event somebody typed here, and the gestures it earns (issue #764).
+"""The one writer of the ledger, and the gestures a row earns (issues #764, #816).
 
-:mod:`ledger` owns the **import**: whole files in, whole files out, and no
-row-level write anywhere in it. That rule is #697's second and it is right about
-the population it was written for — a line provisioned by ``broker.csv`` must
-not be editable, or the file and the store become two truths about the same
-purchase, and the one gesture offered instead is forgetting the import.
+**One population, one writer, one set of gestures** (ADR-0032). There were two
+until #816: a row typed in the app, which corrected and deleted, and a row a
+mounted file had provisioned, which did neither — ``PUT`` and ``DELETE`` refused
+it in ``409``, and the only gesture offered instead was *forget the whole file*.
+That asymmetry had a real argument behind it — a file that is **mounted, watched
+and re-read** and the store must not become two truths about the same purchase —
+and the argument was about the mount, not about provenance. A file is handed
+over by ``POST /api/events/import`` now, parsed once and never seen again; it is
+a payload, dead the instant it is read. So its rows come in here, through the
+same functions the form uses, and are indistinguishable from typed ones. A typo
+in an imported line is a typo, not a fate, and undoing an import is a deletion
+over the ledger's own reduction rather than a revocation of a batch identity.
 
-It says nothing about a row that came from no file. ADR-0005 removed manual mode
-and made *typing a position* mean *creating dated events*, so the create form is
-the **onboarding**; and a row created there is reachable by no revocation, since
-there is no import to forget. Without an edit and a removal, a typo made in the
-first five minutes of using this app would be permanent. So the population
-splits, and the split is **structural** rather than a comment: this module
-writes only rows whose ``source_id`` is ``NULL``, and refuses — never silently
-skips — anything else.
-
-It is a module of its own for the reason :mod:`accounts` is one. ``account`` and
-``event`` are both written by the import path *and* by the app, and keeping the
-two halves apart is what lets *"the import path has no row-level write"* stay
-true by inspection instead of by care. :mod:`accounts` is the precedent down to
-the shape: three functions, ``source_id NULL`` on the way in, a refusal named
-after what the caller must do instead.
+What that leaves is a module with a *whole* subject rather than half of one:
+every write to ``event`` in this application happens below, and the sentence
+*"the import path has no row-level write"* has nothing left to be true about.
 
 Three properties are decisions rather than details.
 
@@ -29,36 +24,34 @@ and an imported one obey the same rules or they are two products: the validator
 runs over the **whole stored ledger** on every build, so a row one road let
 through and the other would have refused fails the *boot*, in the gunicorn
 master, in an app the owner then cannot reach to repair it. What this module
-adds is not a second rule set but the *context* the file path already had — the
+adds is not a second rule set but the *context* a file's rows need too — the
 declared accounts — and the refusal it raises carries the field the validator
 named, so a form can mark the input rather than print a paragraph. **The
-validator is handed the draft as it arrived**, blank account included, and the
-file path's ordering is the reason: a blank means ``default`` only while nothing
-is declared, so resolving it first would hide the very cell the rule is about
-and let this road write a phantom account the other road refuses.
+validator is handed the draft as it arrived**, blank account included: a blank
+means ``default`` only while nothing is declared, so resolving it first would
+hide the very cell the rule is about and let a phantom ``default`` grow on an
+install that declares ``pea``.
 
 **Nothing is written when anything refuses.** The single-row check, the write
 and the replay all live inside one ``store.transaction()``, so a refusal rolls
-back to the ledger as it stood. That is ``PUT /api/settings``' rule and
-:func:`ledger.import_file`'s alike: a half-applied body is a state nobody asked
-for.
+back to the ledger as it stood. That is ``PUT /api/settings``' rule, and it is
+what makes a file imported whole or not at all: a half-applied body is a state
+nobody asked for.
 
 **The replay is the last assertion, and it is not the same one.** Per-row
 validity is a property of the row; **overselling is a property of the ledger**,
 so a `SELL` that is legal on its own can be illegal in company — and a `BUY`
 whose removal makes a later `SELL` an oversell is the same fact seen from the
 other side. So every one of the gestures ends by replaying the ledger it
-would leave, inside the transaction, exactly as an import does.
+would leave, inside the transaction.
 
-**The bulk removal is the one gesture that does not read the split** (issue
-#814, ADR-0032). :func:`remove_selection` deletes what the ledger's own
-reduction retains, *whatever* laid the rows down: the subject of the gesture is
-the reduction, and asking of each row whether a file carried it would make the
-reader's *undo this import* stop halfway through the very import they are
-undoing. It is what makes losing ``forget_import`` survivable — and it repairs
-the twelve events somebody mistyped as well, which no revocation ever reached.
-The split above stays exactly what it is: it is about the three gestures that
-address **one row by its key**, and this one addresses none.
+**The bulk removal is what replaced the revocation** (issue #814, ADR-0032).
+:func:`remove_selection` deletes what the ledger's own reduction retains,
+*whatever* laid the rows down — which is now every row, there being one kind. It
+undoes a whole import without ever naming an import, and it reaches the twelve
+rows somebody mistyped, which no revocation could. What separates it from the
+three gestures above is not a population but an address: they take **one row by
+its key**, and this one takes none.
 
 **A duplicate is caught by content, and never by a constraint** (issue #813,
 ADR-0032). :data:`DUPLICATE_KEY_COLUMNS` is the key; :func:`split_duplicates`
@@ -72,13 +65,14 @@ strictly identical `POST /api/events` both land. ADR-0007's rule decides it from
 the other side too: the error a constraint would catch does not enter here, it
 enters at the import, and it is caught there.
 
-**Not in this module**: the ``import_source`` row, the drop folder, and the
-symbol's own price history. A symbol row is created here when an event needs one
-(the foreign key wants it), and never removed — the orphan is #695 § 10's
-deliberate one, named and purgeable, because a forget is reversible and a price
-series is not.
+**Not in this module**: reading the ledger back (:func:`ledger.read_events`) and
+the symbol's own price history. A symbol row is created here when an event needs
+one (the foreign key wants it), and never removed — the orphan is #695 § 10's
+deliberate one, named and purgeable, because a row can be typed again and a
+price series cannot.
 """
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
@@ -110,24 +104,11 @@ class UnknownEntry(Exception):
     """No event has that id.
 
     Its own class because its answer is its own — the API turns it into a
-    ``404`` — and it must never be confused with the refusal below, which is
-    about a row that is very much there.
+    ``404``. It is now the **only** thing addressing a row by its key can be
+    refused for: ``ImportedEntry`` and the ``409`` it carried went with the
+    second population (ADR-0032, #816), and a row is never turned away for where
+    it came from, because there is nowhere left for it to come from.
     """
-
-
-class ImportedEntry(Exception):
-    """The row came from a file, and a file's row is revoked, never edited.
-
-    Carries the import to forget, because that is the whole of what the caller
-    has left to do: the message names the file, and the id is published beside
-    it so a page can link to the import block rather than re-parse a sentence.
-    """
-
-    def __init__(self, message: str, source_id: Optional[int] = None,
-                 filename: Optional[str] = None):
-        super().__init__(message)
-        self.source_id = source_id
-        self.filename = filename
 
 
 class InvalidEntry(Exception):
@@ -148,13 +129,12 @@ class InvalidEntry(Exception):
 # --------------------------------------------------------------------------- #
 
 def create(store, draft: Event) -> Event:
-    """Record one event typed in the app. ``source_id`` stays ``NULL``.
+    """Record one event typed in the app.
 
-    ``NULL`` is what *"created in the app"* **is** (spec #695 § 6), the same
-    column that makes the row editable, and the same column
-    :func:`events.export.render_events` deliberately does not export — so a row
-    typed here leaves in a file like any other and comes back declared by that
-    file, which is the round trip #710 designed and not an exception to it.
+    The row carries no column saying where it came from, because there is only
+    one kind of row (ADR-0032): what leaves in an export and comes back through
+    an upload is the same row it was, and the round trip #710 designed is the
+    ordinary case rather than an exception to a rule.
 
     Returns the event as stored, key included.
 
@@ -173,13 +153,13 @@ def create(store, draft: Event) -> Event:
         _insert_symbol(store, event)
         store.execute(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
-            '                   quantity, unit_price, fee, amount, notes, '
-            '                   source_id, source_sheet, source_row) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
+            '                   quantity, unit_price, fee, amount, notes) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [next_id, event.date, event.event_type.value, account,
              event.symbol, event.name, event.quantity, event.unit_price,
              event.fee, event.amount, event.notes])
 
+        _stamp_write(store)
         _replays(store)
         logger.info(f"Recorded event {next_id}: {event.event_type.value} "
                     f"{event.symbol or account} on {event.date}")
@@ -193,8 +173,8 @@ def create_many(store, drafts: Sequence[Event], *,
     :func:`create` N times would be N replays of the ledger, which is quadratic
     in the size of an import and is the only reason this exists — the rules are
     the same rules, read from the same validator, and a row written here is a
-    row written there: ``source_id NULL``, and no column saying it arrived in
-    company (issue #811, ADR-0032).
+    row written there, with no column saying it arrived in company (issue #811,
+    ADR-0032).
 
     Three details are the difference between *the same rules* and *the same
     code*:
@@ -212,9 +192,9 @@ def create_many(store, drafts: Sequence[Event], *,
     ``base_currency`` is the one thing a **file** says about itself rather than
     about a row: the reporting currency its amounts are recorded in (#710), as
     :func:`ledger.currency_to_adopt` has already decided it against the ledger as
-    it stands. It is written **first**, inside this transaction, for the reason
-    :func:`ledger.import_file` writes it first: a refused import must leave the
-    dial exactly as it found it, and an amount re-read in another unit is the
+    it stands. It is written **first**, inside this transaction, and that is the
+    ordering rather than a preference: a refused import must leave the dial
+    exactly as it found it, and an amount re-read in another unit is the
     unrecoverable act ADR-0002 names.
 
     Returns the events as stored, keys included, in the order they were written.
@@ -255,20 +235,24 @@ def create_many(store, drafts: Sequence[Event], *,
                   for offset, event in enumerate(settled)]
         store.executemany(
             'INSERT INTO event (id, date, event_type, account, symbol, name, '
-            '                   quantity, unit_price, fee, amount, notes, '
-            '                   source_id, source_sheet, source_row) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
+            '                   quantity, unit_price, fee, amount, notes) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [[event.id, event.date, event.event_type.value, event.account,
               event.symbol, event.name, event.quantity, event.unit_price,
               event.fee, event.amount, event.notes] for event in stored])
 
+        _stamp_write(store)
         _replays(store)
         logger.info(f"Recorded {len(stored)} event(s) from one file")
     return stored
 
 
 def update(store, event_id: int, draft: Event) -> Event:
-    """Rewrite one event typed in the app, in place.
+    """Rewrite one event, in place — **whatever laid it down** (ADR-0032).
+
+    A row an upload wrote is corrected exactly like a row somebody typed, and
+    that is the whole of #816: a typo in line 14 of an export used to cost the
+    revocation of the two hundred and eighty-four lines around it.
 
     The **whole** row is rewritten rather than the members a caller happened to
     send: an event's fields are not independent of one another — a type change
@@ -277,11 +261,11 @@ def update(store, event_id: int, draft: Event) -> Event:
     draft is the event, and what it does not say is absent rather than kept.
 
     Raises:
-        UnknownEntry, ImportedEntry, InvalidEntry,
+        UnknownEntry, InvalidEntry,
         events.aggregator.AggregationError: as :func:`create`.
     """
     with store.transaction():
-        _require_typed(store, event_id)
+        _require_known(store, event_id)
         event = _settled(store, draft)
         _refuse(store, event)
         account = event.account or DEFAULT_ACCOUNT
@@ -296,17 +280,17 @@ def update(store, event_id: int, draft: Event) -> Event:
              event.name, event.quantity, event.unit_price, event.fee,
              event.amount, event.notes, event_id])
 
+        _stamp_write(store)
         _replays(store)
         logger.info(f"Rewrote event {event_id}")
     return replace(event, id=event_id, account=account)
 
 
 def remove(store, event_id: int) -> None:
-    """Delete one event typed in the app.
+    """Delete one event — **whatever laid it down** (ADR-0032).
 
-    Named ``remove`` and not ``delete_event``: :mod:`ledger`'s surface is
-    asserted to hold no such name, and a reader who finds one here must find it
-    in the module whose whole subject is the row that may carry it.
+    One row at a time, which is what a reader who wants to drop a single line of
+    a two-hundred-line import needs, and what the revocation could never do.
 
     The replay runs afterwards for a reason the two gestures above share from
     the other side: removing a purchase can leave a later sale overselling, so a
@@ -314,12 +298,13 @@ def remove(store, event_id: int) -> None:
     in a state that would fail the next boot.
 
     Raises:
-        UnknownEntry, ImportedEntry,
+        UnknownEntry,
         events.aggregator.AggregationError: as :func:`create`.
     """
     with store.transaction():
-        _require_typed(store, event_id)
+        _require_known(store, event_id)
         store.execute('DELETE FROM event WHERE id = ?', [event_id])
+        _stamp_write(store)
         _replays(store)
         logger.info(f"Removed event {event_id}")
 
@@ -327,12 +312,12 @@ def remove(store, event_id: int) -> None:
 def remove_selection(store, selection: events_export.Selection) -> int:
     """Delete every event a reduction retains. Returns how many left (#814).
 
-    The gesture ADR-0032 makes the successor of ``forget_import``, and it is a
+    The gesture ADR-0032 makes the successor of the revocation, and it is a
     better one: it undoes a whole import without ever naming an import, and it
     reaches the twelve rows somebody mistyped, which no revocation could. What
     it is *about* is the reduction — so **no row is asked where it came from**,
-    and there is no :class:`ImportedEntry` to raise here. That predicate goes
-    away entirely at the next ticket; it is already out of this road's way.
+    which since #816 is not a restraint this function shows but a question the
+    application no longer has anywhere to ask.
 
     The reduction is :class:`events.export.Selection`, the export routes' own,
     read by :func:`events.export.select` and by nothing written a second time
@@ -364,6 +349,8 @@ def remove_selection(store, selection: events_export.Selection) -> int:
                 if event.id is not None]
         store.executemany('DELETE FROM event WHERE id = ?',
                           [[key] for key in keys])
+        if keys:
+            _stamp_write(store)
         _replays(store)
         logger.info(f"Removed {len(keys)} event(s) on a reduction")
     return len(keys)
@@ -506,27 +493,35 @@ def _refuse_all(store, settled: Sequence[Event]) -> None:
         raise InvalidEntry(issues[0].message, field=issues[0].field)
 
 
-def _require_typed(store, event_id: int) -> None:
-    """Refuse anything that is not a row this module may write.
+def _require_known(store, event_id: int) -> None:
+    """Refuse an id no row answers to. **One refusal, and it is the only one.**
 
-    Two refusals and they are not the same news: *no such row* is a ``404``
-    (nothing to talk about), *this row came from a file* is a ``409`` naming the
-    import — the row is there, that is the whole problem, and forgetting its
-    import is the gesture the owner has instead.
+    There were two until #816, and the second — *this row came from a file*, a
+    ``409`` naming the import to forget — went with the population it described
+    (ADR-0032). What is left is *no such row*, which is a ``404`` and nothing to
+    talk about; a row that is there is a row these gestures address.
     """
-    rows = store.query(
-        'SELECT e.source_id, s.filename FROM event e '
-        'LEFT JOIN import_source s ON s.id = e.source_id '
-        'WHERE e.id = ?', [event_id])
+    rows = store.query('SELECT 1 FROM event WHERE id = ?', [event_id])
     if not rows:
         raise UnknownEntry(f"No event with id {event_id}")
 
-    source_id, filename = rows[0]
-    if source_id is not None:
-        raise ImportedEntry(
-            f"Event {event_id} came from {filename or 'an imported file'} and "
-            f"is read-only; correct the file and drop it again, or forget that "
-            f"import", source_id=source_id, filename=filename)
+
+def _stamp_write(store) -> None:
+    """Record the instant the ledger moved (:data:`ledger.LAST_WRITE_KEY`).
+
+    Called from inside each gesture's transaction, so the stamp and the rows it
+    is about commit together or not at all. ``import_source.imported_at``
+    answered the question for free while a file was a row; a file is a payload
+    now, so the writer says it — and says it of a correction and a deletion too,
+    which the old query, being about imports, never counted as writes.
+
+    The instant is UTC and written in ISO 8601, which is the one clock and the
+    one spelling this product has (``test_suite_conventions``).
+    """
+    store.execute(
+        'INSERT INTO setting (key, value) VALUES (?, ?) '
+        'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+        [ledger.LAST_WRITE_KEY, datetime.now(timezone.utc).isoformat()])
 
 
 def _settled(store, draft: Event,
@@ -542,18 +537,17 @@ def _settled(store, draft: Event,
     *"name is required"* one rule for both roads instead of a refusal the form
     could never satisfy.
 
-    **The account is deliberately not settled here**, and that is the whole of
-    what makes this road and the file's one road. A blank ``account`` means
+    **The account is deliberately not settled here**, and it is the reason the
+    form's rows and a file's rows can share one road. A blank ``account`` means
     ``default`` *until something is declared and is an error afterwards* (#698),
     so the blank itself is what the validator judges: resolved before
     :func:`_refuse`, ``EventValidator._validate_account`` never sees one, and an
     install declaring ``pea`` would silently grow the phantom ``default`` that
-    rule exists to refuse — the file path refusing the same body whole. So the
-    blank is carried through the validation and resolved **at the write**, by
-    ``event.account or DEFAULT_ACCOUNT``, which is the expression and the
-    ordering of :func:`ledger._insert_events`. Whitespace is folded into the
-    blank rather than left standing: a ``account`` of ``"  "`` names no account
-    on either road, and the file path's own cells arrive stripped.
+    rule exists to refuse — a file carrying the same cell being refused whole.
+    So the blank is carried through the validation and resolved **at the
+    write**, by ``event.account or DEFAULT_ACCOUNT``. Whitespace is folded into
+    the blank rather than left standing: an ``account`` of ``"  "`` names no
+    account, and a file's own cells arrive stripped.
 
     ``known`` is that same lookup **prefetched** for a whole file
     (:func:`create_many`) — the query below orders the entire ``event`` table,
@@ -561,8 +555,7 @@ def _settled(store, draft: Event,
     """
     return replace(draft, account=(draft.account or '').strip() or None,
                    name=draft.name or _named(store, draft.symbol, known),
-                   id=None, source_id=None, source_sheet=None,
-                   source_row=None, source_filename=None)
+                   id=None)
 
 
 def _named(store, symbol: Optional[str],
@@ -594,11 +587,11 @@ def _known_names(store) -> Dict[str, str]:
 
 
 def _refuse(store, event: Event) -> None:
-    """Run the one validator, with the context the file path already had.
+    """Run the one validator, with the context a row needs to be judged in.
 
     ``account_ids`` and ``accounts_declared`` are read **inside** the
-    transaction, like :func:`ledger.import_file` reads them, so a declaration
-    made in the same breath is the one this event is judged against.
+    transaction, so a declaration made in the same breath is the one this event
+    is judged against.
 
     Only the first issue is raised. A form marks one input at a time and a
     ``curl`` reads one sentence; what matters for the criterion is that
@@ -611,7 +604,7 @@ def _refuse(store, event: Event) -> None:
 
 
 def _validator(store) -> EventValidator:
-    """The one validator, with the context the file path already had.
+    """The one validator, with the context a row needs to be judged in.
 
     Built from a **read of the store**, which is what makes a declaration made
     in the same breath the one an event is judged against — and built once per
@@ -626,11 +619,11 @@ def _validator(store) -> EventValidator:
 def _insert_symbol(store, event: Event) -> None:
     """Give the security its row before the event references it.
 
-    :func:`ledger._insert_symbols`' single-row twin, and it exists for the same
-    reason: ``event.symbol`` has a foreign key onto ``symbol``, so a first
-    purchase of a ticker nobody owns would violate it. The ingestion creates that
-    row, never the scrape — two writers on one row is what the schema's
-    generating rule forbids.
+    :func:`create_many`'s ``executemany`` twin, one row at a time, and it exists
+    for the same reason: ``event.symbol`` has a foreign key onto ``symbol``, so a
+    first purchase of a ticker nobody owns would violate it. The ingestion
+    creates that row, never the scrape — two writers on one row is what the
+    schema's generating rule forbids.
     """
     if event.symbol:
         store.execute(
@@ -641,8 +634,7 @@ def _insert_symbol(store, event: Event) -> None:
 def _replays(store) -> None:
     """Replay the ledger this gesture would leave, before the commit.
 
-    The assertion :func:`ledger.import_file` makes at the end of its own
-    transaction, for the same reason and against the same failure: an
+    The last thing every gesture does, and always against the same failure: an
     unreplayable ledger committed here is a store that raises on every reload,
     and that raise is **fatal at boot** (``build_runtime`` exits), so the API
     that could repair it would never come up to be asked.
@@ -652,7 +644,7 @@ def _replays(store) -> None:
 
 __all__ = [
     'DUPLICATE_KEY_COLUMNS',
-    'UnknownEntry', 'ImportedEntry', 'InvalidEntry',
+    'UnknownEntry', 'InvalidEntry',
     'create', 'create_many', 'update', 'remove', 'remove_selection',
     'content_key', 'split_duplicates', 'judge',
 ]

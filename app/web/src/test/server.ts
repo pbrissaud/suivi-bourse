@@ -29,7 +29,6 @@ import {
   aPositionsHistory,
   aPositionsPayload,
   aPriceSeries,
-  anImportsPayload,
   aReceipt,
   aRuntime,
   aStore,
@@ -86,8 +85,8 @@ export function defaultHandlers() {
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
     // The two writes echo the row back, which is the contract's own shape: the
-    // id and the provenance are the store's to decide, so a client cannot send
-    // them and the answer is where they come from.
+    // id is the store's to decide, so a client cannot send one and the answer is
+    // where it comes from.
     http.post(ROUTES.events, async ({ request }) => {
       const draft = (await request.json()) as EventDraft
       return HttpResponse.json(aTypedEvent({ id: 'created', ...draft }), { status: 201 })
@@ -124,15 +123,6 @@ export function defaultHandlers() {
       return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
     }),
 
-    // The sources, and the one gesture that reaches an imported row (#728).
-    // The revocation answers what it removed, which is what the store knows —
-    // the front counts *before*, off the ledger it has already read, and the two
-    // are deliberately two: the box has to say what will happen, and the server
-    // says what did.
-    http.get(ROUTES.imports, () => HttpResponse.json(anImportsPayload())),
-    http.delete(ROUTES.importSource, ({ params }) =>
-      HttpResponse.json({ id: Number(params.id), events_removed: 3 }),
-    ),
 
     // The way back out (#710, #796). It is fetched by the client since the
     // receipt has to last as long as the operation, so it is a faked edge like

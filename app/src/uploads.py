@@ -1,13 +1,13 @@
 """A file handed to the app, read once, and never seen again (issue #811).
 
 ADR-0032's sentence, as a module: **the mounted file was a second truth, the
-uploaded file is a payload.** ``ledger.py`` refuses a row-level write on an
-imported row so that the file and the store do not become two truths about one
-purchase — right about a file that is mounted, watched and re-read, and about
+uploaded file is a payload.** ``ledger.py`` used to refuse a row-level write on
+an imported row so that the file and the store would not become two truths about
+one purchase — right about a file that is mounted, watched and re-read, and about
 nothing else. What arrives here is dead the instant it is parsed, so its rows go
 in through :mod:`entries` — the route composes the two halves — and are
-indistinguishable from typed ones: same table, same writer, no column of
-provenance written by this road.
+indistinguishable from typed ones: same table, same writer, no provenance at all
+since #816, and the same three gestures afterwards.
 
 This module therefore **reads and judges, and never writes**: what it hands back
 is a list of events and, afterwards, the receipt for the file they came out of.
@@ -19,10 +19,10 @@ this module has no store (:func:`entries.split_duplicates` owns it).
 Three things are decisions rather than plumbing.
 
 **The genre is read off the header, never off the name** — the rule that does
-not move, only its entrance does. :func:`accounts.is_accounts_file` says what a
-file is, here as in the drop folder; an accounts file is **refused** (ADR-0034:
-accounts are born in the app), and the refusal names what it recognised, because
-a file silently not imported is the symptom this whole ticket exists against.
+not move, only its entrance did. :func:`accounts.is_accounts_file` says what a
+file is; an accounts file is **refused** (ADR-0034: accounts are born in the
+app), and the refusal names what it recognised, because a file silently not
+imported is the symptom this whole ticket exists against.
 
 **The v4 file is recognised by its name, and that is not the same rule.** A
 ``config.yaml`` has no header to read — it is not a ledger at all — and the two
@@ -57,9 +57,14 @@ import accounts as accounts_module
 from events import EventLoader
 from events.loader import EventLoaderError
 from events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, Event
-from ledger import IMPORT_SUFFIXES
 
 logger = getLogger("uploads")
+
+#: What an upload may carry, and **the extension is the only thing that decides
+#: it**: no filename has a special meaning here (spec #695 § 6), so ``ui.csv`` is
+#: a file like any other. It named the droppable files while there was a folder;
+#: it lives here now, with the one door a file has left (ADR-0032).
+IMPORT_SUFFIXES = ('.csv', '.xlsx')
 
 #: What one upload may carry. A ledger is text: a hundred thousand events export
 #: to a few megabytes, so this is generous by two orders of magnitude for the
@@ -187,10 +192,9 @@ def read(filename: str, stream) -> Upload:
     the ledger makes of it is :func:`entries.create_many`'s business. That split
     is what lets #813's preview run this half alone.
 
-    Both outcomes are **said once, here**, which is where the file is judged —
-    the two lines the drop folder's own path logs (``_sync_event_file``), for the
-    same reason: a refusal returns a ``422`` and leaves no row behind, so the log
-    is the whole of what a headless owner has to read afterwards.
+    Both outcomes are **said once, here**, which is where the file is judged: a
+    refusal returns a ``422`` and leaves no row behind, so the log line is the
+    whole of what a headless owner has to read afterwards.
 
     Raises:
         UploadTooLarge: the stream is past :data:`MAX_UPLOAD_BYTES`.
@@ -289,11 +293,9 @@ def _parse(path: Path, name: str) -> Upload:
         logger.warning(f"Refused {name}: {exc}")
         raise UploadRefused(str(exc).replace(str(path), name))
     except Exception as exc:
-        # **Broad, and it is the drop folder's own precedent**
-        # (``ledger._sync_event_file`` catches ``Exception`` and marks the file
-        # refused): what arrives here is untrusted bytes, and a ``.xlsx`` that is
-        # not a zip raises out of openpyxl rather than as an
-        # :class:`EventLoaderError`. Left to travel it reaches the blueprint's
+        # **Broad, and deliberately so**: what arrives here is untrusted bytes,
+        # and a ``.xlsx`` that is not a zip raises out of openpyxl rather than as
+        # an :class:`EventLoaderError`. Left to travel it reaches the blueprint's
         # handler, and the reader is told *the app hit an error it did not
         # expect* about a file **they** chose — which is the one refusal they can
         # actually act on.
@@ -307,6 +309,7 @@ def _parse(path: Path, name: str) -> Upload:
 
 __all__ = [
     'MAX_UPLOAD_BYTES', 'MAX_BODY_BYTES', 'MIGRATION_PAGE', 'LEGACY_FILENAMES',
+    'IMPORT_SUFFIXES',
     'Receipt', 'Upload', 'UploadRefused', 'UploadTooLarge',
     'oversize', 'too_large_detail', 'read', 'receipt',
 ]

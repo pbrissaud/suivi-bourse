@@ -186,10 +186,11 @@ class EventLoader:
                    sheet: Optional[str] = None) -> Event:
         """Parse a row into an Event object.
 
-        ``sheet``/``row_num`` are carried onto the event as **displayable
-        provenance** (issue #697): a CSV has no sheet and leaves it ``None``, a
-        workbook names the tab the row came from. Neither is ever used to write
-        back — the store's primary key is what addresses a row.
+        ``sheet``/``row_num`` say **where in the file** this row is, and they are
+        used for one thing only: naming the place in a refusal. They used to be
+        carried onto the event as displayable provenance and are not any more
+        (ADR-0032, #816) — a row that came out of a file is a row, and the file
+        is gone the instant it is parsed.
         """
         # The file's own declaration first (issue #710) — before anything that
         # can reject the row, so a source that states two reporting currencies
@@ -257,8 +258,6 @@ class EventLoader:
             amount=amount,
             notes=notes if notes else None,
             account=account if account else None,
-            source_sheet=sheet,
-            source_row=row_num,
         )
 
     def _note_currency(self, row: dict) -> None:
@@ -266,7 +265,7 @@ class EventLoader:
 
         The value is upper-cased here and its *shape* is not checked at all —
         three letters or not is :mod:`settings_registry`'s rule, and it is the
-        import that puts the question to it (``ledger.import_file``). What is
+        import that puts the question to it (``ledger.currency_to_adopt``). What is
         this module's business is the one thing only a reader of the file can
         see: **a source states one reporting currency**. Two different codes in
         one file is not a value to arbitrate between, it is a file that says two

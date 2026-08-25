@@ -5,11 +5,12 @@
  * holds. ADR-0020 cut it in two — what the user *declared* against what the
  * installation *is* — and two things broke that arrangement. The **accounts
  * left the page** at #793, so the first half stopped being *what the owner
- * declared* and became the ledger and its provenance; and a **notice is
- * prose**, which a card in a column beside the store has nowhere to say.
+ * declared* and became the ledger and the two gestures a file is the unit of;
+ * and a **notice is prose**, which a card in a column beside the store has
+ * nowhere to say.
  *
- * So: *the ledger* (what you declared, and where it came from), *the notices*
- * (what the app has to tell you), *the installation* (what it is).
+ * So: *the ledger* (what you declared, and the way in and out of it), *the
+ * notices* (what the app has to tell you), *the installation* (what it is).
  *
  * Two things live here rather than in any one tab, because they are about the
  * set:

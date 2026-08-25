@@ -48,16 +48,13 @@ class Event:
     ``symbol``/``name`` are Optional because cash events (DEPOSIT/WITHDRAWAL)
     carry no share.
 
-    The last four fields are **provenance, and provenance is a display** (issue
-    #697, spec #695 § 6). ``(source_id, source_sheet, source_row)`` are the
-    store's own columns and exist to say *"row 14 of 2024.csv"*; they are never
-    an address to write back to. What made #662's opaque token an address was
-    that the *file* was the address — in the store a row has a primary key,
-    which does not go stale, so nothing here needs to survive an edit.
-
-    ``source_filename`` is the one derived field: it is joined on at read time
-    (:func:`ledger.read_events`) so that whoever holds an event can render its
-    provenance without going back to the store for the name.
+    **There is no provenance on an event, and that is the decision** (ADR-0032,
+    issue #816). ``(source_id, source_sheet, source_row, source_filename)`` said
+    *"row 14 of 2024.csv"* about a row a **mounted** file had provisioned, and
+    they existed at all because that file was re-read: the store and the file had
+    to be kept from becoming two truths about one purchase. A file is handed over
+    once now and never seen again, so there is one population of rows, and a row
+    that came out of a file is a row.
 
     ``id`` is the ``event`` table's own primary key (issue #764), read by
     :func:`ledger.read_events` like any other column and ``None`` on an event
@@ -66,10 +63,7 @@ class Event:
     ``(file, sheet, row)`` was reaching for and could not be: a key does not go
     stale between the read and the write, which is why the apparatus that
     guarded a stale one (the fingerprint as an ``ETag``, its ``409``) has no
-    successor here. It addresses **only** what it can address — a row typed in
-    the app, ``source_id IS NULL`` — and an imported row carries one too, for
-    the same reason every row of a table has a key: refusing to publish it would
-    not make the row editable, it would only make the refusal unexplainable.
+    successor here. It addresses **every** row, there being only one kind.
     """
     date: date
     event_type: EventType
@@ -81,10 +75,6 @@ class Event:
     amount: Optional[float] = None
     notes: Optional[str] = None
     account: Optional[str] = None
-    source_id: Optional[int] = None
-    source_sheet: Optional[str] = None
-    source_row: Optional[int] = None
-    source_filename: Optional[str] = None
     id: Optional[int] = None
 
     def __post_init__(self):

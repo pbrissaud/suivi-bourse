@@ -2,8 +2,8 @@
  * **Deleting the reduction** — the successor of *forget this import* (#814,
  * ADR-0032).
  *
- * The revocation by file goes away with the provenance, and what replaces it is
- * worth more: it undoes a whole import without ever naming one, and it also
+ * The revocation by file went with the provenance at #816, and what replaced it
+ * is worth more: it undoes a whole import without ever naming one, and it also
  * repairs the twelve rows somebody mistyped, which no revocation ever reached.
  * The price is that the gesture is **general**, and a general destructive
  * gesture has to say what it is about — which is where this component's three

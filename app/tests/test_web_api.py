@@ -19,7 +19,9 @@ import json
 import openpyxl
 import pytest
 
+import accounts as accounts_module
 import advisories
+import entries
 import ledger
 import main
 import perf_series
@@ -29,6 +31,7 @@ import runtime_state
 import settings_registry
 import store
 import web as web_module
+from events import EventLoader
 from events import export as events_export
 from events.schemas import AccountMetricPoint, PortfolioTotalPoint
 from web import create_app, problem
@@ -136,6 +139,13 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     itself. What a route then reads is the store, which is the only thing these
     tests ever assert on.
 
+    They go in **through the roads the product has** since #816 — the accounts
+    are declared as the app declares them, the events written by
+    :func:`entries.create_many`, which is the function the upload route calls.
+    The file stays the fixture's shape because it is what these tests already
+    spell, and because an event file is still what an owner hands over; what is
+    gone is the folder that read it on its own.
+
     ``seed`` runs **after** the first publication, and it has to: the replay
     rewrites ``position`` wholesale, so a row laid down before it would be
     swept away by it.
@@ -159,8 +169,10 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     # here would mean the routes read a different ledger from the one the
     # snapshot was published from.
     opened = store.open_store(tmp_path / 'store.duckdb')
-    if accounts is not None or events is not None:
-        ledger.sync_drop_folder(opened, events_dir)
+    if accounts is not None:
+        declare_accounts(opened, events_dir / 'accounts.csv')
+    if events is not None:
+        write_event_file(opened, events_dir / '2024.csv')
     manager = main.ConfigurationManager(config_dir=str(tmp_path),
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
@@ -179,6 +191,38 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     if with_scheduler:
         runtime.metrics = FakeMetrics(manager)
     return create_app(runtime).test_client(), opened
+
+
+def declare_accounts(opened, path):
+    """The accounts a fixture wants, declared the way the app declares them.
+
+    Accounts are born in the app (ADR-0034) and no file imports them, so this
+    reads the fixture's file and makes the same three calls a reader clicking
+    *declare* would. The seeded ``default`` row exists already and is relabelled
+    rather than inserted — which is also the one way an install with a page and
+    no file declares its single account.
+    """
+    for row in accounts_module.load_account_rows(path):
+        if row.id in accounts_module.account_ids(opened):
+            opened.execute(
+                'UPDATE account SET type = ?, label = ? WHERE id = ?',
+                [row.type, row.label, row.id])
+            continue
+        accounts_module.create_account(opened, row.id, row.type, row.label)
+
+
+def write_event_file(opened, path):
+    """One event file into the store, **through the road the upload takes**.
+
+    :func:`entries.create_many` is what ``POST /api/events/import`` calls, and
+    the currency question is put by the same function the route puts it to —
+    so a fixture cannot write a ledger the product would have refused.
+    """
+    loader = EventLoader(str(path))
+    rows = loader.load()
+    entries.create_many(
+        opened, rows,
+        base_currency=ledger.currency_to_adopt(opened, loader.declared_currency))
 
 
 # --------------------------------------------------------------------- #
@@ -1371,7 +1415,8 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     """Reading the declaration rather than a DISTINCT on the tag (#652 déc. 4)
     hands over label and type — fields the app writes and zero Grafana panels
-    read — plus, since #698, where the row came from."""
+    read. An account is declared in the app and nowhere else (ADR-0034), so it
+    is editable, which is what ``source_id NULL`` has always meant."""
     accounts = (
         "id,type,label\n"
         "pea,PEA,PEA Bourso\n"
@@ -1386,10 +1431,8 @@ def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     assert payload['declared'] is True
     row = payload['accounts'][0]
     assert (row['id'], row['label'], row['type']) == ('pea', 'PEA Bourso', 'PEA')
-    # It came from a file, so the page must not offer to edit it: the gesture
-    # on a file-provisioned row is forgetting its import (issue #698).
-    assert row['source_id'] is not None
-    assert row['editable'] is False
+    assert row['source_id'] is None
+    assert row['editable'] is True
     # #661 enriched the resource with the newest perf figures. With nothing
     # written yet they are all null and `as_of` says so — a declared account
     # whose first perf cycle has not run is a row with em dashes, not a missing
@@ -1781,13 +1824,14 @@ def test_events_are_returned_without_an_address(tmp_path):
     assert payload[2]['amount'] == 8.50
 
 
-def test_an_event_carries_its_provenance_all_the_way_to_the_wire(tmp_path):
-    """"row 14 of 2024.csv" reaches the client (issue #697, user story n°13).
+def test_no_event_carries_a_provenance_on_the_wire(tmp_path):
+    """*"row 14 of 2024.csv"* is gone, and so is everything behind it (#816).
 
-    The triplet is a **display**, so what the API owes is the rendered sentence
-    as well as the three columns behind it: a client grouping by import needs
-    ``source_id``, and a client showing a user where to go and fix a line needs
-    the label. Neither is an address — the row has a primary key now.
+    The triplet and the sentence composed from it described a row a **mounted**
+    file had provisioned, and they existed because that file was re-read
+    (ADR-0032). A file is a payload now, so what the API can say about where a
+    row came from is nothing — asserted as an absence on the payload, which is
+    the only place a client would have looked.
     """
     events = (
         "date,event_type,symbol,name,quantity,unit_price,amount\n"
@@ -1796,14 +1840,11 @@ def test_an_event_carries_its_provenance_all_the_way_to_the_wire(tmp_path):
     )
     payload = build_client(tmp_path, events=events).get('/api/events').get_json()
 
-    # Row 2 is the first data row: row 1 is the header, and the number shown
-    # has to be the one the user's editor shows them.
-    assert [row['source_row'] for row in payload] == [2, 3]
-    assert [row['source_sheet'] for row in payload] == [None, None]
-    assert [row['provenance'] for row in payload] == [
-        '2024.csv, row 2', '2024.csv, row 3']
-    # One file, so one source id, and it is the same on both rows.
-    assert len({row['source_id'] for row in payload}) == 1
+    assert len(payload) == 2
+    for row in payload:
+        assert set(row).isdisjoint(
+            {'source_id', 'source_sheet', 'source_row', 'source_filename',
+             'provenance'})
 
 
 def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
@@ -1876,41 +1917,14 @@ def test_the_declaration_is_never_refused_because_events_are_unassigned(tmp_path
     assert moved.get_json() == {'account': 'pea', 'reassigned': 3}
 
 
-def test_the_reassignment_is_reachable_when_a_file_declared(tmp_path):
-    """The other road, and the same instant (issue #698).
-
-    An accounts source declares as much as the form does; the event file beside
-    it is then refused for the blank column it was right to carry, and its rows
-    stay under `default` with no gesture in the app able to reach them. This
-    route is that gesture, and nothing in it names the road taken.
-    """
-    def declare_by_file(opened):
-        # The ordering #698 guarantees: the accounts source is imported, the
-        # event file beside it is re-read under the new rule and **refused** for
-        # the blank column it was right to carry, so its rows stay exactly where
-        # they were.
-        (tmp_path / 'events' / 'accounts.csv').write_text(
-            "id,type,label\npea,PEA,PEA Bourso\n", encoding='utf-8')
-        ledger.sync_drop_folder(opened, tmp_path / 'events')
-
-    client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS,
-                                            seed=declare_by_file)
-    assert _accounts_named_by_events(opened) == ['default'] * 3
-
-    moved = client.post('/api/accounts/pea/reassignment')
-
-    assert moved.status_code == 200
-    assert moved.get_json()['reassigned'] == 3
-    assert _accounts_named_by_events(opened) == ['pea'] * 3
-    assert client.get('/api/accounts').get_json()['declared'] is True
-
-
 def test_after_that_instant_an_imported_row_is_not_writable(tmp_path):
-    """*Jamais ensuite*, and it is said three ways at once.
+    """*Jamais ensuite*, and the ``WHERE`` is what says it.
 
-    A second reassignment moves nothing — the population is the column's own
-    value, so there is no row left for it to reach — the row-level `PATCH` still
-    refuses an imported row by name, and no request can name the event to move.
+    A second reassignment moves nothing: the population is the column's own
+    value, so once the rows name ``pea`` there is nothing left for it to reach.
+    What *is* still reachable is each row on its own — the row-level ``PATCH``
+    takes it, which since #816 is true of every row (ADR-0032) — so moving one
+    of them back is a correction and never a second reassignment.
     """
     client, opened = build_client_and_store(tmp_path, events=UNASSIGNED_EVENTS)
     client.post('/api/accounts',
@@ -1921,13 +1935,13 @@ def test_after_that_instant_an_imported_row_is_not_writable(tmp_path):
     assert again.get_json() == {'account': 'cto', 'reassigned': 0}
     assert _accounts_named_by_events(opened) == ['pea'] * 3
 
-    imported = [row for row in client.get('/api/events').get_json()
-                if row['source_id'] is not None]
-    refused = client.patch(f"/api/events/{imported[0]['id']}",
-                           json={'date': '2024-01-15', 'event_type': 'BUY',
-                                 'symbol': 'AAPL', 'quantity': 10,
-                                 'unit_price': 150.0, 'account': 'cto'})
-    assert refused.status_code == 409
+    rows = client.get('/api/events').get_json()
+    moved = client.patch(f"/api/events/{rows[0]['id']}",
+                         json={'date': '2024-01-15', 'event_type': 'BUY',
+                               'symbol': 'AAPL', 'quantity': 10,
+                               'unit_price': 150.0, 'account': 'cto'})
+    assert moved.status_code == 200
+    assert sorted(_accounts_named_by_events(opened)) == ['cto', 'pea', 'pea']
 
 
 def test_the_seeded_row_is_not_a_target_of_the_reassignment(tmp_path):
@@ -1974,20 +1988,6 @@ def _draft(**overrides) -> dict:
     return body
 
 
-def test_an_event_carries_its_file_name_beside_the_rendered_label(tmp_path):
-    """The front composes the provenance in the reader's language (ADR-0024).
-
-    The store's own ``2024.csv, row 2`` is one English sentence and stays as a
-    fallback; what a client needs to write its own is the file's **name**, which
-    was already on the event and simply was not on the wire.
-    """
-    payload = build_client(tmp_path, events=_ONE_BUY).get('/api/events').get_json()
-
-    (row,) = payload
-    assert row['source_filename'] == '2024.csv'
-    assert row['provenance'] == '2024.csv, row 2'
-
-
 def test_every_row_carries_the_key_it_is_addressed_by(tmp_path):
     """``event.id`` reaches the wire, as text, and it is the store's own key."""
     client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
@@ -2001,8 +2001,8 @@ def test_every_row_carries_the_key_it_is_addressed_by(tmp_path):
     assert isinstance(row['id'], str)
 
 
-def test_a_typed_event_lands_with_no_provenance_and_is_visible_at_once(tmp_path):
-    """``POST`` writes a ``source_id NULL`` row, and the replay follows it.
+def test_a_typed_event_lands_and_is_visible_at_once(tmp_path):
+    """``POST`` writes a row like every other, and the replay follows it.
 
     Both halves in one test because one without the other is the bug: a row
     written and not replayed is a ledger the app is not computing on, and the
@@ -2012,16 +2012,13 @@ def test_a_typed_event_lands_with_no_provenance_and_is_visible_at_once(tmp_path)
 
     created = client.post('/api/events', json=_draft())
     assert created.status_code == 201
-    assert created.get_json()['source_id'] is None
-    assert created.get_json()['provenance'] is None
     assert created.get_json()['id'] is not None
 
     rows = opened.query(
-        "SELECT source_id, name, account, notes FROM event "
-        "WHERE date = '2024-06-03'")
+        "SELECT name, account, notes FROM event WHERE date = '2024-06-03'")
     # The name the form never asked for, read off what the ledger already calls
     # this security; the account, blank, resolved to the seeded bucket.
-    assert rows == [(None, 'Apple Inc', 'default', 'Typed in the app')]
+    assert rows == [('Apple Inc', 'default', 'Typed in the app')]
 
     # Visible in the ledger the app publishes, with no timer in between.
     ledger_rows = client.get('/api/events').get_json()
@@ -2222,21 +2219,29 @@ def test_a_patch_is_a_rewrite_and_never_a_merge(tmp_path):
         [int(key)]) == [(None, None, 500.0)]
 
 
-def test_an_imported_row_is_refused_by_both_row_gestures(tmp_path):
-    """Read-only is unchanged for the population it was written for.
+def test_an_uploaded_row_is_taken_by_both_row_gestures(tmp_path):
+    """**The ticket's seam, on the API** (ADR-0032, #816, stories 13 and 14).
 
-    ``409`` and not ``404``: the row is there, that is the whole problem — and
-    the answer **names the import to forget**, which is the gesture the owner
-    has instead.
+    Both gestures used to answer ``409`` on a row a file had laid down, naming
+    the import to forget. A file is handed over once and never re-read now, so
+    the argument for that refusal is gone: the row is corrected in place, and
+    then removed on its own, and the two rows beside it stay exactly where they
+    were.
     """
-    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
-    ((key,),) = opened.query('SELECT id FROM event')
+    client, opened = build_client_and_store(tmp_path, events=_THREE_LINES)
+    keys = [key for (key,) in opened.query('SELECT id FROM event ORDER BY id')]
+    assert len(keys) == 3
 
-    for response in (client.patch(f'/api/events/{key}', json=_draft()),
-                     client.delete(f'/api/events/{key}')):
-        assert response.status_code == 409
-        assert '2024.csv' in response.get_json()['detail']
-    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+    corrected = client.patch(f'/api/events/{keys[0]}',
+                             json=_draft(date='2024-01-15', quantity=12))
+    assert corrected.status_code == 200
+    assert opened.query(
+        'SELECT quantity FROM event WHERE id = ?', [keys[0]]) == [(12.0,)]
+
+    removed = client.delete(f'/api/events/{keys[0]}')
+    assert removed.status_code == 200
+    assert [key for (key,) in
+            opened.query('SELECT id FROM event ORDER BY id')] == keys[1:]
 
 
 def test_an_unaddressable_event_is_a_named_404(tmp_path):
@@ -2820,18 +2825,14 @@ def test_a_bulk_delete_that_would_leave_an_oversell_is_refused_whole(tmp_path):
     opened.close()
 
 
-def test_the_bulk_delete_reaches_what_the_row_gesture_refuses(tmp_path):
-    """The two answers about one row, side by side (ADR-0032).
+def test_the_bulk_delete_reaches_an_uploaded_row(tmp_path):
+    """*The removal is the gesture* (ADR-0032), on a row a file laid down.
 
-    ``DELETE /api/events/<id>`` still refuses an imported row in ``409``, naming
-    the import to forget; the bulk gesture takes it, because its subject is the
-    reduction. That contrast is the whole of *the removal is the gesture*: what
-    replaces losing ``forget_import`` has to reach the rows a file laid down.
+    What replaces losing ``forget_import`` has to reach those rows, and it does
+    so without asking any of them where they came from — which since #816 is not
+    a restraint it shows but a question nothing can ask.
     """
     client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
-    ((key,),) = opened.query('SELECT id FROM event')
-
-    assert client.delete(f'/api/events/{key}').status_code == 409
 
     removed = client.delete('/api/events?symbol=AAPL')
 
@@ -2843,7 +2844,8 @@ def test_the_bulk_delete_reaches_what_the_row_gesture_refuses(tmp_path):
 
 def test_an_unreadable_store_fails_the_workbook_too(tmp_path):
     """Same contract as the CSV: a query error is a ``503``, never a file."""
-    client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
     opened.execute('DROP TABLE event')
 
     assert client.get('/api/export/events.xlsx').status_code == 503
@@ -2856,7 +2858,8 @@ def test_an_unreadable_store_fails_the_export_rather_than_emptying_it(tmp_path):
     Same contract as every other route in this blueprint: a query error
     propagates and becomes a ``503``, never an empty collection.
     """
-    client, opened = build_client_and_store(tmp_path, events=_EXPORTABLE)
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
     opened.execute('DROP TABLE event')
 
     response = client.get('/api/export/events.csv')
@@ -3009,14 +3012,25 @@ def test_the_file_era_routes_are_gone_rather_than_refusing(tmp_path):
     because **the file was the address**. Neither has a successor.
 
     The row-level writes on ``/api/events`` are **not** in that list any more
-    (issue #764): they came back for the population no revocation reaches, and
-    what they refuse they refuse by name rather than by absence — see
-    ``test_an_imported_row_is_refused_by_both_row_gestures``.
+    (issue #764): they came back for every row there is, and they refuse nothing
+    for its origin — see
+    ``test_an_uploaded_row_is_taken_by_both_row_gestures``.
+
+    **The two import routes join the list at #816** (criterion 3, ADR-0032).
+    ``GET /api/imports`` listed the sources and ``DELETE /api/imports/<id>``
+    revoked one; nothing persists that could be named any more, so they are
+    demolished rather than answering an empty collection — which would be a
+    resource claiming to exist.
     """
     client = ledger_client(tmp_path)
 
     assert client.get('/api/events/files').status_code == 404
     assert client.put('/api/accounts', json={'accounts': []}).status_code == 405
+    assert client.get('/api/imports').status_code == 404
+    # ``405`` and not ``404`` for the same reason ``PUT /api/accounts`` gets one,
+    # one line up: the catch-all takes the path and not the verb. What both
+    # answers say is *no such route*.
+    assert client.delete('/api/imports/1').status_code == 405
 
 
 # --------------------------------------------------------------------------- #
@@ -3143,17 +3157,27 @@ def test_the_store_resource_states_its_size_and_its_last_ledger_write(tmp_path):
     finds the number — and the explanation is what stops the purge button beside
     it reading as a way to get bytes back.
 
-    ``ledger_last_write`` is the newest **import**, and never the newest observed
-    price. The second is liveness and belongs to the banner; shown here it would
-    make a store whose last import was a year ago read as freshly written.
+    ``ledger_last_write`` is when the **ledger** last moved, and never the newest
+    observed price. The second is liveness and belongs to the banner; shown here
+    it would make a store whose last write was a year ago read as freshly
+    written. It was ``max(import_source.imported_at)`` while a file was a row;
+    the writer stamps the instant since #816, so a correction and a deletion
+    move it too — which the old query, being about imports, never did.
     """
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
 
     body = client.get('/api/store').get_json()
 
     assert body['size_bytes'] > 0
-    assert body['ledger_last_write'] is not None
+    first = body['ledger_last_write']
+    assert first is not None
+
+    ((key,),) = opened.query('SELECT id FROM event ORDER BY id LIMIT 1')
+    assert client.delete(f'/api/events/{key}').status_code == 200
+
+    after = client.get('/api/store').get_json()['ledger_last_write']
+    assert after is not None and after >= first
     assert body['orphans'] == []
 
 
@@ -3629,79 +3653,15 @@ _ONE_BUY = (
     "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,\n"
 )
 
+#: Three lines of one file, so a gesture on one of them can be shown to leave
+#: the other two exactly where they were — story 14's whole point.
+_THREE_LINES = (
+    "date,event_type,symbol,name,quantity,unit_price,amount\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,\n"
+    "2024-02-15,BUY,MSFT,Microsoft,4,380.00,\n"
+    "2024-03-15,BUY,MSFT,Microsoft,1,390.00,\n"
+)
 
-def test_imports_are_listed_with_what_each_one_carried(tmp_path):
-    """The count sits next to the gesture that would destroy it."""
-    payload = build_client(tmp_path, events=_ONE_BUY).get('/api/imports').get_json()
-
-    (record,) = payload
-    assert record['filename'] == '2024.csv'
-    assert record['kind'] == 'events'
-    assert record['events'] == 1
-    assert record['imported_at'] is not None
-    assert record['fingerprint']
-
-
-def test_an_install_that_imported_nothing_is_an_empty_collection(tmp_path):
-    """``200`` + ``[]``, never a 404 and never a 503 (#695 user story 69)."""
-    response = build_client(tmp_path).get('/api/imports')
-
-    assert response.status_code == 200
-    assert response.get_json() == []
-
-
-def test_forgetting_an_import_revokes_it_in_bulk_and_replays(tmp_path):
-    """The one destructive gesture, and the replay follows it synchronously.
-
-    The user has just changed the ledger; they must not wait for a timer to see
-    the effect of their own gesture, which is the 300-second wait #695's user
-    story n°20 asks to be rid of.
-    """
-    client = build_client(tmp_path, events=_ONE_BUY)
-    (record,) = client.get('/api/imports').get_json()
-
-    response = client.delete(f"/api/imports/{record['id']}")
-
-    assert response.status_code == 200
-    assert response.get_json() == {'id': record['id'], 'events_removed': 1}
-    # In bulk, and the replay already happened: the ledger the API serves and
-    # the snapshot the shares come from are both empty, in the same request.
-    assert client.get('/api/imports').get_json() == []
-    assert client.get('/api/events').get_json() == []
-
-
-def test_forgetting_an_unknown_import_is_a_404_not_a_503(tmp_path):
-    """Asking to revoke something absent is a client error, not a broken store."""
-    response = build_client(tmp_path, events=_ONE_BUY).delete('/api/imports/4242')
-
-    assert response.status_code == 404
-
-
-def test_forgetting_an_accounts_import_an_event_rests_on_is_a_409(tmp_path):
-    """The cascade refusal, on the wire (issue #698).
-
-    ``409`` and not ``400``: the request is well formed and the client did
-    nothing wrong — the store's state is what refuses, and the answer says
-    which gesture has to come first.
-    """
-    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
-                          events=ACCOUNTS_EVENTS)
-    declaring = next(r for r in client.get('/api/imports').get_json()
-                     if r['kind'] == 'accounts')
-
-    response = client.delete(f"/api/imports/{declaring['id']}")
-
-    assert response.status_code == 409
-    assert response.mimetype == 'application/problem+json'
-    assert 'pea' in response.get_json()['detail']
-    # Nothing was half-forgotten on the way to the refusal.
-    assert len(client.get('/api/imports').get_json()) == 2
-    assert len(client.get('/api/events').get_json()) == 1
-
-
-# --------------------------------------------------------------------- #
-# The advisories (issue #709)
-# --------------------------------------------------------------------- #
 
 def test_an_install_with_nothing_to_say_answers_an_empty_collection(tmp_path):
     """``200`` + ``[]``. Silence is the ordinary state, not a missing resource."""
@@ -3834,13 +3794,19 @@ def test_declaring_an_id_twice_is_a_409(tmp_path):
     assert response.status_code == 409
 
 
-def test_an_account_from_a_file_refuses_the_edit_and_the_delete(tmp_path):
-    """Read-only means read-only: the gesture on it is forgetting its import."""
+def test_a_declared_account_is_renamed_and_removed_from_the_app(tmp_path):
+    """An account is born in the app, so it is editable there (ADR-0034).
+
+    The ``409`` that used to answer here was about a row an accounts **file**
+    had provisioned; no file declares an account any more, and the refusal that
+    stands is the one ADR-0013 has always held — an account an event names,
+    which is the test below.
+    """
     client = build_client(tmp_path, accounts=ACCOUNTS_FILE)
 
     assert client.patch('/api/accounts/pea',
-                        json={'label': 'Renamed'}).status_code == 409
-    assert client.delete('/api/accounts/pea').status_code == 409
+                        json={'label': 'Renamed'}).status_code == 200
+    assert client.delete('/api/accounts/pea').status_code == 200
 
 
 def test_deleting_an_account_an_event_names_is_a_409(tmp_path):
@@ -3858,28 +3824,33 @@ def test_deleting_an_unknown_account_is_a_404(tmp_path):
     assert build_client(tmp_path).delete('/api/accounts/nope').status_code == 404
 
 
-def test_the_row_gestures_exist_beside_the_bulk_one(tmp_path):
-    """Revocation in bulk, **and** three row gestures — for two populations.
+def test_the_row_gestures_and_the_bulk_one_are_the_whole_map(tmp_path):
+    """**Criterion 3 of #816**: the imports are not a resource any more.
 
-    The URL map is where the decision reads: ``DELETE /api/imports/<id>`` is
-    what reaches a row a file provisioned, and the three on ``/api/events`` are
-    what reaches a row somebody typed. Neither is a superset of the other, which
-    is why both are asserted here — an ``/api/events`` map that had emptied
-    again would mean the onboarding form has nowhere to write (issue #764), and
-    an imports map that had would mean an imported line is indestructible
-    (issue #697).
+    The URL map is where the decision reads. ``GET /api/imports`` and
+    ``DELETE /api/imports/<id>`` are gone with the population they existed for
+    (ADR-0032): nothing persists that could be named, so there is nothing to
+    list and nothing to revoke. What is left is the four gestures on the
+    collection an import writes — one row in, one row rewritten, one row out,
+    and the reduction — plus the upload itself.
     """
     client = build_client(tmp_path, events=_ONE_BUY)
     rules = {
         (rule.rule, method)
         for rule in client.application.url_map.iter_rules()
         for method in (rule.methods or set())
-        if method in {'PUT', 'PATCH', 'DELETE', 'POST'}
+        if method in {'PUT', 'PATCH', 'DELETE', 'POST', 'GET'}
     }
+    paths = {rule for rule, _ in rules}
 
-    assert ('/api/imports/<int:source_id>', 'DELETE') in rules
+    assert '/api/imports' not in paths
+    assert not any(path.startswith('/api/imports/') for path in paths)
+
     assert ('/api/events', 'POST') in rules
+    assert ('/api/events', 'DELETE') in rules
+    assert ('/api/events/import', 'POST') in rules
     assert ('/api/events/<event_id>', 'PATCH') in rules
+    assert ('/api/events/<event_id>', 'DELETE') in rules
     assert ('/api/events/<event_id>', 'DELETE') in rules
     # And nothing writes a *file* — #711's demolition, still standing.
     assert not [rule for rule, _ in rules if rule.startswith('/api/events/files')]

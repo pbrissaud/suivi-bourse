@@ -875,22 +875,13 @@ def _event_to_dict(event) -> dict:
     ``account`` is reported as the aggregator resolves it — blank means
     ``default``, which is the rule for an install that declared no account.
 
-    ``provenance`` is what survives of #662, and it is a **display** (issue
-    #697). The triplet behind it — ``(source_id, source_sheet, source_row)`` —
-    is reported alongside the rendered label so a client can group by source
-    without re-parsing a sentence, and neither is an address: the row has a
-    primary key now, and a key does not go stale. The label is ``null`` for a
-    row with no source, which is what a line created in the UI is.
-
-    ``source_filename`` is the file's **name**, and it is served beside the
-    rendered ``provenance`` rather than instead of it (issue #764). The store's
-    label is one English sentence — ``2024.csv, row 14`` — and a rendering
-    follows the **reader's** language (ADR-0024), so a front that has only the
-    sentence can translate nothing. What it needs is the name; what it composes
-    from the name and the row number is its own. The field was already on the
-    event, joined at read time by :func:`ledger.read_events` precisely so that
-    whoever holds one can render its provenance, and it simply was not put on
-    the wire.
+    **There is no provenance on the wire, and there is none in the store**
+    (ADR-0032, issue #816). ``source_id``/``source_sheet``/``source_row``/
+    ``source_filename`` and the ``provenance`` sentence composed from them said
+    *"row 14 of 2024.csv"* about a row a **mounted** file had provisioned, and
+    they existed because that file was re-read. A file is a payload now, so the
+    row it wrote is a row: what a client can say about where it came from is
+    nothing, and there is nothing to say.
 
     ``id`` is a **string**, and that is a decision. The column is a ``BIGINT``,
     and a JSON number above 2^53 is not the integer that was sent; more to the
@@ -911,11 +902,6 @@ def _event_to_dict(event) -> dict:
         'amount': event.amount,
         'notes': event.notes,
         'account': event.account,
-        'source_id': event.source_id,
-        'source_sheet': event.source_sheet,
-        'source_row': event.source_row,
-        'source_filename': event.source_filename,
-        'provenance': ledger.provenance_label(event),
     }
 
 
@@ -925,8 +911,8 @@ def create_event():
 
     The onboarding, not a convenience: manual mode is gone, so *typing a
     position* **means** creating dated events, and this is where they land. The
-    row carries ``source_id NULL`` — created here, therefore editable — which is
-    the same column, and the same sentence, as ``POST /api/accounts``' (#698).
+    row it writes is the row an upload writes: one population, one writer, one
+    set of gestures afterwards (ADR-0032).
 
     ``422`` for a body the ledger refuses, and it refuses **before writing
     anything**: the parse below runs over the whole body, and
@@ -942,9 +928,9 @@ def create_event():
     ``/problems/unreplayable-ledger`` and not ``/problems/conflict`` (#824): the
     two are one status and two pieces of news.
 
-    The replay follows the write, synchronously and in this process, exactly as
-    on ``DELETE /imports/<id>``: whoever just recorded an event must not wait
-    for a timer to see their own gesture.
+    The replay follows the write, synchronously and in this process, as it does
+    on every write here: whoever just recorded an event must not wait for a
+    timer to see their own gesture.
     """
     body = _json_object()
     if body is None:
@@ -1066,7 +1052,7 @@ def import_events():
             # and the ingestion share one DuckDB connection. It is **not** a
             # transaction (``ConfigurationManager.writing``), which is what lets
             # the currency be decided here — against the ledger as it stands,
-            # exactly where ``ledger.import_file`` decides it — and written
+            # exactly where the write decides it — and written
             # inside the one transaction that also writes the rows.
             with runtime.config_manager.writing() as opened:
                 adopted = ledger.currency_to_adopt(opened,
@@ -1148,16 +1134,14 @@ def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
 
 @api_bp.patch('/events/<event_id>')
 def update_event(event_id: str):
-    """Rewrite one event typed in the app — and refuse an imported one.
+    """Rewrite one event — **whatever laid it down** (ADR-0032, #816).
 
-    **This is the route** ``forget_import``'s docstring used to say did not
-    exist, and the two now say the same thing about two different populations:
-    a line provisioned by ``broker.csv`` is still uneditable here (``409``,
-    naming the import to forget), because the file and the store must not become
-    two truths about one purchase. A line somebody typed a minute ago is
-    reachable by no revocation at all, so refusing it too would make a typo in
-    the onboarding form permanent — which is the trap ADR-0005 walked into by
-    making that form the first gesture of a new arrival.
+    There were two populations here and there is one. A line ``broker.csv``
+    provisioned used to be refused with a ``409`` naming the import to forget,
+    because a **mounted** file and the store must not become two truths about
+    one purchase; a file is handed over once now and never re-read, so the
+    argument is gone and the refusal with it. A typo on line 14 of a two-hundred
+    line export costs a correction, not the revocation of the other 199.
 
     The **whole** row is rewritten, never the members the body happened to
     carry: an event's fields are not independent — a type change turns a
@@ -1182,8 +1166,6 @@ def update_event(event_id: str):
             updated = entries.update(opened, key, draft)
     except entries.UnknownEntry as exc:
         return not_found(str(exc))
-    except entries.ImportedEntry as exc:
-        return conflict(str(exc))
     except entries.InvalidEntry as exc:
         return unprocessable_entry(str(exc), key=exc.field)
     except AggregationError as exc:
@@ -1195,13 +1177,13 @@ def update_event(event_id: str):
 
 @api_bp.delete('/events/<event_id>')
 def delete_event(event_id: str):
-    """Remove one event typed in the app — and refuse an imported one.
+    """Remove one event — **whatever laid it down** (ADR-0032, #816).
 
-    The pair of the route above and refused on the same predicate. It exists
-    because *edit* alone does not cover the mistake it is there for: an event
-    recorded on the wrong account, or recorded twice, is removed rather than
-    corrected — and the bulk gesture that would otherwise reach it, forgetting
-    an import, has nothing to forget on a row that came from no file.
+    The pair of the route above, and it refuses nothing the route above does
+    not. It exists because *edit* alone does not cover the mistake it is there
+    for: an event recorded on the wrong account, or recorded twice, is removed
+    rather than corrected — and one line of a file is now removable on its own,
+    which is what the revocation of a whole import never allowed.
 
     The ``409`` on a ledger that would not replay is not symmetry either: taking
     a purchase away can leave a later sale overselling, which is the same fact
@@ -1221,8 +1203,6 @@ def delete_event(event_id: str):
             entries.remove(opened, key)
     except entries.UnknownEntry as exc:
         return not_found(str(exc))
-    except entries.ImportedEntry as exc:
-        return conflict(str(exc))
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_REMOVE)
 
@@ -1238,8 +1218,8 @@ def delete_events():
     replaces: it undoes a whole import without resurrecting a batch identity to
     delete by, and it also repairs the twelve rows somebody mistyped, which no
     revocation ever reached. **The subject of the gesture is the reduction, not
-    the row** — so the predicate *this line came from a file* is not consulted
-    here, and it will not exist at all one ticket from now.
+    the row** — and the predicate *this line came from a file* is not consulted
+    here because since #816 there is nowhere left to ask it.
 
     It takes **exactly the five parameters of the export routes**, period
     included, off :func:`_selection`: one vocabulary arriving over one contract,
@@ -1325,9 +1305,10 @@ class _InvalidBody(Exception):
         self.field = field
 
 
-#: The members a client may send. ``id``, the provenance triplet and
-#: ``source_filename`` are **not** among them: they are the store's to write, and
-#: a client that could name one would be a client that could forge one.
+#: The members a client may send. ``id`` is **not** among them: it is the
+#: store's to write, and a client that could name one would be a client that
+#: could forge one. The provenance columns that used to be named here left the
+#: schema with #816 — there is nothing to forge.
 _EVENT_TEXT_FIELDS = ('symbol', 'name', 'notes', 'account')
 _EVENT_NUMBER_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
 
@@ -1649,87 +1630,6 @@ def _file_response(body, filename: str, content_type: str) -> Response:
 
 
 # --------------------------------------------------------------------- #
-# Imports: the unit of revocation (issue #697)
-# --------------------------------------------------------------------- #
-
-@api_bp.get('/imports')
-def list_imports():
-    """The imports the store holds, each with the number of events it carried.
-
-    The count is not decoration: forgetting an import is destructive in bulk, so
-    how many rows the gesture takes with it belongs next to the gesture that
-    offers it.
-
-    ``200`` + ``[]`` on an install that has imported nothing — the empty
-    collection, never an error.
-    """
-    records = ledger.list_imports(_store())
-    return jsonify([
-        {
-            'id': record.id,
-            'filename': record.filename,
-            'kind': record.kind,
-            'imported_at': _iso(record.imported_at),
-            'fingerprint': record.fingerprint,
-            'events': record.events,
-        }
-        for record in records
-    ])
-
-
-@api_bp.delete('/imports/<int:source_id>')
-def forget_import(source_id: int):
-    """Forget an import: every row it laid down, in one gesture.
-
-    **The only gesture that reaches an imported row, and the only one there will
-    be.** Read-only forbids editing line 42 of ``broker.csv``; it does not
-    forbid revoking the file. Without this, a line provisioned by a file would
-    be at once unalterable and indestructible — which is the trap #697 exists to
-    avoid.
-
-    That sentence used to end *"...and why the absence of a*
-    ``PATCH /api/events/<id>`` *is a decision rather than an omission"*, and
-    issue #764 makes it **imprecise rather than false**: the route exists now,
-    and what it will not touch is exactly this population. The argument was
-    always about a row *a file provisioned* — the file and the store must not
-    become two truths about one purchase, and revoking the file is what is
-    offered instead. It never covered a row somebody typed here a minute ago,
-    which comes from no file and which no revocation can reach; refusing to edit
-    that one made a typo in the onboarding form (ADR-0005) permanent. So the
-    population is named, the sibling routes refuse an imported row by name
-    (``409``, quoting the import to forget), and the two texts say one thing.
-
-    The replay follows the write, synchronously and in this process (issue
-    #697): the caller has just changed the ledger, and must not have to wait for
-    a timer to see the effect of their own gesture.
-
-    Removing the *file* from disk is not this gesture and never will be — the
-    store is the truth, so a deleted file changes nothing at all.
-
-    **An accounts import is refused while an event names one of its accounts**
-    (``409``, issue #698). Cascading — taking the events with it — is what the
-    refusal exists instead of: the gesture is meant to be reversible by
-    re-dropping the file, and one that deleted a year of events on the way out
-    would not be. The answer names the account, so the order to follow is
-    readable from the error: forget the event imports first.
-    """
-    runtime = current_runtime()
-    try:
-        # The same mutex the account writes take: a revocation is two
-        # statements, and an ingestion transaction running between them in
-        # another thread would take them into its own rollback.
-        with runtime.config_manager.writing() as opened:
-            removed = ledger.forget_import(opened, source_id)
-    except ledger.UnknownImport as exc:
-        return not_found(str(exc))
-    except accounts_module.AccountInUse as exc:
-        return conflict(str(exc))
-
-    main.replay_after_write(runtime)
-    return jsonify({'id': source_id, 'events_removed': removed})
-
-
-# --------------------------------------------------------------------- #
 # The app's own runtime state (issue #668, design #656)
 # --------------------------------------------------------------------- #
 
@@ -1856,14 +1756,16 @@ def get_store():
       number is still there for anyone who runs ``du``. What must travel with it
       is what a purge does *not* do — measured, 79 % of a real store's rows
       purged for zero bytes returned.
-    * ``ledger_last_write`` — the newest import, and **never the newest observed
-      price**. The second is liveness, it belongs to the banner, and shown here
-      it would make a store whose last import was a year ago read as freshly
-      written.
+    * ``ledger_last_write`` — when the ledger last moved, and **never the newest
+      observed price**. The second is liveness, it belongs to the banner, and
+      shown here it would make a store whose last write was a year ago read as
+      freshly written. It was the newest import while a file was a row; the
+      writer stamps the instant since #816, so a correction and a deletion count
+      as the writes they are.
     * ``orphans`` — the symbols no event names any more, with the size of the
-      series each one holds. Kept deliberately (#695 § 10): forgetting an import
-      is reversible and a reconstructed series is not. A **sold position is not
-      one of them** — its events are still recorded.
+      series each one holds. Kept deliberately (#695 § 10): a row can be recorded
+      again and a reconstructed series cannot. A **sold position is not one of
+      them** — its events are still recorded.
     """
     runtime = current_runtime()
     opened = _store()
