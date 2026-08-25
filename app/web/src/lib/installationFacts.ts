@@ -2,9 +2,15 @@
  * What the *Notices* block shows, what the tab's badge counts, and what gesture
  * each notice carries (#724, ADR-0021).
  *
- * Pure — advisories in, decisions out — because all three of those are one
- * question asked three times, and a component answering it per render is how a
- * badge and the block under it end up disagreeing about what is standing.
+ * **The word changed here and the notion did not** (ADR-0036, #820). *Advisory*
+ * was carrying three things at once; it is freed for the one that does not
+ * exist yet — what the owner's **data** says about itself — and what this file
+ * decides about is now called an **installation fact**. The three keys are
+ * untouched, and so is the place each of them is rendered.
+ *
+ * Pure — installation facts in, decisions out — because all three of those are
+ * one question asked three times, and a component answering it per render is how
+ * a badge and the block under it end up disagreeing about what is standing.
  *
  * **The badge counts unacknowledged notices and nothing else.** That sentence is
  * the criterion, and it is written here as an exclusion list because the three
@@ -13,9 +19,9 @@
  *  - **the ephemeral store** — its predicate is never acknowledgeable (a
  *    container either keeps nothing or it does), so counting it would give a
  *    permanent badge, which is noise and takes the notices that matter down
- *    with it. It is not an advisory at all: `boot_conditions.py` says it, and
- *    ADR-0015's own rule is *the banner shows conditions the owner can end, the
- *    badge counts facts they can only acknowledge*;
+ *    with it. It is not an installation fact at all: `boot_conditions.py` says
+ *    it, and ADR-0015's own rule is *the banner shows conditions the owner can
+ *    end, the badge counts facts they can only acknowledge*;
  *  - **the orphan symbols** — a choice, not a waste. Nobody is being told
  *    anything;
  *  - **the reconstruction** — it has exactly **one** announcer, the banner
@@ -24,14 +30,15 @@
  *    and make the badge under-count what the reader can see, while leaving it in
  *    both would put two announcers on one fact.
  */
-import type { Advisory } from '@/lib/api'
+import type { InstallationFact } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 
 /**
- * The advisory the banner owns. It is excluded from the block **and** from the
- * badge together, because a badge is a promise that something is there to read.
+ * The installation fact the banner owns. It is excluded from the block **and**
+ * from the badge together, because a badge is a promise that something is there
+ * to read.
  */
-export const BANNER_ADVISORY = 'reconstruction_running'
+export const BANNER_FACT = 'reconstruction_running'
 
 /**
  * What the *Notices* block renders: standing, not acknowledged, and not the
@@ -48,9 +55,9 @@ export const BANNER_ADVISORY = 'reconstruction_running'
  * date — a badge whose contents reshuffle between two reads is a badge nobody
  * trusts.
  */
-export function shownAdvisories(advisories: readonly Advisory[]): Advisory[] {
-  return advisories.filter(
-    (advisory) => advisory.key !== BANNER_ADVISORY && !advisory.acknowledged,
+export function shownFacts(facts: readonly InstallationFact[]): InstallationFact[] {
+  return facts.filter(
+    (fact) => fact.key !== BANNER_FACT && !fact.acknowledged,
   )
 }
 
@@ -59,8 +66,8 @@ export function shownAdvisories(advisories: readonly Advisory[]): Advisory[] {
  * *a badge promises something to find* true by construction rather than by
  * inspection: the two read one list.
  */
-export function unacknowledgedCount(advisories: readonly Advisory[]): number {
-  return shownAdvisories(advisories).length
+export function unacknowledgedCount(facts: readonly InstallationFact[]): number {
+  return shownFacts(facts).length
 }
 
 /**
@@ -94,11 +101,11 @@ export function unacknowledgedCount(advisories: readonly Advisory[]): number {
  * be #662's opaque token over `(file, sheet, row)` under another name, which
  * ADR-0020 removed.
  */
-export type AdvisoryGesture = { kind: 'ledger'; symbols: string[] } | null
+export type FactGesture = { kind: 'ledger'; symbols: string[] } | null
 
-export function advisoryGesture(advisory: Advisory): AdvisoryGesture {
-  if (advisory.key !== 'assumed_base_currency') return null
-  const symbols = advisory.detail?.symbols
+export function factGesture(fact: InstallationFact): FactGesture {
+  if (fact.key !== 'assumed_base_currency') return null
+  const symbols = fact.detail?.symbols
   if (!Array.isArray(symbols)) return null
   const named = symbols.map((symbol) => String(symbol)).filter((symbol) => symbol !== '')
   if (named.length === 0) return null
@@ -148,7 +155,7 @@ export function advisoryGesture(advisory: Advisory): AdvisoryGesture {
 export type ListFormatter = (items: readonly string[]) => string
 
 /** A catalogue key and what it interpolates. The component calls `t` with it. */
-export interface AdvisoryText {
+export interface FactText {
   key: MessageKey
   values?: MessageValues
 }
@@ -157,9 +164,9 @@ interface Sentence {
   /** What the notice says when this process observed what it names. */
   named: MessageKey
   /**
-   * What it says otherwise — the parallel of `AdvisorySpec.doc` on the server,
+   * What it says otherwise — the parallel of `FactSpec.doc` on the server,
    * which is what `message` falls back to when `detail` is `null`. It states
-   * what the advisory *is* and claims no specifics it has not read.
+   * what the installation fact *is* and claims no specifics it has not read.
    */
   unobserved: MessageKey
   /** `null` when the detail is there and does not carry what the sentence needs. */
@@ -198,8 +205,8 @@ function items(detail: Record<string, unknown>, member: string): string[] | null
  */
 const SENTENCES: Record<string, Sentence> = {
   unread_environment: {
-    named: 'installation.advisory.unread_environment',
-    unobserved: 'installation.advisory.unread_environment.unobserved',
+    named: 'installation.fact.unread_environment',
+    unobserved: 'installation.fact.unread_environment.unobserved',
     values: (detail, list) => {
       const variables = items(detail, 'variables')
       return variables === null
@@ -208,8 +215,8 @@ const SENTENCES: Record<string, Sentence> = {
     },
   },
   reconstruction_running: {
-    named: 'installation.advisory.reconstruction_running',
-    unobserved: 'installation.advisory.reconstruction_running.unobserved',
+    named: 'installation.fact.reconstruction_running',
+    unobserved: 'installation.fact.reconstruction_running.unobserved',
     values: (detail) => {
       const complete = count(detail, 'complete')
       const total = count(detail, 'total')
@@ -217,8 +224,8 @@ const SENTENCES: Record<string, Sentence> = {
     },
   },
   assumed_base_currency: {
-    named: 'installation.advisory.assumed_base_currency',
-    unobserved: 'installation.advisory.assumed_base_currency.unobserved',
+    named: 'installation.fact.assumed_base_currency',
+    unobserved: 'installation.fact.assumed_base_currency.unobserved',
     values: (detail, list) => {
       const base = text(detail, 'base_currency')
       const events = items(detail, 'events')
@@ -241,23 +248,24 @@ const SENTENCES: Record<string, Sentence> = {
  *
  * `null` has exactly one cause and it is not an absence of translation: a key
  * outside the closed list of three. The caller then renders the server's
- * `message`, which is the honest degradation — a fourth advisory shipping before
- * its catalogue entry says its English sentence rather than nothing at all, and
+ * `message`, which is the honest degradation — a fourth installation fact
+ * shipping before its catalogue entry says its English sentence rather than
+ * nothing at all, and
  * an empty notice is the one outcome a block that exists to be read cannot
  * afford.
  *
  * A `detail` this process could not observe (`null`, #709's third answer) or one
  * that does not carry what the sentence interpolates falls back to the notice's
  * *unobserved* sentence rather than to a paragraph with `undefined` in it — the
- * same move the server makes when it falls back to `AdvisorySpec.doc`.
+ * same move the server makes when it falls back to `FactSpec.doc`.
  */
-export function advisoryText(advisory: Advisory, list: ListFormatter): AdvisoryText | null {
-  const sentence = SENTENCES[advisory.key]
+export function factText(fact: InstallationFact, list: ListFormatter): FactText | null {
+  const sentence = SENTENCES[fact.key]
   if (!sentence) return null
-  if (!advisory.detail) return { key: sentence.unobserved }
-  const values = sentence.values(advisory.detail, list)
+  if (!fact.detail) return { key: sentence.unobserved }
+  const values = sentence.values(fact.detail, list)
   return values === null ? { key: sentence.unobserved } : { key: sentence.named, values }
 }
 
 /** The three keys the catalogues answer for, in the server's declared order. */
-export const ADVISORY_KEYS = Object.keys(SENTENCES)
+export const FACT_KEYS = Object.keys(SENTENCES)

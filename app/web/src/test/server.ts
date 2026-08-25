@@ -20,7 +20,7 @@ import {
   anAccount,
   anAccountHistory,
   anAccountsPayload,
-  anAdvisory,
+  anInstallationFact,
   aConfig,
   aHealth,
   aTypedEvent,
@@ -144,7 +144,7 @@ export function defaultHandlers() {
     // list are what a test asks for by name, both being exactly what the block
     // exists to render.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
-    http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])),
+    http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
@@ -156,9 +156,13 @@ export function defaultHandlers() {
         effect: { symbols_rescheduled: 2, symbols_at_market_open: 1, jobs_rescheduled: [] },
       })
     }),
-    http.post(ROUTES.advisoryAcknowledgement, ({ params }) =>
+    http.post(ROUTES.installationFactAcknowledgement, ({ params }) =>
       HttpResponse.json(
-        anAdvisory({ key: String(params.key), acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+        anInstallationFact({
+          key: String(params.key),
+          acknowledged: true,
+          acknowledged_at: '2026-03-02T12:00:00.000Z',
+        }),
       ),
     ),
     http.delete(ROUTES.storeOrphans, () =>

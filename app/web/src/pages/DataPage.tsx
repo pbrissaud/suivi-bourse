@@ -21,7 +21,7 @@
  *    which is noise and takes down the notices that matter with it — not the
  *    orphan symbols, which are a choice and not a waste, and not the
  *    reconstruction, which has exactly one announcer and it is the block the
- *    dot leads to. `lib/advisories.ts` holds that list, so the badge and the
+ *    dot leads to. `lib/installationFacts.ts` holds that list, so the badge and the
  *    tab it promises read the *same* one.
  *  - **The notice that names events leads to them.** The assumed-currency
  *    notice is the one with a gesture inside the app, and its subject is on
@@ -36,9 +36,9 @@ import { Installation } from '@/components/data/Installation'
 import { Ledger, type LedgerFocus } from '@/components/data/Ledger'
 import { Notices } from '@/components/data/Notices'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { unacknowledgedCount } from '@/lib/advisories'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { unacknowledgedCount } from '@/lib/installationFacts'
 import { filtersFromSearch, NO_FILTERS } from '@/lib/ledger'
 import { usePageHeading } from '@/lib/pageHeading'
 
@@ -165,12 +165,12 @@ export default function DataPage() {
 
   // Read here as well as inside the tab: the badge is on a trigger, which is
   // visible while another tab is. One query key, so it is one request.
-  const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
+  const facts = useQuery({ queryKey: ['installation-facts'], queryFn: api.installationFacts })
   // **An optional read, so the `?? []` survives** (ADR-0026): a badge at zero is
   // *not rendered at all*, so a read in flight takes an ornament off a tab
   // rather than making a claim — and the three tabs must be reachable while it
   // is in flight.
-  const badge = unacknowledgedCount(advisories.data ?? [])
+  const badge = unacknowledgedCount(facts.data ?? [])
 
   usePageHeading(t('page.data'))
 

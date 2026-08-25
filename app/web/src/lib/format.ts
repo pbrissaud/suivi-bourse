@@ -198,7 +198,7 @@ export function formatDate(
  *
  * An empty list renders as the em dash the rest of this module uses for absence
  * — never as an empty gap inside a sentence — though no caller can reach it: an
- * advisory that names nothing does not stand.
+ * installation fact that names nothing does not stand.
  */
 export function formatList(locale: string, items: readonly string[]): string {
   if (items.length === 0) return ABSENT

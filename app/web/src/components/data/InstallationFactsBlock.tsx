@@ -22,23 +22,23 @@
  *    do about them. Inventing a button there would be inventing a power the app
  *    does not have.
  *  - **The sentence is composed here, from `key` and `detail`** (#768,
- *    ADR-0024). This block rendered `advisory.message` verbatim, and those five
- *    sentences are built in English by `advisories.py` — so the whole content of
+ *    ADR-0024). This block rendered `fact.message` verbatim, and those five
+ *    sentences are built in English by `installation_facts.py` — so the whole content of
  *    a French reader's notices was English, inside a frame whose title, date and
- *    button were not. `lib/advisories.ts` holds the choice and the two forms it
+ *    button were not. `lib/installationFacts.ts` holds the choice and the two forms it
  *    was taken against; `message` stays the log line and what a client with no
  *    interface reads.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
-import { advisoryGesture, advisoryText, shownAdvisories } from '@/lib/advisories'
-import { api, type Advisory } from '@/lib/api'
+import { api, type InstallationFact } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { factGesture, factText, shownFacts } from '@/lib/installationFacts'
 
-export interface AdvisoriesBlockProps {
-  advisories: readonly Advisory[]
+export interface InstallationFactsBlockProps {
+  facts: readonly InstallationFact[]
   /**
    * Take the reader to the ledger, reduced to **every** security a notice
    * names — never the first of them, which would state a repair perimeter
@@ -47,46 +47,46 @@ export interface AdvisoriesBlockProps {
   onShowInLedger: (symbols: readonly string[]) => void
 }
 
-export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockProps) {
+export function InstallationFactsBlock({ facts, onShowInLedger }: InstallationFactsBlockProps) {
   const { t } = useI18n()
   const format = useFormatters()
   const client = useQueryClient()
 
   const acknowledge = useMutation({
-    mutationFn: (key: string) => api.acknowledgeAdvisory(key),
+    mutationFn: (key: string) => api.acknowledgeInstallationFact(key),
     // The list is re-read rather than patched in place: the server drops a row
     // whose predicate has stopped standing, so a client editing its own copy
     // would keep showing notices the installation has grown out of.
-    onSuccess: () => client.invalidateQueries({ queryKey: ['advisories'] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['installation-facts'] }),
   })
 
-  const shown = shownAdvisories(advisories)
+  const shown = shownFacts(facts)
   if (shown.length === 0) return null
 
   return (
-    <section aria-labelledby="installation-advisories" className="space-y-4">
-      <h2 id="installation-advisories" className="text-lg font-semibold tracking-tight">
-        {t('installation.advisories')}
+    <section aria-labelledby="installation-facts" className="space-y-4">
+      <h2 id="installation-facts" className="text-lg font-semibold tracking-tight">
+        {t('installation.facts')}
       </h2>
 
       <ul className="space-y-3">
-        {shown.map((advisory) => {
-          const gesture = advisoryGesture(advisory)
+        {shown.map((fact) => {
+          const gesture = factGesture(fact)
           // `null` is a key outside the closed list of five, and the server's
           // own English sentence is then better than an empty notice.
-          const said = advisoryText(advisory, format.list)
+          const said = factText(fact, format.list)
           return (
             <li
-              key={advisory.key}
+              key={fact.key}
               className="space-y-3 rounded-lg border border-attention/40 bg-attention/5 p-4"
             >
               <p className="text-sm leading-relaxed">
-                {said ? t(said.key, said.values) : advisory.message}
+                {said ? t(said.key, said.values) : fact.message}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-xs text-muted-foreground">
-                  {t('installation.advisory.seen', {
-                    date: format.dateTime(advisory.first_seen_at),
+                  {t('installation.fact.seen', {
+                    date: format.dateTime(fact.first_seen_at),
                   })}
                 </p>
                 <div className="ml-auto flex items-center gap-2">
@@ -97,7 +97,7 @@ export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockP
                       size="sm"
                       onClick={() => onShowInLedger(gesture.symbols)}
                     >
-                      {t('installation.advisory.showEvents')}
+                      {t('installation.fact.showEvents')}
                     </Button>
                   ) : null}
                   <Button
@@ -105,9 +105,9 @@ export function AdvisoriesBlock({ advisories, onShowInLedger }: AdvisoriesBlockP
                     variant="ghost"
                     size="sm"
                     disabled={acknowledge.isPending}
-                    onClick={() => acknowledge.mutate(advisory.key)}
+                    onClick={() => acknowledge.mutate(fact.key)}
                   >
-                    {t('installation.advisory.acknowledge')}
+                    {t('installation.fact.acknowledge')}
                   </Button>
                 </div>
               </div>

@@ -10,19 +10,20 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import {
-  ADVISORY_KEYS,
-  advisoryGesture,
-  advisoryText,
-  shownAdvisories,
-  unacknowledgedCount,
-} from '@/lib/advisories'
-import type { Advisory } from '@/lib/api'
+import type { InstallationFact } from '@/lib/api'
 import { formatList } from '@/lib/format'
 import { LOCALES, formatMessage } from '@/lib/i18n'
 import type { Language } from '@/lib/i18n'
+import {
+  BANNER_FACT,
+  FACT_KEYS,
+  factGesture,
+  factText,
+  shownFacts,
+  unacknowledgedCount,
+} from '@/lib/installationFacts'
 
-function advisory(overrides: Partial<Advisory> = {}): Advisory {
+function fact(overrides: Partial<InstallationFact> = {}): InstallationFact {
   return {
     key: 'unread_environment',
     first_seen_at: '2026-03-01T09:00:00.000Z',
@@ -36,9 +37,9 @@ function advisory(overrides: Partial<Advisory> = {}): Advisory {
 
 describe('what the block shows', () => {
   it('drops an acknowledged notice rather than greying it out', () => {
-    const shown = shownAdvisories([
-      advisory(),
-      advisory({ key: 'assumed_base_currency', acknowledged: true }),
+    const shown = shownFacts([
+      fact(),
+      fact({ key: 'assumed_base_currency', acknowledged: true }),
     ])
 
     // Greyed out, the notice of somebody who decided to live with what it names
@@ -47,15 +48,15 @@ describe('what the block shows', () => {
   })
 
   it('leaves the reconstruction to the banner, its one announcer', () => {
-    const shown = shownAdvisories([advisory(), advisory({ key: 'reconstruction_running' })])
+    const shown = shownFacts([fact(), fact({ key: 'reconstruction_running' })])
 
     expect(shown.map((entry) => entry.key)).toEqual(['unread_environment'])
   })
 
   it('keeps the server’s declared order rather than sorting by date', () => {
-    const shown = shownAdvisories([
-      advisory({ key: 'assumed_base_currency', first_seen_at: '2026-03-02T00:00:00.000Z' }),
-      advisory({ key: 'unread_environment', first_seen_at: '2026-01-01T00:00:00.000Z' }),
+    const shown = shownFacts([
+      fact({ key: 'assumed_base_currency', first_seen_at: '2026-03-02T00:00:00.000Z' }),
+      fact({ key: 'unread_environment', first_seen_at: '2026-01-01T00:00:00.000Z' }),
     ])
 
     // A badge whose contents reshuffle between two reads is a badge nobody
@@ -71,18 +72,62 @@ describe('what the block shows', () => {
 describe('what the badge counts', () => {
   it('counts exactly what the block shows', () => {
     const entries = [
-      advisory(),
-      advisory({ key: 'assumed_base_currency' }),
-      advisory({ key: 'assumed_base_currency', acknowledged: true }),
-      advisory({ key: 'reconstruction_running' }),
+      fact(),
+      fact({ key: 'assumed_base_currency' }),
+      fact({ key: 'assumed_base_currency', acknowledged: true }),
+      fact({ key: 'reconstruction_running' }),
     ]
 
-    expect(unacknowledgedCount(entries)).toBe(shownAdvisories(entries).length)
+    expect(unacknowledgedCount(entries)).toBe(shownFacts(entries).length)
     expect(unacknowledgedCount(entries)).toBe(2)
   })
 
   it('is zero when everything standing has been acknowledged', () => {
-    expect(unacknowledgedCount([advisory({ acknowledged: true })])).toBe(0)
+    expect(unacknowledgedCount([fact({ acknowledged: true })])).toBe(0)
+  })
+})
+
+/**
+ * **The banner shows conditions the owner can end; the badge counts facts they
+ * can only acknowledge** (ADR-0021, carried into ADR-0036).
+ *
+ * That one sentence is what separates the three notions the word *advisory* used
+ * to carry, so #820 renamed everything around it and left it standing. It is
+ * asserted here rather than left to the prose: the rename touched every name the
+ * rule is written in, and a rule that survives only in a comment is a rule the
+ * next refactor drops.
+ */
+describe('the rule that separates health, installation facts and advisories', () => {
+  it('keeps the one condition the owner can end out of the block and the badge', () => {
+    // `reconstruction_running` ends by itself when the reconstruction finishes —
+    // there is nothing to acknowledge — so the banner announces it and neither
+    // the block nor the badge says a word about it.
+    const entries = [fact({ key: BANNER_FACT }), fact()]
+
+    expect(shownFacts(entries).map((entry) => entry.key)).toEqual(['unread_environment'])
+    expect(unacknowledgedCount(entries)).toBe(1)
+  })
+
+  it('counts every other key, each being a fact one can only acknowledge', () => {
+    // The two that are left name something the app cannot undo for the owner —
+    // a variable set in the container, an assertion made once about imported
+    // amounts — so the only gesture is the acknowledgement, and the badge is
+    // what counts them.
+    const acknowledgeable = FACT_KEYS.filter((key) => key !== BANNER_FACT)
+
+    expect(acknowledgeable).toEqual(['unread_environment', 'assumed_base_currency'])
+    expect(unacknowledgedCount(acknowledgeable.map((key) => fact({ key })))).toBe(
+      acknowledgeable.length,
+    )
+  })
+
+  it('takes an acknowledged fact out of the block and the badge together', () => {
+    // A badge is a promise that something is there to read: the two read one
+    // list, so acknowledging cannot empty the block and leave the count on.
+    const entries = [fact({ key: 'assumed_base_currency', acknowledged: true })]
+
+    expect(shownFacts(entries)).toEqual([])
+    expect(unacknowledgedCount(entries)).toBe(0)
   })
 })
 
@@ -93,8 +138,8 @@ describe('the gesture a notice carries', () => {
     // the whole set. Keeping the first would state a repair perimeter smaller
     // than the sentence rendered above the button, on the one notice the app
     // cannot recompute.
-    const gesture = advisoryGesture(
-      advisory({
+    const gesture = factGesture(
+      fact({
         key: 'assumed_base_currency',
         detail: { symbols: ['ZZA', 'ZZB', 'ZZC'], events: [1, 2, 3, 4] },
       }),
@@ -107,16 +152,16 @@ describe('the gesture a notice carries', () => {
     // Its own sentence — which names this installation's variables — already
     // says what to do out there. A button would be a power the app does not
     // have: unsetting a variable is a `docker run` away from here.
-    expect(advisoryGesture(advisory({ key: 'unread_environment' }))).toBeNull()
-    expect(advisoryGesture(advisory({ key: 'reconstruction_running' }))).toBeNull()
+    expect(factGesture(fact({ key: 'unread_environment' }))).toBeNull()
+    expect(factGesture(fact({ key: 'reconstruction_running' }))).toBeNull()
   })
 
   it('is nothing when this process could not observe what it names', () => {
     // `detail: null` is the honest answer of a runtime that cannot see the
     // source — never an error, and never a gesture pointing at nothing.
-    expect(advisoryGesture(advisory({ key: 'assumed_base_currency', detail: null }))).toBeNull()
+    expect(factGesture(fact({ key: 'assumed_base_currency', detail: null }))).toBeNull()
     expect(
-      advisoryGesture(advisory({ key: 'assumed_base_currency', detail: { symbols: [] } })),
+      factGesture(fact({ key: 'assumed_base_currency', detail: { symbols: [] } })),
     ).toBeNull()
   })
 })
@@ -129,8 +174,8 @@ describe('the gesture a notice carries', () => {
  * the pair is here to prevent, and `formatMessage` is what turns one into the
  * other.
  */
-function say(language: Language, entry: Advisory): string {
-  const said = advisoryText(entry, (list) => formatList(LOCALES[language], list))
+function say(language: Language, entry: InstallationFact): string {
+  const said = factText(entry, (list) => formatList(LOCALES[language], list))
   if (!said) throw new Error(`no catalogue sentence for ${entry.key}`)
   return formatMessage(language, said.key, said.values)
 }
@@ -152,14 +197,14 @@ describe('the sentence a notice is read in', () => {
     // English on a French installation, and most of these sentences had no
     // rendering surface at all before #724 gave them one. It was five until
     // ADR-0032 took the two that were a `stat` on a folder nothing reads.
-    expect(ADVISORY_KEYS).toEqual([
+    expect(FACT_KEYS).toEqual([
       'unread_environment',
       'reconstruction_running',
       'assumed_base_currency',
     ])
 
-    for (const key of ADVISORY_KEYS) {
-      const entry = advisory({ key, detail: DETAILS[key] })
+    for (const key of FACT_KEYS) {
+      const entry = fact({ key, detail: DETAILS[key] })
       const fr = say('fr', entry)
       const en = say('en', entry)
 
@@ -175,14 +220,14 @@ describe('the sentence a notice is read in', () => {
   })
 
   it('interpolates what this installation names, so the notice stays actionable', () => {
-    const named = advisory({
+    const named = fact({
       key: 'unread_environment',
       detail: DETAILS.unread_environment,
     })
     expect(say('fr', named)).toContain('INFLUXDB_TOKEN')
     expect(say('en', named)).toContain('INFLUXDB_TOKEN')
 
-    const assumed = advisory({
+    const assumed = fact({
       key: 'assumed_base_currency',
       detail: DETAILS.assumed_base_currency,
     })
@@ -194,8 +239,8 @@ describe('the sentence a notice is read in', () => {
     // `f"{len(variables)} environment variable(s) are set"` is the approximate
     // pluralisation ICU exists to replace, and the verb was wrong at one
     // whichever branch the server picked.
-    const one = advisory({ key: 'unread_environment', detail: { variables: ['SB_PERF_INTERVAL'] } })
-    const three = advisory({
+    const one = fact({ key: 'unread_environment', detail: { variables: ['SB_PERF_INTERVAL'] } })
+    const three = fact({
       key: 'unread_environment',
       detail: { variables: ['SB_PERF_INTERVAL', 'SB_EXECUTOR_POOL', 'INFLUXDB_TOKEN'] },
     })
@@ -208,7 +253,7 @@ describe('the sentence a notice is read in', () => {
     // And the two counted nouns of the currency notice turn independently: four
     // events on three lines is the ordinary shape, one on one is not the same
     // sentence twice.
-    const alone = advisory({
+    const alone = fact({
       key: 'assumed_base_currency',
       detail: {
         base_currency: 'EUR',
@@ -219,15 +264,16 @@ describe('the sentence a notice is read in', () => {
     })
     expect(say('fr', alone)).toContain('1 événement sur 1 ligne cotée')
     expect(say('en', alone)).toContain('1 event on 1 line')
-    expect(say('fr', advisory({ key: 'assumed_base_currency', detail: DETAILS.assumed_base_currency })))
+    expect(say('fr', fact({ key: 'assumed_base_currency', detail: DETAILS.assumed_base_currency })))
       .toContain('4 événements sur 3 lignes cotées')
 
     // The reconstruction counts its own noun, and French agrees the verb where
     // English does not.
-    expect(say('fr', advisory({ key: 'reconstruction_running', detail: { complete: 1, total: 19 } })))
+    expect(say('fr', fact({ key: 'reconstruction_running', detail: { complete: 1, total: 19 } })))
       .toContain('1 série a atteint sa première acquisition')
-    expect(say('fr', advisory({ key: 'reconstruction_running', detail: DETAILS.reconstruction_running })))
-      .toContain('7 séries ont atteint leur première acquisition')
+    expect(
+      say('fr', fact({ key: 'reconstruction_running', detail: DETAILS.reconstruction_running })),
+    ).toContain('7 séries ont atteint leur première acquisition')
   })
 
   it('enumerates the way the language does, never with a « , » that crosses the wire', () => {
@@ -235,7 +281,7 @@ describe('the sentence a notice is read in', () => {
     // closes on *and*, French on *et*, and `Intl.ListFormat` is the only thing
     // that knows which — so the payload carries the array and the front carries
     // the language.
-    const assumed = advisory({
+    const assumed = fact({
       key: 'assumed_base_currency',
       detail: DETAILS.assumed_base_currency,
     })
@@ -244,7 +290,7 @@ describe('the sentence a notice is read in', () => {
     expect(say('fr', assumed)).toContain('GBP et USD')
     expect(say('en', assumed)).toContain('GBP and USD')
 
-    const variables = advisory({
+    const variables = fact({
       key: 'unread_environment',
       detail: { variables: ['SB_PERF_INTERVAL', 'SB_EXECUTOR_POOL'] },
     })
@@ -254,9 +300,9 @@ describe('the sentence a notice is read in', () => {
 
   it('falls back to what the notice *is* when this process observed nothing', () => {
     // `detail: null` is #709's third answer, and the server does the same thing
-    // one level up: its `message` becomes `AdvisorySpec.doc`. A paragraph with
+    // one level up: its `message` becomes `FactSpec.doc`. A paragraph with
     // `undefined` where a path should be would be the alternative.
-    const unobserved = advisory({ key: 'unread_environment', detail: null })
+    const unobserved = fact({ key: 'unread_environment', detail: null })
     expect(say('fr', unobserved)).toBe(
       'Des variables d’environnement sont définies et cette version n’en lit aucune.',
     )
@@ -267,7 +313,7 @@ describe('the sentence a notice is read in', () => {
     // Same answer for a detail that is there and does not carry what the
     // sentence interpolates: half a sentence is not a degradation, it is a bug
     // rendered.
-    const partial = advisory({ key: 'assumed_base_currency', detail: { base_currency: 'EUR' } })
+    const partial = fact({ key: 'assumed_base_currency', detail: { base_currency: 'EUR' } })
     expect(say('fr', partial)).not.toContain('undefined')
     expect(say('en', partial)).toBe(
       'Amounts imported from files were taken to be in the base currency.',
@@ -278,6 +324,6 @@ describe('the sentence a notice is read in', () => {
     // The list is closed (ADR-0021), so this cannot happen against a server of
     // the same generation — and against one of another, an English sentence is
     // better than an empty notice in a block that exists to be read.
-    expect(advisoryText(advisory({ key: 'a_sixth_notice' }), (list) => list.join(', '))).toBeNull()
+    expect(factText(fact({ key: 'a_sixth_notice' }), (list) => list.join(', '))).toBeNull()
   })
 })
