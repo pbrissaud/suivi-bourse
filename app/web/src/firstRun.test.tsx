@@ -394,8 +394,8 @@ describe('the ceiling loses nothing: what does not fit the slot is held by the p
     // And it is an *encart with a gesture*, never an acknowledgeable notice:
     // acknowledging *I have no currency* means nothing (ADR-0021). The notices
     // are a tab of their own since #794, so this is asked where they are.
-    await user.click(await screen.findByRole('tab', { name: /Les avis/ }))
-    const notices = await screen.findByRole('region', { name: 'Avis' })
+    await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
+    const notices = await screen.findByRole('region', { name: 'Faits d’installation' })
     expect(within(notices).queryByText(/devise de base/i)).not.toBeInTheDocument()
   })
 })

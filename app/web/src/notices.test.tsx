@@ -18,18 +18,18 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
-import { ROUTES, type Advisory } from '@/lib/api'
+import { ROUTES, type InstallationFact } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { anEnvironmentAdvisory, anAdvisory, aRuntime, aStore } from '@/test/factories'
+import { anEnvironmentFact, anInstallationFact, aRuntime, aStore } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-async function openNotices(advisories?: Advisory[]) {
-  if (advisories) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
+async function openNotices(facts?: InstallationFact[]) {
+  if (facts) {
+    server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
   }
   const rendered = renderApp({ url: '/donnees' })
-  await rendered.user.click(await screen.findByRole('tab', { name: /Les avis/ }))
+  await rendered.user.click(await screen.findByRole('tab', { name: /Les notices/ }))
   return rendered
 }
 
@@ -45,31 +45,31 @@ describe('the tab exists whether or not there is anything in it', () => {
     // dot: a tab that answers *nothing to report* answers exactly the question
     // the dot asks, and an address that only sometimes exists is not one.
     expect(await screen.findByText('Rien à signaler')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Les avis/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('never says it while the read is in flight', async () => {
     // *A block with nothing in it does not exist* is what is reversed here —
     // ADR-0026 is not. *Nothing to report* is a claim about this installation,
     // and a claim is not something a silence licenses.
-    server.use(http.get(ROUTES.advisories, () => new Promise<never>(() => {})))
+    server.use(http.get(ROUTES.installationFacts, () => new Promise<never>(() => {})))
     await openNotices()
 
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Les avis/ })).toHaveAttribute(
+      expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute(
         'aria-selected',
         'true',
       ),
     )
     expect(screen.queryByText('Rien à signaler')).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument()
   })
 
   it('names an unreadable store instead of reporting that all is well', async () => {
     // The notices live in the store, so *there is nothing to tell you* and *the
     // store cannot be read* must never be the same screen. One band or none.
     server.use(
-      problemHandler(ROUTES.advisories, {
+      problemHandler(ROUTES.installationFacts, {
         status: 503,
         type: PROBLEM_TYPES.storageUnavailable,
         title: 'storage unavailable',
@@ -82,13 +82,13 @@ describe('the tab exists whether or not there is anything in it', () => {
   })
 
   it('keeps the tab when the last notice is acknowledged', async () => {
-    const { user } = await openNotices([anEnvironmentAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
+    const { user } = await openNotices([anEnvironmentFact()])
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
 
     server.use(
-      http.get(ROUTES.advisories, () =>
+      http.get(ROUTES.installationFacts, () =>
         HttpResponse.json([
-          anEnvironmentAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+          anEnvironmentFact({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
         ]),
       ),
     )
@@ -97,19 +97,19 @@ describe('the tab exists whether or not there is anything in it', () => {
     // The alternative loses on its own terms: the tab would vanish under the
     // reader's cursor at the exact moment they finished with it.
     expect(await screen.findByText('Rien à signaler')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Les avis/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute('aria-selected', 'true')
   })
 })
 
 describe('the badge on the tab', () => {
   it('counts unacknowledged notices and nothing else', async () => {
     server.use(
-      http.get(ROUTES.advisories, () =>
+      http.get(ROUTES.installationFacts, () =>
         HttpResponse.json([
-          anAdvisory(),
-          anEnvironmentAdvisory(),
+          anInstallationFact(),
+          anEnvironmentFact(),
           // Acknowledged: gone from the block, so gone from the count.
-          anEnvironmentAdvisory({
+          anEnvironmentFact({
             acknowledged: true,
             acknowledged_at: '2026-02-01T00:00:00.000Z',
           }),
@@ -117,7 +117,7 @@ describe('the badge on the tab', () => {
           // block the dot leads to. Counted here it would be a second one;
           // shown in the block and not counted, the badge would under-count
           // what is on screen.
-          anAdvisory({ key: 'reconstruction_running', message: 'Rebuild in progress' }),
+          anInstallationFact({ key: 'reconstruction_running', message: 'Rebuild in progress' }),
         ]),
       ),
       // Neither of these is a notice: the ephemeral store's predicate is never
@@ -133,39 +133,39 @@ describe('the badge on the tab', () => {
 
     // On the tab the notices are on, which is what makes a badge a promise
     // rather than a hunt.
-    const tab = await screen.findByRole('tab', { name: /Les avis/ })
-    expect(await within(tab).findByLabelText('2 avis à lire')).toBeInTheDocument()
+    const tab = await screen.findByRole('tab', { name: /Les notices/ })
+    expect(await within(tab).findByLabelText('2 notices à lire')).toBeInTheDocument()
   })
 
   it('is absent when there is nothing to read', async () => {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json([])))
+    server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json([])))
     renderApp({ url: '/donnees' })
 
-    const tab = await screen.findByRole('tab', { name: /Les avis/ })
-    await waitFor(() => expect(tab).toHaveTextContent('Les avis'))
-    expect(within(tab).queryByLabelText(/avis à lire/)).not.toBeInTheDocument()
+    const tab = await screen.findByRole('tab', { name: /Les notices/ })
+    await waitFor(() => expect(tab).toHaveTextContent('Les notices'))
+    expect(within(tab).queryByLabelText(/notices? à lire/)).not.toBeInTheDocument()
   })
 })
 
 describe('the notices', () => {
   it('offers no « acknowledge all », whatever the count', async () => {
-    await openNotices([anAdvisory(), anEnvironmentAdvisory()])
+    await openNotices([anInstallationFact(), anEnvironmentFact()])
 
-    await screen.findByRole('heading', { name: 'Avis' })
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
     // Five at the very most, and a bulk acknowledgement is exactly how the one
     // notice the app cannot recompute gets swept away unread.
-    expect(within(block('Avis')).getAllByRole('button', { name: 'Acquitter' })).toHaveLength(2)
+    expect(within(block('Faits d’installation')).getAllByRole('button', { name: 'Acquitter' })).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /tout acquitter/i })).not.toBeInTheDocument()
   })
 
   it('makes an acknowledged notice disappear rather than grey it out', async () => {
-    const { user } = await openNotices([anEnvironmentAdvisory()])
+    const { user } = await openNotices([anEnvironmentFact()])
 
-    await screen.findByRole('heading', { name: 'Avis' })
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
     server.use(
-      http.get(ROUTES.advisories, () =>
+      http.get(ROUTES.installationFacts, () =>
         HttpResponse.json([
-          anEnvironmentAdvisory({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
+          anEnvironmentFact({ acknowledged: true, acknowledged_at: '2026-03-02T12:00:00.000Z' }),
         ]),
       ),
     )
@@ -176,41 +176,41 @@ describe('the notices', () => {
     // `config.yaml` for ever would be a permanent fixture of their screen. The
     // *tab* stays — that is #794's whole clause — and it says what is left.
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument(),
     )
   })
 
   it('re-arms when its predicate becomes true again', async () => {
-    const { user } = await openNotices([anEnvironmentAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
+    const { user } = await openNotices([anEnvironmentFact()])
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
 
     server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([anEnvironmentAdvisory({ acknowledged: true })]),
+      http.get(ROUTES.installationFacts, () =>
+        HttpResponse.json([anEnvironmentFact({ acknowledged: true })]),
       ),
     )
     await user.click(screen.getByRole('button', { name: 'Acquitter' }))
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument(),
     )
 
     // The file comes back. The server drops the row and arms a fresh one, and
     // the block shows it again — an acknowledgement of a fact that stopped
     // being true must not make its next occurrence invisible.
     server.use(
-      http.get(ROUTES.advisories, () =>
-        HttpResponse.json([anEnvironmentAdvisory({ first_seen_at: '2026-03-02T11:00:00.000Z' })]),
+      http.get(ROUTES.installationFacts, () =>
+        HttpResponse.json([anEnvironmentFact({ first_seen_at: '2026-03-02T11:00:00.000Z' })]),
       ),
     )
     await user.click(screen.getByRole('tab', { name: /Le grand livre/ }))
-    await user.click(screen.getByRole('tab', { name: /Les avis/ }))
+    await user.click(screen.getByRole('tab', { name: /Les notices/ }))
 
-    expect(await screen.findByRole('heading', { name: 'Avis' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Faits d’installation' })).toBeInTheDocument()
   })
 
   it('leads to the events a notice names, in the ledger, already reduced', async () => {
-    const { user } = await openNotices([anAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
+    const { user } = await openNotices([anInstallationFact()])
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
 
     await user.click(screen.getByRole('button', { name: 'Voir les événements concernés' }))
 
@@ -238,13 +238,13 @@ describe('the notices', () => {
 
 
   it('gives a notice about the environment no button it cannot honour', async () => {
-    await openNotices([anEnvironmentAdvisory()])
-    await screen.findByRole('heading', { name: 'Avis' })
+    await openNotices([anEnvironmentFact()])
+    await screen.findByRole('heading', { name: 'Faits d’installation' })
 
     // A variable in the container's environment is outside the app's reach, and
     // the sentence — which names this installation's own — says what to do out
     // there.
-    const notices = block('Avis')
+    const notices = block('Faits d’installation')
     expect(within(notices).queryByRole('button', { name: /Voir les événements/ })).not.toBeInTheDocument()
     expect(notices).toHaveTextContent('SB_EXECUTOR_POOL')
   })
@@ -253,26 +253,26 @@ describe('the notices', () => {
 /**
  * The notices are read in the reader's language (#768, ADR-0024).
  *
- * `AdvisoriesBlock` rendered `advisory.message` verbatim, and those sentences
- * are built in English by `advisories.py` — so the **whole content** of the
+ * `InstallationFactsBlock` rendered `fact.message` verbatim, and those sentences
+ * are built in English by `installation_facts.py` — so the **whole content** of the
  * block was English on a French installation, framed by a title, a date and a
  * button that were not. The tests below are at the same seam as the rest of the
  * file: the whole app in jsdom, HTTP the only faked edge, and the language taken
  * from the browser because it defaults to `auto`.
  */
 describe('the language of a notice', () => {
-  async function inLanguage(advisories: Advisory[], browserLanguages: readonly string[]) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
+  async function inLanguage(facts: InstallationFact[], browserLanguages: readonly string[]) {
+    server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
     const rendered = renderApp({ url: '/donnees', browserLanguages })
-    const tab = browserLanguages[0].startsWith('fr') ? /Les avis/ : /The notices/
+    const tab = browserLanguages[0].startsWith('fr') ? /Les notices/ : /The notices/
     await rendered.user.click(await screen.findByRole('tab', { name: tab }))
     return rendered
   }
 
   it('reads French for a French reader, and never the server’s English', async () => {
-    await inLanguage([anEnvironmentAdvisory(), anAdvisory()], ['fr-FR'])
+    await inLanguage([anEnvironmentFact(), anInstallationFact()], ['fr-FR'])
 
-    const notices = block('Avis')
+    const notices = block('Faits d’installation')
     // The variable is the server's — it names *this* installation — and
     // everything around it is the catalogue's.
     expect(notices).toHaveTextContent(
@@ -287,9 +287,9 @@ describe('the language of a notice', () => {
   })
 
   it('reads English for an English reader, plurals and list included', async () => {
-    await inLanguage([anEnvironmentAdvisory(), anAdvisory()], ['en-GB'])
+    await inLanguage([anEnvironmentFact(), anInstallationFact()], ['en-GB'])
 
-    const notices = screen.getByRole('region', { name: 'Notices' })
+    const notices = screen.getByRole('region', { name: 'Installation facts' })
     expect(notices).toHaveTextContent(
       /1 environment variable is set and read by nothing: SB_EXECUTOR_POOL/,
     )
@@ -304,19 +304,19 @@ describe('the language of a notice', () => {
     // Not only the one that is easy to provoke. The third key,
     // `reconstruction_running`, has exactly one announcer and it is the banner
     // (#724) — its sentence is in the same catalogue and composed by the same
-    // function, pinned in `lib/advisories.test.ts` in both languages. It was
+    // function, pinned in `lib/installationFacts.test.ts` in both languages. It was
     // four until ADR-0032 took the two that watched a folder.
     await inLanguage(
       [
-        anEnvironmentAdvisory({
+        anEnvironmentFact({
           detail: { variables: ['SB_PERF_INTERVAL', 'INFLUXDB_TOKEN'] },
         }),
-        anAdvisory(),
+        anInstallationFact(),
       ],
       ['fr-FR'],
     )
 
-    const notices = block('Avis')
+    const notices = block('Faits d’installation')
     expect(notices).toHaveTextContent(
       /2 variables d’environnement sont définies et ne sont lues par rien : SB_PERF_INTERVAL et INFLUXDB_TOKEN/,
     )
@@ -326,11 +326,11 @@ describe('the language of a notice', () => {
   it('says what the notice *is* when this process observed nothing', async () => {
     // `detail: null` is #709's third answer — a runtime that cannot see the
     // source — and the server does the same thing one level up, falling back to
-    // `AdvisorySpec.doc`. A paragraph with `undefined` where a list belongs
+    // `FactSpec.doc`. A paragraph with `undefined` where a list belongs
     // would be the alternative.
-    await inLanguage([anEnvironmentAdvisory({ detail: null })], ['fr-FR'])
+    await inLanguage([anEnvironmentFact({ detail: null })], ['fr-FR'])
 
-    const notices = block('Avis')
+    const notices = block('Faits d’installation')
     expect(notices).toHaveTextContent(
       'Des variables d’environnement sont définies et cette version n’en lit aucune.',
     )
