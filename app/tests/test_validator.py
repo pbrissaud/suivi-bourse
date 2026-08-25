@@ -380,6 +380,25 @@ def test_an_undeclared_account_names_the_account_column():
     assert "'nope' is not declared" in issue.message
 
 
+def test_the_undeclared_account_is_sent_to_the_app_and_nowhere_else():
+    """An account is born in the app, and the refusal says only that (ADR-0034).
+
+    This sentence reaches the owner both ways — as the ``detail`` of a ``422``
+    on an uploaded file and under the create form's account field — so naming an
+    accounts file in it would hand them a second road on one of the two, and a
+    road the upload itself refuses, naming those very columns. The refusal would
+    then be the app arguing with itself in front of them.
+    """
+    strict = EventValidator(account_ids={'default', 'pea'})
+    typed = Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+                  quantity=1, unit_price=1.0, account='nope')
+
+    (issue,) = strict.issues([typed])
+
+    assert 'declare it in the app' in issue.message
+    assert 'file' not in issue.message
+
+
 # ---------------------------------------------------------------------------
 # validate_or_raise
 # ---------------------------------------------------------------------------

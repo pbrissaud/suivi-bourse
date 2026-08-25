@@ -394,7 +394,13 @@ def test_the_preview_refuses_what_the_write_would_refuse(tmp_path):
     response = _upload(client, body, query="?dry_run=1")
 
     assert response.status_code == 422
-    assert "'pea' is not declared" in response.get_json()['detail']
+    detail = response.get_json()['detail']
+    assert "'pea' is not declared" in detail
+    # And it names the **one** place an account is born (ADR-0034). A sentence
+    # sending the reader to an accounts file would send them at a refusal this
+    # same road opposes them: the header reader turns such a file back.
+    assert 'the app' in detail
+    assert 'accounts file' not in detail
     assert opened.query('SELECT count(*) FROM event') == [(0,)]
 
 

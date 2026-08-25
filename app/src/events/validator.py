@@ -20,9 +20,7 @@ module. Two questions, two owners, and the split is the loader's, not a new one.
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
-from .schemas import (
-    ACCOUNT_FILE_COLUMNS, CASH_EVENT_TYPES, Event, EventType,
-)
+from .schemas import CASH_EVENT_TYPES, Event, EventType
 
 
 class EventValidationError(Exception):
@@ -192,8 +190,11 @@ class EventValidator:
         """Validate the ``account`` column of one event (issue #698).
 
         The message on an unknown id **names the account to declare**, because
-        that is the whole gesture the user has left to make: drop a file with
-        ``id``, ``type``, ``label``, or declare it in the app.
+        that is the whole gesture the user has left to make — and it names
+        the **one** place there is to make it, the app (ADR-0034). Naming a
+        file here would send the reader into a refusal this same app opposes
+        them a moment later: :mod:`uploads` turns back any file whose header
+        declares accounts, and names those very columns doing it.
         """
         if not event.account:
             if self.accounts_declared:
@@ -209,9 +210,8 @@ class EventValidator:
         declared = ", ".join(sorted(self.account_ids)) or "none"
         return [_issue(
             'account', prefix,
-            f"account '{event.account}' is not declared — declare it in an "
-            f"accounts file ({', '.join(ACCOUNT_FILE_COLUMNS)}) or in the app "
-            f"(declared: {declared})")]
+            f"account '{event.account}' is not declared — declare it in "
+            f"the app (declared: {declared})")]
 
     def _validate_buy(self, event: Event, prefix: str) -> List[ValidationIssue]:
         """Validate a BUY event."""
