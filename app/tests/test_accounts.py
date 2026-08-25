@@ -189,6 +189,41 @@ def test_the_header_says_what_a_file_is_not_its_name(store, tmp_path):
         _file(tmp_path, 'accounts.csv', V4_SINGLE_ACCOUNT)) is False
 
 
+def test_a_declaration_is_recognised_in_a_workbook_too(store, tmp_path):
+    """The events' format has two halves, and the guard holds on both.
+
+    ``is_accounts_file`` survives one job (ADR-0034, criterion 2): letting the
+    upload **refuse a declaration by name**. A ``.xlsx`` is handed over exactly
+    as a ``.csv`` is, so the recognition has to reach through the workbook
+    reader too — and it is the only road left to it. Asserted on the ``.csv``
+    alone, the criterion would leave that half unguarded, and a zealous pass
+    would take it away with nobody the wiser.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+
+    def _workbook(name, header, row):
+        book = openpyxl.Workbook()
+        sheet = book.active
+        sheet.title = "Comptes"
+        sheet.append(header)
+        sheet.append(row)
+        path = tmp_path / name
+        book.save(path)
+        return path
+
+    declaration = _workbook("ui.xlsx", ["id", "type", "label"],
+                            ["pea", "PEA", "PEA Bourso"])
+    events = _workbook("accounts.xlsx",
+                       ["date", "event_type", "symbol", "quantity",
+                        "unit_price"],
+                       ["2024-01-15", "BUY", "AAPL", 10, 150.0])
+
+    assert accounts_module.is_accounts_file(declaration) is True
+    # And the name decides nothing here either: the second workbook is called
+    # after the accounts and carries events, so it goes to the event loader.
+    assert accounts_module.is_accounts_file(events) is False
+
+
 def test_the_label_falls_back_to_the_id(store):
     """``label`` is ``NOT NULL``: a row cannot decline to name itself."""
     accounts_module.create_account(store, 'pea', 'PEA')
