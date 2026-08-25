@@ -50,6 +50,19 @@ export const ROUTES = {
    */
   prices: '/api/prices/:symbol',
   runtime: '/api/runtime',
+  /**
+   * **The one route with no `/api` prefix**, and it is not an oversight (#819,
+   * ADR-0036): it is the container's own probe, written into the image's
+   * `HEALTHCHECK` long before a browser read it, and renaming it to please this
+   * table would break the one reader the app is sure to have.
+   *
+   * It is what the **status dot** reads. The trade is stated in ADR-0036: the
+   * dot used to read `/api/runtime`, which touches no store and therefore
+   * survives one that has failed, and health is now said in one place. The cost
+   * is that the body goes when the store goes — and what survives that is the
+   * half that matters then, a `503` the dot renders **red**.
+   */
+  health: '/health',
   /** The ledger itself — read, and written one row at a time (#723). */
   events: '/api/events',
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
@@ -867,6 +880,80 @@ export interface RuntimeState {
 }
 
 // ------------------------------------------------------------------------- //
+// Health — the register whose reader is a person (#818, #819, ADR-0036)
+//
+// **Two registers, and they never mix.** The status code is for the
+// orchestrator and asks one question, *should this container be restarted*: the
+// worker serves and the store answers. The body is for a person and carries the
+// three jobs — scrape, backfill, performance — each with its last pass and its
+// verdict, plus one word for the whole.
+//
+// A silent scrape is therefore **amber with a `200`**, and that is the reason
+// the dot moved here: restarting repairs nothing yfinance or the market broke,
+// so a writer frozen since Tuesday leaves the code green and has to be read off
+// the body instead.
+// ------------------------------------------------------------------------- //
+
+/**
+ * The three words a job — or the whole — is said in. **Red is not among them,
+ * and its absence is the design**: red is what a reader concludes when the
+ * route answers `503` and there is no body at all, which is precisely the
+ * colour that needs nothing published to be true.
+ */
+export const HEALTH_STATUSES = ['ok', 'attention', 'unknown'] as const
+
+export type HealthStatus = (typeof HEALTH_STATUSES)[number]
+
+/**
+ * The verdict of a backfill that still has windows to cover — the one word the
+ * front branches on out of the server's per-job vocabulary.
+ *
+ * It is read rather than folded into `status` because the two say different
+ * things: a reconstruction under way is **not** something to look at, so the
+ * job's own `status` is `ok` while it runs, and the dot's fifth state (#787)
+ * would be lost if it were read off that word alone. Green means *the quotes
+ * are read **and** the performance is up to date*; a rebuild breaks the second
+ * half without breaking anything.
+ */
+export const BACKFILL_RUNNING = 'running'
+
+/** One job's line: what it last did, and what that is worth looking at. */
+export interface HealthJob {
+  status: HealthStatus
+  /** The instant of its last pass. `null` — this process has seen none. */
+  at: string | null
+  /** The job's own word, out of its own vocabulary. Never rendered raw. */
+  verdict: string
+}
+
+export interface HealthJobs {
+  /** Held symbols only: a sold line keeps no scrape job and no record. */
+  scrape: HealthJob & { held: number; attention: string[] }
+  /** `complete`/`in_scope` ride beside the verdict: *is it advancing* is a pair
+   * of numbers and not a word. */
+  backfill: HealthJob & { complete: number; in_scope: number; attention: string[] }
+  /** One error and not a list: the record holds the last pass only. */
+  performance: HealthJob & { error: string | null }
+}
+
+export interface HealthState {
+  status: HealthStatus
+  now: string
+  /**
+   * The one problem the dot could already detect before ADR-0036, and it
+   * survives it: a worker whose scheduler has stopped will not run any of the
+   * three jobs again, however well their last pass went. It is folded into
+   * `status` by the server — it is read here by nobody, and carried so a
+   * `curl` and the installation tab read the same object.
+   */
+  scheduler_running: boolean
+  /** `null` when the fold itself failed, with `error` saying what it could not
+   * say. A defect in the shaping is not a reason to restart the container. */
+  jobs: HealthJobs | null
+  error?: string
+}
+
+// ------------------------------------------------------------------------- //
 // The ledger (#723, ADR-0020, ADR-0005)
 //
 // **The shape below is the one `GET /api/events` already serves**, field for
@@ -1236,6 +1323,11 @@ export const api = {
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
+  // Typed for the caller, and **narrowed all the same** where it is read
+  // (`lib/status.ts`): this is the one payload whose shape the dot has to
+  // survive losing, a proxy or a stale image being able to answer `200` with
+  // something that is not this object at all.
+  health: () => get<HealthState>(ROUTES.health),
   config: () => get<ConfigResponse>(ROUTES.config),
   saveSettings: (values: Record<string, string | number>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),

@@ -29,6 +29,7 @@ import {
   aPerfPoint,
   aPortfolioHistory,
   aPositionsPayload,
+  aRebuilding,
   aRuntime,
   aTotals,
   aTotalsPayload,
@@ -1158,6 +1159,9 @@ describe('the reconstruction, on the dot and in the tab it leads to', () => {
     // the opposite at the top of the same page.
     server.use(
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
+      // The dot reads `/health` since #819 (ADR-0036), where the same fact is
+      // the backfill job's own verdict.
+      http.get(ROUTES.health, () => HttpResponse.json(aRebuilding())),
     )
     renderApp()
 

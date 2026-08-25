@@ -197,16 +197,23 @@ describe('the reader preferences', () => {
 })
 
 describe('when the app is not answering', () => {
+  /**
+   * The two routes the shell reads, refusing together — which is what an app
+   * that is not answering looks like from a browser. They are two since #819:
+   * the band is the runtime's, and the dot is `/health`'s (ADR-0036).
+   */
   const unavailable = () =>
-    problemHandler(ROUTES.runtime, {
-      status: 503,
-      type: PROBLEM_TYPES.storageUnavailable,
-      title: 'Storage unavailable',
-      detail: 'Catalog Error: Table with name position does not exist!',
-    })
+    [ROUTES.runtime, ROUTES.health].map((route) =>
+      problemHandler(route, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'Storage unavailable',
+        detail: 'Catalog Error: Table with name position does not exist!',
+      }),
+    )
 
   it('shows one band and never the server’s own sentence', async () => {
-    server.use(unavailable())
+    server.use(...unavailable())
     renderApp()
 
     const band = await screen.findByRole('status')
@@ -221,7 +228,7 @@ describe('when the app is not answering', () => {
   })
 
   it('keeps the status dot, which is what explains the empty page', async () => {
-    server.use(unavailable())
+    server.use(...unavailable())
     renderApp()
 
     const dot = await screen.findByRole('link', { name: /installation/i })

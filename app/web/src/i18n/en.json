@@ -33,8 +33,8 @@
   "sidebar.rail": "Collapse or expand the navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "The sections of the app, in a drawer.",
-  "sidebar.status.title": "{state, select, ok {Everything running} attention {Scheduler stopped} rebuilding {Rebuilding history} unreachable {App unreachable} other {}}",
-  "sidebar.status.body": "{state, select, ok {Quotes are read and history is rebuilt on their cadence.} attention {Nothing is being read and nothing is being rebuilt until it starts again.} rebuilding {Quotes are read; the consolidated figures are still catching up with your history.} unreachable {Nothing has answered, so nothing on screen is fresh.} other {}}",
+  "sidebar.status.title": "{state, select, ok {Everything running} attention {A job needs a look} rebuilding {Rebuilding history} unreachable {App unreachable} other {}}",
+  "sidebar.status.body": "{state, select, ok {Quotes are read and history is rebuilt on their cadence.} attention {A job has stopped or gone silent, so nothing on screen is moving on.} rebuilding {Quotes are read; the consolidated figures are still catching up with your history.} unreachable {Nothing has answered, so nothing on screen is fresh.} other {}}",
   "sheet.close": "Close",
   "dialog.close": "Close",
 

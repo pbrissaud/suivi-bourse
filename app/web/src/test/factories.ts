@@ -75,6 +75,8 @@ import type {
   EnvironmentVariable,
   EventsResponse,
   Fundamentals,
+  HealthJobs,
+  HealthState,
   ImportReceipt,
   LedgerEvent,
   Mover,
@@ -932,6 +934,85 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     accounts: defaultAccounts().map((account) => ({ account: account.id, horizon: NOW })),
     ...overrides,
   }
+}
+
+/**
+ * The body of `GET /health` (#818), which is what the **status dot** reads
+ * since #819 (ADR-0036).
+ *
+ * The default is a well install: the three jobs have each had a pass, none of
+ * them asks to be looked at, and the reconstruction has reached every first
+ * acquisition. The states a test wants are asked for by name, and the two that
+ * decide this ticket are `aFrozenScrape()` — amber with a `200`, the behaviour
+ * the dot did not have — and a route that answers `503` at all.
+ */
+export function aHealth(overrides: Partial<HealthState> = {}): HealthState {
+  return {
+    status: 'ok',
+    now: NOW,
+    scheduler_running: true,
+    jobs: aHealthJobs(),
+    ...overrides,
+  }
+}
+
+export function aHealthJobs(overrides: Partial<HealthJobs> = {}): HealthJobs {
+  return {
+    scrape: { status: 'ok', at: NOW, verdict: 'open', held: 3, attention: [] },
+    backfill: {
+      status: 'ok',
+      at: NOW,
+      verdict: 'complete',
+      complete: 3,
+      in_scope: 3,
+      attention: [],
+    },
+    performance: { status: 'ok', at: NOW, verdict: 'ran', error: null },
+    ...overrides,
+  }
+}
+
+/**
+ * A reconstruction still covering windows — the dot's fifth state (#787), read
+ * off the backfill's **verdict** and not off the body's overall word.
+ *
+ * That job's own `status` stays `ok` while it runs, deliberately: a rebuild is
+ * not something to look at. It is the fixture's whole point that the two do not
+ * coincide.
+ */
+export function aRebuilding(): HealthState {
+  return aHealth({
+    jobs: aHealthJobs({
+      backfill: {
+        status: 'ok',
+        at: NOW,
+        verdict: 'running',
+        complete: 1,
+        in_scope: 3,
+        attention: [],
+      },
+    }),
+  })
+}
+
+/**
+ * **A writer frozen since Tuesday** — the shape this whole ticket is about
+ * (#819). The scheduler is running, the store answers, the code is `200`, and
+ * nothing has been written for days: `attention`, and the dot has to be amber.
+ */
+export function aFrozenScrape(): HealthState {
+  return aHealth({
+    status: 'attention',
+    jobs: aHealthJobs({
+      scrape: {
+        status: 'attention',
+        at: '2026-02-24T17:35:00.000Z',
+        verdict: 'frozen',
+        held: 3,
+        attention: ['ZETA'],
+      },
+    }),
+  })
 }
 
 // ------------------------------------------------------------------------- //

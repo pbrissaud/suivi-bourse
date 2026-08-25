@@ -52,7 +52,7 @@ cd app/web && pnpm install
 pnpm lint    # tsc -b --noEmit
 pnpm test    # vitest, no network and no configuration
 pnpm build   # → app/src/static/, served by Flask (git-ignored)
-pnpm dev     # Vite on :5173, proxying /api to localhost:8080
+pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080
 ```
 
 `pnpm dev` needs the API running — which on a Mac means the container. If it is
@@ -106,10 +106,12 @@ Four workloads write to the store, each owning its own tables:
   applies the retention ladder;
 - **Performance** — replays the ledger and rewrites the return series.
 
-The front is a packaged SPA, served by Flask, which only ever talks to the app
-through `/api`. There is **one interface and one socket** (ADR-0033): the
-exporter and its second port are gone, and `/api` is the front's interface rather
-than a contract held for anybody else.
+The front is a packaged SPA, served by Flask, which talks to the app through
+`/api` and — for the status dot alone — `/health` (ADR-0036, #819). There is
+**one interface and one socket** (ADR-0033): the exporter and its second port
+are gone, and `/api` is the front's interface rather than a contract held for
+anybody else. `/health` is the container's own probe, read by the dot because
+health is said in one place.
 
 ## The rules that are expensive to break
 
