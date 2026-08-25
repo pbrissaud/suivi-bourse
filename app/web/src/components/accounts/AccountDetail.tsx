@@ -575,11 +575,10 @@ function eventName(event: LedgerEvent): string | null {
  * The standing half of the reassignment (#725, ADR-0006).
  *
  * The other half rides **inside** the first declaration, where there is no list
- * of accounts to choose from yet. This one is reachable with no gesture in this
- * app at all — an accounts file dropped in the folder declares as much as the
- * form does, and the event file beside it is then refused for the blank column
- * it was right to carry — so it stands on its own, with the declared accounts
- * as its targets.
+ * of accounts to choose from yet. This one needs no file at all to be reached
+ * (ADR-0034) — events typed into the app before anything was declared land
+ * under the seeded row, and the declaration that follows does not claim them —
+ * so it stands on its own, with the declared accounts as its targets.
  *
  * **No correspondence layer**: what crosses the wire is one target id, and the
  * population is the `account` column's own value. A `default → pea` map beside

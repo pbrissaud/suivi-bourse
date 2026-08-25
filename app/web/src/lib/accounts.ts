@@ -616,11 +616,12 @@ export function removalOf(account: Account, events: number): Removal {
  *    picker here would be asking the reader to choose between an empty list and
  *    the account they are in the middle of creating.
  *  - **`standing`** — something is declared and rows are still under the seeded
- *    row. That state is reachable with **no gesture in this app at all**: an
- *    accounts file dropped into the folder declares as much as the form does
- *    (#698), and the event file beside it is then refused for the blank column
- *    it was right to carry. So the offer stands on its own, with the declared
- *    accounts as its targets.
+ *    row. That state needs **no file at all** to reach (ADR-0034): months of
+ *    events typed into the app before anything was declared leave the `account`
+ *    column blank and land under the seeded row, and the declaration made
+ *    afterwards does not claim them — the back proves exactly that trap from
+ *    the keyboard. So the offer stands on its own, with the declared accounts
+ *    as its targets.
  *
  * **No correspondence layer** is built here, and that is the criterion rather
  * than an omission: a `default → pea` map beside the events would be a second
