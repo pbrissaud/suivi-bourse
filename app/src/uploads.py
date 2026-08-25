@@ -26,10 +26,10 @@ imported is the symptom this whole ticket exists against.
 
 **The v4 file is recognised by its name, and that is not the same rule.** A
 ``config.yaml`` has no header to read — it is not a ledger at all — and the two
-``legacy_*`` advisories that used to ``stat`` it said their sentence later, on
-another screen, to a reader no longer holding the file. It is said at the
-instant of the gesture now, and it names the file and points at the migration
-page.
+``legacy_*`` installation facts that used to ``stat`` it said their sentence
+later, on another screen, to a reader no longer holding the file. It is said at
+the instant of the gesture now, and it names the file and points at the
+migration page.
 
 **The bound is written, and it is held in three places because each sees
 something the other two do not.** A declared ``Content-Length`` is refused before
@@ -81,9 +81,10 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 #: is generous: what it exists to stop is a payload of another order.
 MAX_BODY_BYTES = MAX_UPLOAD_BYTES + 64 * 1024
 
-#: The v4 files, by name. They are the two the retired ``legacy_*`` advisories
-#: watched for, and they are named here rather than derived: a ``.yaml`` has no
-#: header to classify, and *this is v4's* is the one thing worth saying about it.
+#: The v4 files, by name. They are the two the retired ``legacy_*``
+#: installation facts watched for, and they are named here rather than derived:
+#: a ``.yaml`` has no header to classify, and *this is v4's* is the one thing
+#: worth saying about it.
 LEGACY_FILENAMES = ('config.yaml', 'settings.yaml')
 
 #: Where a v4 owner is sent. Versioned and absolute, because this sentence

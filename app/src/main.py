@@ -25,11 +25,11 @@ from urllib3 import exceptions as u_exceptions
 from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
-import advisories
 import boot_conditions
 import boot_env
 import carrying
 import fx
+import installation_facts
 import ledger
 import mounts
 import perf_series
@@ -64,7 +64,7 @@ yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
 MANAGED_LOGGERS = (
     'suivi_bourse', 'apscheduler.scheduler', 'yfinance', 'store',
     'quotes', 'perf_series', 'ledger', 'positions',
-    'advisories', 'web.api',
+    'installation_facts', 'web.api',
     # Four names the list had never caught up with. `PUT /api/config/log-level`
     # turned the app to DEBUG and left them at the boot level — `fx` above all,
     # which is the module that most often explains why a conversion is missing,
@@ -250,12 +250,14 @@ def effective_environment() -> List[Dict]:
     return boot_env.effective(os.environ, log_level=current_log_level())
 
 
-def advisory_context(config_manager, metrics=None) -> advisories.Context:
-    """Gather what the advisories' predicates read (issue #709).
+def installation_fact_context(config_manager,
+                              metrics=None) -> installation_facts.Context:
+    """Gather what the installation facts' predicates read (issue #709).
 
-    The seam between :mod:`advisories`, which holds the predicates and the log's
-    text — a reader is served the front's catalogue since #768, so *the* text is
-    no longer one text — and the two places their sources actually live: the
+    The seam between :mod:`installation_facts`, which holds the predicates and
+    the log's text — a reader is served the front's catalogue since #768, so
+    *the* text is no longer one text — and the two places their sources
+    actually live: the
     environment inventory here, and the reconstruction's progress in the
     scheduler's own memory. **One builder**, so the observation a job makes and
     the one a request renders cannot come from two different readings of the same
@@ -264,10 +266,10 @@ def advisory_context(config_manager, metrics=None) -> advisories.Context:
     A caller with no ``metrics`` — the gunicorn master, a web request on a
     runtime that has not started its scheduler — reports the reconstruction as
     **unobservable** rather than as finished. That distinction is the whole of
-    :data:`advisories.UNOBSERVED`: without it, a page being opened would drop the
-    row a running scheduler armed.
+    :data:`installation_facts.UNOBSERVED`: without it, a page being opened
+    would drop the row a running scheduler armed.
     """
-    return advisories.Context(
+    return installation_facts.Context(
         unread_variables=tuple(unread_environment()),
         reconstruction=(None if metrics is None
                         else metrics.reconstruction_state()),
@@ -2074,39 +2076,40 @@ class SuiviBourseMetrics:
         # scheduler is wired in __main__.
         self._reconcile_jobs()
 
-        # Re-observe the advisories (issue #709). Here because this is the
-        # gesture that runs at the boot, on a file landing and after a write —
-        # the three moments the *installation's* advisories can change — and
+        # Re-observe the installation facts (issue #709). Here because this is
+        # the gesture that runs at the boot, on a file landing and after a
+        # write — the three moments an *installation fact* can change — and
         # because it is the only one that runs on an install holding nothing at
         # all, where the backfill returns before doing anything.
-        self.review_advisories()
+        self.review_installation_facts()
 
     # ------------------------------------------------------------------ #
-    # The advisories (issue #709)
+    # The installation facts (issue #709)
     # ------------------------------------------------------------------ #
 
     def reconstruction_state(self) -> Tuple[int, int]:
         """``(series complete, series in the reconstruction)`` — process memory.
 
-        The source of the one advisory that is neither a file nor an environment
-        variable, and it is memory rather than a query for the same reason
-        ``/api/runtime`` reads none: ``_backfill_complete`` is where "this pass
-        has reached its first acquisition" lives, and no row anywhere says it —
-        a symbol Yahoo answers nothing about has a completed pass and an empty
-        series.
+        The source of the one installation fact that is neither a file nor an
+        environment variable, and it is memory rather than a query for the same
+        reason ``/api/runtime`` reads none: ``_backfill_complete`` is where
+        "this pass has reached its first acquisition" lives, and no row
+        anywhere says it — a symbol Yahoo answers nothing about has a completed
+        pass and an empty series.
 
         **This method never answers ``None``**, and that is the whole of it:
-        across the seam ``None`` means :data:`advisories.UNOBSERVED` — *this
-        process cannot see the scheduler* — and it is :func:`advisory_context`
-        alone that says it, for a caller holding no ``metrics`` at all. Nothing
-        ever held is ``(0, 0)``: an observation, made from here, saying there is
-        no reconstruction to run. A fresh install still announces no reprise
-        d'historique — ``_observe_reconstruction`` stands the advisory down on
+        across the seam ``None`` means :data:`installation_facts.UNOBSERVED` —
+        *this process cannot see the scheduler* — and it is
+        :func:`installation_fact_context` alone that says it, for a caller
+        holding no ``metrics`` at all. Nothing ever held is ``(0, 0)``: an
+        observation, made from here, saying there is no reconstruction to run.
+        A fresh install still announces no reprise d'historique —
+        ``_observe_reconstruction`` stands the installation fact down on
         ``total <= 0`` exactly as it does on a finished one — but it *stands it
         down* instead of leaving it untouched, which is what the criterion
-        demands: forgetting every import while the reconstruction was armed used
-        to leave its row standing for ever, on a portfolio that no longer names
-        a single symbol.
+        demands: forgetting every import while the reconstruction was armed
+        used to leave its row standing for ever, on a portfolio that no longer
+        names a single symbol.
         """
         windows = self.config_manager.current().backfill_windows()
         now = datetime.now(timezone.utc)
@@ -2117,36 +2120,41 @@ class SuiviBourseMetrics:
                        if self._backfill_complete.get(symbol) == target)
         return complete, len(windows)
 
-    def review_advisories(self) -> None:
-        """Re-observe every advisory, and record the one that is an event.
+    def review_installation_facts(self) -> None:
+        """Re-observe every installation fact, and record the one that is an
+        event.
 
-        The whole call-site pattern of the feature: the observation is made where
-        the sources are — the ingest and the backfill cycle — and **never on a
-        ``GET``**, an advisory dated by the moment somebody happened to open a
-        page saying nothing about when the thing it names started.
+        The whole call-site pattern of the feature: the observation is made
+        where the sources are — the ingest and the backfill cycle — and **never
+        on a ``GET``**, an installation fact dated by the moment somebody
+        happened to open a page saying nothing about when the thing it names
+        started.
 
         Both callers see all four sources, this object being where the
         reconstruction's memory lives, so neither of them can drop a row the
         other armed. What cannot see it is a runtime with no scheduler — the
-        gunicorn master, a web request — and :func:`advisory_context` answers
-        *unobservable* for those rather than *finished*.
+        gunicorn master, a web request — and
+        :func:`installation_fact_context` answers *unobservable* for those
+        rather than *finished*.
 
         Guarded: a store that refuses this must not take a scheduled job with it.
         A missed review costs one cycle, and the next one re-observes everything
         from scratch, there being no state to catch up on.
         """
         try:
-            context = advisory_context(self.config_manager, self)
+            context = installation_fact_context(self.config_manager, self)
             with self.config_manager.writing() as opened:
                 # Order matters, and only in one direction: the reconstruction
-                # concluding is what *produces* the assumed-currency advisory, so
-                # it is recorded before the refresh that stands its sibling down.
+                # concluding is what *produces* the assumed-currency
+                # installation fact, so it is recorded before the refresh that
+                # stands its sibling down.
                 if context.reconstruction_concluded:
-                    advisories.record(
-                        opened, advisories.ASSUMED_BASE_CURRENCY, context)
-                advisories.refresh(opened, context)
+                    installation_facts.record(
+                        opened,
+                        installation_facts.ASSUMED_BASE_CURRENCY, context)
+                installation_facts.refresh(opened, context)
         except Exception as e:
-            app_logger.error(f"Failed to review the advisories: {e}")
+            app_logger.error(f"Failed to review the installation facts: {e}")
 
     def _adopt_declared_currency(self) -> None:
         """Take up a reporting currency an import has just declared (issue #710).
@@ -2340,15 +2348,16 @@ class SuiviBourseMetrics:
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
 
-        # The cycle that just moved the reconstruction is the one that re-observes
-        # it (issue #709), and it is also where the *event* advisory is born: the
-        # last backward pass reaching its first acquisition is the earliest
-        # instant at which every symbol's quote currency has been observed, and
-        # therefore the earliest at which the app can say what it assumed of the
-        # amounts it imported. The condition is re-tested every cycle rather than
-        # latched — the currency may be answered long after the reconstruction
-        # ended — and the write is idempotent, so it is produced exactly once.
-        self.review_advisories()
+        # The cycle that just moved the reconstruction is the one that
+        # re-observes it (issue #709), and it is also where the *event*
+        # installation fact is born: the last backward pass reaching its first
+        # acquisition is the earliest instant at which every symbol's quote
+        # currency has been observed, and therefore the earliest at which the
+        # app can say what it assumed of the amounts it imported. The condition
+        # is re-tested every cycle rather than latched — the currency may be
+        # answered long after the reconstruction ended — and the write is
+        # idempotent, so it is produced exactly once.
+        self.review_installation_facts()
 
     def _backfill_symbol(self, symbol: str,
                          window: Tuple[date, Optional[date]],
