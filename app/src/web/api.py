@@ -482,8 +482,7 @@ def list_accounts():
     lists differ only on historical residue (an account since removed, the
     pre-v4.1 ``default`` bucket). Reading the declaration also hands over
     ``label`` and ``type``, which the tags on the series only record as they
-    *were*, plus ``source_id``/``editable``: where the row came from, which is
-    what tells the page whether it may offer an edit at all (issue #698).
+    *were*.
 
     The figures ride the *same* resource rather than a second one, which is
     #655's REST rule doing what it was adopted for: there is one accounts
@@ -634,13 +633,11 @@ def get_account_history(account_id: str):
 
 @api_bp.post('/accounts')
 def create_account():
-    """Declare an account from the app — the other half of the file (issue #698).
+    """Declare an account — the one place one is born (ADR-0034).
 
-    The file exists so that a **headless** install can declare accounts at all;
-    this exists so that an install with a page does not have to write a file to
-    do it. Neither is the primary one, and the row they produce differs in
-    exactly one column: ``source_id``, ``NULL`` here, which is what makes this
-    row editable and a file's row read-only.
+    A file could once declare accounts too, so that a **headless** install had
+    a way at all; ADR-0033 retires that install, and this is what is left. There
+    is no second population and no column that tells one from the other.
 
     The replay follows the write, in this process: declaring an account changes
     what an event file is allowed to say, so the caller must see the effect of
@@ -751,8 +748,6 @@ def update_account(account_id: str):
                 account_type=body.get('type'), label=body.get('label'))
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
-    except accounts_module.ReadOnlyAccount as exc:
-        return conflict(str(exc))
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account))
@@ -762,10 +757,9 @@ def update_account(account_id: str):
 def delete_account(account_id: str):
     """Remove an account created in the app.
 
-    ``409`` on the three refusals, and they are the ticket's spine: an account
-    **an event names** cannot go (ADR-0013 — no orphan historical residue), an
-    account a **file** declared is revoked by forgetting that import, and the
-    ``default`` account is the one row every install has.
+    ``409`` on the two refusals, and they are the ticket's spine: an account
+    **an event names** cannot go (ADR-0013 — no orphan historical residue), and
+    the ``default`` account is the one row every install has.
     """
     runtime = current_runtime()
     try:
@@ -773,8 +767,7 @@ def delete_account(account_id: str):
             accounts_module.delete_account(opened, account_id)
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
-    except (accounts_module.AccountInUse,
-            accounts_module.ReadOnlyAccount) as exc:
+    except accounts_module.AccountInUse as exc:
         return conflict(str(exc))
 
     main.replay_after_write(runtime)
@@ -784,16 +777,14 @@ def delete_account(account_id: str):
 def _account_to_dict(account) -> dict:
     """One :class:`events.schemas.Account`, on the wire.
 
-    ``editable`` is published rather than left to the client to derive from
-    ``source_id``: it is the rule, and a rule the front re-implements is a rule
-    that can disagree with the API that enforces it.
+    Three members and no fourth: an account is declared in the app and nowhere
+    else (ADR-0034), so there is nothing left to say about where the row came
+    from — and no rule for the front to re-implement out of it.
     """
     return {
         'id': account.id,
         'type': account.type,
         'label': account.label,
-        'source_id': account.source_id,
-        'editable': account.editable,
     }
 
 
@@ -1413,7 +1404,6 @@ EXPORT_FILENAMES = {
     'events.xlsx': 'suivi-bourse-events.xlsx',
     'selection.csv': 'suivi-bourse-selection.csv',
     'selection.xlsx': 'suivi-bourse-selection.xlsx',
-    'accounts.csv': 'suivi-bourse-accounts.csv',
 }
 
 #: The media type OOXML registered for a workbook. Written out rather than
@@ -1491,30 +1481,6 @@ def export_events_workbook():
             opened.setting('base_currency')),
         _export_name('xlsx', selection),
         XLSX_MIME)
-
-
-@api_bp.get('/export/accounts.csv')
-def export_accounts():
-    """Every **declared** account, as a file this app imports (issue #698).
-
-    The other half of a round trip that is actually round: an event file naming
-    ``pea`` is refused whole where nothing declares ``pea``, so exporting the
-    events alone would restore a multi-account install into a refusal. Two files
-    and not one because that is the format — a file is an accounts source or an
-    event source according to its header, never both.
-
-    The seeded ``default`` row is **not** in it unless something changed it: it
-    is on every install and nobody declared it, so writing it out would turn "I
-    declared nothing" into a declaration — and re-importing that would hand the
-    one row every install owns a ``source_id``, making it read-only and
-    forgettable, which is exactly what ADR-0013 keeps it from being.
-    """
-    return _file_response(
-        events_export.render_accounts(events_export.declared_accounts(
-            accounts_module.read_accounts(_store()),
-            store_module.DEFAULT_ACCOUNT_ROW)),
-        EXPORT_FILENAMES['accounts.csv'],
-        'text/csv; charset=utf-8')
 
 
 class _InvalidParameter(Exception):

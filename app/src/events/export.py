@@ -68,7 +68,7 @@ from typing import (
 )
 
 from .loader import BASE_CURRENCY_COLUMN
-from .schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, Event
+from .schemas import DEFAULT_ACCOUNT, Event
 
 #: The columns of an exported event file, in the order the documentation shows
 #: them (``website/docs/import-your-events.mdx``). ``base_currency`` closes the
@@ -93,11 +93,6 @@ _UNWRITABLE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 #: year nothing happened in.
 UNDATED_SHEET = 'events'
 
-#: The columns of an exported accounts file — the account file's own three
-#: (issue #698), taken from :mod:`events.schemas` so this is a second *name* for
-#: that tuple and never a second value.
-ACCOUNT_COLUMNS = ACCOUNT_FILE_COLUMNS
-
 
 def render_events(events: Iterable[Event],
                   base_currency: Optional[str] = None) -> str:
@@ -111,21 +106,6 @@ def render_events(events: Iterable[Event],
     """
     return _render(EVENT_COLUMNS, [
         _event_row(event, base_currency) for event in events
-    ])
-
-
-def render_accounts(accounts: Iterable[Any]) -> str:
-    """The declaration as an importable accounts ``.csv`` (issue #698).
-
-    The other half of a round trip that is actually round: an events file naming
-    ``pea`` is *not imported at all* where nothing declares ``pea``, so an export
-    of the events alone would restore a multi-account install into a refusal.
-    Two files rather than one because that is the format — a file is an accounts
-    source or an event source according to its header, and never both.
-    """
-    return _render(ACCOUNT_COLUMNS, [
-        {'id': account.id, 'type': account.type, 'label': account.label}
-        for account in accounts
     ])
 
 
@@ -182,23 +162,6 @@ def _cell(value: Any) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
-
-
-def declared_accounts(accounts: Iterable[Any],
-                      seed_row: Sequence[Any]) -> List[Any]:
-    """The accounts worth writing into a file: everything but an untouched seed.
-
-    The ``default`` row is on every install and nobody declared it, so exporting
-    it would turn *"this install declared nothing"* into a file that declares
-    something — and re-importing that file would hand the seeded row a
-    ``source_id``, making it read-only and forgettable, which is precisely what
-    ADR-0013 keeps it from being. A ``default`` a file **took over** is a
-    declaration and does leave: the comparison is against the seeded *values*,
-    not against the id.
-    """
-    seed = (seed_row[0], seed_row[1], seed_row[2])
-    return [account for account in accounts
-            if (account.id, account.type, account.label) != seed]
 
 
 # --------------------------------------------------------------------- #
@@ -426,8 +389,8 @@ def _haystack(event: Event) -> str:
 
 
 __all__ = [
-    'EVENT_COLUMNS', 'ACCOUNT_COLUMNS', 'BASE_CURRENCY_COLUMN',
+    'EVENT_COLUMNS', 'BASE_CURRENCY_COLUMN',
     'UNDATED_SHEET', 'NO_SELECTION', 'Selection',
-    'render_events', 'render_events_workbook', 'render_accounts',
-    'declared_accounts', 'select', 'account_of', 'fold',
+    'render_events', 'render_events_workbook',
+    'select', 'account_of', 'fold',
 ]
