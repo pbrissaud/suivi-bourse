@@ -20,12 +20,16 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
+import carrying
 import fx
 import main
 import performance
+import portfolio_view
 import quotes
 import runtime_state
+import runtime_view
 import scheduling
+import store_reads
 import settings as settings_module
 import settings_registry
 from events import EventAggregator
@@ -1363,3 +1367,249 @@ def test_a_line_yahoo_names_no_unit_for_is_carried_at_its_cost(
     # at the position's own cost rather than counted at nothing.
     assert quotes.terminal_symbols(store, window, datetime.now(UTC)) == {'AAPL'}
     assert value_on(date(2024, 6, 2)) == (pytest.approx(10 * 100.0), True)
+
+
+# =========================================================================== #
+# The unit of a symbol quoted in the reporting currency (issue #825)
+#
+# The population #773's repair could not reach, because the gate that let it be
+# reached tested a *symptom*: **a point with no conversion**. A symbol quoted in
+# the reporting currency has nothing to convert — the fetch made while its
+# market is shut leaves the unit in ``_share_info_cache``, ``_convert_history``
+# converts every rebuilt point at 1,0 — so the pass declared
+# ``nothing_to_repair`` and stood down one line above the branch that learns the
+# unit, while the live scrape's own gate (*not closed and a price*) wrote
+# nothing. Measured on staging, markets shut: eleven of the twelve held lines
+# rendered at an em dash, valued at their cost, until the Monday.
+# =========================================================================== #
+
+_SHUT_MARKET_INFO = {'currency': 'EUR', 'exchange': 'PAR', 'quoteType': 'ETF'}
+
+
+def _met_with_its_market_shut(store, monkeypatch, info=None,
+                              base_currency='EUR'):
+    """The staging state, rebuilt: a held line first met with its market shut.
+
+    Three facts, and the defect is the shape they make together. The fetch
+    **succeeds** market shut and leaves the unit in ``_share_info_cache``, which
+    is why the cache is seeded here rather than left empty as in #773's own
+    fixture; the rebuild therefore converts every point it writes, at 1,0, the
+    quote currency being the reporting one; and nothing writes that unit to
+    ``symbol_quote``, the live scrape having refused to write anything at all.
+
+    ``info`` is what the pass's **own** request answers, and that request is a
+    second and later one than the fetch that filled the cache: ``{}`` is Yahoo
+    naming no currency for a symbol whose points are already converted.
+    """
+    frame = pd.DataFrame(
+        {'Close': [101.0, 102.0, 103.0]},
+        index=pd.date_range(start='2024-06-01', periods=3, freq='D', tz=UTC))
+    instrument = _Instrument(
+        info=dict(_SHUT_MARKET_INFO) if info is None else info, frame=frame)
+    metrics = _metrics(store, base_currency=base_currency)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
+    metrics._share_info_cache['AAPL'] = dict(_SHUT_MARKET_INFO)
+    metrics._backfill_backward('AAPL', datetime(2024, 6, 1, tzinfo=UTC),
+                               datetime(2024, 6, 4, tzinfo=UTC))
+    return metrics, instrument
+
+
+def test_a_line_quoted_in_the_reporting_currency_learns_its_unit_all_the_same(
+        store, monkeypatch):
+    """The criterion, and the premise is half of the test.
+
+    Every point carries its conversion — which is exactly what made the defect
+    invisible — so the pass has **no span to repair** and learns the unit all the
+    same. The trigger is *a point with no conversion or a symbol with no unit*,
+    and this row is the second half of that sentence.
+    """
+    metrics, instrument = _met_with_its_market_shut(store, monkeypatch)
+
+    # The premise: converted at 1,0, and the store knows no unit for them.
+    assert _point(store) == [(101.0, 101.0, 1.0), (102.0, 102.0, 1.0),
+                             (103.0, 103.0, 1.0)]
+    assert quotes.quote_currency(store, 'AAPL') is None
+    before = store.query('SELECT count(*) FROM price_point')[0]
+
+    written, _ = _lateral(metrics)
+
+    assert quotes.quote_currency(store, 'AAPL') == 'EUR'
+    assert instrument.reads == 1
+    # And **not one row was added**, counted rather than argued: the price gate
+    # of the live scrape is untouched, which is what keeps a table deliberately
+    # without an index from collecting an identical point every 120 s all night.
+    assert written == 0
+    assert store.query('SELECT count(*) FROM price_point')[0] == before
+    assert _point(store) == [(101.0, 101.0, 1.0), (102.0, 102.0, 1.0),
+                             (103.0, 103.0, 1.0)]
+
+
+def test_a_pass_that_only_learnt_a_unit_says_so_and_is_not_a_failure(
+        store, monkeypatch):
+    """A pass that did the only work there was is not a pass that found none.
+
+    ``nothing_to_repair`` would have been the cheap reuse and it says the
+    opposite of what happened, on the one cycle that turns a line from carried at
+    cost into quoted. So the vocabulary gains the case rather than borrowing a
+    word: a verdict of its own, no failure counted, no terminal armed, and it
+    travels to ``/api/runtime`` as the pass's state.
+    """
+    metrics, _ = _met_with_its_market_shut(store, monkeypatch)
+
+    _, record = _lateral(metrics)
+
+    assert record.skipped == runtime_state.SKIP_UNIT_LEARNT
+    assert record.failed is False and record.failures == 0
+    assert record.terminal is None and record.error is None
+    # No window: there was no span, and dating a repair nobody made would be a
+    # claim about rows this pass never touched.
+    assert record.window is None
+    assert 'AAPL' not in metrics._lateral_retry_at
+    assert runtime_view.backfill_progress(
+        record, runtime_state.LATERAL, datetime.now(UTC)).state \
+        == runtime_state.SKIP_UNIT_LEARNT
+
+
+def test_the_learnt_unit_makes_the_position_quoted_rather_than_carried(
+        store, monkeypatch, declare_positions):
+    """The consequence on the screen, read off the payload the front reads.
+
+    *A quote is a number **and** a unit* (#774): before the pass the row carries
+    a price with no currency beside it, which ``carrying.is_quoted`` — and
+    ``lib/absence.ts`` with it — reads as *carried at its cost*, an em dash and a
+    latent gain of zero, indistinguishable from a line the market cannot price.
+    The repair belongs to the writer, and this is it landing.
+    """
+    declare_positions(store, [_share()])
+    metrics, _ = _met_with_its_market_shut(store, monkeypatch)
+
+    def published():
+        rows = store_reads.PortfolioReader(store).positions()
+        return portfolio_view.build_positions(rows, 'EUR')[0]
+
+    before = published()
+    assert before['price']['value'] == 103.0
+    assert before['price']['currency'] is None
+    assert carrying.is_quoted(before['price']['value'],
+                              before['price']['currency']) is False
+
+    _lateral(metrics)
+
+    after = published()
+    assert after['price']['value'] == 103.0
+    assert after['price']['currency'] == 'EUR'
+    assert carrying.is_quoted(after['price']['value'],
+                              after['price']['currency']) is True
+    # The conversion was never the missing half, and it has not moved.
+    assert after['converted'] == {'value': 103.0, 'currency': 'EUR',
+                                  'rate': 1.0, 'rate_at': after['price']['at']}
+
+
+def test_the_foreign_currency_twin_goes_on_being_repaired_exactly_as_before(
+        store, monkeypatch):
+    """The corollary that is also the control (issue #825).
+
+    In a foreign currency the points stay unconverted, the old trigger sees them
+    and the repair happens — which is precisely why the defect only ever showed
+    on the pair *quote currency = reporting currency*. Widening the trigger must
+    move nothing here: the span is still what sizes the work, the unit is still
+    learnt on the way, and the pass still reports what it **converted** rather
+    than reporting that it learnt a unit.
+    """
+    metrics = _metrics(store, base_currency='EUR')
+    _unconverted(store, currency=None)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    instrument = _Instrument(info={'currency': 'USD'})
+    monkeypatch.setattr(main.yf, 'Ticker', instrument)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92}}))
+
+    written, record = _lateral(metrics)
+
+    assert written == 3
+    assert quotes.quote_currency(store, 'AAPL') == 'USD'
+    assert record.written == 3
+    assert record.skipped is None          # never ``unit_learnt``: it converted
+    assert record.window is not None
+    assert _point(store) == [
+        (101.0, pytest.approx(101.0 * 0.90), 0.90),
+        (102.0, pytest.approx(102.0 * 0.91), 0.91),
+        (103.0, pytest.approx(103.0 * 0.92), 0.92),
+    ]
+
+
+def test_two_cycles_on_a_unit_just_learnt_emit_one_request(
+        store, monkeypatch):
+    """The guard the widening could have broken, and the reason it does not.
+
+    The three load-bearing guards are what make the trigger *"a symbol with no
+    unit"* cost one request per symbol for the life of the install rather than
+    one per cycle: the back-off in front of the pass, the memory of a Yahoo that
+    named nothing, and — the one at work here — a learnt unit **written to the
+    store**, which is what the next cycle reads instead of asking.
+    """
+    metrics, instrument = _met_with_its_market_shut(store, monkeypatch)
+
+    first = _lateral(metrics)[1]
+    second = _lateral(metrics)[1]
+
+    assert instrument.reads == 1
+    assert first.skipped == runtime_state.SKIP_UNIT_LEARNT
+    # And the cycle after it is the ordinary steady state, which is the honest
+    # reading: there is nothing left to repair *and* the unit is known.
+    assert second.skipped == runtime_state.SKIP_NOTHING_TO_REPAIR
+
+
+def test_a_unit_yahoo_names_none_for_is_not_re_asked_every_cycle_either(
+        store, monkeypatch):
+    """The second half of the same guard, on the branch with **no span at all**.
+
+    Without the memory of a reply that named nothing, a symbol Yahoo says nothing
+    about and whose points are all converted would put the question again on
+    every cycle for ever — the pass having, this time, no span whose repair could
+    ever take it back out of the trigger. ``no_quote_currency`` keeps its
+    subject: a reply, durable, and never a failure.
+    """
+    metrics, instrument = _met_with_its_market_shut(store, monkeypatch, info={})
+
+    records = [_lateral(metrics)[1] for _ in range(3)]
+
+    assert instrument.reads == 1
+    assert {record.skipped for record in records} == \
+        {runtime_state.SKIP_NO_QUOTE_CURRENCY}
+    assert all(record.failed is False for record in records)
+    assert quotes.quote_currency(store, 'AAPL') is None
+
+
+def test_a_failed_request_for_a_unit_alone_backs_off_and_concludes_nothing(
+        store, monkeypatch):
+    """A request that did not complete taught nothing, span or no span.
+
+    #704's rule, on the branch #825 opens: the back-off is honoured, no terminal
+    is armed — no pair was named, let alone refused — and the error names the one
+    thing that could not be established rather than claiming a number of points
+    it could not convert, there being none.
+    """
+    metrics, instrument = _met_with_its_market_shut(store, monkeypatch)
+    instrument._raises = RuntimeError('yahoo is down')
+
+    at = datetime.now(UTC)
+    written, record = _lateral(metrics)
+
+    assert written == 0
+    assert record.failed is True and record.failures == 1
+    assert record.terminal is None
+    assert record.window is None
+    assert record.error == \
+        'the currency AAPL is quoted in could not be established'
+    assert (metrics._lateral_retry_at['AAPL'] - at).total_seconds() \
+        == pytest.approx(scheduling.backoff_delay(metrics.regular_interval, 1),
+                         abs=2)
+    # A failure is not a reply: the symbol is asked again once the back-off has
+    # run out, and for ever.
+    metrics._lateral_retry_at.clear()
+    _lateral(metrics)
+    assert instrument.reads == 2

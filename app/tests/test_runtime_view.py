@@ -622,6 +622,29 @@ def test_a_symbol_never_quoted_can_say_so_durably():
     assert progress.state == runtime_state.SKIP_NO_QUOTE_CURRENCY
 
 
+def test_a_pass_that_learnt_a_unit_is_not_a_pass_that_found_no_work():
+    """The two verdicts say opposite things about the same cycle (issue #825).
+
+    ``unit_learnt`` is the pass that gave a symbol its unit and had nothing else
+    to do — the one cycle that turns a line from carried at cost into quoted —
+    while ``nothing_to_repair`` is the steady state that follows it for ever
+    after. Folded into one word, the cycle that repaired the portfolio would be
+    unreadable among the hundreds that did nothing.
+    """
+    progress = runtime_view.backfill_progress(
+        _lateral(skipped=runtime_state.SKIP_UNIT_LEARNT),
+        runtime_state.LATERAL, NOW)
+
+    assert progress.state == runtime_state.SKIP_UNIT_LEARNT
+    # A verdict, not a fault: no error to publish, and nothing for the owner to
+    # act on — so it never reaches the errors list nor the attention set.
+    assert progress.error is None and progress.reason is None
+    body = _health(backfill={('AAPL', runtime_state.LATERAL): _lateral(
+        skipped=runtime_state.SKIP_UNIT_LEARNT)})
+    assert body['jobs']['backfill']['attention'] == []
+    assert body['jobs']['backfill']['verdict'] != runtime_view.BACKFILL_FAILING
+
+
 def test_a_lateral_fetch_that_failed_is_an_error_like_any_other():
     """The other half of the split: a fetch that did not complete *is* a failure,
     and it belongs where the other two passes publish theirs."""
