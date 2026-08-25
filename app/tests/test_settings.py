@@ -197,3 +197,20 @@ def test_describe_is_the_registry_and_not_a_second_enumeration(store):
     # Never answered, never seeded: the third state survives the round trip.
     assert described['base_currency']['value'] is None
     assert described['base_currency']['stored'] is False
+
+
+def test_the_required_mark_travels_with_the_dial_it_belongs_to(store):
+    """The front reads a mark, never a key (ADR-0035).
+
+    Published like the bounds and the effect, because it is the same kind of
+    thing: part of what a dial *is*. Paired with ``stored`` it is the whole of
+    the first-run predicate — marked required, nothing stored — which is why
+    the two have to arrive together.
+    """
+    described = {row['key']: row for row in settings.describe(store)}
+
+    assert [key for key, row in described.items() if row['required']] == \
+        list(settings_registry.required_keys())
+    assert described['base_currency']['required'] is True
+    assert described['base_currency']['stored'] is False
+    assert described['regular_interval']['required'] is False

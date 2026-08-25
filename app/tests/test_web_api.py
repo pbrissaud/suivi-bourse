@@ -3811,6 +3811,11 @@ def test_the_reporting_currency_is_a_dial_and_its_absence_is_a_state(tmp_path):
     dial = _dials(client)['base_currency']
     assert dial['value'] is None and dial['default'] is None
     assert dial['stored'] is False
+    # And it is published as *required* rather than recognised by its key: the
+    # first run reads the mark, so a second required dial is a registry line
+    # and not a second predicate (ADR-0035).
+    assert dial['required'] is True
+    assert _dials(client)['regular_interval']['required'] is False
 
     assert client.put('/api/settings',
                       json={'base_currency': 'eur'}).status_code == 200

@@ -164,8 +164,14 @@ on.
 ### The dials — the store is the only source
 
 No dial requires a restart. `settings_registry.py` is the single list (key, type,
-default, bounds, effect); `PUT /api/settings` is the only writer, validates the
-whole body and **writes nothing at all** when it refuses.
+default, bounds, effect, **required**); `PUT /api/settings` is the only writer,
+validates the whole body and **writes nothing at all** when it refuses.
+
+`required` is the first run's predicate, published with the rest of what a dial
+is: *a required dial with nothing stored is a question nobody has answered*
+(ADR-0035). `base_currency` wears it alone today — it is the one dial with no
+default — and the front reads the mark rather than the key, so a second required
+dial is a line in this list and nothing else.
 
 | Dial | Default | Bounds | Effect |
 |---|---|---|---|
