@@ -24,7 +24,6 @@ import { DEFAULT_ACCOUNT_ID } from '@/lib/accounts'
 import { accountPath, ROUTES, type LedgerEvent } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
-  aFileAccount,
   aLedgerPayload,
   anAccount,
   anAccountsPayload,
@@ -80,15 +79,14 @@ describe('the same form as the ledger, not a second one', () => {
     }
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
 
-    // `Beta` came from a file: what a file declared is corrected in the file, so
-    // its name is text — and the sentence beside it says so, because an
-    // affordance that is absent names its reason.
+    // **Every** account's name is the affordance, since ADR-0034: one was text
+    // rather than a button while a file could declare a row the app must not
+    // correct, and there is no such row any more.
     await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
     const beta = await detail('Beta')
-    expect(within(beta).queryByRole('button', { name: 'Beta' })).not.toBeInTheDocument()
-    expect(beta).toHaveTextContent(/Déclaré par un fichier importé/)
+    expect(within(beta).getByRole('button', { name: 'Beta' })).toBeInTheDocument()
 
-    // `Gamma` was declared here: its name opens the panel.
+    // `Gamma` was declared here too: its name opens the panel.
     const panel = await openPanel(user, 'Gamma')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
     expect(within(panel).getByLabelText('Type')).toHaveValue('CTO')
@@ -171,17 +169,19 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     )
   })
 
-  it('names a file’s own repair, which is not the same one', async () => {
+  it('offers the panel on every account, a file declaring none of them', async () => {
+    // What ADR-0034 takes off this page. `Beta` had no panel at all — a file
+    // declared it, and what a file declared was corrected in the file — so the
+    // refusal was the absence of the affordance. No file declares an account
+    // now, so the row that could not be edited has stopped existing.
     const { user } = renderAccounts()
-    // `Beta` is declared by a file, so its name is not a button — the panel is
-    // not reachable at all, and the refusal is the absence of the affordance.
-    await user.click(within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole(
-      'link',
-      { name: /Beta/ },
-    ))
-    const beta = await detail('Beta')
-    expect(within(beta).queryByRole('button', { name: 'Beta' })).not.toBeInTheDocument()
-    expect(beta).toHaveTextContent(/corrigez le fichier et redéposez-le, ou oubliez son import/)
+    const panel = await openPanel(user, 'Beta')
+
+    expect(within(panel).getByRole('region', { name: 'Supprimer ce compte' })).toHaveTextContent(
+      /Rien ne nomme ce compte/,
+    )
+    // And no refusal names a file: none of them can any more.
+    expect(panel).not.toHaveTextContent(/oubliez/)
   })
 
   it('offers it on an account declared here that nothing names', async () => {
@@ -196,7 +196,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
         HttpResponse.json(
           anAccountsPayload([
             anAccount({ id: 'alpha', label: 'Alpha' }),
-            aFileAccount({ id: 'beta', label: 'Beta' }),
+            anAccount({ id: 'beta', label: 'Beta' }),
           ]),
         ),
       ),

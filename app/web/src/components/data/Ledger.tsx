@@ -255,7 +255,6 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
         <ImportsBlock
           upload={upload}
           events={all}
-          accounts={accounts.data ?? null}
           // The chips, at the instant the menu is clicked (#796). They live
           // here because they reduce the table, and the export's third entry is
           // the same reduction asked of the store — which is why what travels

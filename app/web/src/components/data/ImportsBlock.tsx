@@ -23,7 +23,8 @@
  *
  * Two things about what is left are still decisions:
  *
- *  - **The export is four files and one of them is the reduction** (#796). It
+ *  - **The export is three files and one of them is the reduction** (#796,
+ *    ADR-0034). It
  *    was *total or nothing* until that ticket, on the argument that a partial
  *    file is not a round trip and makes re-importing look like a restore. What
  *    settles it is the **name**: the server calls a reduction a selection and
@@ -36,7 +37,7 @@
  */
 import { ExportMenu } from '@/components/data/ExportMenu'
 import { UploadZone, type EventUpload } from '@/components/data/UploadZone'
-import type { AccountsResponse, LedgerEvent } from '@/lib/api'
+import type { LedgerEvent } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { exportable } from '@/lib/imports'
 import type { LedgerFilters } from '@/lib/ledger'
@@ -51,13 +52,6 @@ export interface ImportsBlockProps {
   /** The ledger this tab has already read: what there is to hand back. */
   events: readonly LedgerEvent[]
   /**
-   * The declaration. **A needed read, `null` while it has not landed**
-   * (ADR-0026) — it decides whether the accounts file has any row in it, and
-   * read as *nothing is declared* the band would offer a file that is a header
-   * and nothing else.
-   */
-  accounts: AccountsResponse | null
-  /**
    * The reduction the table holds, and how many rows it retains (#796) — what
    * the *filtered selection* entry of the menu exports. It comes down from the
    * tab rather than being read here: the chips are the ledger's, and this band
@@ -67,22 +61,15 @@ export interface ImportsBlockProps {
   selected: number
 }
 
-export function ImportsBlock({
-  upload,
-  events,
-  accounts,
-  selection,
-  selected,
-}: ImportsBlockProps) {
+export function ImportsBlock({ upload, events, selection, selected }: ImportsBlockProps) {
   const { t } = useI18n()
 
-  const files = exportable(events, accounts)
+  const files = exportable(events)
 
   // Nothing to hand over to and nothing to hand back: the block does not exist
-  // (#724). A read in flight takes the same road, which is the one road that
-  // claims nothing — `exportable` answers *no accounts file* on a declaration
-  // that has not landed.
-  if (events.length === 0 && !files.events && !files.accounts) return null
+  // (#724). One question and no longer two since ADR-0034 — there is no
+  // accounts file to weigh, so what there is to export is what the ledger holds.
+  if (events.length === 0 && !files.events) return null
 
   return (
     <section
@@ -103,7 +90,7 @@ export function ImportsBlock({
           equal weight, one line below this band. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         {events.length > 0 ? <UploadZone upload={upload} /> : null}
-        {files.events || files.accounts ? (
+        {files.events ? (
           <ExportMenu files={files} selection={selection} selected={selected} />
         ) : null}
       </div>

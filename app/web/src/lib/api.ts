@@ -65,10 +65,11 @@ export const ROUTES = {
    */
   eventsImport: '/api/events/import',
   /**
-   * The ledger back out, in the format it came in by (#710) — **two files**,
-   * because a file is an accounts source *or* an event source according to its
-   * header and never both. Exporting the events alone would restore a
-   * multi-account install into a refusal.
+   * The ledger back out, in the format it came in by (#710) — **the events, and
+   * only them** (ADR-0034). There was a second file, the declaration, because a
+   * round trip needed both; no accounts file is read back in any more, so one
+   * that left would look like half a restore without being one. The accounts
+   * are redeclared in the app, which is the only place they are ever declared.
    *
    * The events resource takes the ledger's own reduction on its query string
    * since #796 (`q`, `type`, `account`, repeated `symbol`), and answers it in
@@ -79,7 +80,6 @@ export const ROUTES = {
    */
   exportEvents: '/api/export/events.csv',
   exportEventsWorkbook: '/api/export/events.xlsx',
-  exportAccounts: '/api/export/accounts.csv',
   /** What this install is configured with: the dials and the boot variables. */
   config: '/api/config',
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
@@ -142,7 +142,7 @@ export const WRITE_ONLY_ROUTES = [
   'accountReassignment',
   'advisoryAcknowledgement',
   'storeOrphans',
-  // The three exports are in here for what they are, not for who fetches them:
+  // The two exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
   // — the receipt has to last as long as the operation, and an `href` the
@@ -151,7 +151,6 @@ export const WRITE_ONLY_ROUTES = [
   // anything to say about.
   'exportEvents',
   'exportEventsWorkbook',
-  'exportAccounts',
 ] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */
@@ -306,12 +305,13 @@ async function upload<T>(path: string, file: File, params: string[] = []): Promi
 }
 
 /**
- * The four files a reader can ask for (#796), named so a receipt can say which
- * one is being made. They are names of *files*, not of routes: two of them are
- * the same resource under two reductions, and one is that resource in the other
- * shape.
+ * The three files a reader can ask for (#796, ADR-0034), named so a receipt can
+ * say which one is being made. They are names of *files*, not of routes: all
+ * three are one resource — two reductions of it, and one of those in the other
+ * shape. There was a fourth, the declaration, and it left with the accounts
+ * file it was half of.
  */
-export const EXPORT_FILES = ['events', 'workbook', 'selection', 'accounts'] as const
+export const EXPORT_FILES = ['events', 'workbook', 'selection'] as const
 
 export type ExportFile = (typeof EXPORT_FILES)[number]
 
@@ -385,14 +385,6 @@ export interface Account {
   label: string | null
   /** Same clause, same row: `default`'s seeded type is the catalogue's too. */
   type: string | null
-  /**
-   * The declaration's provenance — the import that carried it, `null` for one
-   * created in the app (#698). `editable` is published rather than derived from
-   * it: a rule the front re-implements is a rule that can disagree with the API
-   * enforcing it.
-   */
-  source_id?: number | null
-  editable?: boolean
   /**
    * The account's **newest** `account_metrics` row, ridden on this resource
    * rather than on a second one — one accounts resource with two consumers, the

@@ -153,11 +153,6 @@ export function AccountDetail({
   const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
   const type = declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
   const reason = degradedReason(row, rebuilding)
-  // What a file declared is corrected in the file, never in the app (ADR-0020's
-  // rule, one table over). `editable` is published rather than derived: a rule
-  // the front re-implements is a rule that can disagree with the API enforcing
-  // it.
-  const editable = row.editable !== false
 
   // **Every derivation below is memoised, and against the reads themselves.**
   // The series is some two and a half thousand days long and the ledger is the
@@ -219,17 +214,13 @@ export function AccountDetail({
     <section aria-labelledby={heading} className="space-y-6">
       <header className="space-y-1">
         {/* The name **is** the affordance, which is the ledger's own rule read
-            one table over: a button exactly where the row may be edited, and
-            plain text where a file declared it and only the file can correct
-            it. A column of identical pencils discriminates nothing. */}
+            one table over: a button exactly where the row may be edited. Every
+            row may be, since ADR-0034 — an account is born in the app, so there
+            is no second population for a plain-text name to have meant. */}
         <h2 id={heading} className="text-xl font-semibold tracking-tight">
-          {editable ? (
-            <button type="button" className="underline-offset-4 hover:underline" onClick={onEdit}>
-              {name}
-            </button>
-          ) : (
-            name
-          )}
+          <button type="button" className="underline-offset-4 hover:underline" onClick={onEdit}>
+            {name}
+          </button>
         </h2>
         <p className="text-sm text-muted-foreground">{type}</p>
         {/* The id is what every event names and what a file's `account` column
@@ -241,16 +232,6 @@ export function AccountDetail({
             full. */}
         {name === row.id || type === row.id ? null : (
           <p className="font-mono text-xs text-muted-foreground">{row.id}</p>
-        )}
-        {/* **An affordance that is absent names its reason**, which is the rule
-            the removal has generalised twice already: the name above is plain
-            text here and nothing says why, so the sentence does. It carries the
-            repair too — the file is corrected and dropped again, or its import
-            is forgotten — because *read-only* on its own is a dead end. */}
-        {editable ? null : (
-          <p className="max-w-prose text-sm text-muted-foreground">
-            {t('accounts.detail.fromFile')}
-          </p>
         )}
         {/* The reason a detail has no figures — a **reason**, never a progress
             with a target date, which stays on the banner. */}
