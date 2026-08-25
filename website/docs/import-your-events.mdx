@@ -242,15 +242,14 @@ Your portfolio can leave the way it came in. **The export format is the import
 format**, so the round trip is round by construction: what comes out is a file
 this same app reads, with no conversion and no special path.
 
-In the app, the export menu is beside the upload zone, and it offers four files:
-every event, the same events as a **workbook with one sheet per year**, the
-**selection your filters hold** at the moment you click, and your accounts.
-Away from the page, they are requests:
+In the app, the export menu is beside the upload zone, and it offers three
+files: every event, the same events as a **workbook with one sheet per year**,
+and the **selection your filters hold** at the moment you click. Away from the
+page, they are requests:
 
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
 curl -O http://localhost:8080/api/export/events.xlsx
-curl -O http://localhost:8080/api/export/accounts.csv
 
 # The selection, by the same names the filters on the page carry.
 # `symbol` may be repeated; anything left out is simply not narrowed.
@@ -278,14 +277,12 @@ The workbook is importable too — the app reads every sheet of it. The plain
 significant digit fewer than a text file does: a broker's `0.34898399999999996`
 comes back exactly from a CSV and as `0.348984` from a workbook.
 
-The accounts file is offered only once you have declared something: on an
-install that has not, it would be a header row with no rows under it, and a
-version 4 install refuses a whole directory over one.
-
-**Only `events.csv` belongs in a version 4 directory.** Version 4 has no accounts
-file and refuses a whole directory over a header it does not recognise, so
-`accounts.csv` sitting beside the events there refuses the portfolio rather than
-itself — see [Going back](./coming-from-v4.mdx#going-back).
+**Your accounts do not leave in a file, and that is deliberate.** They are
+declared in the app and nowhere else, so nothing reads an accounts file back in
+— and a file nothing restores from is worse than no file at all, because it
+sits in your backup looking like half a round trip. Redeclare your accounts in
+the app on the far side, with the same ids the `account` column names; the
+events file carries those ids on every row.
 
 It is an HTTP route rather than a button only, for the reason every write path
 in this app is: the page is one client of the API and never a privileged one.
