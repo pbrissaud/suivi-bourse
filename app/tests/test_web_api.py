@@ -22,8 +22,8 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import accounts as accounts_module
-import installation_facts
 import entries
+import installation_facts
 import ledger
 import main
 import perf_series
