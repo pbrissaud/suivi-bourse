@@ -496,11 +496,12 @@ class Timeline:
 class Account:
     """A declared account — a row of the store's ``account`` table (issue #698).
 
-    Declared by a **file** in the events' format, or from the app; never by a
-    settings block, which is the inheritance ADR-0013 corrects. ``source_id`` is
-    where it came from: the import that carried it, or ``NULL`` for one created
-    in the app — which is also what makes it editable, since what came from a
-    file is read-only and revoked with its import.
+    Declared **in the app**, and nowhere else (ADR-0034); never by a settings
+    block, which is the inheritance ADR-0013 corrects. There is no provenance on
+    it and that is the decision: an account was once declared by a file too, with
+    the import that carried it recorded in a ``source_id`` — the column made the
+    row read-only, and it left with the file it described. A declared account is
+    a declared account.
 
     **There is no ``currency`` field** (issue #702, ADR-0002). It was kept as an
     always-``None`` placeholder while the v4 currency machinery was still in
@@ -513,12 +514,6 @@ class Account:
     id: str
     type: str
     label: str = ''
-    source_id: Optional[int] = None
-
-    @property
-    def editable(self) -> bool:
-        """Can the app change this account? Only if no file provisioned it."""
-        return self.source_id is None
 
 
 @dataclass

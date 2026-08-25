@@ -80,20 +80,11 @@ class StoreUnavailable(Exception):
 # pure module. A Sydney close therefore lands on the previous UTC day, which is
 # an accepted consequence rather than an oversight.
 
-# ``account.source_id`` is a **residue** (ADR-0032, issue #816). It said which
-# accounts file had declared a row, back when a mounted folder was re-read; the
-# folder is gone, no accounts file is imported any more, and the column is on
-# its way out with the rest of the accounts' provenance (issue #817). It carries
-# no foreign key and never did, for a reason that is measured rather than
-# stylistic (issue #698): DuckDB executes an ``UPDATE`` that touches a column
-# participating in a foreign key as a delete followed by an insert, and the
-# delete then trips the *incoming* ``event.account → account(id)`` key.
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
     type       VARCHAR NOT NULL,                    -- PEA | CTO | …
-    label      VARCHAR NOT NULL,
-    source_id  INTEGER);                            -- NULL = created in the UI
+    label      VARCHAR NOT NULL);
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
 
@@ -230,7 +221,7 @@ TABLES = (
 #: rest of the code: seeding ``Compte par défaut`` — as spec #695 first wrote it
 #: — put a French noun in the English interface, the exact fault ADR-0024 exists
 #: against.
-DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account', None)
+DEFAULT_ACCOUNT_ROW = ('default', 'OTHER', 'Default account')
 
 
 class Store:
@@ -529,7 +520,7 @@ def prepare(connection: 'duckdb.DuckDBPyConnection') -> bool:
 
     if is_new:
         connection.execute(
-            'INSERT INTO account (id, type, label, source_id) VALUES (?, ?, ?, ?)',
+            'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
             list(DEFAULT_ACCOUNT_ROW))
 
     for key, value in settings_registry.seeded_defaults().items():

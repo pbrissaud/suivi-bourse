@@ -22,13 +22,9 @@ design merely tolerated. The cascade is refused, never performed.
 **Not in this module**: the event rows, which are :mod:`entries`' — the one
 writer of them since #816. This module owns the ``account`` table alone, one
 writer per row, as the schema's generating rule requires.
-
-``account.source_id`` is an inert residue on a store that predates ADR-0032 and
-leaves with the rest of the accounts' provenance at #817; nothing writes it any
-more except the seed, which writes ``NULL``.
 """
 import csv
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set
 
@@ -70,9 +66,9 @@ CSV_ENCODING = 'utf-8-sig'
 
 
 class AccountSourceError(Exception):
-    """The accounts file cannot be read, or what it declares cannot stand.
+    """What is being declared cannot stand: no id, or no type.
 
-    Raised **before** anything is written, so a refused accounts file leaves the
+    Raised **before** anything is written, so a refused declaration leaves the
     store exactly as it was — the same all-or-nothing contract an event file
     gets.
     """
@@ -82,9 +78,8 @@ class AccountInUse(Exception):
     """The account cannot go: an event names it.
 
     The one refusal ADR-0013 turns into a construction rather than a
-    convention. It answers both gestures that could orphan an event — deleting
-    the account, and forgetting the import that declared it — so the cascade is
-    *refused*, never performed.
+    convention, and the half of that record ADR-0034 leaves standing: the
+    cascade is *refused*, never performed.
     """
 
 
@@ -96,43 +91,8 @@ class DuplicateAccount(Exception):
     """That id is taken. Two accounts with one id is what the PK forbids."""
 
 
-class ReadOnlyAccount(Exception):
-    """The account came from a file, so the app does not edit it.
-
-    What came from a file is read-only and revoked by forgetting its import;
-    what was created in the app is editable (issue #698). Editing a
-    file-provisioned row in place would put the store and the file in
-    disagreement with no way to tell which one is meant.
-    """
-
-
-@dataclass(frozen=True)
-class AccountRow:
-    """One row of an accounts file, with the position that names it in an error.
-
-    ``sheet``/``row`` are the same displayable provenance an event carries
-    (issue #697) — here they only ever reach an error message, because the
-    ``account`` table has no room for them and an account is one row, not a
-    line in a ledger.
-    """
-    id: str
-    type: str
-    label: str
-    sheet: Optional[str] = None
-    row: Optional[int] = None
-
-    def where(self) -> str:
-        """*"row 3"* / *"sheet Comptes, row 3"* — for the refusal message."""
-        parts = []
-        if self.sheet:
-            parts.append(f"sheet {self.sheet}")
-        if self.row is not None:
-            parts.append(f"row {self.row}")
-        return ", ".join(parts) or "?"
-
-
 # --------------------------------------------------------------------------- #
-# Reading the file
+# Reading a header — all that is left of the file
 # --------------------------------------------------------------------------- #
 
 def is_accounts_file(path: Path) -> bool:
@@ -169,56 +129,6 @@ def header_of(path: Path) -> Set[str]:
     return set()
 
 
-def load_account_rows(path: Path) -> List[AccountRow]:
-    """Every account the file declares, in file order.
-
-    Raises:
-        AccountSourceError: the file cannot be read, lacks ``id``/``type``, or
-            carries a row that is not a declarable account.
-    """
-    path = Path(path)
-    suffix = path.suffix.lower()
-    if suffix == '.csv':
-        return _load_csv(path)
-    if suffix == '.xlsx':
-        return _load_xlsx(path)
-    raise AccountSourceError(f"Unsupported accounts file format: {suffix}")
-
-
-def _load_csv(path: Path) -> List[AccountRow]:
-    try:
-        with open(path, 'r', encoding=CSV_ENCODING) as handle:
-            reader = csv.DictReader(handle)
-            if not reader.fieldnames:
-                raise AccountSourceError(f"Empty accounts file: {path.name}")
-            _require_columns(_normalised(reader.fieldnames), path.name)
-            # start=2: row 1 is the header, so the number in a refusal is the
-            # one the user's editor shows them.
-            return [
-                _row_from(dict(_lower_keys(raw)), path.name, number)
-                for number, raw in enumerate(reader, start=2)
-                if any((value or '').strip() for value in raw.values())
-            ]
-    except OSError as exc:
-        raise AccountSourceError(f"Cannot read {path.name}: {exc}") from exc
-
-
-def _load_xlsx(path: Path) -> List[AccountRow]:
-    rows: List[AccountRow] = []
-    for title, values in _xlsx_sheets(path):
-        if not values:
-            continue
-        header = [str(cell).lower().strip() if cell is not None else ''
-                  for cell in values[0]]
-        _require_columns(set(header), f"{path.name}/{title}")
-        for number, line in enumerate(values[1:], start=2):
-            if not any(cell is not None and str(cell).strip() for cell in line):
-                continue
-            raw = {key: value for key, value in zip(header, line)}
-            rows.append(_row_from(raw, path.name, number, sheet=title))
-    return rows
-
-
 def _open_workbook(path: Path):
     try:
         import openpyxl
@@ -241,50 +151,6 @@ def _xlsx_first_row(path: Path) -> Sequence:
         workbook.close()
 
 
-def _xlsx_sheets(path: Path) -> List[tuple]:
-    """``[(sheet title, [row, …]), …]`` — the workbook, values only."""
-    workbook = _open_workbook(path)
-    try:
-        return [(sheet.title, list(sheet.iter_rows(values_only=True)))
-                for sheet in workbook.worksheets]
-    finally:
-        workbook.close()
-
-
-def _require_columns(header: Set[str], where: str) -> None:
-    missing = sorted(REQUIRED_ACCOUNT_COLUMNS - header)
-    if missing:
-        raise AccountSourceError(
-            f"Missing required column(s) {missing} in {where}; an accounts "
-            f"file has the columns {list(ACCOUNT_COLUMNS)}")
-
-
-def _lower_keys(raw: dict):
-    return ((str(key).lower().strip() if key else '', value)
-            for key, value in raw.items())
-
-
-def _row_from(raw: dict, filename: str, number: int,
-              sheet: Optional[str] = None) -> AccountRow:
-    account_id = _text(raw.get('id'))
-    account_type = _text(raw.get('type'))
-    label = _text(raw.get('label'))
-    where = f"sheet {sheet}, row {number}" if sheet else f"row {number}"
-
-    if not account_id:
-        raise AccountSourceError(f"{filename} ({where}): id is required")
-    if not account_type:
-        raise AccountSourceError(
-            f"{filename} ({where}): type is required for account "
-            f"{account_id!r}")
-
-    # The label falls back to the id rather than to the empty string: the
-    # column is `NOT NULL`, and a row that cannot decline to name itself is
-    # what makes the interface's account list readable without a second lookup.
-    return AccountRow(id=account_id, type=account_type,
-                      label=label or account_id, sheet=sheet, row=number)
-
-
 def _text(value) -> str:
     if value is None:
         return ''
@@ -302,9 +168,8 @@ def _normalised(names: Iterable) -> Set[str]:
 def read_accounts(store) -> List[Account]:
     """Every row of ``account``, id-sorted. ``default`` is always among them."""
     rows = store.query(
-        'SELECT id, type, label, source_id FROM account ORDER BY id')
-    return [Account(id=r[0], type=r[1], label=r[2], source_id=r[3])
-            for r in rows]
+        'SELECT id, type, label FROM account ORDER BY id')
+    return [Account(id=r[0], type=r[1], label=r[2]) for r in rows]
 
 
 def account_ids(store) -> Set[str]:
@@ -335,13 +200,16 @@ def default_is_declared(store) -> bool:
 
     The companion of :func:`accounts_are_declared`, and it is a different
     question: that one counts rows *beside* ``default``, this one asks whether
-    ``default`` itself has stopped being what the schema seeded. Three roads
+    ``default`` itself has stopped being what the schema seeded. Two roads
     reach that, and each of them is a declaration —
 
-    * its owner **renamed** it, which is how an install with a page and no file
-      declares its one account (the gesture #729 built the block for at N = 1);
-    * its owner **retyped** it, the same clause on the other seeded column;
-    * a **file** took it over (#698), which makes it a file's row like any other.
+    * its owner **renamed** it, which is how an install declares its one account
+      (the gesture #729 built the block for at N = 1);
+    * its owner **retyped** it, the same clause on the other seeded column.
+
+    There was a third — a **file** taking the row over (#698) — and it left with
+    the accounts file itself (ADR-0034): an account is born in the app, so the
+    only hand that can have touched this row is its owner's.
 
     It exists for the reassignment alone. *Events naming ``default``* and
     *events nobody assigned* are the same set only while nobody has declared
@@ -359,8 +227,6 @@ def default_is_declared(store) -> bool:
     row = next((a for a in read_accounts(store) if a.id == DEFAULT_ACCOUNT), None)
     if row is None:
         return False
-    if row.source_id is not None:
-        return True
     declared = as_declared(row)
     return declared.label is not None or declared.type is not None
 
@@ -415,7 +281,7 @@ def as_declared(account: Account) -> Account:
     """
     if account.id != DEFAULT_ACCOUNT:
         return account
-    _, seeded_type, seeded_label, _ = store_module.DEFAULT_ACCOUNT_ROW
+    _, seeded_type, seeded_label = store_module.DEFAULT_ACCOUNT_ROW
     return replace(
         account,
         label=None if account.label == seeded_label else account.label,
@@ -430,80 +296,18 @@ def is_named_by_events(store, account_id: str) -> bool:
     return bool(rows and rows[0][0])
 
 
-def source_account_ids(store, source_id: int) -> List[str]:
-    """The ids an import declared, id-sorted."""
-    return [row[0] for row in store.query(
-        'SELECT id FROM account WHERE source_id = ? ORDER BY id', [source_id])]
-
-
-# --------------------------------------------------------------------------- #
-# Writing the table — the file's half
-# --------------------------------------------------------------------------- #
-
-def forget_source(store, source_id: int) -> List[str]:
-    """Drop the accounts an import declared. Returns the ids it removed.
-
-    Raises:
-        AccountInUse: an event names one of them. **Cascade forgetting is
-            refused**, never performed: the alternative is an event pointing at
-            an account that no longer exists, which is the orphan the whole
-            design exists to make unrepresentable.
-    """
-    retired = source_account_ids(store, source_id)
-    _retire(store, retired)
-    return retired
-
-
-def _retire(store, ids: Iterable[str]) -> None:
-    """Remove accounts a source no longer declares — unless an event names one.
-
-    **Every refusal is decided before the first deletion**, and that ordering is
-    the whole correctness of the function: it may be called outside a
-    transaction, so raising halfway through the loop would commit the deletions
-    already made and refuse the gesture — a state that is both refused and
-    partly applied. Checking first makes the refusal all-or-nothing without a
-    transaction to lean on.
-
-    ``default`` is never removed and never refused. It is the row every install
-    has (ADR-0013: *there is always at least one account*), so a file that
-    declared it hands it back rather than taking it away — and it hands back the
-    **whole** row: ``type`` and ``label`` return to what the seed wrote, not to
-    the file's own pair. Dropping the ownership alone would leave the install
-    with an account nobody declares still wearing the name a forgotten file gave
-    it, editable in the app and impossible to explain from anything the store
-    still holds.
-    """
-    retiring = list(ids)
-
-    removable = [i for i in retiring if i != DEFAULT_ACCOUNT]
-    named = [i for i in removable if is_named_by_events(store, i)]
-    if named:
-        raise AccountInUse(
-            f"Account(s) {', '.join(repr(i) for i in sorted(named))} cannot be "
-            f"removed while an event names it; forget those events first")
-
-    for account_id in retiring:
-        if account_id == DEFAULT_ACCOUNT:
-            _, seeded_type, seeded_label, _ = store_module.DEFAULT_ACCOUNT_ROW
-            store.execute(
-                'UPDATE account SET type = ?, label = ?, source_id = NULL '
-                'WHERE id = ?', [seeded_type, seeded_label, DEFAULT_ACCOUNT])
-            continue
-        perf_series.forget_account(store, account_id)
-        store.execute('DELETE FROM account WHERE id = ?', [account_id])
-
-
 # --------------------------------------------------------------------------- #
 # Writing the table — the app's half
 # --------------------------------------------------------------------------- #
 
 def create_account(store, account_id: str, account_type: str,
                    label: Optional[str] = None) -> Account:
-    """Declare an account from the app. ``source_id`` stays ``NULL``.
+    """Declare an account. The app is where one is born, and the only place.
 
-    ``NULL`` is what "created in the UI" *is* (spec #695 § 6), and it is the
-    same column that makes the row editable: what came from a file is read-only
-    and revoked with its import, what was created here is neither.
+    There is no second population of rows to tell this one from (ADR-0034): a
+    declared account is a declared account, and how it was declared is not a
+    property of it — the move :mod:`entries` makes for events, arriving here for
+    the same reason.
     """
     account_id = _text(account_id)
     account_type = _text(account_type)
@@ -515,8 +319,7 @@ def create_account(store, account_id: str, account_type: str,
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
     store.execute(
-        'INSERT INTO account (id, type, label, source_id) '
-        'VALUES (?, ?, ?, NULL)',
+        'INSERT INTO account (id, type, label) VALUES (?, ?, ?)',
         [account_id, account_type, _text(label) or account_id])
     logger.info(f"Declared account {account_id}")
     return Account(id=account_id, type=account_type,
@@ -528,15 +331,10 @@ def update_account(store, account_id: str, *, account_type: Optional[str] = None
     """Relabel or retype an account created in the app.
 
     The id is not among what can change: it is the value events name, so
-    changing it would be renaming every event that names it — which is an edit
-    of imported rows, and imported rows are read-only.
+    changing it would be renaming every event that names it — and an event is
+    addressed by its own key, never by a column somebody else may rewrite.
     """
     current = _require(store, account_id)
-    if current.source_id is not None:
-        raise ReadOnlyAccount(
-            f"Account {account_id!r} came from a file and is read-only; "
-            f"correct the file and drop it again, or forget its import")
-
     new_type = _text(account_type) or current.type
     new_label = _text(label) or current.label
     store.execute('UPDATE account SET type = ?, label = ? WHERE id = ?',
@@ -545,19 +343,14 @@ def update_account(store, account_id: str, *, account_type: Optional[str] = None
 
 
 def delete_account(store, account_id: str) -> None:
-    """Remove an account created in the app.
+    """Remove an account.
 
-    Three refusals, **in this order**: the ``default`` row (there is always at
-    least one account), any account an event names (ADR-0013), and a row a file
-    declared (forget the import instead).
-
-    The middle one comes before the last on purpose. Both apply to a
-    file-provisioned account an event names, and only one of them is actionable:
-    *"forget its import"* is advice that would fail too, because forgetting is
-    refused in cascade for exactly the same reason. Naming the event is what
-    tells the user the gesture they actually have to make first.
+    Two refusals, **in this order**: the ``default`` row (there is always at
+    least one account), and any account an event names (ADR-0013 — the cascade
+    is refused, never performed). A third stood here while a file could declare
+    a row and be forgotten; the file is gone (ADR-0034) and the refusal with it.
     """
-    current = _require(store, account_id)
+    _require(store, account_id)
     if account_id == DEFAULT_ACCOUNT:
         raise AccountInUse(
             "The default account is the one every install has, and it cannot "
@@ -566,10 +359,6 @@ def delete_account(store, account_id: str) -> None:
         raise AccountInUse(
             f"Account {account_id!r} cannot be removed while an event names "
             f"it; forget those events first")
-    if current.source_id is not None:
-        raise ReadOnlyAccount(
-            f"Account {account_id!r} came from a file; forget that import to "
-            f"remove it")
     # The cached figures go with it (issue #700). ``account_metrics.account``
     # references this row, so the perf job's first cycle would otherwise make
     # every declared account undeletable — a constraint error the API renders as
@@ -590,11 +379,11 @@ def _require(store, account_id: str) -> Account:
 
 __all__ = [
     'ACCOUNT_COLUMNS', 'REQUIRED_ACCOUNT_COLUMNS',
-    'AccountRow', 'AccountSourceError', 'AccountInUse', 'UnknownAccount',
-    'DuplicateAccount', 'ReadOnlyAccount',
-    'is_accounts_file', 'header_of', 'load_account_rows',
+    'AccountSourceError', 'AccountInUse', 'UnknownAccount',
+    'DuplicateAccount',
+    'is_accounts_file', 'header_of',
     'read_accounts', 'account_ids', 'accounts_are_declared',
     'default_is_declared', 'declared_portfolio',
-    'is_named_by_events', 'source_account_ids', 'forget_source',
+    'is_named_by_events',
     'create_account', 'update_account', 'delete_account',
 ]
