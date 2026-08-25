@@ -297,8 +297,6 @@
   "data.tab.notices": "The notices",
   "data.tab.installation": "The installation",
   "data.tab.notices.badge": "{count, plural, one {# notice to read} other {# notices to read}}",
-  "data.notices.empty.title": "Nothing to report",
-  "data.notices.empty.body": "This installation has nothing to tell you. When it does — a file this version no longer reads, amounts it had to assume a currency for — it is written here, with the day it was noticed.",
   "data.ledger.label": "Your events",
   "data.ledger.shown": "{shown} of {total} shown",
   "data.ledger.more": "Show more",

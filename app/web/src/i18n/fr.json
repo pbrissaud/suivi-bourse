@@ -297,8 +297,6 @@
   "data.tab.notices": "Les notices",
   "data.tab.installation": "L’installation",
   "data.tab.notices.badge": "{count, plural, one {# notice à lire} other {# notices à lire}}",
-  "data.notices.empty.title": "Rien à signaler",
-  "data.notices.empty.body": "Cette installation n’a rien à vous dire. Quand elle aura quelque chose — un fichier que cette version ne lit plus, des montants dont elle a dû supposer la devise — ce sera écrit ici, avec le jour du constat.",
   "data.ledger.label": "Vos événements",
   "data.ledger.shown": "{shown} sur {total} affichés",
   "data.ledger.more": "Afficher la suite",

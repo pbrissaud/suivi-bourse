@@ -1,18 +1,19 @@
 /**
- * The notices tab (#724, #768, #794, ADR-0021, ADR-0030), at the one seam: the
- * whole app in jsdom, HTTP the only faked edge.
+ * The notices tab (#724, #768, #794, #821, ADR-0021, ADR-0036), at the one
+ * seam: the whole app in jsdom, HTTP the only faked edge.
  *
- * It is **the one place in the product where a block with nothing in it
- * exists**, and every case below turns on why: the status dot *leads*
- * somewhere (ADR-0022), and a destination that came and went with the dot's
- * colour would give one control two addresses. So the tab answers *nothing to
- * report* — and acknowledging the last notice leaves the reader where they are
- * instead of taking the tab out from under them.
+ * It **was** the one place in the product where a block with nothing in it
+ * existed, and the reason was the status dot: a destination that came and went
+ * with the dot's colour would give one control two addresses, so the tab
+ * answered *nothing to report*. The dot does not ask that question — it leads
+ * to the installation tab, where one repairs — so the block is ordinary again
+ * and the first cases below say the ordinary thing: nothing to say, nothing on
+ * screen, the last acknowledgement included.
  *
- * What is **not** reversed is ADR-0026: *nothing to report* is a claim about
- * this installation, and it is never made while the read is in flight. That
- * pairs with the badge, whose three exclusions each have their own reason —
- * the ephemeral store, the orphans and the reconstruction.
+ * What is **not** withdrawn is ADR-0026: a notice is a claim about this
+ * installation, and none is made while the read is in flight. That pairs with
+ * the badge, whose three exclusions each have their own reason — the ephemeral
+ * store, the orphans and the reconstruction.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -37,21 +38,42 @@ function block(name: RegExp | string) {
   return screen.getByRole('region', { name })
 }
 
-describe('the tab exists whether or not there is anything in it', () => {
-  it('says so when there is nothing, rather than disappearing', async () => {
-    await openNotices([])
+/** What the selected tab currently says, in one string. */
+function panelSays() {
+  return screen.getByRole('tabpanel').textContent
+}
 
-    // The product's one permanent empty state, and its reason is the status
-    // dot: a tab that answers *nothing to report* answers exactly the question
-    // the dot asks, and an address that only sometimes exists is not one.
-    expect(await screen.findByText('Rien à signaler')).toBeInTheDocument()
+describe('the block does not exist when it is empty', () => {
+  it('says nothing at all when the installation has nothing to say', async () => {
+    // The wire is what is waited on, and it has to be: a tab whose read has not
+    // landed and a tab whose read came back empty are the **same screen** now,
+    // which is the member ADR-0026 holds on the source rather than through the
+    // net. Waiting for a rendering that never comes would assert nothing.
+    let landed = 0
+    server.use(
+      http.get(ROUTES.installationFacts, () => {
+        landed += 1
+        return HttpResponse.json([])
+      }),
+    )
+    await openNotices()
+    await waitFor(() => expect(landed).toBeGreaterThan(0))
+
+    // *Rien à signaler* is gone with the exception that carried it: the dot
+    // leads to the installation tab and never asked this tab's question, so a
+    // permanent empty state answered nobody.
+    expect(screen.queryByText('Rien à signaler')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Faits d’installation' })).not.toBeInTheDocument()
+    // The tab itself is not the block: it stays where the reader put themselves.
     expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute('aria-selected', 'true')
+    expect(panelSays()).toBe('')
   })
 
-  it('never says it while the read is in flight', async () => {
-    // *A block with nothing in it does not exist* is what is reversed here —
-    // ADR-0026 is not. *Nothing to report* is a claim about this installation,
-    // and a claim is not something a silence licenses.
+  it('renders nothing while the read is in flight, title included', async () => {
+    // ADR-0026 is not what is withdrawn. The default install has a notice
+    // standing, so this screen is silent because the read is hanging and not
+    // because there is nothing — and neither the title nor a frame around an
+    // empty list is written before the answer arrives.
     server.use(http.get(ROUTES.installationFacts, () => new Promise<never>(() => {})))
     await openNotices()
 
@@ -61,13 +83,14 @@ describe('the tab exists whether or not there is anything in it', () => {
         'true',
       ),
     )
-    expect(screen.queryByText('Rien à signaler')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument()
+    expect(panelSays()).toBe('')
   })
 
-  it('names an unreadable store instead of reporting that all is well', async () => {
-    // The notices live in the store, so *there is nothing to tell you* and *the
-    // store cannot be read* must never be the same screen. One band or none.
+  it('names an unreadable store instead of an ordinary silence', async () => {
+    // The notices live in the store, so *this installation has nothing to tell
+    // you* and *the store cannot be read* must never be the same screen — and a
+    // silence is what the first of them now looks like. One band or none.
     server.use(
       problemHandler(ROUTES.installationFacts, {
         status: 503,
@@ -78,10 +101,10 @@ describe('the tab exists whether or not there is anything in it', () => {
     await openNotices()
 
     expect(await screen.findByRole('status')).toHaveTextContent(/magasin/i)
-    expect(screen.queryByText('Rien à signaler')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Faits d’installation' })).not.toBeInTheDocument()
   })
 
-  it('keeps the tab when the last notice is acknowledged', async () => {
+  it('takes the surface away when the last fact is acknowledged', async () => {
     const { user } = await openNotices([anEnvironmentFact()])
     await screen.findByRole('heading', { name: 'Faits d’installation' })
 
@@ -94,10 +117,15 @@ describe('the tab exists whether or not there is anything in it', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Acquitter' }))
 
-    // The alternative loses on its own terms: the tab would vanish under the
-    // reader's cursor at the exact moment they finished with it.
-    expect(await screen.findByText('Rien à signaler')).toBeInTheDocument()
+    // This was the exception's own second argument — the surface vanishing
+    // under the reader at the exact moment they finished with it — and it is
+    // the intended behaviour now: the block goes, the tab stays, and the reader
+    // is left on a tab with nothing on it because there is nothing.
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument(),
+    )
     expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute('aria-selected', 'true')
+    expect(panelSays()).toBe('')
   })
 })
 
@@ -174,7 +202,7 @@ describe('the notices', () => {
 
     // Kept greyed out, the notice of somebody who decided to keep their
     // `config.yaml` for ever would be a permanent fixture of their screen. The
-    // *tab* stays — that is #794's whole clause — and it says what is left.
+    // *tab* stays — a tab is not a block — and the block shows what is left.
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument(),
     )
