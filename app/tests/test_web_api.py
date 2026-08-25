@@ -13,6 +13,7 @@ an ``/api`` 404.
 """
 from datetime import date, datetime, timedelta, timezone
 
+import csv
 import io
 import json
 
@@ -194,6 +195,22 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     return create_app(runtime).test_client(), opened
 
 
+def _declared_rows(path):
+    """The fixture file's ``id,type,label`` rows, read here and nowhere else.
+
+    Reading it is the fixture's own business since ADR-0034: no accounts file
+    enters the app any more, so the parser that used to live in :mod:`accounts`
+    is gone and what a test writes for its own convenience it also reads.
+    """
+    with open(path, newline='', encoding='utf-8') as handle:
+        return [
+            (row['id'].strip(), row['type'].strip(),
+             (row.get('label') or '').strip() or row['id'].strip())
+            for row in csv.DictReader(handle)
+            if (row.get('id') or '').strip()
+        ]
+
+
 def declare_accounts(opened, path):
     """The accounts a fixture wants, declared the way the app declares them.
 
@@ -203,13 +220,13 @@ def declare_accounts(opened, path):
     rather than inserted — which is also the one way an install with a page and
     no file declares its single account.
     """
-    for row in accounts_module.load_account_rows(path):
-        if row.id in accounts_module.account_ids(opened):
+    for account_id, account_type, label in _declared_rows(path):
+        if account_id in accounts_module.account_ids(opened):
             opened.execute(
                 'UPDATE account SET type = ?, label = ? WHERE id = ?',
-                [row.type, row.label, row.id])
+                [account_type, label, account_id])
             continue
-        accounts_module.create_account(opened, row.id, row.type, row.label)
+        accounts_module.create_account(opened, account_id, account_type, label)
 
 
 def write_event_file(opened, path):
@@ -1339,11 +1356,12 @@ def test_accounts_says_undeclared_and_still_serves_the_seeded_row(tmp_path):
     # The row **as a reader must see it**: what nobody declared is `null`, so the
     # interface names it from its own catalogue rather than recognising the
     # seed's English on the far side of HTTP — see the test below, which is where
-    # that rule is guarded. `source_id` NULL, therefore editable, is what makes
-    # the rename an ordinary `PATCH`.
+    # that rule is guarded.
     seeded = payload['accounts'][0]
     assert (seeded['label'], seeded['type']) == (None, None)
-    assert (seeded['source_id'], seeded['editable']) == (None, True)
+    # And nothing says where the row came from: an account is born in the app
+    # (ADR-0034), so the rename is an ordinary `PATCH` with no rule to consult.
+    assert not {'source_id', 'editable'} & set(seeded)
 
 
 def test_renaming_the_seeded_account_is_visible_on_the_resource(tmp_path):
@@ -1396,7 +1414,7 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
         ('default', None, None)]
     # Read off the constant rather than quoted: this assertion has to fail when
     # the seed is reworded, which is the whole reason it exists.
-    _, seeded_type, seeded_label, _ = store.DEFAULT_ACCOUNT_ROW
+    _, seeded_type, seeded_label = store.DEFAULT_ACCOUNT_ROW
     assert (seeded_label, seeded_type) not in [
         (a['label'], a['type']) for a in served]
 
@@ -1416,8 +1434,8 @@ def test_the_seed_never_crosses_the_wire_and_the_owners_name_does(tmp_path):
 def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     """Reading the declaration rather than a DISTINCT on the tag (#652 déc. 4)
     hands over label and type — fields the app writes and zero Grafana panels
-    read. An account is declared in the app and nowhere else (ADR-0034), so it
-    is editable, which is what ``source_id NULL`` has always meant."""
+    read. An account is declared in the app and nowhere else (ADR-0034), so
+    there is nothing beside them saying where the row came from."""
     accounts = (
         "id,type,label\n"
         "pea,PEA,PEA Bourso\n"
@@ -1432,8 +1450,7 @@ def test_accounts_returns_the_declaration_with_its_labels(tmp_path):
     assert payload['declared'] is True
     row = payload['accounts'][0]
     assert (row['id'], row['label'], row['type']) == ('pea', 'PEA Bourso', 'PEA')
-    assert row['source_id'] is None
-    assert row['editable'] is True
+    assert not {'source_id', 'editable'} & set(row)
     # #661 enriched the resource with the newest perf figures. With nothing
     # written yet they are all null and `as_of` says so — a declared account
     # whose first perf cycle has not run is a row with em dashes, not a missing
@@ -1899,6 +1916,29 @@ def test_declaring_the_first_account_reassigns_in_the_same_gesture(tmp_path):
     # by the same request, not by a timer.
     assert [row['account'] for row in client.get('/api/events').get_json()] == [
         'pea'] * 3
+
+
+def test_the_trap_is_reached_from_the_keyboard_and_repaired_there(tmp_path):
+    """The reassignment never had the import for a subject (ADR-0034).
+
+    Its trap — a run of months under the seeded ``default`` row, then a real
+    account — is reached by **typing** events exactly as it was by handing over
+    a file: what puts a row in the population is its ``account`` column, and a
+    typed row leaves that column blank as readily as a file's does. Not one
+    event here comes out of a file, and the gesture answers identically.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    for day in ('2024-01-15', '2024-02-01', '2024-03-01'):
+        assert client.post('/api/events',
+                           json=_draft(date=day)).status_code == 201
+    assert _accounts_named_by_events(opened) == ['default'] * 3
+
+    created = client.post('/api/accounts',
+                          json={'id': 'pea', 'type': 'PEA', 'reassign': True})
+
+    assert created.status_code == 201
+    assert _accounts_named_by_events(opened) == ['pea'] * 3
 
 
 def test_the_declaration_is_never_refused_because_events_are_unassigned(tmp_path):
@@ -2427,24 +2467,22 @@ def test_the_export_is_reachable_over_http(tmp_path):
     opened.close()
 
 
-def test_the_accounts_export_serves_the_declaration(tmp_path):
-    """The other half of a round trip that is round for a multi-account install."""
+def test_there_is_no_accounts_file_to_export(tmp_path):
+    """The export drops its second file, and the route with it (ADR-0034).
+
+    It is the worst of the residues while it stands: nothing reads an accounts
+    file back in since the upload started refusing one, so a
+    ``suivi-bourse-accounts.csv`` filed beside the events **looks** like half of
+    a round trip without being one — its owner keeps it with their backup and
+    believes they can restore from it. A ``404`` is the honest answer, and the
+    accounts are redeclared by hand.
+    """
     client, opened = build_client_and_store(
         tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
 
-    body = client.get('/api/export/accounts.csv').get_data(as_text=True)
-
-    assert body == "id,type,label\npea,PEA,PEA Boursorama\n"
-    opened.close()
-
-
-def test_an_install_that_declared_nothing_exports_a_header_only(tmp_path):
-    """The seeded ``default`` is not a declaration and does not leave (ADR-0013)."""
-    client, opened = build_client_and_store(tmp_path)
-
-    body = client.get('/api/export/accounts.csv').get_data(as_text=True)
-
-    assert body == "id,type,label\n"
+    assert client.get('/api/export/accounts.csv').status_code == 404
+    # And the events' own export is untouched by its going.
+    assert client.get('/api/export/events.csv').status_code == 200
     opened.close()
 
 
@@ -3990,8 +4028,13 @@ def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
 # Declaring an account from the app (issue #698)
 # --------------------------------------------------------------------- #
 
-def test_an_account_can_be_declared_here_and_is_editable(tmp_path):
-    """The UI's half of the declaration: ``source_id`` null, so it is editable."""
+def test_an_account_is_declared_here_renamed_here_and_removed_here(tmp_path):
+    """The one place an account is born, and three members on the wire.
+
+    No ``source_id`` and no ``editable``: an account is declared in the app and
+    nowhere else (ADR-0034), so there is no second population to tell this row
+    from and no rule about it for the front to re-implement.
+    """
     client = build_client(tmp_path)
 
     created = client.post('/api/accounts',
@@ -3999,8 +4042,7 @@ def test_an_account_can_be_declared_here_and_is_editable(tmp_path):
 
     assert created.status_code == 201
     assert created.get_json() == {'id': 'pea', 'type': 'PEA',
-                                  'label': 'PEA Bourso', 'source_id': None,
-                                  'editable': True}
+                                  'label': 'PEA Bourso'}
     # The replay followed the write: the declaration is already published.
     listed = client.get('/api/accounts').get_json()
     assert listed['declared'] is True

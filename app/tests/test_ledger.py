@@ -27,7 +27,7 @@ import entries
 import ledger
 import uploads
 from events import EventLoader
-from events.schemas import DEFAULT_ACCOUNT, EventType
+from events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, EventType
 from test_web_api import ACCOUNTS_FILE, build_client, build_client_and_store
 from web import problem
 
@@ -710,7 +710,13 @@ def test_an_accounts_file_is_refused_naming_what_it_recognised(tmp_path):
                        filename="2024.csv")
 
     assert response.status_code == 422
-    assert 'accounts' in response.get_json()['detail']
+    detail = response.get_json()['detail']
+    assert 'accounts' in detail
+    # **Named by its columns**, which is what keeps ``is_accounts_file`` alive
+    # now that no accounts file is read: the refusal has to say what it saw, or
+    # the reader is told their ledger is unreadable and never why.
+    for column in ACCOUNT_FILE_COLUMNS:
+        assert column in detail
     assert opened.query('SELECT count(*) FROM account WHERE id <> ?',
                         ['default']) == [(0,)]
 

@@ -87,9 +87,9 @@ def _declare(store, text):
 
 
 def _accounts(store):
-    """Every account row, as ``(id, type, label, source_id)`` tuples."""
+    """Every account row, as ``(id, type, label)`` tuples."""
     return store.query(
-        'SELECT id, type, label, source_id FROM account ORDER BY id')
+        'SELECT id, type, label FROM account ORDER BY id')
 
 
 def _event_accounts(store):
@@ -113,7 +113,7 @@ def test_a_v4_single_account_install_imports_untouched(store, tmp_path):
     assert len(written) == 2
     assert _event_accounts(store) == [DEFAULT_ACCOUNT, DEFAULT_ACCOUNT]
     # The seeded row is the whole declaration, and nothing else appeared.
-    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account', None)]
+    assert _accounts(store) == [(DEFAULT_ACCOUNT, 'OTHER', 'Default account')]
     assert accounts_module.declared_portfolio(store) is None
 
 
@@ -197,33 +197,6 @@ def test_the_label_falls_back_to_the_id(store):
     assert pea.label == 'pea'
 
 
-def test_a_declaration_with_no_id_is_refused_by_name(store, tmp_path):
-    """The header reader still judges the file it recognises."""
-    path = _file(tmp_path, 'accounts.csv', "id,type,label\n,PEA,No id\n")
-
-    assert accounts_module.is_accounts_file(path) is True
-    with pytest.raises(accounts_module.AccountSourceError,
-                       match="id is required"):
-        accounts_module.load_account_rows(path)
-
-
-def test_an_accounts_file_can_be_a_workbook(store, tmp_path):
-    """The events' format, both halves of it — recognised, so refusable."""
-    openpyxl = pytest.importorskip("openpyxl")
-    folder = tmp_path / "drop"
-    folder.mkdir(exist_ok=True)
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.title = "Comptes"
-    sheet.append(["id", "type", "label"])
-    sheet.append(["pea", "PEA", "PEA Bourso"])
-    workbook.save(folder / "accounts.xlsx")
-
-    assert accounts_module.is_accounts_file(folder / "accounts.xlsx") is True
-    assert [row.id for row in
-            accounts_module.load_account_rows(folder / "accounts.xlsx")] == ['pea']
-
-
 # --------------------------------------------------------------------------- #
 # Undeletable while an event names it (ADR-0013)
 # --------------------------------------------------------------------------- #
@@ -250,9 +223,6 @@ def test_an_excel_utf8_export_is_recognised_despite_its_byte_order_mark(store, t
     (folder / "accounts.csv").write_text(ACCOUNTS_FILE, encoding="utf-8-sig")
 
     assert accounts_module.is_accounts_file(folder / "accounts.csv") is True
-    assert {row.id for row in
-            accounts_module.load_account_rows(folder / "accounts.csv")} == \
-        {'pea', 'cto'}
 
 
 def test_the_default_account_is_never_removed(store):
@@ -272,10 +242,12 @@ def test_the_default_account_is_never_removed(store):
     assert accounts_module.account_ids(store) == {DEFAULT_ACCOUNT}
 
 
-def test_an_account_created_in_the_app_is_editable(store):
+def test_an_account_declared_here_is_renamed_and_removed_here(store):
+    """An account is born in the app, so every gesture on it is the app's."""
     created = accounts_module.create_account(store, 'pea', 'PEA', 'PEA Bourso')
 
-    assert created.source_id is None and created.editable
+    assert (created.id, created.type, created.label) == \
+        ('pea', 'PEA', 'PEA Bourso')
 
     accounts_module.update_account(store, 'pea', label="PEA Fortuneo")
     assert next(a for a in accounts_module.read_accounts(store)
@@ -384,12 +356,10 @@ def test_a_declaration_changing_republishes_the_snapshot(tmp_path):
 def test_portfolio_ids_and_get():
     portfolio = Portfolio(accounts=[
         Account(id="PEA", type="PEA", label="Mon PEA"),
-        Account(id="CTO", type="CTO", label="CTO", source_id=3),
+        Account(id="CTO", type="CTO", label="CTO"),
     ])
     assert portfolio.ids() == {"PEA", "CTO"}
     assert portfolio.get("PEA").label == "Mon PEA"
-    assert portfolio.get("PEA").editable is True
-    assert portfolio.get("CTO").editable is False
     assert portfolio.get("UNKNOWN") is None
 
 

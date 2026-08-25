@@ -99,15 +99,31 @@ def install(root, files, currency=None):
     return manager, opened
 
 
+def _declared_rows(path):
+    """The fixture file's ``id,type,label`` rows, read here and nowhere else.
+
+    Reading it is the fixture's own business since ADR-0034: no accounts file
+    enters the app any more, so the parser that used to live in :mod:`accounts`
+    is gone and what a test writes for its own convenience it also reads.
+    """
+    with open(path, newline='', encoding='utf-8') as handle:
+        return [
+            (row['id'].strip(), row['type'].strip(),
+             (row.get('label') or '').strip() or row['id'].strip())
+            for row in csv.DictReader(handle)
+            if (row.get('id') or '').strip()
+        ]
+
+
 def _declare_from(opened, path):
     """The file's accounts, declared the way the app declares them (ADR-0034)."""
-    for row in accounts_module.load_account_rows(path):
-        if row.id in accounts_module.account_ids(opened):
+    for account_id, account_type, label in _declared_rows(path):
+        if account_id in accounts_module.account_ids(opened):
             opened.execute(
                 'UPDATE account SET type = ?, label = ? WHERE id = ?',
-                [row.type, row.label, row.id])
+                [account_type, label, account_id])
             continue
-        accounts_module.create_account(opened, row.id, row.type, row.label)
+        accounts_module.create_account(opened, account_id, account_type, label)
 
 
 def _write_events(opened, path):
@@ -120,14 +136,14 @@ def _write_events(opened, path):
 
 
 def export_of(opened):
-    """The two files an install exports, exactly as the routes render them."""
-    return (
-        events_export.render_events(ledger.read_events(opened),
-                                    opened.setting('base_currency')),
-        events_export.render_accounts(events_export.declared_accounts(
-            accounts_module.read_accounts(opened),
-            store_module.DEFAULT_ACCOUNT_ROW)),
-    )
+    """The **one** file an install exports, exactly as the route renders it.
+
+    One and not two since ADR-0034: there is no accounts file to read back, so
+    an ``accounts.csv`` beside the events would be a backup nothing restores.
+    The accounts are redeclared by hand, which is what the restores below do.
+    """
+    return events_export.render_events(ledger.read_events(opened),
+                                       opened.setting('base_currency'))
 
 
 def figures(opened):
@@ -162,7 +178,7 @@ def test_the_export_carries_the_import_format_columns(tmp_path):
     """The header is the import format's, so the file is not a second format."""
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
                                          'accounts.csv': _ACCOUNTS})
-    events_csv, _ = export_of(opened)
+    events_csv = export_of(opened)
     opened.close()
 
     header = events_csv.splitlines()[0].split(',')
@@ -176,7 +192,7 @@ def test_every_row_states_the_reporting_currency(tmp_path):
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
                                          'accounts.csv': _ACCOUNTS},
                         currency='EUR')
-    events_csv, _ = export_of(opened)
+    events_csv = export_of(opened)
     opened.close()
 
     rows = rows_of(events_csv)
@@ -193,7 +209,7 @@ def test_an_unanswered_install_exports_a_blank_currency_column(tmp_path):
     """
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
                                          'accounts.csv': _ACCOUNTS})
-    events_csv, _ = export_of(opened)
+    events_csv = export_of(opened)
     opened.close()
 
     assert {row[BASE_CURRENCY_COLUMN] for row in rows_of(events_csv)} == {''}
@@ -203,42 +219,13 @@ def test_an_absent_value_is_an_empty_cell_never_the_word_none(tmp_path):
     """``None`` is what a CSV writes as nothing, and reads back as nothing."""
     _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
                                          'accounts.csv': _ACCOUNTS})
-    events_csv, _ = export_of(opened)
+    events_csv = export_of(opened)
     opened.close()
 
     assert 'None' not in events_csv
     deposit = next(row for row in rows_of(events_csv)
                    if row['event_type'] == 'DEPOSIT')
     assert deposit['symbol'] == '' and deposit['quantity'] == ''
-
-
-def test_the_accounts_export_leaves_an_untouched_default_out(tmp_path):
-    """A row every install owns is not a declaration.
-
-    Exporting it would make *"I declared nothing"* into a file that declares
-    something — and re-importing that file would give the seeded row a
-    ``source_id``, making the one account every install has read-only and
-    forgettable.
-    """
-    single = _LEDGER.replace(',pea,', ',default,').replace(',cto,', ',default,')
-    _, opened = install(tmp_path / 'a', {'2024.csv': single})
-    _, accounts_csv = export_of(opened)
-    opened.close()
-
-    assert rows_of(accounts_csv) == []
-
-
-def test_the_accounts_export_carries_what_was_declared(tmp_path):
-    """And the declared ones do come out, with their type and their label."""
-    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
-                                         'accounts.csv': _ACCOUNTS})
-    _, accounts_csv = export_of(opened)
-    opened.close()
-
-    assert rows_of(accounts_csv) == [
-        {'id': 'cto', 'type': 'CTO', 'label': 'Compte-titres'},
-        {'id': 'pea', 'type': 'PEA', 'label': 'PEA Boursorama'},
-    ]
 
 
 # --------------------------------------------------------------------- #
@@ -256,13 +243,13 @@ def test_reimporting_an_export_rebuilds_the_same_ledger(tmp_path):
     _, source = install(tmp_path / 'source',
                         {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
                         currency='EUR')
-    events_csv, accounts_csv = export_of(source)
+    events_csv = export_of(source)
     before = figures(source)
     source.close()
 
     _, restored = install(tmp_path / 'restored', {
         'suivi-bourse-events.csv': events_csv,
-        'suivi-bourse-accounts.csv': accounts_csv,
+        'accounts.csv': _ACCOUNTS,
     })
     after = figures(restored)
     # The declaration the file carried, taken up by an install that had none —
@@ -282,14 +269,14 @@ def test_the_round_trip_is_idempotent(tmp_path):
     _, source = install(tmp_path / 'source',
                         {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
                         currency='EUR')
-    events_csv, accounts_csv = export_of(source)
+    events_csv = export_of(source)
     source.close()
 
     _, restored = install(tmp_path / 'restored', {
         'suivi-bourse-events.csv': events_csv,
-        'suivi-bourse-accounts.csv': accounts_csv,
+        'accounts.csv': _ACCOUNTS,
     })
-    again, _ = export_of(restored)
+    again = export_of(restored)
     restored.close()
 
     assert again == events_csv
@@ -309,12 +296,12 @@ def test_a_declared_currency_is_taken_by_a_store_that_has_none(tmp_path):
     _, source = install(tmp_path / 'source',
                         {'2024.csv': _LEDGER, 'accounts.csv': _ACCOUNTS},
                         currency='USD')
-    events_csv, accounts_csv = export_of(source)
+    events_csv = export_of(source)
     source.close()
 
     _, restored = install(tmp_path / 'restored', {
         'suivi-bourse-events.csv': events_csv,
-        'suivi-bourse-accounts.csv': accounts_csv,
+        'accounts.csv': _ACCOUNTS,
     })
     assert restored.setting('base_currency') == 'USD'
     restored.close()
@@ -562,13 +549,12 @@ def test_reimporting_the_workbook_rebuilds_the_same_ledger(tmp_path):
                         currency='EUR')
     payload = events_export.render_events_workbook(
         ledger.read_events(source), source.setting('base_currency'))
-    _, accounts_csv = export_of(source)
     before = figures(source)
     source.close()
 
     restored_root = tmp_path / 'restored'
     manager, restored = install(restored_root,
-                                {'suivi-bourse-accounts.csv': accounts_csv})
+                                {'accounts.csv': _ACCOUNTS})
     workbook = restored_root / 'events' / 'suivi-bourse-events.xlsx'
     workbook.write_bytes(payload)
     # The workbook goes in the way a workbook goes in: through the road the
@@ -670,11 +656,10 @@ def test_a_selected_export_is_importable_like_any_other(tmp_path):
         events_export.select(ledger.read_events(source),
                              events_export.Selection(account='cto')),
         source.setting('base_currency'))
-    _, accounts_csv = export_of(source)
     source.close()
 
     _, restored = install(tmp_path / 'restored', {
-        'suivi-bourse-accounts.csv': accounts_csv,
+        'accounts.csv': _ACCOUNTS,
         'suivi-bourse-selection.csv': selected,
     })
     accounts_held = {row[0] for row in restored.query(
