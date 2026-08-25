@@ -46,12 +46,22 @@ export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 
  * A **word this front does not know** is refused here too, and deliberately:
  * `unknown` means *nothing has been observed yet*, so borrowing it for *the
  * server said something else* would put a grey dot on a claim nobody made.
+ *
+ * The **four required members** are all asked for, and not `status` alone: a
+ * proxy's own `{"status":"ok"}` is the most ordinary shape of the case above,
+ * and reading one member out of four would let it paint the dot **green** — the
+ * one colour that must never be borrowed. `jobs` is the one that may be `null`,
+ * which is the server's own way of saying the fold failed, and `error` is
+ * optional because it rides with it.
  */
 function readHealth(payload: unknown): HealthState | null {
   if (typeof payload !== 'object' || payload === null) return null
-  const status = (payload as { status?: unknown }).status
-  if (typeof status !== 'string') return null
-  if (!(HEALTH_STATUSES as readonly string[]).includes(status)) return null
+  const body = payload as Partial<Record<keyof HealthState, unknown>>
+  if (typeof body.status !== 'string') return null
+  if (!(HEALTH_STATUSES as readonly string[]).includes(body.status)) return null
+  if (typeof body.now !== 'string') return null
+  if (typeof body.scheduler_running !== 'boolean') return null
+  if (typeof body.jobs !== 'object') return null
   return payload as HealthState
 }
 
@@ -261,9 +271,11 @@ export function shellConditions(input: {
  * them.
  *
  * `/api/runtime` answers from the scheduler's process memory and touches no
- * store at all (#668), which is the property that makes the status dot survive
- * a database outage — and the exact property that leaves the banner **silent**
- * when the store is the thing that has failed. A page whose figures came back
+ * store at all (#668), which is the property that leaves the shell's band
+ * **silent** when the store is the thing that has failed. The dot no longer
+ * rides on it: since #819 it reads `/health`, whose body goes when the store
+ * goes, and red is what is left (ADR-0036) — so the band is now the only one of
+ * the two surfaces that says nothing here. A page whose figures came back
  * `503` therefore has no announcer above it, and a block that renders nothing
  * turns *"the store is unreadable"* and *"you own nothing yet"* into the same
  * screen: an empty one, which is the worse half of the defect the product names

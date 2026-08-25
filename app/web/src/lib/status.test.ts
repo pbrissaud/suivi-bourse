@@ -54,6 +54,10 @@ describe('the status dot is a state, never a count', () => {
     expect(installationState({ health: 'ok' })).toBe('unreachable')
     expect(installationState({ health: {} })).toBe('unreachable')
     expect(installationState({ health: { status: 'degraded' } })).toBe('unreachable')
+    // The most ordinary proxy body of all, and the one that would cost the
+    // most: a word this front *does* know, alone, with none of the three
+    // members that make it this object — green on somebody else's JSON.
+    expect(installationState({ health: { status: 'ok' } })).toBe('unreachable')
   })
 
   it('keeps grey for "nothing has run yet", which is not "something is wrong"', () => {
