@@ -48,6 +48,65 @@ the app. Give it time rather than reloading: **about 25 minutes for 30 symbols
 over five years**, and figures that depend on a price you do not have yet say
 so instead of guessing.
 
+## Is it working?
+
+The image carries its own probe, and the app answers it on `/health`, on the
+same port as everything else. That one answer speaks to two readers at once, and
+they never mix.
+
+**The status code is for whatever supervises the container.** It answers one
+question — *should this container be restarted* — and `200` means the process is
+serving and its store answers. A `503` means it cannot do its work at all, which
+is the only failure a restart repairs. That is what `docker ps` reads to mark the
+container `healthy`, and what a Kubernetes probe would read.
+
+**The body is for you.** It names each of the three jobs — the scrape, the
+rebuild, the returns — with the last time it ran and what came of that pass, plus
+one word for the whole:
+
+```bash
+curl -s localhost:8080/health
+```
+
+```json
+{
+  "status": "attention",
+  "now": "2026-08-24T15:00:00+00:00",
+  "scheduler_running": true,
+  "jobs": {
+    "scrape": {
+      "status": "attention", "at": "2026-08-24T14:59:12+00:00",
+      "verdict": "frozen", "held": 12, "attention": ["ASML.AS"]
+    },
+    "backfill": {
+      "status": "ok", "at": "2026-08-24T14:58:40+00:00",
+      "verdict": "running", "complete": 7, "in_scope": 12, "attention": []
+    },
+    "performance": {
+      "status": "ok", "at": "2026-08-24T14:58:41+00:00",
+      "verdict": "ran", "error": null
+    }
+  }
+}
+```
+
+Each job — and the whole above them — carries one of three words. `ok` is
+everything ran and nothing asks to be looked at. `attention` is something ran
+badly, or has stopped running. `unknown` is *nothing has been observed yet*,
+which is what a container that started a minute ago honestly says, and which is
+deliberately not `ok`. `attention` lists the securities the verdict is about, so
+you know which line to go and read; `verdict` is the job's own word for its last
+pass, and `at` is when that pass happened.
+
+:::note A scrape that has gone quiet is amber, and the code stays `200`
+Restarting the container repairs nothing that Yahoo or the market broke, and a
+probe that failed on a stuck job would turn it into a restart loop that fixes
+nothing and hides everything. So a job that is late, wedged or silent is read in
+the body and never in the status code. The one thing that makes the code fail is
+the store not answering — and then there is no body at all, which is itself the
+answer.
+:::
+
 :::note Backups come in two forms, and neither is hot
 Exporting your events backs up **the portfolio**: re-import them into a fresh
 install and the rebuild fetches the prices again. Stopping the container,
