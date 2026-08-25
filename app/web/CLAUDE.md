@@ -70,6 +70,25 @@
 > acknowledging the last fact takes the surface away rather than leaving a
 > permanent *Rien à signaler* behind. What does **not** move is ADR-0026:
 > nothing is rendered, title included, while the read is in flight.
+> **The first run walks three passages** (#823, ADR-0035): the required
+> settings, the accounts, the first events — in that order, the last opening by
+> either of its two doors. The modal is still **armed by one predicate** (a
+> required dial with nothing stored, read off the registry's mark since #822)
+> and it is now **latched**: answering makes the predicate false, and the answer
+> is the *first* passage, so `FirstRun` holds a `walking` flag or the two after
+> it would be unreachable to everybody who answers. *Mandatory* means
+> **traversed, never answered** — the accounts passage is satisfied by the
+> seeded row and offers no field, and a bare `docker run` walks all three with
+> **no write at all leaving the browser**, which is how *no `onboarding_done`
+> row* is asserted. The memory is `localStorage`, written whichever way the
+> reader leaves — the cross, a door, or the last control — and it holds **two
+> things**: that they have been through, *and what was still unanswered when
+> they left*. The second half is what makes a wiped volume ask again in the very
+> browser that answered, instead of only in some other one; `unanswered` is
+> still stored as `dismissed`, because a new spelling would reopen the walk on
+> every browser that has already closed the old modal. Nothing in the predicate
+> reads the data the walk collects, which is what answers #726's refusal: an
+> emptied ledger reopens nothing.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed

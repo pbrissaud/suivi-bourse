@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  PASSAGES,
   currencyFixed,
   currencyUnanswered,
   firstRunStands,
+  nextPassage,
+  passageNumber,
+  previousPassage,
   requiredUnanswered,
 } from '@/lib/firstRun'
 import { aSetting, defaultSettings } from '@/test/factories'
@@ -36,7 +40,7 @@ describe('the one predicate', () => {
 
     expect(requiredUnanswered(withASecondRequiredDial)).toBe(true)
     expect(currencyUnanswered(withASecondRequiredDial)).toBe(false)
-    expect(firstRunStands({ settings: withASecondRequiredDial, dismissed: false })).toBe(true)
+    expect(firstRunStands({ settings: withASecondRequiredDial, mark: null })).toBe(true)
   })
 
   it('says nothing at all while the read has not landed', () => {
@@ -46,11 +50,53 @@ describe('the one predicate', () => {
     expect(requiredUnanswered([aSetting()])).toBeUndefined()
   })
 
-  it('never opens the modal on a silence, nor once it has been waved away', () => {
-    expect(firstRunStands({ settings: unanswered(), dismissed: false })).toBe(true)
-    expect(firstRunStands({ settings: unanswered(), dismissed: true })).toBe(false)
-    expect(firstRunStands({ settings: undefined, dismissed: false })).toBe(false)
-    expect(firstRunStands({ settings: defaultSettings(), dismissed: false })).toBe(false)
+  it('never opens the modal on a silence, nor once the reader has been through', () => {
+    expect(firstRunStands({ settings: unanswered(), mark: null })).toBe(true)
+    expect(firstRunStands({ settings: unanswered(), mark: 'unanswered' })).toBe(false)
+    expect(firstRunStands({ settings: undefined, mark: null })).toBe(false)
+    expect(firstRunStands({ settings: defaultSettings(), mark: null })).toBe(false)
+  })
+
+  it('walks again the reader who left having answered, their store being gone', () => {
+    // The half of the browser's memory that is not *been through* (ADR-0035):
+    // a mark saying only that would suppress the question for ever in the very
+    // browser that answered it, so the reader who loses their volume — the
+    // trial install ADR-0015 designs for — would meet an app with no currency
+    // and nothing asking for one. A required dial unanswered under an
+    // *answered* mark can only be a store that no longer holds the answer.
+    expect(firstRunStands({ settings: unanswered(), mark: 'answered' })).toBe(true)
+    // And nothing changes for the reader who walked away from an open question:
+    // an emptied ledger, a reload, a second container — the mark still fits
+    // what the server says, and they are left alone.
+    expect(firstRunStands({ settings: unanswered(), mark: 'unanswered' })).toBe(false)
+    // Answered and answered: no walk either way.
+    expect(firstRunStands({ settings: defaultSettings(), mark: 'answered' })).toBe(false)
+  })
+})
+
+describe('the three passages', () => {
+  it('are walked in the order the record names', () => {
+    // The required settings first — the app cannot convert or compute without
+    // the answer — then the accounts, so the notion exists before a file that
+    // names them is handed over, then the events themselves (ADR-0035).
+    expect(PASSAGES).toEqual(['settings', 'accounts', 'events'])
+    expect(nextPassage('settings')).toBe('accounts')
+    expect(nextPassage('accounts')).toBe('events')
+    expect(previousPassage('events')).toBe('accounts')
+    expect(previousPassage('accounts')).toBe('settings')
+  })
+
+  it('end, rather than looping: the last passage has nothing after it', () => {
+    // What that `null` is read as, one file over, is *leave* — and leaving is
+    // what writes the browser's mark. A fourth passage would be a line here.
+    expect(nextPassage('events')).toBeNull()
+    // And the first has no way back, which is what makes the walk a sequence
+    // rather than three tabs.
+    expect(previousPassage('settings')).toBeNull()
+  })
+
+  it('are counted from one, because that is what a reader is told', () => {
+    expect(PASSAGES.map(passageNumber)).toEqual([1, 2, 3])
   })
 })
 

@@ -1,14 +1,18 @@
 /**
- * The first run (#726, ADR-0021, ADR-0005, ADR-0015, ADR-0002), at the one
- * seam: the whole app in jsdom, HTTP the only faked edge.
+ * The first run (#726, #823, ADR-0021, ADR-0035, ADR-0005, ADR-0015, ADR-0002),
+ * at the one seam: the whole app in jsdom, HTTP the only faked edge.
  *
- * Every case names what it prevents, and three of them are the ticket's own
+ * Every case names what it prevents, and four of them are the ticket's own
  * arguments rather than opinions:
  *
  *  - **an onboarding screen reopening on somebody who has used the app for six
- *    months** — which is what three independent steps on three predicates would
- *    have done the day they revoked their imports. One predicate, and it is the
- *    only dial with no default;
+ *    months** — which is what three steps *derived from the data they collect*
+ *    would have done the day that reader emptied their ledger. The passages are
+ *    a sequence inside one predicate, and the predicate is a required dial with
+ *    nothing stored;
+ *  - **a trial run walled in** — a bare `docker run` is a trial by design, so
+ *    the three passages are traversed with nothing supplied and no write leaves
+ *    the browser;
  *  - **a wall of bands** — the banner was validated in production on a `503`,
  *    something that happens and passes; two conditions that stand until somebody
  *    acts stack into a wall, so it renders one band or none, in causal order;
@@ -17,13 +21,19 @@
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { ROUTES, type ConfigResponse } from '@/lib/api'
 import { CURRENCIES } from '@/lib/currencies'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
-import { aConfig, aLedgerPayload, aRebuilding, aRuntime } from '@/test/factories'
+import {
+  aConfig,
+  aLedgerPayload,
+  aRebuilding,
+  aRuntime,
+  noAccountsDeclared,
+} from '@/test/factories'
 import { renderApp, type RenderAppOptions } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -76,6 +86,37 @@ async function firstRun(options: RenderAppOptions = {}) {
   await screen.findByRole('dialog')
   return rendered
 }
+
+type Reader = ReturnType<typeof renderApp>['user']
+
+/**
+ * Walk on, one passage at a time. The control is a **ghost** and the answer is
+ * filled, which is ADR-0021's *no escape hatch at the weight of the answer* one
+ * control over: continuing is the walk, not a second spelling of the way out.
+ */
+async function walk(user: Reader, passages = 1) {
+  for (let step = 0; step < passages; step += 1) {
+    await user.click(within(modal()).getByRole('button', { name: 'Continuer' }))
+  }
+}
+
+/**
+ * Every request the app makes that is **not a read**, recorded off the wire.
+ *
+ * This is how *no `onboarding_done` row* is asserted: not by inspecting a
+ * module, but by watching what the walk sends. A traversal that recorded itself
+ * server-side would have to write, and there is nothing on the other end of
+ * this list to write to.
+ */
+function writesMade(): string[] {
+  const writes: string[] = []
+  server.events.on('request:start', ({ request }) => {
+    if (request.method !== 'GET') writes.push(`${request.method} ${new URL(request.url).pathname}`)
+  })
+  return writes
+}
+
+afterEach(() => server.events.removeAllListeners())
 
 describe('the modal opens on a predicate, never on a moment', () => {
   it('opens wherever the reader landed, because first run is not a place', async () => {
@@ -173,7 +214,7 @@ describe('closing it', () => {
     expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
   })
 
-  it('remembers the closing in the browser alone, so a wiped volume re-arms it', async () => {
+  it('remembers the closing in the browser alone, so a second browser sees it again', async () => {
     const { user, unmount } = await firstRun()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -322,7 +363,7 @@ describe('the currency itself', () => {
     expect(await screen.findByText(/AED — enregistrée hors de cette liste/)).toBeInTheDocument()
   })
 
-  it('answering it writes the dial, receipts the gesture and closes the modal', async () => {
+  it('answering it writes the dial, receipts the gesture and walks on', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
@@ -330,7 +371,12 @@ describe('the currency itself', () => {
     // `findAllBy`: a toast renders its text twice, once drawn and once in the
     // live region that announces it.
     expect(await screen.findAllByText(/Devise de base enregistrée : EUR/)).not.toHaveLength(0)
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // **The answer no longer closes anything** (ADR-0035). It made the predicate
+    // false, and the predicate is what *armed* the modal rather than what holds
+    // it open — otherwise the two passages after the question would be
+    // unreachable to everybody who answers it, which is everybody it is for.
+    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    expect(within(modal()).queryByLabelText('Devise de base')).not.toBeInTheDocument()
   })
 })
 
@@ -369,6 +415,11 @@ describe('the banner, with the currency unanswered', () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
+    // The walk goes on after the answer, and a modal hides the page behind it
+    // from the accessibility tree — so the bands are read once the reader is out.
+    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     // The fact is not lost: the dot carries it, and it is a link.
@@ -411,12 +462,87 @@ describe('the status dot is a state and a link, and the link arrives', () => {
   })
 })
 
-describe('the last step is the ledger’s own pair of entrances', () => {
+describe('the walk is three passages, and they are walked in order', () => {
+  it('names each one as the reader arrives on it', async () => {
+    const { user } = await firstRun()
+
+    // One: what the app has to be told, which is one thing and has no default.
+    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
+    expect(
+      within(modal()).getByRole('heading', { name: 'Les réglages obligatoires' }),
+    ).toBeInTheDocument()
+    expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument()
+
+    // Two: the accounts, so the notion exists **before** a file naming them is
+    // handed over, which is the whole reason it comes second and not third.
+    await walk(user)
+    expect(await within(modal()).findByText('Passage 2 sur 3')).toBeInTheDocument()
+    expect(within(modal()).getByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+
+    // Three: the events, named for the events and never for the import.
+    await walk(user)
+    expect(await within(modal()).findByText('Passage 3 sur 3')).toBeInTheDocument()
+    expect(
+      within(modal()).getByRole('heading', { name: 'Vos premiers événements' }),
+    ).toBeInTheDocument()
+    // Named for the events and **not** for the import: *premier import* would
+    // tell a reader with no file that they cannot come in, and ADR-0005 decided
+    // the opposite. The file is one of two doors inside the passage, never the
+    // passage itself.
+    expect(
+      within(modal()).queryByRole('heading', { name: /premier import/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('walks back, the sequence being one and not three tabs', async () => {
+    const { user } = await firstRun()
+
+    // The first passage has no way back, so nothing offers one there.
+    expect(within(modal()).queryByRole('button', { name: 'Revenir' })).not.toBeInTheDocument()
+
+    await walk(user, 2)
+    await user.click(within(modal()).getByRole('button', { name: 'Revenir' }))
+    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+  })
+
+  it('is satisfied on the accounts by the seeded row, and asks for nothing', async () => {
+    // The install that has declared nothing — which is every install on its
+    // first day, and the one this passage must not wall in. The seeded row is a
+    // declaration the owner may decline to add to, so the passage names it and
+    // offers no field at all.
+    server.use(http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())))
+    const { user } = await firstRun()
+    await walk(user)
+
+    const passage = within(modal())
+    expect(await passage.findByText('Non affecté')).toBeInTheDocument()
+    expect(passage.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(passage.getByRole('button', { name: 'Continuer' })).toBeEnabled()
+  })
+
+  it('says nothing about the accounts while that read is in flight', async () => {
+    // ADR-0026, on the one read this walk added: *what this installation holds*
+    // is a claim about the reader's own install, and a read that has not landed
+    // is not an absence. The passage's own two sentences are about the product
+    // and stand; the block that names rows does not exist yet.
+    server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
+    const { user } = await firstRun()
+    await walk(user)
+
+    const passage = within(modal())
+    expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    expect(passage.queryByText(/Ce que cette installation possède/)).not.toBeInTheDocument()
+    expect(passage.queryByText('Non affecté')).not.toBeInTheDocument()
+  })
+})
+
+describe('the third passage is the ledger’s own pair of entrances', () => {
   it('mounts the same component, at equal weight and with no primary action', async () => {
-    await firstRun()
+    const { user } = await firstRun()
+    await walk(user, 2)
 
     const pair = within(modal())
-    expect(pair.getByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument()
+    expect(await pair.findByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument()
     expect(pair.getByRole('region', { name: 'Saisir un premier événement' })).toBeInTheDocument()
     // Both entries are **available**, and that is a property of the product
     // rather than of this install (#811, ADR-0032): a file is handed to the app
@@ -424,18 +550,152 @@ describe('the last step is the ledger’s own pair of entrances', () => {
     // entrance away — and the sentence names no folder, there being none left
     // to name.
     expect(pair.getByText(/Remettez à l’application un .csv ou un .xlsx/)).toBeInTheDocument()
-    expect(within(modal()).queryByText(/\/import/)).not.toBeInTheDocument()
+    expect(pair.queryByText(/\/import/)).not.toBeInTheDocument()
     // No primary action: a filled button beside an outlined one is a
-    // recommendation, and it would be wrong for whichever reader it misses.
-    const entry = pair.getByRole('link', { name: 'Saisir un événement' })
-    expect(entry.className).toContain('border')
+    // recommendation, and it would be wrong for whichever reader it misses. Both
+    // doors are outlined, which is what *equal weight* is made of.
+    expect(pair.getByRole('link', { name: 'Saisir un événement' }).className).toContain('border')
+    expect(pair.getByRole('link', { name: 'Remettre un fichier' }).className).toContain('border')
   })
 
   it('states no emptiness: it offers two doors before anything has been read', async () => {
-    await firstRun()
+    const { user } = await firstRun()
+    await walk(user, 2)
 
     // `data-empty` is the mount's and not the component's — here nothing is
     // being claimed about the reader's own data.
+    await within(modal()).findByRole('region', { name: 'Importer un fichier' })
     expect(modal().querySelector('[data-empty]')).toBeNull()
+  })
+
+  it('is traversed by the file door, which lands where a file is handed over', async () => {
+    const { user } = await firstRun()
+    await walk(user, 2)
+
+    await user.click(await within(modal()).findByRole('link', { name: 'Remettre un fichier' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // Not merely `/donnees`: the target the file is actually handed to, which is
+    // reached by its own label rather than by a rectangle a pointer must find.
+    expect(await screen.findByLabelText('Choisir un fichier')).toBeInTheDocument()
+    // The walk is over however it ended, and the browser holds that.
+    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
+  })
+
+  it('is traversed by the typed event, ADR-0005 having decided that is a way in', async () => {
+    const { user } = await firstRun()
+    await walk(user, 2)
+
+    await user.click(await within(modal()).findByRole('link', { name: 'Saisir un événement' }))
+
+    // The door opens the form itself and not a page with a button on it: a
+    // reader with no file must be able to record a first purchase from here,
+    // because typing a position *is* creating dated events.
+    expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
+    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
+  })
+})
+
+describe('mandatory means traversed, never answered', () => {
+  it('lets a bare docker run through the three without supplying anything', async () => {
+    // The install ADR-0015 designs for: no volume, nothing declared, an empty
+    // ledger. A screen that will not release this reader without a CSV in hand
+    // turns the trial into a wall, so the three passages are walked and the
+    // only thing that happens is that they end.
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ store: { persistence: 'ephemeral', path: '/data/suivi-bourse.duckdb' } }),
+        ),
+      ),
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
+      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))),
+    )
+    const writes = writesMade()
+    const { user } = await firstRun()
+
+    await walk(user, 2)
+    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // **Nothing was extracted, and nothing was recorded server-side.** No dial
+    // was answered, no account declared, no event written — and no
+    // `onboarding_done` either, there being no write at all to carry one.
+    expect(writes).toEqual([])
+    expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
+  })
+
+  it('keeps the walk out of the store: the memory is the browser’s, and only that', async () => {
+    const writes = writesMade()
+    const { user, unmount } = await firstRun()
+
+    await walk(user, 2)
+    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(writes).toEqual([])
+    unmount()
+
+    // It holds between two mounts, the server having answered nothing new.
+    withNoCurrency()
+    renderApp()
+    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('does not reopen on a ledger emptied after six months', async () => {
+    // #726's refusal, answered on its merits. What used to reopen the screen was
+    // not the number of steps: it was deriving its existence from the data it is
+    // about to collect. Nothing here reads the ledger, so emptying one — which
+    // the bulk delete makes an ordinary gesture — changes nothing.
+    server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
+    renderApp({ url: '/donnees' })
+
+    await screen.findByRole('heading', { name: 'Données', level: 1 })
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument(),
+    )
+    // The ledger is empty on screen, and the walk is nowhere.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('re-poses the question on a wiped store, in the very browser that answered', async () => {
+    // The other half of the same property, and the case a plain *been through*
+    // mark gets wrong: this reader answered, walked the three and came back to
+    // an install whose volume is gone. Nothing server-side remembers the walk —
+    // there is no row to survive the wipe — so the question is asked again, and
+    // the browser's memory does not swallow it, because what it holds is *what
+    // was still unanswered when I left*.
+    const { user, unmount } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
+    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    await walk(user)
+    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    unmount()
+
+    // Same browser, same address — and a store that answers *unanswered* again,
+    // which is what a wiped volume is.
+    withNoCurrency()
+    renderApp()
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
+  })
+
+  it('leaves alone the reader who walked away from the question still open', async () => {
+    // The counterweight, and the reason the mark is not simply cleared when the
+    // predicate stands again: a bare `docker run` answers nothing on purpose, so
+    // this reader must not be walked through the product's explanation on every
+    // page load — nor on the next container, which is indistinguishable to them.
+    const { user, unmount } = await firstRun()
+    await walk(user, 2)
+    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    unmount()
+
+    withNoCurrency()
+    renderApp()
+    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
