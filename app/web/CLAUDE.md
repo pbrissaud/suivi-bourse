@@ -80,12 +80,15 @@
 > **traversed, never answered** — the accounts passage is satisfied by the
 > seeded row and offers no field, and a bare `docker run` walks all three with
 > **no write at all leaving the browser**, which is how *no `onboarding_done`
-> row* is asserted. The memory is `localStorage`, one mark written whichever way
-> the reader leaves — the cross, a door, or the last control — and it is still
-> spelled `dismissed`, because a new spelling would reopen the walk on every
-> browser that has been through. Nothing in the predicate reads the data the
-> walk collects, which is what answers #726's refusal: an emptied ledger reopens
-> nothing.
+> row* is asserted. The memory is `localStorage`, written whichever way the
+> reader leaves — the cross, a door, or the last control — and it holds **two
+> things**: that they have been through, *and what was still unanswered when
+> they left*. The second half is what makes a wiped volume ask again in the very
+> browser that answered, instead of only in some other one; `unanswered` is
+> still stored as `dismissed`, because a new spelling would reopen the walk on
+> every browser that has already closed the old modal. Nothing in the predicate
+> reads the data the walk collects, which is what answers #726's refusal: an
+> emptied ledger reopens nothing.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed

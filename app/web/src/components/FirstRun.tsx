@@ -53,8 +53,11 @@
  *    doors.
  *  - **The memory of the traversal is the browser's alone.** The predicate stays
  *    derived server-side and reads no data this screen is about to collect, so a
- *    wiped volume re-arms the question, a second browser sees it again, and an
- *    emptied ledger reopens nothing. No `onboarding_done` row anywhere.
+ *    second browser sees the walk again and an emptied ledger reopens nothing.
+ *    What `localStorage` holds is *been through, and this is what was still
+ *    unanswered when I left* — the second half being what makes a **wiped
+ *    volume ask again** in the browser that answered, rather than only in some
+ *    other one. No `onboarding_done` row anywhere.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -79,11 +82,13 @@ import {
   PASSAGES,
   currencyFixed,
   firstRunStands,
-  firstRunWalked,
   nextPassage,
   passageNumber,
   previousPassage,
+  readFirstRunMark,
   rememberFirstRunWalked,
+  requiredUnanswered,
+  type FirstRunMark,
   type Passage,
 } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
@@ -94,11 +99,11 @@ const FIELD_ID = 'first-run-currency'
 export function FirstRun() {
   const { t } = useI18n()
   const client = useQueryClient()
-  const [walked, setWalked] = useState(() => firstRunWalked())
+  const [mark, setMark] = useState<FirstRunMark | null>(() => readFirstRunMark())
   const [passage, setPassage] = useState<Passage>(PASSAGES[0])
 
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
-  const stands = firstRunStands({ settings: config.data?.settings, walked })
+  const stands = firstRunStands({ settings: config.data?.settings, mark })
 
   // **The walk is latched, and it has to be.** The predicate is what *arms* the
   // modal; it is not what keeps it open, because answering the question makes it
@@ -123,10 +128,19 @@ export function FirstRun() {
   const suggestion = suggestedCurrency(navigator.languages)
   const [choice, setChoice] = useState<string>(() => suggestion ?? '')
 
-  /** Leave, however: the cross, `Escape`, a door taken, or the last passage. */
+  /**
+   * Leave, however: the cross, `Escape`, a door taken, or the last passage.
+   *
+   * What is written is the walk **and the state of the question when it ended**
+   * — only a positive observation of *answered* writes that half, so a config
+   * read that is not in hand leaves the reader alone rather than re-arming the
+   * modal on their next page load.
+   */
   const leave = () => {
-    rememberFirstRunWalked()
-    setWalked(true)
+    const left: FirstRunMark =
+      requiredUnanswered(config.data?.settings) === false ? 'answered' : 'unanswered'
+    rememberFirstRunWalked(left)
+    setMark(left)
     setWalking(false)
   }
 

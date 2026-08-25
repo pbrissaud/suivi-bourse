@@ -214,7 +214,7 @@ describe('closing it', () => {
     expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
   })
 
-  it('remembers the closing in the browser alone, so a wiped volume re-arms it', async () => {
+  it('remembers the closing in the browser alone, so a second browser sees it again', async () => {
     const { user, unmount } = await firstRun()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -658,22 +658,44 @@ describe('mandatory means traversed, never answered', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('re-poses the question on a wiped store, nothing there having remembered', async () => {
-    // The other half of the same property. The traversal is the browser's, so
-    // there is no row to survive the volume: an install whose store is gone
-    // answers *unanswered* again, and every reader who has not been through in
-    // this browser is walked through the three again.
+  it('re-poses the question on a wiped store, in the very browser that answered', async () => {
+    // The other half of the same property, and the case a plain *been through*
+    // mark gets wrong: this reader answered, walked the three and came back to
+    // an install whose volume is gone. Nothing server-side remembers the walk —
+    // there is no row to survive the wipe — so the question is asked again, and
+    // the browser's memory does not swallow it, because what it holds is *what
+    // was still unanswered when I left*.
+    const { user, unmount } = await firstRun({ browserLanguages: ['fr-FR'] })
+    await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
+    expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    await walk(user)
+    await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    unmount()
+
+    // Same browser, same address — and a store that answers *unanswered* again,
+    // which is what a wiped volume is.
+    withNoCurrency()
+    renderApp()
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
+  })
+
+  it('leaves alone the reader who walked away from the question still open', async () => {
+    // The counterweight, and the reason the mark is not simply cleared when the
+    // predicate stands again: a bare `docker run` answers nothing on purpose, so
+    // this reader must not be walked through the product's explanation on every
+    // page load — nor on the next container, which is indistinguishable to them.
     const { user, unmount } = await firstRun()
     await walk(user, 2)
     await user.click(await within(modal()).findByRole('button', { name: 'Terminer' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     unmount()
 
-    window.localStorage.clear()
     withNoCurrency()
     renderApp()
-
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'Tableau de bord', level: 1 })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

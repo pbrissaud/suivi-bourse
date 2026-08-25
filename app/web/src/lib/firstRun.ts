@@ -177,29 +177,58 @@ export function currencyFixed(settings: readonly SettingDescription[] | undefine
  * onboarding — the explanation of the product included — on every reader who has
  * been through. What the mark means widened; what it is written as did not.
  */
-const WALKED = 'dismissed'
+const STILL_UNANSWERED = 'dismissed'
+const ANSWERED = 'answered'
 
-/** Whether this browser has already been through — closed or walked, one mark. */
-export function firstRunWalked(): boolean {
+/**
+ * What the browser remembers of the walk: **that the reader has been through,
+ * and what was still unanswered when they left.**
+ *
+ * The second half is what makes *a wiped store asks again* true (ADR-0035)
+ * rather than merely true of a second browser. A mark saying only *been through*
+ * would suppress the question for ever in the browser that answered it — and the
+ * reader who loses their volume, which is the trial install ADR-0015 designs
+ * for, would land on an app whose currency is gone with nothing asking for it
+ * again. So the mark is compared against what the server says **now**: a reader
+ * who left with the question still open is left alone, and a reader who left
+ * having answered is asked again the day the store no longer holds the answer,
+ * because that is a different installation wearing the same address.
+ *
+ * `'unanswered'` is written as `dismissed`, the string every browser that has
+ * already closed this modal holds. That is deliberate: the old modal only ever
+ * stood on an unanswered dial, so the legacy value already *means* this, and a
+ * new spelling would walk every one of those readers through the product's
+ * explanation a second time.
+ */
+export type FirstRunMark = 'unanswered' | 'answered'
+
+/** What this browser holds, or `null` — nobody has been through here. */
+export function readFirstRunMark(): FirstRunMark | null {
   try {
-    return browserStorage()?.getItem(FIRST_RUN_STORAGE_KEY) === WALKED
+    const stored = browserStorage()?.getItem(FIRST_RUN_STORAGE_KEY)
+    if (stored === STILL_UNANSWERED) return 'unanswered'
+    if (stored === ANSWERED) return 'answered'
+    return null
   } catch {
-    return false
+    // A browser that refuses storage has no memory: it walks again, which is
+    // the degradation `lib/storage.ts` chose for the three preferences too.
+    return null
   }
 }
 
 /**
- * Remember the traversal — **however the reader left**, the cross and the last
- * passage writing the same mark: what is recorded is *this reader has been
- * through*, and the way out never had the weight of the answer (ADR-0021).
+ * Remember the traversal — **however the reader left**, the cross, a door and
+ * the last passage writing the same kind of mark: what is recorded is *this
+ * reader has been through*, and the way out never had the weight of the answer
+ * (ADR-0021).
  *
  * A browser that refuses storage simply shows the modal again next time — the
  * reader still leaves it, it just is not remembered, which is `lib/storage.ts`'s
  * rule for the three preferences and the right degradation here too: nothing is
  * lost but a second walk.
  */
-export function rememberFirstRunWalked() {
-  rememberPreference(FIRST_RUN_STORAGE_KEY, WALKED)
+export function rememberFirstRunWalked(mark: FirstRunMark) {
+  rememberPreference(FIRST_RUN_STORAGE_KEY, mark === 'answered' ? ANSWERED : STILL_UNANSWERED)
 }
 
 /**
@@ -211,13 +240,18 @@ export function rememberFirstRunWalked() {
  * half**: no read of the accounts and no read of the ledger reaches this
  * function, which is what keeps an emptied ledger from reopening the walk.
  *
+ * The two are composed rather than and-ed: a browser that walked away from an
+ * **open** question is left alone, and one that walked away having answered is
+ * walked again the day a required dial is unanswered — which can only mean the
+ * store that held the answer is gone.
+ *
  * `false` while the settings read has not landed, which is the same rule the
  * bands follow: a surface that appears on a silence and disappears when the
  * answer arrives is worse than one that arrives late.
  */
 export function firstRunStands(input: {
   settings: readonly SettingDescription[] | undefined
-  walked: boolean
+  mark: FirstRunMark | null
 }): boolean {
-  return requiredUnanswered(input.settings) === true && !input.walked
+  return requiredUnanswered(input.settings) === true && input.mark !== 'unanswered'
 }
