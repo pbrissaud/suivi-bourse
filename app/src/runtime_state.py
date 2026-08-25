@@ -128,6 +128,18 @@ SKIP_TOO_RECENT = 'too_recent'
 SKIP_NO_BASE_CURRENCY = 'no_base_currency'
 SKIP_NO_QUOTE_CURRENCY = 'no_quote_currency'
 SKIP_NOTHING_TO_REPAIR = 'nothing_to_repair'
+#: The lateral pass's fourth, and the one that is **not** a no-op (issue #825):
+#: the pass learnt the symbol's unit and had nothing else to do. It is a word of
+#: its own rather than ``nothing_to_repair`` because the two say opposite things
+#: about the same cycle — the steady state means *this pass found no work*, while
+#: this one means *this pass did the only work there was*, and wrote it to
+#: ``symbol_quote``. Folding it into the steady state would leave the cycle that
+#: turns a line from carried-at-cost into quoted indistinguishable, on
+#: ``/api/runtime``, from the hundreds of cycles that did nothing at all. It
+#: rides on ``skipped`` all the same, since ``written`` counts **points**
+#: repaired and this pass repaired none: nothing was converted, a unit was
+#: learnt. Never a failure — the request completed and named a currency.
+SKIP_UNIT_LEARNT = 'unit_learnt'
 #: The backward pass's own: a window under a day, which is what a chunk boundary
 #: landing inside a single trading session leaves.
 #:
@@ -461,7 +473,7 @@ __all__ = [
     'TERMINAL_COMPLETE', 'TERMINAL_UNCONVERTIBLE',
     'SKIP_NO_SERIES', 'SKIP_TOO_RECENT', 'SKIP_WINDOW_TOO_SMALL',
     'SKIP_NO_BASE_CURRENCY', 'SKIP_NO_QUOTE_CURRENCY',
-    'SKIP_NOTHING_TO_REPAIR',
+    'SKIP_NOTHING_TO_REPAIR', 'SKIP_UNIT_LEARNT',
     'INGEST_UPDATED', 'INGEST_UNCHANGED', 'INGEST_FAILED',
     'PERF_RAN', 'PERF_FAILED',
     'ScrapeRecord', 'BackfillRecord', 'IngestRecord', 'PerfRecord',
