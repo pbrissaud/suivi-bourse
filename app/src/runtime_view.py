@@ -939,6 +939,24 @@ def build_health(
     Three jobs and not four: ingestion is not one — it is the boot or a write —
     and what it has to say, *the app is running on its previous configuration*,
     is a banner condition rather than a job's verdict.
+
+    **The whole takes all three words, ``unknown`` included.** A process that has
+    observed nothing yet — no job with a last pass, which is a container a minute
+    old — answers ``unknown`` and not ``ok``: ``ok`` is *everything ran and
+    nothing asks to be looked at*, and a boot window can support neither half of
+    that sentence. It is the same reading each job already gives itself one
+    storey down, and the same one :mod:`web.health` gives the body it could not
+    fold at all.
+
+    The order is **attention, then unknown, then ok**, and the first is the one
+    that must not be softened: a stopped scheduler on a fresh boot is a reason to
+    look, whatever has yet to run.
+
+    ``unknown`` is *nothing at all has run*, deliberately, and not *some job has
+    not run*. A portfolio whose lines are all sold keeps no scrape job and no
+    backfill in scope, so those two verdicts are ``unknown`` for the life of the
+    process with nothing wrong anywhere — reading the whole off the worst of the
+    three would park such an install on a word that no future pass can clear.
     """
     jobs = {
         'scrape': health_scrape(symbols),
@@ -947,8 +965,15 @@ def build_health(
     }
     attention = not scheduler_running or any(
         job['status'] == HEALTH_ATTENTION for job in jobs.values())
+    observed = any(job['at'] is not None for job in jobs.values())
+    if attention:
+        status = HEALTH_ATTENTION
+    elif not observed:
+        status = HEALTH_UNKNOWN
+    else:
+        status = HEALTH_OK
     return {
-        'status': HEALTH_ATTENTION if attention else HEALTH_OK,
+        'status': status,
         'now': _iso(now),
         'scheduler_running': scheduler_running,
         'jobs': jobs,

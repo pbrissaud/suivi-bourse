@@ -1094,13 +1094,13 @@ def test_a_reconstruction_that_reached_its_target_reads_complete():
     assert body['jobs']['backfill']['status'] == runtime_view.HEALTH_OK
 
 
-def test_nothing_observed_is_unknown_and_the_whole_is_still_well():
+def test_nothing_observed_is_unknown_the_whole_included():
     """The boot window: nothing is wrong, and nothing is known either.
 
     Two different sentences, and answering ``ok`` to the second is how a page
     announces a reconstruction that has not started as one that finished. The
-    *whole* stays ``ok`` all the same — an install nobody has broken is not an
-    install asking to be looked at.
+    *whole* says it too: ``ok`` claims that everything ran and nothing asks to be
+    looked at, and a container a minute old can support neither half of it.
     """
     body = _health()
 
@@ -1109,7 +1109,37 @@ def test_nothing_observed_is_unknown_and_the_whole_is_still_well():
     assert body['jobs']['performance'] == {
         'status': runtime_view.HEALTH_UNKNOWN, 'at': None,
         'verdict': runtime_view.HEALTH_UNKNOWN, 'error': None}
+    assert body['status'] == runtime_view.HEALTH_UNKNOWN
+
+
+def test_one_pass_is_enough_for_the_whole_to_leave_unknown():
+    """``unknown`` is *nothing has run*, and not *something has not run yet*.
+
+    A scrape that wrote is an observation, so the whole is ``ok`` although the
+    backfill and the perf cycle are still ahead of their first pass. The
+    stricter reading — the worst of the three — would park a portfolio whose
+    lines are all sold on ``unknown`` for the life of the process, since neither
+    of those two jobs has anything left to observe there.
+    """
+    body = _health(scrape={'AAPL': _scrape()})
+
+    assert body['jobs']['scrape']['at'] is not None
+    assert body['jobs']['backfill']['status'] == runtime_view.HEALTH_UNKNOWN
+    assert body['jobs']['performance']['status'] == runtime_view.HEALTH_UNKNOWN
     assert body['status'] == runtime_view.HEALTH_OK
+
+
+def test_a_boot_window_with_a_stopped_scheduler_asks_to_be_looked_at():
+    """Attention keeps its precedence over the honest silence.
+
+    A worker whose scheduler has stopped will run none of the three jobs ever
+    again, so *nothing has been observed* is exactly the wrong word for it: what
+    is true is that nothing ever will be.
+    """
+    body = _health(scheduler_running=False)
+
+    assert [job['at'] for job in body['jobs'].values()] == [None, None, None]
+    assert body['status'] == runtime_view.HEALTH_ATTENTION
 
 
 def test_a_stopped_scheduler_is_a_reason_to_look_however_well_the_jobs_went():

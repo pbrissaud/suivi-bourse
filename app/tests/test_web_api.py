@@ -3546,25 +3546,53 @@ def test_a_failed_perf_pass_is_read_in_the_body_with_what_it_raised(tmp_path):
     assert body['jobs']['performance']['error'] == 'the replay raised'
 
 
-def test_a_job_nothing_has_been_observed_of_is_unknown_and_not_well(tmp_path):
-    """The boot window, said as itself.
+def test_a_container_that_has_observed_nothing_is_unknown_and_not_well(tmp_path):
+    """The boot window, said as itself — the whole included.
 
-    A container that started ninety seconds ago has run no backfill cycle and
-    no perf cycle. *Nothing is wrong* and *nothing is known* are two different
-    sentences, and answering ``ok`` to the second is how a page ends up
-    announcing a reconstruction that has not started as one that finished.
+    A container that started ninety seconds ago has run no scrape, no backfill
+    cycle and no perf cycle. *Nothing is wrong* and *nothing is known* are two
+    different sentences, and answering ``ok`` to the second is how a page ends up
+    announcing a reconstruction that has not started as one that finished. The
+    code is the other register and it does not move: ``unknown`` is a ``200``,
+    because there is nothing here a restart repairs.
     """
     client, _ = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     _arm_the_scheduler(web_module.current_runtime())
 
-    body = client.get('/health').get_json()
+    response = client.get('/health')
+    body = response.get_json()
 
-    assert body['status'] == 'ok'
+    assert response.status_code == 200
+    assert body['status'] == 'unknown'
     assert [job['status'] for job in body['jobs'].values()] == [
         'unknown', 'unknown', 'unknown']
     assert body['jobs']['scrape']['at'] is None
     assert body['jobs']['performance']['verdict'] == 'unknown'
+
+
+def test_a_first_pass_takes_the_whole_out_of_unknown_into_well(tmp_path):
+    """And the boot window closes on the first observation, not on the last.
+
+    ``unknown`` is *this process has seen nothing*; one job that ran and nothing
+    asking to be looked at is ``ok``, although the two other cycles are still
+    ahead of their first pass.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol='AAPL', at=HEALTH_PASS, market_state='REGULAR', closed=False,
+        price_present=True, verdict=runtime_state.SCRAPE_WROTE,
+        failure_count=0, next_delay=120.0, wrote=True, stale=False))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'ok'
+    assert body['jobs']['scrape']['status'] == 'ok'
+    assert body['jobs']['backfill']['status'] == 'unknown'
 
 
 def test_the_health_code_is_the_store_and_the_store_alone(tmp_path):
