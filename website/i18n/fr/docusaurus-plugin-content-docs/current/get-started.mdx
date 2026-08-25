@@ -98,6 +98,12 @@ deliberately not `ok`. `attention` lists the securities the verdict is about, so
 you know which line to go and read; `verdict` is the job's own word for its last
 pass, and `at` is when that pass happened.
 
+**The dot at the top right of the app reads this same body**, so you do not have
+to `curl` anything to know: green is `ok`, amber is `attention` — or a rebuild
+still running — and red is the app not answering at all. It is a link, and it
+leads to the installation panel, where the jobs and the store are written out in
+full.
+
 :::note A scrape that has gone quiet is amber, and the code stays `200`
 Restarting the container repairs nothing that Yahoo or the market broke, and a
 probe that failed on a stuck job would turn it into a restart loop that fixes
