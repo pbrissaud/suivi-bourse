@@ -62,8 +62,14 @@
 > a time, its header is sticky and its body bounded, the two filters are chips,
 > and the count and the end-of-ledger sentence are true of the reduction.
 > **ADR-0030 has landed** (#794): the data page is the three tabs described
-> below, the notices are the one block that exists when it is empty, and the
-> imports are one band above the ledger table.
+> below, and the imports are one band above the ledger table. **Its exception is
+> withdrawn** (#821, ADR-0036): the notices were kept mounted because the status
+> dot was said to ask *is there anything to report*, and it does not — it leads
+> to the installation tab, where one repairs. The block is ordinary again, so *a
+> block with nothing in it does not exist* has no exception anywhere, and
+> acknowledging the last fact takes the surface away rather than leaving a
+> permanent *Rien à signaler* behind. What does **not** move is ADR-0026:
+> nothing is rendered, title included, while the read is in flight.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed
@@ -183,8 +189,9 @@ Four nets hold a rule nothing made true by construction:
   it may sit beside them where the type tells them apart — `head` against `term`
   is a factor of three. A shared row is a defect only where neither cue is
   there.
-- **A block with nothing in it does not exist.** The layout shifts when a notice
-  appears.
+- **A block with nothing in it does not exist**, and since #821 there is **no
+  exception anywhere** — the notices held the last one. The layout shifts when a
+  notice appears.
 - **A receipt lasts as long as the operation, never three seconds** (#796,
   `CONTEXT.md` § Receipt). Two gestures have one and they render it two ways,
   which is a property of what they answer rather than an inconsistency: the
@@ -366,6 +373,7 @@ src/
   `events/export.py` and a rule written twice loses a branch; the fourth was the
   accounts, and it left with the file nothing could read back (ADR-0034) — and
   **no third entry** since #816: nothing persists that could be listed or revoked, so the
-  band is the zone and the menu), *The notices* — **always mounted**, saying so
-  when there is nothing, because the status dot must have one destination — and
-  *The installation* (settings, the store and its orphans).
+  band is the zone and the menu), *The notices* — an **ordinary block** since
+  #821: the tab is always there, what is on it is not, and an installation with
+  nothing to report renders nothing at all — and *The installation* (settings,
+  the store and its orphans).

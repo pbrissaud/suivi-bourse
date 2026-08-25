@@ -1,4 +1,4 @@
-# The data page has three tabs, and the notices keep one when they have nothing to say
+# The data page has three tabs
 
 > **The notices' exception is withdrawn by
 > [ADR-0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md)**: the dot
@@ -27,15 +27,18 @@ A tab is not a page, so the four-page cut of ADR-0020 still holds.
 
 ## Consequences
 
-- **The notices tab is always mounted, and this reverses ADR-0020 for that block alone.**
-  It is the one place the product accepts a permanent empty state, and the reason is the
-  status dot: [ADR-0022](./0022-the-navigation-is-a-sidebar.md) made the dot *lead*
-  somewhere rather than indicate without pointing, and a destination that exists only
-  when the dot is amber gives one control two addresses. A tab that answers *nothing to
-  report* answers exactly the question the dot asks. The alternative also loses on its
-  own terms: acknowledging the last notice would make the tab vanish under the reader.
-  *A block with nothing in it does not exist* is unchanged everywhere else, the orphan
-  list and the empty ledger included.
+- **The notices tab was always mounted, and that was this decision's one exception —
+  [withdrawn by ADR-0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md),
+  so nothing below is claimed of the product today.** The reason was the status dot:
+  [ADR-0022](./0022-the-navigation-is-a-sidebar.md) made the dot *lead* somewhere rather
+  than indicate without pointing, and a destination that exists only when the dot is
+  amber gives one control two addresses; a tab that answers *nothing to report* answers
+  exactly the question the dot asks. The dot does not ask it — it leads to the
+  installation tab, where one repairs — so the block became ordinary again, and *a block
+  with nothing in it does not exist*, unchanged everywhere else all along, has no
+  exception anywhere. The second argument went the same way: acknowledging the last
+  notice makes the surface vanish under the reader, which was the objection and is the
+  behaviour.
 - **The imports return to the ledger tab, which is where ADR-0020 had put them.** The
   redesign had moved the imported files beside the store; provenance is a property of a
   *declared row* — which file, imported when, with what fingerprint — and ADR-0020 had

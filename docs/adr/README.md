@@ -40,7 +40,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0027](./0027-a-key-names-a-row-for-as-long-as-the-row-lives.md) | A key names a row for as long as the row lives, and no longer |
 | [0028](./0028-the-accounts-page-shows-one-account.md) | The accounts page shows one account, and the comparison moves with its range control |
 | [0029](./0029-the-preset-becomes-ours.md) | The preset becomes ours, and it is still installed from a URL |
-| [0030](./0030-the-data-page-has-three-tabs.md) | The data page has three tabs, and the notices keep one when they have nothing to say |
+| [0030](./0030-the-data-page-has-three-tabs.md) | The data page has three tabs |
 | [0031](./0031-the-ledger-loads-in-pages.md) | The ledger loads in pages, and only the first one is silent |
 | [0032](./0032-the-import-is-a-gesture-not-a-mount.md) | The import is a gesture, not a mount |
 | [0033](./0033-prometheus-leaves-and-the-api-stops-being-a-contract.md) | Prometheus leaves, and the API stops being a contract |
