@@ -144,11 +144,6 @@ interface Surface {
  * dashboard, whose chart reads **one** of two series and picks by the same
  * discriminant that decides its reading. Without the second the valuation
  * series is armed under a condition false by default and never enters the net.
- *
- * The notices tab is here for a reason the others are not: it is the one block
- * in the product that exists when it is empty (ADR-0030), so it is the one
- * whose *empty* sentence a read in flight could produce out of nothing. The tab
- * stays mounted; the sentence waits.
  */
 const SURFACES: readonly Surface[] = [
   { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
