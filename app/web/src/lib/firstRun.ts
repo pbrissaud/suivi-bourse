@@ -1,5 +1,6 @@
 /**
- * The first run — **a predicate, never a moment** (#726, ADR-0021, ADR-0005).
+ * The first run — **a predicate, never a moment** (#726, ADR-0021, ADR-0005),
+ * and **three passages** since ADR-0035 (#823).
  *
  * Everything a first launch could once have asked has been deleted or answered
  * elsewhere: the mode is dead (#711), the accounts seed themselves (ADR-0013),
@@ -9,11 +10,6 @@
  * the one dial with no default and therefore the only one whose absence means
  * *nobody has ever answered here*.
  *
- * That is why there is one predicate and not three independent steps on three
- * predicates: three steps would reopen the onboarding screen — the explanation
- * of the product included — for somebody who has used the app for six months
- * and has just revoked their imports.
- *
  * **The predicate is a class and not a name** (ADR-0035). It reads *a required
  * setting is unanswered*, off the `required` mark the registry publishes with
  * every other property of a dial — not off `base_currency` spelled out here.
@@ -21,19 +17,63 @@
  * it; what the seam buys is that the second required dial is a line in
  * `settings_registry.py` rather than this file reopened.
  *
- * **The memory of the closing is browser-side only.** The predicate stays
+ * **The memory of the traversal is browser-side only.** The predicate stays
  * entirely derived from the server, so a wiped volume re-arms it and a second
- * browser sees it again; what `localStorage` holds is *this reader has waved it
- * away in this browser*, which is a property of the reader exactly as the theme
- * and the language are (ADR-0024, same mechanism, absence meaning *not yet*).
- * Storing it in the store would be a second dial answering a question the app
- * has just decided it asks once.
+ * browser sees it again; what `localStorage` holds is *this reader has been
+ * through, in this browser*, which is a property of the reader exactly as the
+ * theme and the language are (ADR-0024, same mechanism, absence meaning *not
+ * yet*). There is **no `onboarding_done` row**: recording server-side what can
+ * be derived is precisely what the predicate was written against, and it is
+ * that severed link — not the number of passages — that answers #726's refusal
+ * on its merits. A ledger emptied after six months reopens nothing, because
+ * nothing about this screen is derived from the data it is about to collect.
  */
 import type { SettingDescription } from '@/lib/api'
 import { browserStorage, rememberPreference } from '@/lib/storage'
 
 /** Same shape as the theme and language keys, deliberately (ADR-0024). */
 export const FIRST_RUN_STORAGE_KEY = 'sb.firstRun'
+
+/**
+ * The three passages, **in order** (ADR-0035): the required settings, the
+ * accounts, the first events.
+ *
+ * They are a list rather than three booleans because that is the whole of what
+ * changed: the modal already stood on one predicate, and what the reader walks
+ * is a sequence inside it. Three *independent* steps on three predicates is the
+ * shape #726 refused, and it is refused here too — nothing below reads the
+ * accounts or the ledger to decide whether a passage is owed.
+ *
+ * **Mandatory means traversed, never answered.** Each of the three is walked
+ * and none of them extracts anything: the settings passage carries the one
+ * question and releases a reader who does not answer it, the accounts passage
+ * is satisfied by the seeded row every install owns, and the events passage
+ * offers two doors and no obligation to take either.
+ */
+export const PASSAGES = ['settings', 'accounts', 'events'] as const
+
+export type Passage = (typeof PASSAGES)[number]
+
+/** Where in the walk this passage is, counted from one for a reader. */
+export function passageNumber(passage: Passage): number {
+  return PASSAGES.indexOf(passage) + 1
+}
+
+/**
+ * The passage after this one, or `null` where the walk ends.
+ *
+ * `null` is what the last passage's control reads: there is nothing after the
+ * events, so the gesture there **leaves**, and leaving is what writes the mark.
+ */
+export function nextPassage(passage: Passage): Passage | null {
+  return PASSAGES[PASSAGES.indexOf(passage) + 1] ?? null
+}
+
+/** The passage before this one, or `null` on the first — which has no way back. */
+export function previousPassage(passage: Passage): Passage | null {
+  const index = PASSAGES.indexOf(passage)
+  return index <= 0 ? null : PASSAGES[index - 1]
+}
 
 /**
  * The reporting currency's own key. It is **not** the predicate's — that reads
@@ -130,23 +170,36 @@ export function currencyFixed(settings: readonly SettingDescription[] | undefine
   return unanswered === undefined ? undefined : !unanswered
 }
 
-/** Whether this browser has already waved the modal away. */
-export function firstRunDismissed(): boolean {
+/**
+ * The value the mark is written with. It is `dismissed` and not `walked`, and
+ * the wording is deliberately left where it was: every browser that has already
+ * closed the modal holds this exact string, and a new spelling would re-open the
+ * onboarding — the explanation of the product included — on every reader who has
+ * been through. What the mark means widened; what it is written as did not.
+ */
+const WALKED = 'dismissed'
+
+/** Whether this browser has already been through — closed or walked, one mark. */
+export function firstRunWalked(): boolean {
   try {
-    return browserStorage()?.getItem(FIRST_RUN_STORAGE_KEY) === 'dismissed'
+    return browserStorage()?.getItem(FIRST_RUN_STORAGE_KEY) === WALKED
   } catch {
     return false
   }
 }
 
 /**
- * Remember the closing. A browser that refuses storage simply shows the modal
- * again next time — the reader still closes it, it just is not remembered,
- * which is `lib/storage.ts`'s rule for the two preferences and the right
- * degradation here too: nothing is lost but a second dismissal.
+ * Remember the traversal — **however the reader left**, the cross and the last
+ * passage writing the same mark: what is recorded is *this reader has been
+ * through*, and the way out never had the weight of the answer (ADR-0021).
+ *
+ * A browser that refuses storage simply shows the modal again next time — the
+ * reader still leaves it, it just is not remembered, which is `lib/storage.ts`'s
+ * rule for the three preferences and the right degradation here too: nothing is
+ * lost but a second walk.
  */
-export function rememberFirstRunDismissed() {
-  rememberPreference(FIRST_RUN_STORAGE_KEY, 'dismissed')
+export function rememberFirstRunWalked() {
+  rememberPreference(FIRST_RUN_STORAGE_KEY, WALKED)
 }
 
 /**
@@ -154,7 +207,9 @@ export function rememberFirstRunDismissed() {
  *
  * The predicate is the registry's mark and not a key (ADR-0035), so the day a
  * second dial is marked required the modal opens for it with nothing changed
- * here.
+ * here. **The browser's memory is the other half and it is the only other
+ * half**: no read of the accounts and no read of the ledger reaches this
+ * function, which is what keeps an emptied ledger from reopening the walk.
  *
  * `false` while the settings read has not landed, which is the same rule the
  * bands follow: a surface that appears on a silence and disappears when the
@@ -162,7 +217,7 @@ export function rememberFirstRunDismissed() {
  */
 export function firstRunStands(input: {
   settings: readonly SettingDescription[] | undefined
-  dismissed: boolean
+  walked: boolean
 }): boolean {
-  return requiredUnanswered(input.settings) === true && !input.dismissed
+  return requiredUnanswered(input.settings) === true && !input.walked
 }
