@@ -27,6 +27,18 @@ second socket the exporter used to be bound to is gone, and with it the "publish
 only the metrics port" that hid nothing anyway: whoever reaches the socket
 reaches the whole app.
 
+**`/health` says health in two registers that never mix** (ADR-0036). The
+**status code** is the orchestrator's, and its predicate is the one #696 settled
+— the worker serves and the store answers; nothing else reaches it. The **body**
+is a person's: each job (scrape, backfill, performance) with its last pass and
+its verdict, plus one word for the whole. A job that is late, wedged or silent
+is amber **with a `200`** — restarting repairs nothing yfinance broke, and a
+probe that reddened on it would turn a stuck job into a restart loop. The body
+is folded by `runtime_view.build_health` out of the recorder's last-pass records
+and issues no query, which is what keeps the two registers apart; when the store
+goes, so does the body, and the `503` is the whole answer. The route keeps its
+name: `/healthz` was examined and declined.
+
 ## The store
 
 `store.py` owns the file: the connection, the DDL of the eleven tables, the seed.
@@ -75,8 +87,9 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
   sleeps to the next open; a dead ticker backs off at `regular_interval ×
   2^(n−3)`. A freshness sonde watches for a writer that persists frozen values —
   purely diagnostic, and it says so twice: a `WARNING` in the logs and the
-  *stale* field of the scrape record the runtime tab renders. Its threshold is
-  the `staleness_horizon` dial.
+  *stale* field of the scrape record, which the runtime tab renders as a
+  `frozen` pill and `/health`'s body folds into the scrape job's verdict. Its
+  threshold is the `staleness_horizon` dial.
 - **Ingestion** — armed by the boot or by a write through the API, and by
   nothing else since ADR-0032 took the drop folder and its watcher. Each run
   reconciles the per-symbol scrape jobs; the write's own passes `force=True`,

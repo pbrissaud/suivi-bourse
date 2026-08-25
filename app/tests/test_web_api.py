@@ -18,6 +18,7 @@ import json
 
 import openpyxl
 import pytest
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import accounts as accounts_module
 import advisories
@@ -2923,7 +2924,9 @@ def test_health_still_wins_over_the_catch_all(tmp_path):
     response = build_client(tmp_path).get('/health')
 
     assert response.status_code == 200
-    assert response.get_json() == {'status': 'ok'}
+    # It is the route and not the shell: the shell has no ``jobs`` (#818).
+    assert set(response.get_json()['jobs']) == {
+        'scrape', 'backfill', 'performance'}
 
 
 def test_a_build_without_a_bundle_says_so_instead_of_404ing_blankly(tmp_path,
@@ -3427,6 +3430,235 @@ def test_a_published_record_reaches_the_payload_with_its_pill(tmp_path):
     assert body['symbols'][0]['last_pass'] == '2026-08-05T15:00:00+00:00'
     # No scheduler in a test process, and that is not trap 1's ambiguity.
     assert body['symbols'][0]['next_run_state'] == 'unavailable'
+
+
+# --------------------------------------------------------------------- #
+# Health — the two registers, on the app over a real store (issue #818)
+# --------------------------------------------------------------------- #
+
+HEALTH_PASS = datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc)
+
+
+def _arm_the_scheduler(runtime):
+    """Give the runtime a scheduler, so ``/health`` reads a worker, not a master.
+
+    A **real** ``BackgroundScheduler``, never started: it holds no thread until
+    ``start()``, and what the health body asks of it — *is there one, and what
+    is armed* — an empty pending set answers truthfully. Standing in for it
+    would have been standing in for the very thing the field is about.
+    """
+    runtime.scheduler = BackgroundScheduler()
+    return runtime
+
+
+def test_health_names_each_job_with_its_last_pass_and_its_verdict(tmp_path):
+    """Criterion 1 of #818: the body is for a person, and it carries the jobs.
+
+    Three jobs and one word for the whole. The material is process memory —
+    the recorder's last-pass records — so this answers on a store that has just
+    been proved to answer and asks it nothing more.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol='AAPL', at=HEALTH_PASS, market_state='REGULAR', closed=False,
+        price_present=True, verdict=runtime_state.SCRAPE_WROTE,
+        failure_count=0, next_delay=120.0, wrote=True))
+    runtime.recorder.record_backfill(runtime_state.BackfillRecord(
+        symbol='AAPL', direction=runtime_state.BACKWARD, at=HEALTH_PASS,
+        target=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        terminal=runtime_state.TERMINAL_COMPLETE))
+    runtime.recorder.record_perf(runtime_state.PerfRecord(
+        at=HEALTH_PASS, verdict=runtime_state.PERF_RAN))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'ok'
+    assert body['jobs']['scrape'] == {
+        'status': 'ok', 'at': '2026-08-05T15:00:00+00:00', 'verdict': 'open',
+        'held': 1, 'attention': []}
+    assert body['jobs']['backfill']['verdict'] == 'complete'
+    assert body['jobs']['backfill']['complete'] == 1
+    assert body['jobs']['backfill']['in_scope'] == 1
+    assert body['jobs']['performance'] == {
+        'status': 'ok', 'at': '2026-08-05T15:00:00+00:00', 'verdict': 'ran',
+        'error': None}
+
+
+def test_a_frozen_scrape_leaves_the_code_at_200_and_is_read_in_the_body(
+        tmp_path):
+    """**The assertion that holds the whole decision of the two registers.**
+
+    A writer that fetches happily and persists a value that never moves is what
+    #628's sonde flags on the scrape record. Restarting the container repairs
+    nothing yfinance or the market broke, so the orchestrator must be told
+    nothing at all — and the owner must be told everything. Amber with a
+    ``200``, and both halves are read here: the status code, and the payload.
+
+    There is a status code to read, so there is **no spy to write**: the trap
+    #804 names by hand is assuring this by checking that some function was not
+    called.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol='AAPL', at=HEALTH_PASS, market_state='REGULAR', closed=False,
+        price_present=True, verdict=runtime_state.SCRAPE_WROTE,
+        failure_count=0, next_delay=120.0, wrote=True, stale=True))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'attention'
+    assert body['jobs']['scrape']['status'] == 'attention'
+    assert body['jobs']['scrape']['verdict'] == 'frozen'
+    # And named, because *which line to go and read* is the one thing a `curl`
+    # cannot follow up on from a count.
+    assert body['jobs']['scrape']['attention'] == ['AAPL']
+
+
+def test_a_wedged_backfill_is_read_in_the_body_and_never_in_the_code(tmp_path):
+    """The same rule, on the second job: a stuck pass is not a restart.
+
+    ``failures`` is the backfill's own consecutive counter, folded by the
+    recorder — the piece #656 grew out of, since ``_backfill_backward`` logs a
+    warning and returns ``0``, leaving nothing to tell *pacing normally* from
+    *wedged on yfinance*.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    for _ in range(3):
+        runtime.recorder.record_backfill(runtime_state.BackfillRecord(
+            symbol='AAPL', direction=runtime_state.BACKWARD, at=HEALTH_PASS,
+            target=datetime(2024, 1, 15, tzinfo=timezone.utc),
+            failed=True, error='yfinance answered nothing'))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['jobs']['backfill']['verdict'] == 'failing'
+    assert body['jobs']['backfill']['attention'] == ['AAPL']
+
+
+def test_a_failed_perf_pass_is_read_in_the_body_with_what_it_raised(tmp_path):
+    """The third job, and the one whose record is global.
+
+    The error rides on the job rather than in a list because there is one of it:
+    the record holds the last pass only, so it disappears the moment the next
+    cycle succeeds.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    runtime.recorder.record_perf(runtime_state.PerfRecord(
+        at=HEALTH_PASS, verdict=runtime_state.PERF_FAILED,
+        error='the replay raised'))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'attention'
+    assert body['jobs']['performance']['verdict'] == 'failed'
+    assert body['jobs']['performance']['error'] == 'the replay raised'
+
+
+def test_a_container_that_has_observed_nothing_is_unknown_and_not_well(tmp_path):
+    """The boot window, said as itself — the whole included.
+
+    A container that started ninety seconds ago has run no scrape, no backfill
+    cycle and no perf cycle. *Nothing is wrong* and *nothing is known* are two
+    different sentences, and answering ``ok`` to the second is how a page ends up
+    announcing a reconstruction that has not started as one that finished. The
+    code is the other register and it does not move: ``unknown`` is a ``200``,
+    because there is nothing here a restart repairs.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    _arm_the_scheduler(web_module.current_runtime())
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'unknown'
+    assert [job['status'] for job in body['jobs'].values()] == [
+        'unknown', 'unknown', 'unknown']
+    assert body['jobs']['scrape']['at'] is None
+    assert body['jobs']['performance']['verdict'] == 'unknown'
+
+
+def test_a_first_pass_takes_the_whole_out_of_unknown_into_well(tmp_path):
+    """And the boot window closes on the first observation, not on the last.
+
+    ``unknown`` is *this process has seen nothing*; one job that ran and nothing
+    asking to be looked at is ``ok``, although the two other cycles are still
+    ahead of their first pass.
+    """
+    client, _ = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    runtime.recorder.record_scrape(runtime_state.ScrapeRecord(
+        symbol='AAPL', at=HEALTH_PASS, market_state='REGULAR', closed=False,
+        price_present=True, verdict=runtime_state.SCRAPE_WROTE,
+        failure_count=0, next_delay=120.0, wrote=True, stale=False))
+
+    response = client.get('/health')
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body['status'] == 'ok'
+    assert body['jobs']['scrape']['status'] == 'ok'
+    assert body['jobs']['backfill']['status'] == 'unknown'
+
+
+def test_the_health_code_is_the_store_and_the_store_alone(tmp_path):
+    """Criterion 2 of #818: the predicate of the code did not move.
+
+    The body grew; what makes the answer a ``503`` is what #696 settled — the
+    store does not answer — and it is still a ``problem+json``, which is the
+    contract every other failing route on this socket obeys.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    runtime = _arm_the_scheduler(web_module.current_runtime())
+    # A record a reader would have wanted — and it goes with the store, which
+    # is the trade ADR-0036 makes by name: the colour that survives is red.
+    runtime.recorder.record_perf(runtime_state.PerfRecord(
+        at=HEALTH_PASS, verdict=runtime_state.PERF_RAN))
+    opened.close()
+
+    response = client.get('/health')
+
+    assert response.status_code == 503
+    assert response.mimetype == 'application/problem+json'
+
+
+def test_the_health_body_issues_no_query_at_all(tmp_path, mocker):
+    """Beyond the ``ping`` the code register runs, the body asks nothing.
+
+    The same rule ``/api/runtime`` keeps, and here it is what keeps the two
+    registers apart: a body built from the store would fail for reasons the
+    status code has just finished saying the process does not have.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    _arm_the_scheduler(web_module.current_runtime())
+    queried = mocker.spy(opened, 'query')
+    arrow = mocker.spy(opened, 'arrow')
+
+    assert client.get('/health').status_code == 200
+
+    # One query, and it is the probe's own read of a declared table.
+    assert queried.call_count == 1
+    assert arrow.call_count == 0
 
 
 def _dials(client):

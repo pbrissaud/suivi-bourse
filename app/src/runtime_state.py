@@ -46,7 +46,7 @@ while it does.
 """
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
-from typing import Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 # --------------------------------------------------------------------- #
 # Vocabulary. Every constant below is a value a *job* writes, never one a
@@ -416,6 +416,37 @@ class RuntimeRecorder:
     def backfill_of(self, symbol: str,
                     direction: str) -> Optional[BackfillRecord]:
         return self._backfill.get((symbol, direction))
+
+    def records_for(self, shares: Iterable[Mapping[str, Any]]) -> Tuple[
+            Dict[str, Optional[ScrapeRecord]],
+            Dict[Tuple[str, str], Optional[BackfillRecord]]]:
+        """Every record the **snapshot's** symbols have, one ``get`` per key.
+
+        The read path of the module's two consumers, and it lives here rather
+        than at each of them because the second — ``/health``'s body, issue #818
+        — would otherwise be a copy of the first. Two copies of this loop is how
+        the lateral pass came to be missing from ``/api/runtime`` on the day it
+        landed, and :data:`DIRECTIONS` is spelled out **once** so that adding a
+        fourth direction is adding it there and nowhere else.
+
+        The row set is the declaration's and never this object's key set (déc.
+        3): it keeps a request thread from iterating a dict the scrape threads
+        are writing, and it answers *unknown* rather than *missing* for a symbol
+        the scheduler has not reached yet.
+        """
+        scrape: Dict[str, Optional[ScrapeRecord]] = {}
+        backfill: Dict[Tuple[str, str], Optional[BackfillRecord]] = {}
+        for share in shares:
+            symbol = share.get('symbol')
+            # A symbol held in two accounts is two rows of the snapshot and one
+            # series: it is read once, not once per holding.
+            if not symbol or symbol in scrape:
+                continue
+            scrape[symbol] = self.scrape_of(symbol)
+            for direction in DIRECTIONS:
+                backfill[(symbol, direction)] = self.backfill_of(
+                    symbol, direction)
+        return scrape, backfill
 
     def ingest(self) -> Optional[IngestRecord]:
         return self._ingest

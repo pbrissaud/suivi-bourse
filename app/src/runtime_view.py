@@ -756,6 +756,230 @@ def build_runtime(
     }
 
 
+# --------------------------------------------------------------------- #
+# Health — the register that is for a person (issue #818, ADR-0036)
+# --------------------------------------------------------------------- #
+
+#: Everything ran, and nothing asks to be looked at.
+HEALTH_OK = 'ok'
+#: Something ran badly, or has stopped running, and a person should look. It is
+#: **never** a failing status code: restarting the container repairs nothing
+#: that yfinance or the market broke, and a probe that reds on a stuck job turns
+#: it into a restart loop that fixes nothing and hides everything (ADR-0036).
+HEALTH_ATTENTION = 'attention'
+#: No pass of that job has been observed by this process — a designed state on a
+#: freshly booted container, and deliberately neither of the two above: nothing
+#: is wrong, and nothing is known either. Spelt like :data:`PILL_UNKNOWN` and
+#: :data:`BACKFILL_UNKNOWN`, which is what the folds below fall back to, because
+#: it is the same sentence one storey up.
+HEALTH_UNKNOWN = 'unknown'
+
+# **Red is missing from that list, and its absence is the design.** It is what a
+# reader concludes when the route answers ``503`` and there is no body at all —
+# the one colour that needs nothing published to be true, which is precisely
+# what lets it survive the store it would otherwise have been read from.
+
+#: Which single word a scrape of N symbols gets, worst first. It is
+#: :func:`symbol_pill`'s ranking one storey up — the same claim about what the
+#: reader came to find out — and it stops at ``closed`` because
+#: :data:`PILL_UNKNOWN` is the fold's fallback rather than a rank of its own.
+#: :data:`PILL_NOT_HELD` is absent for a stronger reason: an unheld symbol is
+#: not polled *by design*, so it is out of the fold entirely.
+_SCRAPE_RANK = (PILL_WRITE_FAILED, PILL_BACKOFF, PILL_FROZEN, PILL_FAILING,
+                PILL_OPEN, PILL_CLOSED)
+
+#: The four of them a person should look at. A silent scrape is **amber with a
+#: ``200``**: it is said here, and it is not said in the status code.
+_SCRAPE_ATTENTION = (PILL_WRITE_FAILED, PILL_BACKOFF, PILL_FROZEN, PILL_FAILING)
+
+#: The two backfill states a person should look at, over all three directions.
+#: ``unconvertible`` is in the list although it is a *terminal* and not a
+#: failure: it is the one backfill state that asks the owner to do something,
+#: which is the reason :func:`build_backfill_summary` refuses to count it as an
+#: achievement.
+_BACKFILL_ATTENTION = (BACKFILL_FAILING, runtime_state.TERMINAL_UNCONVERTIBLE)
+
+
+def health_scrape(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
+    """The scrape job in one line: its last pass, and its worst symbol's verdict.
+
+    **Held symbols only.** A sold line keeps no scrape job and no record, so
+    folding it in would say *"the scheduler has never reached this symbol"* about
+    a symbol nothing polls — for the life of the process, with no future event
+    able to clear it. That is the same reading :func:`symbol_pill` gives
+    ``held`` precedence for.
+
+    ``at`` is the **newest** of the last passes rather than the oldest, because
+    the question the field answers is *is it still scraping*: one symbol a
+    ``backoff`` has parked for four hours must not read as the whole job having
+    stopped, and the verdict beside it is what says that instead.
+    """
+    held = [symbol for symbol in symbols if symbol.held]
+    pills = {symbol.pill for symbol in held}
+    verdict = next((pill for pill in _SCRAPE_RANK if pill in pills),
+                   HEALTH_UNKNOWN)
+    # Through ``_utc`` on the way in: a record's instant is the job's, and
+    # ``max`` over a naive one beside an aware one raises. See :func:`_utc`.
+    passes = [stamped for stamped in
+              (_utc(symbol.last_pass) for symbol in held) if stamped]
+    return {
+        'status': _health_status(verdict, _SCRAPE_ATTENTION),
+        'at': _iso(max(passes)) if passes else None,
+        'verdict': verdict,
+        'held': len(held),
+        # Who the verdict is about, named. A count alone would leave the one
+        # thing a ``curl`` cannot follow up on: which line to go and read.
+        'attention': sorted(symbol.symbol for symbol in held
+                            if symbol.pill in _SCRAPE_ATTENTION),
+    }
+
+
+def health_backfill(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
+    """The backfill job in one line, over its three directions.
+
+    The **attention** half reads all three passes — a forward pass wedged on
+    yfinance is as much a stopped job as a backward one — while the *progress*
+    half is the backward pass alone, straight out of
+    :func:`build_backfill_summary` and for the reason stated there: the two
+    others have a healthy steady state that is a no-op, and folding them in
+    would make a perfectly well portfolio look permanently half-done.
+
+    ``complete``/``in_scope`` ride beside the verdict because *"is it
+    advancing"* is a pair of numbers and not a word: a reconstruction under way
+    says ``running`` on its first cycle and on its four-hundredth.
+    """
+    summary = build_backfill_summary(symbols)
+    states = set()
+    attention: List[str] = []
+    passes: List[datetime] = []
+    for symbol in symbols:
+        passes_of = (symbol.backward, symbol.forward, symbol.lateral)
+        own = {progress.state for progress in passes_of if progress is not None}
+        states |= own
+        if own & set(_BACKFILL_ATTENTION):
+            attention.append(symbol.symbol)
+        for progress in passes_of:
+            stamped = _utc(progress.at) if progress is not None else None
+            if stamped is not None:
+                passes.append(stamped)
+
+    if BACKFILL_FAILING in states:
+        verdict = BACKFILL_FAILING
+    elif runtime_state.TERMINAL_UNCONVERTIBLE in states:
+        verdict = runtime_state.TERMINAL_UNCONVERTIBLE
+    elif summary['in_scope'] == 0:
+        # Nothing observed, or nothing to observe — one sentence here, *this
+        # process has seen no reconstruction*, and the summary has already kept
+        # the boot window out of its own denominator.
+        verdict = BACKFILL_UNKNOWN
+    elif summary['complete'] == summary['in_scope']:
+        verdict = runtime_state.TERMINAL_COMPLETE
+    else:
+        verdict = BACKFILL_RUNNING
+
+    return {
+        'status': _health_status(verdict, _BACKFILL_ATTENTION),
+        'at': _iso(max(passes)) if passes else None,
+        'verdict': verdict,
+        'complete': summary['complete'],
+        'in_scope': summary['in_scope'],
+        'attention': sorted(attention),
+    }
+
+
+def health_performance(
+        record: Optional[runtime_state.PerfRecord]) -> Dict[str, Any]:
+    """The perf job in one line. Two verdicts since #707, and no third to fold.
+
+    ``error`` rides here rather than in a list because there is one of it: the
+    record holds the last pass only, so a failure disappears the moment the next
+    cycle succeeds — :func:`build_errors`' rule, applied to a global record.
+    """
+    if record is None:
+        return {'status': HEALTH_UNKNOWN, 'at': None,
+                'verdict': HEALTH_UNKNOWN, 'error': None}
+    failed = record.verdict == runtime_state.PERF_FAILED
+    return {
+        'status': HEALTH_ATTENTION if failed else HEALTH_OK,
+        'at': _iso(record.at),
+        'verdict': record.verdict,
+        'error': record.error,
+    }
+
+
+def _health_status(verdict: str, attention: Sequence[str]) -> str:
+    """One job's verdict, read as one of the three states."""
+    if verdict in attention:
+        return HEALTH_ATTENTION
+    if verdict == HEALTH_UNKNOWN:
+        return HEALTH_UNKNOWN
+    return HEALTH_OK
+
+
+def build_health(
+    symbols: Sequence[SymbolRuntime],
+    perf: Optional[runtime_state.PerfRecord],
+    now: datetime,
+    scheduler_running: bool = True,
+) -> Dict[str, Any]:
+    """The body of ``GET /health`` — the register whose reader is a person.
+
+    The status code is the other register and it is decided elsewhere, in
+    :mod:`web.health`, on the two facts an orchestrator can act on: the worker
+    serves and the store answers. **Nothing here reaches it.** A job that is
+    late, wedged or silent is read in this object and never in the code, which
+    is the whole of ADR-0036 — and the reason the gauges could leave (ADR-0033):
+    with them gone, this body *is* the observability.
+
+    ``scheduler_running`` is a reason to look and not merely a fact reported: a
+    worker whose scheduler has stopped will not run any of the three jobs again,
+    however well their last pass went. It is the one problem the sidebar's dot
+    could already detect before this record, and it survives it.
+
+    Three jobs and not four: ingestion is not one — it is the boot or a write —
+    and what it has to say, *the app is running on its previous configuration*,
+    is a banner condition rather than a job's verdict.
+
+    **The whole takes all three words, ``unknown`` included.** A process that has
+    observed nothing yet — no job with a last pass, which is a container a minute
+    old — answers ``unknown`` and not ``ok``: ``ok`` is *everything ran and
+    nothing asks to be looked at*, and a boot window can support neither half of
+    that sentence. It is the same reading each job already gives itself one
+    storey down, and the same one :mod:`web.health` gives the body it could not
+    fold at all.
+
+    The order is **attention, then unknown, then ok**, and the first is the one
+    that must not be softened: a stopped scheduler on a fresh boot is a reason to
+    look, whatever has yet to run.
+
+    ``unknown`` is *nothing at all has run*, deliberately, and not *some job has
+    not run*. A portfolio whose lines are all sold keeps no scrape job and no
+    backfill in scope, so those two verdicts are ``unknown`` for the life of the
+    process with nothing wrong anywhere — reading the whole off the worst of the
+    three would park such an install on a word that no future pass can clear.
+    """
+    jobs = {
+        'scrape': health_scrape(symbols),
+        'backfill': health_backfill(symbols),
+        'performance': health_performance(perf),
+    }
+    attention = not scheduler_running or any(
+        job['status'] == HEALTH_ATTENTION for job in jobs.values())
+    observed = any(job['at'] is not None for job in jobs.values())
+    if attention:
+        status = HEALTH_ATTENTION
+    elif not observed:
+        status = HEALTH_UNKNOWN
+    else:
+        status = HEALTH_OK
+    return {
+        'status': status,
+        'now': _iso(now),
+        'scheduler_running': scheduler_running,
+        'jobs': jobs,
+    }
+
+
 def _utc(value: Optional[datetime]) -> Optional[datetime]:
     """Stamp a naive datetime as UTC. One rule, applied at every exit.
 
@@ -815,4 +1039,6 @@ __all__ = [
     'symbol_pill', 'backfill_progress', 'build_symbols',
     'build_backfill_summary', 'build_ingestion', 'build_perf', 'build_accounts',
     'build_errors', 'is_rebuilding', 'build_runtime',
+    'HEALTH_OK', 'HEALTH_ATTENTION', 'HEALTH_UNKNOWN',
+    'health_scrape', 'health_backfill', 'health_performance', 'build_health',
 ]

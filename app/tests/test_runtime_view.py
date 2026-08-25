@@ -995,3 +995,164 @@ def test_an_unobserved_runtime_defaults_to_unknown_rather_than_kept():
         ingest=None, perf=None, now=NOW)
 
     assert payload['store']['persistence'] == mounts.UNKNOWN
+
+
+# ===================================================================== #
+# Health — the fold from N symbols to one word (issue #818, ADR-0036)
+# ===================================================================== #
+
+def _health(shares=None, scrape=None, backfill=None, perf=None,
+            scheduler_running=True):
+    """The body, composed the way :mod:`web.health` composes it."""
+    symbols = runtime_view.build_symbols(
+        shares=shares if shares is not None else [_share()],
+        scrape=scrape or {}, backfill=backfill or {}, next_runs={}, now=NOW,
+        scheduler_running=scheduler_running)
+    return runtime_view.build_health(
+        symbols=symbols, perf=perf, now=NOW,
+        scheduler_running=scheduler_running)
+
+
+def test_the_scrape_verdict_is_the_worst_symbol_and_not_the_commonest():
+    """One word for N symbols, and the ranking is :func:`symbol_pill`'s.
+
+    *Broken beats asleep* all the way down, one storey up: a portfolio where
+    nine symbols wrote and the tenth persists nothing says ``write_failed``,
+    because the reader came to find out whether anything is wrong and a majority
+    verdict would answer a question nobody asked.
+    """
+    body = _health(
+        shares=[_share(symbol='AAPL'), _share(symbol='ASML.AS')],
+        scrape={'AAPL': _scrape(),
+                'ASML.AS': _scrape(symbol='ASML.AS',
+                                   verdict=runtime_state.SCRAPE_WRITE_FAILED)})
+
+    assert body['jobs']['scrape']['verdict'] == 'write_failed'
+    assert body['jobs']['scrape']['status'] == runtime_view.HEALTH_ATTENTION
+    assert body['jobs']['scrape']['attention'] == ['ASML.AS']
+    assert body['status'] == runtime_view.HEALTH_ATTENTION
+
+
+def test_the_scrape_last_pass_is_the_newest_of_them():
+    """*Is it still scraping* is the question, so the newest pass answers it.
+
+    A symbol a back-off has parked for four hours would otherwise drag the whole
+    job's date back with it and read as a scheduler that stopped — while the
+    pill beside it already says what is true of that one symbol.
+    """
+    body = _health(
+        shares=[_share(symbol='AAPL'), _share(symbol='ASML.AS')],
+        scrape={'AAPL': _scrape(at=NOW - timedelta(hours=4)),
+                'ASML.AS': _scrape(symbol='ASML.AS', at=NOW)})
+
+    assert body['jobs']['scrape']['at'] == NOW.isoformat()
+
+
+def test_a_sold_line_is_out_of_the_scrape_fold_entirely():
+    """It is not polled **by design**, so it is neither well nor unwell.
+
+    Folding it in would answer *"the scheduler has never reached this symbol"*
+    about a symbol nothing polls — for the life of the process, and with no
+    future event able to clear it. The backfill is where a sold line is still
+    read, because that pass is still running on it (#703).
+    """
+    body = _health(shares=[_share(quantity=0)],
+                   scrape={'AAPL': _scrape(stale=True)})
+
+    assert body['jobs']['scrape']['held'] == 0
+    assert body['jobs']['scrape']['verdict'] == runtime_view.HEALTH_UNKNOWN
+    assert body['jobs']['scrape']['attention'] == []
+
+
+def test_an_unconvertible_series_is_a_reason_to_look_although_it_is_terminal():
+    """The one backfill terminal that asks the owner to do something (#704).
+
+    ``complete`` is a conclusion and this is a fault, which is why
+    :func:`build_backfill_summary` refuses to count it as an achievement — and
+    why it is a reason to look here rather than a job well done.
+    """
+    body = _health(backfill={
+        ('AAPL', runtime_state.LATERAL): _backfill(
+            direction=runtime_state.LATERAL,
+            terminal=runtime_state.TERMINAL_UNCONVERTIBLE,
+            reason='no exchange rate exists between XYZ and EUR')})
+
+    assert body['jobs']['backfill']['verdict'] == 'unconvertible'
+    assert body['jobs']['backfill']['attention'] == ['AAPL']
+
+
+def test_a_reconstruction_that_reached_its_target_reads_complete():
+    """And it carries its two numbers, because *advancing* is not a word."""
+    body = _health(backfill={
+        ('AAPL', runtime_state.BACKWARD): _backfill(
+            target=NOW - timedelta(days=400),
+            terminal=runtime_state.TERMINAL_COMPLETE)})
+
+    assert body['jobs']['backfill']['verdict'] == 'complete'
+    assert body['jobs']['backfill']['complete'] == 1
+    assert body['jobs']['backfill']['in_scope'] == 1
+    assert body['jobs']['backfill']['status'] == runtime_view.HEALTH_OK
+
+
+def test_nothing_observed_is_unknown_the_whole_included():
+    """The boot window: nothing is wrong, and nothing is known either.
+
+    Two different sentences, and answering ``ok`` to the second is how a page
+    announces a reconstruction that has not started as one that finished. The
+    *whole* says it too: ``ok`` claims that everything ran and nothing asks to be
+    looked at, and a container a minute old can support neither half of it.
+    """
+    body = _health()
+
+    assert body['jobs']['scrape']['verdict'] == runtime_view.HEALTH_UNKNOWN
+    assert body['jobs']['backfill']['verdict'] == runtime_view.HEALTH_UNKNOWN
+    assert body['jobs']['performance'] == {
+        'status': runtime_view.HEALTH_UNKNOWN, 'at': None,
+        'verdict': runtime_view.HEALTH_UNKNOWN, 'error': None}
+    assert body['status'] == runtime_view.HEALTH_UNKNOWN
+
+
+def test_one_pass_is_enough_for_the_whole_to_leave_unknown():
+    """``unknown`` is *nothing has run*, and not *something has not run yet*.
+
+    A scrape that wrote is an observation, so the whole is ``ok`` although the
+    backfill and the perf cycle are still ahead of their first pass. The
+    stricter reading — the worst of the three — would park a portfolio whose
+    lines are all sold on ``unknown`` for the life of the process, since neither
+    of those two jobs has anything left to observe there.
+    """
+    body = _health(scrape={'AAPL': _scrape()})
+
+    assert body['jobs']['scrape']['at'] is not None
+    assert body['jobs']['backfill']['status'] == runtime_view.HEALTH_UNKNOWN
+    assert body['jobs']['performance']['status'] == runtime_view.HEALTH_UNKNOWN
+    assert body['status'] == runtime_view.HEALTH_OK
+
+
+def test_a_boot_window_with_a_stopped_scheduler_asks_to_be_looked_at():
+    """Attention keeps its precedence over the honest silence.
+
+    A worker whose scheduler has stopped will run none of the three jobs ever
+    again, so *nothing has been observed* is exactly the wrong word for it: what
+    is true is that nothing ever will be.
+    """
+    body = _health(scheduler_running=False)
+
+    assert [job['at'] for job in body['jobs'].values()] == [None, None, None]
+    assert body['status'] == runtime_view.HEALTH_ATTENTION
+
+
+def test_a_stopped_scheduler_is_a_reason_to_look_however_well_the_jobs_went():
+    """It is not merely a fact reported: none of the three will run again.
+
+    The one problem the sidebar's dot could already detect before this body
+    existed, and it survives it — here, and never in the status code.
+    """
+    body = _health(scrape={'AAPL': _scrape()},
+                   perf=runtime_state.PerfRecord(
+                       at=NOW, verdict=runtime_state.PERF_RAN),
+                   scheduler_running=False)
+
+    assert body['jobs']['scrape']['status'] == runtime_view.HEALTH_OK
+    assert body['scheduler_running'] is False
+    assert body['status'] == runtime_view.HEALTH_ATTENTION
