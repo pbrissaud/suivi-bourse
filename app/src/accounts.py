@@ -37,15 +37,17 @@ from events.schemas import (
 
 logger = getLogger("accounts")
 
-#: The columns of an account file — the columns of the ``account`` table.
-#: ``label`` is optional and falls back to the id, the way v4's ``accounts:``
-#: block did; the other two are what the DDL declares ``NOT NULL``.
+#: The columns that make a file a declaration of accounts — the columns of the
+#: ``account`` table. ``label`` is optional and falls back to the id, the way
+#: v4's ``accounts:`` block did; the other two are what the DDL declares
+#: ``NOT NULL``.
 #:
 #: The list itself lives in :mod:`events.schemas`, and this is a second **name**
-#: for it rather than a second value: the validator quotes it in the refusal it
-#: raises when an event names an account nobody declared, and it cannot import
-#: this module — but this one can import that one, so one tuple serves both
-#: messages and neither can drift from the DDL without the other.
+#: for it rather than a second value. Both names are read at a user and neither
+#: imports the other's module: :mod:`main` quotes this one when it says a v4
+#: ``settings.yaml`` is named and never read, :mod:`uploads` quotes the other
+#: when it turns a declaration away. One tuple serves both, so neither message
+#: can drift from the DDL without the other.
 ACCOUNT_COLUMNS = ACCOUNT_FILE_COLUMNS
 REQUIRED_ACCOUNT_COLUMNS = frozenset({'id', 'type'})
 

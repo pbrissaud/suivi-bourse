@@ -258,7 +258,6 @@
   "accounts.detail.events": "Latest events",
   "accounts.detail.events.link": "See the whole ledger",
 
-
   "accounts.new": "Declare an account",
   "accounts.remove": "Remove",
   "accounts.remove.title": "Remove this account",
@@ -355,7 +354,6 @@
   "data.form.number.invalid": "This is not a number.",
   "data.form.submit": "Record this event",
   "data.form.cancel": "Cancel",
-
 
 
   "data.empty.file.title": "Import a file",

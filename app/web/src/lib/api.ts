@@ -455,9 +455,11 @@ export interface AccountsResponse {
  * surface that creates the rows.
  *
  * `id` is sent on a creation and **never on an edit**: it is the value events
- * name, so changing it would be an edit of every imported row that names it, and
- * imported rows are read-only. The server refuses it for that reason, and the
- * form does not offer it.
+ * name, so changing it would rewrite every event that names it. An event is
+ * addressed by its own key and never by a column somebody else may rewrite
+ * (#816, ADR-0032) — the server refuses it for that reason, and the form does
+ * not offer it. Reassignment is the gesture that moves events, and it names its
+ * subject.
  */
 export interface AccountDraft {
   id?: string

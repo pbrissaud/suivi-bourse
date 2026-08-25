@@ -258,7 +258,6 @@
   "accounts.detail.events": "Derniers événements",
   "accounts.detail.events.link": "Voir tout le grand livre",
 
-
   "accounts.new": "Déclarer un compte",
   "accounts.remove": "Supprimer",
   "accounts.remove.title": "Supprimer ce compte",
@@ -355,7 +354,6 @@
   "data.form.number.invalid": "Ce n’est pas un nombre.",
   "data.form.submit": "Enregistrer cet événement",
   "data.form.cancel": "Annuler",
-
 
 
   "data.empty.file.title": "Importer un fichier",

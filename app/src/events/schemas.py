@@ -15,14 +15,16 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 # constant so the row and the aggregation agree.
 DEFAULT_ACCOUNT = "default"
 
-# The columns of an accounts file (issue #698) — the columns of the ``account``
-# table, and the **one** definition of them. Named here rather than in
-# :mod:`accounts` because the validator quotes them in the refusal it raises
-# when an event names an account nobody declared, and ``accounts`` imports this
-# module: one direction, no cycle. ``accounts.ACCOUNT_COLUMNS`` is this tuple
-# under the name that module's own messages read best, never a copy of it — two
-# lists of columns, both quoted at a user, would drift the day the table gains a
-# fourth.
+# The columns that make a file a **declaration of accounts** (issue #698) — the
+# columns of the ``account`` table, and the **one** definition of them. No such
+# file is imported any more (ADR-0034), and the tuple stays because the refusal
+# has to name them: :mod:`uploads` quotes it when it turns a declaration away,
+# and :mod:`main` quotes it when it says a v4 ``settings.yaml`` is not read.
+# Named here rather than in :mod:`accounts` because ``uploads`` reads it beside
+# the header check it takes from that module, and ``accounts`` imports this one:
+# one direction, no cycle. ``accounts.ACCOUNT_COLUMNS`` is this tuple under the
+# name that module's own messages read best, never a copy of it — two lists of
+# columns, both quoted at a user, would drift the day the table gains a fourth.
 ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
 
 
