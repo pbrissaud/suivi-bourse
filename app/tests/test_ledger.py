@@ -687,7 +687,8 @@ def test_a_declared_account_is_written_as_the_file_named_it(tmp_path):
 
 
 def test_a_v4_config_file_is_refused_by_its_name_and_points_at_the_migration(tmp_path):
-    """The sentence the two ``legacy_*`` advisories said later and elsewhere.
+    """The sentence the two ``legacy_*`` installation facts said later, and
+    elsewhere.
 
     It is said at the instant of the gesture now (story 10, ADR-0032), which is
     the only moment at which the owner is holding the file.

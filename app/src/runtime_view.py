@@ -688,10 +688,10 @@ def is_rebuilding(reconstruction: Optional[Tuple[int, int]]) -> bool:
 
     ``None`` is the reading a process with no scheduler makes — the gunicorn
     master, a test runtime — and it answers ``False``. That is not the third
-    state :data:`advisories.UNOBSERVED` keeps: a boolean has no room for one, and
-    ``False`` is the safe reading, since what it enables is the *assertion* that
-    a date is still moving, which an observer that cannot see the scheduler has
-    no ground to make.
+    state :data:`installation_facts.UNOBSERVED` keeps: a boolean has no room for
+    one, and ``False`` is the safe reading, since what it enables is the
+    *assertion* that a date is still moving, which an observer that cannot see
+    the scheduler has no ground to make.
     """
     if reconstruction is None:
         return False

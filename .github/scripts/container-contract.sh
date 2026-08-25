@@ -317,9 +317,9 @@ ok 'the probe is in the image and it turns green'
 assertion '9 — a retired variable is named in the grouped notice and changes nothing'
 wait_serving "$LEGACY" "http://127.0.0.1:$LEGACY_WEB/health"
 # Anchored on the emitting function rather than on the sentence: `location=` is
-# a code identifier, the prose is not, and the advisory (#709) mentions the same
-# variable name on another line. One line, from the one function whose whole
-# job is the grouped notice.
+# a code identifier, the prose is not, and the installation fact (#709) mentions
+# the same variable name on another line. One line, from the one function whose
+# whole job is the grouped notice.
 named="$(docker logs "$LEGACY" 2>&1 | grep -c 'report_unread_environment.*SB_INGESTION_INTERVAL' || true)"
 [ "$named" -eq 1 ] \
     || { dump "$LEGACY"; fail "assertion 9: the grouped notice named SB_INGESTION_INTERVAL $named time(s), expected exactly 1"; }

@@ -189,12 +189,12 @@ const SURFACES: readonly Surface[] = [
   { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
   { name: 'les données · le grand livre', url: '/donnees', heading: 'Données' },
   {
-    name: 'les données · les avis',
+    name: 'les données · les notices',
     url: '/donnees',
     heading: 'Données',
     open: async ({ user }) => {
-      await user.click(await screen.findByRole('tab', { name: /Les avis/ }))
-      return screen.findByRole('heading', { name: 'Avis' })
+      await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
+      return screen.findByRole('heading', { name: 'Faits d’installation' })
     },
   },
   {

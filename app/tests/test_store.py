@@ -198,7 +198,8 @@ def test_an_observed_instant_is_timestamptz_and_a_calendar_day_is_a_date(store):
     instants = [
         ('symbol_quote', 'fetched_at'),
         ('symbol_quote', 'last_price_ts'), ('price_point', 'ts'),
-        ('advisory', 'first_seen_at'), ('advisory', 'acknowledged_at'),
+        ('installation_fact', 'first_seen_at'),
+        ('installation_fact', 'acknowledged_at'),
     ]
     days = [
         ('event', 'date'), ('symbol_quote', 'oldest_window_tried'),

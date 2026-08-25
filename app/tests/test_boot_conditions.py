@@ -118,16 +118,16 @@ def test_every_line_carries_its_key_in_the_logfmt_context():
         assert condition.context['condition'] == condition.key
 
 
-def test_no_condition_is_an_advisory():
+def test_no_condition_is_an_installation_fact():
     """*"This container keeps nothing"* is **never acknowledgeable**: it would go
     quiet while still true, which is the one thing an acknowledgement must not
-    buy. The keys therefore live here and not in :mod:`advisories` — asserted on
-    the source, because the failure mode is a well-meaning later ticket adding
-    one of these to the table that carries acknowledgements."""
-    import advisories
+    buy. The keys therefore live here and not in :mod:`installation_facts` —
+    asserted on the source, because the failure mode is a well-meaning later
+    ticket adding one of these to the table that carries acknowledgements."""
+    import installation_facts
 
     keys_here = {boot_conditions.NO_PERSISTENCE,
                  boot_conditions.NO_BASE_CURRENCY,
                  boot_conditions.NO_PORTFOLIO}
 
-    assert keys_here.isdisjoint({spec.key for spec in advisories.SPECS})
+    assert keys_here.isdisjoint({spec.key for spec in installation_facts.SPECS})

@@ -12,7 +12,7 @@
  * under the reader's cursor.
  *
  * What is **not** reversed is ADR-0026. *Nothing to report* is a claim about
- * this installation, so it is never written while `/api/advisories` is in
+ * this installation, so it is never written while `/api/installation-facts` is in
  * flight: the tab is mounted, and it renders nothing at all — title included —
  * until the read lands. The tab's own permanence is the trigger's, not this
  * block's.
@@ -25,10 +25,10 @@ import { useQuery } from '@tanstack/react-query'
 
 import { Band } from '@/components/Band'
 import { EmptyState } from '@/components/EmptyState'
-import { AdvisoriesBlock } from '@/components/data/AdvisoriesBlock'
-import { shownAdvisories } from '@/lib/advisories'
+import { InstallationFactsBlock } from '@/components/data/InstallationFactsBlock'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { shownFacts } from '@/lib/installationFacts'
 import { oneBand, readConditions } from '@/lib/status'
 
 export interface NoticesProps {
@@ -40,31 +40,31 @@ export function Notices({ onShowInLedger }: NoticesProps) {
   const { t } = useI18n()
 
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
-  const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
+  const facts = useQuery({ queryKey: ['installation-facts'], queryFn: api.installationFacts })
 
   // One band on screen or none, and the causal order is the shell's own: the
   // notices live in the store, so an unreadable store names the cause rather
   // than letting this tab say the installation has nothing to report.
   const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [advisories.error] }),
+    readConditions({ shellError: runtime.error, errors: [facts.error] }),
   )
 
   // **A needed read** (ADR-0026): both of the two things this tab can say — a
   // list of notices, and *nothing to report* — are statements about the
   // reader's own installation.
-  const landed = advisories.data
+  const landed = facts.data
 
   return (
     <div className="space-y-8">
       {failure ? <Band>{t(failure.message)}</Band> : null}
 
-      {!landed ? null : shownAdvisories(landed).length === 0 ? (
+      {!landed ? null : shownFacts(landed).length === 0 ? (
         <EmptyState
           title={t('data.notices.empty.title')}
           description={t('data.notices.empty.body')}
         />
       ) : (
-        <AdvisoriesBlock advisories={landed} onShowInLedger={onShowInLedger} />
+        <InstallationFactsBlock facts={landed} onShowInLedger={onShowInLedger} />
       )}
     </div>
   )

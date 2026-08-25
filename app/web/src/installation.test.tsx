@@ -22,19 +22,19 @@ import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import type { Advisory, StoreState } from '@/lib/api'
+import type { InstallationFact, StoreState } from '@/lib/api'
 import {
   aConfig,
-  anEnvironmentAdvisory,
+  anEnvironmentFact,
   aRuntime,
   aStore,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-async function openInstallation(advisories?: Advisory[], store?: StoreState) {
-  if (advisories) {
-    server.use(http.get(ROUTES.advisories, () => HttpResponse.json(advisories)))
+async function openInstallation(facts?: InstallationFact[], store?: StoreState) {
+  if (facts) {
+    server.use(http.get(ROUTES.installationFacts, () => HttpResponse.json(facts)))
   }
   if (store) {
     server.use(http.get(ROUTES.store, () => HttpResponse.json(store)))
@@ -57,13 +57,13 @@ describe('the two blocks, in one order', () => {
   })
 
   it('says nothing about the notices, which are a tab of their own', async () => {
-    await openInstallation([anEnvironmentAdvisory()])
+    await openInstallation([anEnvironmentFact()])
     await screen.findByRole('heading', { name: 'Réglages' })
 
     // A notice is prose — a date, an acknowledgement, a link to the events
     // concerned — and a card in a column beside the store has nowhere to say
     // it (ADR-0030).
-    expect(screen.queryByRole('heading', { name: 'Avis' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Faits d’installation' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Acquitter' })).not.toBeInTheDocument()
   })
 })
@@ -248,7 +248,7 @@ describe('the store', () => {
     // it would make it go quiet while it was still true. Since #794 the notices
     // are not even on this tab, and the tab that carries them is asserted on in
     // `notices.test.tsx`.
-    expect(screen.getByRole('tab', { name: /Les avis/ })).not.toHaveTextContent(/avis à lire/)
+    expect(screen.getByRole('tab', { name: /Les notices/ })).not.toHaveTextContent(/notices? à lire/)
   })
 
   it('says nothing about persistence it cannot observe', async () => {

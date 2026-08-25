@@ -71,8 +71,8 @@ def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
 
 
 class _FakeConfigManager:
-    #: No configuration directory: the two v4 files an advisory names are
-    #: *unobservable* from here rather than absent (issue #709).
+    #: No configuration directory: the two v4 files an installation fact names
+    #: are *unobservable* from here rather than absent (issue #709).
     config_dir = None
 
     def __init__(self, shares, opened_store=None):

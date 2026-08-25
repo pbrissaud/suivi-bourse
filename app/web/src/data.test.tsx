@@ -66,7 +66,7 @@ describe('the three tabs under one route', () => {
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'Le grand livre',
-      'Les avis',
+      'Les notices',
       'L’installation',
     ])
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
@@ -94,7 +94,7 @@ describe('the three tabs under one route', () => {
     renderData(ledgerEvents(), '/donnees#notices')
 
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Les avis/ })).toHaveAttribute(
+      expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute(
         'aria-selected',
         'true',
       ),

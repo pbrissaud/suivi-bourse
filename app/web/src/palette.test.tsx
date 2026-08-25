@@ -15,7 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { aLedgerPayload, anAdvisory, ledgerEvents } from '@/test/factories'
+import { aLedgerPayload, anInstallationFact, ledgerEvents } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -243,7 +243,7 @@ describe('a gesture the palette armed is spent once', () => {
   it('leaves no address behind when a notice reduces the ledger its own way', async () => {
     server.use(
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
-      http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])),
+      http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
     )
     const view = render()
     const { user } = view
@@ -252,7 +252,7 @@ describe('a gesture the palette armed is spent once', () => {
     await user.click(await screen.findByRole('button', { name: /Virement entrant/ }))
     await screen.findByRole('table', { name: 'Vos événements' })
 
-    await user.click(await screen.findByRole('tab', { name: /Les avis/ }))
+    await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
     await user.click(await screen.findByRole('button', { name: 'Voir les événements concernés' }))
     await screen.findByText(/Réduit à 3 titres/)
 

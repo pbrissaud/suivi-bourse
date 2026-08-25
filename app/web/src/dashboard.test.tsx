@@ -396,7 +396,7 @@ describe('during the reconstruction', () => {
   })
 
   it('says nothing about the ledger while the runtime has not answered', async () => {
-    // The same rule the advisories follow (#709): asserting *your ledger does
+    // The same rule the installation facts follow (#709): asserting *your ledger does
     // not go back that far* takes a **positive** observation of this process,
     // and a runtime that failed is not one. Absence therefore keeps the
     // rebuild's sentence — it names something the app is doing, and waiting
@@ -1086,7 +1086,7 @@ describe('the time announcers', () => {
   })
 })
 
-describe('no advisory lands here', () => {
+describe('no installation fact lands here', () => {
   it('says nothing of a standing notice, which the installation tab counts', async () => {
     // A notice posted on the dashboard is invisible to whoever lands on another
     // page, and it would compete with the banner — which was validated in

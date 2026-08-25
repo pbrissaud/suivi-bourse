@@ -98,9 +98,9 @@ export const ROUTES = {
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
   settings: '/api/settings',
   /** What this install has been told and has not acknowledged (#709). */
-  advisories: '/api/advisories',
-  /** One advisory's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
-  advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
+  installationFacts: '/api/installation-facts',
+  /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
+  installationFactAcknowledgement: '/api/installation-facts/:key/acknowledgement',
   /** The store's own figures — size, last ledger write, orphans (#724). */
   store: '/api/store',
   /** The orphans as a collection: the only thing done to it is removing it. */
@@ -153,7 +153,7 @@ export const WRITE_ONLY_ROUTES = [
   'eventsImport',
   'account',
   'accountReassignment',
-  'advisoryAcknowledgement',
+  'installationFactAcknowledgement',
   'storeOrphans',
   // The two exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
@@ -183,8 +183,8 @@ export function accountReassignmentPath(id: string): string {
   return `${accountPath(id)}/reassignment`
 }
 
-export function advisoryAcknowledgementPath(key: string): string {
-  return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
+export function installationFactAcknowledgementPath(key: string): string {
+  return `/api/installation-facts/${encodeURIComponent(key)}/acknowledgement`
 }
 
 /**
@@ -1143,18 +1143,18 @@ export interface SettingsWriteResponse {
 }
 
 /**
- * One standing advisory (#709, ADR-0021, ADR-0024).
+ * One standing installation fact (#709, ADR-0021, ADR-0024).
  *
  * **`message` is the server's sentence, in English, and no reader is served it
  * for a key the catalogues answer.** This docstring used to say the opposite —
  * that rendering `message` verbatim was not a hole in ADR-0024, and that *a
- * catalogue key per advisory would be a second authority on what each one
+ * catalogue key per installation fact would be a second authority on what each one
  * says*. **#768 reversed it**, on a measurement rather than on taste: the whole
  * content of the *Notices* block was English on a French installation, beside a
  * title, a date and a button that were not, and the sentences interpolated
  * their plurals with `(s)` and their enumerations with `', '.join(...)` —
  * neither of which is how a language counts or lists. The repair **is** the
- * refused form: ten catalogue keys, two per notice, in `lib/advisories.ts`.
+ * refused form: ten catalogue keys, two per notice, in `lib/installationFacts.ts`.
  *
  * What `message` is still good for, and why it stays on the payload:
  *
@@ -1162,18 +1162,18 @@ export interface SettingsWriteResponse {
  *    removed — *headless means without an interface, not without HTTP*
  *    (ADR-0015). A key is a stable identifier, not a sentence, and asking every
  *    such consumer to write five of its own is asking each of them to redo
- *    `lib/advisories.ts`;
+ *    `lib/installationFacts.ts`;
  *  - **the log**, whose line `message` is: #709's *logged once, in English, at
  *    the instant the row is created* is a property of the mechanism and is
  *    untouched by any of this;
  *  - **this front's fallback for a key outside the closed list of five** — a
- *    sixth advisory shipping before its catalogue entry says its English
+ *    sixth installation fact shipping before its catalogue entry says its English
  *    sentence rather than nothing at all, and an empty notice is the one
  *    outcome a block that exists to be read cannot afford. That is the only
  *    path on which the interface still renders a string it did not write.
  *
  * **It is not a second authority, and the split is exactly ADR-0024's.** The
- * server stays the authority on the **predicate** — whether an advisory stands
+ * server stays the authority on the **predicate** — whether an installation fact stands
  * at all — and on the **parameters**: `key` is a closed list of five (ADR-0021)
  * and `detail` is re-derived per read, so the paths, the variables, the symbols
  * and the counts a sentence names are the server's observations and nothing
@@ -1184,7 +1184,7 @@ export interface SettingsWriteResponse {
  * therefore **data, never prose**: an array of variables rather than a joined
  * string, a count rather than a `(s)`.
  */
-export interface Advisory {
+export interface InstallationFact {
   key: string
   first_seen_at: string
   acknowledged: boolean
@@ -1194,7 +1194,7 @@ export interface Advisory {
   detail: Record<string, unknown> | null
 }
 
-export type AdvisoriesResponse = Advisory[]
+export type InstallationFactsResponse = InstallationFact[]
 
 /** One orphan symbol: nothing declares it, and this is the series it holds. */
 export interface OrphanSymbol {
@@ -1331,9 +1331,9 @@ export const api = {
   config: () => get<ConfigResponse>(ROUTES.config),
   saveSettings: (values: Record<string, string | number>) =>
     send<SettingsWriteResponse>(ROUTES.settings, 'PUT', values),
-  advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
-  acknowledgeAdvisory: (key: string) =>
-    send<Advisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+  installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
+  acknowledgeInstallationFact: (key: string) =>
+    send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),
   // The way in (#811), and since #813 it is made twice on purpose: once with
   // `dryRun` for the forecast, once without it to commit — **the same file**,
   // re-sent. There is no pending-import id to hold instead, because holding one

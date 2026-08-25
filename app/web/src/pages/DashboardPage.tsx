@@ -11,7 +11,7 @@
  *    construction: the time-weighted return's base date, on the head and only
  *    while it moves, and the reconstruction's progress, in the banner and only
  *    there.
- *  - **No advisory lands here.** A notice posted on the dashboard is invisible
+ *  - **No installation fact lands here.** A notice posted on the dashboard is invisible
  *    to whoever lands on another page, and it would compete with the banner —
  *    which was validated in production and which the installation tab's badge is
  *    the counterpart of (#724).

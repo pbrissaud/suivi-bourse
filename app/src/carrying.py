@@ -182,7 +182,7 @@ def holding_bounds(acquired: date, exited: Optional[date],
     would eventually put them a day apart — which is exactly one chunk of
     disagreement about whether a symbol is finished.
 
-    The advisory reads it too (issue #709), and there the stake is the
+    The installation fact reads it too (issue #709), and there the stake is the
     ``_backfill_complete`` watermark: it is keyed by the **target**, so a second
     spelling of "the first acquisition as an instant" would make
     :meth:`main.SuiviBourseMetrics.reconstruction_state` compare against a target

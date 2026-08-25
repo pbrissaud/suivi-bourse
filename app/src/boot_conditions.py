@@ -7,9 +7,9 @@ Three conditions, each printed **once and only when it is true**, in logfmt:
 3. **no portfolio** — so the URL where the first event is recorded.
 
 They are **conditions**, in ADR-0021's exact sense — *the banner shows
-conditions the owner can end; the badge counts facts they can only
-acknowledge* — and that is why none of them is an advisory (#709): there is no
-row, no ``first_seen_at`` and above all **no acknowledgement**. "This container
+conditions the owner can end; the badge counts facts they can only acknowledge*
+— and that is why none of them is an installation fact (#709): there is no row,
+no ``first_seen_at`` and above all **no acknowledgement**. "This container
 keeps nothing" acknowledged would go quiet while it is still true, which is the
 one thing an acknowledgement must never buy. They do not count towards a page's
 screen obligations either: they live in the terminal and in ``/metrics``, and
@@ -45,8 +45,8 @@ class Condition:
     """One line: what to say, how loudly, and the pairs that make it parseable.
 
     ``context`` is what ``logfmt_logger`` renders as ``key=value``, the way an
-    advisory's is (#709), so a headless install can *grep for a key* rather than
-    for a sentence that will be reworded.
+    installation fact's is (#709), so a headless install can *grep for a key*
+    rather than for a sentence that will be reworded.
     """
 
     key: str

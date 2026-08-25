@@ -172,10 +172,17 @@ CREATE TABLE IF NOT EXISTS portfolio_totals (
     net_contributed  DOUBLE, xirr DOUBLE, gain_absolu DOUBLE, twr_index DOUBLE);
 """
 
-_DDL_SETTINGS_AND_ADVISORIES = """
+#: ``installation_fact`` was called ``advisory`` until #820, and the rename is
+#: **a new table and not a migration**: the DDL runs with ``IF NOT EXISTS`` and
+#: there is no migration machinery (ADR-0008). A store created by an earlier
+#: preview therefore keeps its ``advisory`` table, unread, and starts this one
+#: empty — which loses the acknowledgements it held. v5 has not shipped, so that
+#: is the assumed price of freeing the word (ADR-0036); it is written here so it
+#: is read rather than discovered.
+_DDL_SETTINGS_AND_FACTS = """
 CREATE TABLE IF NOT EXISTS setting (key VARCHAR PRIMARY KEY, value VARCHAR);
 
-CREATE TABLE IF NOT EXISTS advisory (
+CREATE TABLE IF NOT EXISTS installation_fact (
     key              VARCHAR PRIMARY KEY,
     first_seen_at    TIMESTAMPTZ NOT NULL,
     acknowledged_at  TIMESTAMPTZ);
@@ -187,7 +194,7 @@ DDL = ''.join((
     _DDL_DERIVED_FROM_MARKET,
     _DDL_PRICE_POINT,
     _DDL_DERIVED_FROM_COMPUTATION,
-    _DDL_SETTINGS_AND_ADVISORIES,
+    _DDL_SETTINGS_AND_FACTS,
 ))
 
 #: Every table the DDL creates, so a caller can assert the shape without parsing
@@ -200,7 +207,7 @@ TABLES = (
     'position', 'account_state',
     'symbol_quote', 'price_point',
     'account_metrics', 'portfolio_totals',
-    'setting', 'advisory',
+    'setting', 'installation_fact',
 )
 
 #: The account every event falls into until one is declared (ADR-0008: an empty

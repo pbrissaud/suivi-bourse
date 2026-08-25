@@ -69,7 +69,6 @@ import type {
   Account,
   AccountHistoryResponse,
   AccountsResponse,
-  Advisory,
   ChartWindow,
   ConfigResponse,
   EnvironmentVariable,
@@ -78,6 +77,7 @@ import type {
   HealthJobs,
   HealthState,
   ImportReceipt,
+  InstallationFact,
   LedgerEvent,
   Mover,
   MoversResponse,
@@ -1109,7 +1109,7 @@ export function aConfig(overrides: Partial<ConfigResponse> = {}): ConfigResponse
  * with no interface read, and a page test asserting the block does *not* show it
  * needs it to be there to be a test at all.
  */
-export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
+export function anInstallationFact(overrides: Partial<InstallationFact> = {}): InstallationFact {
   return {
     key: 'assumed_base_currency',
     first_seen_at: '2026-03-01T09:00:00.000Z',
@@ -1140,8 +1140,8 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
  * acknowledgeable notice the block renders and the badge counts — and this is
  * the one that is left with an owner able to end it.
  */
-export function anEnvironmentAdvisory(overrides: Partial<Advisory> = {}): Advisory {
-  return anAdvisory({
+export function anEnvironmentFact(overrides: Partial<InstallationFact> = {}): InstallationFact {
+  return anInstallationFact({
     key: 'unread_environment',
     message:
       '1 environment variable(s) are set and read by nothing: SB_EXECUTOR_POOL. Unset them, or acknowledge this notice.',

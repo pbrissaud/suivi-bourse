@@ -1,18 +1,27 @@
-"""The advisories — a tiny table carrying an acknowledgement, and nothing else.
+"""The installation facts — a tiny table carrying an acknowledgement.
 
-Issue #709, spec #695 § 14, ADR-0008 / ADR-0014 / ADR-0021.
+Issue #709, spec #695 § 14, ADR-0008 / ADR-0014 / ADR-0021 / ADR-0036.
 
-``advisory(key, first_seen_at, acknowledged_at)`` is **not a journal**: no
-history, no row per occurrence, a closed list of keys in the whole product. The
-sort is made on one question — *can the app work this out again later?* — and
-almost nothing survives it. Two advisories are **derivable states**: a read of
-the environment for the variables nothing obeys any more, and the process's own
-memory for how far the reconstruction has got. **One is a real event**: *"v5
-asserted that your v4 amounts were already in your reporting currency"*. It
-happens once, at the end of the first reconstruction, by comparing the observed
-quote currency to the reporting one — deferred, because at import time no symbol
-has been fetched and the app does not know what a line is quoted in — and since
-the reconstruction never happens twice, **it is lost if it is not written**.
+**The word changed here and the notion did not** (ADR-0036, issue #820). Three
+things shared *advisory*: whether the app is doing its work, which is the
+**health** of ADR-0036's own first half; what is true of *this install*, which
+is what this module has always carried; and what the owner's **data** says
+about itself, which does not exist yet and is what the word is being freed for.
+The keys are untouched — they are published identifiers a client may branch on
+— and so is every predicate below.
+
+``installation_fact(key, first_seen_at, acknowledged_at)`` is **not a
+journal**: no history, no row per occurrence, a closed list of keys in the
+whole product. The sort is made on one question — *can the app work this out
+again later?* — and almost nothing survives it. Two installation facts are
+**derivable states**: a read of the environment for the variables nothing obeys
+any more, and the process's own memory for how far the reconstruction has got.
+**One is a real event**: *"v5 asserted that your v4 amounts were already in
+your reporting currency"*. It happens once, at the end of the first
+reconstruction, by comparing the observed quote currency to the reporting one —
+deferred, because at import time no symbol has been fetched and the app does
+not know what a line is quoted in — and since the reconstruction never happens
+twice, **it is lost if it is not written**.
 
 **Three keys, and the two that left are ADR-0032's.** ``legacy_config_file``
 and ``legacy_settings_file`` were a ``stat`` on a v4 file *found in a folder the
@@ -21,31 +30,32 @@ never seen again. The sentence did not disappear with them — it is **said at t
 refusal of the upload**, by name and at the instant of the gesture, which beats a
 notice discovered later.
 
-**And not six** (ADR-0021, which amends spec #695 § 14 on precisely
-this point). A missing base currency is a **live condition**, not an advisory,
-and the rule that separates them is the ADR's: *the banner shows conditions the
-owner can end; the badge counts facts they can only acknowledge*. Counting it
-here produced a permanent badge on an install that had simply not answered yet,
-and the two predicates it needs are published already (``/api/config``'s
-``stored`` flag and the head's ``currency``), so nothing is lost by its absence.
+**And not six** (ADR-0021, which amends spec #695 § 14 on precisely this
+point). A missing base currency is a **live condition**, not an installation
+fact, and the rule that separates them is the ADR's: *the banner shows
+conditions the owner can end; the badge counts facts they can only
+acknowledge*. Counting it here produced a permanent badge on an install that
+had simply not answered yet, and the two predicates it needs are published
+already (``/api/config``'s ``stored`` flag and the head's ``currency``), so
+nothing is lost by its absence.
 
 Logs would be cheaper, and they are not enough, for one reason only: **a log
 cannot be acknowledged**. Someone may want to keep a v4 ``.env`` sourced into
 their container for ever, and an app that reproaches them for it at every boot
-becomes noise one learns to ignore — which would kill the recorded advisory too,
-on the day it counts.
+becomes noise one learns to ignore — which would kill the recorded installation
+fact too, on the day it counts.
 
 Four properties of the mechanism are decisions rather than details.
 
-**The row exists exactly while the advisory stands.** :func:`refresh` arms an
-advisory whose observation stands and has no row, and *drops* the row of one
-whose observation no longer does. That is what *"no stored existence beyond the
-acknowledgement"* means in practice: an acknowledged advisory disappears from the
-listing, and if its predicate goes false and true again it is armed anew, with a
-fresh ``first_seen_at`` and a fresh log line. The acknowledgement of a fact that
-has stopped being true is not a fact worth keeping — and keeping it would make
-the next occurrence invisible, which is the one failure this table exists
-against.
+**The row exists exactly while the installation fact stands.** :func:`refresh`
+arms an installation fact whose observation stands and has no row, and *drops*
+the row of one whose observation no longer does. That is what *"no stored
+existence beyond the acknowledgement"* means in practice: an acknowledged
+installation fact disappears from the listing, and if its predicate goes false
+and true again it is armed anew, with a fresh ``first_seen_at`` and a fresh log
+line. The acknowledgement of a fact that has stopped being true is not a fact
+worth keeping — and keeping it would make the next occurrence invisible, which
+is the one failure this table exists against.
 
 **An observation has three answers, not two.** ``None`` is *does not stand*, a
 mapping is *stands, and here is what it names*, and :data:`UNOBSERVED` is *not
@@ -55,18 +65,19 @@ and **so does disarming**: with only two answers, every restart would drop the
 row a running scheduler had armed, then re-arm it a minute later, resetting its
 date and logging it a second time.
 
-**The detail is recomputed, never stored.** The table has three columns, so what
-an advisory *names* — the path, the variables, the events — is derived at every
-read. For the recorded one that is the whole trick: *that the assertion was made*
-is what no code can work out again, and it is therefore the row; *which events it
-was made about* is a join, and a join does not need a table of its own.
+**The detail is recomputed, never stored.** The table has three columns, so
+what an installation fact *names* — the path, the variables, the events — is
+derived at every read. For the recorded one that is the whole trick: *that the
+assertion was made* is what no code can work out again, and it is therefore the
+row; *which events it was made about* is a join, and a join does not need a
+table of its own.
 
-**And it is not a trace of what happened.** There was an ``import_source`` table
-holding one row per imported file, and merging the two would have given an
-advisory box that grows by one row per import and that one stops reading — both
-failures at once, the notices lost in the trace and the trace unreadable as
-notices. The table left with the mount (ADR-0032); the argument is kept because
-the next thing tempted to file itself here will be a trace too.
+**And it is not a trace of what happened.** There was an ``import_source``
+table holding one row per imported file, and merging the two would have given
+an installation fact box that grows by one row per import and that one stops
+reading — both failures at once, the notices lost in the trace and the trace
+unreadable as notices. The table left with the mount (ADR-0032); the argument
+is kept because the next thing tempted to file itself here will be a trace too.
 """
 import logging
 from dataclasses import dataclass
@@ -77,15 +88,16 @@ from logfmt_logger import getLogger
 
 import fx
 
-logger = getLogger("advisories")
+logger = getLogger("installation_facts")
 
-#: An advisory the code can decide for itself at any instant. Its row is armed
-#: and dropped by :func:`refresh` alone.
+#: An installation fact the code can decide for itself at any instant. Its row
+#: is armed and dropped by :func:`refresh` alone.
 DERIVED = 'derived'
 
-#: An advisory that is an **event**: the row *is* the fact, so :func:`refresh`
-#: never arms one — :func:`record` does, at the instant it occurs — and the only
-#: thing that can drop it is its subject disappearing altogether.
+#: An installation fact that is an **event**: the row *is* the fact, so
+#: :func:`refresh` never arms one — :func:`record` does, at the instant it
+#: occurs — and the only thing that can drop it is its subject disappearing
+#: altogether.
 RECORDED = 'recorded'
 
 #: The third answer an observation may give: *not from here*. Distinguished from
@@ -100,14 +112,15 @@ RECONSTRUCTION_RUNNING = 'reconstruction_running'
 ASSUMED_BASE_CURRENCY = 'assumed_base_currency'
 
 
-class UnknownAdvisory(KeyError):
-    """A key no advisory carries. The registry is closed, so this is a mistake."""
+class UnknownFact(KeyError):
+    """A key no installation fact carries. The registry is closed, so this is
+    a mistake."""
 
 
-class AdvisoryNotStanding(LookupError):
+class FactNotStanding(LookupError):
     """The key is one of the three, and nothing is standing under it right now.
 
-    Its own class because the API's answer differs from :class:`UnknownAdvisory`
+    Its own class because the API's answer differs from :class:`UnknownFact`
     only in the sentence, never in the status: both are a ``404``, and both mean
     *there is nothing here to acknowledge*.
     """
@@ -132,22 +145,23 @@ class Context:
     #: (``main.unread_environment``). ``None`` when the caller did not look.
     unread_variables: Optional[Tuple[str, ...]] = None
 
-    #: ``(series complete, series in the reconstruction)``, from the scheduler's
-    #: process memory. ``None`` when this process cannot see it, and **only**
-    #: that: ``(0, 0)`` is *nothing to reconstruct*, an answer, and it stands
-    #: the advisory down. The two are opposite gestures on the same row —
-    #: ``None`` leaves it exactly as it is, so a restart does not re-date and
-    #: re-log what a running scheduler armed a minute earlier; ``(0, 0)`` takes
-    #: it away, so a notice cannot outlive the portfolio it describes.
+    #: ``(series complete, series in the reconstruction)``, from the
+    #: scheduler's process memory. ``None`` when this process cannot see it,
+    #: and **only** that: ``(0, 0)`` is *nothing to reconstruct*, an answer,
+    #: and it stands the installation fact down. The two are opposite gestures
+    #: on the same row — ``None`` leaves it exactly as it is, so a restart does
+    #: not re-date and re-log what a running scheduler armed a minute earlier;
+    #: ``(0, 0)`` takes it away, so a notice cannot outlive the portfolio it
+    #: describes.
     reconstruction: Optional[Tuple[int, int]] = None
 
     @property
     def reconstruction_concluded(self) -> bool:
         """Every series has reached its first acquisition — *and it was observed*.
 
-        The condition that produces the one advisory that is an event, and it is
-        a property here rather than a test written at the call site because the
-        two ways of getting it wrong are both silent: an unobserved
+        The condition that produces the one installation fact that is an event,
+        and it is a property here rather than a test written at the call site
+        because the two ways of getting it wrong are both silent: an unobserved
         reconstruction is not a concluded one, and a portfolio that was never
         held has not concluded anything either.
         """
@@ -158,8 +172,9 @@ class Context:
 
 
 @dataclass(frozen=True)
-class AdvisorySpec:
-    """One advisory: what makes it stand, and what it says when it does.
+class FactSpec:
+    """One installation fact: what makes it stand, and what it says when it
+    does.
 
     ``observe`` answers the three-valued question of the module docstring;
     ``message`` turns what it named into a sentence, and that sentence has two
@@ -168,32 +183,33 @@ class AdvisorySpec:
     which has no reader preference and is grepped rather than read.
 
     **Until #768 this said the opposite, and the argument was reversed rather
-    than narrowed.** It read: *``message`` turns what it named into the sentence
-    a human reads, on the API and in the log alike — **one text, one place**,
-    because an advisory whose log line and whose screen disagree is worse than
-    either alone.* Both halves fell together. The interface composes its own
-    sentence from ``key`` and ``detail``, so there are now **two texts in two
-    places**, and the screen is deliberately not this one — reversed on a
-    measurement rather than on taste: the whole content of the *Notices* block
-    was English on a French installation, and the sentences below count with
-    ``(s)`` and enumerate with ``', '.join(...)``, which is an operator's plural
-    and an operator's list. What the old clause was right about is kept — two
-    texts that *disagreed* would still be worse than either alone — and these two
-    do not disagree: they serve two audiences under two contracts, a logfmt line
-    an operator greps in one language for ever against a paragraph a reader reads
-    in theirs, and the front is served the arrays and the counts these sentences
-    were built from rather than the string.
+    than narrowed.** It read: *``message`` turns what it named into the
+    sentence a human reads, on the API and in the log alike — **one text, one
+    place**, because an installation fact whose log line and whose screen
+    disagree is worse than either alone.* Both halves fell together. The
+    interface composes its own sentence from ``key`` and ``detail``, so there
+    are now **two texts in two places**, and the screen is deliberately not
+    this one — reversed on a measurement rather than on taste: the whole
+    content of the *Notices* block was English on a French installation, and
+    the sentences below count with ``(s)`` and enumerate with
+    ``', '.join(...)``, which is an operator's plural and an operator's list.
+    What the old clause was right about is kept — two texts that *disagreed* would
+    still be worse than either alone — and these two do not disagree: they
+    serve two audiences under two contracts, a logfmt line an operator greps in
+    one language for ever against a paragraph a reader reads in theirs, and the
+    front is served the arrays and the counts these sentences were built from
+    rather than the string.
 
     The reader's language is a browser preference with **no dial in the store**
     (ADR-0024), so this process does not know it and ``Accept-Language`` has no
     subject here; the choice and the two forms refused beside it are argued in
-    ``lib/advisories.ts``, where it is taken. **Nothing here follows a reader**:
-    the sentences below are English and stay English.
+    ``lib/installationFacts.ts``, where it is taken. **Nothing here follows a
+    reader**: the sentences below are English and stay English.
 
     ``level`` is the log level the arming line is emitted at, and it is per
-    advisory rather than uniform: a reconstruction in progress is the app working
-    as designed, and a ``WARNING`` for it would teach an operator to filter out
-    the level the other two need.
+    installation fact rather than uniform: a reconstruction in progress is the
+    app working as designed, and a ``WARNING`` for it would teach an operator
+    to filter out the level the other two need.
     """
 
     key: str
@@ -205,13 +221,13 @@ class AdvisorySpec:
 
 
 @dataclass(frozen=True)
-class Advisory:
-    """A standing advisory: its row, plus what it names *right now*.
+class InstallationFact:
+    """A standing installation fact: its row, plus what it names *right now*.
 
     ``detail`` is ``None`` when the observation could not be made from here —
     the row stands, and this process simply cannot say what it covers. The
-    message then falls back to :attr:`AdvisorySpec.doc`, which says what the
-    advisory is without claiming specifics it has not read.
+    message then falls back to :attr:`FactSpec.doc`, which says what the
+    installation fact is without claiming specifics it has not read.
     """
 
     key: str
@@ -244,9 +260,10 @@ class Advisory:
 def _observe_unread_environment(opened, context: Context):
     """The ``SB_*`` / ``INFLUXDB_*`` variables that are set and obeyed by nothing.
 
-    The list is **computed** by :func:`main.unread_environment` — the difference
-    between what is present and what the inventory names — so this advisory
-    cannot drift the way a hand-written list of retired names would.
+    The list is **computed** by :func:`main.unread_environment` — the
+    difference between what is present and what the inventory names — so this
+    installation fact cannot drift the way a hand-written list of retired names
+    would.
     """
     if context.unread_variables is None:
         return UNOBSERVED
@@ -264,13 +281,13 @@ def _observe_reconstruction(opened, context: Context):
     :meth:`main.SuiviBourseMetrics.reconstruction_state` never produces it — a
     process that *can* see the scheduler always answers a pair.
 
-    Two pairs stand the advisory down, and they are two situations rather than
-    one spelling: ``(n, n)`` is finished, and ``(0, 0)`` is *nothing to
-    reconstruct* — a fresh install, or an owner who has just forgotten every
-    import. Both are observations, so both **drop the row**. Reading the second
-    as *unobservable* is what let the notice outlive its own subject: the
-    advisory stayed armed, with no detail and no way back, on an installation
-    whose portfolio was empty.
+    Two pairs stand the installation fact down, and they are two situations
+    rather than one spelling: ``(n, n)`` is finished, and ``(0, 0)`` is
+    *nothing to reconstruct* — a fresh install, or an owner who has just
+    forgotten every import. Both are observations, so both **drop the row**.
+    Reading the second as *unobservable* is what let the notice outlive its own
+    subject: the installation fact stayed armed, with no detail and no way
+    back, on an installation whose portfolio was empty.
     """
     if context.reconstruction is None:
         return UNOBSERVED
@@ -374,37 +391,37 @@ def _say_assumed_base_currency(detail: Mapping[str, Any]) -> str:
         f"acknowledge this notice.")
 
 
-#: Every advisory this product has, in the order a reader meets them: what is
-#: true of the installation first, then what the app is doing, then what it once
-#: assumed. The order is **stable and declared** rather than sorted by date,
-#: because a badge whose contents reshuffle between two reads is a badge nobody
-#: trusts.
-SPECS: Tuple[AdvisorySpec, ...] = (
-    AdvisorySpec(
+#: Every installation fact this product has, in the order a reader meets them:
+#: what is true of the installation first, then what the app is doing, then
+#: what it once assumed. The order is **stable and declared** rather than
+#: sorted by date, because a badge whose contents reshuffle between two reads
+#: is a badge nobody trusts.
+SPECS: Tuple[FactSpec, ...] = (
+    FactSpec(
         UNREAD_ENVIRONMENT, DERIVED, _observe_unread_environment,
         _say_unread_environment,
         'Environment variables are set that this version reads for nothing.'),
-    AdvisorySpec(
+    FactSpec(
         RECONSTRUCTION_RUNNING, DERIVED, _observe_reconstruction,
         _say_reconstruction,
         'The historical reconstruction has not reached every first acquisition.',
         level=logging.INFO),
-    AdvisorySpec(
+    FactSpec(
         ASSUMED_BASE_CURRENCY, RECORDED, _observe_assumed_base_currency,
         _say_assumed_base_currency,
         'Amounts imported from files were taken to be in the reporting currency.'),
 )
 
 #: By key, for the lookups the write path and the API do.
-BY_KEY: Dict[str, AdvisorySpec] = {spec.key: spec for spec in SPECS}
+BY_KEY: Dict[str, FactSpec] = {spec.key: spec for spec in SPECS}
 
 
-def spec_for(key: str) -> AdvisorySpec:
-    """The spec of ``key``, or :class:`UnknownAdvisory` — the list is closed."""
+def spec_for(key: str) -> FactSpec:
+    """The spec of ``key``, or :class:`UnknownFact` — the list is closed."""
     try:
         return BY_KEY[key]
     except KeyError:
-        raise UnknownAdvisory(key) from None
+        raise UnknownFact(key) from None
 
 
 # --------------------------------------------------------------------------- #
@@ -425,31 +442,34 @@ def _rows(opened) -> Dict[str, _Row]:
     return {
         key: _Row(key, _utc(first_seen_at), _utc(acknowledged_at))
         for key, first_seen_at, acknowledged_at in opened.query(
-            'SELECT key, first_seen_at, acknowledged_at FROM advisory')
+            'SELECT key, first_seen_at, acknowledged_at FROM installation_fact')
     }
 
 
 def refresh(opened, context: Context,
-            now: Optional[datetime] = None) -> List[Advisory]:
-    """Re-observe every advisory, arm what stands, drop what no longer does.
+            now: Optional[datetime] = None) -> List[InstallationFact]:
+    """Re-observe every installation fact, arm what stands, drop what no
+    longer does.
 
     The one function that writes rows for the derivable two, and the reason it
-    both arms *and* drops is the criterion it serves: an advisory has no stored
-    existence beyond its acknowledgement, so a predicate that goes false takes
-    its row — and its acknowledgement — with it, and a predicate that comes back
-    is a new advisory with a new date and a new log line.
+    both arms *and* drops is the criterion it serves: an installation fact has
+    no stored existence beyond its acknowledgement, so a predicate that goes
+    false takes its row — and its acknowledgement — with it, and a predicate
+    that comes back is a new installation fact with a new date and a new log
+    line.
 
-    A :data:`RECORDED` advisory is never armed here (only :func:`record` does
-    that, at the instant it happens) and is dropped only when its subject is
-    gone: forgetting the import whose amounts were assumed takes the notice with
-    it, there being nothing left to repair.
+    A :data:`RECORDED` installation fact is never armed here (only
+    :func:`record` does that, at the instant it happens) and is dropped only
+    when its subject is gone: forgetting the import whose amounts were assumed
+    takes the notice with it, there being nothing left to repair.
 
-    Returns the advisories that stand afterwards, acknowledged ones included —
-    the caller decides what to show, and :func:`listing` is what the API reads.
+    Returns the installation facts that stand afterwards, acknowledged ones
+    included — the caller decides what to show, and :func:`listing` is what the
+    API reads.
     """
     now = now or datetime.now(timezone.utc)
     rows = _rows(opened)
-    standing: List[Advisory] = []
+    standing: List[InstallationFact] = []
 
     for spec in SPECS:
         detail = spec.observe(opened, context)
@@ -458,9 +478,9 @@ def refresh(opened, context: Context,
         if detail is UNOBSERVED:
             # Not from here: the row is left exactly as it is, armed or absent.
             # Dropping it would make every restart re-date and re-log the
-            # advisory a running scheduler is perfectly aware of.
+            # installation fact a running scheduler is perfectly aware of.
             if row is not None:
-                standing.append(_advisory(spec, row, None))
+                standing.append(_fact(spec, row, None))
             continue
 
         if detail is None:
@@ -472,14 +492,15 @@ def refresh(opened, context: Context,
             if spec.kind == RECORDED:
                 continue
             row = _arm(opened, spec, detail, now)
-        standing.append(_advisory(spec, row, detail))
+        standing.append(_fact(spec, row, detail))
 
     return standing
 
 
 def record(opened, key: str, context: Context,
-           now: Optional[datetime] = None) -> Optional[Advisory]:
-    """Arm a :data:`RECORDED` advisory — the event half, called where it happens.
+           now: Optional[datetime] = None) -> Optional[InstallationFact]:
+    """Arm a :data:`RECORDED` installation fact — the event half, called
+    where it happens.
 
     Idempotent by construction: a key that already has a row is left alone,
     whatever its acknowledgement. That is what makes it safe to call at the end
@@ -488,12 +509,13 @@ def record(opened, key: str, context: Context,
     store does not.
 
     Answers ``None`` when there was nothing to record: the observation did not
-    stand, or the advisory was armed already.
+    stand, or the installation fact was armed already.
     """
     spec = spec_for(key)
     if spec.kind != RECORDED:
         raise ValueError(
-            f"{key} is a derivable advisory; refresh() arms it, not record()")
+            f"{key} is a derivable installation fact; refresh() arms it, "
+            f"not record()")
 
     detail = spec.observe(opened, context)
     if detail is None or detail is UNOBSERVED:
@@ -502,24 +524,26 @@ def record(opened, key: str, context: Context,
         return None
 
     row = _arm(opened, spec, detail, now or datetime.now(timezone.utc))
-    return _advisory(spec, row, detail)
+    return _fact(spec, row, detail)
 
 
-def listing(opened, context: Context) -> List[Advisory]:
+def listing(opened, context: Context) -> List[InstallationFact]:
     """What the API answers: the rows that stand, each re-derived at this instant.
 
-    A **read**, deliberately: the arming and the dropping belong to the jobs that
-    observe the sources, so a ``GET`` never writes and never dates an advisory
+    A **read**, deliberately: the arming and the dropping belong to the jobs
+    that observe the sources, so a ``GET`` never writes and never dates an
+    installation fact
     with the moment somebody happened to look at a page.
 
     An acknowledged row is left out, which is the whole of *"an acknowledged
-    advisory disappears"*, and there is no option to ask for it back: this is not
-    a journal. It is not *deleted* either — the row is what keeps the
-    acknowledgement across a restart, which a *toast* cannot do and which the
-    recorded advisory needs, arriving as it does half an hour after the boot.
+    installation fact disappears"*, and there is no option to ask for it back:
+    this is not a journal. It is not *deleted* either — the row is what keeps
+    the acknowledgement across a restart, which a *toast* cannot do and which
+    the recorded installation fact needs, arriving as it does half an hour
+    after the boot.
     """
     rows = _rows(opened)
-    shown: List[Advisory] = []
+    shown: List[InstallationFact] = []
     for spec in SPECS:
         row = rows.get(spec.key)
         if row is None:
@@ -529,17 +553,17 @@ def listing(opened, context: Context) -> List[Advisory]:
         detail = spec.observe(opened, context)
         if detail is UNOBSERVED or detail is None:
             detail = None
-        shown.append(_advisory(spec, row, detail))
+        shown.append(_fact(spec, row, detail))
     return shown
 
 
 def acknowledge(opened, key: str, context: Optional[Context] = None,
-                now: Optional[datetime] = None) -> Advisory:
-    """Acknowledge one advisory. The only gesture the table offers.
+                now: Optional[datetime] = None) -> InstallationFact:
+    """Acknowledge one installation fact. The only gesture the table offers.
 
     Raises:
-        UnknownAdvisory: the key is not one of the three.
-        AdvisoryNotStanding: it is, and nothing stands under it — there is
+        UnknownFact: the key is not one of the three.
+        FactNotStanding: it is, and nothing stands under it — there is
             nothing to acknowledge, and pretending otherwise would write a row
             whose predicate has never been observed.
 
@@ -553,46 +577,47 @@ def acknowledge(opened, key: str, context: Optional[Context] = None,
     spec = spec_for(key)
     row = _rows(opened).get(key)
     if row is None:
-        raise AdvisoryNotStanding(key)
+        raise FactNotStanding(key)
 
     if row.acknowledged_at is None:
         acknowledged_at = now or datetime.now(timezone.utc)
         with opened.transaction():
             opened.execute(
-                'UPDATE advisory SET acknowledged_at = ? WHERE key = ?',
+                'UPDATE installation_fact SET acknowledged_at = ? WHERE key = ?',
                 [acknowledged_at, key])
         row = _Row(key, row.first_seen_at, acknowledged_at)
 
     detail = spec.observe(opened, context or Context())
     if detail is UNOBSERVED or detail is None:
         detail = None
-    return _advisory(spec, row, detail)
+    return _fact(spec, row, detail)
 
 
 # --------------------------------------------------------------------------- #
 # Internals
 # --------------------------------------------------------------------------- #
 
-def _arm(opened, spec: AdvisorySpec, detail: Mapping[str, Any],
+def _arm(opened, spec: FactSpec, detail: Mapping[str, Any],
          now: datetime) -> _Row:
     """Write the row and say it once, in logfmt.
 
-    The log line is emitted **here**, where the row is created, and nowhere else:
-    that is what makes *"journalisé une fois, au moment où il se produit"* a
-    property of the mechanism rather than a discipline every caller has to keep.
-    An advisory that is already armed is not logged again, and one that is
-    re-armed after its predicate came back is — it is a new occurrence.
+    The log line is emitted **here**, where the row is created, and nowhere
+    else: that is what makes *"journalisé une fois, au moment où il se
+    produit"* a property of the mechanism rather than a discipline every caller
+    has to keep. An installation fact that is already armed is not logged
+    again, and one that is re-armed after its predicate came back is — it is a
+    new occurrence.
 
     ``extra['context']`` is what ``logfmt_logger`` renders as ``key=value``
     pairs, so the headless channel is parseable rather than a sentence to grep.
     """
     with opened.transaction():
         opened.execute(
-            'INSERT INTO advisory (key, first_seen_at, acknowledged_at) '
+            'INSERT INTO installation_fact (key, first_seen_at, acknowledged_at) '
             'VALUES (?, ?, NULL) ON CONFLICT (key) DO NOTHING',
             [spec.key, now])
     logger.log(spec.level, spec.message(detail), extra={'context': {
-        'advisory': spec.key,
+        'installation_fact': spec.key,
         'first_seen_at': _iso(now),
     }})
     return _Row(spec.key, now, None)
@@ -601,13 +626,13 @@ def _arm(opened, spec: AdvisorySpec, detail: Mapping[str, Any],
 def _drop(opened, key: str) -> None:
     """Take the row away, acknowledgement included. See :func:`refresh`."""
     with opened.transaction():
-        opened.execute('DELETE FROM advisory WHERE key = ?', [key])
+        opened.execute('DELETE FROM installation_fact WHERE key = ?', [key])
 
 
-def _advisory(spec: AdvisorySpec, row: _Row,
-              detail: Optional[Mapping[str, Any]]) -> Advisory:
+def _fact(spec: FactSpec, row: _Row,
+          detail: Optional[Mapping[str, Any]]) -> InstallationFact:
     """Join a row to what its observation named, or to nothing at all."""
-    return Advisory(
+    return InstallationFact(
         key=row.key,
         first_seen_at=row.first_seen_at,
         acknowledged_at=row.acknowledged_at,
@@ -631,8 +656,8 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 
 
 __all__ = [
-    'Advisory', 'AdvisorySpec', 'Context', 'UnknownAdvisory',
-    'AdvisoryNotStanding', 'DERIVED', 'RECORDED', 'UNOBSERVED',
+    'InstallationFact', 'FactSpec', 'Context', 'UnknownFact',
+    'FactNotStanding', 'DERIVED', 'RECORDED', 'UNOBSERVED',
     'UNREAD_ENVIRONMENT',
     'RECONSTRUCTION_RUNNING', 'ASSUMED_BASE_CURRENCY',
     'SPECS', 'BY_KEY', 'spec_for',
