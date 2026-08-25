@@ -222,6 +222,18 @@ Four nets hold a rule nothing made true by construction:
   band announced a rebuild on every page — two surfaces disagreeing about one
   installation. With the rebuild folded in, one glance answers *are the figures I
   am looking at any good*, which is why no page dates its own figures any more.
+- **And the dot reads `/health`** (#819, ADR-0036), which is the one route the
+  front reads with no `/api` prefix — the container's own probe, so `vite.config.ts`
+  proxies it beside `/api` or the dev server answers it with `index.html`. It read
+  `/api/runtime` until then, whose one *detectable* problem is a stopped
+  scheduler: a scrape frozen since Tuesday left the dot green. The body's own
+  word carries the four facts now, so **amber is a `200`**, and the trade is
+  assumed — the body goes when the store goes, and the `503` under it is red,
+  the one colour that needs no body to be true. Red also covers a route that
+  answers with a body `installationState` cannot read; grey stays *nothing has
+  run yet* and never *something is wrong*. `STATE_TONE` is declared **once**, in
+  `StatusDot.tsx`, and the sidebar card reads it: the card is the dot's
+  development, never a second opinion on what *attention* covers.
 - **The theme, the language and the table density are the reader's three
   preferences, one mechanism** (ADR-0024 decided the first two): three states each
   for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density
