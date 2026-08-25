@@ -100,6 +100,7 @@ describe('the settings, which are one surface', () => {
                 maximum: 9,
                 effect: 'next_cycle',
                 doc: 'Something a later version added.',
+                required: false,
                 stored: false,
               },
             ],

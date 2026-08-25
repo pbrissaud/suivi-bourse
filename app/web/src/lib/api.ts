@@ -1092,9 +1092,17 @@ export interface SettingDescription {
   /** The registry's own English note. Diagnostic, like `problem.detail`. */
   doc: string
   /**
+   * Whether the app must be told before it can do its work (ADR-0035). The
+   * first run is a predicate over **this mark and `stored`** — *a required dial
+   * nobody has answered* — which is why the front carries no key of its own:
+   * `base_currency` wears it today, and the second one to wear it will not need
+   * this decision reopened.
+   */
+  required: boolean
+  /**
    * Whether the store holds an answer. Published rather than derived from
-   * `value !== default`: a dial answered *at* its default is answered, and
-   * `base_currency` is the one whose two states decide a whole screen.
+   * `value !== default`: a dial answered *at* its default is answered, and a
+   * required one with nothing stored is the question itself.
    */
   stored: boolean
 }
