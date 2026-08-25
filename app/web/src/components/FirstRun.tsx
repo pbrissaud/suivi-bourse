@@ -142,6 +142,9 @@ export function FirstRun() {
     rememberFirstRunWalked(left)
     setMark(left)
     setWalking(false)
+    // The walk is rewound as it is left, so a re-arming inside the same mount
+    // reopens it on its first passage rather than on ‘Terminer’.
+    setPassage(PASSAGES[0])
   }
 
   /** The next passage, or the end of the walk — one control, two meanings. */

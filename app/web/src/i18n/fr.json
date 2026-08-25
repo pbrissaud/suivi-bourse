@@ -160,7 +160,7 @@
   "firstRun.pass.accounts.body": "Chaque événement est enregistré sur un compte, et toute installation en possède déjà un — ce passage est donc déjà satisfait. Déclarez-en d’autres, et renommez celui-ci, depuis la page Comptes ; un fichier importé plus tard les nomme par leur identifiant.",
   "firstRun.pass.accounts.yours": "Ce que cette installation possède aujourd’hui",
   "firstRun.pass.events.title": "Vos premiers événements",
-  "firstRun.pass.events.body": "Deux portes ouvrent sur la même pièce : remettre un fichier à l’application, ou saisir un premier événement. Prenez l’une, l’autre, ou aucune — l’application fonctionne le grand livre vide et vous attend.",
+  "firstRun.pass.events.body": "Deux portes ouvrent sur la même pièce : remettre un fichier à l’application, ou saisir un premier événement. Prenez l’une, l’autre, ou aucune — l’application fonctionne avec un grand livre vide et vous attend.",
   "firstRun.pass.events.file": "Remettre un fichier",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
