@@ -2959,6 +2959,18 @@ class SuiviBourseMetrics:
         and once. :data:`runtime_state.SKIP_NO_QUOTE_CURRENCY` keeps the case the
         sentence was aimed at: the request came back naming no currency.
 
+        **And the gate that lets it be reached is the pass's own subject** (issue
+        #825). *A point with no conversion* was the one trigger, which made a
+        symptom the condition of a repair: a symbol quoted in the **reporting**
+        currency has nothing to convert — its points land at 1,0 off the memory
+        cache — so the pass declared ``nothing_to_repair`` and left the unit
+        unlearnt for as long as its market stayed shut. The trigger is now *a
+        point with no conversion **or** a symbol with no unit*, and the three
+        guards that bound the cost — the back-off above, the memory of the
+        symbols Yahoo named nothing for, and the fact that a learnt unit is
+        written to the store — are what keep the widening one request per symbol
+        for the life of the install rather than one per cycle.
+
         Returns the number of points repaired this cycle.
         """
         now = datetime.now(timezone.utc)
@@ -2995,35 +3007,77 @@ class SuiviBourseMetrics:
 
         store_open = self.config_manager.store
         span = quotes.unconverted_span(store_open, symbol)
-        if span is None:
+        currency = quotes.quote_currency(store_open, symbol)
+
+        # **The gate is double, and issue #825 is the second half of it.** It
+        # read *"are there points without a conversion"* alone, which was a
+        # symptom standing in for the subject: the pass repairs what is
+        # *missing*, and a missing unit is one of the two things it can repair.
+        # The two came apart on the case nobody had met — a symbol quoted in the
+        # **reporting** currency, first seen with its market shut. The fetch
+        # succeeds market shut and leaves the unit in ``_share_info_cache``, so
+        # ``_convert_history`` converts the rebuilt points at 1,0 and every one
+        # of them carries its conversion; the live scrape's gate (*not closed and
+        # a price*) writes nothing, so nothing records the attributes; and this
+        # pass stood down on ``nothing_to_repair`` **before** the branch below,
+        # which is the only other writer of the unit. The cache dies with the
+        # process, ``symbol_quote`` stays bare, and *a quote is a number and a
+        # unit* (#774) renders the whole line carried at its cost until the
+        # market reopens — a whole weekend, with ``/health`` saying ``ok``.
+        # In a foreign currency the points stay unconverted, so the old gate saw
+        # them and the repair happened: it is exactly the pair *quote currency =
+        # reporting currency* that fell between the two.
+        if span is None and currency:
             # The steady state, and the one that clears the back-off: every
-            # point carries its conversion.
+            # point carries its conversion, and the unit they are in is known.
             self._lateral_retry_at.pop(symbol, None)
             publish(skipped=runtime_state.SKIP_NOTHING_TO_REPAIR)
             return 0
-        oldest, newest, pending = span
 
-        currency = quotes.quote_currency(store_open, symbol)
+        # ``None`` when the unit alone is what is missing: there is no span to
+        # report, and a window invented for the record would date a repair
+        # nobody made.
+        span_window = _span_instants(span[0], span[1]) if span else None
+
         if not currency:
             # Nobody has asked yet — the live scrape never met this symbol
-            # (issue #773). The pass that knows the unit is missing is the one
-            # that asks for it, once, and writes the answer where the store can
-            # give it back.
+            # (issue #773), or met it with the market shut (issue #825). The
+            # pass that knows the unit is missing is the one that asks for it,
+            # once, and writes the answer where the store can give it back.
             currency, failed = self._learn_quote_currency(symbol)
             if failed:
                 back_off()
                 app_logger.warning(
                     f"Could not establish the currency {symbol} is quoted in, "
                     f"will retry")
-                publish(window=_span_instants(oldest, newest), failed=True,
+                # The consequence is named only when there is one: with no span
+                # to repair, promising a number of points that cannot be
+                # converted would count rows this pass never had.
+                consequence = (
+                    f", so its {span[2]} stored price(s) cannot be converted "
+                    f"yet" if span else "")
+                publish(window=span_window, failed=True,
                         error=f"the currency {symbol} is quoted in could not "
-                              f"be established, so its {pending} stored price(s)"
-                              f" cannot be converted yet")
+                              f"be established{consequence}")
                 return 0
             if not currency:
-                publish(window=_span_instants(oldest, newest),
+                publish(window=span_window,
                         skipped=runtime_state.SKIP_NO_QUOTE_CURRENCY)
                 return 0
+            if span is None:
+                # The unit was the whole of the work, and it landed: the symbol
+                # is **quoted** from here on rather than carried at its cost, and
+                # the pass says so in its own word rather than borrowing the
+                # steady state's (issue #825). A success, so the back-off clears
+                # exactly as it does for a conversion that lands.
+                self._lateral_retry_at.pop(symbol, None)
+                app_logger.info(
+                    f"Learnt the unit of {symbol}; it had no point left to "
+                    f"convert")
+                publish(skipped=runtime_state.SKIP_UNIT_LEARNT)
+                return 0
+
+        oldest, newest, pending = span
 
         # One chunk per cycle, from the **oldest** unconverted day, exactly as
         # the backward pass walks one chunk per cycle from its anchor.
