@@ -22,6 +22,7 @@ import {
   anAccountsPayload,
   anAdvisory,
   aConfig,
+  aHealth,
   aTypedEvent,
   aLedgerPayload,
   aMoversPayload,
@@ -82,6 +83,10 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
+    // What the status dot reads since #819 (ADR-0036). The default is a well
+    // install; the amber this ticket exists for — a scrape frozen with a `200`
+    // — is `aFrozenScrape()`, and the red is the route refusing at all.
+    http.get(ROUTES.health, () => HttpResponse.json(aHealth())),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
     // The two writes echo the row back, which is the contract's own shape: the
     // id is the store's to decide, so a client cannot send one and the answer is

@@ -7,25 +7,114 @@ import { ApiProblem } from '@/lib/api'
 import { formatMessage } from '@/lib/i18n'
 import { PROBLEM_TYPES, problemMessage, problemMessageKey } from '@/lib/problem'
 import { installationState, oneBand, readConditions, shellConditions } from '@/lib/status'
-import { aRuntime } from '@/test/factories'
+import { NOW, aFrozenScrape, aHealth, aHealthJobs, aRuntime } from '@/test/factories'
 
 describe('the status dot is a state, never a count', () => {
   it('says nothing before the first answer, rather than saying "fine"', () => {
     expect(installationState({})).toBe('unknown')
   })
 
-  it('reads a running scheduler as fine and a stopped one as worth a look', () => {
-    expect(installationState({ runtime: aRuntime() })).toBe('ok')
-    expect(installationState({ runtime: aRuntime({ scheduler_running: false }) })).toBe('attention')
+  it('reads a well install as fine', () => {
+    expect(installationState({ health: aHealth() })).toBe('ok')
+  })
+
+  it('turns amber on a writer frozen since Tuesday — the behaviour #819 adds', () => {
+    // The dot read `/api/runtime` before this ticket, whose one detectable
+    // problem is a stopped scheduler: this install has a running scheduler, a
+    // store that answers and a scrape that has written nothing for days, and it
+    // was **green**. It is the body that says so, and it says so with a `200`.
+    expect(installationState({ health: aFrozenScrape() })).toBe('attention')
+  })
+
+  it('still turns amber on the one problem it could already see', () => {
+    // A stopped scheduler is folded into the body's own word by the server, so
+    // the front reads one member where it used to read two.
+    expect(
+      installationState({
+        health: aHealth({ status: 'attention', scheduler_running: false }),
+      }),
+    ).toBe('attention')
   })
 
   it('reads a failed query as unreachable, whatever the payload said', () => {
     expect(
       installationState({
-        runtime: aRuntime(),
+        health: aHealth(),
         error: new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable }),
       }),
     ).toBe('unreachable')
+  })
+
+  it('is red on a route that answers with no body it can read', () => {
+    // ADR-0036's trade, and the half of it that is not a `503`: the body goes
+    // when the store goes, and the colour has to stay true when the detail
+    // disappears. A proxy's own JSON, an image whose body has moved on — the
+    // dot says *the app is not answering*, which is what has happened.
+    expect(installationState({ health: null })).toBe('unreachable')
+    expect(installationState({ health: 'ok' })).toBe('unreachable')
+    expect(installationState({ health: {} })).toBe('unreachable')
+    expect(installationState({ health: { status: 'degraded' } })).toBe('unreachable')
+  })
+
+  it('keeps grey for "nothing has run yet", which is not "something is wrong"', () => {
+    // A container a minute old. The body says `unknown` and the dot says the
+    // same — grey claims nothing, and amber would send a reader looking for a
+    // fault that does not exist.
+    expect(installationState({ health: aHealth({ status: 'unknown' }) })).toBe('unknown')
+  })
+
+  it('reads a rebuild off the backfill’s verdict, not off the whole’s word', () => {
+    // The backfill's own `status` is `ok` while it runs, deliberately: a
+    // reconstruction is not something to look at. Read off that word the dot
+    // would be green during a rebuild, which is exactly what #787 removed.
+    const rebuilding = aHealth({
+      jobs: aHealthJobs({
+        backfill: {
+          status: 'ok',
+          at: '2026-03-02T11:59:00.000Z',
+          verdict: 'running',
+          complete: 1,
+          in_scope: 3,
+          attention: [],
+        },
+      }),
+    })
+    expect(installationState({ health: rebuilding })).toBe('rebuilding')
+  })
+
+  it('puts attention above a rebuild: a stopped job is why one never finishes', () => {
+    const both = aHealth({
+      status: 'attention',
+      jobs: aHealthJobs({
+        scrape: {
+          status: 'attention',
+          at: NOW,
+          verdict: 'frozen',
+          held: 3,
+          attention: ['ZETA'],
+        },
+        backfill: {
+          status: 'ok',
+          at: NOW,
+          verdict: 'running',
+          complete: 1,
+          in_scope: 3,
+          attention: [],
+        },
+      }),
+    })
+    expect(installationState({ health: both })).toBe('attention')
+  })
+
+  it('survives a body whose jobs the app itself could not read', () => {
+    // `web/health.py` guards its own fold: a defect in the shaping is not a
+    // reason to restart the container, and what it fails to say it says it
+    // could not say. That is a readable body — grey, and never red.
+    expect(
+      installationState({
+        health: aHealth({ status: 'unknown', jobs: null, error: 'The jobs could not be read' }),
+      }),
+    ).toBe('unknown')
   })
 })
 
@@ -72,7 +161,25 @@ describe('the causal order of the shell’s two conditions (#726, #787)', () => 
     // not take the top of every page on every route, and the dot it moved to is
     // a link — so the fact kept its address and lost its cost.
     expect(oneBand(shellConditions({ currencyUnanswered: false, runtime: rebuilding }))).toBeNull()
-    expect(installationState({ runtime: rebuilding })).toBe('rebuilding')
+    // The dot's own reading of the same installation, off `/health` since #819:
+    // the fact is the backfill's verdict rather than the runtime's boolean, and
+    // the state it lands on is unchanged.
+    expect(
+      installationState({
+        health: aHealth({
+          jobs: aHealthJobs({
+            backfill: {
+              status: 'ok',
+              at: NOW,
+              verdict: 'running',
+              complete: 0,
+              in_scope: 2,
+              attention: [],
+            },
+          }),
+        }),
+      }),
+    ).toBe('rebuilding')
   })
 
   it('keeps its gesture, because the reader can make this condition stop', () => {

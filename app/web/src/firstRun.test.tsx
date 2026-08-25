@@ -23,7 +23,7 @@ import { ROUTES, type ConfigResponse } from '@/lib/api'
 import { CURRENCIES } from '@/lib/currencies'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
-import { aConfig, aLedgerPayload, aRuntime } from '@/test/factories'
+import { aConfig, aLedgerPayload, aRebuilding, aRuntime } from '@/test/factories'
 import { renderApp, type RenderAppOptions } from '@/test/render'
 import { server } from '@/test/server'
 
@@ -361,7 +361,11 @@ describe('the banner, with the currency unanswered', () => {
     // The causal order still holds — it is simply one condition shorter. What
     // used to take the slot next is the reconstruction, and it no longer
     // competes for one.
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
+    server.use(
+      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
+      // The dot reads `/health` since #819: same fact, the backfill's verdict.
+      http.get(ROUTES.health, () => HttpResponse.json(aRebuilding())),
+    )
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))

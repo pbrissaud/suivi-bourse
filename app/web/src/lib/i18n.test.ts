@@ -102,6 +102,36 @@ describe('ICU is the format, and it is needed', () => {
     expect(formatMessage('fr', 'dashboard.gainTotal')).toBe('Gain total')
   })
 
+  it('writes the dot’s five states in both catalogues, as two sources', () => {
+    // The vocabulary the status dot and its card are said in (#819, ADR-0036).
+    // Both catalogues carry all five branches, and neither is a rendering of
+    // the other: the word `attention` used to say *scheduler stopped* in both,
+    // which stopped being true the day the dot started reading `/health` — one
+    // stuck scrape, one wedged backfill and one failing perf pass all land on
+    // it now.
+    for (const state of ['ok', 'attention', 'rebuilding', 'unreachable'] as const) {
+      for (const key of ['status.dot', 'sidebar.status.title', 'sidebar.status.body'] as const) {
+        for (const language of ['fr', 'en'] as const) {
+          expect(formatMessage(language, key, { state }), `${language}:${key}:${state}`).not.toBe('')
+        }
+      }
+    }
+
+    // And the two part company where a literal rendering would degrade one of
+    // them: English has **job** for the three of them, and French has no crisp
+    // equivalent — so the French sentence names them, which is a decision and
+    // not a longer translation.
+    expect(formatMessage('en', 'sidebar.status.title', { state: 'attention' })).toBe(
+      'A job needs a look',
+    )
+    expect(formatMessage('fr', 'sidebar.status.title', { state: 'attention' })).toBe(
+      'Quelque chose s’est arrêté',
+    )
+    expect(formatMessage('fr', 'sidebar.status.body', { state: 'attention' })).toContain(
+      'Un relevé, une reconstruction ou un calcul de performance',
+    )
+  })
+
   it('pluralises per language rather than per string', () => {
     // French puts 0 in `one` and English does not — which is why a shared
     // string between two contexts is not available, and why the catalogue
