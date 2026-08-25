@@ -1039,6 +1039,7 @@ export function aSetting(overrides: Partial<SettingDescription> = {}): SettingDe
     maximum: 86400,
     effect: 'rearm_scrape',
     doc: 'Poll cadence, in seconds.',
+    required: false,
     stored: true,
     ...overrides,
   }
@@ -1061,6 +1062,9 @@ export function defaultSettings(): SettingDescription[] {
       maximum: null,
       effect: 'next_cycle',
       doc: 'The reporting currency, as an ISO-4217 code.',
+      // The one dial the registry marks required, and the fixture says so
+      // rather than letting the predicate recognise it by name (ADR-0035).
+      required: true,
     }),
   ]
 }

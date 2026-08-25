@@ -24,6 +24,14 @@ Three consequences the rest of the app leans on:
   posed), so it is absent from the seed and :func:`default_for` answers ``None``.
   "Not answered yet" and "answered" must stay two states — a default here would
   silently interpret every amount already imported;
+* **which dials are *required* is a property of this list** (ADR-0035). The
+  first run is a predicate — *a required setting is unanswered* — and the mark
+  that carries it lives here, beside the dial, rather than as a key spelled out
+  in the front. Today ``base_currency`` alone wears it, being the one dial with
+  no default and therefore the only one whose absence can mean *nobody has ever
+  answered here*; the mark exists so that the second required dial, whenever it
+  comes, does not reopen that decision. It is published with the rest of what a
+  dial is (``settings.describe``) and read as a mark, never as a literal key;
 * **no dial requires a restart**, which is a property of *which dials exist*
   rather than of the machinery: the executor-pool pair was the one couple that
   would still have needed one — a ``ThreadPoolExecutor`` does not shrink hot —
@@ -98,6 +106,13 @@ class SettingSpec:
     ``attribute`` names the ``SuiviBourseMetrics`` field the dial feeds when it
     has one, so applying a change is one loop over this list rather than five
     hand-written assignments that can fall out of step with it.
+
+    ``required`` says the app cannot do its work until somebody answers, which
+    is what the first run asks about (ADR-0035). It goes with ``default is
+    None`` and not beside it: a dial the code already answers is answered, so
+    marking one required *and* giving it a default would ask a question whose
+    answer is already on screen. :func:`required_keys` is the whole of the
+    class, and it is what the front reads instead of naming a key.
     """
 
     key: str
@@ -109,6 +124,7 @@ class SettingSpec:
     minimum: Optional[int] = None
     maximum: Optional[int] = None
     attribute: Optional[str] = None
+    required: bool = False
 
 
 def _int(raw: str) -> int:
@@ -167,7 +183,7 @@ SETTINGS: Tuple[SettingSpec, ...] = (
         'base_currency', None, CURRENCY, _currency, REPAIR_CONVERSIONS,
         'The reporting currency, as an ISO-4217 code. No default: it is asked, '
         'never assumed, and it is fixed from the first recorded event.',
-        attribute='base_currency'),
+        attribute='base_currency', required=True),
 )
 
 #: By key, for the O(1) lookups every other function here is built on.
@@ -183,6 +199,18 @@ def seeded_defaults() -> Dict[str, str]:
     """The rows the store inserts: every dial that *has* a default, as stored."""
     return {spec.key: spec.default
             for spec in SETTINGS if spec.default is not None}
+
+
+def required_keys() -> Tuple[str, ...]:
+    """The dials the app must be told, in the registry's order (ADR-0035).
+
+    *First run* is a predicate over this tuple — **a required dial with nothing
+    stored is a question nobody has answered** — and the tuple is published
+    rather than described, so the browser derives that predicate from the mark
+    instead of holding its own copy of which key matters. One dial wears it
+    today; the point of the tuple is that the second one costs nothing.
+    """
+    return tuple(spec.key for spec in SETTINGS if spec.required)
 
 
 def default_for(key: str):
@@ -315,6 +343,6 @@ __all__ = [
     'SettingSpec', 'InvalidSetting', 'SETTINGS', 'BY_KEY',
     'INTEGER', 'CURRENCY',
     'NEXT_CYCLE', 'REARM_SCRAPE', 'REARM_BACKFILL_JOB', 'REPAIR_CONVERSIONS',
-    'spec_for', 'seeded_defaults', 'default_for', 'defaults', 'resolve',
-    'validate', 'stored_form',
+    'spec_for', 'seeded_defaults', 'required_keys', 'default_for', 'defaults',
+    'resolve', 'validate', 'stored_form',
 ]

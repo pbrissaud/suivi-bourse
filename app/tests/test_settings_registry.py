@@ -43,6 +43,35 @@ def test_the_reporting_currency_has_no_default_and_is_never_seeded():
     assert 'base_currency' not in registry.seeded_defaults()
 
 
+def test_the_required_mark_is_the_registry_s_and_not_a_key_in_the_front():
+    """*First run* is a class, not a name (ADR-0035, ADR-0021).
+
+    The predicate was *the reporting currency is unanswered* and the browser
+    spelled that key out. It is now *a required dial is unanswered*, and the
+    mark that says which ones is here — so the second required dial, whenever
+    it comes, is a line in this list rather than a decision reopened.
+    """
+    assert registry.required_keys() == ('base_currency',)
+    assert registry.spec_for('base_currency').required is True
+    assert not any(registry.spec_for(key).required
+                   for key in registry.BY_KEY if key != 'base_currency')
+
+
+def test_a_required_dial_has_no_default_so_its_absence_is_the_question():
+    """What makes the mark readable: nothing else answers for it.
+
+    A dial the code already answers is answered, so *required* and a default
+    together would pose a question whose answer is already on screen — and the
+    predicate, which reads *marked required, nothing stored*, would then stand
+    over an install that runs perfectly well.
+    """
+    for key in registry.required_keys():
+        assert registry.default_for(key) is None
+        assert key not in registry.seeded_defaults()
+        # Nothing stored, nothing resolved: this is what drives the predicate.
+        assert registry.resolve(key, None) is None
+
+
 def test_every_other_dial_has_a_default_and_it_parses():
     seeded = registry.seeded_defaults()
 

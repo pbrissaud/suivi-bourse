@@ -2,10 +2,11 @@
  * The reporting currency's **closed list**, and the suggestion a browser locale
  * is allowed to make (#726, ADR-0002, ADR-0021).
  *
- * `base_currency` is the one dial with no default, therefore the only one whose
- * absence means *nobody has ever answered here* — which is what makes it the
- * app's single first-run question. Two decisions are encoded here rather than
- * described:
+ * `base_currency` has no default, so the field always opens on an unanswered
+ * dial. Whether that absence is a question the app must ask is the registry's
+ * to say and not this file's: the `required` mark carries it (ADR-0035), and
+ * the front reads the mark rather than this key. What is decided here is the
+ * field itself, and two decisions are encoded rather than described:
  *
  *  - **A closed list, bounded by what the rate source quotes.** A free-text
  *    field accepts `XYZ`, whose pair never resolves; the failure that follows is

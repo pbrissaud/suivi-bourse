@@ -68,6 +68,12 @@ def describe(store) -> List[Dict[str, Any]]:
     ``stored`` is published rather than derived from ``value != default``: a dial
     answered at its default value is answered, and a page that showed it as
     untouched would be telling the reader something the store does not say.
+
+    ``required`` travels the same way and for the same reason (ADR-0035): the
+    first run asks *is a required dial unanswered?*, and a browser that answered
+    it by spelling out ``base_currency`` would hold a second list of one. The
+    two fields together are the whole predicate — a dial marked required with
+    ``stored`` false is a question nobody has answered here.
     """
     rows = dict(store.query('SELECT key, value FROM setting'))
     described = []
@@ -82,6 +88,7 @@ def describe(store) -> List[Dict[str, Any]]:
             'maximum': spec.maximum,
             'effect': spec.effect,
             'doc': spec.doc,
+            'required': spec.required,
             'stored': raw is not None and str(raw).strip() != '',
         })
     return described
