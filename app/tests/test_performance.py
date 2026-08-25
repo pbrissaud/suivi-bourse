@@ -307,7 +307,7 @@ def test_a_grants_contribution_does_not_move_with_the_backfill():
 #
 # AAPL quotes 200 € today, so holdings are 2 000,00 €.
 
-WORKED_EXAMPLE_ACCOUNT = Account("CTO", "CTO", "Mon CTO", "EUR")
+WORKED_EXAMPLE_ACCOUNT = Account("CTO", "CTO", "Mon CTO")
 TODAY = date(2025, 4, 20)
 
 

@@ -57,8 +57,22 @@ def test_a_new_file_declares_no_provenance_at_all(store):
     assert 'import_source' not in store_module.DDL
 
 
+def test_a_new_file_declares_no_provenance_on_an_account_either(store):
+    """The accounts' own half of that, and it is ADR-0034's (#817).
+
+    ``account.source_id`` said which accounts file had declared a row; there is
+    no accounts file, so a fresh store declares no such column — the same inert
+    residue on an older store, and the same absence of migration machinery.
+    """
+    columns = {row[0] for row in store.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'account'")}
+    assert columns == {'id', 'type', 'label'}
+    assert 'source_id' not in store_module.DDL
+
+
 def test_a_new_file_is_seeded_with_the_default_account(store):
-    rows = store.query('SELECT id, type, label, source_id FROM account')
+    rows = store.query('SELECT id, type, label FROM account')
 
     assert rows == [store_module.DEFAULT_ACCOUNT_ROW]
 
@@ -166,30 +180,6 @@ def test_the_foreign_keys_hold(store):
         store.execute(
             "INSERT INTO account_state (account, cash_balance, net_contributed) "
             "VALUES ('nope', 0, 0)")
-
-
-def test_an_account_can_change_hands_while_an_event_names_it(store):
-    """Why ``account.source_id`` carries no foreign key of its own (#698).
-
-    DuckDB runs an ``UPDATE`` that touches a foreign-key column as a delete plus
-    an insert, and the delete then trips the *incoming* ``event.account`` key. A
-    key here would therefore freeze exactly the accounts that are in use: no
-    write to this column on a row an event names would succeed. Integrity moves
-    to the writer, as it does for ``price_point``.
-
-    The column itself is an inert residue since ADR-0032 and leaves at #817;
-    what this holds until then is that writing it does not trip the incoming
-    key, which is a property of the **schema** and not of who writes it.
-    """
-    store.execute("UPDATE account SET source_id = 1 WHERE id = 'default'")
-    store.execute(
-        "INSERT INTO event (id, date, event_type, account, amount) "
-        "VALUES (1, DATE '2024-01-02', 'DEPOSIT', 'default', 100.0)")
-
-    store.execute("UPDATE account SET source_id = NULL WHERE id = 'default'")
-
-    assert store.query("SELECT source_id FROM account WHERE id = 'default'") \
-        == [(None,)]
 
 
 # --------------------------------------------------------------------------- #

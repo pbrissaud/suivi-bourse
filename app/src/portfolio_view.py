@@ -634,10 +634,6 @@ class AccountSummary:
     gain_absolu: Optional[float]
     xirr: Optional[float]
     twr_index: Optional[float]
-    #: Where the declaration came from: the import that carried it, or ``None``
-    #: for one created in the app (issue #698). It rides on the row because the
-    #: page has to render the difference — what came from a file is read-only.
-    source_id: Optional[int] = None
     #: ADR-0018's fourth term for **this** account (issue #722), signed as it
     #: enters the sum. It rides here rather than on a resource of its own for
     #: the reason the figures beside it do: one accounts resource, two
@@ -647,17 +643,11 @@ class AccountSummary:
     #: belong in a sum with them.
     transfer_fees: Optional[float] = None
 
-    @property
-    def editable(self) -> bool:
-        return self.source_id is None
-
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
             'label': self.label,
             'type': self.type,
-            'source_id': self.source_id,
-            'editable': self.editable,
             'as_of': _iso(self.as_of),
             'cash_balance': self.cash_balance,
             'holdings_value': self.holdings_value,
@@ -708,7 +698,6 @@ def build_accounts(
             gain_absolu=row.get('gain_absolu'),
             xirr=row.get('xirr'),
             twr_index=row.get('twr_index'),
-            source_id=getattr(account, 'source_id', None),
             transfer_fees=(transfer_fees or {}).get(account.id),
         ))
     return summaries

@@ -4,17 +4,16 @@
  *
  * Nothing about it is invented: a lateral panel, opened from the account's own
  * name, one field per thing the row carries, a band for what the server refuses.
- * That sameness is the criterion rather than a convenience — the accounts are
- * provisionable by file exactly as the events are, read-only for what came from
- * one and editable for what came from here, and a second shape for the same rule
- * is the defect *individually right, collectively unreadable* by definition.
+ * That sameness is the criterion rather than a convenience — one shape for one
+ * rule, a second shape for it being the defect *individually right, collectively
+ * unreadable* by definition.
  *
  * It lives on `/comptes` since ADR-0028, with the page that reads the accounts,
  * and it is where an account is **removed** as well as declared and renamed.
  * That move is the point of the removal rather than a side effect of it: the
- * three refusals are **prose** — the account every install owns, the *n* events
- * that name it, the imported file that declares it — and prose in a table cell
- * is a sentence nobody has room to read. Here it has a paragraph.
+ * two refusals are **prose** — the account every install owns, and the *n*
+ * events that name it — and prose in a table cell is a sentence nobody has room
+ * to read. Here it has a paragraph.
  *
  * Three decisions of its own:
  *
@@ -24,9 +23,9 @@
  *    USD security* has no referent to be a bug about. The page built during the
  *    prototype still carried the field, which is why the criterion names it.
  *  - **The identifier is fixed once the row exists.** It is the value events
- *    name, so renaming it would be an edit of every imported row that names it,
- *    and imported rows are read-only. The panel says so where the field would
- *    be, rather than showing a control the server would refuse.
+ *    name, and an event is addressed by its own key rather than by a column
+ *    somebody else may rewrite. The panel says so where the field would be,
+ *    rather than showing a control the server would refuse.
  *  - **The first declaration carries the reassignment** (#725). It is one box,
  *    checked by default, and it is here rather than beside the panel because
  *    *dans le même geste* is the criterion: at that instant there is no list of
@@ -61,19 +60,16 @@ import { useI18n, type MessageKey } from '@/lib/i18n'
 import { problemMessageKey, problemSentence } from '@/lib/problem'
 
 /**
- * The three refusals, in `accounts.delete_account`'s own order.
+ * The two refusals, in `accounts.delete_account`'s own order.
  *
- * `fromFile` is unreachable **by construction and not by accident**: this panel
- * only opens from an editable account's name, and `removalOf` answers `fromFile`
- * only where `editable` is false. It stays in the map all the same — the map
- * mirrors the server's classification, and a record of three answers with two
- * entries is a record that has stopped being one. The reason a file's account
- * has no panel at all is said on its detail instead.
+ * There was a third — a row an accounts **file** had declared, revoked by
+ * forgetting that import — and it left with the file (ADR-0034). What the map
+ * mirrors is the server's classification, so it holds exactly what that
+ * classification now holds.
  */
 const REFUSALS: Record<Exclude<Removal['kind'], 'offered'>, MessageKey> = {
   seeded: 'accounts.remove.seeded',
   namedByEvents: 'accounts.remove.namedByEvents',
-  fromFile: 'accounts.remove.fromFile',
 }
 
 interface Draft {

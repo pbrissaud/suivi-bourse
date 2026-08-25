@@ -39,7 +39,6 @@ import {
 } from '@/lib/accounts'
 import type { PerfPoint } from '@/lib/api'
 import {
-  aFileAccount,
   anAccount,
   anAccountHistory,
   anAccountsPayload,
@@ -348,16 +347,15 @@ describe('the name one account wears, on both pages', () => {
 
 describe('a removal that cannot happen names its reason', () => {
   it('follows `accounts.delete_account`’s own order', () => {
-    // Not alphabetical: the seeded row first, then the events naming it, then
-    // the file that declared it. The middle one before the last on purpose —
-    // both apply to a file-provisioned account an event names, and only one of
-    // them is actionable, forgetting the import being refused in cascade.
+    // The seeded row first — there is always at least one account — then the
+    // events naming it. A third refusal stood between them while a file could
+    // declare a row and be forgotten; the file is gone (ADR-0034) and it with
+    // it, so what is left is two answers and the offer.
     expect(removalOf(theSeededAccount(), 0)).toEqual({ kind: 'seeded' })
-    expect(removalOf(aFileAccount({ id: 'beta' }), 71)).toEqual({
+    expect(removalOf(anAccount({ id: 'beta' }), 71)).toEqual({
       kind: 'namedByEvents',
       count: 71,
     })
-    expect(removalOf(aFileAccount({ id: 'beta' }), 0)).toEqual({ kind: 'fromFile' })
     expect(removalOf(anAccount({ id: 'gamma' }), 0)).toEqual({ kind: 'offered' })
   })
 })
@@ -452,15 +450,11 @@ describe('réaffecter, jamais refuser (#725)', () => {
     const named = anAccountsPayload([theSeededAccount({ label: 'Mon PEA' })], false)
     expect(reassignmentOf(named, unassignedLedger())).toEqual({ kind: 'none' })
 
-    // The other seeded column says as much, and a file that took the row over
-    // says it a third way (#698).
+    // The other seeded column says as much. There was a third road — a file
+    // taking the row over — and it left with the accounts file (ADR-0034): the
+    // two that remain are the owner's own, which are the ones that mattered.
     const retyped = anAccountsPayload([theSeededAccount({ type: 'PEA' })], false)
     expect(reassignmentOf(retyped, unassignedLedger())).toEqual({ kind: 'none' })
-    const taken = anAccountsPayload(
-      [theSeededAccount({ source_id: 2, editable: false }), anAccount({ id: 'pea' })],
-      true,
-    )
-    expect(reassignmentOf(taken, unassignedLedger())).toEqual({ kind: 'none' })
   })
 
   it('claims nothing while the read has not landed', () => {

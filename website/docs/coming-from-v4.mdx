@@ -10,7 +10,7 @@ afterwards.
 ## Going back
 
 **[Export your events](./import-your-events.mdx#export-it-all-back-out), then
-point a version 4 install at a folder holding the exported `events.csv` alone.**
+point a version 4 install at a folder holding the exported `events.csv`.**
 
 That sentence is the whole procedure, and the export is what makes it true: your
 original files are never touched, so going back at the moment you switch costs
@@ -19,17 +19,10 @@ store, and the export is how it leaves. The exported file is an ordinary event
 file; version 4 reads it and ignores the one column it does not know, the
 `base_currency` version 5 writes on every row.
 
-**`alone` is the operative word**, and what it keeps out is the second file the
-export writes. Version 4 has no notion of an accounts file: it refuses any `.csv` whose header
-lacks `date` and `event_type`, and it refuses **the whole directory** with it —
-so an `accounts.csv` left beside the events is not skipped, it takes the entire
-portfolio down (`Error loading accounts.csv: Missing required columns`). A
-single-account install is caught by the same rule and not spared by having
-nothing to declare: its accounts export is a header row with no rows under it,
-and an empty file is still a file with the wrong header. So keep `accounts.csv`
-out of the folder version 4 reads — with your backup, where it is the half
-version 5 restores from — and redeclare what it holds in version 4's
-`settings.yaml`, with the same ids the `account` column names.
+**Your accounts are redeclared by hand**, in version 4's `settings.yaml`, with
+the same ids the `account` column names. There is nothing to copy across: an
+account is declared in version 5's own pages and nowhere else, so the export
+writes the events and no second file.
 
 **Version 4 asks each account for a `currency`, and the exported file cannot
 carry one**: version 5 has one reporting currency for the whole install and no
@@ -48,7 +41,7 @@ coincide with what you were reading.
 It is the subject of its own ticket. What it will hold:
 
 - everything is redone: re-import, then rebuild — about 25 minutes for 30 symbols over five years;
-- a single-account v4's event files import without one edit; accounts are redeclared in a file of the event format, and `settings.yaml` is named but never read;
+- a single-account v4's event files import without one edit; accounts are declared in the app, and `settings.yaml` is named but never read;
 - copy your old configuration directory, never share it between the two versions;
 - a reconciliation table: quantity, cash balance and net contribution must coincide, the rest is deliberately corrected;
 - what to do with the InfluxDB and Grafana volumes — a documented gesture, never an action of the app.

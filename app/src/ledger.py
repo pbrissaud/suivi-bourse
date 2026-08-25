@@ -150,7 +150,7 @@ def stamp(store) -> Optional[str]:
     """
     (digest,) = store.query(_LEDGER_DIGEST)[0:1][0]
     declared = store.query(
-        'SELECT id, type, label, source_id FROM account '
+        'SELECT id, type, label FROM account '
         'WHERE id <> ? ORDER BY id', [DEFAULT_ACCOUNT])
     if digest is None and not declared:
         return None

@@ -152,8 +152,8 @@
   "firstRun.refused": "The app refused this value and wrote nothing.",
 
   "receipt.currency.saved": "Base currency saved: {currency}.",
-  "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} accounts {Preparing your accounts…} other {Preparing your file…}}",
-  "receipt.export.saved": "{file, select, events {Your events are on your disk.} workbook {Your workbook is on your disk.} selection {Your selection is on your disk.} accounts {Your accounts are on your disk.} other {Your file is on your disk.}}",
+  "receipt.export.running": "{file, select, events {Preparing your events…} workbook {Preparing your workbook…} selection {Preparing your selection…} other {Preparing your file…}}",
+  "receipt.export.saved": "{file, select, events {Your events are on your disk.} workbook {Your workbook is on your disk.} selection {Your selection is on your disk.} other {Your file is on your disk.}}",
   "receipt.import.running": "Reading {file}…",
   "receipt.import.written": "{count, plural, one {# event written} other {# events written}}, from {from} to {to}, over {accounts, plural, one {# account} other {# accounts}} and {symbols, plural, one {# security} other {# securities}}.",
   "receipt.import.empty": "{file} carried no event: nothing was written.",
@@ -258,15 +258,12 @@
   "accounts.detail.events": "Latest events",
   "accounts.detail.events.link": "See the whole ledger",
 
-  "accounts.detail.fromFile": "Declared by an imported file, so it is read-only here: correct the file and drop it again, or forget its import.",
-
   "accounts.new": "Declare an account",
   "accounts.remove": "Remove",
   "accounts.remove.title": "Remove this account",
-  "accounts.remove.offered": "Nothing names this account and no file declares it, so removing it takes nothing with it. It cannot be undone from the app.",
+  "accounts.remove.offered": "Nothing names this account, so removing it takes nothing with it. It cannot be undone from the app.",
   "accounts.remove.seeded": "This is the account every install has: every event naming no other is recorded there. Rename it rather than remove it.",
   "accounts.remove.namedByEvents": "{count, plural, one {# event names this account} other {# events name this account}}, and an account an event names cannot go: the event would then name something that does not exist. Assign them to another account, or remove them first.",
-  "accounts.remove.fromFile": "An imported file declares it: forget that import to remove it.",
   "accounts.reassign.title": "Events assigned to no account",
   "accounts.reassign.body": "{count, plural, one {# event was recorded before you declared anything, so it names no account of yours.} other {# events were recorded before you declared anything, so they name no account of yours.}} Assign them to one of your accounts. Your files stay as they are — the column was right when they were imported, and it is this app that changed the rule underneath them.",
   "accounts.reassign.target": "Assign them to",
@@ -278,7 +275,7 @@
   "accounts.form.edit.title": "This account",
   "accounts.form.description": "An account is where your events are recorded, and it is yours to name. It has no currency of its own: every figure in this app is reported in one currency.",
   "accounts.form.id": "Identifier",
-  "accounts.form.id.fixed": "This is what your events name, in a file as well as here, so it cannot be changed. Declare another account and forget the import that carried this one instead.",
+  "accounts.form.id.fixed": "This is what your events name, in a file as well as here, so it cannot be changed. Declare another account and move the events onto it instead.",
   "accounts.form.type": "Type",
   "accounts.form.label": "Name",
   "accounts.form.required": "This field is required.",
@@ -287,7 +284,7 @@
   "accounts.form.cancel": "Cancel",
 
   "accounts.empty.title": "No account declared",
-  "accounts.empty.body": "Every install owns one account, so this screen means the declaration has not been read rather than that you have none. Declare one here, or hand the app a file that names your accounts.",
+  "accounts.empty.body": "Every install owns one account, so this screen means the declaration has not been read rather than that you have none. Declare one here — it is the only place an account is declared.",
 
   "event.type.BUY": "Buy",
   "event.type.SELL": "Sell",
@@ -359,7 +356,6 @@
   "data.form.cancel": "Cancel",
 
 
-
   "data.empty.file.title": "Import a file",
   "data.empty.file.body": "Hand the app a .csv or an .xlsx of your events. It reads it once, whatever it is called, and a file covering one year only is a legitimate start.",
   "data.empty.manual.title": "Enter a first event",
@@ -373,11 +369,9 @@
   "data.import.cancel": "Cancel",
   "data.import.duplicates": "Write the lines already in my ledger",
   "data.export.title": "Export",
-  "data.export.two": "A round trip needs two files: a file is an accounts source or an event source according to its header, never both. The events file carries the currency your amounts are recorded in, in a column of its own, so a file written before that column existed still imports unchanged.",
   "data.export.events": "Your events",
   "data.export.workbook": "A workbook, one sheet per year",
   "data.export.selection": "The filtered selection ({count, plural, one {# event} other {# events}})",
-  "data.export.accounts": "Your accounts",
 
   "data.bulk.title": "Delete these {count, plural, one {# event} other {# events}}",
   "data.bulk.confirm.title": "Delete {count, plural, one {# event} other {# events}}?",

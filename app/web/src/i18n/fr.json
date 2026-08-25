@@ -152,8 +152,8 @@
   "firstRun.refused": "L’application a refusé cette valeur et n’a rien écrit.",
 
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
-  "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} accounts {Préparation de vos comptes…} other {Préparation de votre fichier…}}",
-  "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} accounts {Vos comptes sont sur votre disque.} other {Votre fichier est sur votre disque.}}",
+  "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} other {Préparation de votre fichier…}}",
+  "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} other {Votre fichier est sur votre disque.}}",
   "receipt.import.running": "Lecture de {file}…",
   "receipt.import.written": "{count, plural, one {# événement écrit} other {# événements écrits}}, du {from} au {to}, sur {accounts, plural, one {# compte} other {# comptes}} et {symbols, plural, one {# titre} other {# titres}}.",
   "receipt.import.empty": "{file} ne portait aucun événement : rien n’a été écrit.",
@@ -258,15 +258,12 @@
   "accounts.detail.events": "Derniers événements",
   "accounts.detail.events.link": "Voir tout le grand livre",
 
-  "accounts.detail.fromFile": "Déclaré par un fichier importé, donc en lecture seule ici : corrigez le fichier et redéposez-le, ou oubliez son import.",
-
   "accounts.new": "Déclarer un compte",
   "accounts.remove": "Supprimer",
   "accounts.remove.title": "Supprimer ce compte",
-  "accounts.remove.offered": "Rien ne nomme ce compte et aucun fichier ne le déclare : le supprimer n’emporte rien avec lui. C’est sans retour depuis l’application.",
+  "accounts.remove.offered": "Rien ne nomme ce compte : le supprimer n’emporte rien avec lui. C’est sans retour depuis l’application.",
   "accounts.remove.seeded": "C’est le compte que toute installation possède : tout événement qui n’en nomme aucun autre y est enregistré. Renommez-le plutôt que de le supprimer.",
   "accounts.remove.namedByEvents": "{count, plural, one {# événement nomme ce compte} other {# événements nomment ce compte}}, et un compte qu’un événement nomme ne peut pas disparaître : l’événement nommerait alors quelque chose qui n’existe pas. Affectez-les à un autre compte, ou supprimez-les d’abord.",
-  "accounts.remove.fromFile": "Un fichier importé le déclare : oubliez cet import pour le supprimer.",
   "accounts.reassign.title": "Des événements affectés à aucun compte",
   "accounts.reassign.body": "{count, plural, one {# événement a été enregistré avant toute déclaration : il ne nomme donc aucun de vos comptes.} other {# événements ont été enregistrés avant toute déclaration : ils ne nomment donc aucun de vos comptes.}} Affectez-les à l’un de vos comptes. Vos fichiers restent tels quels : la colonne était juste au moment de l’import, et c’est l’application qui a changé la règle sous eux.",
   "accounts.reassign.target": "Les affecter à",
@@ -278,7 +275,7 @@
   "accounts.form.edit.title": "Ce compte",
   "accounts.form.description": "Un compte est l’endroit où vos événements sont enregistrés, et c’est à vous de le nommer. Il n’a pas de devise propre : tous les chiffres de cette application sont rendus dans une seule devise.",
   "accounts.form.id": "Identifiant",
-  "accounts.form.id.fixed": "C’est ce que nomment vos événements, dans un fichier comme ici : il ne peut donc pas changer. Déclarez un autre compte et oubliez l’import qui portait celui-ci.",
+  "accounts.form.id.fixed": "C’est ce que nomment vos événements, dans un fichier comme ici : il ne peut donc pas changer. Déclarez un autre compte et affectez-y les événements.",
   "accounts.form.type": "Type",
   "accounts.form.label": "Nom",
   "accounts.form.required": "Ce champ est obligatoire.",
@@ -287,7 +284,7 @@
   "accounts.form.cancel": "Annuler",
 
   "accounts.empty.title": "Aucun compte déclaré",
-  "accounts.empty.body": "Toute installation possède un compte : cet écran dit donc que la déclaration n’a pas été lue, et non que vous n’en avez aucun. Déclarez-en un ici, ou remettez à l’application un fichier qui les nomme.",
+  "accounts.empty.body": "Toute installation possède un compte : cet écran dit donc que la déclaration n’a pas été lue, et non que vous n’en avez aucun. Déclarez-en un ici — c’est le seul endroit où un compte se déclare.",
 
   "event.type.BUY": "Achat",
   "event.type.SELL": "Vente",
@@ -359,7 +356,6 @@
   "data.form.cancel": "Annuler",
 
 
-
   "data.empty.file.title": "Importer un fichier",
   "data.empty.file.body": "Remettez à l’application un .csv ou un .xlsx de vos événements. Elle le lit une fois, quel que soit son nom, et un fichier qui ne couvre qu’une année est un début légitime.",
   "data.empty.manual.title": "Saisir un premier événement",
@@ -373,11 +369,9 @@
   "data.import.cancel": "Annuler",
   "data.import.duplicates": "Écrire quand même les lignes déjà dans mon grand livre",
   "data.export.title": "Exporter",
-  "data.export.two": "Un aller-retour complet demande deux fichiers : un fichier est une source de comptes ou une source d’événements selon son en-tête, jamais les deux. Le fichier d’événements porte dans une colonne la devise dans laquelle vos montants sont enregistrés, si bien qu’un fichier écrit avant cette colonne s’importe à l’identique.",
   "data.export.events": "Vos événements",
   "data.export.workbook": "Un classeur, un onglet par année",
   "data.export.selection": "La sélection filtrée ({count, plural, one {# événement} other {# événements}})",
-  "data.export.accounts": "Vos comptes",
 
   "data.bulk.title": "Supprimer ces {count, plural, one {# événement} other {# événements}}",
   "data.bulk.confirm.title": "Supprimer {count, plural, one {# événement} other {# événements}} ?",

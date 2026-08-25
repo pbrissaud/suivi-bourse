@@ -348,11 +348,12 @@ src/
   them, and it is not offered at all while nothing is reduced. Above the table,
   one band holding the **upload zone** (a real target since #811: a file
   dropped on it or chosen from it is handed to `POST /api/events/import`, and the
-  receipt is said under it), the export menu — **four entries** since #796: every
-  event, a workbook with one sheet per year, the filtered selection and the
-  accounts, the middle two server-side because the importable form belongs to
-  `events/export.py` and a rule written twice loses a branch — and **no third
-  entry** since #816: nothing persists that could be listed or revoked, so the
+  receipt is said under it), the export menu — **three entries** since #817:
+  every event, a workbook with one sheet per year and the filtered selection,
+  all three server-side because the importable form belongs to
+  `events/export.py` and a rule written twice loses a branch; the fourth was the
+  accounts, and it left with the file nothing could read back (ADR-0034) — and
+  **no third entry** since #816: nothing persists that could be listed or revoked, so the
   band is the zone and the menu), *The notices* — **always mounted**, saying so
   when there is nothing, because the status dot must have one destination — and
   *The installation* (settings, the store and its orphans).

@@ -1,18 +1,20 @@
 /**
- * **The way back out — four entries since #796** (#710, #794, ADR-0020,
- * ADR-0030).
+ * **The way back out — three entries** (#710, #794, #796, ADR-0020, ADR-0030,
+ * ADR-0034).
  *
  * Every event as an importable `.csv`, the same ledger as a **workbook with one
- * sheet per year**, the **filtered selection** — what the chips retain at the
- * instant of the click — and the declared accounts. The first two and the last
- * were the menu; the middle two are what this ticket adds.
+ * sheet per year**, and the **filtered selection** — what the chips retain at
+ * the instant of the click. There was a fourth, the declared accounts, and it
+ * left with the accounts file: nothing reads one back in, so a file offered
+ * here would be a backup that restores nothing (ADR-0034). The accounts are
+ * redeclared in the app, where they are declared in the first place.
  *
- * **Three of the four entries are a perimeter stated by the entry itself.** The
+ * **All three entries are a perimeter stated by the entry itself.** The
  * workbook is the ledger *entire*, deliberately: the resource takes the
  * reduction in either shape, so a workbook of the selection is one parameter
- * away, and what stops the menu from offering it is that four entries were what
- * the reader was promised. The perimeter is named by the one entry that
- * reduces, which is what keeps the other three unambiguous.
+ * away, and what stops the menu from offering it is that the reader was
+ * promised entries they could tell apart. The perimeter is named by the one
+ * entry that reduces, which is what keeps the other two unambiguous.
  *
  * **Nothing here narrows anything.** The selection is the ledger's own
  * reduction, carried to the server as the five names the chips hold (`q`,
@@ -28,15 +30,6 @@
  * and a backup is of what is stored. The count on the third entry is this
  * page's own — it describes the table the reader is looking at, which is what
  * makes it an honest label for the gesture.
- *
- * **Two files and not one** (#710): a file is an accounts source *or* an event
- * source according to its header, so exporting the events alone would restore a
- * multi-account install into a refusal. That is not an option offered to the
- * reader — it is what the format is — and it is said **in the menu**, where the
- * choice is made. The accounts file appears only where something is declared,
- * the seeded row being no declaration (ADR-0013) and the file it would produce a
- * header with no rows under it, which v4's loader refuses the whole directory
- * over.
  *
  * **The confirmation is the receipt, and it lasts as long as the operation.**
  * That is why the entries are gestures rather than `<a download>` links: a link
@@ -67,8 +60,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api, ROUTES, type ExportFile } from '@/lib/api'
@@ -79,8 +70,8 @@ import { receiptMessage } from '@/lib/receipts'
 import { saveFile } from '@/lib/save'
 
 export interface ExportMenuProps {
-  /** Which files this install has anything to put in. */
-  files: { events: boolean; accounts: boolean }
+  /** Whether this install has anything to put in a file. */
+  files: { events: boolean }
   /** The reduction in force, as the table holds it at the instant of the click. */
   selection: LedgerFilters
   /** How many rows it retains — the third entry's own label. */
@@ -143,17 +134,6 @@ export function ExportMenu({ files, selection, selected }: ExportMenuProps) {
             </DropdownMenuItem>
           </>
         ) : null}
-        {files.accounts ? (
-          <DropdownMenuItem onSelect={() => run('accounts', ROUTES.exportAccounts)}>
-            {t('data.export.accounts')}
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuSeparator />
-        {/* Not an entry: it is what the files above are, said where they are
-            chosen. `DropdownMenuLabel` is not focusable and answers no click. */}
-        <DropdownMenuLabel className="font-normal text-xs whitespace-normal text-muted-foreground">
-          {t('data.export.two')}
-        </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>
   )

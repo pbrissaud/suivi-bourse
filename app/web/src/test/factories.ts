@@ -115,18 +115,15 @@ export const BASE_CURRENCY = 'EUR'
  * the head from the four rather than reading the fifth, so a fixture where the
  * two disagreed would put a contradiction on screen and call it a test.
  *
- * The default is one **created in the app** — `source_id` `null`, therefore
- * editable — because that is the row #729's declaration block can act on; a
- * file-declared one is what a test asks for by name, exactly as the ledger's
- * imported row is.
+ * There is one kind of account and no second: it is declared in the app and
+ * nowhere else (ADR-0034), so nothing on it says where it came from and every
+ * row is one #729's declaration block can act on.
  */
 export function anAccount(overrides: Partial<Account> = {}): Account {
   return {
     id: 'alpha',
     label: 'Alpha',
     type: 'PEA',
-    source_id: null,
-    editable: true,
     as_of: '2026-03-02',
     total_value: 1800,
     holdings_value: 1300,
@@ -168,16 +165,6 @@ export function anAccountWithoutSeries(overrides: Partial<Account> = {}): Accoun
   })
 }
 
-/** Declared by a file: read-only, revoked with its import and never edited. */
-export function aFileAccount(overrides: Partial<Account> = {}): Account {
-  // Source **2**, and the number is a fact about the fixture rather than a
-  // placeholder: the ledger's imported rows carry source 1, which is the events
-  // file, and a file is an accounts source *or* an event source according to its
-  // header and never both. One id for the two would make the import list's own
-  // subject — *what does forgetting this source take with it* — unanswerable.
-  return anAccount({ source_id: 2, editable: false, ...overrides })
-}
-
 /**
  * The row the schema seeds and never removes (ADR-0013), **as the API serves
  * it**: `label` and `type` are `null` while nobody has named it. The seed's own
@@ -187,9 +174,6 @@ export function aFileAccount(overrides: Partial<Account> = {}): Account {
  * own catalogue is asserted here; that the server sends `null` is asserted in
  * `test_web_api.py`, which is the only place both halves of that sentence are
  * in the same process.
- *
- * `source_id` is `NULL` on the seed, which is what makes it editable — the one
- * property the rename rests on.
  */
 export function theSeededAccount(overrides: Partial<Account> = {}): Account {
   return anAccount({ id: 'default', label: null, type: null, ...overrides })
@@ -310,11 +294,6 @@ export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsRe
  *
  * `171,5` beside `115,0` is the pair ADR-0019 was written on, to the tenth.
  *
- * **`beta` is declared by a file** (#729), which is the shape the real install
- * has — everything came in by import. It is what makes the declaration's
- * read-only half visible on the default screen rather than only in the test that
- * asks for it: what a file declared is corrected in the file, never in the app.
- *
  * Their fourth terms are `−3,00`, `−2,00` and `0,00`, which is the global
  * `−5,00` (#722): the fees a broker takes belong to an account, and the panel
  * of one must never show the sum of all of them.
@@ -322,7 +301,7 @@ export function noAccountsDeclared(overrides: Partial<Account> = {}): AccountsRe
 export function defaultAccounts(): Account[] {
   return [
     anAccount({ id: 'alpha', label: 'Alpha', type: 'PEA' }),
-    aFileAccount({
+    anAccount({
       id: 'beta',
       label: 'Beta',
       type: 'CTO',

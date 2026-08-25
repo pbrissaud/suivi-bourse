@@ -39,9 +39,8 @@ export function defaultHandlers() {
   return [
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     // The declaration's three gestures (#698, read by a client since #729). They
-    // echo the row back the way the two event writes do: `source_id` is the
-    // store's to decide, so a client cannot send it and the answer is where it
-    // comes from.
+    // echo the row back the way the two event writes do — three members and no
+    // fourth, an account being born in the app and nowhere else (ADR-0034).
     http.post(ROUTES.accounts, async ({ request }) => {
       const draft = (await request.json()) as AccountDraft
       return HttpResponse.json(anAccount({ ...draft, id: draft.id ?? '' }), { status: 201 })
@@ -134,7 +133,6 @@ export function defaultHandlers() {
     http.get(ROUTES.exportEventsWorkbook, ({ request }) =>
       exported(new URL(request.url).search === '' ? 'events' : 'selection', 'xlsx'),
     ),
-    http.get(ROUTES.exportAccounts, () => exported('accounts', 'csv')),
 
     // The installation tab (#724). The default install has one notice standing,
     // a store on a mount and no orphan — the ephemeral store and the orphan

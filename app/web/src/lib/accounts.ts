@@ -314,13 +314,6 @@ export interface AccountRow {
   type: string | null
   /** The day the money figures describe. `null` — no cycle wrote this account. */
   as_of: string | null
-  /**
-   * Whether the app may write this row — published by the server rather than
-   * derived from `source_id`, because a rule the front re-implements is a rule
-   * that can disagree with the API enforcing it. What a file declared is
-   * corrected in the file (ADR-0020).
-   */
-  editable: boolean
   total_value: number | null
   holdings_value: number | null
   cash_balance: number | null
@@ -348,10 +341,6 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     label: account.label ?? null,
     type: account.type ?? null,
     as_of: account.as_of ?? null,
-    // Absent is **editable**: the member is optional on the wire, and a client
-    // that read a missing field as *read-only* would hide the rename on every
-    // row of a server that has not published it yet.
-    editable: account.editable !== false,
     total_value: account.total_value ?? null,
     holdings_value: account.holdings_value ?? null,
     // **`Liquidités` follows `total_value`.** The two are written together or
@@ -564,12 +553,13 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
  * Is this the row **nobody declared** — the seed, still saying what it said?
  *
  * The same rule the server states on the other side of the seam
- * (`accounts.default_is_declared`), read off the three fields the payload
- * carries it in: `as_declared` nulls the two seeded columns exactly when they
- * still hold the seed's own words, and `source_id` says a file took the row
- * over. It cannot be the same function object — that one is Python, in another
- * process — so what travels is the rule, and this is the one place the front
- * spells it (`lib/absence.ts`'s `isQuoted` is the precedent, #774).
+ * (`accounts.default_is_declared`), read off the two fields the payload carries
+ * it in: `as_declared` nulls the two seeded columns exactly when they still hold
+ * the seed's own words. There was a third road — a file taking the row over —
+ * and it left with the accounts file (ADR-0034). It cannot be the same function
+ * object — that one is Python, in another process — so what travels is the rule,
+ * and this is the one place the front spells it (`lib/absence.ts`'s `isQuoted`
+ * is the precedent, #774).
  *
  * Both seeded columns, not the label alone: an owner who retyped the row has
  * declared it as much as one who renamed it, and #725's whole correctness rests
@@ -578,14 +568,13 @@ export function valueSeries(points: readonly PerfPoint[]): ValuePoint[] {
 export function isSeededOnly(account: Account): boolean {
   return (
     isDefaultAccount(account.id) &&
-    (account.source_id ?? null) === null &&
     declaredLabel(account) === null &&
     declaredType(account) === null
   )
 }
 
 /**
- * The three refusals and the offer.
+ * The two refusals and the offer.
  *
  * The **count** is what makes the refusal a sentence rather than a shrug, and it
  * comes off the ledger the tab has already read — never off a second resource,
@@ -597,18 +586,14 @@ export type Removal =
   | { kind: 'offered' }
   | { kind: 'seeded' }
   | { kind: 'namedByEvents'; count: number }
-  | { kind: 'fromFile' }
 
 export function removalOf(account: Account, events: number): Removal {
-  // `accounts.delete_account`'s order, and it is not alphabetical: the seeded
-  // row first (there is always at least one account), then the events that name
-  // it, then the file that declared it. The middle one comes before the last on
-  // purpose — both apply to a file-provisioned account an event names, and only
-  // one of them is actionable, since forgetting the import is refused in cascade
-  // for exactly the same reason.
+  // `accounts.delete_account`'s order: the seeded row first (there is always at
+  // least one account), then the events that name it. A third stood between
+  // them while a file could declare a row and be forgotten; the file is gone
+  // (ADR-0034) and the refusal with it.
   if (isDefaultAccount(account.id)) return { kind: 'seeded' }
   if (events > 0) return { kind: 'namedByEvents', count: events }
-  if (account.editable === false) return { kind: 'fromFile' }
   return { kind: 'offered' }
 }
 
@@ -631,11 +616,12 @@ export function removalOf(account: Account, events: number): Removal {
  *    picker here would be asking the reader to choose between an empty list and
  *    the account they are in the middle of creating.
  *  - **`standing`** — something is declared and rows are still under the seeded
- *    row. That state is reachable with **no gesture in this app at all**: an
- *    accounts file dropped into the folder declares as much as the form does
- *    (#698), and the event file beside it is then refused for the blank column
- *    it was right to carry. So the offer stands on its own, with the declared
- *    accounts as its targets.
+ *    row. That state needs **no file at all** to reach (ADR-0034): months of
+ *    events typed into the app before anything was declared leave the `account`
+ *    column blank and land under the seeded row, and the declaration made
+ *    afterwards does not claim them — the back proves exactly that trap from
+ *    the keyboard. So the offer stands on its own, with the declared accounts
+ *    as its targets.
  *
  * **No correspondence layer** is built here, and that is the criterion rather
  * than an omission: a `default → pea` map beside the events would be a second

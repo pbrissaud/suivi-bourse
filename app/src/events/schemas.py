@@ -15,14 +15,16 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 # constant so the row and the aggregation agree.
 DEFAULT_ACCOUNT = "default"
 
-# The columns of an accounts file (issue #698) — the columns of the ``account``
-# table, and the **one** definition of them. Named here rather than in
-# :mod:`accounts` because the validator quotes them in the refusal it raises
-# when an event names an account nobody declared, and ``accounts`` imports this
-# module: one direction, no cycle. ``accounts.ACCOUNT_COLUMNS`` is this tuple
-# under the name that module's own messages read best, never a copy of it — two
-# lists of columns, both quoted at a user, would drift the day the table gains a
-# fourth.
+# The columns that make a file a **declaration of accounts** (issue #698) — the
+# columns of the ``account`` table, and the **one** definition of them. No such
+# file is imported any more (ADR-0034), and the tuple stays because the refusal
+# has to name them: :mod:`uploads` quotes it when it turns a declaration away,
+# and :mod:`main` quotes it when it says a v4 ``settings.yaml`` is not read.
+# Named here rather than in :mod:`accounts` because ``uploads`` reads it beside
+# the header check it takes from that module, and ``accounts`` imports this one:
+# one direction, no cycle. ``accounts.ACCOUNT_COLUMNS`` is this tuple under the
+# name that module's own messages read best, never a copy of it — two lists of
+# columns, both quoted at a user, would drift the day the table gains a fourth.
 ACCOUNT_FILE_COLUMNS = ('id', 'type', 'label')
 
 
@@ -496,11 +498,12 @@ class Timeline:
 class Account:
     """A declared account — a row of the store's ``account`` table (issue #698).
 
-    Declared by a **file** in the events' format, or from the app; never by a
-    settings block, which is the inheritance ADR-0013 corrects. ``source_id`` is
-    where it came from: the import that carried it, or ``NULL`` for one created
-    in the app — which is also what makes it editable, since what came from a
-    file is read-only and revoked with its import.
+    Declared **in the app**, and nowhere else (ADR-0034); never by a settings
+    block, which is the inheritance ADR-0013 corrects. There is no provenance on
+    it and that is the decision: an account was once declared by a file too, with
+    the import that carried it recorded in a ``source_id`` — the column made the
+    row read-only, and it left with the file it described. A declared account is
+    a declared account.
 
     **There is no ``currency`` field** (issue #702, ADR-0002). It was kept as an
     always-``None`` placeholder while the v4 currency machinery was still in
@@ -513,12 +516,6 @@ class Account:
     id: str
     type: str
     label: str = ''
-    source_id: Optional[int] = None
-
-    @property
-    def editable(self) -> bool:
-        """Can the app change this account? Only if no file provisioned it."""
-        return self.source_id is None
 
 
 @dataclass

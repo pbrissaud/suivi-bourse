@@ -135,7 +135,7 @@ function block() {
 }
 
 describe('the export', () => {
-  it('offers four files: the ledger, the workbook, the selection and the accounts', async () => {
+  it('offers three files: the ledger, the workbook and the selection', async () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
     const menu = await openExport(user)
@@ -150,22 +150,19 @@ describe('the export', () => {
       // The count is the label: what the entry will produce, said before the
       // click rather than discovered in a file.
       'La sélection filtrée (4 événements)',
-      'Vos comptes',
     ])
-    // Two files and not one, said where the choice is made rather than as a
-    // paragraph on a page that has stopped explaining its own rules.
-    expect(within(menu).getByText(/porte dans une colonne la devise/)).toBeInTheDocument()
+    // And nothing announces that a round trip takes two files: it does not
+    // (ADR-0034). A label saying so would send the reader looking for a second
+    // file the menu no longer has.
+    expect(within(menu).queryByText(/deux fichiers/)).not.toBeInTheDocument()
   })
 
-  it('does not offer the accounts file on an install that has declared nothing', async () => {
-    // The seeded row is not a declaration (ADR-0013): the file would be a header
-    // with no rows under it, and v4's loader refuses the whole directory over
-    // it — which is the round trip this export exists for.
-    const { user } = renderImports({ accounts: [theSeededAccount()], declared: false })
-    const menu = await openExport(user)
-
-    expect(within(menu).getByRole('menuitem', { name: 'Vos événements' })).toBeInTheDocument()
-    expect(within(menu).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
+  it('offers no accounts file, whatever this install has declared', async () => {
+    // ADR-0034. Nothing reads an accounts file back in, so one offered here
+    // would be a backup that restores nothing — the residue that is worst
+    // because it *looks* like half a round trip.
+    const declared = await openExport(renderImports({ accounts: [anAccount({ id: 'zeta' })] }).user)
+    expect(within(declared).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
   })
 
   it('asks the server for the whole ledger, and saves it under the name it answers with', async () => {
@@ -326,42 +323,16 @@ describe('the export', () => {
   })
 })
 
-describe('a read that has not landed', () => {
-  it('offers no accounts file while the declaration is in flight', async () => {
-    // ADR-0026 at the notch #777 named: the band **waits by the rows a read
-    // owns**, not whole. The events file rests on the ledger, which this tab has
-    // already read, so it is offered; the accounts file rests on the
-    // declaration, and offering it on a silence would state that something is
-    // declared. What went with #816 is the third case — a *verdict about a
-    // source* — there being no source left to state one about.
-    server.use(http.get(ROUTES.accounts, () => new Promise(() => {})))
-    const { user } = renderImports()
-    await waitFor(() => expect(block()).toBeInTheDocument())
-
-    const menu = await openExport(user)
-    expect(
-      within(menu)
-        .getAllByRole('menuitem')
-        .map((item) => item.textContent),
-    ).toEqual([
-      'Vos événements',
-      'Un classeur, un onglet par année',
-      'La sélection filtrée (4 événements)',
-    ])
-  })
-})
-
 describe('an install that has imported nothing', () => {
-  it('offers the file entrance once, never beside the empty state that offers it', async () => {
-    // An install with something declared and no event — the one place the band
-    // and the ledger's own empty state would each carry the gesture.
+  it('offers the file entrance once, with a declaration and nothing recorded', async () => {
+    // An install with something declared and no event. The band stood here while
+    // the declaration was itself a file worth handing back; ADR-0034 took that
+    // file away, so what there is to hand back is the ledger — and there is
+    // none. The gesture is then offered once, by the empty state's own entry.
     renderImports({ events: [], accounts: [anAccount({ id: 'zeta' })] })
     await screen.findByText('Importer un fichier')
 
-    // The band is there — it has something to hand back — and the gesture is
-    // offered once, by the entry of the empty state and not by the band.
-    const band = block()
-    expect(within(band).queryByText(/Importer un \.csv ou un \.xlsx/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
     expect(screen.getAllByLabelText('Choisir un fichier')).toHaveLength(1)
   })
 
