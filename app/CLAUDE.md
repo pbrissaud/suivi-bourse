@@ -49,7 +49,7 @@ name: `/healthz` was examined and declined.
 - **DDL with `IF NOT EXISTS`, no migration machinery.** A new column would exist
   on no store created before it: derive at read time instead.
 - **Every table has exactly one writer** — the configuration path owns
-  `account`/`symbol`/`advisory`, `entries.py` owns `event` **whole**
+  `account`/`symbol`/`installation_fact`, `entries.py` owns `event` **whole**
   (ADR-0032, #816: one population, one writer, the named exception of
   `reassignment.py` apart), the ingestion `position`/`account_state`, the market
   `symbol_quote`/`price_point`, the perf job
@@ -312,7 +312,7 @@ src/
 ├── accounts.py         # the account table, the declaration, the refusals
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
-├── advisories.py       # the three advisories: predicate in code, the table holds the ack
+├── installation_facts.py  # the three facts: predicate in code, the table holds the ack
 ├── runtime_state.py / runtime_view.py   # the jobs' last-pass records, and how they read
 ├── store_reads.py / portfolio_view.py   # the UI read primitives, and their page shapes
 ├── web/                # Flask: create_app, the /api blueprint, problem.py (RFC 9457), health

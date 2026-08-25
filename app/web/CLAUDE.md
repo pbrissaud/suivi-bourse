@@ -282,7 +282,7 @@ src/
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what there is to export
-│   ├── advisories.ts         # what the block shows, what the badge counts
+│   ├── installationFacts.ts  # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
