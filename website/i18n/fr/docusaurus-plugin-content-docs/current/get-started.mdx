@@ -29,13 +29,39 @@ lives in the container's writable layer, and the first `docker rm` takes it.
 
 Go to [http://localhost:8080](http://localhost:8080).
 
-The app asks you exactly one thing: **the base currency** every figure is
-reported in. It has no default, and nothing else has to be decided at
-installation. You may close the question and answer it later — while your
-ledger is empty the answer is still yours to change; from your first event it
-is fixed, because changing it afterwards would reinterpret amounts you already
-recorded. Until it is answered, prices are still fetched, nothing is converted
-and no return is computed; the app says so on screen rather than refusing.
+On a store nobody has answered for yet, the app opens on a short walk of **three
+passages**. It says in three sentences what it is — a ledger of dated events,
+quotes it fetches itself, one currency everything is reported in — and, on an
+install with no volume, that this container keeps nothing.
+
+1. **The required settings.** Exactly one thing has to be decided at
+   installation: **the base currency** every figure is reported in. It has no
+   default, which is why it is asked at all.
+2. **Your accounts.** Every event is recorded on an account, and your install
+   already owns one — so this passage shows you what you have and asks for
+   nothing. You declare others, and rename this one, on the *Accounts* page. It
+   comes before the next passage on purpose: a file you import names its accounts
+   by their identifier.
+3. **Your first events.** Two doors, side by side and neither recommended over
+   the other: hand the app a `.csv` or an `.xlsx`, or type a first purchase.
+   Typing a position *is* creating dated events, so a reader with no file to
+   import has not missed anything.
+
+**Walking through is not answering.** No passage extracts anything: you can go
+through all three, supply nothing, and end up on a working app. And you may leave
+at any point — the modal closes on its cross, with no *Later* button, because the
+way out should not have the weight of the answer. Whichever way you leave, your
+browser remembers that you have been through: the walk does not come back on the
+next page load, and emptying your ledger later does not bring it back either.
+Nothing about it is recorded in your store, so a store you wipe asks the question
+again.
+
+The currency may be answered later, and where you left it the app says so.
+While your ledger is empty the answer is still yours to change; from your first
+event it is fixed, because changing it afterwards would reinterpret amounts you
+already recorded. Until it is answered, prices are still fetched, nothing is
+converted and no return is computed; the app says so on screen rather than
+refusing.
 
 If you would rather not answer it by hand, the same question is answered with
 one `curl` on the write API, which is served on the same port as the page. An
