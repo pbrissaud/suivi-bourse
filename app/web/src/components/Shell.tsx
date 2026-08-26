@@ -25,9 +25,38 @@ import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 
+/**
+ * **Reading back what the registry component already writes.**
+ *
+ * `SidebarProvider` stores the fold in a `sidebar_state` cookie on every
+ * toggle, and never reads it: upstream is a Next.js component, where the cookie
+ * is read on the server and handed down as `defaultOpen`. This app is a static
+ * bundle Flask serves, so there is no server render to do that — the write
+ * landed and nothing ever looked at it, and the fold was lost on every reload.
+ *
+ * So the read is the product's, and it is the **same cookie** rather than a
+ * fourth `sb.*` key: the reader's preferences are three, one mechanism
+ * (ADR-0024), and the fold of a menu is not one of them — it is chrome, it is
+ * the component's own memory, and a second spelling of it here would leave two
+ * places disagreeing about one menu the day the component's name for it moves.
+ *
+ * Absent, unreadable or anything but `false`, the navigation is open: the fold
+ * is the choice, and *not remembered* has to fall back to the ordinary state.
+ */
+function navigationWasFolded(): boolean {
+  try {
+    return document.cookie
+      .split('; ')
+      .some((entry) => entry === 'sidebar_state=false')
+  } catch {
+    // A document that refuses cookies is not a reason to refuse a navigation.
+    return false
+  }
+}
+
 export function Shell() {
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={!navigationWasFolded()}>
       <AppSidebar />
       <SidebarInset>
         <ContentHeader />

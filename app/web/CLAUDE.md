@@ -93,6 +93,21 @@
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed
 > and removed.
+> **The shell opens to five** (#828, ADR-0038): the settings have an address of
+> their own, `/reglages`, and the data page is called the **ledger** — `Grand
+> livre` in French, the word `CONTEXT.md` and every French record already use,
+> never a third one. The navigation groups **three and two**: the top is the
+> portfolio, what the owner *looks at*; the foot is what they *act on*, and the
+> ledger's claim to the top is declined on that count. What `/reglages` renders
+> is `Installation` unchanged — the page is the address, and the tab bar around
+> that block, its move out of `components/data/` and ADR-0038's three
+> corrections of wording are #830's. **And the fold of the navigation is
+> persisted for the first time**: `SidebarProvider` had always written the
+> `sidebar_state` cookie and never read it, upstream reading it on a Next.js
+> server this static bundle does not have, so `Shell` reads that same cookie for
+> `defaultOpen` — the component's own memory, read back, and **not** a fourth
+> `sb.*` key: the reader's preferences are three, and the fold of a menu is
+> chrome.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -143,7 +158,7 @@ or a DOM snapshot.
 
 Four nets hold a rule nothing made true by construction:
 
-- `src/readsInFlight.test.tsx` — for each of eight surfaces, the routes actually
+- `src/readsInFlight.test.tsx` — for each of nine surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
   that read hanging for ever**, asserting an *absence*. It also fails when a route
   of `ROUTES` is visited by no surface. Since #777 it reads **every rendered
@@ -268,6 +283,14 @@ Four nets hold a rule nothing made true by construction:
   dates follow the **language**, not the currency. ADR-0024 says *two* because
   density came later; a record is dated, and it is this line that carries the
   count.
+- **`en.json` is the source, and `fr.json` is kept in step by hand until
+  Crowdin's first import.** `crowdin.yml` covers this catalogue alongside the
+  site (ADR-0024) and declares `fr.json` to be Crowdin's output — but that
+  import has never run, so every key since #713 has landed in both files in the
+  same commit, and a ticket that renames a label renames it twice. The half that
+  is not a stopgap is the order: English is decided first, and a key exists in
+  `en.json` or it does not exist at all. The hand stops here when the first
+  import lands, and not before.
 - **`index.css` has exactly three blocks** (ADR-0023, whose preset ADR-0029
   replaced): the tweakcn primitives (**never hand-edited**, regenerated with
   `pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn`
@@ -317,6 +340,7 @@ src/
 │   ├── FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
 │   ├── Shell · ContentHeader (the title, the dot, ⌘K, the three preferences)
+│   │                          # Shell also reads back the navigation's fold
 │   ├── Palette                # ⌘K: five sections, three of them optional reads
 │   ├── AppSidebar (the navigation, and the status card that develops the dot)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
@@ -329,7 +353,7 @@ src/
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
 
-## The four pages, one line each
+## The five pages, one line each
 
 - **Dashboard** (`/`) — a **plateau of two tracks** from `lg`, split *drawn*
   against *read down*: the head (which computes `Gain total` from its four terms
@@ -370,7 +394,9 @@ src/
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
-- **Data** (`/donnees`) — three tabs (ADR-0030): *The ledger* (the table — bounded,
+- **Ledger** (`/donnees`) — still ADR-0030's three tabs, and the page is
+  **named** for the one it is about to be alone with (ADR-0038): the notices
+  leave with #829 and the tab bar with #830. *The ledger* (the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
   groups of chips, a search, a **period** — two date fields since #810, both
   bounds inclusive, and a chip that shows up only once a bound is in force, to
@@ -395,4 +421,12 @@ src/
   band is the zone and the menu), *The notices* — an **ordinary block** since
   #821: the tab is always there, what is on it is not, and an installation with
   nothing to report renders nothing at all — and *The installation* (settings,
-  the store and its orphans).
+  the store and its orphans), which `/reglages` now renders too.
+- **Settings** (`/reglages`) — the fifth page (ADR-0038), and the only route of
+  the five that reads nothing off its own address: a dial is not a reduction of
+  anything, so there is nothing here for a search parameter to describe. It
+  renders the installation block — the settings, the store with its size and its
+  last write, the orphaned securities, the rebuild — and the *why* of it is that
+  a two-tab bar is a bar that should not exist: it costs a control and a level
+  of nesting to hold a choice between what the owner declared and what the
+  installation is.

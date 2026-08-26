@@ -172,7 +172,7 @@ export default function DataPage() {
   // is in flight.
   const badge = unacknowledgedCount(facts.data ?? [])
 
-  usePageHeading(t('page.data'))
+  usePageHeading(t('page.ledger'))
 
   return (
     <div className="space-y-8">

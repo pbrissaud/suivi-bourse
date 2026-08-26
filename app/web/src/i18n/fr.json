@@ -5,7 +5,8 @@
   "nav.dashboard": "Tableau de bord",
   "nav.shares": "Titres",
   "nav.accounts": "Comptes",
-  "nav.data": "Données",
+  "nav.ledger": "Grand livre",
+  "nav.settings": "Réglages",
 
   "header.toggleSidebar": "Afficher ou masquer la navigation",
   "header.language": "Langue",
@@ -52,7 +53,8 @@
   "page.dashboard": "Tableau de bord",
   "page.shares": "Titres",
   "page.accounts": "Comptes",
-  "page.data": "Données",
+  "page.ledger": "Grand livre",
+  "page.settings": "Réglages",
 
   "notFound.title": "Page introuvable",
   "notFound.body": "Cette adresse ne correspond à aucune page.",
@@ -90,7 +92,7 @@
   "dashboard.withoutLedger": "Un grand livre d’événements datés ajouterait votre valeur totale, votre versé net et vos deux rendements.",
   "dashboard.empty.title": "Aucun événement",
   "dashboard.empty.body": "Tout ce qui est affiché ici est calculé depuis un grand livre d’événements datés. Rien n’a encore été importé ni saisi.",
-  "dashboard.empty.link": "Aller à Données",
+  "dashboard.empty.link": "Aller au grand livre",
   "dashboard.holdings": "Titres",
   "dashboard.pricedAt": "Cours au {date}",
 
@@ -203,7 +205,7 @@
   "shares.closed.toggle": "{count, plural, one {# position soldée} other {# positions soldées}}",
   "shares.empty.title": "Aucune position",
   "shares.empty.body": "Cette page est calculée depuis un grand livre d’événements datés. Rien n’a encore été importé ni saisi.",
-  "shares.empty.link": "Aller à Données",
+  "shares.empty.link": "Aller au grand livre",
   "shares.reduced": "Réduit au compte {account}. Les chiffres ci-dessus ne portent que sur ses lignes.",
   "shares.reduced.undo": "Afficher tous les comptes",
   "shares.reduced.empty.title": "Aucune position sur ce compte",

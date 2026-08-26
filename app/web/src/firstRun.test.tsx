@@ -650,7 +650,7 @@ describe('mandatory means traversed, never answered', () => {
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
     renderApp({ url: '/donnees' })
 
-    await screen.findByRole('heading', { name: 'Données', level: 1 })
+    await screen.findByRole('heading', { name: 'Grand livre', level: 1 })
     await waitFor(() =>
       expect(screen.getByRole('region', { name: 'Importer un fichier' })).toBeInTheDocument(),
     )

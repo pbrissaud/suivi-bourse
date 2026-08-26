@@ -549,7 +549,7 @@ describe('the page’s own reads', () => {
   it('says the portfolio is empty, and where to go, when it really is', async () => {
     renderShares([])
     expect(await screen.findByText('Aucune position')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller à Données' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toHaveAttribute(
       'href',
       '/donnees',
     )

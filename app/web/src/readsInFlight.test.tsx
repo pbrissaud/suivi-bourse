@@ -139,11 +139,17 @@ interface Surface {
 }
 
 /**
- * Seven surfaces for four pages: two are a reader's gesture away — the share's
+ * Nine surfaces for five pages: two are a reader's gesture away — the share's
  * sheet and the data page's two other tabs — and two more are a state of the
  * dashboard, whose chart reads **one** of two series and picks by the same
  * discriminant that decides its reading. Without the second the valuation
  * series is armed under a condition false by default and never enters the net.
+ *
+ * The ninth is `/reglages`, ADR-0038's fifth page. It reads exactly what the
+ * installation tab reads, and it is in the list all the same: the net is driven
+ * by the **surface** and not by the block, so a second address onto the same
+ * reads is a second set of hanging states to walk — and the day #830 takes the
+ * tab away, the surface that survives is already covered.
  */
 const SURFACES: readonly Surface[] = [
   { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
@@ -182,11 +188,11 @@ const SURFACES: readonly Surface[] = [
   // gesture away, so the six reads it makes are on the mount: there is nothing
   // left to open.
   { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
-  { name: 'les données · le grand livre', url: '/donnees', heading: 'Données' },
+  { name: 'le grand livre', url: '/donnees', heading: 'Grand livre' },
   {
-    name: 'les données · les notices',
+    name: 'le grand livre · les notices',
     url: '/donnees',
-    heading: 'Données',
+    heading: 'Grand livre',
     open: async ({ user }) => {
       await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
       return screen.findByRole('heading', { name: 'Faits d’installation' })
@@ -212,14 +218,15 @@ const SURFACES: readonly Surface[] = [
     },
   },
   {
-    name: 'les données · l’installation',
+    name: 'le grand livre · l’installation',
     url: '/donnees',
-    heading: 'Données',
+    heading: 'Grand livre',
     open: async ({ user }) => {
       await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
       return screen.findByRole('heading', { name: 'Le magasin' })
     },
   },
+  { name: 'les réglages', url: '/reglages', heading: 'Réglages' },
 ]
 
 // ------------------------------------------------------------------------- //

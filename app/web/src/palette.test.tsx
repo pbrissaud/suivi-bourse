@@ -99,7 +99,7 @@ describe('the three sections that read', () => {
     await open(user)
 
     // The pages and the actions are there at once — they read nothing.
-    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(4)
+    expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(5)
     expect(section('Actions')).not.toBeNull()
     // And the three that read are **gone**, not empty, and not holding the rest.
     expect(section('Titres détenus')).toBeNull()
@@ -169,7 +169,7 @@ describe('the ledger an event result lands on', () => {
     await user.type(field(), 'virement')
     await user.click(await screen.findByRole('button', { name: /Virement entrant/ }))
 
-    await screen.findByRole('heading', { level: 1, name: 'Données' })
+    await screen.findByRole('heading', { level: 1, name: 'Grand livre' })
     const table = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2))
 

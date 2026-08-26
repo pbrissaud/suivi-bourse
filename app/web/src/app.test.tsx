@@ -41,14 +41,16 @@ async function chooseInMenu(
 }
 
 describe('the walking skeleton', () => {
-  it('starts, dresses, speaks two languages and walks its four routes', async () => {
+  it('starts, dresses, speaks two languages and walks its five routes', async () => {
     // The whole ticket in one pass, because the value of a tracer bullet is
     // that it can be *shown*: the app comes up, the sidebar is there, the
-    // ground turns, the language turns, and the four routes answer under both.
+    // ground turns, the language turns, and the five routes answer under both.
     const { user } = renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
-    expect(within(nav()).getAllByRole('link')).toHaveLength(4)
+    // Five since ADR-0038, in three and two — the portfolio, then what the
+    // owner acts on.
+    expect(within(nav()).getAllByRole('link')).toHaveLength(5)
 
     await chooseInMenu(user, 'Thème', 'Sombre')
     expect(document.documentElement).toHaveClass('dark')
@@ -56,39 +58,47 @@ describe('the walking skeleton', () => {
     await chooseInMenu(user, 'Langue', 'English')
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
 
-    // **The four routes now answer with four pages.** `PendingPage` and its one
+    // **The five routes now answer with five pages.** `PendingPage` and its one
     // sentence left with #721, the last placeholder: a page that says it is not
     // built yet has no subject once every one of them is, and keeping the
-    // component around for a fifth route nobody plans is how dead code is kept
+    // component around for a sixth route nobody plans is how dead code is kept
     // warm.
-    for (const entry of ['Shares', 'Accounts', 'Data']) {
+    for (const entry of ['Shares', 'Accounts', 'Ledger', 'Settings']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
-      expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
+      // `level: 1` is the page's own name, which the header draws (#789). The
+      // settings page needs it said: the block it renders is *called* the
+      // settings too, one level down, and that block is #830's to reshape.
+      expect(
+        await screen.findByRole('heading', { level: 1, name: entry }),
+      ).toBeInTheDocument()
     }
 
     // Back to French, on the page we happen to be standing on.
     await chooseInMenu(user, 'Language', 'Français')
-    expect(await screen.findByRole('heading', { name: 'Données' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Le grand livre' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Réglages' }),
+    ).toBeInTheDocument()
     // The ground did not move when the language did.
     expect(document.documentElement).toHaveClass('dark')
     // Headroom, and it is measured rather than defensive: this one walks the
-    // four routes **twice**, and since ADR-0028 the accounts route mounts a
+    // five routes **twice**, and since ADR-0028 the accounts route mounts a
     // detail reading the positions, the ledger and a perf series on top of the
     // declaration. Two seconds and a half in a quiet run, and the default five
     // is not a margin under a loaded worker.
   }, 20_000)
 })
 
-describe('the four routes', () => {
+describe('the five routes', () => {
   it('answer, and the reader walks to each of them', async () => {
     const { user } = renderApp()
 
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument()
 
-    for (const entry of ['Titres', 'Comptes', 'Données']) {
+    for (const entry of ['Titres', 'Comptes', 'Grand livre', 'Réglages']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
-      expect(await screen.findByRole('heading', { name: entry })).toBeInTheDocument()
+      expect(
+        await screen.findByRole('heading', { level: 1, name: entry }),
+      ).toBeInTheDocument()
     }
   })
 
@@ -253,10 +263,10 @@ describe('the content header', () => {
 
     expect(objects().every(Boolean)).toBe(true)
 
-    await user.click(within(nav()).getByRole('link', { name: 'Données' }))
-    await screen.findByRole('heading', { name: 'Données' })
+    await user.click(within(nav()).getByRole('link', { name: 'Grand livre' }))
+    await screen.findByRole('heading', { name: 'Grand livre' })
     // It is the one surface that survives the three sidebar states, so it is
-    // the one that has to be on all four pages.
+    // the one that has to be on all five pages.
     expect(objects().every(Boolean)).toBe(true)
   })
 })
