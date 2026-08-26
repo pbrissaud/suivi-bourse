@@ -108,6 +108,28 @@
 > `defaultOpen` — the component's own memory, read back, and **not** a fourth
 > `sb.*` key: the reader's preferences are three, and the fold of a menu is
 > chrome.
+>
+> **The dashboard explains no rule of the product** (#831, ADR-0016). Its shape
+> landed with #790 — the plateau, the hero card where the total dominates its
+> four terms, the two period pills that stay **with** the total, the accounts
+> card under ADR-0019's one range with no `MAX`, the ring carrying its total in
+> its hole — and what was left was the other half of the same record: the page
+> showing figures rather than explaining itself. Three sentences went, all three
+> under the chart — *l'écart entre les deux courbes est votre gain total*, its
+> latent variant, and *base 0 % au premier jour de la plage affichée*. Each was a
+> convention **written on the page**, which is what the bubble on the figure
+> exists to replace, and each is already stated by one of the four bubbles the
+> head carries: ADR-0016 puts one icon per figure *and per surface*, so no fifth
+> bubble inherits them. What is left under the plot is a legend, which names
+> curves; what a **reading** needs in order to be read is said by marks and not
+> by prose — the zero line the performance curve crosses, the range control that
+> names its window, and, on the install with no cash ledger, the pair of names
+> `Valorisation` / `Prix de revient`. The sentences that stay are the ones an
+> **absence** owes: why a block that is empty is empty, which ADR-0021's
+> replacement clause is about and which is a fact about the reader's install
+> rather than a rule of the product. And the two period pills take the maquette's
+> own tint and arrow: the sign was said in colour alone, and an arrow says it
+> again without the hue.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -363,7 +385,10 @@ src/
   since ADR-0028, and it therefore holds ADR-0019's rule: one range for every
   figure on it, sparkline included. The head's two period figures sit with the
   total, never among its four terms. It is the dashboard **unconditionally**,
-  zero events included.
+  zero events included. And it carries **four convention notes and no prose**
+  (#831): the bubbles sit on `Gain total`, `Versé net`, `TRI` and `TWR`, and the
+  three sentences that stated a rule under the chart are gone — an absence still
+  says why it is absent, which is not the same thing.
 - **Shares** (`/titres`) — nine columns, the header sums its
   lines, so the closed positions **fold** rather than being filtered (the fold is
   not a filter, and the header does not move when the section opens). **Every

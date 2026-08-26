@@ -45,12 +45,21 @@
  *    emptying the head, which is what it did while this block's `settled` made
  *    a failed series and an unanswered one the same silence.
  *
+ *  - **It explains no rule of the product** (#831). The block used to close on a
+ *    caption per reading — what the gap between the curves is, what the
+ *    performance curve is based on — and both were conventions written **on the
+ *    page**, which is exactly what ADR-0016 replaced with an icon on the figure.
+ *    The head carries four of those bubbles three cards up, on the same page, and
+ *    ADR-0016 puts one icon per figure *and per surface*: so the sentences go and
+ *    no fifth bubble arrives to inherit them. What is left under the plot is a
+ *    legend, which names curves rather than stating rules.
+ *
  * Without a cash ledger the perf series does not exist — `total_value`,
  * `net_contributed` and `twr_index` are `NULL` by #708's per-field rule — so
  * *Amounts* falls back to valuation against cost and is **the only reading**:
  * the area is then the *latent* gain, which is a different figure and therefore
- * a different sentence, and *Performance* is not offered rather than offered
- * empty.
+ * a different pair of names in the legend, and *Performance* is not offered
+ * rather than offered empty.
  */
 import { useState } from 'react'
 import {
@@ -222,16 +231,16 @@ export function PortfolioChart({ ledger, currency, performance, valuation }: Por
                           quantity: it is the gain, it crosses zero inside a
                           window often enough that one colour would be wrong half
                           the time, and it therefore had to stay grey — which
-                          made it invisible on midnight, under a caption that
-                          promised a mark nobody could find.
+                          made it invisible on midnight, under the caption the
+                          block still carried then and which promised a mark
+                          nobody could find. That caption went with #831.
 
                           A fill under the **value** claims nothing about a sign:
                           the value is what it is, the curve is already drawn in
                           the mint, and the wash is that curve's own weight. The
-                          gap the caption names is still read between the two
-                          lines — it is the mint above the dashed one — and it is
-                          legible precisely because the region under it is no
-                          longer empty.
+                          gap is still read between the two lines — it is the
+                          mint above the dashed one — and it is legible precisely
+                          because the region under it is no longer empty.
 
                           The gradient is the maquette's to the stop: `0.22` of
                           the mint at the curve, `0.02` at the floor. */}
@@ -302,12 +311,22 @@ export function PortfolioChart({ ledger, currency, performance, valuation }: Por
             </div>
 
             {/* The legend is written here rather than left to the library: it
-                is what pairs a curve to its name, and the caption names the
-                **gap** between them — which changes with its subject. *Gap* and
-                not *area* since #787: the wash under the value curve is the one
-                area drawn, and it is not the gain. A caption naming a fill the
-                chart no longer draws that way is a caption pointing at the wrong
-                mark. */}
+                is what pairs a curve to its **name**, and since #831 that is all
+                it does. It used to carry a sentence too — *the gap between the
+                two curves is your total gain*, and its latent variant — and that
+                sentence was the page explaining itself: the gain's identity is a
+                convention of the product, so it belongs on the bubble the head
+                already carries three cards up (ADR-0016, `CONTEXT.md` §
+                *Convention note*), not in a paragraph under a plot. The maquette
+                draws the two swatches and nothing else, which is the same
+                arrangement arrived at from the other end.
+
+                Nothing is lost by the removal that the page does not go on
+                saying: the fallback's own reason — *this portfolio records no
+                cash movement* — is the head's `dashboard.withoutLedger`, said
+                once, where the figures it removes are; and which pair of curves
+                is drawn is said by the two names below, `Valorisation` /
+                `Prix de revient` against `Valeur totale` / `Versé net`. */}
             {reading === 'amounts' ? (
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                 <span className="flex items-center gap-2">
@@ -330,17 +349,19 @@ export function PortfolioChart({ ledger, currency, performance, valuation }: Por
                     {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
                   </span>
                 </span>
-                <p className="text-muted-foreground">
-                  {t(ledger ? 'dashboard.chart.area.gain' : 'dashboard.chart.area.unrealised')}
-                </p>
               </div>
-            ) : (
-              // No base **date** here, deliberately: the curve is rebased on the
-              // first day of the visible window, so it does not move as the
-              // reconstruction reaches further back — only the head's scalar
-              // does, and that one carries the date while it is still moving.
-              <p className="text-sm text-muted-foreground">{t('dashboard.chart.performance.base')}</p>
-            )}
+            ) : // Nothing under the performance reading, and no base **date**
+            // either. The date was already refused here — the curve is rebased
+            // on the first day of the visible window, so it does not move as the
+            // reconstruction reaches further back, and only the head's scalar
+            // carries a date, while it is still moving. What leaves with #831 is
+            // the other half, *base 0 % on the first day of the range shown*: a
+            // rebasing is a convention, and a convention stated in prose on the
+            // page is the thing ADR-0016 built the bubble to replace. The two
+            // marks that state it without a sentence stay — the zero reference
+            // line the curve crosses, and the range control that names the
+            // window it is rebased on.
+            null}
           </>
         )}
       </CardContent>
