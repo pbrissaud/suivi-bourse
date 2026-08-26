@@ -37,6 +37,15 @@
  * *the store is unreadable* and *there is nothing to say about this
  * installation* the same screen, in its worst form, a blank one.
  *
+ * **`/health` obeys that rule too, and it is the one where it matters most**
+ * (#830). It is the read the bell is made of, and the state where it refuses is
+ * the state the panel pins *Le magasin ne répond pas* in, with a link here and
+ * no acknowledgement: a page that treated the refusal as a read in flight would
+ * answer that link with a page saying nothing whatsoever about the workloads —
+ * a link to a page about something else. So the workloads block takes its
+ * failure like the other two, and the card stays, named, with the sentence in
+ * the space its three rows would have filled.
+ *
  * The store block is the exception that proves it: its two facts about the file
  * ride on the runtime, so they stay on screen through exactly that failure —
  * and through that read being merely **in flight**, which is why the block
@@ -84,12 +93,19 @@ export default function SettingsPage() {
     null,
   )
 
-  // **One failure per block, said by the block.** The dials and the store's own
-  // figures both come out of the store, and either read can refuse on its own;
+  // **One failure per block, said by the block.** The dials, the store's own
+  // figures and the workloads each come off a read that can refuse on its own;
   // what the reader loses is that block, and what they are told is why, in the
-  // space it would have filled. `/api/runtime` is in neither list — see above.
+  // space it would have filled. `/api/runtime` is in none of the lists — see
+  // above.
+  //
+  // `/health` is in one of them since #830: it refusing is *the* state the bell
+  // pins its health entry in and links here, so a page that treated it as a
+  // read in flight would answer *Voir dans Réglages* with a page that does not
+  // mention the workloads at all.
   const settingsFailure = oneFailure(readConditions({ errors: [config.error] }))
   const storeFailure = oneFailure(readConditions({ errors: [store.error] }))
+  const healthFailure = oneFailure(readConditions({ errors: [health.error] }))
 
   return (
     // 880 px, from the mock-up, and centred in whatever the shell gives. Every
@@ -114,8 +130,10 @@ export default function SettingsPage() {
         <DialsBlock config={config.data} runtime={runtime.data} />
       ) : null}
 
-      {/* What the bell's colour is a fold of, one line per workload (ADR-0037). */}
-      <JobsBlock health={health.data ?? null} />
+      {/* What the bell's colour is a fold of, one line per workload (ADR-0037)
+          — and, when that read is the one that refused, the reason said in the
+          card the bell's link named. */}
+      <JobsBlock health={health.data ?? null} failure={healthFailure} />
 
       {/* Absent at zero, and never a maintenance table: it is the visible
           consequence of a gesture the reader has just made. */}

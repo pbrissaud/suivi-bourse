@@ -37,11 +37,26 @@
  * **`null` is a read in flight and the card does not exist** (ADR-0026), title
  * included: *everything is running* is a claim about an installation nobody has
  * observed yet.
+ *
+ * **A read that was refused is not that**, and the difference is the whole of
+ * why this block takes a second prop (#830, #829, ADR-0037). `/health` refusing
+ * is precisely the state the bell sends the reader here in — `installationState`
+ * reads `unreachable` off the failed request and the panel pins *Le magasin ne
+ * répond pas* with a link to this page — so a card that vanished on it would
+ * make the one link the panel offers land on a page that says nothing about
+ * what the link was about. So the card stays, keeps its name, and carries
+ * `Unreadable` in the space the three rows would have filled: the same rule the
+ * dials and the store already follow, one block further along. The heading
+ * survives because it is not a claim about the installation — it names what is
+ * missing, which is what makes *the workloads could not be read* sayable at
+ * all.
  */
+import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { HealthJobs, HealthState, HealthStatus } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey, type MessageValues } from '@/lib/i18n'
+import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 /** The id the card's landmark is named by — one constant, two readers. */
@@ -72,15 +87,41 @@ const JOB_NAMES: Record<JobKey, MessageKey> = {
 }
 
 export interface JobsBlockProps {
-  /** `null` until `GET /health` has landed, failure included (ADR-0026). */
+  /** `null` until `GET /health` has landed, refusal included (ADR-0026). */
   health: HealthState | null
+  /**
+   * `GET /health` refused — `null` when it answered or is still in flight. The
+   * two are **not** the same news (StoreBlock states the same distinction over
+   * `/api/store`): in flight nothing has been observed and the card does not
+   * exist; refused, there is an observation to state — *this could not be read*
+   * — and it is the one the bell just sent the reader here to read.
+   */
+  failure?: ReadFailure | null
 }
 
-export function JobsBlock({ health }: JobsBlockProps) {
+export function JobsBlock({ health, failure = null }: JobsBlockProps) {
   const { t } = useI18n()
   const format = useFormatters()
 
-  if (health === null) return null
+  if (health === null) {
+    // In flight, and nothing is rendered at all (ADR-0026).
+    if (failure === null) return null
+    // Refused, and the card owes the reason where its three rows would have
+    // been. It is the state the bell's health entry links here in, so the page
+    // saying nothing would be a link to a page about something else.
+    return (
+      <Card role="region" aria-labelledby={JOBS_HEADING}>
+        <CardHeader>
+          <h2 id={JOBS_HEADING} className="text-lg font-semibold tracking-tight">
+            {t('settings.jobs')}
+          </h2>
+        </CardHeader>
+        <CardContent>
+          <Unreadable failure={failure} />
+        </CardContent>
+      </Card>
+    )
+  }
 
   const jobs = health.jobs
 

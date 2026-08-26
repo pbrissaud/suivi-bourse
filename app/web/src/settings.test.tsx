@@ -490,6 +490,39 @@ describe('the workloads, which the bell’s health card develops', () => {
     // observed yet (ADR-0026), title included.
     expect(screen.queryByRole('heading', { name: 'Les plans de charge' })).not.toBeInTheDocument()
   })
+
+  it('says why it could not be read where the bell’s link lands', async () => {
+    // **The state the bell is loudest in**, and it was the one this page said
+    // nothing about: `/health` refuses, `installationState` reads `unreachable`
+    // off the failed request, and the panel pins *Le magasin ne répond pas*
+    // whose one offer is a link here. A card that vanished on it — a refusal
+    // read as a read in flight — would answer *Voir dans Réglages* with a page
+    // that does not mention the workloads at all. Walked the way a reader walks
+    // it, from the dashboard.
+    server.use(
+      problemHandler(ROUTES.health, {
+        status: 503,
+        type: PROBLEM_TYPES.storageUnavailable,
+        title: 'storage unavailable',
+      }),
+    )
+    const { user } = renderApp({ url: '/' })
+
+    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
+
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
+    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    // The card the link named, keeping its name and carrying the reason its
+    // three rows are not there — the same rule the dials and the store follow
+    // (#829, ADR-0037), one block further along.
+    expect(within(jobs).getByText('Lecture impossible')).toBeInTheDocument()
+    expect(jobs).toHaveTextContent(/son magasin ne répond pas/)
+    // An empty state and never an alert: there is no band anywhere, and what
+    // announces the installation is the bell, once.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })
 
 describe('the page’s own reads', () => {
