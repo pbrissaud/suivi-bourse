@@ -48,6 +48,18 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
   return http.get(ROUTES.portfolioTotals, () => HttpResponse.json(aTotalsPayload(aTotals(overrides))))
 }
 
+/**
+ * The chart's own card, taken by the one control that is only ever on it — the
+ * page's range radios. The legend names `Valeur totale` and `Versé net`, and so
+ * do two of the head's statistics: one portfolio said twice, which is the
+ * arrangement rather than a collision, so a legend assertion has to say **which
+ * card** it is about.
+ */
+async function chartCard(): Promise<HTMLElement> {
+  const range = await screen.findByRole('radiogroup', { name: 'Plage' })
+  return range.closest('[data-slot="card"]') as HTMLElement
+}
+
 describe('the gain is computed, never read', () => {
   it('adds its four terms up and ignores a divergent `gain_absolu`', async () => {
     // Two producers for one figure is what the shares page spent a session
@@ -880,33 +892,40 @@ describe('one chart slot, two readings', () => {
     expect(screen.queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
   })
 
-  it('names the area with its subject — and it is the gain', async () => {
+  it('names each curve and explains no rule under them', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // The area between value and net contributed *is* the gain, which is the
-    // clearest answer to *did I gain because it went up or because I put more
-    // in*. Naming it is what makes the surface readable at all.
-    expect(
-      await screen.findByText(/L’écart entre les deux courbes est votre gain total/),
-    ).toBeInTheDocument()
+    // The legend names the two curves — that is what pairs a colour to a
+    // figure — and it says nothing else. The sentence it used to close on,
+    // *l'écart entre les deux courbes est votre gain total*, is a convention of
+    // the product, and a convention lives on the bubble the head carries three
+    // cards up, never in a paragraph on the page (ADR-0016).
+    //
+    // Scoped to the chart's own card: `Valeur totale` is also one of the head's
+    // statistics, and the two saying the same thing about one portfolio is the
+    // point rather than a collision.
+    const chart = within(await chartCard())
+    expect(chart.getByText('Valeur totale')).toBeInTheDocument()
+    expect(chart.getByText('Versé net')).toBeInTheDocument()
+    expect(screen.queryByText(/L’écart entre les deux courbes/)).not.toBeInTheDocument()
   })
 
   it('falls back to valuation against cost, and it is then the only reading', async () => {
     // #708's per-field rule: with no cash event `total_value`,
     // `net_contributed` and `twr_index` are all `NULL`, so *value against net
-    // contributed* is two empty curves. The area is then the **latent** gain —
-    // a different figure, therefore a different sentence — and *Performance* is
-    // not offered rather than offered empty.
+    // contributed* is two empty curves. Which pair is drawn is said by the two
+    // **names** in the legend — a valuation against a cost, not a value against
+    // what was put in — and *Performance* is not offered rather than offered
+    // empty.
     server.use(
       totalsOf({ total_value: null, cash_balance: null, net_contributed: null, twr_index: null, ytd: null }),
     )
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    expect(
-      await screen.findByText(/L’écart entre les deux courbes est votre plus-value latente/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Valorisation')).toBeInTheDocument()
+    expect(screen.getByText('Prix de revient')).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Performance' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
     // The range control survives the fallback: it is the page's, not a
@@ -914,16 +933,70 @@ describe('one chart slot, two readings', () => {
     expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
   })
 
-  it('states no base date on the performance reading', async () => {
-    // The curve is rebased on the first day of the visible window, so it does
-    // not move as the reconstruction reaches further back — only the head's
-    // scalar does, and that one carries the date while it is still moving.
+  it('states neither a base date nor a base rule on the performance reading', async () => {
+    // The date was already refused: the curve is rebased on the first day of
+    // the visible window, so it does not move as the reconstruction reaches
+    // further back — only the head's scalar does, and that one carries the date
+    // while it is still moving. The **rule** goes with it (#831): *base 0 % au
+    // premier jour de la plage affichée* is a convention written on the page,
+    // and the two marks that say it without a sentence stay — the zero line the
+    // curve crosses and the range control that names the window.
     const { user } = renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
     await user.click(await screen.findByRole('tab', { name: 'Performance' }))
-    expect(await screen.findByText(/Base 0 % au premier jour de la plage affichée/)).toBeInTheDocument()
+    // The legend goes with the reading, which is how one knows the card has
+    // actually swapped what it draws.
+    await waitFor(async () =>
+      expect(within(await chartCard()).queryByText('Valeur totale')).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Base 0 %/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/premier jour de la plage/)).not.toBeInTheDocument()
     expect(screen.queryByText(/L’écart entre les deux courbes/)).not.toBeInTheDocument()
+  })
+})
+
+describe('the page shows figures and never explains itself (ADR-0016, #831)', () => {
+  // The bubbles themselves are asserted above — four of them, on the head's
+  // four figures. What is asserted here is the other half of the same decision:
+  // the page states **no rule of the product** in prose. The three sentences
+  // that did lived under the chart, one per reading, and a convention written
+  // on the page is what the icon on the figure exists to replace.
+  const RULES = [
+    /L’écart entre les deux courbes/,
+    /Base 0 %/,
+    /l’application ne peut pas distinguer/,
+  ]
+
+  it('states no rule in prose, in either reading of the chart', async () => {
+    const { user } = renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    await chartCard()
+
+    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('tab', { name: 'Performance' }))
+    await waitFor(async () =>
+      expect(within(await chartCard()).queryByText('Valeur totale')).not.toBeInTheDocument(),
+    )
+    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
+  })
+
+  it('states none of them either where the reading falls back to cost', async () => {
+    // The install with no cash ledger is where the last of the three lived, and
+    // it was the one carrying a rule about what the app **cannot** tell from
+    // what. Which pair of curves is drawn is said by their two **names**, and
+    // that is a label rather than a rule.
+    server.use(
+      totalsOf({ total_value: null, cash_balance: null, net_contributed: null, twr_index: null, ytd: null }),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    const chart = within(await chartCard())
+    expect(chart.getByText('Valorisation')).toBeInTheDocument()
+    expect(chart.getByText('Prix de revient')).toBeInTheDocument()
+    for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
   })
 })
 
