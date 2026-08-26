@@ -7,12 +7,13 @@ description: One convention per figure — the rules the app links to from the f
   THE ANCHORS ON THIS PAGE ARE A CONTRACT WITH THE APPLICATION.
 
   Every figure in SuiviBourse carries an information icon whose link points at
-  one of the anchors below, version included (ADR-0016, ADR-0025). The eleven
+  one of the anchors below, version included (ADR-0016, ADR-0025). The twelve
   anchors are fixed — they are `DOCS_ANCHORS` in `app/web/src/lib/docs.ts`, and
   the two lists are the same list:
 
     #avg-cost  #total-gain  #latent-gain  #realized-gain  #dividends
-    #net-contributed  #deposit-fees  #twr  #xirr  #carrying-price  #absence
+    #net-contributed  #deposit-fees  #total-performance  #twr  #xirr
+    #carrying-price  #absence
 
   They are written by hand, on every heading, and NEVER left to be derived from
   the heading text. Reword a title and a derived anchor changes with it: the
@@ -176,6 +177,32 @@ this figure records, so the money is gone from one side of the subtraction and
 not the other. The gap has to land somewhere, and it lands in fees taken from
 your transfers — a term of its own rather than a silent
 adjustment here.
+
+## Total performance {#total-performance}
+
+**Total performance: this account's whole gain divided by what you have paid
+into it.**
+
+It is what a euro left in the account since the beginning has become, and it is
+a **cumulative ratio rather than a rate**. Three things follow from that, and
+each is a question it does not answer.
+
+It covers the account's **entire life** and no shorter period. That is why it
+carries no range beside it: there is no window to choose, so there is nothing
+for a control to say and nothing for a legend to state. A
+[time-weighted return](#twr) without its period is a figure you cannot read;
+this one has only one period it could ever mean.
+
+It is **not annualised**. Two accounts showing the same total performance may
+have taken two years and twenty to get there, so it ranks nothing across
+accounts of different ages — that is the [money-weighted return](#xirr)'s job,
+and it is the figure directly under this one for that reason.
+
+And it says nothing about **when** the money went in. Every euro counts the
+same whether it arrived before a rise or after it. Paying more in lowers the
+ratio until that money earns something, which is exactly what makes it legible:
+it is a gain read against its own base, not a measure of the holdings on their
+own.
 
 ## Time-weighted return {#twr}
 
