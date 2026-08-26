@@ -12,6 +12,7 @@ import type { Position } from '@/lib/api'
 import { positionRenderings } from '@/lib/absence'
 import {
   accountBreakdown,
+  allocation,
   buildShareRows,
   closedRows,
   eventMarkers,
@@ -354,5 +355,69 @@ describe('the weight of a line', () => {
     )
     // The one case of its own: a figure of a valuation, over a whole of nothing.
     expect(weightRendering(priced, 0).kind).toBe('dash')
+  })
+})
+
+
+/**
+ * The rows the allocation divides, with no failure counter: it is a rendering
+ * concern (see the head of `lib/shares.ts`) and the arithmetic has no subject
+ * for it.
+ */
+function allocationRows(positions: readonly Position[]) {
+  return buildShareRows(positions, NO_FAILURES)
+}
+
+// ------------------------------------------------------------------------- //
+// The allocation — the dashboard's figure until #831, this page's since
+// ------------------------------------------------------------------------- //
+
+describe('the allocation', () => {
+  it('names twelve lines and folds the rest into one slice that counts itself', () => {
+    // Eight was the threshold and it is measurably wrong: the tail *Others (4)*
+    // was worth 10,1 %, more than four of the named slices put together.
+    const positions = Array.from({ length: 15 }, (_, index) =>
+      aPosition({ symbol: `Z${index}`, name: `Zeta ${index}`, quantity: 1, cost_basis: 1, price: 15 - index }),
+    )
+    const { slices, total } = allocation(allocationRows(positions))
+
+    expect(slices).toHaveLength(12)
+    expect(slices.slice(0, 11).every((slice) => slice.count === 1)).toBe(true)
+    expect(slices[11]).toMatchObject({ symbol: null, count: 4 })
+    // Nothing is lost in the fold: 15 + 14 + … + 1.
+    expect(total).toBe(120)
+    expect(slices.reduce((sum, slice) => sum + slice.share, 0)).toBeCloseTo(1, 10)
+  })
+
+  it('excludes what it could not place **and hands it back to be named**', () => {
+    // The exclusion was already right and its own comment said why — summing a
+    // position with no resolved rate makes every *other* percentage silently
+    // wrong — and it was never said on screen.
+    const { slices, unplaced } = allocation(
+      allocationRows([
+        aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+        aPosition({ symbol: 'ZZB', quantity: 4, cost_basis: 400, price: 125, currency: 'USD', rate: null }),
+      ]),
+    )
+
+    expect(unplaced).toEqual(['ZZB'])
+    expect(slices.map((slice) => slice.symbol)).toEqual(['ZZA'])
+    expect(slices[0].share).toBe(1)
+  })
+
+  it('keeps a line carried at its cost and drops a closed one', () => {
+    // A position nothing has ever quoted is worth what it cost (ADR-0004), so
+    // it is a slice; a sold one is worth exactly zero, and a legend of zeros is
+    // noise — the shares page's folded section is where it lives.
+    const { slices } = allocation(
+      allocationRows([
+        aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+        aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null }),
+        aPosition({ symbol: 'ZZD', quantity: 0, cost_basis: 0, price: null, realised: 120 }),
+      ]),
+    )
+
+    expect(slices.map((slice) => slice.symbol)).toEqual(['ZZA', 'ZZC'])
+    expect(slices[1].value).toBe(600)
   })
 })

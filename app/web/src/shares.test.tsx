@@ -894,6 +894,98 @@ describe('a click on the line opens its sheet', () => {
   })
 })
 
+// ------------------------------------------------------------------------- //
+// The allocation, above the table it divides (#831)
+// ------------------------------------------------------------------------- //
+
+describe('the allocation', () => {
+  it('names every line in the slices’ own order, with its share', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+
+    // 1 300 / 600 / 400 out of 2 300 — and the legend is in the slices' own
+    // descending order, which is what pairs a legend row to its slice and what
+    // licenses the rank ramp of ADR-0023.
+    const list = await screen.findByRole('list', { name: 'Répartition' })
+    const rows = within(list)
+      .getAllByRole('listitem')
+      .map((row) => (row.textContent ?? '').replace(/\s/g, ''))
+    expect(rows).toEqual(['ZetaAlpha56,52%', 'ZetaGamma26,09%', 'ZetaBeta17,39%'])
+
+    // The total, in the ring's own hole — **one named group and two lines**,
+    // not a sentence: `2 300,00 € de titres` measured wider than the hole and
+    // was drawn over the slices it divides. The pair stays whole where it has
+    // to, which is the accessible tree.
+    //
+    // And it is the header's own `Valorisation`, one block down: the ring
+    // divides exactly the lines that header sums, so the two are one number
+    // said twice rather than two figures that happen to agree.
+    const card = list.closest('[data-slot="card"]') as HTMLElement
+    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
+  })
+
+  it('names what it could not place instead of dropping it in silence', async () => {
+    // Summing a position whose rate has not resolved makes every *other*
+    // percentage silently wrong — the exclusion was already right, and its own
+    // comment said why without ever saying it on screen.
+    renderShares([
+      aPosition({ symbol: 'ZZA', name: 'Zeta Alpha', quantity: 10, cost_basis: 1000, price: 130 }),
+      aPosition({
+        symbol: 'ZZB',
+        name: 'Zeta Beta',
+        quantity: 4,
+        cost_basis: 400,
+        price: 125,
+        currency: 'USD',
+        rate: null,
+      }),
+    ])
+    await waitFor(() => expect(liveTable()).toBeInTheDocument())
+
+    expect(screen.getByText(/n’est pas dans cette répartition/)).toBeInTheDocument()
+    // And the line it kept is the whole of what it counted.
+    const legend = within(screen.getByRole('list', { name: 'Répartition' }))
+    expect(legend.getAllByRole('listitem')).toHaveLength(1)
+    expect(legend.getByRole('listitem')).toHaveTextContent(/100,00\D?%/)
+  })
+
+  it('adds no selector of its own beside the gestures the page already has', async () => {
+    renderShares()
+    await waitFor(() => expect(head()).toHaveTextContent(/460,00/))
+
+    // No breakdown by account and none by type: the question *which account is
+    // working* has a page of its own, and this page already answers *by
+    // account* with the grouping under the table — a partition of the very same
+    // lines rather than a second, disagreeing control.
+    const card = screen
+      .getByRole('list', { name: 'Répartition' })
+      .closest('[data-slot="card"]') as HTMLElement
+    expect(within(card).queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(within(card).queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('divides the reduction, which is exactly what the header above it sums', async () => {
+    // `?compte=` reduces the positions before the folding, so the header sums
+    // that account's lines — and the ring divides exactly them, no rule of its
+    // own required. `alpha` holds `ZZA` alone, worth 1 300,00, and has closed
+    // `ZZD`, which is worth zero and is not a slice.
+    server.use(
+      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
+    )
+    renderApp({ url: '/titres?compte=alpha' })
+    await waitFor(() => expect(head()).toHaveTextContent(/455,00/))
+
+    const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
+    expect(legend.getAllByRole('listitem').map((row) => (row.textContent ?? '').replace(/\s/g, ''))).toEqual([
+      'ZetaAlpha100,00%',
+    ])
+    const card = screen
+      .getByRole('list', { name: 'Répartition' })
+      .closest('[data-slot="card"]') as HTMLElement
+    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/1\D?300,00/)
+  })
+})
+
 describe('the absences of this page, one screen apart', () => {
   it('gives a share carried at its cost an em dash and no triangle', async () => {
     // Nothing is broken: no price was ever observed, the line is carried at

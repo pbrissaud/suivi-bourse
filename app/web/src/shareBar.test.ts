@@ -55,7 +55,7 @@ const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
  * per-line share is still a cell. Three surfaces, no fourth.
  */
 const MOUNTS = [
-  'src/components/dashboard/Allocation.tsx',
+  'src/components/shares/Allocation.tsx',
   'src/components/accounts/AccountsRail.tsx',
   'src/components/accounts/AccountDetail.tsx',
 ]

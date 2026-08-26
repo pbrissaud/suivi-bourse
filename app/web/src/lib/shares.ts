@@ -47,6 +47,7 @@ import {
   type PositionAbsenceInput,
   type Rendering,
 } from '@/lib/absence'
+import { ALLOCATION_SLICES } from '@/lib/alloc'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
 import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
@@ -413,13 +414,118 @@ export function accountGroups(
 }
 
 // ------------------------------------------------------------------------- //
+// The allocation (#727, moved here from the dashboard by #831)
+// ------------------------------------------------------------------------- //
+
+export interface AllocationSlice {
+  /** The security, or `null` on the tail — which names no single line. */
+  symbol: string | null
+  /** What to write. `null` on the tail: the catalogue names it with its count. */
+  label: string | null
+  value: number
+  /** Of the placed total, `0`…`1`. The legend renders it beside the name. */
+  share: number
+  /** How many lines this slice folds. `1` everywhere but on the tail. */
+  count: number
+}
+
+export interface Allocation {
+  /** Descending by value, **at most twelve**, the tail last if there is one. */
+  slices: AllocationSlice[]
+  total: number
+  /**
+   * The held lines that could **not** be placed — quoted, and the rate has not
+   * resolved. Named on screen, never summed: summing them would make every other
+   * percentage silently wrong, and dropping them in silence is what happened.
+   */
+  unplaced: string[]
+}
+
+/**
+ * The whole portfolio in one figure, **twelve slices and the full width**.
+ *
+ * It divided the dashboard until #831 and it divides the shares page now: the
+ * maquette draws the ring over the table it is the division of, and the block
+ * is handed exactly the rows the page header sums, so the figure in the ring's
+ * hole and the header's `Valorisation` are one number read twice.
+ *
+ * Eight was the threshold and it is measurably wrong: the tail *Autres (4)* was
+ * worth **10,1 %**, more than four of the named slices put together. What
+ * decided the *layout* is what that threshold costs at half width — four names
+ * out of twelve folded, a block twice the height of the movers beside it, and
+ * 350 px of nothing under them.
+ *
+ * A **closed** line is not a slice: it is worth exactly zero and a legend of
+ * zeros is noise, so the folded section of the shares page is where it lives. A
+ * held line worth zero stays — that is a figure about a line the owner holds.
+ * The predicate is `isClosed`, above, and `moversSplit` calls the same one one
+ * module over: the two blocks describe one portfolio, so what is *in* it cannot
+ * be two questions — which is why the predicate did not travel with the block.
+ */
+export function allocation(rows: readonly ShareRow[]): Allocation {
+  const placed: AllocationSlice[] = []
+  const unplaced: string[] = []
+
+  for (const row of rows) {
+    if (isClosed(row)) continue
+    const value = marketValue(row)
+    if (value === null) {
+      unplaced.push(row.symbol)
+      continue
+    }
+    placed.push({
+      symbol: row.symbol,
+      label: row.name ?? row.symbol,
+      value,
+      share: 0,
+      count: 1,
+    })
+  }
+
+  placed.sort((left, right) =>
+    left.value === right.value
+      ? (left.symbol ?? '').localeCompare(right.symbol ?? '')
+      : right.value - left.value,
+  )
+
+  // The ramp has twelve stops (ADR-0023) and the tail is one slice like any
+  // other, so it takes the twelfth: the least contrasted rank, which is what a
+  // fold of the smallest lines should be.
+  let slices = placed
+  if (placed.length > ALLOCATION_SLICES) {
+    const named = placed.slice(0, ALLOCATION_SLICES - 1)
+    const rest = placed.slice(ALLOCATION_SLICES - 1)
+    slices = [
+      ...named,
+      {
+        symbol: null,
+        label: null,
+        value: rest.reduce((sum, slice) => sum + slice.value, 0),
+        share: 0,
+        count: rest.length,
+      },
+    ]
+  }
+
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0)
+  return {
+    slices: slices.map((slice) => ({
+      ...slice,
+      share: total === 0 ? 0 : slice.value / total,
+    })),
+    total,
+    unplaced,
+  }
+}
+
+// ------------------------------------------------------------------------- //
 // The weight (#791, #832, and the account's lines since #833)
 // ------------------------------------------------------------------------- //
 
 /**
  * The whole a weight divides — **the value of the lines that can be placed**,
- * which is `allocation`'s own rule a few lines down and not a second answer to
- * the same question.
+ * which is `allocation`'s own rule just above and not a second answer to the
+ * same question.
  *
  * These three functions have outlived two renderings of the shares table's
  * `Poids` column — #791 wrote it, took it out, #832 brought it back as a bar,

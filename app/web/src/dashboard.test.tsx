@@ -1032,70 +1032,21 @@ describe('the page shows figures and never explains itself (ADR-0016, #831)', ()
   })
 })
 
-describe('the allocation', () => {
-  it('names every line in the slices’ own order, with its share', async () => {
+describe('the allocation is not on this page', () => {
+  it('draws no ring and no legend here since #831', async () => {
+    // It sat on the wide track from #727 to #830, and the maquette draws it in
+    // the `Titres` branch and nowhere in this one. The figure moved rather than
+    // being duplicated: `shares.test.tsx` is where its three cases are now, on
+    // the page whose table it divides.
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
+    await chartCard()
 
-    // 1 300 / 600 / 400 out of 2 300 — and the legend is in the slices' own
-    // descending order, which is what pairs a legend row to its slice and what
-    // licenses the rank ramp of ADR-0023.
-    const list = await screen.findByRole('list', { name: 'Répartition' })
-    const legend = within(list)
-    const rows = legend.getAllByRole('listitem').map((row) => row.textContent ?? '')
-    expect(rows.map((row) => row.replace(/\s/g, ''))).toEqual([
-      'ZetaAlpha56,52%',
-      'ZetaGamma26,09%',
-      'ZetaBeta17,39%',
-    ])
-    // The total, in the ring's own hole — **one named group and two lines**,
-    // not a sentence: `2 300,00 € de titres` measured wider than the hole and
-    // was drawn over the slices it divides. The pair stays whole where it has
-    // to, which is the accessible tree.
-    //
-    // Scoped to the card, because the head one track over names the same figure
-    // the same way: the ring's centre is the total *this figure* is the division
-    // of, and the two agree because they read one number.
-    const card = list.closest('[data-slot="card"]') as HTMLElement
-    expect(within(card).getByRole('group', { name: 'Titres' })).toHaveTextContent(/2\D?300,00/)
-  })
-
-  it('names what it could not place instead of dropping it in silence', async () => {
-    // Summing a position whose rate has not resolved makes every *other*
-    // percentage silently wrong — the exclusion was already right, and its own
-    // comment said why without ever saying it on screen.
-    server.use(
-      http.get(ROUTES.positions, () =>
-        HttpResponse.json(
-          aPositionsPayload([
-            aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
-            aPosition({ symbol: 'ZZB', quantity: 4, cost_basis: 400, price: 125, currency: 'USD', rate: null }),
-          ]),
-        ),
-      ),
-    )
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    expect(await screen.findByText(/ZZB/)).toBeInTheDocument()
-    expect(screen.getByText(/n’est pas dans cette répartition/)).toBeInTheDocument()
-    // And the line it kept is the whole of what it counted.
-    const legend = within(screen.getByRole('list', { name: 'Répartition' }))
-    expect(legend.getAllByRole('listitem')).toHaveLength(1)
-    expect(legend.getByRole('listitem')).toHaveTextContent(/100,00\D?%/)
-  })
-
-  it('adds no second selector beside the chart’s', async () => {
-    renderApp()
-    await screen.findByRole('group', { name: 'Gain total' })
-
-    // No breakdown by account and none by type: a second control **on this
-    // block** is the duplication this page keeps closing. The two radio groups
-    // on the page belong to the chart and to the accounts card, and the
-    // allocation has neither.
-    const allocation = screen.getByRole('list', { name: 'Répartition' }).closest('[data-slot="card"]')!
-    expect(within(allocation as HTMLElement).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Répartition' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
+    // And the head's own `Titres` statistic stays: it is the same total, said
+    // by the figure that was always the head's, not by the ring that left.
+    expect(figure('Titres')).toHaveTextContent(/2\D?300,00/)
   })
 })
 
@@ -1219,7 +1170,6 @@ describe('the four states of the page', () => {
     // Not a third copy of the pair of entries (#723's, which the first-run
     // modal is the second of): this page reads, it is not where one enters.
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Répartition')).not.toBeInTheDocument()
     expect(screen.queryByText('Mouvements')).not.toBeInTheDocument()
     expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
     // And the route is the dashboard unconditionally: a bookmark valid
@@ -1252,9 +1202,10 @@ describe('the four states of the page', () => {
     expect(figure('Plus-value réalisée')).toHaveTextContent(/75,00/)
     expect(figure('Titres')).toHaveTextContent(/0,00/)
 
-    // And both blocks say **why** they are empty rather than being absent.
-    expect(await screen.findByText('Aucune position détenue')).toBeInTheDocument()
-    expect(screen.getByText('Rien à comparer')).toBeInTheDocument()
+    // And the block says **why** it is empty rather than being absent. There is
+    // one of them here since #831: the allocation, which said the same thing
+    // about the same portfolio, is on the shares page and says it there.
+    expect(await screen.findByText('Rien à comparer')).toBeInTheDocument()
   })
 })
 
