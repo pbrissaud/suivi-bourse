@@ -1,12 +1,15 @@
 /**
  * The shell, once the page's own head moved into it (#789).
  *
- * Three things are decided here and none of them is a look:
+ * Four things are decided here and none of them is a look:
  *
  *  - **the page's title is the header's** — the `<h1>` each page used to draw
  *    for itself is one object of the shell now, so a reader reads the name of
  *    the page they are on without deducing it from the navigation, and a screen
  *    reader still finds a title on every route;
+ *  - **the navigation opens to five, in three and two** (ADR-0038) — the
+ *    portfolio at the top, what the owner acts on at the foot, and the fold
+ *    survives a reload;
  *  - **the status card is the dot's development, never its home** — it says in
  *    words what the dot says in a colour, and it is *absent* in the two sidebar
  *    states that cannot hold it, the dot staying put in all three (ADR-0022);
@@ -52,7 +55,7 @@ describe('the page title, now the header’s', () => {
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
 
-    for (const entry of ['Titres', 'Comptes', 'Données']) {
+    for (const entry of ['Titres', 'Comptes', 'Grand livre', 'Réglages']) {
       await user.click(within(nav()).getByRole('link', { name: entry }))
       expect(await screen.findByRole('heading', { level: 1, name: entry })).toBeInTheDocument()
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
@@ -76,10 +79,10 @@ describe('the page title, now the header’s', () => {
       screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement
     await waitFor(() => expect(banner()).toHaveTextContent(/Cours au/))
 
-    // *Données* dates nothing: it declares a name and no subtitle, and what it
-    // does not say must not be read from what the dashboard said.
-    await user.click(within(nav()).getByRole('link', { name: 'Données' }))
-    await screen.findByRole('heading', { level: 1, name: 'Données' })
+    // *Grand livre* dates nothing: it declares a name and no subtitle, and
+    // what it does not say must not be read from what the dashboard said.
+    await user.click(within(nav()).getByRole('link', { name: 'Grand livre' }))
+    await screen.findByRole('heading', { level: 1, name: 'Grand livre' })
     expect(banner()).not.toHaveTextContent(/Cours au/)
   })
 
@@ -89,6 +92,81 @@ describe('the page title, now the header’s', () => {
       await screen.findByRole('heading', { level: 1, name: 'Page introuvable' }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+})
+
+describe('the navigation, five entries in three and two (ADR-0038)', () => {
+  /** The nav's links, in the order a reader — and a screen reader — meets them. */
+  const entries = () => within(nav()).getAllByRole('link').map((link) => link.textContent)
+
+  it('says Grand livre and Réglages, and puts both at the foot of the list', async () => {
+    renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+
+    // *Grand livre* and never *Registre*: the concept has a word, and a label
+    // inventing a second one puts two names on one thing. The order is the
+    // decision — the three the owner **looks at**, then the two they **act
+    // on** — so it is asserted as an order and not as a set.
+    expect(entries()).toEqual([
+      'Tableau de bord',
+      'Titres',
+      'Comptes',
+      'Grand livre',
+      'Réglages',
+    ])
+  })
+
+  it('leads to a settings page that is a page, with a title of its own', async () => {
+    const { user } = renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+
+    await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
+
+    // A route that renders a stub is a promise; this one renders the surface —
+    // the dials, and the store the reader came to read.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Le magasin' })).toBeInTheDocument()
+  })
+
+  it('answers on its own address, so a bookmark on the settings survives', async () => {
+    renderApp({ url: '/reglages' })
+
+    // It is not `/donnees#installation` under a shorter name: a hash names a
+    // tab, and ADR-0038 took the tab bar away.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
+  })
+
+  it('folds on ⌘B, and is still folded on the next load', async () => {
+    // The fold is the component's — the rail, the shortcut, the cookie — but
+    // the **read back** is the product's: upstream reads that cookie on a
+    // server this app does not have, so without it the write landed and
+    // nothing ever looked at it.
+    const { user, unmount } = renderApp()
+    await screen.findByText('Système opérationnel')
+
+    await user.keyboard('{Meta>}b{/Meta}')
+    await waitFor(() => expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument())
+
+    unmount()
+    renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+    // The card is what the rail cannot hold, so its absence is the fold, read
+    // off the accessible rendering rather than off a class.
+    expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
+  })
+
+  it('is a drawer at 390 px, behind a gesture, with the five entries in it', async () => {
+    setViewportWidth(390)
+    const { user } = renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+
+    // Nothing of the navigation is on screen until it is asked for: the drawer
+    // is what let the sidebar win over the top bar, which lost a route here.
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
+    expect(within(drawer).getAllByRole('link')).toHaveLength(5)
   })
 })
 

@@ -7,6 +7,7 @@ import { validateLedgerSearch, type LedgerSearch } from '@/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
+import SettingsPage from '@/pages/SettingsPage'
 import SharesPage from '@/pages/SharesPage'
 
 /**
@@ -20,12 +21,17 @@ import SharesPage from '@/pages/SharesPage'
  * class of problem (`c87a0b1`, the front's `lib/` swallowed by the root
  * gitignore). The crossover is roughly ten routes; the map plans four.
  *
- * The four paths do not move: `/`, `/titres`, `/comptes`, `/donnees`, and all
- * four are in the navigation at every N — the accounts page used to leave it at
- * one account, and ADR-0028 removed the argument by making that page a reading
- * of *one* account rather than a comparison. And `/` is the dashboard
- * **unconditionally**: a redirect while the ledger is empty would make it the
- * one route in the product whose behaviour depends on the data.
+ * The five paths do not move: `/`, `/titres`, `/comptes`, `/donnees`,
+ * `/reglages`, and all five are in the navigation at every N — the accounts
+ * page used to leave it at one account, and ADR-0028 removed the argument by
+ * making that page a reading of *one* account rather than a comparison. And `/`
+ * is the dashboard **unconditionally**: a redirect while the ledger is empty
+ * would make it the one route in the product whose behaviour depends on the
+ * data.
+ *
+ * The fifth arrived with ADR-0038 and the count is still well under the
+ * crossover: the settings left the data page, the tab bar left with them, and a
+ * bookmark on the installation stopped being a hash.
  */
 
 const rootRoute = createRootRoute({
@@ -119,11 +125,28 @@ const dataRoute = createRoute({
   }),
 })
 
+/**
+ * The fifth route, and the only one of the five that reads nothing off its own
+ * address (ADR-0038).
+ *
+ * Two things it deliberately is not. It is not `/donnees#installation` under a
+ * shorter name: a hash names a tab, and there is no tab bar left for it to
+ * name. And it takes **no search parameter** — the dial the reader came to turn
+ * is not a reduction of anything, so there is nothing here for an address to
+ * describe.
+ */
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reglages',
+  component: SettingsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
   accountsRoute,
   dataRoute,
+  settingsRoute,
 ])
 
 /**

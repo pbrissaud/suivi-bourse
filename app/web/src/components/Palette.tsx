@@ -30,6 +30,7 @@ import {
   LayoutDashboard,
   Plus,
   Search,
+  Settings,
   Table2,
   Wallet,
 } from 'lucide-react'
@@ -53,14 +54,17 @@ import {
 } from '@/lib/palette'
 
 /**
- * The four pages, named by the catalogue that names them in the navigation: the
- * palette is a second way to the same four routes, never a second vocabulary.
+ * The five pages, named by the catalogue that names them in the navigation: the
+ * palette is a second way to the same five routes, never a second vocabulary —
+ * which is why the settings arrived here the day ADR-0038 gave them an address,
+ * and not a ticket later.
  */
 const PAGES = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/titres', label: 'nav.shares', icon: Coins },
   { to: '/comptes', label: 'nav.accounts', icon: Wallet },
-  { to: '/donnees', label: 'nav.data', icon: Table2 },
+  { to: '/donnees', label: 'nav.ledger', icon: Table2 },
+  { to: '/reglages', label: 'nav.settings', icon: Settings },
 ] as const satisfies readonly { to: string; label: MessageKey; icon: LucideIcon }[]
 
 /** One line of the palette: what it says, and what it does. */

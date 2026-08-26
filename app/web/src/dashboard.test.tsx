@@ -660,7 +660,7 @@ describe('the statistics shrink instead of filling with dashes', () => {
     renderApp()
 
     expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller à Données' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
 })
@@ -1108,7 +1108,7 @@ describe('the four states of the page', () => {
     renderApp()
 
     expect(await screen.findByText('Aucun événement')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller à Données' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
     // Not a third copy of the pair of entries (#723's, which the first-run
     // modal is the second of): this page reads, it is not where one enters.
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()

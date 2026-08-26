@@ -6,17 +6,25 @@
  * table — nothing visible: 0 above 1 536 px, −7,8 % at 1 440, −20,8 % at the
  * worst realistic case (1 280), where twelve slices still sit in two columns of
  * six and eight columns neither truncate nor scroll. What separates the two
- * forms is **mechanical**: at 390 px the top bar loses the *Données* route — it
+ * forms is **mechanical**: at 390 px the top bar loses its fourth route — it
  * overflows its row with no scroll and no drawer, taking the status dot with it.
  *
  * So: shadcn's `Sidebar`, `collapsible="icon"` when wide, a drawer under 768 px.
  * **Nothing is hand-written for the narrow case** — the rail, the drawer, the
  * ⌘B shortcut and the persisted state come with the component, which is what
  * removed the last open question instead of answering it.
+ *
+ * **Five entries since ADR-0038, in three and two.** Settings left the data
+ * page and the tab bar left with it, so the list grew — and it groups, because
+ * a flat five that groups by nothing is worse than a three-and-two that groups
+ * by one. The top is the **portfolio**, what the owner looks at; the foot is
+ * what they *act on* — the ledger, where events are declared, corrected and
+ * deleted, and the settings. The ledger has a claim to the top on that first
+ * count and it is declined on the second, which is ADR-0038's own arbitration.
  */
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { CircleDollarSign, Database, LayoutDashboard, Wallet } from 'lucide-react'
+import { CircleDollarSign, Database, LayoutDashboard, Settings, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import {
@@ -38,23 +46,34 @@ import { installationState } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 interface Entry {
-  to: '/' | '/titres' | '/comptes' | '/donnees'
+  to: '/' | '/titres' | '/comptes' | '/donnees' | '/reglages'
   label: MessageKey
   icon: LucideIcon
 }
 
-const ENTRIES: Entry[] = [
+/** What the owner looks at. */
+const PORTFOLIO: Entry[] = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/titres', label: 'nav.shares', icon: CircleDollarSign },
   { to: '/comptes', label: 'nav.accounts', icon: Wallet },
-  { to: '/donnees', label: 'nav.data', icon: Database },
+]
+
+/**
+ * What the owner acts on — and the page is `Grand livre`, never *Registre*:
+ * the concept has a word in `CONTEXT.md` and every French record uses it, so a
+ * label inventing a second one puts two names on one thing (ADR-0038). The
+ * source string is `Ledger`, English being decided first (ADR-0024).
+ */
+const WORKINGS: Entry[] = [
+  { to: '/donnees', label: 'nav.ledger', icon: Database },
+  { to: '/reglages', label: 'nav.settings', icon: Settings },
 ]
 
 export function AppSidebar() {
   const t = useT()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-  // **The four entries are four, at every N.** The accounts entry used to
+  // **The five entries are five, at every N.** The accounts entry used to
   // disappear at one account, and the argument was the page's own: comparing one
   // term is not comparing. ADR-0028 made that page a master-detail — five blocks
   // about *one* account, four of which exist nowhere else — so at one account it
@@ -71,26 +90,28 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        {/* `flex-1`, so the group is as tall as the scroll area and the foot
+            of the list is the foot of the column. */}
+        <SidebarGroup className="flex-1">
           {/* The component ships divs; the landmark is the product's job, and
-              it is what a screen reader — and a test — takes hold of. */}
-          <nav aria-label={t('nav.label')}>
+              it is what a screen reader — and a test — takes hold of. **One
+              landmark over the two groups** and not one each: they are a
+              grouping *inside* the navigation, and a screen reader offered two
+              navigations would have to be told which is which — two names for
+              one thing again, one level up. */}
+          <nav aria-label={t('nav.label')} className="flex h-full flex-col">
             <SidebarMenu>
-              {ENTRIES.map((entry) => (
-                <SidebarMenuItem key={entry.to}>
-                  <SidebarMenuButton
-                    asChild
-                    tooltip={t(entry.label)}
-                    // `exact` on the index only: without it "/" matches every
-                    // path and two entries light up at once.
-                    isActive={entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)}
-                  >
-                    <Link to={entry.to}>
-                      <entry.icon />
-                      <span>{t(entry.label)}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+              {PORTFOLIO.map((entry) => (
+                <NavEntry key={entry.to} entry={entry} pathname={pathname} />
+              ))}
+            </SidebarMenu>
+            {/* The foot of the list, not the foot of the sidebar: the status
+                card lives there and it is not a route. `mt-auto` is what puts
+                the two entries at the bottom of the column without a second
+                menu having to know how tall the first one is. */}
+            <SidebarMenu className="mt-auto">
+              {WORKINGS.map((entry) => (
+                <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}
             </SidebarMenu>
           </nav>
@@ -99,6 +120,26 @@ export function AppSidebar() {
       <StatusCard />
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
+  const t = useT()
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        tooltip={t(entry.label)}
+        // `exact` on the index only: without it "/" matches every path and two
+        // entries light up at once.
+        isActive={entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)}
+      >
+        <Link to={entry.to}>
+          <entry.icon />
+          <span>{t(entry.label)}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   )
 }
 

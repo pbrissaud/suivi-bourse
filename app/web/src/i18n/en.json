@@ -5,7 +5,8 @@
   "nav.dashboard": "Dashboard",
   "nav.shares": "Shares",
   "nav.accounts": "Accounts",
-  "nav.data": "Data",
+  "nav.ledger": "Ledger",
+  "nav.settings": "Settings",
 
   "header.toggleSidebar": "Show or hide the navigation",
   "header.language": "Language",
@@ -52,7 +53,8 @@
   "page.dashboard": "Dashboard",
   "page.shares": "Shares",
   "page.accounts": "Accounts",
-  "page.data": "Data",
+  "page.ledger": "Ledger",
+  "page.settings": "Settings",
 
   "notFound.title": "No such page",
   "notFound.body": "This address matches no page.",
@@ -90,7 +92,7 @@
   "dashboard.withoutLedger": "A ledger of dated events would add your total value, your net contributions and both returns.",
   "dashboard.empty.title": "No events yet",
   "dashboard.empty.body": "Everything here is computed from a ledger of dated events. Nothing has been imported or entered yet.",
-  "dashboard.empty.link": "Go to Data",
+  "dashboard.empty.link": "Go to the ledger",
   "dashboard.holdings": "Securities",
   "dashboard.pricedAt": "Prices as of {date}",
 
@@ -203,7 +205,7 @@
   "shares.closed.toggle": "{count, plural, one {# closed position} other {# closed positions}}",
   "shares.empty.title": "No positions",
   "shares.empty.body": "This page is computed from a ledger of dated events. Nothing has been imported or entered yet.",
-  "shares.empty.link": "Go to Data",
+  "shares.empty.link": "Go to the ledger",
   "shares.reduced": "Reduced to account {account}. The figures above cover its lines alone.",
   "shares.reduced.undo": "Show every account",
   "shares.reduced.empty.title": "No position on this account",
