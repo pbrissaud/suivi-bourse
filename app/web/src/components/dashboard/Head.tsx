@@ -66,6 +66,7 @@
  * consumers.
  */
 import { Link } from '@tanstack/react-router'
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
@@ -87,7 +88,7 @@ import {
 } from '@/lib/gain'
 import { dayMove } from '@/lib/dashboard'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { signClass } from '@/lib/sign'
+import { signClass, signOf, type Sign } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 const TERM_LABELS: Record<GainTermName, MessageKey> = {
@@ -470,15 +471,38 @@ export function DashboardHead({
  * statistics they join a row of things to add, which is the reading ADR-0018's
  * subordination exists to prevent; mounted as pills beside the headline they
  * read as what they are.
+ *
+ * **It is tinted by its sign, and it carries the arrow of that sign** (#831,
+ * the maquette's own pill). The neutral chip it used to be — a hairline border
+ * on `bg-background/60`, with the sign in the text colour alone — put the two
+ * periods in the chrome of the card rather than in the family of the figure
+ * above them, and left the sign said **once**, in colour. The tint is the
+ * figure's own token at a twelfth, so the pill stays a ground and never a mark;
+ * the arrow is the redundant encoding that makes the direction legible without
+ * the hue, which is the rule the allocation's ramp already answers one card
+ * down. A **zero** takes neither: it is a figure, not a direction, and
+ * `lib/sign.ts` is what says so.
  */
+const PERIOD_TONES: Record<Sign, string> = {
+  gain: 'bg-gain/12 text-gain',
+  loss: 'bg-loss/12 text-loss',
+  // A day that moved by nothing is a figure in the colour of text, on the
+  // card's own muted ground — never the grey of absence, which it is not.
+  zero: 'bg-muted text-foreground',
+  absent: 'bg-muted text-muted-foreground',
+}
+
 function Period({ amount, text }: { amount: number; text: string }) {
+  const sign = signOf(amount)
+  const Arrow = sign === 'gain' ? ArrowUpRight : sign === 'loss' ? ArrowDownRight : null
   return (
     <span
       className={cn(
-        'tabular rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium',
-        signClass(amount),
+        'tabular inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium',
+        PERIOD_TONES[sign],
       )}
     >
+      {Arrow === null ? null : <Arrow className="size-3" aria-hidden />}
       {text}
     </span>
   )
