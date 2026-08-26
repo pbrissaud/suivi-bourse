@@ -283,6 +283,14 @@ Four nets hold a rule nothing made true by construction:
   dates follow the **language**, not the currency. ADR-0024 says *two* because
   density came later; a record is dated, and it is this line that carries the
   count.
+- **`en.json` is the source, and `fr.json` is kept in step by hand until
+  Crowdin's first import.** `crowdin.yml` covers this catalogue alongside the
+  site (ADR-0024) and declares `fr.json` to be Crowdin's output — but that
+  import has never run, so every key since #713 has landed in both files in the
+  same commit, and a ticket that renames a label renames it twice. The half that
+  is not a stopgap is the order: English is decided first, and a key exists in
+  `en.json` or it does not exist at all. The hand stops here when the first
+  import lands, and not before.
 - **`index.css` has exactly three blocks** (ADR-0023, whose preset ADR-0029
   replaced): the tweakcn primitives (**never hand-edited**, regenerated with
   `pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn`
