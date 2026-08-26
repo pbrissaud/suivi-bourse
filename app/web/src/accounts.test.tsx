@@ -88,6 +88,13 @@ describe('the rail', () => {
     expect(entries()).toHaveLength(3)
     expect(entries()[0]).toContain('Alpha')
     expect(entries()[0]).toMatch(/1\D?800,00/)
+    // And what it has done with it (#833): `322,00 / 1 478,00`, the maquette's
+    // own `Performance totale` — a cumulative ratio, so ADR-0028's clause is
+    // satisfied rather than waived, a rail with no range control having no
+    // period it could state. The name is announced, the card carrying a value
+    // and a type already.
+    expect(entries()[0]).toMatch(/\+21,79\s?%/)
+    expect(entries()[0]).toContain('Performance totale')
 
     expect(weights()[0]).toContain('Alpha')
     // A share of a whole, never a change: `+54,55 %` would put the sign of a
@@ -113,6 +120,10 @@ describe('the rail', () => {
     expect(entries()[2]).toContain('Gamma')
     expect(entries()[2]).toMatch(/600,00/)
     expect(weights()[2]).toMatch(/18,18\s%/)
+    // Its ratio is the em dash and never a zero: with nothing ever paid in
+    // there is no contribution to divide by, which is *nothing to compute*.
+    expect(entries()[2]).not.toMatch(/%/)
+    expect(entries()[2]).toContain(ABSENT)
   })
 
   it('states no share at all where there is none, and never a zero', async () => {
@@ -265,28 +276,25 @@ describe('what the page stopped doing', () => {
       ).toEqual([
         'Ce que veut dire Gain total',
         'Ce que veut dire Versé net',
-        'Ce que veut dire perf',
+        'Ce que veut dire Performance totale',
         'Ce que veut dire TRI',
         'Ce que veut dire Encaissés',
       ]),
     )
   })
 
-  it('carries one range control, and never offers MAX', async () => {
+  it('carries no range control at all, on either track', async () => {
     renderAccounts()
     await settled()
 
-    // Two would be two announcers contradicting each other, which is the defect
-    // the dashboard has already paid for once.
-    const controls = await screen.findAllByRole('radiogroup')
-    expect(controls).toHaveLength(1)
-    expect(within(controls[0]).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
-    expect(within(controls[0]).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
-      '1M',
-      'Depuis le 1ᵉʳ janvier',
-      '1A',
-      'Depuis l’ouverture',
-    ])
+    // ADR-0028 corrected (#833): the control is the dashboard accounts card's,
+    // where several spans are read side by side and one account's ancient
+    // volatility can set the scale for every other. Here the detail draws one
+    // series on one axis and the rail draws none, so the defect the control
+    // guards against has no subject — and the maquette this page takes its form
+    // from defines its presets and renders them nowhere.
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
   })
 })
 
@@ -305,7 +313,9 @@ describe('the page’s own reads', () => {
     // What answers it instead, and it opens onto the detail the sentence never
     // had room for (#829, ADR-0037).
     expect(screen.getByRole('button', { name: /^Notifications/ })).toBeInTheDocument()
-    // The interval is carried by the range control and never written in words.
+    // No interval is named on this page in any register since #833: there is no
+    // control asking for one, and what is drawn is the account's whole history,
+    // which its legend states as an extent rather than as a window.
     expect(screen.queryByText(/sur (un an|les douze derniers mois)/i)).not.toBeInTheDocument()
   })
 

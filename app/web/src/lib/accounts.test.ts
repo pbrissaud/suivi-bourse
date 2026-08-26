@@ -29,6 +29,7 @@ import {
   firstDay,
   LAST_EVENTS,
   distinctSymbols,
+  onContributed,
   reassignmentOf,
   rebase,
   RANGES,
@@ -212,6 +213,43 @@ describe('the rows, and the weights the rail draws off them', () => {
     // No account at all is not *in flight*: it is a declaration with nothing
     // in it, and the page's own empty state owns that one.
     expect(settledSeries([])).toEqual([])
+  })
+})
+
+describe('what a figure is worth against the contribution (#833)', () => {
+  const rows = buildAccountRows(defaultAccounts())
+
+  it('divides the gain by what was paid in, and that is the whole of it', () => {
+    // 322,00 of 1 478,00. It is a **cumulative ratio** and not a rate: no
+    // window, no annualisation, and the same arithmetic the detail applies to
+    // the dividends one card lower.
+    expect(onContributed(rows[0].gain_absolu, rows[0].net_contributed)).toBeCloseTo(
+      322 / 1478,
+      6,
+    )
+    expect(onContributed(rows[1].gain_absolu, rows[1].net_contributed)).toBeCloseTo(
+      48 / 852,
+      6,
+    )
+  })
+
+  it('states no ratio at all on any of the three ways there is none', () => {
+    // *Nothing to compute*, three times over, and never a zero: `gamma` has no
+    // cash movement so nothing was ever paid in (#708); an account paid out of
+    // more than it took in has a negative base, and a share of a negative whole
+    // is not a figure; and a numerator nobody has written is not a ratio of
+    // zero either.
+    expect(onContributed(rows[2].gain_absolu, rows[2].net_contributed)).toBeNull()
+    expect(onContributed(100, 0)).toBeNull()
+    expect(onContributed(100, -50)).toBeNull()
+    expect(onContributed(null, 1478)).toBeNull()
+  })
+
+  it('keeps a loss a loss, the ratio being a change rather than a share', () => {
+    // −0,63 € over 452,98 € — the account that went nowhere. The sign survives
+    // the division, which is why the front renders it with `percent` and not
+    // with `percentPoints`.
+    expect(onContributed(-0.63, 452.98)).toBeCloseTo(-0.63 / 452.98, 6)
   })
 })
 

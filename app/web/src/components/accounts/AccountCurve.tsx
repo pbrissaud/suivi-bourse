@@ -19,35 +19,28 @@
  *    with no cash event has `net_contributed` at `null` for ever (#708), and a
  *    line drawn along the floor would say the owner put nothing in.
  *  - **The drawing states the span it covers** (ADR-0028, #833). The clause is
- *    *carry the period or carry no figure*, and it is not satisfied by the
- *    range control sitting above: a control says what was **asked for**, a
- *    legend says what is **drawn**, and the two part company on the one preset
- *    whose bound is a fact about the data — `SINCE_OPENING`. The maquette puts
- *    the span at the end of this very row, and that is where it goes: a curve
- *    with no stated extent beside a total is the unbounded-window failure in
- *    miniature. It is a **word** and not a stamp of the two dates, because the
- *    window is a preset the reader chose and reading it back to them in figures
- *    is a second announcer of the same choice.
+ *    *carry the period or carry no figure*, and nothing above the chart says it
+ *    any more: the range control left with ADR-0028's correction, and what is
+ *    drawn is the account's history end to end. The legend is therefore the one
+ *    place the extent is stated, at the end of the very row the maquette puts it
+ *    on — a curve with no stated extent beside a total is the unbounded-window
+ *    failure in miniature. It is a **word** and not a stamp of the two dates: the
+ *    span is a fact about the account rather than a choice, and two dates would
+ *    date a drawing whose whole subject is that it is not cut.
  */
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import type { Range, ValuePoint } from '@/lib/accounts'
+import type { ValuePoint } from '@/lib/accounts'
 
 export interface AccountCurveProps {
   points: readonly ValuePoint[]
   currency: string | null
-  /**
-   * The window the points were cut to — **stated on the drawing** (ADR-0028).
-   * It is the same value the control above is set to, handed down rather than
-   * read again, so the legend cannot say one span while the curve draws another.
-   */
-  range: Range
 }
 
-export function AccountCurve({ points, currency, range }: AccountCurveProps) {
+export function AccountCurve({ points, currency }: AccountCurveProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -112,7 +105,7 @@ export function AccountCurve({ points, currency, range }: AccountCurveProps) {
         {/* The span, at the end of the row the maquette puts it on. `ml-auto`
             and never a third legend entry: it names no mark on the chart, it
             names the extent of both. */}
-        <li className="sm:ml-auto">{t('accounts.detail.curve.period', { range })}</li>
+        <li className="sm:ml-auto">{t('accounts.detail.curve.period')}</li>
       </ul>
     </section>
   )

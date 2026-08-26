@@ -45,6 +45,7 @@ export const DOCS_ANCHORS = [
   'dividends',
   'net-contributed',
   'deposit-fees',
+  'total-performance',
   'twr',
   'xirr',
   'carrying-price',

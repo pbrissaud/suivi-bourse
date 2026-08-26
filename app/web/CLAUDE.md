@@ -33,6 +33,25 @@
 > without closing it: the scroll inside the container is what the maquette itself
 > does at 1 280 px, so it is the drawing's answer rather than a stopgap.
 >
+> **The accounts page has no range control** (#833, ADR-0028 corrected). The
+> detail carried a copy of ADR-0019's — four presets driving a windowed
+> time-weighted rate *and* the curve beside it — and the record's clause is
+> amended in its **address** this time: the rule is about several spans read side
+> by side, and the detail draws one series on one axis. It lands on the
+> dashboard's accounts card alone, which is the surface that compares accounts.
+> What stands at the head of the detail instead is **`Performance totale`** —
+> `gain ÷ versé net`, the total computed from its four terms over the
+> contribution one line above it — a **cumulative ratio** of the same family as
+> the *sur versé* under the dividends, covering the account's whole life and so
+> implying no window at all. The rail's cards carry that same figure, divided out
+> of `gain_absolu` (the fourth term is what makes the two telescope), which is why
+> the maquette's `perf` can stand there now when ADR-0028 refused it: a ratio with
+> no window needs no period stated. The curve is drawn over the whole history and
+> its legend says so; `perf` and its bubble leave the product, the four-reversals
+> warning being carried by the dashboard's own `TWR` bubble that the accounts card
+> already leans on; and *depuis l'ouverture* stops naming two different days on
+> two surfaces.
+>
 > **And the account's lines block draws the share** (#833). `placedValue`,
 > `weightShare` and `weightRendering` were written for #791's column and have now
 > outlived it twice, held between the two by their own unit tests. Their reader is
@@ -526,13 +545,17 @@ src/
   and names, one account's detail beside it — the gain over its four terms, the
   composition, the annualised rate, the dividends, the lines and the last events.
   Which account is open is a **URL** (`?compte=`), and an id naming nothing falls
-  back to the first declared one. **One** range control drives the detail's curve
-  *and* the rate beside it, `MAX` not offered; the rail draws a share of a total
-  on a stated day and no curve at all, which is the second half of ADR-0028's
-  sparkline clause — and the first half is held by the curve itself since #833,
-  whose legend **states the span it was cut to**, a control saying what was asked
-  for where a legend says what is drawn. The cross-account comparison is the
-  dashboard's accounts card now, and ADR-0019's rule travelled with it. It is
+  back to the first declared one. **No range control at all** since #833: the
+  head figure is `Performance totale`, `gain ÷ versé net`, a cumulative ratio
+  whose extent is the account's own life — so no window is implied and none has to
+  be stated, which is what lets the rail's cards carry the same figure where
+  ADR-0028 refused a windowed `perf`. The rail still draws a share of a total on a
+  stated day and no curve at all, the second half of ADR-0028's sparkline clause;
+  the first half is held by the curve itself, whose legend **states the extent it
+  covers** — the account's whole history, there being nothing left to cut it to.
+  The cross-account comparison is the dashboard's accounts card now, and
+  ADR-0019's rule travelled with it — control, bound and all, that card being the
+  one surface in the product that still has one. It is
   **also** where an account is declared (from the rail), renamed and removed
   (from the panel its own name opens) — the removal's **two** refusals being
   prose, which a table cell never had room for; the third was *a file declares
@@ -541,12 +564,11 @@ src/
   carries the **weight** of each line since #833 — `lib/shares.ts`'s three
   functions, which outlived the shares column that read them — and the two
   questions the encashed figure raises and cannot answer are answered in two
-  places, because they do not obey the same window: *what it is worth against
-  the contribution* sits under the figure itself, in the dividends block, and
-  **which securities pay it** is a card of its own below the lines, stating the
-  extent it was read over — `position.dividends` is a lifetime total, so that
-  block says the account's whole history rather than borrowing the range control
-  above it.
+  places: *what it is worth against the contribution* sits under the figure
+  itself, in the dividends block, and **which securities pay it** is a card of
+  its own below the lines, stating the extent it was read over —
+  `position.dividends` is a lifetime total, so that block says the account's
+  whole history, which since #833 is the only extent the page has.
   The reassignment rides with the **declaration** where nothing is
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that

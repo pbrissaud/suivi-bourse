@@ -133,7 +133,7 @@ export function declaredType(account: NamedAccount): string | null {
 }
 
 // ------------------------------------------------------------------------- //
-// The one range control
+// The one range control — the dashboard's accounts card, and nowhere else
 // ------------------------------------------------------------------------- //
 
 /**
@@ -141,6 +141,13 @@ export function declaredType(account: NamedAccount): string | null {
  * hidden by the bound: the dashboard's own series is drawn over the whole
  * history and has no scale problem, where a time-weighted index read across
  * accounts does.
+ *
+ * **One consumer since #833**, and it is the dashboard's accounts card. The
+ * accounts detail carried a second copy of this control until ADR-0028 was
+ * corrected against the maquette it takes its form from: the detail draws one
+ * series on one axis, where the rule these presets exist to keep is about
+ * several spans read side by side. What the detail carries instead is a
+ * cumulative ratio ({@link onContributed}), which implies no window at all.
  */
 export const RANGES = ['1M', 'YTD', '1Y', 'SINCE_OPENING'] as const
 
@@ -386,6 +393,30 @@ export function degradedReason(
   return row.total_value === null ? 'withoutCashLedger' : null
 }
 
+
+/**
+ * What a figure is worth **against what was paid in** — the maquette's *sur
+ * versé*, and the arithmetic behind two figures rather than one (#833).
+ *
+ * `gain ÷ versé net` is what the maquette calls **`Performance totale`**, at the
+ * head of the detail and on every card of the rail; `dividendes ÷ versé net` is
+ * what it writes under the dividends encashed. The two are the same ratio on the
+ * same denominator, so they are one function: the contribution is the one base
+ * this page already has, and a third — the account's value, or its cost — would
+ * be a second denominator for one surface to explain.
+ *
+ * It is a **cumulative ratio and not a rate**: it covers the account's whole
+ * life, which is what *totale* says, so it implies no window and needs none
+ * stated (ADR-0028). That is the whole of why it can stand where a time-weighted
+ * return could not.
+ *
+ * `null` on all three of *no numerator yet*, *nothing paid in* and *more taken
+ * out than put in*: none of the three is a ratio, and the em dash says so.
+ */
+export function onContributed(amount: number | null, contributed: number | null): number | null {
+  if (amount === null || contributed === null || contributed <= 0) return null
+  return amount / contributed
+}
 
 // ------------------------------------------------------------------------- //
 // The rail — the weights, and which account the detail is about
