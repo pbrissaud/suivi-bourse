@@ -17,7 +17,10 @@ docker run -d \
   ghcr.io/pbrissaud/suivi-bourse:5
 ```
 
-`--restart unless-stopped` is what brings the container back after a reboot.
+`--restart unless-stopped` is what brings the container back after a reboot —
+and after a crash. Nothing inside the container restarts anything: the app is one
+process, so when it stops the container exits and this policy is what decides
+whether it comes back.
 
 The `-v` is the whole difference between a trial and an install. Without it the
 container still starts — it simply keeps nothing, and it says so on every start,
