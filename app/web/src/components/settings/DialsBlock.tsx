@@ -1,26 +1,31 @@
 /**
- * *Settings* — **one surface, two sections** (#724, ADR-0014, ADR-0020).
+ * *What you can change* — **the dials, and only the dials** (#724, #830,
+ * ADR-0014, ADR-0020, ADR-0038).
  *
- * The line between the two is ADR-0014's boot test transposed to the render:
- * what the process had to know before it could open the store can never be a
- * dial, and what lives in the store can never need a restart. So the tab shows
- * *what you can change* beside *what the container imposes*, and the
- * **effective-configuration card disappears as an object** — it was drawn twice
- * from the same source on the same page, and it answered a precedence problem
- * that no longer exists: there is one place that says what a setting is worth.
+ * The line between this card and `EnvironmentBlock` is ADR-0014's boot test
+ * transposed to the render: what the process had to know before it could open
+ * the store can never be a dial, and what lives in the store can never need a
+ * restart. The **effective-configuration card disappears as an object** — it was
+ * drawn twice from the same source on the same page, and it answered a
+ * precedence problem that no longer exists: there is one place that says what a
+ * setting is worth.
  *
- * Four things here are decisions rather than layout:
+ * **The two halves are two cards now** (#830). They were one `<section>` headed
+ * *Réglages*, which is the name of the page they sit on: a page whose `<h1>` and
+ * whose first `<h2>` read the same word says its title twice and names nothing.
+ * What they are called is what each one is — *what you can change* against *what
+ * the container imposes* — and the sentence ADR-0020 defends is untouched: one
+ * place says what a setting is worth, and the other card is a description.
+ *
+ * Three things here are decisions rather than layout:
  *
  *  - **The form is drawn by the registry.** `settings_registry.py` is the single
  *    list — key, type, bounds, effect — and this component iterates what the API
  *    hands over. The catalogue supplies one sentence per key and nothing else;
  *    a hard-written list of six fields would be the fourth list ADR-0014 exists
- *    against, and the first to fall out of step.
- *  - **The environment half is a description, not a form.** Rendered as greyed
- *    fields it invites the click and reads as a form that refused. It is a
- *    key/value list, nothing in it is focusable, and *changes when the container
- *    is recreated* is written **once for the section** rather than under each of
- *    four rows.
+ *    against, and the first to fall out of step. **`staleness_horizon` is on
+ *    this page because it is in that list** and for no other reason, which is
+ *    the whole of what makes it impossible for the redesign to drop it again.
  *  - **The cadence says who it reaches.** A portfolio-wide dial that reaches
  *    three symbols out of twelve has to say so, or the reader concludes the
  *    other nine are misconfigured. The count comes from `/api/runtime` and it is
@@ -37,6 +42,7 @@ import { toast } from 'sonner'
 
 import { CurrencyField } from '@/components/CurrencyField'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   api,
@@ -64,6 +70,9 @@ import {
  */
 const CURRENCY = CURRENCY_KEY
 
+/** The id the card's landmark is named by — one constant, two readers. */
+const DIALS_HEADING = 'settings-dials'
+
 /**
  * One sentence per dial, in the reader's language. The **list** is the
  * registry's; only the words are here, exactly as the six event types are named
@@ -89,12 +98,12 @@ const DIAL_HINT: Record<string, MessageKey> = {
   base_currency: 'settings.base_currency.hint',
 }
 
-export interface SettingsBlockProps {
+export interface DialsBlockProps {
   config: ConfigResponse
   runtime: RuntimeState | undefined
 }
 
-export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
+export function DialsBlock({ config, runtime }: DialsBlockProps) {
   const { t } = useI18n()
   const client = useQueryClient()
   const [draft, setDraft] = useState<Record<string, string>>(() => draftFrom(config.settings))
@@ -136,11 +145,20 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
   const pending = Object.keys(changedValues(config.settings, draft)).length
 
   return (
-    <section aria-labelledby="installation-settings" className="space-y-6">
-      <h2 id="installation-settings" className="text-lg font-semibold tracking-tight">
-        {t('installation.settings')}
-      </h2>
-
+    // `Card` ships a `div`, so the landmark's role is stated rather than
+    // inherited from a `<section>` — the shape one page over (`AccountDetail`).
+    <Card role="region" aria-labelledby={DIALS_HEADING}>
+      <CardHeader>
+        <h2 id={DIALS_HEADING} className="text-lg font-semibold tracking-tight">
+          {t('installation.settings.editable')}
+        </h2>
+        {/* The counterpart of the environment card's own note, and the reason
+            the two are told apart at a glance: nothing here needs a restart. */}
+        <p className="max-w-prose text-sm text-muted-foreground">
+          {t('installation.settings.editable.note')}
+        </p>
+      </CardHeader>
+      <CardContent>
       <form
         className="space-y-4"
         onSubmit={(event) => {
@@ -148,8 +166,6 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
           save.mutate()
         }}
       >
-        <h3 className="text-sm font-medium">{t('installation.settings.editable')}</h3>
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {config.settings.map((setting) => (
             <Dial
@@ -185,9 +201,8 @@ export function SettingsBlock({ config, runtime }: SettingsBlockProps) {
           ) : null}
         </div>
       </form>
-
-      <Environment config={config} />
-    </section>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -259,38 +274,3 @@ function Dial({
   )
 }
 
-/**
- * The second section: a **description**, and the test of that is mechanical —
- * nothing in it is an `input`, and nothing in it can be focused.
- */
-function Environment({ config }: { config: ConfigResponse }) {
-  const { t } = useI18n()
-
-  return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-medium">{t('installation.settings.imposed')}</h3>
-      {/* Written once for the section, never under each of four rows. */}
-      <p className="text-sm text-muted-foreground">{t('installation.settings.imposed.note')}</p>
-
-      <dl className="divide-y rounded-lg border text-sm">
-        {config.environment.map((variable) => (
-          <div key={variable.name} className="flex flex-wrap gap-2 px-4 py-2">
-            <dt className="font-mono text-xs text-muted-foreground">{variable.name}</dt>
-            <dd className="tabular ml-auto font-mono text-xs">
-              {variable.value ?? ''}
-              {variable.set ? null : (
-                <span className="ml-2 font-sans text-muted-foreground">
-                  {t('installation.settings.imposed.default')}
-                </span>
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {/* `unread_environment` is deliberately **not** repeated here: it is one of
-          the five notices, the block above says it with the names it found, and
-          two announcers on one fact is the defect this page was rebuilt to
-          remove. */}
-    </div>
-  )
-}

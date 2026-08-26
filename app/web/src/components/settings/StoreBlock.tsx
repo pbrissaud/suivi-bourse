@@ -1,5 +1,5 @@
 /**
- * *The store* — the third block of the installation tab (#724, ADR-0015,
+ * *The store* — a card of the settings page (#724, #830, ADR-0015, ADR-0038,
  * spec #695 § 10).
  *
  * Four things, and each one is here because of what it prevents:
@@ -33,19 +33,20 @@
  * of stating something nobody has observed. The block waits **whole** in one
  * state only, neither read having landed.
  *
- * And the orphan list is **absent at zero**. It is not a maintenance table: it
- * is the visible consequence of a gesture the reader has just made — forgetting
- * an import. A **sold position is not one of them**, its events being in the
- * ledger still.
+ * **The orphans are a card of their own** since #830 (`OrphansBlock`), which is
+ * what the mock-up draws and what the enumeration of ADR-0038 already implied:
+ * a securities list with a destructive gesture on it is not a fifth row of a
+ * key/value list about a file. What is left here is the file.
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-
 import { Unreadable } from '@/components/Unreadable'
-import { Button } from '@/components/ui/button'
-import { api, type RuntimeStore, type StoreState } from '@/lib/api'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import type { RuntimeStore, StoreState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
+
+/** The id the card's landmark is named by — one constant, two readers. */
+const STORE_HEADING = 'settings-store'
 
 export interface StoreBlockProps {
   /**
@@ -56,7 +57,7 @@ export interface StoreBlockProps {
   /**
    * The figures — **`null` until `GET /api/store` has landed**, failure
    * included (#777, ADR-0026). The two facts above them come off
-   * `/api/runtime`, which opens nothing, so the block itself never waits: what
+   * `/api/runtime`, which opens nothing, so the card itself never waits: what
    * waits is what this read alone can say.
    */
   store: StoreState | null
@@ -64,7 +65,7 @@ export interface StoreBlockProps {
    * `GET /api/store` refused — `null` when it answered or is still in flight.
    * The two are **not** the same news: in flight the figures are simply not
    * there yet, refused they are not coming, and since #829 there is no band
-   * above the tab to say so on the block's behalf (ADR-0037).
+   * above the page to say so on the card's behalf (ADR-0037).
    */
   failure?: ReadFailure | null
 }
@@ -72,18 +73,6 @@ export interface StoreBlockProps {
 export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockProps) {
   const { t } = useI18n()
   const format = useFormatters()
-  const client = useQueryClient()
-
-  const purge = useMutation({
-    mutationFn: () => api.purgeOrphans(),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['store'] }),
-  })
-
-  // **An optional read, so the `?? []` survives** (ADR-0026): the orphan list is
-  // absent at zero, so a read in flight removes a block rather than falsifying
-  // one — and the two facts above it ride on `/api/runtime`, which is the whole
-  // point of the split (#668).
-  const orphans = store?.orphans ?? []
 
   // **Neither read has landed, so the block does not exist yet** (#777,
   // ADR-0026): a title over an empty frame is the hand-written skeleton this
@@ -92,18 +81,20 @@ export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockPr
   // screen and stays there whatever becomes of the other.
   if (!runtimeStore && !store) {
     // Unless the read was **refused**, and then even a block with nothing in it
-    // owes the reason: an installation tab with a hole where the store's
-    // figures go, and no word anywhere, is the screen ADR-0037 moved the
-    // sentence down a floor to abolish.
+    // owes the reason: a settings page with a hole where the store's figures
+    // go, and no word anywhere, is the screen ADR-0037 moved the sentence down
+    // a floor to abolish.
     return failure === null ? null : <Unreadable failure={failure} />
   }
 
   return (
-    <section aria-labelledby="installation-store" className="space-y-4">
-      <h2 id="installation-store" className="text-lg font-semibold tracking-tight">
-        {t('installation.store')}
-      </h2>
-
+    <Card role="region" aria-labelledby={STORE_HEADING}>
+      <CardHeader>
+        <h2 id={STORE_HEADING} className="text-lg font-semibold tracking-tight">
+          {t('installation.store')}
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-4">
       {/* It dominates. Not a note under the size, not a notice in the block
           above — the one screen where a trial run learns what it is. */}
       {runtimeStore?.persistence === 'ephemeral' ? (
@@ -179,34 +170,7 @@ export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockPr
         ) : null}
       </dl>
 
-      {orphans.length > 0 ? (
-        <div className="space-y-3 rounded-lg border p-4">
-          <p className="font-medium">
-            {t('installation.store.orphans', { count: orphans.length })}
-          </p>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            {t('installation.store.orphans.body')}
-          </p>
-          <ul className="space-y-1 text-sm">
-            {orphans.map((orphan) => (
-              <li key={orphan.symbol} className="flex gap-3">
-                <span className="font-medium">{orphan.symbol}</span>
-                <span className="tabular text-muted-foreground">
-                  {t('installation.store.orphans.points', { count: orphan.points })}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={purge.isPending}
-            onClick={() => purge.mutate()}
-          >
-            {t('installation.store.purge')}
-          </Button>
-        </div>
-      ) : null}
-    </section>
+      </CardContent>
+    </Card>
   )
 }

@@ -1,78 +1,38 @@
 /**
- * The ledger page — **two tabs under one route**, and it was three (#794,
- * ADR-0030, ADR-0037).
+ * The ledger page — **one route, one thing, and no tab bar** (#794, #830,
+ * ADR-0030, ADR-0037, ADR-0038).
  *
- * The word matters: a tab is not a page, so the product's cut at five pages
- * holds. ADR-0020 cut it in two — what the user *declared* against what the
- * installation *is* — and two things broke that arrangement. The **accounts
- * left the page** at #793, so the first half stopped being *what the owner
- * declared* and became the ledger and the two gestures a file is the unit of;
- * and a **notice is prose**, which a card in a column beside the store has
- * nowhere to say.
+ * It held three tabs, then two, and now none. ADR-0020 cut it in two — what the
+ * user *declared* against what the installation *is* — and the two halves left
+ * one at a time: the **accounts** at #793, so the first half stopped being *what
+ * the owner declared* and became the ledger; the **notices** at #829, into the
+ * panel behind the header's bell, a notice being prose that a card in a column
+ * beside the store has nowhere to say; and the **installation** here, to
+ * `/reglages`. What is left is *the ledger*, which is what the page is now
+ * called — `Grand livre`, the word the glossary and every French record already
+ * use, never a third one.
  *
- * **The notices tab left with #829**, and with it the badge that sat on its
- * trigger. There is one global indicator in the app now and it is the header's
- * bell (ADR-0037): the installation facts are cards in its panel, beside the
- * health and the advisories, so a second count on a tab of one page would be
- * exactly the second badge ADR-0022 refused. What is left here is *the ledger*
- * and *the installation* — and the second of the two leaves with #830, which
- * takes the bar with it.
+ * **The hash goes with the bar it named.** `#installation` was an *address* on a
+ * tab, read and never written, so a bookmark taken on that tab opened it; a tab
+ * that no longer exists has no address to keep, and the surface it named has a
+ * path of its own — which is the whole of what ADR-0038 bought. A hash typed by
+ * hand now lands on the ledger, which is what every hash but that one already
+ * did.
  *
- * The reduction the assumed-currency notice leads to is not composed here any
- * more either: it arrives as an **address** (`?symbol=`), because the card that
- * asks for it is mounted in the shell and reachable from all five routes.
+ * The reduction the assumed-currency notice leads to is not composed here
+ * either: it arrives as an **address** (`?symbol=`), because the card that asks
+ * for it is mounted in the shell and reachable from all five routes.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 
-import { Installation } from '@/components/data/Installation'
 import { Ledger, type LedgerFocus } from '@/components/data/Ledger'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useI18n } from '@/lib/i18n'
 import { filtersFromSearch } from '@/lib/ledger'
 import { usePageHeading } from '@/lib/pageHeading'
 
-const LEDGER = 'ledger'
-const INSTALLATION = 'installation'
-
-/**
- * The hashes that name a tab. Anything else lands on the ledger — and *anything*
- * includes `#toString`: a lookup table written as an object literal answers
- * `valueOf`, `hasOwnProperty` and `constructor` with **inherited functions**,
- * which are truthy, and a function reaching `useState` or a setter is read as an
- * initialiser or an updater and called. `/donnees#valueOf` took the route down
- * that way. A list and a membership test have no prototype to fall through to.
- */
-const NAMED: readonly string[] = [INSTALLATION]
-
-/** The tab a hash names, or the ledger. */
-function tabNamed(hash: string): string {
-  return NAMED.includes(hash) ? hash : LEDGER
-}
-
 export default function DataPage() {
   const { t } = useI18n()
-  // **The hash names the tab** (#726). It arrived for two links that no longer
-  // exist — the status dot and the currency band's own gesture, both retired by
-  // #829 (ADR-0037), and the panel's cards land on `/reglages`, on an account or
-  // on a reduced ledger instead. What is left is the reason the mechanism
-  // outlives its producers: `#installation` is an **address**, so a bookmark
-  // taken on that tab, or the hash typed by hand, opens it rather than silently
-  // landing on the ledger. A tab is not a route, so this is a hash and not a
-  // path; and it is *read*, never written, so opening another tab by hand
-  // leaves the URL alone rather than pushing a history entry per click.
-  const hash = useLocation({ select: (location) => location.hash })
-  const [tab, setTab] = useState(() => tabNamed(hash))
-
-  // Read again on every change, not only at the mount: a reader already on
-  // `/donnees` who follows a link to that hash moves it without remounting the
-  // page, and the initial state would never see it. What this deliberately does
-  // **not** do is re-select the tab when the hash has not moved — following the
-  // same link a second time after switching tab by hand leaves the reader where
-  // they put themselves, which is the lesser of the two surprises.
-  useEffect(() => {
-    if (NAMED.includes(hash)) setTab(hash)
-  }, [hash])
   // A fresh object per gesture, so asking twice for the same reduction reduces
   // the ledger twice — the reader may well have cleared it between the two.
   const [focus, setFocus] = useState<LedgerFocus | undefined>(undefined)
@@ -103,21 +63,18 @@ export default function DataPage() {
 
   useEffect(() => {
     if (reduction === null) return
-    // The subject of the reduction is on the first tab, wherever the reader was.
     setFocus({ filters: reduction, named: true })
-    setTab(LEDGER)
   }, [reduction])
 
   useEffect(() => {
     if (search.ouvrir !== 'evenement') return
     setCompose({})
-    setTab(LEDGER)
     // Spent on arrival: what the address armed is about to happen, and an
     // address that went on saying so would arm it again on the next reload. The
-    // *state* is spent too, one tab down — `onComposed` — because Radix unmounts
-    // the inactive tab and a prop still holding the gesture would reopen the
-    // form on the way back. A reduction hand-typed beside it rides on: the
-    // palette never sends both, and an address that carries the two means both.
+    // *state* is spent too, down in the table — `onComposed` — so that a form
+    // the reader has closed is not reopened by a prop still holding the
+    // gesture. A reduction hand-typed beside it rides on: the palette never
+    // sends both, and an address that carries the two means both.
     void navigate({
       to: '/donnees',
       search: {
@@ -145,10 +102,8 @@ export default function DataPage() {
    * **The address has stopped describing this table**, so it stops being one.
    *
    * Two things go, and both have to: the search parameters, or a reload would
-   * restore a reduction the reader has just lifted; and the `focus` prop, or the
-   * *next mount of the tab* would — Radix unmounts the inactive one, so a
-   * reduction lifted and then left behind for the notices came back with its own
-   * sentence over a table the URL no longer described.
+   * restore a reduction the reader has just lifted; and the `focus` prop, or a
+   * later mount would restore it from a state the URL no longer describes.
    */
   const release = () => {
     setFocus(undefined)
@@ -160,29 +115,18 @@ export default function DataPage() {
 
   return (
     <div className="space-y-8">
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value={LEDGER}>{t('data.tab.ledger')}</TabsTrigger>
-          <TabsTrigger value={INSTALLATION}>{t('data.tab.installation')}</TabsTrigger>
-        </TabsList>
-        <TabsContent value={LEDGER}>
-          <Ledger
-            focus={focus}
-            compose={compose}
-            // **The reader moved the reduction, so the address stops claiming
-            // one.** Left in place it would restore, on the next reload, a
-            // reduction they have just lifted — an address is a description of
-            // the table, and this is the moment it stops being true of it.
-            onReduced={release}
-            // The arming is spent where it was made, so a tab switched away from
-            // and back to does not reopen a form the reader has closed.
-            onComposed={() => setCompose(undefined)}
-          />
-        </TabsContent>
-        <TabsContent value={INSTALLATION}>
-          <Installation />
-        </TabsContent>
-      </Tabs>
+      <Ledger
+        focus={focus}
+        compose={compose}
+        // **The reader moved the reduction, so the address stops claiming
+        // one.** Left in place it would restore, on the next reload, a
+        // reduction they have just lifted — an address is a description of the
+        // table, and this is the moment it stops being true of it.
+        onReduced={release}
+        // The arming is spent where it was made, so nothing reopens a form the
+        // reader has closed.
+        onComposed={() => setCompose(undefined)}
+      />
     </div>
   )
 }
