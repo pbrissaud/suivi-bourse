@@ -62,6 +62,7 @@
  *    already right and its own comment said why, **without ever saying it on
  *    screen**. Excluded from the arithmetic, named beside it.
  */
+import type { CSSProperties } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
@@ -147,11 +148,25 @@ export function Allocation({ rows, currency }: AllocationProps) {
               </div>
             </div>
 
-            {/* Two columns, and the reading order is the slices' order — down the
-                first column, then down the second, so rank stays legible. */}
+            {/* Two columns, and the reading order is the slices' own — **down the
+                first column, then down the second** (#831). The comment said so
+                from #727 and the grid did the opposite: a default `grid-flow-row`
+                fills across, so twelve slices were laid out 1·2 / 3·4 / 5·6 and
+                the eye read the second-biggest beside the biggest, the third
+                under it. That is a *ranking* the ramp then coloured against
+                itself, which is the one thing ADR-0023 licenses the ramp on —
+                the list being sorted and legended, position has to pair a row to
+                its slice. The maquette flows by column and this now does too:
+                `grid-flow-col` with an explicit row count, since an implicit one
+                would let the browser choose the split.
+
+                It is under `xl:` alone, where the second column exists: one
+                column reads the same either way, and a row count set at every
+                width would spill the tail into an implicit third column. */}
             <ul
               aria-label={t('shares.allocation.title')}
-              className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm xl:grid-cols-2"
+              style={{ '--legend-rows': Math.ceil(slices.length / 2) } as CSSProperties}
+              className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm xl:grid-flow-col xl:grid-cols-2 xl:[grid-template-rows:repeat(var(--legend-rows),auto)]"
             >
               {slices.map((slice, rank) => (
                 <li key={slice.symbol ?? 'others'} className="flex flex-col gap-1">
