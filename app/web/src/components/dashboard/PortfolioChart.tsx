@@ -231,16 +231,16 @@ export function PortfolioChart({ ledger, currency, performance, valuation }: Por
                           quantity: it is the gain, it crosses zero inside a
                           window often enough that one colour would be wrong half
                           the time, and it therefore had to stay grey — which
-                          made it invisible on midnight, under a caption that
-                          promised a mark nobody could find.
+                          made it invisible on midnight, under the caption the
+                          block still carried then and which promised a mark
+                          nobody could find. That caption went with #831.
 
                           A fill under the **value** claims nothing about a sign:
                           the value is what it is, the curve is already drawn in
                           the mint, and the wash is that curve's own weight. The
-                          gap the caption names is still read between the two
-                          lines — it is the mint above the dashed one — and it is
-                          legible precisely because the region under it is no
-                          longer empty.
+                          gap is still read between the two lines — it is the
+                          mint above the dashed one — and it is legible precisely
+                          because the region under it is no longer empty.
 
                           The gradient is the maquette's to the stop: `0.22` of
                           the mint at the curve, `0.02` at the floor. */}
