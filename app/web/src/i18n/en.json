@@ -117,7 +117,7 @@
   "dashboard.xirr.value": "{percent} per year",
   "dashboard.xirr.explain": "Money-weighted return: what your deposits actually earned. It is the single annual rate that reconciles everything that entered and left, each on its own date, with what the portfolio is worth today — so money paid in before a rise weighs more than money paid in after it. Returns are computed from the dates of your events.",
   "dashboard.twr": "Time-weighted return",
-  "dashboard.twr.explain": "Time-weighted return: how the positions themselves performed, independent of your deposits. Paying money in, or taking it out, moves it by nothing at all, which is what makes two portfolios of different sizes comparable. It depends on the period it covers, and a ranking can reverse inside it. Returns are computed from the dates of your events.",
+  "dashboard.twr.explain": "Time-weighted return: how the positions themselves performed, independent of your deposits. Paying money in, or taking it out, moves it by nothing at all, which is what makes two portfolios of different sizes comparable. It depends on the period it covers, and it must be read against that period and never on its own: the same two accounts change places four times over seven ranges, every figure correct. Returns are computed from the dates of your events.",
   "dashboard.twr.since": "since {date}",
   "dashboard.twr.ytd": "{percent} since 1 January",
   "dashboard.scope": "{count, plural, one {# account} other {# accounts}}",

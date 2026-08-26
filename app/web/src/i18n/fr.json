@@ -117,7 +117,7 @@
   "dashboard.xirr.value": "{percent} par an",
   "dashboard.xirr.explain": "Taux de rendement interne : ce que vos versements ont réellement rapporté. C’est le taux annuel unique qui réconcilie tout ce qui est entré et sorti, chacun à sa propre date, avec ce que vaut le portefeuille aujourd’hui — l’argent versé avant une hausse pèse donc plus que celui versé après. Les rendements sont calculés à partir des dates de vos événements.",
   "dashboard.twr": "TWR",
-  "dashboard.twr.explain": "Rendement pondéré par le temps : ce qu’ont fait vos supports eux-mêmes, indépendamment de vos versements. Verser — ou retirer — ne le déplace pas d’un centième, ce qui rend comparables deux portefeuilles de tailles différentes. Il dépend de la période qu’il couvre, et un classement peut s’y inverser. Les rendements sont calculés à partir des dates de vos événements.",
+  "dashboard.twr.explain": "Rendement pondéré par le temps : ce qu’ont fait vos supports eux-mêmes, indépendamment de vos versements. Verser — ou retirer — ne le déplace pas d’un centième, ce qui rend comparables deux portefeuilles de tailles différentes. Il dépend de la période qu’il couvre, et il se lit avec elle et jamais seul : les deux mêmes comptes s’inversent quatre fois sur sept plages, chaque chiffre restant juste. Les rendements sont calculés à partir des dates de vos événements.",
   "dashboard.twr.since": "depuis le {date}",
   "dashboard.twr.ytd": "{percent} depuis le 1ᵉʳ janvier",
   "dashboard.scope": "{count, plural, one {# compte} other {# comptes}}",

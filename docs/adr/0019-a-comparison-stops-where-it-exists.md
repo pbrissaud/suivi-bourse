@@ -19,6 +19,26 @@ Four reversals across seven windows, every figure correct. The page therefore ca
 **one** range control — never two, per ADR of the dashboard's own lesson — and the
 `perf` bubble is the one place in the product that warns against its own figure.
 
+## Amended (#833): the warning changed address, and the measurement is why it moved
+
+The `perf` bubble is gone. The account detail it sat on has no range control any more
+([ADR-0028](./0028-the-accounts-page-shows-one-account.md), amended): one account is one
+series on one axis, so the window it was choosing between had no subject, and the figure
+beside its curve became `Performance totale` — `gain ÷ versé net`, cumulative, which has
+no window to be read against.
+
+**What the measurement above governs did not move, so neither did the warning: it
+followed it.** The windowed, cross-account reading is the dashboard's accounts card, under
+one range control and still refusing `MAX`. The four reversals are therefore stated in
+`dashboard.twr.explain`, word for word — *the same two accounts change places four times
+over seven ranges, every figure correct* — which is the bubble of the figure they are
+about. The product still warns against its own figure in exactly one place; that place is
+now on the surface where the comparison happens.
+
+It is **not** a fifth icon on the dashboard head: the head carries four, and a rule of its
+own holds that (`dashboard.test.tsx`, *puts four icons on the head, not nine*). The
+sentence lengthens a bubble that already existed rather than adding one.
+
 **The longest window is the youngest account's opening, not `MAX`.** Mounted, `MAX`
 fails: `pea` spiked to `+542 %` in February 2022, the axis runs `−58 %` to `+542 %`, and
 both accounts' recent history is crushed into the bottom sixth of the plot. The failure
