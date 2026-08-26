@@ -39,8 +39,16 @@ changes address, and it takes ADR-0019's rule with it.
   ADR-0019 already noted that at three accounts the table's naming problem returns.
 - **The account is declared here now, and removed here.** The declaration leaves the
   data page (ADR-0030), the reassignment rides with it as issue #725 settled, and the
-  removal moves into the edit dialog — where its three refusals, which are prose, have
-  the room a table cell never gave them.
+  removal moves into the edit dialog — where its refusals, which are prose, have the room
+  a table cell never gave them.
+- **There are two refusals, and this record first said three.** The third was *a file
+  declares this account*, and it stopped being knowable when
+  [ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md) removed `account.source_id`
+  along with the rest of the provenance apparatus: `account` carries `id`, `type` and
+  `label`, and nothing in the store can say which account came from a file. What survives
+  is the seed row, which is renamed rather than removed, and the count of events that
+  name the account. The correction is recorded rather than silently applied, because a
+  refusal that a reader looks for and cannot find reads as a defect.
 - **The rail's sparklines carry their period or carry no figure.** A curve with no stated
   span beside a total is the unbounded-window failure in miniature.
 

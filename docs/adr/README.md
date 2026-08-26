@@ -47,6 +47,8 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0034](./0034-accounts-are-born-in-the-app.md) | Accounts are born in the app, and nowhere else |
 | [0035](./0035-the-first-run-has-three-passages.md) | The first run has three passages, and its memory is the browser's |
 | [0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md) | The dot says health, and the notices lose their exception |
+| [0037](./0037-notifications-have-a-space-and-the-banner-has-none.md) | Notifications have a space, and the banner has none |
+| [0038](./0038-settings-leaves-the-data-page.md) | Settings leaves the data page, and the tabs leave with it |
 
 > These records describe **v5**, and which side wins an argument depends on the branch.
 >

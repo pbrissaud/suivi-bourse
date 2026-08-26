@@ -201,18 +201,21 @@ _Avoid_: liveness (as the whole of it), uptime, monitoring
 Something true of *this install* that the owner should know and cannot compute — a
 retired variable still set, a currency adopted from a file, a reconstruction under way.
 A predicate and a sentence, recomputed rather than recorded; only the acknowledgement is
-stored, because it is the one part that cannot be derived. It says nothing about the
-portfolio and nothing about whether the app is working.
-_Avoid_: advisory (for this), audit log, journal, notification, toast
+stored, because it is the one part that cannot be derived, and it is **permanent**. It
+says nothing about the portfolio and nothing about whether the app is working.
+_Avoid_: advisory (for this), audit log, journal, toast
 
 **Advisory**:
 What the owner's **data** says about itself — an audit on the portfolio, not on the app
 and not on the install: a quarter of an account sitting in cash, a position that has
 outgrown the rest. Derived on every read and stored nowhere; it is a **condition the
-owner can end**, so it is never acknowledged and never dismissed — it stops when the
-figure that raised it stops. It is read beside the figures it comments on, never in an
-administration page.
-_Avoid_: alert, warning, recommendation, notification
+owner can end**, and it ends when the figure that raised it stops. It can be
+acknowledged, but only **for a window** — never for good, because an acknowledgement
+that outlived its condition would silence the app the second time the condition arose.
+It is read twice: as a chip beside the figure it comments on, which is the reading, and
+as a card in the notifications panel, which is the inventory and the only place it is
+acknowledged.
+_Avoid_: alert, warning, recommendation
 
 **First run**:
 Not a moment in the boot sequence but a state: a required setting is unanswered, which
@@ -243,12 +246,14 @@ silently shorter than expected is the defect; worse where a total sits over it, 
 correct sum of the wrong perimeter reads exactly like the figure it is not.
 _Avoid_: filter (as a hidden state), view, scope selector
 
-**Banner**:
-The one thing the app interrupts with: why what you are looking at is wrong or empty — a
-missing base currency, a reconstruction still running, a scheduler that stopped. It shows
-**one** at a time and never stacks; what it cannot fit is held by the installation panel
-regardless. Its order is causal rather than a ranking, so two of them rarely contend.
-_Avoid_: alert bar, notification bar, status strip
+**Notifications**:
+The one place the app says what it has to say: a panel behind the header's bell, holding
+health, installation facts and advisories together. The three keep their registers — what
+each card offers differs — but the register is never a word on screen; the reader sees
+**subjects** (Health, Installation, Portfolio, Accounts) and reads the rest off what the
+card lets them do. The bell is the app's **only** global indicator: its icon carries the
+health colour, its badge counts every open entry, and there is no second one anywhere.
+_Avoid_: notification centre, inbox, alerts, activity feed
 
 **Receipt**:
 What a gesture produced, said back to whoever made it — and it lasts as long as the

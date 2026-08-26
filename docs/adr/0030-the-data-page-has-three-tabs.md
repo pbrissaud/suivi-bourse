@@ -6,8 +6,13 @@
 > mounted to answer and become an ordinary block that does not exist when it is empty. And
 > the file list with its revocation goes with
 > [ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md) — the band above the ledger keeps
-> the upload and the export, and loses the sources. What stands below is the **three-tab
-> cut** and the reason provenance belonged beside the rows it described.
+> the upload and the export, and loses the sources. **The three-tab cut itself is then
+> ended by [ADR-0038](./0038-settings-leaves-the-data-page.md)**: the notices leave the
+> page entirely for the panel of
+> [ADR-0037](./0037-notifications-have-a-space-and-the-banner-has-none.md), the
+> installation becomes a page of its own, and what is left is renamed for the one thing it
+> still holds. What stands below is the **reason** provenance belonged beside the rows it
+> described — the cut it argued for is gone.
 
 [ADR-0020](./0020-the-line-is-no-longer-the-unit.md) cut the data page in two — what the
 user *declared* against what the installation *is* — and put the notices inside the

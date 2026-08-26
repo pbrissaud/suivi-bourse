@@ -9,6 +9,13 @@
 > owner can end while the badge counts facts they can only acknowledge** — the rule
 > [ADR-0036](./0036-the-dot-says-health-and-the-notices-lose-their-exception.md) uses to
 > split health, installation facts and advisories.
+>
+> **The banner is then retired by
+> [ADR-0037](./0037-notifications-have-a-space-and-the-banner-has-none.md)**, and the badge
+> rule with it: the banner's three conditions become entries in the notifications panel,
+> its sentence descends into the empty state it explained, and *three surfaces, three jobs*
+> becomes two. The header indicator stops being *a state, not a count* — it is both, and
+> the stuck counter this record warned against is accepted there with the warning quoted.
 
 v5 has exactly one thing it must be told: the **base currency**, the only setting with no
 default. Everything a first run might otherwise have asked has been removed or answered

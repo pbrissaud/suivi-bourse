@@ -1,5 +1,15 @@
 # The dot says health, and the notices lose their exception
 
+> **The surfaces are rearranged by
+> [ADR-0037](./0037-notifications-have-a-space-and-the-banner-has-none.md)**: the three
+> registers share one destination, a panel behind the header's bell, and that bell is the
+> dot. Two things below no longer describe the product — *an advisory is never
+> acknowledged* (it is, but only for a window, which is what answers the objection stated
+> here) and *advisories need no global indicator* (the badge counts them). **The
+> separation of the three words stands**, and so does *one indicator, not two*: there is
+> still exactly one, and it is the bell. The dot's destination is renamed by
+> [ADR-0038](./0038-settings-leaves-the-data-page.md) — the installation tab is a page.
+
 Three things were sharing one word. They are separated here, and each gets its surface.
 
 **Health** is whether the app is doing its work — it serves, its store answers, its jobs ran
