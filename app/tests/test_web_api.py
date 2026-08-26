@@ -164,12 +164,12 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
     if events is not None:
         (events_dir / '2024.csv').write_text(events, encoding='utf-8')
 
-    # A real store under tmp_path, as ``post_fork`` would have opened (#696).
+    # A real store under tmp_path, as ``build_runtime`` would have opened (#696).
     # ``/health`` reaches it, and every other route here has to keep answering
-    # with one present. Since #697 the ledger lives in it too, so the manager
-    # is handed the **same** connection ``start_runtime`` hands it — two files
-    # here would mean the routes read a different ledger from the one the
-    # snapshot was published from.
+    # with one present. Since #697 the ledger lives in it too, so the manager is
+    # handed the **same** connection the boot hands it — two files here would
+    # mean the routes read a different ledger from the one the snapshot was
+    # published from.
     opened = store.open_store(tmp_path / 'store.duckdb')
     if accounts is not None:
         declare_accounts(opened, events_dir / 'accounts.csv')
@@ -179,7 +179,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
                                         opened_store=opened)
     runtime = main.Runtime(manager, None)
     runtime.store = opened
-    # The first publication, as ``build_runtime`` performs it in the master. It
+    # The first publication, as ``build_runtime`` performs it at boot. It
     # reads the store and nothing else (ADR-0032), so what the fixture wrote
     # above is what a route reading the ledger reads.
     manager.reload()
@@ -2097,8 +2097,8 @@ def test_a_security_nothing_has_named_yet_is_called_by_its_ticker(tmp_path):
     """The form does not ask for a name, so a first purchase carries the ticker.
 
     Left ``NULL`` the row would fail ``EventValidator``'s *name is required* on
-    the next build — in the gunicorn master, i.e. a boot the owner cannot repair
-    from an app that is down.
+    the next build — i.e. a boot the owner cannot repair from an app that is
+    down.
     """
     client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
 
@@ -2850,7 +2850,7 @@ def test_a_bulk_delete_that_would_leave_an_oversell_is_refused_whole(tmp_path):
 
     ``DELETE /api/events/<id>``'s ``409`` on a wider perimeter, and it rolls the
     whole reduction back: a ledger committed half-deleted raises on every
-    reload, and that raise is fatal in the gunicorn master.
+    reload, and that raise is fatal at boot.
     """
     client, opened = build_client_and_store(tmp_path)
     client.post('/api/events', json=_draft(quantity=10))

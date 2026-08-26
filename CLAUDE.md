@@ -33,17 +33,19 @@ embedded DuckDB store** (ADR-0001).
 cd app && uv sync                          # runtime + dev deps into .venv
 uv run flake8 src/ --ignore=E501           # lint
 uv run pytest tests/                       # unit + E2E, all network-mocked
-uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+uv run python src/boot.py                  # run it
 ```
 
-gunicorn is the only boot path: the web API and the scheduler share one process,
-and `src/gunicorn.conf.py` holds the sequence. `main.py` has no `__main__` block.
+`src/boot.py` is the only boot path: the web API and the scheduler share one
+process, and that file holds the sequence — the environment, the store, the app,
+the jobs, the socket, in one linear read. `main.py` has no `__main__` block.
 
-> **Running it locally crashes on macOS** as soon as a symbol is scraped:
-> gunicorn forks its worker and libcurl's `Curl_macos_init` (reached through
-> yfinance) reads the system proxy config via CoreFoundation, which is not
-> survivable after a fork without exec. Linux has no such init. On a Mac, build
-> the image and run it.
+**It runs on macOS**, and that is new (ADR-0039). gunicorn always forked, and the
+worker segfaulted the moment a scrape job ran — libcurl's `Curl_macos_init`,
+reached through yfinance, reads the system proxy config via CoreFoundation, which
+is not survivable after a `fork()` without `exec`. uvicorn is called
+programmatically from `boot.py` and never forks, so there is no longer a
+container to build in order to see the app work.
 
 ### The front
 
@@ -76,12 +78,16 @@ There is **no compose stack** — `docker run` is the canonical form.
 
 ```bash
 docker build -t suivi-bourse:dev ./app
-docker run -d --name suivi-bourse -p 8080:8080 \
+docker run -d --name suivi-bourse --restart unless-stopped -p 8080:8080 \
   -v suivi-bourse:/data suivi-bourse:dev
 
 # The image contract is asserted in CI and runnable here:
 IMAGE=suivi-bourse:dev .github/scripts/container-contract.sh
 ```
+
+`--restart unless-stopped` belongs to the command since ADR-0039: nothing inside
+the container respawns anything any more, so a process that dies takes the
+container with it and the restart policy is what decides in the open.
 
 **One mount** (ADR-0032): `/data` holds the store, and there is no second one.
 A `.csv`/`.xlsx` is handed to the app by `POST /api/events/import` — from the
@@ -90,11 +96,11 @@ simply be typed.
 
 ## The architecture in one page
 
-**One container, one process, one scheduler** (`workers = 1` is a property of the
-design, guarded twice). The boot is split either side of gunicorn's `fork()`: the
-master opens the store, applies the DDL and publishes the configuration; the
-worker opens its own connection and arms the jobs. The connection does not cross
-the fork.
+**One container, one process, one scheduler** — and since ADR-0039 that is
+structural rather than guarded: the app does not fork, so there is no worker
+count to refuse. `boot.py` reads the environment, opens the store, applies the
+DDL, publishes the configuration, arms the jobs and serves, in that order, on one
+connection that lives as long as the process.
 
 Four workloads write to the store, each owning its own tables:
 

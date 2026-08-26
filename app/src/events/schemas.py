@@ -392,7 +392,7 @@ class Timeline:
 
         Nothing refuses such an event and #766 declines to add the refusal:
         ``events/validator.py`` judges the **whole stored ledger** on every
-        build, in the gunicorn master, so a rule there is retroactive — every
+        build, boot included, so a rule there is retroactive — every
         install already carrying such a row would stop booting, in an app its
         owner then cannot reach to repair it, and an imported row has no
         row-level edit anyway (#764). That is #699's argument for the ``GRANT``

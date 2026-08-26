@@ -65,14 +65,22 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project
 
+# And the server's console script goes straight back out (ADR-0039). uvicorn is
+# called from `boot.py` as a library — `uvicorn.run(...)`, in process — and the
+# script is the one thing in this image that would accept `--workers 4`, which
+# is the capability the design does not want: N workers are N schedulers. The
+# entrypoint below closes that door by carrying no flags; this closes the one an
+# `--entrypoint uvicorn` override would open.
+RUN rm -f /opt/venv/bin/uvicorn
+
 # The whole uid apparatus is gone (issues #742 and #743): no `chmod 0755` on the
 # home, no sticky-writable cache, no `ENV HOME`. All three existed because the
 # container ran under the *host* user's uid — the price of a config directory
 # the app and a human both wrote in — and the last thing that still ran one was
 # the compose stack, which #743 deleted. The store has a named volume of its own
 # (ADR-0015), so the container runs as `appuser`, who owns their own `$HOME`:
-# Debian's HOME_MODE 0700 is correct again, gunicorn's `chdir` lands in a
-# directory its own user owns, and yfinance's timezone cache belongs to whoever
+# Debian's HOME_MODE 0700 is correct again, the working directory
+# is one its own user owns, and yfinance's timezone cache belongs to whoever
 # writes it. The inherited PaaS hazard — a platform that never records an
 # invoking uid landing on `1000:1000` by accident — closes with the cause rather
 # than by being handled: there is no uid to guess left.
@@ -149,16 +157,24 @@ EXPOSE 8080
 # the runtime image ships no curl and no wget, and adding one for a probe would
 # be a package installed for a single line.
 #
-# The `start-period` covers the **opening of the store** — the master's DDL,
-# seed and first ledger replay, then the fork — and deliberately not the
-# historical reconstruction, which runs for ~25 minutes on thirty symbols over
-# five years. A start period stretched over the rebuild would report *starting*
+# The `start-period` covers the **opening of the store** — the DDL, the seed and
+# the first ledger replay — and deliberately not the historical reconstruction,
+# which runs for ~25 minutes on thirty symbols over five years. A start period stretched over the rebuild would report *starting*
 # for that whole span on a container whose store never answers at all.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % ((os.environ.get('SB_WEB_PORT') or '').strip() or '8080'), timeout=4).read()"]
 
-# gunicorn, not `python3 main.py`: the API runs inside the scraper process, and
-# `preload_app` + `post_fork` in gunicorn.conf.py are what split the boot either
-# side of the fork. There is no second boot path — the config file is the only
-# place the sequence is written down.
-ENTRYPOINT ["gunicorn", "--config", "gunicorn.conf.py", "web:create_app()"]
+# `python boot.py`, and **no server command line** (ADR-0039). The API runs
+# inside the scraper process, and `boot.py` is the whole sequence — the
+# environment, the store, the application, the jobs, the socket — in one file,
+# because there is no fork to split it across any more. There is no second boot
+# path.
+#
+# The absence of a CLI is itself a decision. gunicorn had two guards against a
+# second worker (`on_starting` and a closed control socket), because N workers
+# are N schedulers; uvicorn has a multiprocess mode of its own, so swapping one
+# command line for another would have reopened the door those guards shut. This
+# entrypoint calls `uvicorn.run(...)` in process — there is no flag to pass
+# because there is no server command line here — and the console script that
+# would have taken one was removed above.
+ENTRYPOINT ["python", "boot.py"]

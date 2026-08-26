@@ -10,10 +10,10 @@ drawn by a **mechanical test** rather than by a judgement about nature
 It asks for no case-by-case arbitration, which is the whole reason it is written
 as a rule rather than as a list of three opinions. Two notes have to stay written
 down, because both names look like counter-examples until the test is applied to
-them: the **web port** passes it twice — gunicorn reads it in the master before
-the app is even imported, *and* a port changed from the interface would cut the
-connection the interface arrived by, which is a nature and not only a boot
-sequence — and **``LOG_LEVEL``** is here because the most likely failure of this
+them: the **web port** passes it twice — ``boot.py`` reads it before the store
+is opened, to know what socket to bind, *and* a port changed from the interface
+would cut the connection the interface arrived by, which is a nature and not only
+a boot sequence — and **``LOG_LEVEL``** is here because the most likely failure of this
 application is the store failing to open, and a level kept inside the store
 cannot report that.
 
@@ -21,8 +21,8 @@ cannot report that.
 setting: the page has no port of its own — it is served on the API's socket — so
 a switch for it would be a dial **of the store**, in a product that has just
 deleted its only restart-scoped dial. The one name that ever looked like the
-counter-example decided a **socket to bind**, and the list of binds is fixed when
-the master starts — but ADR-0033 took that socket, and the flag and the port that
+counter-example decided a **socket to bind**, and the socket is bound once, when
+the process starts — but ADR-0033 took that socket, and the flag and the port that
 described it went into :data:`DELETED` with it. There is one bind, and the whole
 application answers on it.
 

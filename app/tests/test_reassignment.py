@@ -218,7 +218,7 @@ def test_the_seeded_row_becomes_removable_again(store, tmp_path):
 
 def test_the_ledger_it_leaves_is_replayed_before_the_commit(store, tmp_path):
     """:mod:`entries`' last assertion, for the same reason: a ledger that does
-    not replay committed here fails the **boot**, in the gunicorn master."""
+    not replay committed here fails the **boot**."""
     _the_month_before_declaring(store, tmp_path)
     accounts_module.create_account(store, 'pea', 'PEA', 'Plan')
     with store.transaction():

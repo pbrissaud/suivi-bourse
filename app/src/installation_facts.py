@@ -59,8 +59,8 @@ is the one failure this table exists against.
 
 **An observation has three answers, not two.** ``None`` is *does not stand*, a
 mapping is *stands, and here is what it names*, and :data:`UNOBSERVED` is *not
-from here* — the reconstruction's progress is process memory, which the gunicorn
-master and a web request cannot see at all. Arming needs a positive observation
+from here* — the reconstruction's progress is the scheduler's own memory, which
+a boot that has not armed it and a web request cannot see at all. Arming needs a positive observation
 and **so does disarming**: with only two answers, every restart would drop the
 row a running scheduler had armed, then re-arm it a minute later, resetting its
 date and logging it a second time.
@@ -275,8 +275,9 @@ def _observe_unread_environment(opened, context: Context):
 def _observe_reconstruction(opened, context: Context):
     """How far the historical reconstruction has got — process memory only.
 
-    ``None`` for the reconstruction means this process cannot see it (the
-    gunicorn master, a test holding a store alone), never that it has finished:
+    ``None`` for the reconstruction means this caller cannot see it (a boot
+    before ``start_runtime``, a test holding a store alone), never that it has
+    finished:
     see :data:`UNOBSERVED`. It is the **only** thing ``None`` says here, and
     :meth:`main.SuiviBourseMetrics.reconstruction_state` never produces it — a
     process that *can* see the scheduler always answers a pair.

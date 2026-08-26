@@ -446,8 +446,8 @@ def test_an_event_dated_in_the_future_is_not_refused_here(validator):
 
     A row dated next year is legal, and the refusal was weighed and declined
     rather than forgotten. This validator judges the **whole stored ledger** on
-    every build, not only a file somebody has just dropped, and that build runs
-    in the gunicorn master under ``preload_app`` — so a rule added here is
+    every build, not only a file somebody has just dropped, and one of those
+    builds is the boot's own — so a rule added here is
     **retroactive**: every install already carrying such a row would stop
     booting, in an app the owner then cannot reach to repair it, and an imported
     row has no row-level edit anyway (#764 refuses one by name; the repair is

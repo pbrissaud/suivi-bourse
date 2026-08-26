@@ -1032,7 +1032,7 @@ def test_an_event_dated_in_the_future_does_not_bound_the_series(
 
     Nothing refuses an event dated next year, and #766 declines to add the
     refusal: ``events/validator.py`` judges the whole *stored* ledger on every
-    build, in the gunicorn master, so the rule would be retroactive and would
+    build, boot included, so the rule would be retroactive and would
     stop the boot of every install already carrying such a row — in an app its
     owner then cannot reach to repair it (#699's argument for the ``GRANT``
     unit_price). What is settled instead is the window:

@@ -355,7 +355,7 @@ def test_broker_dust_the_other_way_round_does_not_refuse_the_file(aggregator):
     """The same file, the same last bit of a float, rounded the other way.
 
     A tolerance on the leftover and none on the guard would make the refusal a
-    coin toss: this replay runs in the gunicorn master, so raising here takes
+    coin toss: this replay runs at boot, so raising here takes
     the whole portfolio down over 4×10⁻¹⁷ of a share — and the ledger has no
     row-level edit to repair it with.
     """

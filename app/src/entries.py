@@ -22,8 +22,8 @@ Three properties are decisions rather than details.
 **Validation has one owner, and it is** :mod:`events.validator`. A typed event
 and an imported one obey the same rules or they are two products: the validator
 runs over the **whole stored ledger** on every build, so a row one road let
-through and the other would have refused fails the *boot*, in the gunicorn
-master, in an app the owner then cannot reach to repair it. What this module
+through and the other would have refused fails the *boot*, in an app the owner
+then cannot reach to repair it. What this module
 adds is not a second rule set but the *context* a file's rows need too — the
 declared accounts — and the refusal it raises carries the field the validator
 named, so a form can mark the input rather than print a paragraph. **The

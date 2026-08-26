@@ -210,9 +210,9 @@ ok 'a bare docker run boots and keeps running'
 assertion '3 — it says it keeps nothing, once'
 # The grep is on the logfmt `condition=` key rather than on the sentence: the
 # key is the contract (#741), the wording is not. **Once** is the half that
-# matters — the line is said in `build_runtime`, in the gunicorn master under
-# `preload_app`, so a boot that started saying it twice would mean the master
-# had forked before speaking, or that a respawn loop was under way.
+# matters — the line is said in `build_runtime`, and there is one process saying
+# it (ADR-0039), so a boot that started saying it twice would mean a restart loop
+# was under way.
 said="$(count_in_logs "$BARE" 'condition="store_ephemeral"')"
 [ "$said" -eq 1 ] || { dump "$BARE"; fail "assertion 3: the ephemeral-store line was said $said time(s), expected exactly 1"; }
 ok 'the no-persistence condition is logged exactly once'

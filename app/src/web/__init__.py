@@ -1,18 +1,12 @@
 """Flask application for SuiviBourse — the web half of a single process (#651).
 
 The API lives *inside* the scraper process: one container, one process, one
-scheduler. So this package is not only a web app, it is the front half of the
-boot sequence, and it is split across gunicorn's ``fork()``:
-
-* :func:`create_app` runs in the **master**, under ``preload_app`` — pure work
-  only, plus the configuration load whose failure must stay a single clean exit.
-* :func:`start_background` runs in ``post_fork``, in the **one** worker that
-  owns the scheduler.
-* :func:`stop_background` runs in ``worker_exit``.
-
-``gunicorn.conf.py`` wires the three and explains why the split is load-bearing.
+scheduler. So this package is not only a web app, it is the third step of the
+boot sequence — and since ADR-0039 that sequence is linear and lives in one
+file, ``boot.py``. There is no ``fork()`` to be on one side of any more: this
+module builds a Flask application on a runtime that has already been built, and
+that is all it does.
 """
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -24,37 +18,24 @@ from web import problem
 from web.api import api_bp
 from web.health import health_bp
 
-# The Runtime built in the master and inherited by the worker through ``fork()``.
-# Module-level on purpose: ``create_app`` (master) and the two gunicorn hooks
-# (worker) must reach the *same* object, and the fork hands them that for free —
-# there is no other channel, since the hooks receive only gunicorn's own
-# arbiter/worker objects.
+# The Runtime the process booted with. Module-level because the routes cannot
+# take it as an argument: ``boot.sequence`` hands it here once, and every
+# request handler reaches it through :func:`current_runtime`.
 _runtime: Optional[main.Runtime] = None
 
 
-def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
-    """Build the WSGI application. Runs in the gunicorn master (``preload_app``).
+def create_app(runtime: main.Runtime) -> Flask:
+    """Build the WSGI application on an already-built runtime.
 
-    Import-time work only: nothing built here may hold a thread, a socket or a
-    file descriptor, because only the calling thread survives ``fork()``.
-    Opening the store and loading the configuration *is* import-time work, and
-    deliberately so — it is the only place left where an unreadable store or a
-    bad ledger still exits the process once and cleanly, before the arbiter has
-    anything to respawn. The store is closed again before this returns: the file
-    descriptor is exactly what must not cross the fork (issue #696).
-
-    Args:
-        runtime: an already-built :class:`main.Runtime`, for tests. Absent — the
-            gunicorn path — one is built here, and a configuration failure ends
-            the process rather than propagating.
+    The runtime is **required** (ADR-0039). It used to be optional, and the
+    absent case was gunicorn's: the factory was named on the command line, so it
+    had to be able to build the runtime itself, in the master, under
+    ``preload_app``. ``boot.py`` is the caller now and it builds the runtime as
+    its own step — which is what leaves this function with a single job and
+    ``create_app(runtime)``, the seam the whole Python suite already used, as the
+    only shape there is.
     """
     global _runtime
-    if runtime is None:
-        try:
-            runtime = main.build_runtime()
-        except Exception as exc:
-            main.log_fatal(exc)
-            sys.exit(1)
     _runtime = runtime
 
     # static_folder=None: Flask's built-in /static/ route is not what the SPA
@@ -120,11 +101,9 @@ def create_app(runtime: Optional[main.Runtime] = None) -> Flask:
 def current_runtime() -> main.Runtime:
     """The Runtime this process booted with, for request handlers.
 
-    The routes cannot capture it at import: ``create_app`` runs in the master
-    and the store connection is only opened in ``post_fork``, so a handler must
-    reach the *same* object after the fork rather than a copy taken before it.
-    The module global is that channel — the fork hands the worker the identical
-    object for free.
+    The routes cannot capture it at import — the module is imported before there
+    is a runtime to capture — so the module global is the channel, written once
+    by :func:`create_app` and read by every handler.
     """
     if _runtime is None:
         raise RuntimeError(
@@ -150,27 +129,4 @@ def _static_dir() -> Path:
     return Path(__file__).resolve().parent.parent / 'static'
 
 
-def start_background() -> None:
-    """``post_fork`` hook body — start everything the fork would have broken."""
-    if _runtime is None:
-        raise RuntimeError(
-            "create_app() has not run before the fork: preload_app must stay on")
-    try:
-        main.start_runtime(_runtime)
-    except Exception as exc:
-        # Logged here, re-raised on purpose. Gunicorn turns an exception raised
-        # in post_fork into WORKER_BOOT_ERROR and halts the whole arbiter, which
-        # is the clean process-wide exit the old ``__main__`` got from
-        # ``sys.exit(1)``. A ``sys.exit`` here would instead read as an ordinary
-        # worker death and be respawned forever, failing identically each time.
-        main.log_fatal(exc)
-        raise
-
-
-def stop_background() -> None:
-    """``worker_exit`` hook body — the heir of ``__main__``'s ``finally``."""
-    if _runtime is not None:
-        main.shutdown_runtime(_runtime)
-
-
-__all__ = ['create_app', 'current_runtime', 'start_background', 'stop_background']
+__all__ = ['create_app', 'current_runtime']

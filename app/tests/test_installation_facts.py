@@ -164,9 +164,9 @@ def test_nothing_to_reconstruct_never_concludes_anything(store):
 def test_a_source_this_process_cannot_see_neither_arms_nor_disarms(store):
     """``UNOBSERVED`` is the third answer, and it is what survives a restart.
 
-    With only *stands* and *does not stand*, the gunicorn master — which has no
-    scheduler and therefore no reconstruction memory — would drop the row the
-    worker armed a minute earlier, re-arm it a minute later, and log it twice
+    With only *stands* and *does not stand*, a boot before ``start_runtime`` —
+    which has no scheduler and therefore no reconstruction memory — would drop
+    the row the previous run armed, re-arm it a minute later, and log it twice
     with a date that means nothing.
     """
     facts.refresh(store, facts.Context(reconstruction=(1, 3)))

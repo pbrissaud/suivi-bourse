@@ -1,44 +1,43 @@
 """
-Tests for the web process and its boot split (issue #657, design #651).
+Tests for the web process and its boot sequence (issue #838, ADR-0039).
 
-The scheduler and the Flask app now share one process, booted by gunicorn either
-side of a ``fork()``. What is worth pinning here is not that Flask serves JSON —
-it is the *split*:
+The scheduler and the Flask app share one process, and since ADR-0039 that
+process does not fork. What is worth pinning here is not that Flask serves JSON
+— it is the **sequence**:
 
-* :func:`main.build_runtime` runs in the master under ``preload_app``: it must
-  **open the store** and load the configuration (so an unreadable store or a
-  broken ledger still ends the process once) and must not leave behind a
-  thread, a socket, an InfluxDB client or a store connection, none of which
-  survive a fork.
-* :func:`main.start_runtime` runs in ``post_fork`` and owns all of that.
-* the two failure paths differ on purpose — the master exits 1 before any fork,
-  ``post_fork`` re-raises so gunicorn halts the arbiter instead of respawning.
+* :func:`boot.sequence` takes five steps in one order — the environment, the
+  store and the ledger, the application, the jobs, the socket — and gives the
+  scheduler and the store back on the way out, whichever way it left;
+* :func:`boot.run` turns a failure at *any* of them into **one** non-zero exit.
+  That used to differ by side of the fork: the master exited 1 before forking
+  and ``post_fork`` re-raised so gunicorn would halt the arbiter rather than
+  respawn a worker that would fail identically. There is no arbiter, so there is
+  one answer;
+* :func:`main.build_runtime` opens the store **once**, for the life of the
+  process. The second connection existed because a DuckDB file descriptor cannot
+  cross a ``fork()`` — the master proved the file openable and closed it again,
+  the worker opened its own — and there is no fork.
 
-The store took the place #658 gave the Cerberus validation (#696): same side of
-the fork, different cause, and one extra rule of its own — the master *closes*
-what it opened, because DuckDB refuses a second process and a forked child would
-be exactly that.
-
-``gunicorn.conf.py`` is exercised as a module: it is executable configuration
-(the bind list, the one-worker guard), not a static file.
+What is deliberately gone: a module executed as configuration.
+``gunicorn.conf.py`` had tests of its own here — a bind list, a one-worker
+guard, a closed control socket. The two guards went with the arbiter they
+defended against, and the bind is one argument of :func:`boot.serve`.
 """
 
-import importlib.util
+import asyncio
 import logging
 import threading
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+import boot
 import boot_conditions
+import boot_env
 import main
 import store
 import web
 from events.validator import EventValidationError
-
-
-_GUNICORN_CONF = Path(__file__).resolve().parent.parent / "src" / "gunicorn.conf.py"
 
 
 class _FakeConfigManager:
@@ -49,10 +48,11 @@ class _FakeConfigManager:
         self._load_error = load_error
         self.load_calls = 0
         self.named_unread = 0
-        # The store the ledger is read through (issue #697): handed in on the
-        # master's side of the fork and again, as the worker's own connection,
-        # on the far side. Recorded rather than used, so the boot's handling of
-        # it stays observable here.
+        # The store the ledger is read through (issue #697, ADR-0039): handed in
+        # at construction, and taken away again only by a boot that will not
+        # finish. Recorded rather than used, so the boot's handling of it stays
+        # observable here — two entries used to be the ordinary case, one per
+        # side of the fork.
         self.attached = []
 
     def attach_store(self, opened_store):
@@ -106,10 +106,43 @@ def _store_in_tmp(monkeypatch, tmp_path):
 
 @pytest.fixture
 def fake_config(monkeypatch):
-    """Install a _FakeConfigManager as the one ``build_runtime`` constructs."""
+    """Install a _FakeConfigManager as the one ``build_runtime`` constructs.
+
+    It records the connection it is constructed with in ``attached``, which is
+    the same list :meth:`attach_store` writes to: what the boot hands the manager
+    and what it takes back read as one sequence.
+    """
     cfg = _FakeConfigManager()
-    monkeypatch.setattr(main, "ConfigurationManager", lambda **kwargs: cfg)
+
+    def _construct(**kwargs):
+        cfg.attached.append(kwargs.get("opened_store"))
+        return cfg
+
+    monkeypatch.setattr(main, "ConfigurationManager", _construct)
     return cfg
+
+
+@pytest.fixture(autouse=True)
+def _close_what_the_boot_opened(monkeypatch):
+    """Close every store a boot opened in this module.
+
+    ``build_runtime`` **keeps** its connection now (ADR-0039), which is the whole
+    point of the ticket and a nuisance for exactly one caller: a test session,
+    which goes on after the boot it provoked. In production the process exits
+    and the file descriptor goes with it.
+    """
+    opened = []
+    real = store.open_store
+
+    def _tracking(path, *args, **kwargs):
+        conn = real(path, *args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(store, "open_store", _tracking)
+    yield
+    for conn in opened:
+        conn.close()
 
 
 @pytest.fixture
@@ -122,27 +155,13 @@ def open_store(tmp_path):
         opened.close()
 
 
-def _load_gunicorn_conf(monkeypatch, **env):
-    """Execute ``src/gunicorn.conf.py`` under a controlled environment."""
-    for name in ("SB_WEB_PORT", "LOG_LEVEL"):
-        monkeypatch.delenv(name, raising=False)
-    for name, value in env.items():
-        monkeypatch.setenv(name, value)
-
-    spec = importlib.util.spec_from_file_location(
-        "sb_gunicorn_conf", _GUNICORN_CONF)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 # ---------------------------------------------------------------------------
-# build_runtime — the master half
+# build_runtime — the store and the configuration
 # ---------------------------------------------------------------------------
 
 def test_build_runtime_validates_the_config_without_starting_anything(
         fake_config, mocker):
-    """The master's whole job: read the config, hold nothing that a fork breaks."""
+    """Its whole job: read the config, start nothing. The scheduler is step four."""
     metrics_cls = mocker.patch.object(main, "SuiviBourseMetrics")
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
     threads_before = threading.active_count()
@@ -162,23 +181,68 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert threading.active_count() == threads_before
 
 
-def test_build_runtime_opens_the_store_and_hands_on_its_path_not_its_connection(
-        fake_config):
-    """The store is created in the master — and left closed behind it (#696).
+def test_build_runtime_opens_the_store_and_keeps_it(fake_config):
+    """One connection, for the life of the process (#696, ADR-0039).
 
-    Opening it here is what makes an unreadable store a single named exit. Not
-    *keeping* it open is the other half: DuckDB refuses a second process, and a
-    worker forked from a master still holding the file is precisely that.
+    Opening it here is what makes an unreadable store a single named exit.
+    *Keeping* it is what ADR-0039 changed: the file descriptor used to be closed
+    again because it could not cross a ``fork()``, and the worker opened a second
+    one on the far side.
     """
     runtime = main.build_runtime()
 
     assert runtime.store_path.exists()
-    assert runtime.store is None
-    # The proof the master let go: a second connection can be opened, which is
-    # exactly what ``post_fork`` will do.
-    reopened = store.open_store(runtime.store_path)
-    assert sorted(reopened.table_names()) == sorted(store.TABLES)
-    reopened.close()
+    assert runtime.store is not None
+    assert sorted(runtime.store.table_names()) == sorted(store.TABLES)
+    # And it is the one the ledger is read through: handed to the manager at
+    # construction, and never taken back.
+    assert fake_config.attached == [runtime.store]
+
+
+def test_the_boot_opens_the_store_exactly_once(fake_config, mocker):
+    """The count is the assertion, because the second open left no trace.
+
+    A store opened twice reads exactly like a store opened once — same file,
+    same schema, same rows — so the only thing that says *"this happened once"*
+    is the call. It is what the two connections used to cost, and what a fork
+    made unavoidable.
+    """
+    opens = mocker.spy(store, "open_store")
+    metrics = mocker.MagicMock()
+    metrics.shares = []
+    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    mocker.patch.object(main, "BackgroundScheduler")
+
+    main.start_runtime(main.build_runtime())
+
+    assert opens.call_count == 1
+
+
+def test_a_boot_that_will_not_finish_gives_the_file_back(monkeypatch):
+    """The connection is only worth keeping for a process that is going to serve.
+
+    A failure past the open leaves nothing holding the store: the manager is
+    detached and the file closed on the way out, and the exception is what
+    reaches ``boot.run``.
+    """
+    cfg = _FakeConfigManager(
+        load_error=EventValidationError("row 3: unknown event_type"))
+    handed = []
+
+    def _construct(**kwargs):
+        handed.append(kwargs.get("opened_store"))
+        cfg.attached.append(kwargs.get("opened_store"))
+        return cfg
+
+    monkeypatch.setattr(main, "ConfigurationManager", _construct)
+
+    with pytest.raises(EventValidationError):
+        main.build_runtime()
+
+    assert cfg.attached == [handed[0], None]
+    # Closed, said the way ``/health`` says it: the store no longer answers.
+    with pytest.raises(Exception):
+        handed[0].ping()
 
 
 def test_build_runtime_reads_the_environment_once_and_hands_no_folder_on(
@@ -210,7 +274,7 @@ def test_build_runtime_reads_the_environment_once_and_hands_no_folder_on(
 def test_build_runtime_stops_on_an_unopenable_store(fake_config, mocker):
     """Nothing is loaded past a store that will not open."""
     mocker.patch.object(
-        main.store, "open_store",
+        store, "open_store",
         side_effect=store.StoreUnavailable("disk is read-only"))
 
     with pytest.raises(store.StoreUnavailable):
@@ -356,7 +420,7 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The two failure paths — they differ, and the difference is the point
+# The one failure path — there used to be two, and the fork was the difference
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("error,expected_message", [
@@ -369,51 +433,27 @@ def test_build_runtime_propagates_a_broken_config(monkeypatch):
     (RuntimeError("something else entirely"),
      "An unexpected error occurred"),
 ])
-def test_create_app_exits_once_on_every_fatal_branch(
+def test_the_boot_names_every_fatal_branch_and_exits_one(
         monkeypatch, mocker, error, expected_message):
-    """In the master, a fatal config is a single clean exit — no fork happened.
+    """A fatal configuration is one named line and one non-zero exit.
 
-    ``preload_app`` runs the factory in the arbiter before it spawns anything,
-    so ``sys.exit(1)`` here reproduces exactly what the old ``__main__`` did.
+    The branch list is the one ``__main__`` carried before gunicorn and it
+    outlived it. What ADR-0039 removed is the *second* answer: the master exited
+    1 and ``post_fork`` re-raised, because an exit code in a worker read as an
+    ordinary death and was respawned forever, failing identically each time.
     """
     monkeypatch.setattr(
         main, "ConfigurationManager",
         lambda **kwargs: _FakeConfigManager(load_error=error))
     fatal = mocker.patch.object(main.app_logger, "fatal")
 
-    with pytest.raises(SystemExit) as excinfo:
-        web.create_app()
-
-    assert excinfo.value.code == 1
+    assert boot.run({}) == 1
+    assert fatal.call_count == 1
     assert expected_message in fatal.call_args[0][0]
 
 
-def test_start_background_reraises_rather_than_exiting(monkeypatch, mocker):
-    """In the worker, the failure must stay an exception.
-
-    Gunicorn reads an exception raised in ``post_fork`` as WORKER_BOOT_ERROR and
-    halts the whole arbiter; an ``exit(1)`` would read as an ordinary worker
-    death and be respawned forever, failing identically each time.
-    """
-    web.create_app(runtime=main.Runtime(_FakeConfigManager()))
-    boom = ValueError("Invalid value for SB_WEB_PORT")
-    monkeypatch.setattr(main, "start_runtime", mocker.Mock(side_effect=boom))
-    fatal = mocker.patch.object(main.app_logger, "fatal")
-
-    with pytest.raises(ValueError):
-        web.start_background()
-
-    assert "Configuration error" in fatal.call_args[0][0]
-
-
-def test_start_background_refuses_to_run_without_a_preloaded_runtime():
-    """The hooks reach the master's Runtime through the fork and nowhere else."""
-    with pytest.raises(RuntimeError, match="preload_app"):
-        web.start_background()
-
-
 # ---------------------------------------------------------------------------
-# start_runtime — the worker half
+# start_runtime — the scheduler and its jobs
 # ---------------------------------------------------------------------------
 
 def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
@@ -447,26 +487,36 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
         {"backfill", "perf"}
 
 
-def test_start_runtime_opens_the_workers_own_store(mocker, tmp_path):
-    """The connection the process lives on belongs on this side of the fork."""
+def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
+        mocker, tmp_path):
+    """It opened one, and that was the fork's doing (ADR-0039).
+
+    Its first act used to be ``store.open_store``, because the connection
+    ``build_runtime`` had proved openable was closed before the fork. There is
+    one connection now and this step is handed it.
+    """
     metrics = mocker.MagicMock()
     metrics.shares = []
     mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
     mocker.patch.object(main, "BackgroundScheduler")
+    opened = store.open_store(tmp_path / "the-one.duckdb")
+    opens = mocker.spy(store, "open_store")
     runtime = main.Runtime(_FakeConfigManager(),
-                           store_path=tmp_path / "worker.duckdb")
+                           store_path=tmp_path / "the-one.duckdb",
+                           opened_store=opened)
 
     main.start_runtime(runtime)
 
-    assert runtime.store is not None
+    assert opens.call_count == 0
+    assert runtime.store is opened
     runtime.store.ping()
-    # ... and ``worker_exit`` gives it back.
+    # ... and the teardown gives it back.
     main.shutdown_runtime(runtime)
     assert runtime.store is None
 
 
 def test_start_runtime_uses_a_background_scheduler(mocker):
-    """Blocking would never return, and gunicorn's worker owns the foreground."""
+    """Blocking would never return, and uvicorn's event loop owns the foreground."""
     metrics = mocker.MagicMock()
     metrics.shares = []
     mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
@@ -492,8 +542,8 @@ def test_shutdown_runtime_stops_the_scheduler_and_the_metrics(mocker):
     runtime.metrics.close.assert_called_once()
 
 
-def test_shutdown_runtime_tolerates_a_worker_that_never_booted():
-    """worker_exit runs even when post_fork died on its first line."""
+def test_shutdown_runtime_tolerates_a_boot_that_never_got_that_far():
+    """The teardown is a ``finally``: it runs on a boot that died on step two."""
     main.shutdown_runtime(main.Runtime(_FakeConfigManager()))
 
 
@@ -606,7 +656,7 @@ def test_health_fails_when_the_store_does_not_answer(open_store):
 
 
 def test_health_fails_when_no_store_is_open():
-    """Before ``post_fork`` there is nothing to be healthy about."""
+    """Before the store is open there is nothing to be healthy about."""
     app = web.create_app(runtime=main.Runtime(_FakeConfigManager()))
 
     assert app.test_client().get("/health").status_code == 503
@@ -631,92 +681,257 @@ def test_metrics_is_not_served(open_store):
 
 
 # ---------------------------------------------------------------------------
-# gunicorn.conf.py — executable configuration
+# boot.py — the sequence (issue #838, ADR-0039)
+# ---------------------------------------------------------------------------
+#
+# Five steps and an order. It is one of the seven places this suite reaches for
+# an internal double, and for the reason the rule names: **what the app decided
+# not to do** leaves nothing to read. An order leaves no row and no payload
+# either — only calls — and "the socket was never bound" is the whole assertion
+# of two of the tests below.
+
+
+@pytest.fixture
+def steps(monkeypatch):
+    """Record the boot's steps, in the order it takes them."""
+    order = []
+    runtime = main.Runtime(_FakeConfigManager())
+
+    def _step(name, result=None, error=None):
+        def _record(*args, **kwargs):
+            order.append(name)
+            if error is not None:
+                raise error
+            return result
+        return _record
+
+    def _fail(name, error):
+        monkeypatch.setattr(*_TARGETS[name], _step(name, error=error))
+
+    _TARGETS = {
+        "read_environment": (boot.boot_env, "read"),
+        "build_runtime": (main, "build_runtime"),
+        "create_app": (web, "create_app"),
+        "start_runtime": (main, "start_runtime"),
+        "serve": (boot, "serve"),
+    }
+    monkeypatch.setattr(boot.boot_env, "read",
+                        _step("read_environment", boot_env.read({})))
+    monkeypatch.setattr(main, "build_runtime", _step("build_runtime", runtime))
+    monkeypatch.setattr(web, "create_app", _step("create_app", "the app"))
+    monkeypatch.setattr(main, "start_runtime", _step("start_runtime"))
+    monkeypatch.setattr(boot, "serve", _step("serve"))
+    monkeypatch.setattr(main, "shutdown_runtime", _step("shutdown_runtime"))
+    return SimpleNamespace(order=order, runtime=runtime, fail=_fail)
+
+
+def test_the_boot_is_one_sequence_in_one_order(steps):
+    """The environment, the store, the application, the jobs, the socket.
+
+    Linear, and that is the whole of the ticket: there is no ``fork()`` cutting
+    it in two and no hook to attach the second half to. The teardown closes it.
+    """
+    assert boot.run({}) == 0
+
+    assert steps.order == ["read_environment", "build_runtime", "create_app",
+                           "start_runtime", "serve", "shutdown_runtime"]
+
+
+@pytest.mark.parametrize("failing", ["read_environment", "build_runtime",
+                                     "create_app", "start_runtime", "serve"])
+def test_a_failure_at_any_step_is_one_non_zero_exit(steps, mocker, failing):
+    """One exit code, decided in one place, whichever step raised.
+
+    There is no arbiter to respawn anything, which is what lets this be the whole
+    of the failure handling — and ``preload_app``, whose reason was to keep an
+    unreadable store (#696) out of a respawn loop, goes with the arbiter that
+    made the loop possible.
+    """
+    steps.fail(failing, RuntimeError("this step will not have it"))
+    fatal = mocker.patch.object(main.app_logger, "fatal")
+
+    assert boot.run({}) == 1
+    assert fatal.call_count == 1
+
+
+def test_the_socket_is_bound_only_if_every_step_before_it_worked(steps, mocker):
+    """A process that could not arm its jobs must not answer as if it had."""
+    steps.fail("start_runtime", RuntimeError("the scheduler will not start"))
+    mocker.patch.object(main.app_logger, "fatal")
+
+    assert boot.run({}) == 1
+    assert "serve" not in steps.order
+
+
+def test_the_teardown_runs_on_a_boot_that_never_reached_a_lifespan(
+        steps, mocker):
+    """The ``finally``'s own case: a socket that could not be bound at all.
+
+    The graceful path does not come through here — see the lifespan tests below
+    — and this is what covers everything that never got that far.
+    """
+    steps.fail("serve", RuntimeError("the port is taken"))
+    mocker.patch.object(main.app_logger, "fatal")
+
+    assert boot.run({}) == 1
+    assert steps.order[-1] == "shutdown_runtime"
+
+
+def test_nothing_is_torn_down_when_there_was_nothing_to_build(steps, mocker):
+    """A store that will not open has already given its file back.
+
+    The ``finally`` needs a runtime to tear down, and step two is what produces
+    one — so a failure *in* step two leaves the teardown with nothing to be
+    handed, and it is not called at all.
+    """
+    steps.fail("build_runtime", store.StoreUnavailable("disk is read-only"))
+    mocker.patch.object(main.app_logger, "fatal")
+
+    assert boot.run({}) == 1
+    assert steps.order == ["read_environment", "build_runtime"]
+
+
+# ---------------------------------------------------------------------------
+# boot.serve — the one socket
 # ---------------------------------------------------------------------------
 
-def test_gunicorn_binds_one_socket(monkeypatch):
-    """One socket, and no condition left to evaluate (ADR-0033)."""
-    conf = _load_gunicorn_conf(monkeypatch)
-
-    assert conf.bind == ["0.0.0.0:8080"]
-    assert conf.workers == 1
-    assert conf.preload_app is True
+@pytest.fixture
+def served(mocker):
+    """Capture the call ``boot.serve`` makes to uvicorn, without binding a port."""
+    return mocker.patch.object(boot.uvicorn, "run")
 
 
-def test_gunicorn_honours_the_web_port_dial(monkeypatch):
-    conf = _load_gunicorn_conf(monkeypatch, SB_WEB_PORT="9000")
-
-    assert conf.bind == ["0.0.0.0:9000"]
+def _noop():
+    """A teardown that has nothing to do — :func:`boot.serve` requires one."""
 
 
-def test_gunicorn_binds_nothing_beyond_the_web_port(monkeypatch):
+def test_serve_binds_the_web_port_on_every_interface(served):
+    """One socket, and the port comes from the environment (ADR-0033, #740)."""
+    boot.serve("the app", boot_env.read({"SB_WEB_PORT": "9000"}), _noop)
+
+    assert served.call_args.kwargs["host"] == "0.0.0.0"
+    assert served.call_args.kwargs["port"] == 9000
+
+
+def test_serve_binds_the_default_port_when_nothing_says_otherwise(served):
+    boot.serve("the app", boot_env.read({}), _noop)
+
+    assert served.call_args.kwargs["port"] == 8080
+
+
+def test_serve_binds_nothing_beyond_the_web_port(served):
     """A v4 ``.env`` still carrying the metrics pair gets **one** socket.
 
     The names are retired rather than absent from the world (they are in
     ``boot_env.DELETED``, and the boot names them), so what is asserted is that
-    they are *inert*: nothing here reads them, and there is no branch left that
-    could append a second bind.
+    they are *inert*: there is no branch left that could bind a second one.
     """
-    conf = _load_gunicorn_conf(
-        monkeypatch, SB_PROMETHEUS_ENABLED="true", SB_METRICS_PORT="9091")
+    boot.serve("the app", boot_env.read(
+        {"SB_PROMETHEUS_ENABLED": "true", "SB_METRICS_PORT": "9091"}), _noop)
 
-    assert conf.bind == ["0.0.0.0:8080"]
+    assert served.call_args.kwargs["port"] == 8080
 
 
-def test_gunicorn_closes_the_control_socket(monkeypatch):
-    """The second door to a second worker.
+def test_serve_asks_for_no_second_process(served):
+    """The ``--workers`` door, shut by there being no command line (ADR-0039).
 
-    ``gunicornc -c "worker add 2"`` raises ``num_workers`` on a *running*
-    arbiter, past ``on_starting``. Closing the socket is the only guard that
-    covers it.
+    ``on_starting`` and ``control_socket_disable`` were two guards spent
+    forbidding a second worker — *N workers are N schedulers* — and uvicorn has a
+    multiprocess mode of its own, so a CLI would have reopened what they shut.
+    Asserted on the call because that is where the absence is: nothing asks for a
+    worker count, and there is no entrypoint anywhere that could be handed one.
     """
-    conf = _load_gunicorn_conf(monkeypatch)
+    boot.serve("the app", boot_env.read({}), _noop)
 
-    assert conf.control_socket_disable is True
+    assert "workers" not in served.call_args.kwargs
 
 
-def test_every_gunicorn_setting_we_declare_is_one_gunicorn_knows(monkeypatch):
-    """Gunicorn silently ignores a config name it does not recognise.
+def test_serve_honours_the_log_level_dial(served):
+    boot.serve("the app", boot_env.read({"LOG_LEVEL": "DEBUG"}), _noop)
 
-    A typo in ``control_socket_disable`` or ``preload_app`` would therefore
-    disable the guard it was written for without a word in the logs. Check the
-    names against gunicorn's own registry rather than trusting them.
+    assert served.call_args.kwargs["log_level"] == "debug"
+
+
+def test_serve_ignores_a_log_level_uvicorn_does_not_understand(served):
+    """``LOG_LEVEL`` predates any server; an unknown value must not fail the boot."""
+    boot.serve("the app", boot_env.read({"LOG_LEVEL": "TRACE_ALL"}), _noop)
+
+    assert served.call_args.kwargs["log_level"] == "info"
+
+
+def test_serve_hands_the_flask_app_over_unchanged(served, open_store):
+    """No route is rewritten (ADR-0039): the WSGI app is wrapped, not ported.
+
+    The adapter is the whole of the change, and ``create_app()`` stays the seam
+    the rest of this suite is written against — which is why the assertion is
+    that the very object built here is the one behind the ASGI wrapper.
     """
-    import types
-    from gunicorn.config import Config
+    runtime = main.Runtime(_FakeConfigManager())
+    runtime.store = open_store
+    flask_app = web.create_app(runtime)
 
-    conf = _load_gunicorn_conf(monkeypatch)
-    known = set(Config().settings)
-    # Everything the file declares at module level, minus its private helpers
-    # (leading underscore), its imports and its hook functions. Modules are
-    # excluded **by type** rather than by name: a list of import names is a
-    # second inventory that goes stale the day one of them is renamed, which is
-    # exactly what #740 did to ``main``.
-    names = {n for n in vars(conf)
-             if not n.startswith('_')
-             and not isinstance(getattr(conf, n), types.ModuleType)}
-    declared = {n for n in names if not callable(getattr(conf, n))}
+    boot.serve(flask_app, boot_env.read({}), _noop)
 
-    assert declared <= known, f"gunicorn ignores: {sorted(declared - known)}"
-    # The four that carry a guarantee, spelled out so a rename cannot slip past.
-    assert {'preload_app', 'workers', 'control_socket_disable', 'bind'} <= declared
+    assert served.call_args.args[0].wsgi.app is flask_app
 
 
-def test_gunicorn_refuses_more_than_one_worker(monkeypatch):
-    """The guard #651 asked for: extra workers duplicate every write, silently."""
-    conf = _load_gunicorn_conf(monkeypatch)
-
-    with pytest.raises(RuntimeError, match="exactly one worker"):
-        conf.on_starting(SimpleNamespace(cfg=SimpleNamespace(workers=4)))
-
-
-def test_gunicorn_boots_with_exactly_one_worker(monkeypatch):
-    conf = _load_gunicorn_conf(monkeypatch)
-
-    assert conf.on_starting(SimpleNamespace(cfg=SimpleNamespace(workers=1))) is None
+# ---------------------------------------------------------------------------
+# The teardown — on the lifespan, and that is a decision (issue #838)
+# ---------------------------------------------------------------------------
+#
+# uvicorn catches SIGTERM, shuts down gracefully, restores the handler it
+# replaced and **re-raises the signal**: the process dies of SIGTERM the instant
+# ``uvicorn.run`` returns, so nothing written after that call runs. ``docker
+# stop`` is that signal. The lifespan shutdown is the last thing uvicorn drives
+# while the process is still alive.
 
 
-def test_gunicorn_ignores_a_log_level_it_does_not_understand(monkeypatch):
-    """LOG_LEVEL predates this file; an unknown value must not fail the boot."""
-    assert _load_gunicorn_conf(monkeypatch, LOG_LEVEL="TRACE").loglevel == "info"
-    assert _load_gunicorn_conf(monkeypatch, LOG_LEVEL="DEBUG").loglevel == "debug"
+def _lifespan(app, trace):
+    """Drive the ASGI lifespan protocol against ``app``, recording it into ``trace``."""
+    incoming = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
+
+    async def receive():
+        return incoming.pop(0)
+
+    async def send(message):
+        trace.append(message["type"])
+
+    asyncio.run(app({"type": "lifespan"}, receive, send))
+
+
+def test_the_lifespan_shutdown_is_what_tears_the_runtime_down():
+    """The heir of ``worker_exit``, and the only hook a SIGTERM leaves time for.
+
+    The order is the assertion: the jobs keep running for the whole of the
+    startup, the teardown lands when the shutdown is *asked for*, and uvicorn is
+    told it is complete only once it has.
+    """
+    trace = []
+    app = boot.Serving("the app", lambda: trace.append("teardown"))
+
+    _lifespan(app, trace)
+
+    assert trace == ["lifespan.startup.complete", "teardown",
+                     "lifespan.shutdown.complete"]
+
+
+def test_the_teardown_survives_being_asked_twice(mocker, tmp_path):
+    """Which is what lets both the lifespan and the ``finally`` name it.
+
+    They cover two different departures — a signal, and a boot that never bound
+    a socket — and a shutdown that could only be run once would make one of the
+    two a defect.
+    """
+    metrics = mocker.MagicMock()
+    metrics.shares = []
+    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    mocker.patch.object(main, "BackgroundScheduler")
+    runtime = main.Runtime(
+        _FakeConfigManager(),
+        opened_store=store.open_store(tmp_path / "twice.duckdb"))
+    main.start_runtime(runtime)
+
+    main.shutdown_runtime(runtime)
+    main.shutdown_runtime(runtime)
+
+    assert runtime.store is None

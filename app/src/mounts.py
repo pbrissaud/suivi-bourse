@@ -125,9 +125,9 @@ def parse(text: Optional[str]) -> Tuple[Mount, ...]:
     The order is kept because it carries a fact: two mounts may share one point,
     and the later one is the one you reach. :func:`enclosing` relies on it.
 
-    A line that cannot be read is **skipped rather than raised on**. This runs in
-    the gunicorn master, before anything has been forked, and a kernel that grew
-    a field must not be able to take the boot down over a diagnostic.
+    A line that cannot be read is **skipped rather than raised on**. This runs at
+    boot, before anything has been started, and a kernel that grew a field must
+    not be able to take the boot down over a diagnostic.
     """
     mounts = []
     for line in (text or '').splitlines():
@@ -235,9 +235,10 @@ def read_mountinfo(mountinfo_path: str = MOUNTINFO) -> Optional[str]:
 def store_persistence(store_dir, mountinfo_path: str = MOUNTINFO) -> str:
     """Observe the directory the store lives in. One call, made once at boot.
 
-    Made **once**, in the gunicorn master, and carried on ``Runtime`` across the
-    fork: a mount namespace does not change under a running process, so asking
-    again per request would be a query whose answer is fixed at ``execve``.
+    Made **once**, in :func:`main.build_runtime`, and carried on ``Runtime``
+    from there: a mount namespace does not change under a running process, so
+    asking again per request would be a query whose answer is fixed at
+    ``execve``.
     """
     return observe(read_mountinfo(mountinfo_path), store_dir)
 

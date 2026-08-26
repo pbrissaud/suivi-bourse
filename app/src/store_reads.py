@@ -87,8 +87,8 @@ class PortfolioReader:
     """The read primitives the pages need, and nothing else.
 
     Takes the open :class:`store.Store` rather than an executor: there is one
-    connection in this process (DuckDB refuses a second), it is opened in
-    ``post_fork``, and a reader is built per request out of it — which costs
+    connection in this process (DuckDB refuses a second), it is opened once by
+    the boot, and a reader is built per request out of it — which costs
     nothing, since it holds a reference and no state.
     """
 

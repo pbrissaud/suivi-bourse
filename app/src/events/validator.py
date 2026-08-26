@@ -6,8 +6,8 @@ drop folder, a sheet of a workbook, or a form somebody filled in the app (issue
 #764) — it is judged by this class and by nothing else. A second set of rules
 for the typed event is how an event created here and an event imported stop
 obeying the same product: the ledger is replayed whole on every build, so a row
-one road let through and the other would have refused fails the *boot*, in the
-gunicorn master, in an app the user then cannot reach to repair it.
+one road let through and the other would have refused fails the *boot*, in an
+app the user then cannot reach to repair it.
 
 What is **not** here is the parse. ``EventLoader`` turns a CSV cell into a typed
 value and raises its own error when it cannot; the API's write path does the
@@ -260,8 +260,8 @@ class EventValidator:
         stored ledger may hold any value in it, and this validator runs over the
         *whole store* on every build (``_load_from_store``), not only over a
         file someone just dropped. A new refusal here is therefore retroactive:
-        a row that was legal when it was imported would fail the boot in the
-        gunicorn master, with no way to repair it from an app that is down. A
+        a row that was legal when it was imported would fail the boot, with no
+        way to repair it from an app that is down. A
         value that cannot be a price is normalised where it is read instead —
         ``aggregator._process_grant`` and ``performance._grant_value``, together
         — which is also the pair the spec's *"no format change is necessary"*

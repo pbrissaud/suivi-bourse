@@ -16,7 +16,6 @@ dependencies = [
     # the database it spoke to — so this line adds no weight to the image, it
     # only stops a direct dependency from being satisfied by accident.
     "pyarrow>=17.0.0",
-
     "logfmt-logger==0.1.2",
     # The exporter's client left with the endpoint it was the whole of
     # (ADR-0033): one interface, one socket, and a dependency tree that says
@@ -31,7 +30,13 @@ dependencies = [
     "numpy>=1.22.2",       # not directly required, pinned by Snyk to avoid a vulnerability
     "setuptools>=65.5.1",  # not directly required, pinned by Snyk to avoid a vulnerability
     "Flask==3.1.3",        # web UI + API, served in-process alongside the scheduler (issue #651)
-    "gunicorn==26.0.0",    # container entrypoint; preload_app + post_fork split the boot
+    # The server, and the adapter that lets the Flask app above stay a WSGI app
+    # (ADR-0039). gunicorn left because it always forks, and the fork is what
+    # segfaults the scrape job on macOS — measured, not assumed. uvicorn is
+    # called **programmatically** from `src/boot.py`, never from a command line:
+    # that is how its multiprocess mode stays out of reach without a guard.
+    "uvicorn==0.52.4",
+    "a2wsgi==1.10.10",
 ]
 
 # Development / test tooling — installed by `uv sync`, excluded in Docker via UV_NO_DEV.

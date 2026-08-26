@@ -279,8 +279,8 @@ class EventAggregator:
         # Overselling stays blocking — but by the same dust threshold, and for
         # the same reason. The file that writes a sale of `0.34898399999999996`
         # against a purchase of `0.348984` writes it the other way round just as
-        # often, and refusing *that* one would abort the replay in the gunicorn
-        # master over 4×10⁻¹⁷ of a share, leaving the whole portfolio
+        # often, and refusing *that* one would abort the boot's replay over
+        # 4×10⁻¹⁷ of a share, leaving the whole portfolio
         # unreachable and unfixable from an app that is down. A tolerance on one
         # side and none on the other is not caution, it is a coin toss on the
         # last bit of a float.

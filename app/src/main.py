@@ -208,10 +208,9 @@ def report_boot_conditions(boot: boot_env.BootEnvironment, persistence: str,
     is the one thing that is not — emitting them.
 
     *Once* is a property of **where this is called** rather than of a flag: it
-    runs in :func:`build_runtime`, in the gunicorn master, under ``preload_app``
-    — one call per process, before any fork. A condition that ends afterwards
-    (a currency answered, a first event recorded) is not re-announced and its line
-    is not retracted; the live states are what ``/api/runtime`` and
+    runs in :func:`build_runtime` — one call per process, before the scheduler
+    exists at all. A condition that ends afterwards (a currency answered, a first
+    event recorded) is not re-announced and its line is not retracted; the live states are what ``/api/runtime`` and
     ``/api/config`` carry, and the terminal is a record of the boot.
 
     Returns the keys said, so a test asserts *which* lines stood rather than
@@ -263,8 +262,8 @@ def installation_fact_context(config_manager,
     the one a request renders cannot come from two different readings of the same
     two sources.
 
-    A caller with no ``metrics`` — the gunicorn master, a web request on a
-    runtime that has not started its scheduler — reports the reconstruction as
+    A caller with no ``metrics`` — the boot before :func:`start_runtime`, a web
+    request on a runtime whose scheduler never started — reports it as
     **unobservable** rather than as finished. That distinction is the whole of
     :data:`installation_facts.UNOBSERVED`: without it, a page being opened
     would drop the row a running scheduler armed.
@@ -608,10 +607,9 @@ class ConfigurationManager:
         self._store = opened_store
 
         # The published snapshot, and the mutex that serialises publishers.
-        # Both are created here, which under gunicorn's ``preload_app`` means
-        # *in the master, before the fork* — a ``threading.Lock`` survives
-        # ``fork()`` unharmed because the master is single-threaded at that
-        # instant, and the worker inherits an unlocked one.
+        # Both are created here, which in production means during
+        # ``build_runtime`` — before the scheduler exists and before the socket
+        # is bound, so the first publication has no concurrent reader to race.
         self._config: Optional[ConfigSnapshot] = None
         self._write_lock = threading.Lock()
 
@@ -656,11 +654,12 @@ class ConfigurationManager:
     def attach_store(self, opened_store) -> None:
         """Hand the manager the connection it should read the ledger through.
 
-        Called on both sides of gunicorn's ``fork()``: the master opens the
-        store, publishes the first snapshot from it and closes it again; the
-        worker opens its own and attaches that one. The connection is what must
-        not cross the fork — the manager itself does, and keeps its published
-        snapshot with it.
+        Called once in production, by :func:`build_runtime`, with the connection
+        this process lives on. It was called twice when a ``fork()`` split the
+        boot — the master attaching its own and detaching it before forking, the
+        worker attaching the one it opened — and ADR-0039 left one connection and
+        one call. It still takes ``None``, which is what a boot that fails
+        mid-load hands back.
         """
         self._store = opened_store
 
@@ -764,8 +763,8 @@ class ConfigurationManager:
         """The published snapshot — the lock-free read path.
 
         One attribute read, because publication is a single rebind. Builds and
-        publishes one on first use, which in production has already happened in
-        the gunicorn master (:func:`build_runtime`).
+        publishes one on first use, which in production has already happened at
+        boot (:func:`build_runtime`).
         """
         snap = self._config
         if snap is not None:
@@ -1468,10 +1467,12 @@ class SuiviBourseMetrics:
 
         **Every boot pays this since #701**, the opt-in flag that used to gate it
         having been deleted along with the fixed pool it selected. That is what
-        makes the cap above load-bearing rather than defensive, and why
-        ``gunicorn.conf.py`` sets an explicit ``timeout``: this whole call
-        happens in ``post_fork``, before the worker reaches the accept loop that
-        answers the arbiter's heartbeat.
+        makes the cap above load-bearing rather than defensive: it runs in
+        :func:`start_runtime`, before the socket is bound, so all of it is time a
+        container spends not answering. The cap is the only thing bounding that
+        wait — there used to be a second bound and it was a *deadline*, gunicorn
+        raising its ``timeout`` to 120 s so the arbiter would not SIGABRT a worker
+        still inside this call, and it went with the arbiter (ADR-0039).
         """
         exchange_of: Dict[str, Optional[str]] = {}
         to_fetch = []
@@ -2132,10 +2133,10 @@ class SuiviBourseMetrics:
 
         Both callers see all four sources, this object being where the
         reconstruction's memory lives, so neither of them can drop a row the
-        other armed. What cannot see it is a runtime with no scheduler — the
-        gunicorn master, a web request — and
-        :func:`installation_fact_context` answers *unobservable* for those
-        rather than *finished*.
+        other armed. What cannot see it is a runtime with no scheduler — a boot
+        that has not reached :func:`start_runtime`, a web request on one that
+        never did — and :func:`installation_fact_context` answers *unobservable*
+        for those rather than *finished*.
 
         Guarded: a store that refuses this must not take a scheduled job with it.
         A missed review costs one cycle, and the next one re-observes everything
@@ -2821,8 +2822,9 @@ class SuiviBourseMetrics:
         — a second ``.info`` per *chunk* doubles the rate-limit exposure of the
         job that already emits the most requests in the app — and the need is per
         **symbol**, once. Widening ``capture_exchange_of`` to the replay's symbol
-        set is worse: that fetch is in ``post_fork``, the whole boot blocks on it,
-        and its time cap is already load-bearing rather than defensive (#701).
+        set is worse: that fetch is in :func:`start_runtime`, the whole boot blocks
+        on it, and its time cap is already load-bearing rather than defensive
+        (#701).
 
         The defect it repairs is dated. ``_convert_history`` deferred to the
         lateral pass *naming exactly this case*, and the lateral pass named it and
@@ -3266,9 +3268,9 @@ class SuiviBourseMetrics:
 
         Until #812 the only one was the ``perf`` interval job, and APScheduler's
         ``max_instances=1`` made an overlap impossible on its own. The replay
-        that follows the write is a **request thread** (``threads = 4`` in
-        ``gunicorn.conf.py``), so two passes are now ordinary: two writes at
-        once, or a write landing while the tick is mid-flight.
+        that follows the write is a **request thread** (the WSGI pool ``boot.py``
+        sizes), so two passes are now ordinary: two writes at once, or a write
+        landing while the tick is mid-flight.
 
         Overlapping is not merely wasteful, it is **destructive**, and the shape
         of the damage is the one this ticket exists to prevent. The pass reads
@@ -3642,85 +3644,86 @@ class SuiviBourseMetrics:
         was never this object's to close: it belongs to the ``Runtime`` and is
         closed **last** by :func:`shutdown_runtime`, once nothing is left running
         that could still write into it. The method survives because
-        ``worker_exit`` calls it and a shutdown hook that has to know which
-        objects have a teardown is a hook that will one day forget one.
+        :func:`shutdown_runtime` calls it, and a teardown that has to know which
+        objects have one is a teardown that will one day forget one.
         """
 
 
 # ---------------------------------------------------------------------------
-# Boot — split across gunicorn's fork (issue #651)
+# Boot — three steps of one sequence (issue #651, ADR-0039)
 # ---------------------------------------------------------------------------
 #
-# The web API lives in this process, so gunicorn is the container entrypoint and
-# the ``__main__`` block that used to sit here is now three importable pieces:
+# The web API lives in this process, so the ``__main__`` block that used to sit
+# here is three importable pieces instead:
 #
-#   build_runtime()     in the master, under ``preload_app``
-#   start_runtime()     in ``post_fork``, in the single worker
-#   shutdown_runtime()  in ``worker_exit``
+#   build_runtime()     the store, the configuration, the first replay
+#   start_runtime()     the scheduler and its jobs
+#   shutdown_runtime()  the teardown
 #
-# The line between the first two is not a matter of taste. ``preload_app`` runs
-# the application factory *before any fork*, so a configuration error raised
-# there ends the process once and cleanly — exactly what the five fatal branches
-# always did. But only the calling thread survives ``fork()``, and an inherited
-# connection pool would be shared with the master, so every thread, socket and
-# client has to be built on the far side. ``gunicorn.conf.py`` wires the three.
+# They were once the two sides of gunicorn's ``fork()`` plus its ``worker_exit``,
+# and the line between the first two was load-bearing: only the calling thread
+# survives a fork, so nothing holding a thread, a socket or a file descriptor
+# could be built before it. ADR-0039 removed the fork, and with it that reason:
+# the three are now simply consecutive, ``boot.py`` calls them in order, and
+# **the store is opened once** — by ``build_runtime``, for the life of the
+# process.
 
 
 class Runtime:
-    """The application's long-lived objects, filled in on both sides of the fork.
+    """The application's long-lived objects, filled in as the boot proceeds.
 
-    :func:`build_runtime` supplies the pure half — the configuration manager and
-    the *path* the store was proved openable at — and :func:`start_runtime` then
-    attaches the half that could not have survived a fork: the store connection,
-    the scheduler and its threads. The registry it also used to carry across the
-    fork left with ``/metrics`` (ADR-0033), and the filesystem observer with the
-    drop folder (ADR-0032).
+    :func:`build_runtime` supplies the store and the configuration manager;
+    :func:`start_runtime` then adds the scheduler and its threads. The two used
+    to be the two sides of a fork, which is why the connection was opened twice;
+    since ADR-0039 they are consecutive steps of one sequence and the connection
+    is opened once. The registry this object used to carry left with
+    ``/metrics`` (ADR-0033), and the filesystem observer with the drop folder
+    (ADR-0032).
     """
 
     def __init__(self, config_manager: ConfigurationManager,
                  store_path: Optional[Path] = None,
-                 store_persistence: str = mounts.UNKNOWN):
+                 store_persistence: str = mounts.UNKNOWN,
+                 opened_store: Optional['store.Store'] = None):
         self.config_manager = config_manager
         self.metrics: Optional['SuiviBourseMetrics'] = None
         self.scheduler: Optional[BackgroundScheduler] = None
 
-        # The store (issue #696). The *path* crosses the fork; the connection
-        # never does. ``build_runtime`` opens the file in the master — which is
-        # what makes an unreadable store one named exit instead of a respawn
-        # loop — and closes it again, because DuckDB's buffers are not something
-        # two processes may inherit from one another. ``start_runtime`` opens
-        # the connection the worker will actually use.
+        # The store (issue #696, ADR-0039). **One connection, for the life of
+        # the process**: ``build_runtime`` opens it, everything downstream reads
+        # and writes through it, and ``shutdown_runtime`` gives it back. It used
+        # to be opened in the master and closed again — DuckDB's buffers are not
+        # something two processes may inherit — with the worker opening its own
+        # on the far side of the fork; there is no fork left to close it for.
+        # The path stays beside it because ``GET /api/runtime`` publishes it.
         self.store_path: Optional[Path] = store_path
-        self.store: Optional[store.Store] = None
+        self.store: Optional[store.Store] = opened_store
 
         # Whether that path outlives the container (issue #741, ADR-0015).
-        # Observed **once**, in the master, and carried across the fork like the
-        # path itself: a mount namespace is fixed for the life of a process, so
+        # Observed **once**, at boot, and carried on this object like the path
+        # itself: a mount namespace is fixed for the life of a process, so
         # re-reading ``/proc/self/mountinfo`` per request would be a query whose
         # answer was settled at ``execve``. It defaults to
         # :data:`mounts.UNKNOWN`, which is the honest reading of a runtime
         # nobody observed — a test's, or the one a Docker-less checkout builds.
         self.store_persistence: str = store_persistence
 
-        # The scheduler's last-pass records (issue #668). Master-side on
-        # purpose — a mutex and three references, and a ``threading.Lock``
-        # crosses ``fork()`` unharmed, the master being single-threaded at that
-        # instant — plus a reason of its own:
-        # ``GET /api/runtime`` must answer *before* and *without* a working
-        # scheduler, since explaining a screen that is not working is the entire
-        # reason the resource exists (#656 déc. 6). A recorder that only came
-        # into being in ``start_runtime`` would be absent exactly then.
+        # The scheduler's last-pass records (issue #668). Built here, with the
+        # object itself, rather than in ``start_runtime``: ``GET /api/runtime``
+        # must answer *before* and *without* a working scheduler, since
+        # explaining a screen that is not working is the entire reason the
+        # resource exists (#656 déc. 6). A recorder that only came into being
+        # with the scheduler would be absent exactly then.
         self.recorder = runtime_state.RuntimeRecorder()
 
 
 def log_fatal(exc: BaseException) -> None:
     """Log a boot-fatal exception under the message its class earned.
 
-    The branch list is the one ``__main__`` carried before gunicorn. *How* the
-    process then dies differs by side of the fork and stays the caller's
-    business: the master exits 1 before forking; ``post_fork`` re-raises, so
-    gunicorn reports WORKER_BOOT_ERROR and halts the arbiter instead of
-    respawning a worker that would fail identically.
+    The branch list is the one ``__main__`` carried before gunicorn, and it
+    outlived it. *How* the process then dies is the caller's business and there
+    is one caller: ``boot.run`` returns 1, once, whichever step raised
+    (ADR-0039).
     """
     if isinstance(exc, store.StoreUnavailable):
         # Named first because it is the earliest thing that can go wrong, and
@@ -3735,11 +3738,15 @@ def log_fatal(exc: BaseException) -> None:
 
 
 def build_runtime() -> Runtime:
-    """Master-side boot: the pure half, run under ``preload_app`` before any fork.
+    """The store and the configuration — the boot's second step (ADR-0039).
 
-    Loading the configuration here is the whole point — it is the only remaining
-    place where a broken config still exits the process once, cleanly, with the
-    arbiter holding nothing to respawn.
+    Opens the store **and keeps it open**: the connection returned on the
+    :class:`Runtime` is the one this process lives on. It used to be closed
+    again here, because a DuckDB file descriptor is exactly what must not cross
+    a ``fork()``; there is no fork left, so the file is opened once.
+
+    A failure at any line of it raises, and ``boot.run`` turns that into one
+    non-zero exit.
     """
     app_logger.info('SuiviBourse is running !')
 
@@ -3758,15 +3765,14 @@ def build_runtime() -> Runtime:
     report_unread_environment()
 
     # The store, first and before anything else (issue #696). It takes the exact
-    # place #658 gave the Cerberus validation — same side of the fork, same
-    # "nothing has been spawned yet, so a failure is one clean exit" — for a
-    # different cause: the app has one store, everything downstream branches off
-    # it, and a file it cannot open is not a degraded mode.
+    # place #658 gave the Cerberus validation — first, so that a failure is one
+    # clean exit before anything has been started — for a different cause: the
+    # app has one store, everything downstream branches off it, and a file it
+    # cannot open is not a degraded mode.
     #
-    # Opened, brought to its schema, seeded, and closed again. The connection
-    # the worker uses is opened in ``start_runtime``; leaving this one open
-    # would hand the child a buffer manager its parent still holds, which is the
-    # exact arrangement DuckDB refuses.
+    # Opened, brought to its schema, seeded, and **left open** (ADR-0039): this
+    # is the connection every job and every request handler goes through, and
+    # ``shutdown_runtime`` is what gives it back.
     store_path = boot.store_dir / store.STORE_FILENAME
     opened = store.open_store(store_path)
 
@@ -3788,15 +3794,14 @@ def build_runtime() -> Runtime:
     # stopped reading.
     config_manager.report_unread_files()
 
-    # First publication, in the master. Reading, aggregating and validating all
-    # happen here, which is what keeps a broken configuration a single clean
-    # exit — the arbiter has not forked yet, so there is nothing to respawn. The
-    # worker inherits the published snapshot through the fork and starts on it;
-    # ``post_fork``'s ``ingest()`` is then a cache hit that only arms the jobs.
+    # First publication. Reading, aggregating and validating all happen here,
+    # which is what keeps a broken configuration a single clean exit — nothing
+    # has been started yet, so there is nothing to tear down. ``start_runtime``'s
+    # ``ingest()`` is then a cache hit that only arms the jobs.
     #
     # It reads the store and nothing else (ADR-0032): the drop folder used to be
-    # scanned here, so that a file the ledger refuses was a master-side event —
-    # logged before anything had been forked — and there is no longer a file to
+    # scanned here, so that a file the ledger refuses was a boot-time event,
+    # logged before anything had been started — and there is no longer a file to
     # be found anywhere at boot.
     try:
         config_manager.reload()
@@ -3808,13 +3813,15 @@ def build_runtime() -> Runtime:
             boot, persistence,
             base_currency=opened.setting('base_currency'),
             recorded_events=len(config_manager.current().events))
-    finally:
-        # The connection closes whichever way the load went, because it is the
-        # file descriptor that must not cross ``fork()`` (issue #696) and a
-        # failed load still exits through here. The worker opens its own in
-        # ``start_runtime`` and attaches it.
+    except BaseException:
+        # A boot that will not finish gives the file back before it raises: the
+        # connection is only worth keeping open for a process that is going to
+        # serve, and a test that provokes a failure must not be left holding a
+        # store nobody closes. On the way through, it stays open — that is the
+        # whole of ADR-0039's "opened once".
         config_manager.attach_store(None)
         opened.close()
+        raise
 
     # The exporter used to be built here, and the ephemerality gauge raised with
     # it. Both left with ``/metrics`` (ADR-0033): the fact the gauge carried is
@@ -3822,33 +3829,26 @@ def build_runtime() -> Runtime:
     # member, and said again by the boot lines above — so it changed instrument
     # rather than status.
     return Runtime(config_manager, store_path=store_path,
-                   store_persistence=persistence)
+                   store_persistence=persistence, opened_store=opened)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:
-    """Worker-side boot (``post_fork``): everything a fork would have broken.
+    """The scheduler and its jobs — the boot's fourth step (ADR-0039).
 
-    The store connection, the scheduler's threads, and the first ``ingest()`` —
-    which is also what arms the per-symbol scrape jobs (issue #616), their
-    immediate first fire being the bootstrap.
+    The scheduler's threads and the first ``ingest()``, which is also what arms
+    the per-symbol scrape jobs (issue #616), their immediate first fire being the
+    bootstrap.
+
+    **It opens nothing.** This used to be ``post_fork`` and its first act was to
+    open the worker's own store connection, because the one ``build_runtime``
+    proved openable had to be closed before the fork. There is no fork and no
+    second connection: the store on the runtime is already open and already
+    attached to the configuration manager.
     """
-    # The worker's own store connection (issue #696). The master proved the file
-    # openable and closed it; this is the connection that lives for the process,
-    # and it is the one thing here a ``fork()`` could not have carried: DuckDB's
-    # buffers are not something two processes may inherit from one another.
-    if runtime.store_path is not None:
-        runtime.store = store.open_store(runtime.store_path)
-        # The ledger reads through this one from here on (issue #697). The
-        # master's connection is closed; the published snapshot it built came
-        # through the fork intact and stands until the first replay.
-        runtime.config_manager.attach_store(runtime.store)
-
     # The dials, from the store and from nowhere else (issue #701, ADR-0014).
-    # Read here rather than in the master because the master's connection is
-    # closed by the time this runs — and read *once*, into the attributes every
-    # cycle re-reads, so the scrape path never queries DuckDB from a scrape
-    # thread. The write path assigns the same attributes, which is the whole of
-    # "no dial requires a restart".
+    # Read *once*, into the attributes every cycle re-reads, so the scrape path
+    # never queries DuckDB from a scrape thread. The write path assigns the same
+    # attributes, which is the whole of "no dial requires a restart".
     dials = settings_registry.defaults() if runtime.store is None \
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']
@@ -3874,8 +3874,8 @@ def start_runtime(runtime: Runtime) -> Runtime:
         sb_metrics.shares, sb_metrics.capture_exchange_of())
     # Wire the scheduler before bootstrapping so ingest() can arm the
     # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
-    # bootstrap — no separate initial scrape. Background, not Blocking: the
-    # gunicorn worker owns the foreground now.
+    # bootstrap — no separate initial scrape. Background, not Blocking: uvicorn's
+    # event loop owns the foreground.
     scheduler = BackgroundScheduler(
         executors={'default': ThreadPoolExecutor(pool_size)})
     sb_metrics.scheduler = scheduler
@@ -3945,11 +3945,11 @@ def replay_after_write(runtime: Runtime) -> None:
 
 
 def shutdown_runtime(runtime: Runtime) -> None:
-    """``worker_exit`` hook body — the heir of ``__main__``'s ``finally``.
+    """The teardown — ``boot.sequence``'s ``finally``, and the heir of ``__main__``'s.
 
-    Gains an explicit ``scheduler.shutdown``: under ``BlockingScheduler`` the
+    Carries an explicit ``scheduler.shutdown``: under ``BlockingScheduler`` the
     scheduler was dead by the time the ``finally`` ran, so there was nothing to
-    stop. ``wait=False`` because the worker is already on its way out — a scrape
+    stop. ``wait=False`` because the process is already on its way out — a scrape
     in flight must not hold the shutdown open for a whole yfinance timeout.
     """
     if runtime.scheduler is not None and runtime.scheduler.running:

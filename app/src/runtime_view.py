@@ -686,8 +686,8 @@ def is_rebuilding(reconstruction: Optional[Tuple[int, int]]) -> bool:
     (``totals.ytd``): the two moments do not coincide, the year-to-date becoming
     computable long before the reconstruction finishes.
 
-    ``None`` is the reading a process with no scheduler makes — the gunicorn
-    master, a test runtime — and it answers ``False``. That is not the third
+    ``None`` is the reading a process with no scheduler makes — a boot before
+    ``start_runtime``, a test runtime — and it answers ``False``. That is not the third
     state :data:`installation_facts.UNOBSERVED` keeps: a boolean has no room for
     one, and ``False`` is the safe reading, since what it enables is the
     *assertion* that a date is still moving, which an observer that cannot see

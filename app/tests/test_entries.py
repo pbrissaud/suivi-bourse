@@ -95,8 +95,7 @@ def test_the_name_comes_off_the_ledger_or_falls_back(store, tmp_path):
     """The form never asks for it: a name is the security's, not the event's.
 
     Left ``NULL`` the row would fail ``EventValidator``'s *name is required* on
-    the next build — in the gunicorn master, i.e. a boot nobody can repair from
-    an app that is down.
+    the next build — i.e. a boot nobody can repair from an app that is down.
     """
     _upload(store, tmp_path)
 
@@ -232,7 +231,7 @@ def test_a_removal_that_oversells_is_refused_the_same_way(store):
     """The same fact from the other side: taking a purchase away.
 
     Without it the store would be left holding a ledger that fails the next
-    boot, and the boot is fatal in the gunicorn master.
+    boot, and a boot that fails is fatal.
     """
     bought = entries.create(store, _draft(quantity=10.0))
     entries.create(store, _draft(date=date(2024, 6, 10),
@@ -383,7 +382,7 @@ def test_a_bulk_removal_that_would_oversell_is_refused_whole(store):
 
     The single-row refusal on a wider perimeter, and it has to roll back the
     **whole** reduction: a ledger committed half-deleted is one that raises on
-    every reload, and that raise is fatal in the gunicorn master.
+    every reload, and that raise is fatal at boot.
     """
     entries.create(store, _draft(quantity=10.0))
     entries.create(store, _draft(date=date(2024, 6, 10),

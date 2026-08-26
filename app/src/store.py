@@ -19,13 +19,15 @@ eleven tables keep theirs. This is the one asymmetry in the schema, so it is
 written where a contributor meets it — next to the table, in
 :data:`_DDL_PRICE_POINT` — and not only in the ADR.
 
-**The connection does not cross ``fork()``.** ``build_runtime`` opens the store
-in the gunicorn master, which is what turns an unreadable file into a single
-named exit before the arbiter has anything to respawn; it then **closes** it,
-and the worker opens its own in ``post_fork``. Keeping the master's connection
-open would leave the same file locked by the parent while the child tried to
-use buffers it no longer owns — and DuckDB refuses a second process precisely
-because that is not survivable.
+**One connection, for the life of the process** (ADR-0039). ``build_runtime``
+opens the store as the boot's first act — which is what turns an unreadable file
+into a single named exit, before anything has been started — and keeps it;
+``shutdown_runtime`` gives it back. It used to be opened twice, because gunicorn
+forked and a DuckDB file descriptor is not something a parent and a child may
+share: the master closed what it had opened and the worker opened its own. That
+is also why this class serialises with a **reentrant** lock rather than
+coordinating between processes — DuckDB refuses a second process, and there has
+never been one to coordinate with.
 """
 import math
 import os

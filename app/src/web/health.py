@@ -47,9 +47,10 @@ def health():
     runtime = current_runtime()
     open_store = runtime.store
     if open_store is None:
-        # Before ``post_fork``, or after ``worker_exit``. Under gunicorn the
-        # socket is not being served then, so this is reachable only in a test
-        # or an embedding — and "the store is not open" is exactly what it says.
+        # Before the boot opened the store, or after the teardown closed it. The
+        # socket is not bound at either moment (``boot.sequence`` serves between
+        # the two), so this is reachable only in a test or an embedding — and
+        # "the store is not open" is exactly what it says.
         return problem.storage_unavailable('The store is not open')
 
     try:

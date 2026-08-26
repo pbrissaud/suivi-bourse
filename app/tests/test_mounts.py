@@ -219,9 +219,8 @@ def test_a_mount_point_named_dash_does_not_pass_for_the_separator():
 
 
 def test_a_line_that_cannot_be_read_is_skipped_and_never_raises():
-    """This runs in the gunicorn master before anything has been forked. A
-    kernel that grew a field must not be able to take the boot down over a
-    diagnostic."""
+    """This runs at boot, before anything has been started. A kernel that grew
+    a field must not be able to take the boot down over a diagnostic."""
     table = ('nonsense\n'
              '\n'
              '30 25 0:5 / / rw,relatime - overlay overlay rw\n'
