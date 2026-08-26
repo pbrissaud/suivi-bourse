@@ -6,8 +6,10 @@
  * draws nothing. The figure is there; the comparison between two lines is not:
  * `15,99 %` against `11,39 %` is a *reading*, and two bars are a glance. Three
  * surfaces carry the same figure — the allocation's legend, the accounts rail
- * and the `Poids` column of the shares table (#791, which this file exists to
- * give its primitive to) — and that is the reason this is a primitive rather
+ * and the account's own held lines (#833; the shares table's `Poids` column,
+ * which this file was written for at #791, has left it for good with #831, the
+ * weight of a line being drawn there by the allocation above the table now) —
+ * and that is the reason this is a primitive rather
  * than a fix: `Stat`, `EmptyState`, `Refusal` and `EntryPair` all exist because the
  * prototype held four copies of one thing, and a share bar written three times
  * diverges three times. It had already begun: the account's composition bar was

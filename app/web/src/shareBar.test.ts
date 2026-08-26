@@ -49,15 +49,15 @@ const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
  * rail's own bar is read in the DOM by `accounts.test.tsx`, which is the
  * stronger assertion of the two and is why this list is a *floor* rather than a
  * replacement for it. The shares table's `Poids` column joined the list at #791,
- * left again when the column did, and is back with it (#832) — the drawing being
- * the whole reason the column came back: `ShareBar` is the primitive this file
- * was written ahead of, and the shares table is the surface it was written for.
+ * left when the column did, came back with it at #832 and has left with it again
+ * (#831, the maquette read rendered): the weight of a line is drawn on that page
+ * by the allocation's legend above the table now, and `AccountDetail` is where a
+ * per-line share is still a cell. Three surfaces, no fourth.
  */
 const MOUNTS = [
   'src/components/dashboard/Allocation.tsx',
   'src/components/accounts/AccountsRail.tsx',
   'src/components/accounts/AccountDetail.tsx',
-  'src/components/shares/SharesTable.tsx',
 ]
 
 function sources(directory: string): string[] {
@@ -93,8 +93,8 @@ describe('one component draws a share', () => {
   }
 
   it('leaves every share bar to the primitive, the stacked bar apart', () => {
-    // Exactly the stacked bar, and nothing beside it: the `Poids` column of the
-    // shares table (#832) mounts `ShareBar`, which is why it is not here.
+    // Exactly the stacked bar, and nothing beside it: every other surface that
+    // draws a share mounts `ShareBar`, which is why none of them is here.
     expect(offenders).toEqual([STACKED_BAR])
   })
 

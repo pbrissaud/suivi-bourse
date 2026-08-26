@@ -223,7 +223,6 @@
   "shares.column.quantity": "Détenu",
   "shares.column.avgCost": "PRU",
   "shares.column.value": "Valorisation",
-  "shares.column.weight": "Poids",
   "shares.column.unrealised": "Latente",
   "shares.column.realised": "Réalisée",
   "shares.column.dividends": "Dividendes",

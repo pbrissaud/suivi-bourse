@@ -23,7 +23,7 @@
  * `usePageHeading`.
  *
  * **One column, and it is narrower than the shell** (#787). The column itself
- * is uncapped since #792, because a dashboard and a table of ten columns want
+ * is uncapped since #792, because a dashboard and a table of nine columns want
  * every pixel; a form of six fields and four key/value lists wants the opposite,
  * and the mock-up bounds this page at 880 px for the reason any prose surface
  * is bounded — a label at the far left of a 2 560 px screen and its value at
