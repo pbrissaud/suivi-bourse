@@ -10,11 +10,20 @@
  *
  * Five things are decisions rather than layout:
  *
- *  - **One range control, and it drives the curve *and* the rate beside it.**
- *    That is ADR-0019's rule amended in its subject and not in its rule: the two
- *    are read off the same rebasing over the same window, so they cannot answer
- *    *how did this period go* twice. `MAX` is not offered, and for ADR-0019's
- *    own reason — a time-weighted index has no bounded amplitude.
+ *  - **No range control, and the head figure is a ratio rather than a rate**
+ *    (#833, ADR-0028 corrected). The detail carried a copy of ADR-0019's control
+ *    driving a windowed time-weighted rate; the maquette this page takes its
+ *    form from defines its range presets and renders them nowhere, and the
+ *    correction is not a matter of taste. The rule the control exists to keep is
+ *    about **several spans read side by side** — one account's ancient
+ *    volatility setting the scale for every other — and it lands on the
+ *    dashboard's accounts card, which is the surface that compares accounts.
+ *    Here there is one series on one axis, so the defect has no subject and the
+ *    control was buying a choice at the price of a second announcer for *how did
+ *    this period go*. What stands at the head instead is `Performance totale`,
+ *    `gain ÷ versé net` — cumulative, of the same family as the *sur versé*
+ *    under the dividends, and covering the account's whole life so that it
+ *    implies no window and needs none stated.
  *  - **The total is computed from its four terms and never read** (ADR-0018).
  *    The payload carries `gain_absolu`, which is the same number written down
  *    elsewhere; computing here is what makes the four an identity rather than a
@@ -54,16 +63,12 @@ import {
   distinctSymbols,
   dividendPayers,
   isDefaultAccount,
-  rebase,
+  onContributed,
   valueSeries,
-  windowStart,
   DEFAULT_ACCOUNT_LABEL,
   DEFAULT_ACCOUNT_TYPE,
-  DEFAULT_RANGE,
-  RANGES,
   type AccountRow,
   type DegradedReason,
-  type Range,
   type Reassignment as ReassignmentOffer,
 } from '@/lib/accounts'
 import { api, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
@@ -78,7 +83,6 @@ import {
   termIsRendered,
   termRendering,
   type GainTermName,
-  type GainTerms,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { FIELDS, identityOf } from '@/lib/ledger'
@@ -123,9 +127,8 @@ export interface AccountDetailProps {
   events: readonly LedgerEvent[] | null
   /**
    * The account's own perf series, whole, or **`null` while its read is in
-   * flight**. It is windowed here rather than at the request: the longest range
-   * offered is the account's own opening, and only the series says when that
-   * was.
+   * flight**. Whole is also what is drawn since #833: there is no window to cut
+   * it to any more, the detail having no range control.
    */
   points: readonly PerfPoint[] | null
   currency: string | null
@@ -173,7 +176,6 @@ export function AccountDetail({
 }: AccountDetailProps) {
   const { t } = useI18n()
   const f = useFormatters()
-  const [range, setRange] = useState<Range>(DEFAULT_RANGE)
   // The detail is a **landmark named by the account it is about**, which is what
   // a reader jumping past the rail lands on and what says, without a colour,
   // which of the rail's entries is open.
@@ -202,37 +204,26 @@ export function AccountDetail({
     [held, row.transfer_fees],
   )
   const total = terms === null ? null : gainTotal(terms)
-  // What the dividends are worth **against what was paid in** — the maquette's
-  // *sur versé*. `null` is the em dash's own case and covers three states at
-  // once: the positions have not landed, nothing was ever paid in, or the
-  // account was paid out of more than it took in. None of them is a rate.
-  const onContributed = terms === null ? null : dividendYield(terms, row.net_contributed)
+  // **What this account has done, cumulatively** — `gain ÷ versé net`, the
+  // maquette's `Performance totale`. The numerator is the total *computed* from
+  // the four terms and never `row.gain_absolu`: the figure sits under the block
+  // that decomposes it, and reading two producers for one number one card apart
+  // is what would let the head and its own ratio disagree. They telescope
+  // exactly, the fourth term being what closes the gap (`lib/gain.ts`), which is
+  // why the rail one column over can divide `gain_absolu` and land on the same
+  // percentage.
+  const performance =
+    total === null || !total.known ? null : onContributed(total.value, row.net_contributed)
+  // What the dividends are worth against the same denominator — the maquette's
+  // *sur versé*, one arithmetic shared with the figure above (`onContributed`).
+  const dividendsOnContributed =
+    terms === null ? null : onContributed(termAmount(terms, 'dividends'), row.net_contributed)
 
-  // One window for the curve and for the rate beside it. `windowStart` takes the
-  // landed series because the bound at *since the opening* is a fact about the
-  // series — here there is one account, so the bound is its own opening.
-  //
-  // **`from === null` is not a read in flight.** It happens on `SINCE_OPENING`
-  // alone, and it means this account's series carries no index at all (#708) —
-  // a fact about the reader's data. Folded into the same branch as `points ===
-  // null` it took the whole card away, **control included**, so the reader who
-  // clicked *depuis l'ouverture* on an account with no cash ledger lost the very
-  // radio that would have brought them back.
-  const from = useMemo(
-    () => (points === null ? null : windowStart(range, new Date(), [points])),
-    [points, range],
-  )
-  const rebased = useMemo(
-    () => (points === null || from === null ? null : rebase(row.id, points, from)),
-    [points, from, row.id],
-  )
-  const curve = useMemo(
-    () =>
-      points === null || from === null
-        ? []
-        : valueSeries(points).filter((point) => point.t >= from),
-    [points, from],
-  )
+  // **The whole series, and no window at all** (#833). The curve is drawn over
+  // the account's own history from end to end: there is no control to ask for
+  // less, and its legend states the extent rather than leaving it implied
+  // (ADR-0028).
+  const curve = useMemo(() => (points === null ? [] : valueSeries(points)), [points])
 
   const lines = useMemo(
     () => (held === null ? null : heldRows(buildShareRows(held, new Map()))),
@@ -348,11 +339,16 @@ export function AccountDetail({
               </ul>
             </Stat>
 
-            {/* Not a fifth term — the **denominator** of the two rates on this
-                page, and it sits outside the list for that reason: a total and
-                its terms never share a row, and neither does a figure that is
-                not one of them. */}
-            <div className="border-t pt-4">
+            {/* Not a fifth term — the **denominator**, and the ratio it feeds,
+                and they sit outside the list for that reason: a total and its
+                terms never share a row, and neither does a figure that is not
+                one of them.
+
+                **The two are read at different weights** and that is the
+                subordination, not a taste: the contribution is a base and the
+                ratio is what the maquette leads an account with, so mounted at
+                equal size the euro amount would read as the subject of the row. */}
+            <div className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
               <Stat
                 size="term"
                 label={t('accounts.figure.netContributed')}
@@ -365,74 +361,53 @@ export function AccountDetail({
                   />
                 }
               />
+              {/* **`Performance totale`, and it is a change** — hence
+                  `f.percent` and its sign, where the *sur versé* under the
+                  dividends is a share and carries none (`lib/format.ts`). Same
+                  arithmetic, two readings, and the formatter is what says which
+                  of the two a percentage is. It inherits the
+                  total's own absence: a rate still resolving leaves the gain
+                  unknown, so the ratio is not an em dash but the same named
+                  wait the figure above it wears. */}
+              <Stat
+                size="stat"
+                label={t('accounts.figure.totalPerformance')}
+                value={renderFigure(
+                  sumRendering(total),
+                  () => (performance === null ? ABSENT : f.percent(performance)),
+                  t,
+                )}
+                valueClassName={signClass(performance)}
+                explain={
+                  <Explain
+                    figure={t('accounts.figure.totalPerformance')}
+                    body="accounts.totalPerformance.explain"
+                    anchor="total-performance"
+                  />
+                }
+              />
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* The chart and the rate beside it, under **one** range control. Nothing
-          at all while the series is in flight, title and control included. */}
+      {/* **The curve, and nothing beside it** (#833). The rate that used to
+          share this card was the windowed one, and it left with the control:
+          what answers *how has this account done* is the ratio at the head, one
+          card up, where its two operands already are. The card is therefore the
+          drawing alone — and a card holding only a drawing that cannot be drawn
+          does not exist, which is why the emptiness is decided here rather than
+          inside it. Nothing at all while the series is in flight (ADR-0026),
+          and the reason in its place where the read refused (#829, ADR-0037). */}
       {points === null ? (
         failures.points ? <Unreadable failure={failures.points} /> : null
-      ) : (
-        <Card className="gap-4">
-          {/* The header carries the control and no title of its own: what the
-              card holds is a rate **and** a curve, and a heading naming the
-              curve would stand over an account that has none to draw. Each
-              figure names itself instead. */}
-          <CardHeader className="flex flex-wrap items-center justify-end gap-3">
-            {/* It **wraps**, and that is the 390 px case rather than a taste:
-                two of the four presets are named in words, and four radios in a
-                row come to more than the width of a phone. */}
-            <div
-              role="radiogroup"
-              aria-label={t('accounts.detail.range')}
-              className="flex flex-wrap justify-end gap-1"
-            >
-              {RANGES.map((candidate) => (
-                <button
-                  key={candidate}
-                  type="button"
-                  role="radio"
-                  aria-checked={candidate === range}
-                  onClick={() => setRange(candidate)}
-                  className={cn(
-                    'rounded px-2 py-1 text-xs',
-                    candidate === range ? 'bg-secondary font-medium' : 'text-muted-foreground',
-                  )}
-                >
-                  {t('accounts.chart.rangeName', { range: candidate })}
-                </button>
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Stat
-              label={t('accounts.figure.performance')}
-              value={
-                // The em dash is right: an account with no cash movement has no
-                // index at all (#708), so there is nothing to compute rather
-                // than something missing.
-                rebased?.performance == null ? ABSENT : f.percent(rebased.performance)
-              }
-              valueClassName={signClass(rebased?.performance ?? null)}
-              explain={
-                <Explain
-                  figure={t('accounts.figure.performance')}
-                  body="accounts.performance.explain"
-                  anchor="twr"
-                />
-              }
-            />
-            {/* A block with nothing in it does not exist: an account with no
-                cash ledger has no value to trace against a contribution, and the
-                header above has already named that reason. */}
-            {curve.length === 0 ? null : (
-              // The window is handed down rather than read again: the legend
-              // states the span the curve was cut to, and the two cannot part
-              // company (ADR-0028, #833).
-              <AccountCurve points={curve} currency={currency} range={range} />
-            )}
+      ) : curve.length === 0 ? null : (
+        <Card>
+          <CardContent>
+            {/* The legend states the extent it was drawn over, which is the
+                account's whole history: a curve with no stated span beside a
+                total is the unbounded-window failure in miniature (ADR-0028). */}
+            <AccountCurve points={curve} currency={currency} />
           </CardContent>
         </Card>
       )}
@@ -533,7 +508,9 @@ export function AccountDetail({
                   // not a change, and `lib/format.ts` reserves the sign for the
                   // second — `+1,69 %` would read as a yield that went up.
                   value={
-                    onContributed === null ? ABSENT : f.percentPoints(onContributed * 100)
+                    dividendsOnContributed === null
+                      ? ABSENT
+                      : f.percentPoints(dividendsOnContributed * 100)
                   }
                 />
               </div>
@@ -719,22 +696,6 @@ export function AccountDetail({
       </div>
     </section>
   )
-}
-
-/**
- * The dividends as a share of what was paid in — the maquette's *sur versé*.
- *
- * It divides the **contribution** and nothing else, because that is what the
- * two rates on this page already divide: a third base — the account's value, or
- * its cost — would be a second denominator for one page to explain.
- *
- * `null` on all three of *no term yet*, *nothing paid in* and *more taken out
- * than put in*: none of the three is a rate, and the em dash says so.
- */
-function dividendYield(terms: GainTerms, contributed: number | null): number | null {
-  const dividends = termAmount(terms, 'dividends')
-  if (dividends === null || contributed === null || contributed <= 0) return null
-  return dividends / contributed
 }
 
 /** The row's own name — the ticker where there is one, the label otherwise. */

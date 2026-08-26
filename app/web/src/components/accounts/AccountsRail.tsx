@@ -9,14 +9,29 @@
  *
  * Four things about it are decisions:
  *
- *  - **It draws a weight and never a rate.** ADR-0028 allows a sparkline here
- *    on the condition that it carry its period, and the second half of the same
- *    clause is *or carry no figure*. What this rail carries is a **share of a
- *    total on a stated day** — the page's own `Chiffres arrêtés au …` — which is
- *    not a period at all, so no window is being implied and none has to be
- *    stated. A curve here would need a range control of its own beside the
- *    detail's, and two controls on one page are the two announcers this product
- *    has already paid for once.
+ *  - **It draws a weight and a cumulative ratio, and never a rate.** ADR-0028
+ *    allows a sparkline here on the condition that it carry its period, and the
+ *    second half of the same clause is *or carry no figure*. Neither of the two
+ *    figures on a card is a period: a **share of a total on a stated day** is
+ *    not one, and `Performance totale` — `gain ÷ versé net`, the same figure the
+ *    detail leads with since #833 — covers the account's whole life, which is
+ *    what *totale* says. So no window is implied and none has to be stated, and
+ *    that is precisely why the maquette's `perf` can stand here now while it
+ *    could not before: what it puts on these cards is that cumulative ratio and
+ *    never the windowed rate ADR-0028 refused. A **curve** is still not drawn:
+ *    it would need a range control of its own, and one control per page is what
+ *    is left of ADR-0019's rule.
+ *  - **The ratio is divided out of `gain_absolu`**, where the detail divides the
+ *    total it computes from four terms (ADR-0018). That is not two producers for
+ *    one number: the fourth term is what closes the gap between the sum and the
+ *    stored figure (`lib/gain.ts`), so the two land on the same percentage — and
+ *    the rail reads no positions at all, which is the whole reason it costs one
+ *    request for the page rather than one per account.
+ *  - **The weights' legend carries neither.** The maquette puts its `perf` on
+ *    the *accounts* — the cards, and the sticky strip that is those same cards
+ *    at a narrow width — and never on the bar's legend, whose one figure is the
+ *    share. Two unlabelled percentages on a twelve-pixel row would be two
+ *    figures the reader has to tell apart by guessing.
  *  - **The entry is a link, so the selection is a URL.** It survives a reload,
  *    it can be handed to somebody else, and the way back out is the browser's
  *    own button. `aria-current` is what says which one is open — a class alone
@@ -54,6 +69,7 @@ import {
   declaredType,
   degradedReason,
   isDefaultAccount,
+  onContributed,
   DEFAULT_ACCOUNT_ID,
   DEFAULT_ACCOUNT_LABEL,
   DEFAULT_ACCOUNT_TYPE,
@@ -64,6 +80,7 @@ import {
 import type { Advisory } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
+import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
 const REASON_LABELS: Record<DegradedReason, MessageKey> = {
@@ -242,6 +259,9 @@ export function AccountsRail({
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
           const type =
             declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
+          // `null` where there is no ratio to state — nothing written about this
+          // account yet, nothing ever paid in, or more taken out than put in.
+          const performance = onContributed(row.gain_absolu, row.net_contributed)
           return (
             <li key={row.id}>
               <Link
@@ -265,14 +285,33 @@ export function AccountsRail({
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">{type}</span>
                 </span>
 
-                {/* **What the account is worth, and never how it performed.** The
-                    maquette puts a `perf` here and ADR-0028 does not let it: a
-                    rate with no stated period beside a total is the
-                    unbounded-window failure in miniature, and this rail has no
-                    range control to state one. The value is the absolute the
-                    share above is a share *of*. */}
-                <span className="tabular mt-1 block text-lg font-semibold tracking-tight">
-                  {f.currency(accountWorth(row), currency)}
+                {/* **What the account is worth, and what it has done with it.**
+                    The maquette pairs the two on this card and ADR-0028 lets it
+                    since #833: the figure beside the value is `Performance
+                    totale`, a cumulative ratio whose extent is the account's own
+                    life, and not the windowed rate a rail with no range control
+                    could never have stated a period for. The value is the
+                    absolute the share above is a share *of*. */}
+                <span className="mt-1 flex items-baseline justify-between gap-3">
+                  <span className="tabular text-lg font-semibold tracking-tight">
+                    {f.currency(accountWorth(row), currency)}
+                  </span>
+                  {/* The name is announced and not drawn: the card already
+                      carries a value and a type, so a bare percentage read out
+                      after them says nothing about which figure it is. It
+                      carries no bubble — ADR-0016 puts one icon per figure and
+                      per surface, and this page's is on the detail's own head. */}
+                  <span
+                    className={cn(
+                      'tabular shrink-0 text-sm font-medium',
+                      signClass(performance),
+                    )}
+                  >
+                    <span className="sr-only">
+                      {t('accounts.figure.totalPerformance')}{' '}
+                    </span>
+                    {performance === null ? ABSENT : f.percent(performance)}
+                  </span>
                 </span>
 
                 {/* The id, on a line of its own: it is what every event names and

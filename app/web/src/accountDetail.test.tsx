@@ -371,81 +371,57 @@ describe('the five blocks', () => {
   })
 })
 
-describe('one range control, two figures', () => {
-  function range() {
-    return screen.getByRole('radiogroup', { name: 'Plage' })
-  }
-
-  it('drives the rate and the curve beside it from one gesture', async () => {
+describe('no range control, and a cumulative ratio in its place', () => {
+  it('reads the whole gain against what was paid in', async () => {
+    // 322,00 of 1 478,00 — the head's own total divided by the contribution
+    // one line above it, which is what `Performance totale` is. It is a
+    // **change**, so it carries its sign, where the *sur versé* under the
+    // dividends is a share and carries none.
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    // One year: 171,5 / 150 − 1. One month: 171,5 / 165 − 1. Both figures
-    // correct, and only the control says which period is being read.
-    await waitFor(() =>
-      expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent(/\+14,33/),
-    )
-    expect(
-      within(detail).getByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
-    ).toBeInTheDocument()
-
-    await user.click(within(range()).getByRole('radio', { name: '1M' }))
-    await waitFor(() =>
-      expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent(/\+3,94/),
-    )
+    const figure = await within(detail).findByRole('group', { name: 'Performance totale' })
+    await waitFor(() => expect(figure).toHaveTextContent(/\+21,79\s?%/))
   })
 
-  it('states on the drawing itself the span it was cut to', async () => {
-    // ADR-0028's sparkline clause is *carry the period or carry no figure*, and
-    // the control above does not satisfy it: a control says what was **asked
-    // for**, a legend says what is **drawn**. The two part company on the one
-    // preset whose bound is a fact about the data.
-    const { user } = renderAccounts()
-    const detail = await open(user, 'Alpha')
-    await waitFor(() =>
-      expect(detail).toHaveTextContent('Dessiné sur les douze derniers mois'),
-    )
-
-    await user.click(within(range()).getByRole('radio', { name: '1M' }))
-    await waitFor(() => expect(detail).toHaveTextContent('Dessiné sur le dernier mois'))
-    expect(detail).not.toHaveTextContent('Dessiné sur les douze derniers mois')
-
-    await user.click(within(range()).getByRole('radio', { name: 'Depuis l’ouverture' }))
-    await waitFor(() =>
-      expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
-    )
-  })
-
-  it('bounds the longest window at the account’s own opening, never at MAX', async () => {
-    const { user } = renderAccounts()
-    const detail = await open(user, 'Alpha')
-    await waitFor(() =>
-      expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent(/\+14,33/),
-    )
-
-    // From 2019-10-30, base 100: the stored index is 171,5, so the account is
-    // up 71,50 % — a figure that is only readable **with** its period, which is
-    // why the control carries it and no sentence repeats it.
-    await user.click(within(range()).getByRole('radio', { name: 'Depuis l’ouverture' }))
-    await waitFor(() =>
-      expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent(/\+71,50/),
-    )
-    expect(within(range()).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
-  })
-
-  it('keeps the control where the window it asks for holds nothing', async () => {
-    // `windowStart` answers `null` on `SINCE_OPENING` alone, and it means this
-    // account's series carries no index at all (#708) — a fact, not a read in
-    // flight. Folded into the same branch the card vanished **with its control**,
-    // so the reader who clicked *depuis l'ouverture* on an account with no cash
-    // ledger lost the very radio that would have brought them back.
+  it('says nothing to compute where nothing was ever paid in', async () => {
+    // `gamma` has no cash movement at all, so there is no contribution to
+    // divide by — the em dash's own sentence, and not a ratio of zero.
     const { user } = renderAccounts()
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    await user.click(within(range()).getByRole('radio', { name: 'Depuis l’ouverture' }))
-    expect(within(range()).getByRole('radio', { name: '1M' })).toBeInTheDocument()
-    expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent('—')
+    expect(
+      within(detail).getByRole('group', { name: 'Performance totale' }),
+    ).toHaveTextContent('—')
+  })
+
+  it('offers no window to read it over, on this page or anywhere in it', async () => {
+    // ADR-0028 corrected: the control is the dashboard accounts card's, and the
+    // detail draws one series on one axis — where the rule the control keeps is
+    // about several spans read side by side. The maquette this page takes its
+    // form from defines its presets and renders them nowhere.
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
+
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'perf' })).not.toBeInTheDocument()
+  })
+
+  it('states on the drawing itself the extent it covers', async () => {
+    // ADR-0028's sparkline clause is *carry the period or carry no figure*, and
+    // with no control above the chart the legend is the one place it is said.
+    // What is drawn is the account's history end to end.
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+
+    await waitFor(() =>
+      expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
+    )
+    expect(
+      within(detail).getByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+    ).toBeInTheDocument()
   })
 
   it('draws nothing where the account has no value to draw', async () => {
@@ -500,16 +476,23 @@ describe('a read in flight is not an absence', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('draws neither curve nor rate while the series has not answered', async () => {
+  it('draws no curve while the series has not answered, and keeps the ratio', async () => {
     server.use(http.get(ROUTES.accountHistory, () => new Promise<never>(() => {})))
     const { user } = renderApp({ url: '/comptes' })
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    // The whole card, control and title included: a range control offering four
-    // windows onto nothing is an announcer of a period nobody has read.
-    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
-    expect(within(detail).queryByRole('group', { name: 'perf' })).not.toBeInTheDocument()
+    // The whole card, its title included: a drawing of a series nobody has read
+    // is not a drawing that is loading, it is a claim about the reader's data.
+    expect(
+      within(detail).queryByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+    ).not.toBeInTheDocument()
+    // And the head figure stands, because it reads none of that: `Performance
+    // totale` divides the four terms by the contribution, both of which landed.
+    // A read that failed never costs the reader a block that did answer.
+    expect(within(detail).getByRole('group', { name: 'Performance totale' })).toHaveTextContent(
+      /\+21,79\s?%/,
+    )
   })
 
   it('names the read it could not make rather than summing nothing', async () => {
@@ -553,20 +536,26 @@ describe('the bubbles', () => {
     )
   })
 
-  it('lets the rate warn against its own figure, and opens on click and not on hover', async () => {
+  it('says the ratio covers the whole life and no window, on click and not on hover', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
-    const trigger = await within(detail).findByRole('button', { name: 'Ce que veut dire perf' })
+    const trigger = await within(detail).findByRole('button', {
+      name: 'Ce que veut dire Performance totale',
+    })
 
     await user.hover(trigger)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     await user.click(trigger)
     const bubble = await screen.findByRole('dialog')
-    // The one bubble in the product that warns against its own figure.
-    expect(bubble).toHaveTextContent(/s’inversent quatre fois sur sept plages/)
-    expect(bubble).toHaveTextContent(
-      /Les rendements sont calculés à partir des dates de vos événements\./,
+    // What the figure is **not**, which is the whole reason it can stand with no
+    // range beside it: a cumulative ratio, not annualised, saying nothing about
+    // when the money went in.
+    expect(bubble).toHaveTextContent(/rapport cumulé et non un taux/)
+    expect(bubble).toHaveTextContent(/toute la vie du compte/)
+    expect(within(bubble).getByRole('link')).toHaveAttribute(
+      'href',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/read-your-figures#total-performance',
     )
   })
 })
