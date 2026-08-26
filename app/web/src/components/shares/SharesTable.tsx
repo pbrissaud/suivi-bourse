@@ -1,7 +1,7 @@
 /**
- * The live table — **nine columns** (#684 D3, #791, ADR-0016, ADR-0017).
+ * The live table — **ten columns** (#684 D3, #791, #832, ADR-0016, ADR-0017).
  *
- *     Titre · Cours · Détenu · PRU · Valorisation · Latente ·
+ *     Titre · Cours · Détenu · PRU · Valorisation · Poids · Latente ·
  *     Réalisée · Dividendes · Compte
  *
  * with the percentage on a **second line under the latent gain** rather than in
@@ -18,10 +18,28 @@
  *    a total never shares a row with its terms (ADR-0016): five numeric columns
  *    of equal weight say nothing about the last four being *inside* the first.
  *
- * **`Poids` is not a column here.** It was one at #791 and it left again: the
- * share of the table a line carries is a figure this page owns — `weightShare`
- * and `weightRendering` are still in `lib/shares.ts`, still tested — but the
- * table is not where it is read. What replaces it is decided elsewhere.
+ * **`Poids` is the tenth, and it is a bar** (#832). It was a column at #791 and
+ * was taken out again on sight — the figure read well and the column was not
+ * where it belonged — which is exactly what changed: the weight is not a
+ * percentage in a column any more, it is `ShareBar` under one, and the drawing
+ * is the whole reason it comes back. `15,99 %` against `11,39 %` is a reading;
+ * two bars are a glance (#800). It sits **beside `Valorisation`**, which is the
+ * only place it can sit: it is that cell over the header's, so the two are read
+ * as one figure at two scales and the reader never has to hunt for the divisor.
+ *
+ * **The whole is the table's, grouped or not.** `placedValue` is taken over
+ * every row of every group, so turning the grouping on re-cuts the lines
+ * without re-scaling a single percentage — a partition moves nothing, which is
+ * the page's own property met one column over. A symbol held on two accounts
+ * splits into two lines whose weights add up to the one it had; that is the
+ * split being honest, not the whole moving.
+ *
+ * **The fill is chrome and the bar is `aria-hidden`.** No ramp: ADR-0023
+ * licenses the rank ramp only over a **sorted, legended** list, and this table
+ * is sorted by whichever of ten columns the reader last pressed. A ramp keyed
+ * on the row's position would therefore recolour the page on a gesture that
+ * says nothing about weight. `AccountDetail`'s composition split already
+ * answered the same question the same way.
  *
  * **Every column sorts, and an absence never rises** (`lib/shares.ts`). The
  * order lives on the `<th>` as `aria-sort`, where a reader who cannot see the
@@ -47,6 +65,7 @@
 import { ArrowDown, ArrowUp, TriangleAlert } from 'lucide-react'
 
 import { Explain } from '@/components/Explain'
+import { ShareBar } from '@/components/ShareBar'
 import {
   Table,
   TableBody,
@@ -63,10 +82,13 @@ import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
   isAnomalous,
   marketValue,
+  placedValue,
   unitCost,
   unrealised,
   unrealisedRatio,
   valuationTotal,
+  weightRendering,
+  weightShare,
   type ShareGroup,
   type ShareRow,
   type ShareSort,
@@ -146,7 +168,7 @@ export interface SharesTableProps {
   /**
    * The blocks the table is made of — **one** when nothing is grouped, and one
    * per account when it is. A group with no header is the ungrouped table, so
-   * there is one rendering of nine columns rather than two.
+   * there is one rendering of ten columns rather than two.
    */
   groups: readonly ShareGroup[]
   currency: string | null
@@ -163,6 +185,10 @@ export function SharesTable({
   onSelect,
 }: SharesTableProps) {
   const { t } = useI18n()
+  // **One whole for the whole table** — see the header comment: the divisor is
+  // taken over every row of every group, so the grouping re-cuts the lines
+  // without re-scaling a percentage.
+  const whole = placedValue(groups.flatMap((group) => group.rows))
 
   return (
     <Table>
@@ -180,6 +206,7 @@ export function SharesTable({
           />
           <ColumnHead label="shares.column.avgCost" column="avgCost" sort={sort} onSort={onSort} numeric />
           <ColumnHead label="shares.column.value" column="value" sort={sort} onSort={onSort} numeric />
+          <ColumnHead label="shares.column.weight" column="weight" sort={sort} onSort={onSort} numeric />
           <ColumnHead
             label="shares.column.unrealised"
             column="unrealised"
@@ -209,6 +236,7 @@ export function SharesTable({
               key={`${group.account ?? ''}·${row.symbol}`}
               row={row}
               currency={currency}
+              whole={whole}
               onSelect={onSelect}
             />
           ))}
@@ -238,7 +266,7 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
 
   return (
     <TableRow className="bg-muted/40 hover:bg-muted/40">
-      <th scope="rowgroup" colSpan={9} className="px-3 py-2 text-left [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5">
+      <th scope="rowgroup" colSpan={10} className="px-3 py-2 text-left [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5">
         <span className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <span className="text-sm font-medium">{group.account}</span>
           <span className="text-xs text-muted-foreground">
@@ -270,16 +298,19 @@ function GroupHead({ group, currency }: { group: ShareGroup; currency: string | 
 interface ShareLineProps {
   row: ShareRow
   currency: string | null
+  /** What the `Poids` cell divides — the table's, never the group's. */
+  whole: number
   onSelect: (symbol: string) => void
 }
 
-function ShareLine({ row, currency, onSelect }: ShareLineProps) {
+function ShareLine({ row, currency, whole, onSelect }: ShareLineProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const renderings = positionRenderings(row)
   const value = marketValue(row)
   const gain = unrealised(row)
   const ratio = unrealisedRatio(row)
+  const share = weightShare(row, whole)
 
   return (
     // **The whole row opens the sheet** (#791). The button on the name stays,
@@ -290,9 +321,16 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
     <TableRow className="cursor-pointer" onClick={() => onSelect(row.symbol)}>
       <TableCell>
         <span className="flex items-center gap-2">
+          {/* **The one column of ten whose width the reader's data decides**, so
+              it is the one that is bounded (#832). Every other cell is a figure
+              of known length; a name is whatever the ledger says, and
+              `whitespace-nowrap` on the cell turns a long one into width the
+              nine columns beside it then have to be found somewhere else. The
+              ticker underneath is never truncated — it is what the reader
+              recognises the line by, and it is short by construction. */}
           <button
             type="button"
-            className="font-medium underline-offset-4 hover:underline"
+            className="max-w-[10rem] truncate font-medium underline-offset-4 hover:underline"
             onClick={() => onSelect(row.symbol)}
           >
             {row.name ?? row.symbol}
@@ -332,6 +370,30 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
 
       <TableCell className={`text-right tabular ${toneOf(renderings.valuation, value)}`}>
         {renderFigure(renderings.valuation, () => f.currency(value, currency), t)}
+      </TableCell>
+
+      {/* **The share of the table this line carries, written and drawn.** The
+          rendering is the valuation's own (`weightRendering`) — whatever empties
+          that cell empties this one, for the same reason and with the sentence
+          already written for it, which is what keeps the four renderings of
+          absence four (ADR-0021).
+
+          `percentPoints` and not `percent`: a share of a whole never carries a
+          sign, where `+15,99 %` would read as a movement (`lib/format.ts`). */}
+      <TableCell className="text-right tabular">
+        {/* `share ?? 0` is unreachable and is not a fallback: `weightRendering`
+            answers `figure` only where there *is* a share, so the callback runs
+            on a number. It is the type closing, not a decision. */}
+        {renderFigure(weightRendering(row, whole), () => f.percentPoints((share ?? 0) * 100), t)}
+        {/* The same figure, drawn (#800) — `aria-hidden`, the percentage being
+            written on the line above it. `null` draws nothing at all, which is
+            what a line with no share to state looks like; the chrome fill is
+            `AccountDetail`'s, to the letter, because neither split is ranked. */}
+        <ShareBar
+          share={share}
+          fill="color-mix(in oklab, var(--foreground) 70%, transparent)"
+          className="mt-1"
+        />
       </TableCell>
 
       <TableCell className={`text-right tabular ${toneOf(renderings.unrealised, gain)}`}>
