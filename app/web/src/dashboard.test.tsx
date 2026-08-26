@@ -892,14 +892,27 @@ describe('one chart slot, two readings', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    // A **reading** selector, drawn as tabs: two sibling radio groups would
-    // read as two settings of the same thing, which is the duplication this
-    // page has just closed.
-    const readings = await screen.findByRole('tablist')
-    expect(within(readings).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+    // A **reading** selector, drawn as buttons since #831 — the maquette draws
+    // it segmented exactly like the range beside it, and nothing here is a
+    // place to go. Radios are still refused for the older reason: two sibling
+    // radio groups read as two settings of the same thing, which is the
+    // duplication this page has just closed.
+    const readings = await screen.findByRole('group', { name: 'Lecture' })
+    expect(within(readings).getAllByRole('button').map((one) => one.textContent)).toEqual([
       'Montants',
       'Performance',
     ])
+    expect(within(readings).getByRole('button', { name: 'Montants' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(readings).queryByRole('radio')).not.toBeInTheDocument()
+
+    // **And there is not a tab left on the page** (#831). #830 emptied the
+    // ledger and the settings of theirs and this card kept two, which is what
+    // reopened this ticket.
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
 
     const range = screen.getByRole('radiogroup', { name: 'Plage' })
     expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
@@ -945,8 +958,8 @@ describe('one chart slot, two readings', () => {
 
     expect(await screen.findByText('Valorisation')).toBeInTheDocument()
     expect(screen.getByText('Prix de revient')).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: 'Performance' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Performance' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
     // The range control survives the fallback: it is the page's, not a
     // property of the series it happens to be drawing.
     expect(screen.getByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
@@ -963,7 +976,7 @@ describe('one chart slot, two readings', () => {
     const { user } = renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    await user.click(await screen.findByRole('tab', { name: 'Performance' }))
+    await user.click(await screen.findByRole('button', { name: 'Performance' }))
     // The legend goes with the reading, which is how one knows the card has
     // actually swapped what it draws.
     await waitFor(async () =>
@@ -994,7 +1007,7 @@ describe('the page shows figures and never explains itself (ADR-0016, #831)', ()
 
     for (const rule of RULES) expect(screen.queryByText(rule)).not.toBeInTheDocument()
 
-    await user.click(await screen.findByRole('tab', { name: 'Performance' }))
+    await user.click(await screen.findByRole('button', { name: 'Performance' }))
     await waitFor(async () =>
       expect(within(await chartCard()).queryByText('Valeur totale')).not.toBeInTheDocument(),
     )

@@ -131,6 +131,7 @@
 
   "dashboard.chart.amounts": "Montants",
   "dashboard.chart.performance": "Performance",
+  "dashboard.chart.reading": "Lecture",
   "dashboard.chart.range": "Plage",
   "dashboard.chart.rangeName": "{range, select, 1M {1M} YTD {Depuis le 1ᵉʳ janvier} 1Y {1A} MAX {MAX} other {}}",
   "dashboard.chart.value": "Valeur totale",

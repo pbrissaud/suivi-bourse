@@ -10,11 +10,17 @@
  *
  * Four things about it are decisions:
  *
- *  - **The reading selector is a reading selector.** It is drawn as tabs and the
- *    range as radios, deliberately: two sibling radio groups read as two
- *    settings of the same thing, which is the duplication this page has just
- *    closed (the head lost its own presets at #718, and this is the page's one
- *    range control).
+ *  - **The reading selector is a reading selector, and it is not tabs** (#831).
+ *    It was `Tabs` for three tickets and the maquette never drew one: both
+ *    controls of this card are segmented **buttons** there (`readingTabs`, whose
+ *    name is the only tab left in the drawing). A tab is a *place* the reader
+ *    goes — the shell's own navigation is what the product has of those — and
+ *    what these two press is which curve the same slot draws. So they are
+ *    buttons that say whether they are in force (`aria-pressed`), grouped and
+ *    named, exactly the idiom the ledger's chips and the price chart's rail
+ *    already use. What survives the change is the reason they are not radios:
+ *    two sibling radio groups read as two settings of the same thing, and the
+ *    range beside them is the page's one range control.
  *  - **`3M` is dead** and `1M / YTD / 1Y / MAX` is the whole list: from February
  *    to December `YTD` covers or contains `3M`, and five buttons on one control
  *    is one too many. The series is daily and dense over the calendar and it is
@@ -78,7 +84,6 @@ import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
 import {
   amountsFromTotals,
@@ -87,6 +92,7 @@ import {
   DASHBOARD_RANGES,
   DEFAULT_DASHBOARD_RANGE,
   performanceRows,
+  READINGS,
   windowFloor,
   yFloor,
   type AmountsRow,
@@ -136,8 +142,8 @@ export function PortfolioChart({
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
   // **Nothing at all, title included** (ADR-0026): the block's one series is
-  // in flight, and a frame carrying two tab labels and a range control over an
-  // empty plot is a skeleton written by hand.
+  // in flight, and a frame carrying two reading buttons and a range control
+  // over an empty plot is a skeleton written by hand.
   //
   // A series that **failed** is the other news, and it is said here rather than
   // in a strip at the top of the page (#829, ADR-0037): the slot the chart would
@@ -163,16 +169,35 @@ export function PortfolioChart({
     <Card className="gap-4">
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Tabs and not radios: the reading is not a second setting of the
-              range, and the two must not look like siblings. At one reading
-              there is nothing to choose, so there is no control at all. */}
+          {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
+              this selector segmented exactly as it draws the range beside it,
+              and nothing here is a place to go: pressing one swaps what the
+              slot below draws, which is what `aria-pressed` says and what a tab
+              would misname. Radios are refused for the older reason — two
+              sibling radio groups read as two settings of the same thing, and
+              the range is the page's one range control. At one reading there is
+              nothing to choose, so there is no control at all. */}
           {ledger ? (
-            <Tabs value={reading} onValueChange={(value) => setChosen(value as Reading)}>
-              <TabsList>
-                <TabsTrigger value="amounts">{t('dashboard.chart.amounts')}</TabsTrigger>
-                <TabsTrigger value="performance">{t('dashboard.chart.performance')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div
+              role="group"
+              aria-label={t('dashboard.chart.reading')}
+              className="flex gap-1"
+            >
+              {READINGS.map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  aria-pressed={candidate === reading}
+                  onClick={() => setChosen(candidate)}
+                  className={cn(
+                    'rounded px-2 py-1 text-xs',
+                    candidate === reading ? 'bg-secondary font-medium' : 'text-muted-foreground',
+                  )}
+                >
+                  {t(candidate === 'amounts' ? 'dashboard.chart.amounts' : 'dashboard.chart.performance')}
+                </button>
+              ))}
+            </div>
           ) : (
             <h2 className="text-sm font-medium">{t('dashboard.chart.amounts')}</h2>
           )}

@@ -131,6 +131,7 @@
 
   "dashboard.chart.amounts": "Amounts",
   "dashboard.chart.performance": "Performance",
+  "dashboard.chart.reading": "Reading",
   "dashboard.chart.range": "Range",
   "dashboard.chart.rangeName": "{range, select, 1M {1M} YTD {YTD} 1Y {1Y} MAX {MAX} other {}}",
   "dashboard.chart.value": "Total value",
