@@ -13,11 +13,14 @@
 > with #791 and was taken out again on sight: the figure reads well and the
 > column was not where it belonged. `placedValue`, `weightShare` and
 > `weightRendering` stay in `lib/shares.ts`, held by their own unit tests since
-> the column's rendering tests left with it — what reads them next is another
-> ticket's decision.
+> the column's rendering tests left with it. **What reads them is the account's
+> lines block** (#833): a dozen lines under one account is where a weight is a
+> glance rather than a tenth column, and it is drawn there as a bar with the
+> percentage written beside it.
 > **A share is drawn now, and by one component** (#800): `ShareBar` puts a bar
 > under every line that carries a share of a total — the allocation's legend,
-> the accounts rail and the account's composition split. It takes a share and a fill and decides neither
+> the accounts rail, the account's composition split and, since #833, the
+> account's own lines and the securities that pay it. It takes a share and a fill and decides neither
 > the colour nor the order, so ADR-0023's rank ramp and the rail's identity
 > wheel each stay the business of the surface that earned them.
 > `src/shareBar.test.ts` is what keeps the count at one.
@@ -386,11 +389,20 @@ src/
   back to the first declared one. **One** range control drives the detail's curve
   *and* the rate beside it, `MAX` not offered; the rail draws a share of a total
   on a stated day and no curve at all, which is the second half of ADR-0028's
-  sparkline clause. The cross-account comparison is the dashboard's accounts card
-  now, and ADR-0019's rule travelled with it. It is **also** where an account is
-  declared (from the rail), renamed and removed (from the panel its own name
-  opens) — the removal's three refusals being prose, which a table cell never had
-  room for. The reassignment rides with the **declaration** where nothing is
+  sparkline clause — and the first half is held by the curve itself since #833,
+  whose legend **states the span it was cut to**, a control saying what was asked
+  for where a legend says what is drawn. The cross-account comparison is the
+  dashboard's accounts card now, and ADR-0019's rule travelled with it. It is
+  **also** where an account is declared (from the rail), renamed and removed
+  (from the panel its own name opens) — the removal's **two** refusals being
+  prose, which a table cell never had room for; the third was *a file declares
+  this account* and it left with `account.source_id` (ADR-0032), ADR-0028
+  recording the correction rather than applying it in silence. The lines block
+  carries the **weight** of each line since #833 — `lib/shares.ts`'s three
+  functions, which outlived the shares column that read them — and the dividends
+  block gained the two questions the encashed figure raises and cannot answer:
+  what it is worth against the contribution, and **which securities pay it**.
+  The reassignment rides with the **declaration** where nothing is
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
