@@ -168,7 +168,10 @@ describe('a surface names its own failed read, and nothing above it can do it', 
     // when every store read refuses with it and says so. What names *the app is
     // not answering* as a fact about the installation is the bell, which reads
     // `/health` — a stricter route that falls wherever this one falls.
-    const pages = ['DashboardPage', 'SharesPage', 'AccountsPage']
+    // `SettingsPage` joined the list at #830, the surface it names having
+    // become a page of its own (ADR-0038) — and it is the one that reads the
+    // runtime for something, which is exactly why it is worth asserting.
+    const pages = ['DashboardPage', 'SharesPage', 'AccountsPage', 'SettingsPage']
     for (const page of pages) {
       const source = fs.readFileSync(
         path.join(import.meta.dirname, '..', 'pages', `${page}.tsx`),
@@ -176,13 +179,11 @@ describe('a surface names its own failed read, and nothing above it can do it', 
       )
       expect(source, page).not.toMatch(/runtime\.error/)
     }
-    for (const block of ['data/Ledger', 'data/Installation']) {
-      const source = fs.readFileSync(
-        path.join(import.meta.dirname, '..', 'components', `${block}.tsx`),
-        'utf8',
-      )
-      expect(source, block).not.toMatch(/runtime\.error/)
-    }
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, '..', 'components', 'data', 'Ledger.tsx'),
+      'utf8',
+    )
+    expect(source, 'data/Ledger').not.toMatch(/runtime\.error/)
   })
 
   it('says nothing where a surface above it is already saying it', () => {

@@ -332,12 +332,11 @@ describe('the currency itself', () => {
     )
   })
 
-  it('stops being drawn as a field on the installation tab once it is answered', async () => {
+  it('stops being drawn as a field on the settings page once it is answered', async () => {
     // Greyed out, a field invites the click and reads as a form that refused;
     // open, it lets a reader choose a code the write will not take. What is
     // left is the answer and the sentence that says it cannot be taken back.
-    const { user } = renderApp({ url: '/donnees' })
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+    renderApp({ url: '/reglages' })
 
     expect(await screen.findByText(/Fixée : vos montants y sont enregistrés/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Devise de base')).not.toBeInTheDocument()
@@ -361,8 +360,7 @@ describe('the currency itself', () => {
         }),
       ),
     )
-    const { user } = renderApp({ url: '/donnees' })
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+    renderApp({ url: '/reglages' })
 
     expect(await screen.findByText(/AED — enregistrée hors de cette liste/)).toBeInTheDocument()
   })
@@ -444,12 +442,10 @@ describe('the band is gone and its sentence descends (#829, ADR-0037)', () => {
 })
 
 describe('the ceiling loses nothing: the field is where the dial is', () => {
-  it('keeps the currency answerable on the installation tab, and posts no notice about it', async () => {
-    const { user } = await firstRun({ url: '/donnees' })
+  it('keeps the currency answerable on the settings page, and posts no notice about it', async () => {
+    const { user } = await firstRun({ url: '/reglages' })
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
     // The same field the modal mounts, still there — the panel holds it anyway,
     // which is what licenses the walk being escapable.

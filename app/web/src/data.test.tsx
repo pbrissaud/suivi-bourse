@@ -56,48 +56,31 @@ async function openTheForm(user: ReturnType<typeof renderApp>['user']) {
   return screen.getByRole('radiogroup', { name: 'Ce qui s’est passé' })
 }
 
-describe('the tabs under one route', () => {
-  it('names them by what you declared and what the installation is', async () => {
+describe('one route, one thing', () => {
+  it('has no tab bar at all, and renders the ledger', async () => {
     renderData()
 
-    // **Two, and it was three** (#829, ADR-0037): the notices tab is gone, and
-    // with it the badge on its trigger. The installation facts are cards in the
-    // panel behind the header's bell now, beside the health and the advisories,
-    // so a second count on one page's tab would be the second global indicator
-    // ADR-0022 refused.
-    const tabs = await screen.findAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Le grand livre', 'L’installation'])
-    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    // **Three, then two, then none** (#829, #830, ADR-0037, ADR-0038): the
+    // notices left for the panel behind the bell, the installation left for
+    // `/reglages`, and a bar holding a choice of one is not a bar.
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(screen.queryAllByRole('tab')).toHaveLength(0)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Grand livre' })).toBeInTheDocument()
   })
 
-  it('lands on the ledger for a hash that names no tab, inherited names included', async () => {
-    // A lookup table written as an object literal answers `#toString` with an
-    // inherited **function**, which is truthy — and a function handed to
-    // `useState` is called as an initialiser, which took the route down.
-    renderData(ledgerEvents(), '/donnees#toString')
-
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'Le grand livre' })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      ),
-    )
-    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
-  })
-
-  it('opens the tab the hash names', async () => {
-    // The hash is what makes a link that points here arrive somewhere. Read,
-    // never written. `#notices` names no tab any more and lands on the ledger,
-    // which is what an unknown hash has always done.
-    renderData(ledgerEvents(), '/donnees#installation')
-
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'L’installation' })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      ),
-    )
+  it('renders the ledger for a hash that used to name a tab, and for any other', async () => {
+    // `#installation` was an *address* on a tab and it is a path now, so a
+    // bookmark taken on the old hash lands on the ledger — which is what every
+    // hash but that one already did. `#toString` is in the same case and it is
+    // the one that took the route down: a lookup table written as an object
+    // literal answers it with an inherited **function**, which is truthy, and a
+    // function handed to `useState` is called as an initialiser.
+    for (const hash of ['#installation', '#toString']) {
+      const view = renderData(ledgerEvents(), `/donnees${hash}`)
+      expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Le magasin' })).not.toBeInTheDocument()
+      view.unmount()
+    }
   })
 })
 
@@ -261,8 +244,10 @@ describe('the reduction, which is what pays for no pagination', () => {
 
     const two = [...ledgerEvents(), anEvent({ id: '12', date: '2026-02-11', account: 'beta' })]
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(two))))
-    await user.click(screen.getByRole('tab', { name: /L’installation/ }))
-    await user.click(screen.getByRole('tab', { name: 'Le grand livre' }))
+    // Away and back — a **route** since ADR-0038 took the tab bar away — which
+    // is what makes the table read the second payload.
+    await user.click(screen.getByRole('link', { name: 'Réglages' }))
+    await user.click(screen.getByRole('link', { name: 'Grand livre' }))
 
     const accounts = await screen.findByRole('group', { name: 'Compte' })
     expect(within(accounts).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
