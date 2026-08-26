@@ -131,6 +131,7 @@
 
   "dashboard.chart.amounts": "Amounts",
   "dashboard.chart.performance": "Performance",
+  "dashboard.chart.reading": "Reading",
   "dashboard.chart.range": "Range",
   "dashboard.chart.rangeName": "{range, select, 1M {1M} YTD {YTD} 1Y {1Y} MAX {MAX} other {}}",
   "dashboard.chart.value": "Total value",
@@ -139,13 +140,6 @@
   "dashboard.chart.cost": "Cost",
   "dashboard.chart.area": "Between the two curves",
   "dashboard.chart.empty": "Nothing to draw over this range yet.",
-
-  "dashboard.allocation.title": "Allocation",
-  "dashboard.allocation.others": "{count, plural, one {# other holding} other {# other holdings}}",
-  "dashboard.allocation.total": "Securities",
-  "dashboard.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
-  "dashboard.allocation.empty": "Nothing held",
-  "dashboard.allocation.empty.body": "Your ledger has events but no open position, so there is nothing to divide up.",
 
   "dashboard.movers.title": "Movers",
   "dashboard.movers.since": "Since the close of {date}",
@@ -205,6 +199,13 @@
   "receipt.import.known.forecast": "{count, plural, one {# line of this file is already in your ledger and will be skipped} other {# lines of this file are already in your ledger and will be skipped}}.",
   "receipt.events.removed": "{count, plural, one {# event removed} other {# events removed}}.",
 
+  "shares.allocation.title": "Allocation",
+  "shares.allocation.others": "{count, plural, one {# other holding} other {# other holdings}}",
+  "shares.allocation.total": "Securities",
+  "shares.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
+  "shares.allocation.empty": "Nothing held",
+  "shares.allocation.empty.body": "Your ledger has events but no open position, so there is nothing to divide up.",
+
   "shares.gainTotal": "Total P&L",
   "shares.gainTotal.explain": "The gain of every line of this table, closed positions included — their realised gain and their dividends stay in this figure long after the position itself is gone, and leaving them out would show you a second figure, just as correct, that is not your gain. It is the sum of the three columns below, which is what makes it checkable by eye. One term cannot appear here: the fees your broker takes out of a transfer belong to no security.",
   "shares.value": "Value",
@@ -222,7 +223,6 @@
   "shares.column.quantity": "Held",
   "shares.column.avgCost": "Avg. cost",
   "shares.column.value": "Value",
-  "shares.column.weight": "Weight",
   "shares.column.unrealised": "Unrealised",
   "shares.column.realised": "Realised",
   "shares.column.dividends": "Dividends",

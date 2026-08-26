@@ -47,6 +47,7 @@ import {
   type PositionAbsenceInput,
   type Rendering,
 } from '@/lib/absence'
+import { ALLOCATION_SLICES } from '@/lib/alloc'
 import type { Converted, Fundamentals, LedgerEvent, Position, Quote, SeriesPoint } from '@/lib/api'
 import { type Sum } from '@/lib/gain'
 import { byDateDescending } from '@/lib/ledger'
@@ -218,13 +219,15 @@ export function buildShareRows(
 
 /**
  * What the reader may order the live table by — **one name per column**, the
- * ten of them.
+ * nine of them.
  *
- * `weight` left with the `Poids` column after #791 and comes back with it
- * (#832): a sort key for a column nobody renders is a control the reader cannot
- * reach, and a column with no sort key is the one column of ten that does not
- * answer the page's own gesture. The list and the header row are read together
- * or they drift.
+ * `weight` is not among them, and it has left twice now: with the `Poids`
+ * column after #791, back with it at #832, and out again with #831 when the
+ * maquette was read rendered rather than in its source — the weight is
+ * answered on that page by the `Répartition` above the table, which is a
+ * figure of the whole and orders nothing. A sort key for a column nobody
+ * renders is a control the reader cannot reach; the list and the header row
+ * are read together or they drift.
  */
 export type SortColumn =
   | 'symbol'
@@ -232,7 +235,6 @@ export type SortColumn =
   | 'quantity'
   | 'avgCost'
   | 'value'
-  | 'weight'
   | 'unrealised'
   | 'realised'
   | 'dividends'
@@ -284,17 +286,6 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
     case 'avgCost':
       return unitCost(row)
     case 'value':
-      return marketValue(row)
-    case 'weight':
-      // **The valuation again, and that is the whole of it.** A weight is
-      // `Valorisation ÷ Valorisation placée`, and the divisor is one number for
-      // the whole table — so ordering by the share and ordering by the value
-      // are the same permutation, exactly. Dividing here would be arithmetic
-      // done to reach an order already in hand, and it would need the whole
-      // threaded into a pure comparator to say nothing new. The two columns
-      // agreeing is a *property* of the figure rather than a shortcut, and it
-      // is why the absence rule below needs no special case: a line with no
-      // value has no weight either, and it does not rise.
       return marketValue(row)
     case 'unrealised':
       return unrealised(row)
@@ -400,7 +391,7 @@ export interface ShareGroup {
  * The accounts come out in **their id's order**, which is what the `Compte`
  * column already renders: there is no fifth read here to fetch a label with,
  * and an order taken from the weights would be a second ranking on a table the
- * reader has just been given ten of their own.
+ * reader has just been given nine of their own.
  */
 export function accountGroups(
   positions: readonly Position[],
@@ -423,18 +414,130 @@ export function accountGroups(
 }
 
 // ------------------------------------------------------------------------- //
-// The weight (#791, rendered again by #832)
+// The allocation (#727, moved here from the dashboard by #831)
+// ------------------------------------------------------------------------- //
+
+export interface AllocationSlice {
+  /** The security, or `null` on the tail — which names no single line. */
+  symbol: string | null
+  /** What to write. `null` on the tail: the catalogue names it with its count. */
+  label: string | null
+  value: number
+  /** Of the placed total, `0`…`1`. The legend renders it beside the name. */
+  share: number
+  /** How many lines this slice folds. `1` everywhere but on the tail. */
+  count: number
+}
+
+export interface Allocation {
+  /** Descending by value, **at most twelve**, the tail last if there is one. */
+  slices: AllocationSlice[]
+  total: number
+  /**
+   * The held lines that could **not** be placed — quoted, and the rate has not
+   * resolved. Named on screen, never summed: summing them would make every other
+   * percentage silently wrong, and dropping them in silence is what happened.
+   */
+  unplaced: string[]
+}
+
+/**
+ * The whole portfolio in one figure, **twelve slices and the full width**.
+ *
+ * It divided the dashboard until #831 and it divides the shares page now: the
+ * maquette draws the ring over the table it is the division of, and the block
+ * is handed exactly the rows the page header sums, so the figure in the ring's
+ * hole and the header's `Valorisation` are one number read twice.
+ *
+ * Eight was the threshold and it is measurably wrong: the tail *Autres (4)* was
+ * worth **10,1 %**, more than four of the named slices put together. What
+ * decided the *layout* is what that threshold costs at half width — four names
+ * out of twelve folded, a block twice the height of the movers beside it, and
+ * 350 px of nothing under them.
+ *
+ * A **closed** line is not a slice: it is worth exactly zero and a legend of
+ * zeros is noise, so the folded section of the shares page is where it lives. A
+ * held line worth zero stays — that is a figure about a line the owner holds.
+ * The predicate is `isClosed`, above, and `moversSplit` calls the same one one
+ * module over: the two blocks describe one portfolio, so what is *in* it cannot
+ * be two questions — which is why the predicate did not travel with the block.
+ */
+export function allocation(rows: readonly ShareRow[]): Allocation {
+  const placed: AllocationSlice[] = []
+  const unplaced: string[] = []
+
+  for (const row of rows) {
+    if (isClosed(row)) continue
+    const value = marketValue(row)
+    if (value === null) {
+      unplaced.push(row.symbol)
+      continue
+    }
+    placed.push({
+      symbol: row.symbol,
+      label: row.name ?? row.symbol,
+      value,
+      share: 0,
+      count: 1,
+    })
+  }
+
+  placed.sort((left, right) =>
+    left.value === right.value
+      ? (left.symbol ?? '').localeCompare(right.symbol ?? '')
+      : right.value - left.value,
+  )
+
+  // The ramp has twelve stops (ADR-0023) and the tail is one slice like any
+  // other, so it takes the twelfth: the least contrasted rank, which is what a
+  // fold of the smallest lines should be.
+  let slices = placed
+  if (placed.length > ALLOCATION_SLICES) {
+    const named = placed.slice(0, ALLOCATION_SLICES - 1)
+    const rest = placed.slice(ALLOCATION_SLICES - 1)
+    slices = [
+      ...named,
+      {
+        symbol: null,
+        label: null,
+        value: rest.reduce((sum, slice) => sum + slice.value, 0),
+        share: 0,
+        count: rest.length,
+      },
+    ]
+  }
+
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0)
+  return {
+    slices: slices.map((slice) => ({
+      ...slice,
+      share: total === 0 ? 0 : slice.value / total,
+    })),
+    total,
+    unplaced,
+  }
+}
+
+// ------------------------------------------------------------------------- //
+// The weight (#791, #832, and the account's lines since #833)
 // ------------------------------------------------------------------------- //
 
 /**
- * The whole the `Poids` column divides — **the value of the lines it can
- * place**, which is `allocation`'s rule one page over (`lib/dashboard.ts`) and
- * not a second answer to the same question.
+ * The whole a weight divides — **the value of the lines that can be placed**,
+ * which is `allocation`'s own rule just above and not a second answer to the
+ * same question.
+ *
+ * These three functions have outlived two renderings of the shares table's
+ * `Poids` column — #791 wrote it, took it out, #832 brought it back as a bar,
+ * #831 took it out for good on the maquette's rendered evidence — and they are
+ * kept because the figure never depended on that column: `AccountDetail`'s held
+ * lines state each line's share of the account, and the surface decides its own
+ * divisor.
  *
  * A held line whose rate has not resolved has no value in the reporting
  * currency. Counting it as nothing would make every other percentage silently
- * wrong; refusing the whole column for it would put one line's absence on ten
- * rows, which is the noise ADR-0016 deletes markers for. So it is left out of
+ * wrong; refusing the whole figure for it would put one line's absence on every
+ * row, which is the noise ADR-0016 deletes markers for. So it is left out of
  * the whole and **named on its own row**, by the rendering below.
  */
 export function placedValue(rows: readonly ShareRow[]): number {
@@ -454,7 +557,7 @@ export function weightShare(row: ShareRow, whole: number): number | null {
 }
 
 /**
- * How the `Poids` cell reads — **the rendering of the valuation it divides**.
+ * How a weight cell reads — **the rendering of the valuation it divides**.
  *
  * It cannot be decided on its own: the weight is `Valorisation ÷ Valorisation
  * totale`, so whatever empties the first empties this one for the same reason
@@ -462,7 +565,7 @@ export function weightShare(row: ShareRow, whole: number): number | null {
  * here would be a second classification of one absence, and a second
  * classification of one absence is how the four renderings become five.
  *
- * The one case of its own is a whole of nothing — a table whose every line is
+ * The one case of its own is a whole of nothing — a set whose every line is
  * worth zero — where there is genuinely nothing to divide, and that is the em
  * dash's own sentence.
  */

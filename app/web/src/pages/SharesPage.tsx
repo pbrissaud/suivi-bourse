@@ -23,6 +23,16 @@
  *    the header is the only place where the **absence** of an anomaly reads as
  *    information rather than as a void.
  *  - **No *hide the closed ones* switch, anywhere.** It is the whole point.
+ *  - **The `Répartition`, above the table** (#831). It came off the dashboard,
+ *    where it had sat since #727 and where the maquette never drew it: the ring
+ *    and its legend are in the `Titres` branch of the drawing, and the reading
+ *    holds on the arithmetic too — the whole it divides is the value of the
+ *    lines that can be placed, which is what the header under it sums, so the
+ *    figure in the ring's hole and that header's `Valorisation` are one number
+ *    said twice. It is handed `onScreen`, the rows the header sums, which is
+ *    what makes the reduction and the anomaly lens travel to it with no rule of
+ *    its own. It is also what the maquette answers *the weight of a line* with,
+ *    and the reason the table has nine columns again rather than ten.
  *
  * **Two gestures on the table itself** (#791), and neither of them removes a
  * line — which is what lets the header go on stating the sum of what is under
@@ -57,6 +67,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
+import { Allocation } from '@/components/shares/Allocation'
 import { ClosedShares } from '@/components/shares/ClosedShares'
 import { SharesHead } from '@/components/shares/SharesHead'
 import { SharesTable } from '@/components/shares/SharesTable'
@@ -331,6 +342,18 @@ export default function SharesPage() {
         )
       ) : (
         <>
+          {/* **The same rows the header sums, one block up** (#831). The ring's
+              centre states the total the slices divide, and that total is the
+              header's `Valorisation` wherever every line on screen has a value:
+              handed anything else — the held lines alone, or the payload — the
+              two figures would be two answers to one question, on one screen,
+              which is the defect this page was rebuilt around. They still part
+              on one inherited case, an unresolved rate emptying the header and
+              not the ring (`Allocation.tsx` says why). Reduced by `?compte=` it
+              draws that account's split; under the anomaly lens it draws what
+              is on screen. */}
+          <Allocation rows={onScreen} currency={currency} />
+
           {/* The rows it sits above, closed ones included — the argument is the
               rule, and handing it the held lines alone is what printed the
               other correct figure. */}

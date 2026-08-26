@@ -1,6 +1,5 @@
 /**
- * The dashboard — the head (#718), then the chart, the allocation and the
- * movers (#727).
+ * The dashboard — the head (#718), then the chart and the movers (#727).
  *
  * Four page-level decisions live here rather than in a block:
  *
@@ -42,14 +41,15 @@
  *    would put the page in `failed` and empty it — the very disappearance being
  *    repaired, one level up.
  *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`, and
- *    the split is *drawn against read down*: the wide one carries the three
- *    figures that are **drawn** — the head, the value/performance chart, and the
- *    allocation, whose ring plus legend wants the same width the chart does —
- *    and the rail carries the two that are **read down as lists**, the movers
- *    and the accounts. That is the maquette's own order, and it is the one the
- *    eye follows: a donut squeezed into a third of the page loses its legend to
- *    two columns of six, and a list of five rows does not gain a thing from
- *    twice the width. Below `lg` the tracks collapse into one, so
+ *    the split is *drawn against read down*: the wide one carries the figures
+ *    that are **drawn** — the head and the value/performance chart — and the
+ *    rail carries the two that are **read down as lists**, the movers and the
+ *    accounts. That is the maquette's own order, and it is the one the eye
+ *    follows: a list of five rows does not gain a thing from twice the width.
+ *    The allocation was the third of the drawn figures until #831, which sent
+ *    it to the shares page — it divides that page's table, and the maquette
+ *    draws it there — so the wide track is two blocks now.
+ *    Below `lg` the tracks collapse into one, so
  *    the 976 px case ADR-0022 measured is the **stacked** page and cannot
  *    overflow sideways; the two-track grid only starts where there is room for
  *    it. And it starts only where there is something to put in the rail: at
@@ -61,7 +61,6 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
-import { Allocation } from '@/components/dashboard/Allocation'
 import { DashboardHead } from '@/components/dashboard/Head'
 import { Movers } from '@/components/dashboard/Movers'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
@@ -149,14 +148,13 @@ export default function DashboardPage() {
   )
 
   // The rows are the shares page's, folded by symbol: one arithmetic for what a
-  // line is worth (ADR-0004's carrying convention included), so the allocation
-  // and the table cannot disagree about the same portfolio. The failure counter
-  // is a rendering concern there and has no subject here, so the map is empty.
+  // line is worth (ADR-0004's carrying convention included), so this page and
+  // that table cannot disagree about the same portfolio. The failure counter is
+  // a rendering concern there and has no subject here, so the map is empty.
   //
-  // Both blocks below take the rows **whole**, closed lines included, and each
-  // reduces them with the same predicate: what is in the portfolio is one
-  // question, and a page whose two blocks answered it apart is what put a sold
-  // line in the movers' own sentence.
+  // The movers take the rows **whole**, closed lines included, and reduce them
+  // with `isClosed`: what is in the portfolio is one question, and answering it
+  // twice is what put a sold line in the movers' own sentence.
   const rows = useMemo(
     () => buildShareRows(positions.data?.positions ?? [], new Map()),
     [positions.data],
@@ -259,7 +257,6 @@ export default function DashboardPage() {
                 valuation={valuation.data?.points ?? null}
                 failure={chartFailure}
               />
-              <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
             </>
           )}
         </div>

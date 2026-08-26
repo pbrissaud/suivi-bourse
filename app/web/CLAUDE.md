@@ -1,7 +1,7 @@
 # app/web/ — the front
 
 > **The shares table has its two gestures** (#791): it **sorts on any of its
-> ten columns** and it **groups by account** with each subtotal in the group
+> nine columns** and it **groups by account** with each subtotal in the group
 > header. Neither removes a line: an order is a permutation and a grouping is a
 > partition, so the header goes on stating the sum of what is under it, ADR-0017
 > untouched. The grouping is offered only above one account,
@@ -9,19 +9,16 @@
 > and not an address: nothing outside the page leads to *this table sorted by
 > PRU*, where ⌘K does lead to `?titre=`.
 >
-> **`Poids` is the tenth column, and it is a bar** (#832). It shipped with #791
-> as a percentage and was taken out again on sight — the figure read well and
-> the column was not where it belonged — which is precisely what changed: what
-> comes back is `ShareBar` under the figure, and the **drawing** is the whole
-> reason. `15,99 %` against `11,39 %` is a reading; two bars are a glance
-> (#800). It sits beside `Valorisation`, the cell it divides, and the divisor is
-> **one whole for the whole table** — `placedValue` over every row of every
-> group, so turning the grouping on re-cuts the lines and re-scales no
-> percentage. The fill is chrome and not a ramp: ADR-0023 licenses the rank ramp
-> over a *sorted, legended* list, and this table is sorted by whichever of ten
-> columns was last pressed. `weightRendering` takes the valuation's own absence
-> rather than deciding a second one, which is what keeps the four renderings
-> four (ADR-0021).
+> **`Poids` is not a column, and the weight is answered by the `Répartition`**
+> (#831). It was one at #791, taken out on sight, back as a bar at #832 — and
+> that last decision was taken on the **source** of the maquette rather than on
+> its rendering. Rendered, the drawing's table has nine headers and no tenth,
+> and the word `Poids` never appears on that page at all: its three occurrences
+> are the account's (*Poids des comptes*, and #833's sortable column). What the
+> maquette answers *the weight of a line* with on `/titres` is the **ring above
+> the table** — a figure of the whole rather than a tenth cell on every row —
+> and that block is mounted there since #831. `weight` left `SortColumn` with
+> the column: a sort key nobody can reach is a control that does not exist.
 >
 > **And the content column may now be narrower than what is in it** (#832).
 > `SidebarInset` is a flex item, so its `min-width` was `auto` — *never narrower
@@ -31,17 +28,16 @@
 > `overflow-x-auto` `components/ui/table.tsx` puts around every table was inert,
 > its parent having grown to fit. `min-w-0` on the shell's column is the whole
 > repair, it is the shell's rather than the table's, and `src/contentWidth.test.ts`
-> holds both halves of the pair on the source. What it does **not** do is make
-> ten columns fit 976 px: they measure 976 px comfortable and 896 px compact
-> against the 672 px the column has there, so below 1 280 px the scroll is the
-> table's own — assumed, and the third of the three answers #832 weighed.
+> holds both halves of the pair on the source. The measurement that forced it was
+> taken on ten columns and the table is back to nine, which **narrows** the case
+> without closing it: the scroll inside the container is what the maquette itself
+> does at 1 280 px, so it is the drawing's answer rather than a stopgap.
 >
-> **And the account's lines block draws the same share** (#833). `placedValue`,
-> `weightShare` and `weightRendering` were written for #791's column, survived its
-> removal held by their own unit tests, and now have two readers rather than one:
-> the tenth column here, over every row of the table, and a dozen lines under a
-> single account there — where a weight is a glance rather than a tenth column.
-> One trio of functions, two divisors, and each surface states its own whole.
+> **And the account's lines block draws the share** (#833). `placedValue`,
+> `weightShare` and `weightRendering` were written for #791's column and have now
+> outlived it twice, held between the two by their own unit tests. Their reader is
+> a dozen lines under a single account — where a weight is a glance down a short
+> list rather than a column — and the surface states its own whole.
 >
 > **A share is drawn now, and by one component** (#800): `ShareBar` puts a bar
 > under every line that carries a share of a total — the allocation's legend,
@@ -208,6 +204,24 @@
 > rather than a rule of the product. And the two period pills take the maquette's
 > own tint and arrow: the sign was said in colour alone, and an arrow says it
 > again without the hue.
+>
+> **And three things of form went with it, on the maquette read *rendered***
+> (#831, reopened). The drawing had been compared on its source for five
+> tickets — it renders its `{{ placeholders }}` raw without `docs/support.js`
+> beside it — and rendering it answered three questions at once. The
+> **`Répartition` is the shares page's**: ring and legend are in the `Titres`
+> branch and in no other, and the arithmetic agrees, the whole it divides being
+> what the header under it sums — so the total in the ring's hole and that
+> header's `Valorisation` are one number said twice wherever every line on
+> screen has a value, reduction and anomaly lens included, the block being
+> handed the rows on screen. They part on one inherited case, an unresolved rate
+> emptying the header while the ring divides what it could place, which was the
+> `Poids` column's tension before it was this block's. The **`Poids` column
+> goes**, the table returning to nine. And the **`Montants / Performance`
+> selector stops being tabs**: the maquette draws it segmented like the range
+> beside it, a tab is a *place* and the shell's navigation is what the product
+> has of those, so it is a group of `aria-pressed` buttons and `ui/tabs.tsx` is
+> gone with its last reader — there is not a `role="tab"` left in the front.
 
 Vite + React 19 + TypeScript, Tailwind/shadcn, TanStack Query & Router, Recharts.
 The tables are written by hand on the `components/ui/table.tsx` primitives:
@@ -443,8 +457,9 @@ src/
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
-│   │                         # the ten orders, the partition by account, the weight
-│   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
+│   │                         # the nine orders, the partition by account, the weight
+│   │                         # and the twelve slices, since #831
+│   ├── dashboard.ts          # the two readings, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what there is to export
 │   ├── installationFacts.ts  # what the block shows, what the badge counts
@@ -463,8 +478,9 @@ src/
 │   ├── Notifications          # the bell and its panel: health · facts · advisories
 │   ├── Palette                # ⌘K: five sections, three of them optional reads
 │   ├── AppSidebar (the navigation, and nothing else since #829)
-│   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
-│   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
+│   ├── dashboard/  # the hero head, the chart, the movers, the accounts card
+│   ├── shares/     # the allocation, the head, the table, the fold of closed lines,
+│   │               # the chart, the sheet
 │   ├── data/       # the ledger, the create form, the drop zone, the export menu
 │   │               # (UploadZone: the file in, the receipt under it)
 │   │               # (the settings left for settings/ — #830, ADR-0038)
@@ -478,9 +494,10 @@ src/
 
 - **Dashboard** (`/`) — a **plateau of two tracks** from `lg`, split *drawn*
   against *read down*: the head (which computes `Gain total` from its four terms
-  and never reads `gain_absolu`), the chart slot with two readings (*Amounts* /
-  *Performance*) and the allocation in twelve slices on the wide one; the movers
-  and the **accounts card** in the rail. That card is where accounts are compared
+  and never reads `gain_absolu`) and the chart slot with two readings
+  (*Amounts* / *Performance*, a group of buttons since #831 and never tabs) on
+  the wide one; the movers and the **accounts card** in the rail. The
+  allocation was the wide track's third block until #831 sent it to `/titres`. That card is where accounts are compared
   since ADR-0028, and it therefore holds ADR-0019's rule: one range for every
   figure on it, sparkline included. The head's two period figures sit with the
   total, never among its four terms. It is the dashboard **unconditionally**,
@@ -488,7 +505,9 @@ src/
   (#831): the bubbles sit on `Gain total`, `Versé net`, `TRI` and `TWR`, and the
   three sentences that stated a rule under the chart are gone — an absence still
   says why it is absent, which is not the same thing.
-- **Shares** (`/titres`) — ten columns since #832, the header sums its
+- **Shares** (`/titres`) — the **`Répartition`** since #831 — twelve slices, its
+  total in the ring's hole, dividing exactly the lines the header under it sums —
+  then nine columns, the header summing its
   lines, so the closed positions **fold** rather than being filtered (the fold is
   not a filter, and the header does not move when the section opens). **Every
   column sorts** since #791 — the control is the label, the state is `aria-sort`

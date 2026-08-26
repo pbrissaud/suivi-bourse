@@ -6,7 +6,7 @@ import { useDensity } from "@/lib/density"
 import { cn } from "@/lib/utils"
 
 // The wide-content rule of the shell applies here and nowhere else in the
-// product yet: a table scrolls **inside its own container**, so the ten columns
+// product yet: a table scrolls **inside its own container**, so the nine columns
 // of the shares page (#791) never make the page itself scroll sideways.
 //
 // The reader's third preference reaches every table through the one attribute

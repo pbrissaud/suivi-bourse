@@ -131,6 +131,7 @@
 
   "dashboard.chart.amounts": "Montants",
   "dashboard.chart.performance": "Performance",
+  "dashboard.chart.reading": "Lecture",
   "dashboard.chart.range": "Plage",
   "dashboard.chart.rangeName": "{range, select, 1M {1M} YTD {Depuis le 1ᵉʳ janvier} 1Y {1A} MAX {MAX} other {}}",
   "dashboard.chart.value": "Valeur totale",
@@ -139,13 +140,6 @@
   "dashboard.chart.cost": "Prix de revient",
   "dashboard.chart.area": "Entre les deux courbes",
   "dashboard.chart.empty": "Rien à tracer sur cette plage pour l’instant.",
-
-  "dashboard.allocation.title": "Répartition",
-  "dashboard.allocation.others": "{count, plural, one {# autre ligne} other {# autres lignes}}",
-  "dashboard.allocation.total": "Titres",
-  "dashboard.allocation.unplaced": "{count, plural, one {# ligne n’est pas} other {# lignes ne sont pas}} dans cette répartition, cotée{count, plural, one {} other {s}} sans taux résolu : {symbols}. Les y compter rendrait tous les autres pourcentages faux.",
-  "dashboard.allocation.empty": "Aucune position détenue",
-  "dashboard.allocation.empty.body": "Votre grand livre porte des événements mais aucune position ouverte : il n’y a rien à répartir.",
 
   "dashboard.movers.title": "Mouvements",
   "dashboard.movers.since": "Depuis la clôture du {date}",
@@ -205,6 +199,13 @@
   "receipt.import.known.forecast": "{count, plural, one {# ligne de ce fichier est déjà dans votre grand livre et sera ignorée} other {# lignes de ce fichier sont déjà dans votre grand livre et seront ignorées}}.",
   "receipt.events.removed": "{count, plural, one {# événement supprimé} other {# événements supprimés}}.",
 
+  "shares.allocation.title": "Répartition",
+  "shares.allocation.others": "{count, plural, one {# autre ligne} other {# autres lignes}}",
+  "shares.allocation.total": "Titres",
+  "shares.allocation.unplaced": "{count, plural, one {# ligne n’est pas} other {# lignes ne sont pas}} dans cette répartition, cotée{count, plural, one {} other {s}} sans taux résolu : {symbols}. Les y compter rendrait tous les autres pourcentages faux.",
+  "shares.allocation.empty": "Aucune position détenue",
+  "shares.allocation.empty.body": "Votre grand livre porte des événements mais aucune position ouverte : il n’y a rien à répartir.",
+
   "shares.gainTotal": "Gain total",
   "shares.gainTotal.explain": "Le gain de toutes les lignes de ce tableau, positions soldées comprises — leur plus-value réalisée et leurs dividendes restent dans ce chiffre longtemps après que la position a disparu, et les retirer afficherait un second chiffre, tout aussi juste, qui n’est pas votre gain. C’est la somme des trois colonnes ci-dessous, ce qui le rend vérifiable à l’œil. Un terme ne peut pas y figurer : les frais que votre courtier prélève sur un virement n’appartiennent à aucun titre.",
   "shares.value": "Valorisation",
@@ -222,7 +223,6 @@
   "shares.column.quantity": "Détenu",
   "shares.column.avgCost": "PRU",
   "shares.column.value": "Valorisation",
-  "shares.column.weight": "Poids",
   "shares.column.unrealised": "Latente",
   "shares.column.realised": "Réalisée",
   "shares.column.dividends": "Dividendes",
