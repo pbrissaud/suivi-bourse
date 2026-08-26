@@ -1,7 +1,7 @@
 # app/web/ — the front
 
 > **The shares table has its two gestures** (#791): it **sorts on any of its
-> nine columns** and it **groups by account** with each subtotal in the group
+> ten columns** and it **groups by account** with each subtotal in the group
 > header. Neither removes a line: an order is a permutation and a grouping is a
 > partition, so the header goes on stating the sum of what is under it, ADR-0017
 > untouched. The grouping is offered only above one account,
@@ -9,12 +9,33 @@
 > and not an address: nothing outside the page leads to *this table sorted by
 > PRU*, where ⌘K does lead to `?titre=`.
 >
-> **`Poids` was a third gesture and is not one any more.** The column shipped
-> with #791 and was taken out again on sight: the figure reads well and the
-> column was not where it belonged. `placedValue`, `weightShare` and
-> `weightRendering` stay in `lib/shares.ts`, held by their own unit tests since
-> the column's rendering tests left with it — what reads them next is another
-> ticket's decision.
+> **`Poids` is the tenth column, and it is a bar** (#832). It shipped with #791
+> as a percentage and was taken out again on sight — the figure read well and
+> the column was not where it belonged — which is precisely what changed: what
+> comes back is `ShareBar` under the figure, and the **drawing** is the whole
+> reason. `15,99 %` against `11,39 %` is a reading; two bars are a glance
+> (#800). It sits beside `Valorisation`, the cell it divides, and the divisor is
+> **one whole for the whole table** — `placedValue` over every row of every
+> group, so turning the grouping on re-cuts the lines and re-scales no
+> percentage. The fill is chrome and not a ramp: ADR-0023 licenses the rank ramp
+> over a *sorted, legended* list, and this table is sorted by whichever of ten
+> columns was last pressed. `weightRendering` takes the valuation's own absence
+> rather than deciding a second one, which is what keeps the four renderings
+> four (ADR-0021).
+>
+> **And the content column may now be narrower than what is in it** (#832).
+> `SidebarInset` is a flex item, so its `min-width` was `auto` — *never narrower
+> than my content* — and a table wider than the column pushed the **whole page**
+> sideways instead of scrolling inside itself: measured on `/titres` against a
+> real API, the page overflowed by 256 px at 768 and by 238 px at 976, and the
+> `overflow-x-auto` `components/ui/table.tsx` puts around every table was inert,
+> its parent having grown to fit. `min-w-0` on the shell's column is the whole
+> repair, it is the shell's rather than the table's, and `src/contentWidth.test.ts`
+> holds both halves of the pair on the source. What it does **not** do is make
+> ten columns fit 976 px: they measure 976 px comfortable and 896 px compact
+> against the 672 px the column has there, so below 1 280 px the scroll is the
+> table's own — assumed, and the third of the three answers #832 weighed.
+>
 > **A share is drawn now, and by one component** (#800): `ShareBar` puts a bar
 > under every line that carries a share of a total — the allocation's legend,
 > the accounts rail and the account's composition split. It takes a share and a fill and decides neither
@@ -156,7 +177,7 @@ quote with no currency). No fixture carries a real symbol, amount or label.
 **Assertions are on the accessible rendering** — never a class, a component name,
 or a DOM snapshot.
 
-Four nets hold a rule nothing made true by construction:
+Five nets hold a rule nothing made true by construction:
 
 - `src/readsInFlight.test.tsx` — for each of nine surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
@@ -177,6 +198,11 @@ Four nets hold a rule nothing made true by construction:
   refused outside `ShareBar.tsx` — the rail's **stacked** bar apart, which the
   net names one by one so that a second bar in that same file fails like a bar
   anywhere else.
+- `src/contentWidth.test.ts` — on the *source*, and for what jsdom cannot lay
+  out at all: the shell's content column declares `min-w-0` and the table
+  primitive keeps its `overflow-x-auto`. Either half alone is inert — without
+  the first the page scrolls sideways, without the second the table is clipped —
+  and neither failure carries a word.
 
 ## The rules
 
@@ -327,7 +353,7 @@ src/
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
-│   │                         # the nine orders, the partition by account, the weight
+│   │                         # the ten orders, the partition by account, the weight
 │   ├── dashboard.ts          # the two readings, the twelve slices, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
 │   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what there is to export
@@ -364,7 +390,7 @@ src/
   figure on it, sparkline included. The head's two period figures sit with the
   total, never among its four terms. It is the dashboard **unconditionally**,
   zero events included.
-- **Shares** (`/titres`) — nine columns, the header sums its
+- **Shares** (`/titres`) — ten columns since #832, the header sums its
   lines, so the closed positions **fold** rather than being filtered (the fold is
   not a filter, and the header does not move when the section opens). **Every
   column sorts** since #791 — the control is the label, the state is `aria-sort`
