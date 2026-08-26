@@ -146,8 +146,9 @@ describe('the rail', () => {
       await screen.findByText('aucun mouvement d’espèces enregistré sur ce compte'),
     ).toBeInTheDocument()
     expect(screen.getByText('historique encore en reconstruction')).toBeInTheDocument()
-    // A progression with a date belongs to the banner, which is the one place
-    // that can carry it without repeating it per account.
+    // A progression with a date belongs to the reconstruction's own card in the
+    // notifications panel (#829, ADR-0037), which is the one place that can
+    // carry it without repeating it per account.
     expect(within(rail()).queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
@@ -318,16 +319,19 @@ describe('the page’s own reads', () => {
     )
     renderApp({ url: '/comptes' })
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    // The declaration is what the page is made of, so the page is empty — and
+    // it says why, in an empty state and never in a band (#829, ADR-0037).
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
   })
 
   it('keeps the page when a read one of its blocks needs is the one that failed', async () => {
-    // One band or none, and the band is raised for **any** of the page's five
-    // reads — but only the declaration failing empties it. Gated on *any*
-    // failure, a ledger that would not answer took the rail and the detail with
-    // it, so an owner lost every figure they did have because the *last events*
-    // block could not be composed.
+    // Only the declaration failing empties the page. The four other reads each
+    // go to the block they compose, so a ledger that would not answer costs the
+    // reader the *last events* block and nothing else — and that block says why
+    // it is not there, in its own place (#829, ADR-0037).
     server.use(
       problemHandler(ROUTES.events, {
         status: 503,
@@ -338,12 +342,17 @@ describe('the page’s own reads', () => {
     renderApp({ url: '/comptes' })
 
     const detail = await settled()
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
     expect(rail()).toBeInTheDocument()
-    // And the one block that read it is absent — never composed out of nothing.
+    // The block that read it is never composed out of nothing — and where it
+    // would have been, the reason.
     expect(
       within(detail).queryByRole('list', { name: 'Derniers événements' }),
     ).not.toBeInTheDocument()
+    expect(within(detail).getByText('Lecture impossible')).toBeInTheDocument()
+    expect(within(detail).getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    // One block, one sentence — and no band anywhere on the page.
+    expect(screen.getAllByText('Lecture impossible')).toHaveLength(1)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('says nothing has been declared, and offers the declaration itself', async () => {

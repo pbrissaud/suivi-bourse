@@ -170,6 +170,14 @@ true of the install (`installation_facts.py`) or of the app (`/health`).
   answers 0036's objection by name — a permanent one *"would silence the app the
   second time the cash piled up"*. Nothing has to observe the condition going
   false, because the expiry needs no observer.
+- **`standing` and `listing` are two questions, and the route asks both.**
+  `GET /api/advisories` answers the *inventory* — what is left to act on, an
+  acknowledged advisory dropped — and `?asleep=include` answers the *reading*,
+  which is `standing`: the cash is still sitting in that account while the card
+  sleeps, so the chip beside the figure goes on saying so (ADR-0037). Served
+  from one derivation, so the two cannot disagree about what stands; an unknown
+  value of the parameter is the inventory, a typo in a URL being no reason to
+  refuse a page.
 - **It is a table and not a column** on `installation_fact`: the DDL is
   `IF NOT EXISTS` with no migration machinery, so a column added there would
   exist on no store created before it. `advisory_ack` is the twelfth table, and

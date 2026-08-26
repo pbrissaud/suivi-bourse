@@ -79,6 +79,7 @@
   "empty.noCurrency.title": "Aucune devise de base",
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé avant que la devise de report ait une réponse. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",
   "empty.noCurrency.link": "Répondre dans Réglages",
+  "empty.unread.title": "Lecture impossible",
 
   "accounts.advisory.cash": "{share, number, percent} de cash",
 

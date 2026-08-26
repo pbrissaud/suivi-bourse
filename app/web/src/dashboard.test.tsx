@@ -418,13 +418,13 @@ describe('during the reconstruction', () => {
   })
 })
 
-describe('a read that fails is named, and named once', () => {
-  it('says why the block is empty when the store will not answer', async () => {
-    // The exact case, and the reason it had no announcer at all: `/api/runtime`
-    // answers from the scheduler's process memory and never opens the store
-    // (#668), so the shell's band is perfectly quiet while the figures are
-    // unreadable. The block rendered `null`, and *"the store is unreadable"*
-    // and *"you own nothing yet"* became one screen — a blank one.
+describe('a read that fails is named, where its content would have been', () => {
+  it('says why the page is empty when the store will not answer', async () => {
+    // The exact case, and the reason it had no announcer at all: the block
+    // rendered `null`, and *"the store is unreadable"* and *"you own nothing
+    // yet"* became one screen — a blank one. Since #829 there is no band left
+    // to raise either (ADR-0037): the two reads the page is *made of* are what
+    // failed, so the page is empty and the page's own empty state says why.
     server.use(
       problemHandler(ROUTES.positions, {
         status: 503,
@@ -434,7 +434,10 @@ describe('a read that fails is named, and named once', () => {
     )
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    // An empty state, never a band: no live region is raised anywhere.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
 
@@ -450,15 +453,16 @@ describe('a read that fails is named, and named once', () => {
     )
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
   })
 
-  it('stays silent while the shell already says the app is not answering', async () => {
-    // One band on screen or none. While the app answers nothing, it is the
-    // cause of every failed read below it, and the band at the top of the
-    // column has already said so — two announcers for one fact is the defect
-    // the head's own comment was written against.
+  it('says it once when the app answers nothing at all', async () => {
+    // Every read of the page refuses together, which is what an app that is not
+    // answering looks like. `oneFailure` keeps the first of the two the page is
+    // made of, so the page is empty **once** and explained once — and the fact
+    // about the *installation* is the bell's, three surfaces over.
     server.use(
       http.get(ROUTES.runtime, () => HttpResponse.error()),
       http.get(ROUTES.positions, () => HttpResponse.error()),
@@ -466,8 +470,9 @@ describe('a read that fails is named, and named once', () => {
     )
     renderApp()
 
-    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(1))
-    expect(screen.getByRole('status')).toHaveTextContent(/L’application ne répond pas/)
+    await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(1))
+    expect(screen.getByText(/L’application ne répond pas/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
 
@@ -479,6 +484,11 @@ describe('a read that fails is named, and named once', () => {
  * series, the valuation series, the accounts and the N account series — entered
  * no condition at all: the block that consumed one rendered `null` and the graph,
  * or the comparison, left the dashboard **on every load, without a word**.
+ *
+ * #829 removed the band and kept the repair: each of those four is handed to the
+ * block it belongs to, and the block says it **in the slot the content would have
+ * filled** (ADR-0037). The head keeps its figures either way, which is the half
+ * the repair had to buy.
  *
  * The net in `readsInFlight.test.tsx` makes a read **hang**; it does not make one
  * **fail**, and a silent disappearance is what it *requires* during the flight. So
@@ -498,8 +508,8 @@ describe('a secondary read that fails is named, and the head keeps its figures',
   /**
    * What the head is worth on the fixture — the total and its four terms — and
    * it is worth it whatever else on the page failed to read. This is the half
-   * the repair had to buy: pouring the four other reads into the head's own
-   * band would have replaced every figure below with one sentence.
+   * the repair had to buy: pouring the four other reads into the two the page
+   * is *made of* would have replaced every figure below with one sentence.
    */
   async function theHeadStandsWhole() {
     const head = await screen.findByRole('group', { name: 'Gain total' })
@@ -514,10 +524,12 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     server.use(unreadable(ROUTES.portfolioTotalsHistory))
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    // In the chart's own slot, and as an empty state (#829, ADR-0037).
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
-    // The block the read belongs to renders nothing at all, title included:
-    // its range control is the surest proof the card is gone rather than empty.
+    // The chart itself is gone rather than empty: its range control is the
+    // surest proof, and the frame that would carry it is not drawn.
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
   })
 
@@ -537,7 +549,8 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     )
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
   })
@@ -546,7 +559,8 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     server.use(unreadable(ROUTES.accounts))
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
     // The perimeter is *unknown*, which is not written down (ADR-0026) — and
     // the comparison has no list of accounts to be a comparison of.
@@ -570,36 +584,41 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     )
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
     expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument()
   })
 
   it('says nothing at all while that same read is merely in flight', async () => {
     // **The repair distinguishes the failure from the flight, it does not
-    // flatten them** (ADR-0026). The band is composed out of an error and never
-    // out of a silence, so a read that has not answered still takes its block
-    // away without a word — title, sentence and band included.
+    // flatten them** (ADR-0026). The sentence is composed out of an error and
+    // never out of a silence, so a read that has not answered still takes its
+    // block away without a word — title and empty state included.
     server.use(http.get(ROUTES.portfolioTotalsHistory, () => new Promise<never>(() => {})))
     renderApp()
 
     await theHeadStandsWhole()
     // The comparison waits on three reads of its own, so its list standing is
-    // the proof the page has otherwise settled and the band is not merely late.
+    // the proof the page has otherwise settled and the sentence is not late.
     await screen.findByRole('list', { name: 'Vos comptes, comparés' })
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-empty]')).toBeNull()
     expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
   })
 
-  it('keeps one band on screen when several of its reads fail at once', async () => {
-    // *One band on screen or none* is unchanged, and it is a rule about
-    // announcers: the four reads are one more list handed to `readConditions`,
-    // whose causal order — and `oneBand` after it — does the rest.
+  it('gives each empty slot its own reason when two reads fail at once', async () => {
+    // *One band on screen or none* was a rule about **announcers**, and there
+    // is no announcer left: an empty state is not a live region, and two blocks
+    // that are empty for the same cause are still two blocks the reader is
+    // owed a reason for. What must never happen is a third sentence with no
+    // slot under it — so the count is exactly the number of blocks that lost
+    // their content.
     server.use(unreadable(ROUTES.portfolioTotalsHistory), unreadable(ROUTES.accounts))
     renderApp()
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
-    await waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(1))
+    await waitFor(() => expect(screen.getAllByText('Lecture impossible')).toHaveLength(2))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await theHeadStandsWhole()
   })
 })
@@ -1080,7 +1099,8 @@ describe('the time announcers', () => {
     expect(await screen.findByText(/Cours au 2 mars 2026/)).toBeInTheDocument()
     expect(screen.getAllByText(/Depuis la clôture/)).toHaveLength(1)
     // The two transitory ones are absent here: the reconstruction is over, so
-    // the base date is not news and the banner says nothing.
+    // the base date is not news and the notifications panel raises no card for
+    // it (#829, ADR-0037).
     expect(screen.queryByText(/30 oct\. 2019/)).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
@@ -1089,8 +1109,9 @@ describe('the time announcers', () => {
 describe('no installation fact lands here', () => {
   it('says nothing of a standing notice, which the installation tab counts', async () => {
     // A notice posted on the dashboard is invisible to whoever lands on another
-    // page, and it would compete with the banner — which was validated in
-    // production. The badge on the data page is the counterpart (#724).
+    // page, and it would compete with the one global indicator — the bell since
+    // #829 (ADR-0037), the banner before it. The badge on the data page is the
+    // counterpart (#724).
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 

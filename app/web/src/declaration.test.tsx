@@ -453,14 +453,24 @@ describe('the create form on an install that has declared nothing', () => {
         ),
       ),
     )
-    renderApp({ url: '/donnees' })
+    const { user } = renderApp({ url: '/donnees' })
 
-    // The tab's band names the cause once — and **the ledger is still there**.
-    // Its own read answered (`GET /api/events` comes off process memory and has
-    // no `503`), so masking it would take the events, the filters and the only
-    // button that opens the form away for a fault they read no ledger about.
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
-    expect(screen.getByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Saisir un événement' })).toBeInTheDocument()
+    // **The ledger is still there.** Its own read answered (`GET /api/events`
+    // comes off process memory and has no `503`), so masking it would take the
+    // events, the filters and the only button that opens the form away for a
+    // fault they read no ledger about.
+    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    // And nothing is said above the journal about it (#829, ADR-0037): there is
+    // no band, and the one surface this failure costs anything is the account
+    // field — which names it itself, in its own three-state sentence.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Saisir un événement' }))
+    const panel = await screen.findByRole('dialog')
+    await user.click(within(panel).getByRole('radio', { name: 'Achat' }))
+    expect(
+      within(panel).getByText(/Vos comptes n’ont pas pu être lus/),
+    ).toBeInTheDocument()
   })
 })

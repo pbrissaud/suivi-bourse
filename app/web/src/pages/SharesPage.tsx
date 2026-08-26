@@ -43,17 +43,18 @@
  * one naming on one page, rather than a fifth read to fetch a label that would
  * disagree with the column beside it.
  *
- * Reads and failures follow the dashboard head's rule and for the same reason:
- * `/api/runtime` answers from process memory and never opens the store (#668),
- * so the shell's banner is silent on the one failure that empties this page.
- * `lib/status.ts` keeps the causal order across the two surfaces, so there is
- * one band on screen or none.
+ * **A read that did not answer is said where the table would have been** (#829,
+ * ADR-0037). There is no band, here or anywhere: the positions are the one read
+ * this page is made of, so a refusal empties it whole — and an empty page that
+ * does not say why turns *the store would not answer* and *you hold nothing*
+ * into one screen. The bell is the announcer of the installation; this is the
+ * page saying what **it** asked for and did not get.
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
-import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { ClosedShares } from '@/components/shares/ClosedShares'
@@ -216,6 +217,14 @@ export default function SharesPage() {
     return <NoBaseCurrency />
   }
 
+  // **The page is its positions**, so a refusal on that read empties it whole —
+  // and it says so in the space the table would have filled (#829, ADR-0037).
+  // Everything below this line is composed off `positions.data`, header line
+  // included, so what stood here before was a red strip above a blank page.
+  if (failure !== null) {
+    return <Unreadable failure={failure} />
+  }
+
   return (
     <div className="space-y-8">
       {/* The page's name and the instant its figures are of are the header
@@ -234,10 +243,11 @@ export default function SharesPage() {
               anything is known; runtime in flight leaves every counter at zero,
               so `absenceCase` answers *carried at cost* where it owes *no
               quote* and three mute symbols read as none; and runtime in **error**
-              hands `readConditions` a `shellError`, which short-circuits to no
-              band at all — so the page said nothing was wrong on the strength
-              of a read that failed. The counter is the one part of this header
-              that asserts something, so it is the one part that waits. */}
+              used to hand `readConditions` a `shellError`, which short-circuited
+              the list to nothing — so the page said nothing was wrong on the
+              strength of a read that failed. That parameter left with the band
+              (#829, ADR-0037), and the counter waits for both reads either way:
+              it is the one part of this header that asserts something. */}
           {anomalies.length === 0 ? (
             <p>{t('shares.anomaly.count', { count: 0 })}</p>
           ) : (
@@ -275,8 +285,6 @@ export default function SharesPage() {
         </div>
       )}
 
-      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
-
       {/* **The reduction states itself, with the account it names and the way
           out.** A table silently shorter than expected is the defect #724 met
           on the ledger, and it is worse here: the header over it is a *sum* of
@@ -299,7 +307,7 @@ export default function SharesPage() {
           portfolio is empty. Reduced, *empty* is a different sentence — the
           portfolio's own emptiness would be a claim about the reader's data
           made on the strength of a filter they can lift in one click. */}
-      {failure || !positions.data ? null : rows.length === 0 ? (
+      {!positions.data ? null : rows.length === 0 ? (
         compte !== null ? (
           <EmptyState
             title={t('shares.reduced.empty.title')}

@@ -15,12 +15,12 @@
  * `lg` — the 976 px case ADR-0022 measured — it is one column, in the order the
  * blocks are written.
  *
- * The reads follow the rule the other pages keep: `/api/runtime` answers from
- * process memory and never opens the store (#668), so the shell's banner is
- * **silent** on the one failure that empties this tab — and a tab that rendered
- * nothing there would make *the store is unreadable* and *there is nothing to
- * say about this installation* the same screen, in its worst form, a blank one.
- * `lib/status.ts` keeps the causal order, so it is still one band or none.
+ * **A read that did not answer is said where its block would have been** (#829,
+ * ADR-0037). There is no band above this tab any more: the settings are a
+ * *read* as much as a form, so `/api/config` refusing leaves the column that
+ * holds them empty, and that column is where it says so — a tab that rendered
+ * nothing would make *the store is unreadable* and *there is nothing to say
+ * about this installation* the same screen, in its worst form, a blank one.
  *
  * The store block is the exception that proves it: its two facts about the file
  * ride on the runtime, so they stay on screen through exactly that failure —
@@ -30,17 +30,14 @@
  */
 import { useQuery } from '@tanstack/react-query'
 
-import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { SettingsBlock } from '@/components/data/SettingsBlock'
 import { RebuildBlock } from '@/components/data/RebuildBlock'
 import { StoreBlock } from '@/components/data/StoreBlock'
 import { api } from '@/lib/api'
-import { useI18n } from '@/lib/i18n'
 import { oneFailure, readConditions } from '@/lib/status'
 
 export function Installation() {
-  const { t } = useI18n()
-
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
   const store = useQuery({ queryKey: ['store'], queryFn: api.store })
@@ -56,19 +53,15 @@ export function Installation() {
     null,
   )
 
-  const failure = oneFailure(
-    readConditions({
-      // Causal order: the dials and the store's own figures both come out of
-      // the store, so the first of the two to fail is the one that names the
-      // cause. `/api/runtime` is not in the list — see below.
-      errors: [config.error, store.error],
-    }),
-  )
+  // **One failure per block, said by the block.** The dials and the store's own
+  // figures both come out of the store, and either read can refuse on its own;
+  // what the reader loses is that block, and what they are told is why, in the
+  // space it would have filled. `/api/runtime` is in neither list — see above.
+  const settingsFailure = oneFailure(readConditions({ errors: [config.error] }))
+  const storeFailure = oneFailure(readConditions({ errors: [store.error] }))
 
   return (
     <div className="space-y-8">
-      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
-
       {/* Full width and first, because it is what the dot sent the reader here
           for, and because a progress bar in a column is a progress bar nobody
           reads across. */}
@@ -83,10 +76,18 @@ export function Installation() {
             for it: a form of six fields that appeared empty and then filled in
             would let a reader type into a dial whose bounds had not arrived. */}
         <div className="space-y-8">
-          {config.data ? <SettingsBlock config={config.data} runtime={runtime.data} /> : null}
+          {settingsFailure !== null ? (
+            <Unreadable failure={settingsFailure} />
+          ) : config.data ? (
+            <SettingsBlock config={config.data} runtime={runtime.data} />
+          ) : null}
         </div>
         <div className="space-y-8">
-          <StoreBlock runtimeStore={runtime.data?.store ?? null} store={store.data ?? null} />
+          <StoreBlock
+            runtimeStore={runtime.data?.store ?? null}
+            store={store.data ?? null}
+            failure={storeFailure}
+          />
         </div>
       </div>
     </div>

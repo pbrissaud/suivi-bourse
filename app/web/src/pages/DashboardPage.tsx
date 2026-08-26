@@ -9,12 +9,11 @@
  *    holds) and the movers' **reference close**, which is a different instant
  *    and is the subject of that block. The two transitory ones are elsewhere by
  *    construction: the time-weighted return's base date, on the head and only
- *    while it moves, and the reconstruction's progress, in the banner and only
- *    there.
+ *    while it moves, and the reconstruction's progress, which is a card of the
+ *    notifications panel since #829 (ADR-0037) and only there.
  *  - **No installation fact lands here.** A notice posted on the dashboard is invisible
- *    to whoever lands on another page, and it would compete with the banner —
- *    which was validated in production and which the installation tab's badge is
- *    the counterpart of (#724).
+ *    to whoever lands on another page, and it would compete with the one global
+ *    indicator — the bell since #829 (ADR-0037), the banner before it.
  *  - **`/` is the dashboard unconditionally**, zero events included: a bookmark
  *    valid yesterday is valid tomorrow, and a redirection conditioned on data is
  *    how an app takes its reader somewhere they did not ask for.
@@ -28,21 +27,20 @@
  *    failure nothing above it can name, which is exactly how a `503` on
  *    `/api/portfolio-totals/history` took the chart off the dashboard on every
  *    load without a word on screen.
- *  - **And the band is the page's, above both tracks.** It used to be the
- *    head's, and the head rendered it *instead* of itself — right for the two
- *    reads the head is made of, wrong for the four the page's other blocks are
- *    made of, since a failed sparkline would have wiped the total gain and its
- *    four terms to say so. Raised here it names **any** read of the page while
- *    every block that did answer keeps its figures. The alternative — a sentence
- *    inside each block, which is not a band and therefore does not compete with
- *    the shell's — was refused: an unreadable store fails every store read at
- *    once, so it would put three sentences on one screen where `oneFailure` puts
- *    one, and *one band on screen or none* is a rule about announcers rather
- *    than about a component's name.
- *  - **What empties the page and what is merely named are two lists.** The band
- *    takes every read; `dashboardState` takes the two the page is *made of*.
- *    Folded into one, a failed accounts read would put the page in `failed` and
- *    empty it — the very disappearance being repaired, one level up.
+ *  - **A failed read is named where its content would have been** (#829,
+ *    ADR-0037). There is no band: the strip that carried this sentence across
+ *    the top of the column is gone and is not replaced, so *this did not answer*
+ *    is said by the surface that is empty because of it — the page when the two
+ *    reads it is *made of* fail, the block when its own read does. That is the
+ *    same repair #799 made, kept: a failed sparkline still costs the reader
+ *    nothing but the sparkline, and the total gain and its four terms stay on
+ *    screen. What it drops is the announcer at the top, which put the emptiness
+ *    at one end of the screen and its reason at the other.
+ *  - **What empties the page and what empties a block are two lists.**
+ *    `dashboardState` takes the two reads the page is *made of*; each block's
+ *    own read is handed to that block. Folded into one, a failed accounts read
+ *    would put the page in `failed` and empty it — the very disappearance being
+ *    repaired, one level up.
  *  - **It is a plateau, not a column** (#787, #790). Two tracks from `lg`, and
  *    the split is *drawn against read down*: the wide one carries the three
  *    figures that are **drawn** — the head, the value/performance chart, and the
@@ -61,7 +59,7 @@
 import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 
-import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { Allocation } from '@/components/dashboard/Allocation'
 import { DashboardHead } from '@/components/dashboard/Head'
@@ -91,8 +89,9 @@ export default function DashboardPage() {
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
   // **The two reads the page is made of, and them alone.** A block's own read
-  // failing removes that block and is named in the band below; it never puts
-  // the page in `failed`, which is a screen with nothing on it but a sentence.
+  // failing removes that block and is named **by that block**, in the slot the
+  // content would have filled; it never puts the page in `failed`, which is a
+  // screen with nothing on it but a sentence.
   const state = dashboardState({
     failed: Boolean(
       oneFailure(readConditions({ errors: [positions.error, totals.error] })),
@@ -172,28 +171,24 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
-  // **One band, for every read the page makes** — and one is the count, not the
-  // maximum: `readConditions` short-circuits under the shell's own band and
-  // `oneFailure` keeps the first of what is left, so an unreadable store, which
-  // fails every one of them at once, is still one sentence on screen.
-  //
-  // The order is **causal down the page**: the two reads the page is made of
-  // first, a store that will not answer them being the cause of every failed
-  // read under them, then the block reads in the order the blocks are read in.
-  // The movers are here too, for the defect's own reason one block along: the
-  // block renders nothing on `null` and a failed read reaches it as one.
-  const failure = oneFailure(
-    readConditions({
-      errors: [
-        positions.error,
-        totals.error,
-        perf.error,
-        valuation.error,
-        accounts.error,
-        movers.error,
-        ...histories.map((one) => one.error),
-      ],
-    }),
+  // **The two reads the page is made of**, and what they say when they fail:
+  // the page is empty, and this is why. `oneFailure` keeps the first — an
+  // unreadable store fails both at once, and one screen owes one sentence.
+  const pageFailure = oneFailure(
+    readConditions({ errors: [positions.error, totals.error] }),
+  )
+
+  // **One failure per block, handed to the block.** Each is the read that block
+  // is made of, so what the reader loses is that block and what they are told
+  // is why — in the space the chart, the list or the comparison would have
+  // filled. The account series ride with the declaration: they are the same
+  // card's second read, and `AccountsCard` draws nothing without either.
+  const chartFailure = oneFailure(
+    readConditions({ errors: [perf.error, valuation.error] }),
+  )
+  const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
+  const accountsFailure = oneFailure(
+    readConditions({ errors: [accounts.error, ...histories.map((one) => one.error)] }),
   )
 
   // The freshest quote the page holds — one instant for the whole screen, and
@@ -229,12 +224,16 @@ export default function DashboardPage() {
     return <NoBaseCurrency />
   }
 
+  // **The page is what did not answer, and it says so where it is empty**
+  // (#829, ADR-0037). `state` is `failed` on exactly this, and the head renders
+  // nothing without its two reads — so without this the screen would be blank
+  // and *the store is unreadable* would read as *you own nothing yet*.
+  if (state === 'failed' && pageFailure !== null) {
+    return <Unreadable failure={pageFailure} />
+  }
+
   return (
     <div className="space-y-6">
-      {/* Above both tracks, so that naming a failed read never costs the page a
-          block that did answer (#799). */}
-      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
-
       <div
         className={cn(
           'grid grid-cols-1 items-start gap-6',
@@ -258,6 +257,7 @@ export default function DashboardPage() {
                 currency={totals.data?.base_currency ?? null}
                 performance={perf.data?.points ?? null}
                 valuation={valuation.data?.points ?? null}
+                failure={chartFailure}
               />
               <Allocation rows={rows} currency={positions.data?.base_currency ?? null} />
             </>
@@ -276,11 +276,16 @@ export default function DashboardPage() {
               reference={movers.data?.reference ?? null}
               rows={rows}
               currency={positions.data?.base_currency ?? null}
+              failure={moversFailure}
             />
             {/* Last, and it is allowed to render nothing at all: at one account
                 a comparison is the head's own figure with a border round it, so
                 the rail then holds the movers alone. */}
-            <AccountsCard accounts={accounts.data?.accounts ?? null} series={series} />
+            <AccountsCard
+              accounts={accounts.data?.accounts ?? null}
+              series={series}
+              failure={accountsFailure}
+            />
           </div>
         )}
       </div>

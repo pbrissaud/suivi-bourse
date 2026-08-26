@@ -39,7 +39,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
-import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { api, CHART_WINDOWS, type ChartWindow, type LedgerEvent } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
@@ -114,8 +114,12 @@ export function PriceChart({
         </div>
       </div>
 
+      {/* **A read that did not answer, said where the plot would have been**
+          (#829, ADR-0037): an empty state and never an alert, so that *there is
+          nothing to draw* and *this could not be read* are told apart by the
+          sentence and not by a colour. */}
       {series.error ? (
-        <Refusal>{t(problemMessageKey(series.error))}</Refusal>
+        <Unreadable failure={{ message: problemMessageKey(series.error) }} />
       ) : !series.data ? null : series.data.points.length === 0 ? (
         <EmptyState title={t('shares.chart.empty')} />
       ) : (

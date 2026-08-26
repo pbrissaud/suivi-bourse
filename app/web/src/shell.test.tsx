@@ -306,6 +306,51 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
       expect(fs.existsSync(path.join(import.meta.dirname, gone)), gone).toBe(false)
     }
   })
+
+  it('mounts the refusal for a gesture only, which is what makes the band gone', () => {
+    // **A file name is not the criterion.** `Refusal.tsx` renders the same
+    // destructive `Alert` the band did, so *there is no band anywhere* holds
+    // only while no surface mounts it for a **read** — mounted on one it would
+    // be the strip back under another import, which is exactly what a rename
+    // buys and nothing else.
+    //
+    // Held on the source because the rule is about **where** a component may be
+    // mounted, which no single rendering can show. What a read that did not
+    // answer renders instead is `Unreadable`, an `EmptyState` standing in the
+    // slot the content would have taken — asserted on the rendering in
+    // `app.test.tsx`, `dashboard.test.tsx` and five others.
+    const READ = /<Refusal>\{?\s*(?:t\()?\w*(?:failure|series|ledger|events|positions|accounts|config|store|totals|perf|history|movers)\w*\.?/i
+    const mounted = fs
+      .readdirSync(path.join(import.meta.dirname, 'components'), {
+        recursive: true,
+        encoding: 'utf8',
+      })
+      .filter((file) => file.endsWith('.tsx'))
+      .map((file) => path.join('components', file))
+      .concat(
+        fs
+          .readdirSync(path.join(import.meta.dirname, 'pages'))
+          .filter((file) => file.endsWith('.tsx'))
+          .map((file) => path.join('pages', file)),
+      )
+      .filter((file) => {
+        const source = fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')
+        return /<Refusal[\s>]/.test(source)
+      })
+
+    // Every mount that is left answers a **write** the reader just made: the
+    // mutation's own error, beside the control that made it.
+    for (const file of mounted) {
+      const source = fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')
+      for (const [mount] of source.matchAll(/\{[^{}\n]*<Refusal>[^\n]*/g)) {
+        expect(mount, `${file}: ${mount.trim()}`).toMatch(
+          /\b(write|remove|move)\.error\b/,
+        )
+      }
+      expect(READ.test(source), `${file} mounts a Refusal for a read`).toBe(false)
+    }
+    expect(mounted.length).toBeGreaterThan(0)
+  })
 })
 
 describe('the density, the reader’s third preference', () => {

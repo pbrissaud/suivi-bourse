@@ -52,19 +52,20 @@ function tabNamed(hash: string): string {
 
 export default function DataPage() {
   const { t } = useI18n()
-  // **The hash names the tab**, which is what makes the two links that point at
-  // it arrive somewhere (#726): the status dot — the only hold a trial user has
-  // on *this container keeps nothing* once the modal is closed — and the
-  // currency band's own gesture, whose whole reason to exist is to reach the
-  // field. Both said `#installation` and both landed on the ledger, because
-  // nothing here read it. A tab is not a route, so this is a hash and not a
+  // **The hash names the tab** (#726). It arrived for two links that no longer
+  // exist — the status dot and the currency band's own gesture, both retired by
+  // #829 (ADR-0037), and the panel's cards land on `/reglages`, on an account or
+  // on a reduced ledger instead. What is left is the reason the mechanism
+  // outlives its producers: `#installation` is an **address**, so a bookmark
+  // taken on that tab, or the hash typed by hand, opens it rather than silently
+  // landing on the ledger. A tab is not a route, so this is a hash and not a
   // path; and it is *read*, never written, so opening another tab by hand
   // leaves the URL alone rather than pushing a history entry per click.
   const hash = useLocation({ select: (location) => location.hash })
   const [tab, setTab] = useState(() => tabNamed(hash))
 
   // Read again on every change, not only at the mount: a reader already on
-  // `/donnees` who clicks the status dot moves the hash without remounting the
+  // `/donnees` who follows a link to that hash moves it without remounting the
   // page, and the initial state would never see it. What this deliberately does
   // **not** do is re-select the tab when the hash has not moved — following the
   // same link a second time after switching tab by hand leaves the reader where

@@ -84,9 +84,10 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
-    // What the status dot reads since #819 (ADR-0036). The default is a well
-    // install; the amber this ticket exists for — a scrape frozen with a `200`
-    // — is `aFrozenScrape()`, and the red is the route refusing at all.
+    // What the bell reads — the status dot's read since #819 (ADR-0036),
+    // inherited whole when #829 folded the dot into it. The default is a well
+    // install; the amber — a scrape frozen with a `200` — is `aFrozenScrape()`,
+    // and the red is the route refusing at all.
     http.get(ROUTES.health, () => HttpResponse.json(aHealth())),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
     // The two writes echo the row back, which is the contract's own shape: the

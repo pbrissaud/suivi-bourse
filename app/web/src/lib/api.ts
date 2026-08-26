@@ -1276,8 +1276,8 @@ export interface StoreState {
   size_bytes: number | null
   /**
    * The newest import, and never the newest observed price: that second one is
-   * liveness, it belongs to the banner, and here it would make a store whose
-   * last import was a year ago read as freshly written.
+   * liveness, which the bell answers (#829, ADR-0037), and here it would make a
+   * store whose last import was a year ago read as freshly written.
    */
   ledger_last_write: string | null
   orphans: OrphanSymbol[]
@@ -1398,7 +1398,25 @@ export const api = {
   installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
   acknowledgeInstallationFact: (key: string) =>
     send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),
+  /**
+   * **The inventory**: what is left to act on, asleep ones removed. This is
+   * what the notifications panel reads.
+   */
   advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
+  /**
+   * **The reading**: every advisory this portfolio raises right now, an
+   * acknowledged one included (#829, ADR-0037).
+   *
+   * The two are one route and one derivation, told apart by a query parameter,
+   * because they answer two questions about the same instant. *Acknowledge for
+   * thirty days* is **not now**, said to the panel; the cash is still sitting in
+   * that account while it sleeps, so the chip beside the figure — which is the
+   * reading and offers no gesture at all — goes on saying so. Read through the
+   * inventory, the chip went out with the card and the record's distinction had
+   * no effect anybody could observe.
+   */
+  standingAdvisories: () =>
+    get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
   // The way in (#811), and since #813 it is made twice on purpose: once with

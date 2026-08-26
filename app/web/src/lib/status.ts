@@ -76,7 +76,9 @@ function isRebuilding(health: HealthState): boolean {
  * one the reader can act on. That left the dot **green while a red band
  * announced a reconstruction at the top of every page** — two surfaces
  * disagreeing about the same installation, and the one the reader is taught to
- * trust saying the wrong thing.
+ * trust saying the wrong thing. The band is gone since #829 and the bell has
+ * both halves, which is what makes the disagreement unsayable rather than
+ * merely repaired.
  *
  * Worse, it made the dot unable to answer the question it exists for. A reader
  * asking *are the figures I am looking at any good* got *the scheduler is
@@ -94,8 +96,9 @@ function isRebuilding(health: HealthState): boolean {
  * the scheduler, so those four facts are one word now, and the dot says
  * *attention* on all of them.
  *
- * The order is causal, like the banner's: the app not answering is stronger
- * than anything the body could say, and *attention* is stronger than a rebuild —
+ * The order is causal, like the retired banner's was: the app not answering is
+ * stronger than anything the body could say, and *attention* is stronger than a
+ * rebuild —
  * a stopped scheduler is *why* a rebuild would never finish, so naming the
  * rebuild there would name the symptom over the cause.
  *
@@ -178,15 +181,23 @@ export function rebuildProgress(
 }
 
 /**
- * A read of a page that failed, and the sentence that names it.
+ * A read that failed, and the sentence that names it.
  *
  * **It is not a band, and there is none left anywhere** (#829, ADR-0037). The
  * banner is retired: its three conditions — a missing base currency, a running
  * reconstruction, a stopped scheduler — are entries of the notifications panel
- * now, and its *sentence* descends one floor, into the empty state of each page
- * it used to explain. What survives here is the other thing the component was
- * used for and which the panel cannot say: **this page asked for something and
- * did not get it**, which is true of the page rather than of the installation.
+ * now, and its *sentence* descends one floor, into the empty state of the
+ * surface it used to explain. What survives here is the other thing the
+ * component was used for and which the panel cannot say: **this surface asked
+ * for something and did not get it**, which is true of the surface rather than
+ * of the installation.
+ *
+ * What renders it is `components/Unreadable.tsx`, an `EmptyState` and never an
+ * alert, mounted **where the missing content would have been**. That placement
+ * is the whole of the rule: a page, a tab or a block that has nothing on it
+ * says why it has nothing, so *you own nothing yet* and *the store would not
+ * answer* are told apart by the sentence rather than by a strip somewhere else
+ * on the screen.
  *
  * It carries no gesture. The one condition that had one was the currency's, and
  * what it led to is a card's link now.
@@ -210,19 +221,24 @@ export function oneFailure(failures: readonly ReadFailure[]): ReadFailure | null
 /**
  * The failures a surface's own reads can observe, in causal order.
  *
- * **Every page names its own now** (#829). `shellError` used to be the banner's
- * and short-circuited this list to nothing, on the argument that the strip at
- * the top of the column was already saying it. There is no strip: a page that
- * stayed silent over a `503` would render nothing and no reason, which turns
- * *"the store is unreadable"* and *"you own nothing yet"* into one empty screen.
- * So a page lists `/api/runtime` first among its own errors — the app not
- * answering is the cause of every failed read under it — and `oneFailure` keeps
- * that one.
+ * **Every surface names its own now** (#829). `shellError` used to be the
+ * banner's and short-circuited this list to nothing, on the argument that the
+ * strip at the top of the column was already saying it. There is no strip: a
+ * surface that stayed silent over a `503` would render nothing and no reason,
+ * which turns *"the store is unreadable"* and *"you own nothing yet"* into one
+ * empty screen. So each surface lists **the reads it is made of** — the ones
+ * whose absence is what leaves it empty — and `oneFailure` keeps the first.
+ *
+ * **`/api/runtime` is in none of those lists, and that is not an omission.** It
+ * answers from process memory and never opens the store (#668), so it refuses
+ * only when the app itself is down — and then every store read refuses with it
+ * and says so. What names *the app is not answering* as a fact about the
+ * installation is the bell, which reads `/health`, a stricter route that falls
+ * wherever `/api/runtime` falls: red icon, and its panel's health card in prose.
  *
  * What is left of the parameter is `namedElsewhere`, and it has exactly one
- * caller: the notifications panel, whose **health card** already says *the
- * store is not answering* in prose. Naming it a second time three lines above
- * would put two announcers on one fact.
+ * caller: that same panel, which is not going to name three lines above what
+ * its own health card is already saying.
  */
 export function readConditions(input: {
   namedElsewhere?: unknown

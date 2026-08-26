@@ -4121,6 +4121,37 @@ def test_acknowledging_puts_it_to_sleep_and_the_row_carries_the_expiry(tmp_path)
     assert expires - stored == advisories.ACK_WINDOW
 
 
+def test_the_reading_keeps_an_advisory_the_inventory_has_put_to_sleep(tmp_path):
+    """``?asleep=include`` is the chip's read, and the chip is the reading.
+
+    ADR-0037 draws the line — *the chip beside the figure is the reading, the
+    panel is the inventory* — and it has an effect only if the two can answer
+    differently about the same instant. *Acknowledge for thirty days* is **not
+    now**, said to the inventory; the cash is still sitting in that account
+    while the card sleeps.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+    client.post('/api/advisories/cash_share:cto/acknowledgement')
+
+    assert client.get('/api/advisories').get_json() == []
+
+    (standing,) = client.get('/api/advisories?asleep=include').get_json()
+    assert standing['key'] == 'cash_share:cto'
+
+
+def test_an_unknown_asleep_value_answers_the_inventory_rather_than_refusing(tmp_path):
+    """A typo in a URL must not turn a page of chips into a refusal."""
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+    client.post('/api/advisories/cash_share:cto/acknowledgement')
+
+    response = client.get('/api/advisories?asleep=yes-please')
+
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
 def test_acknowledging_an_advisory_that_does_not_stand_is_a_404(tmp_path):
     response = build_client(tmp_path).post(
         '/api/advisories/cash_share:nobody/acknowledgement')

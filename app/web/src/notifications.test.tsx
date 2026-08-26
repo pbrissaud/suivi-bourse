@@ -291,4 +291,44 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
     expect(screen.queryByText(/% de cash/)).not.toBeInTheDocument()
   })
+
+  it('keeps the chip when the panel’s card is acknowledged, the condition standing', async () => {
+    // **The two surfaces ask two questions of the same instant.** *Acknowledge
+    // for thirty days* is *not now*, said to the inventory; the cash is still
+    // sitting in that account while the card sleeps, so the reading beside the
+    // figure goes on saying so. Read through the inventory the chip left with
+    // the card, and ADR-0037's *the chip is the reading, the panel is the
+    // inventory* had no effect anybody could observe.
+    //
+    // The server tells the two apart with `?asleep=include`, so the net does
+    // too: `listing` on the panel's read, `standing` on the rail's.
+    let asleep = false
+    server.use(
+      http.get(ROUTES.advisories, ({ request }) => {
+        const standing = new URL(request.url).searchParams.get('asleep') === 'include'
+        return HttpResponse.json(standing || !asleep ? [anAdvisory()] : [])
+      }),
+      http.post(ROUTES.advisoryAcknowledgement, ({ params }) => {
+        asleep = true
+        return HttpResponse.json({
+          ...anAdvisory({ key: String(params.key) }),
+          acknowledged_until: '2026-04-01T12:00:00.000Z',
+        })
+      }),
+    )
+    const { user } = renderApp({ url: '/comptes' })
+
+    expect(await screen.findByText('25 % de cash')).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    await user.click(within(panel).getByRole('button', { name: 'Acquitter 30 jours' }))
+
+    // The card goes — that is the whole of what the gesture was for…
+    await waitFor(() =>
+      expect(within(panel).queryByText(/de liquidités non investies/)).not.toBeInTheDocument(),
+    )
+    // …and the reading stays, because the condition does.
+    expect(screen.getByText('25 % de cash')).toBeInTheDocument()
+  })
 })

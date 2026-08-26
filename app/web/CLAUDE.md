@@ -104,21 +104,32 @@
 > never a word on screen: it decides what a card offers. Health offers a link
 > and no acknowledgement, an installation fact is acknowledged for good, an
 > advisory is put to sleep for **thirty days** and the card says so.
-> **The band is not replaced.** Its three conditions are entries in the panel,
-> and its *sentence* descends one floor: with no reporting currency the
-> dashboard, the securities and the accounts render an empty state that **says
-> why**, and the ledger stays readable — the events are declared, it is their
-> valuation that waits. `Refusal.tsx` is what is left of `Band.tsx`, and it says
-> only what has no other home: a gesture the server refused, and a read that did
-> not answer, named by the surface that asked for it. `readConditions` therefore
-> no longer short-circuits on a `shellError`; its one remaining caller of that
-> clause is the panel itself, whose health card already says it in prose.
+> **The band is not replaced, and no component inherits its mounts.** Its three
+> conditions are entries in the panel, and its *sentence* descends one floor:
+> with no reporting currency the dashboard, the securities and the accounts
+> render an empty state that **says why**, and the ledger stays readable — the
+> events are declared, it is their valuation that waits. What the component was
+> *also* used for splits in two, and the split is checkable on the source:
+> `Refusal.tsx` answers **a gesture the server refused**, mounted beside the
+> control that made it and never for a read; `Unreadable.tsx` is an
+> **`EmptyState`** carrying the sentence of a read that did not answer, mounted
+> **where the missing content would have been** — the page when the reads it is
+> *made of* refuse, the block when its own read does. So no surface renders a
+> strip across the top of the content column, and *empty* and *unreadable* are
+> told apart by the sentence rather than by a colour somewhere else on screen.
+> `readConditions` therefore no longer short-circuits on a `shellError`; its one
+> remaining caller of that clause is the panel itself, whose health card already
+> says it in prose.
 > **A card's link lands on the figure**: the account selected, the security's
 > sheet open, the ledger reduced — which is why the set of securities became
 > **addressable** (`?symbol=`), the panel being mounted in the shell and reached
 > from all five routes. And an **advisory is read twice**: as a chip beside the
 > figure it comments on, which never offers the acknowledgement, and as a card in
-> the panel, which is the only place it is acknowledged.
+> the panel, which is the only place it is acknowledged. The two are two
+> questions about one instant and they answer differently once the window is
+> open — the card goes, the chip stays, the condition still standing — so the
+> chip reads `GET /api/advisories?asleep=include` (`advisories.standing`) while
+> the panel reads the route bare (`advisories.listing`).
 > **The shell opens to five** (#828, ADR-0038): the settings have an address of
 > their own, `/reglages`, and the data page is called the **ledger** — `Grand
 > livre` in French, the word `CONTEXT.md` and every French record already use,
@@ -271,21 +282,26 @@ Four nets hold a rule nothing made true by construction:
   back. This is the one wait the product dresses, and it is not in contention
   with the spinner rule: that rule is about a **read**, whose subject nothing
   may be claimed about; this is the reader's own act.
-- **There is no band anywhere** (#829, ADR-0037). What is left of it is one
-  sentence per surface, and it is the surface's own: a read that did not answer,
-  named where it was asked for. `lib/status.ts` keeps the causal order and
-  `oneFailure` keeps the first, which is why an unreadable store — which fails
-  every read a page is made of at once — is still **one** sentence.
-- **A page's own sentence belongs to the page, above its blocks** (#799).
-  Mounted inside a block it renders *instead* of it, so it can only ever name
-  the reads that block is made of — and the dashboard's four other reads
-  therefore entered no condition at all: a `503` on a series took the chart, or
-  the comparison, off the page on every load without a word. The page reads and
-  the blocks render; `readConditions` is handed **every** read the page is made
-  of. What empties a page and what is merely named stay two lists: only the
-  reads a page is *made of* reach `dashboardState`. `/api/runtime` is in neither
-  — it answers from process memory and never opens the store, so it fails only
-  when everything else does.
+- **There is no band anywhere** (#829, ADR-0037), and the criterion is read off
+  the **rendering**: on a `503` not one live region is raised on any route.
+  What is left of the band is `Unreadable` — an `EmptyState`, not an `Alert` —
+  standing **in the slot the missing content would have taken**. `lib/status.ts`
+  keeps the causal order and `oneFailure` keeps the first, which is why a page
+  whose two reads both refuse says it **once**.
+- **Every read goes to the surface it would have filled** (#799, then #829).
+  The page reads and the blocks render, so each read is declared at the page and
+  handed down — a read declared inside the block that consumes it is a read
+  whose failure nothing can name, which is how a `503` on a series took the
+  chart off the dashboard on every load without a word. #799 answered that with
+  a band above both tracks; ADR-0037 removes the strip and hands each read to
+  its own block instead, which keeps the property that mattered: **a failed read
+  never costs the reader a block that did answer.** What empties a page and what
+  empties a block stay two lists — only the reads a page is *made of* reach
+  `dashboardState`. Several empty slots may therefore carry a reason at once,
+  and that is not *several announcers*: an empty state is not a live region, and
+  what announces the **installation** is the bell, once. `/api/runtime` is in no
+  list — it answers from process memory and never opens the store, so it fails
+  only when everything else does, and `/health` is what the bell reads.
 - **Green means the quotes are read *and* the performance is up to date** (#787).
   The indicator used to hold one predicate, the scheduler, and stayed green while
   a red band announced a rebuild on every page — two surfaces disagreeing about
@@ -368,7 +384,9 @@ src/
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
 ├── components/
-│   ├── Explain · Stat · EmptyState · Refusal · EntryPair · ShareBar
+│   ├── Explain · Stat · EmptyState · EntryPair · ShareBar
+│   ├── Refusal                # a gesture the server refused, beside the control
+│   ├── Unreadable             # a read that did not answer, where its content would be
 │   ├── NoBaseCurrency         # the band's sentence, in each page's empty state
 │   ├── FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)

@@ -82,7 +82,7 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
 
   // **A reduction in force always has a chip that releases it.** `accounts` is
   // what the *ledger* names, and the ledger changes under the reader: revoking
-  // from the band above this bar the import that carried every `beta` event
+  // from the imports bar above this one the import that carried every `beta` event
   // takes `beta` out of the list while `filters.account` still holds it, and the
   // group would then disappear with the only control that could clear it —
   // leaving a table that is simply shorter than it should be and nothing on

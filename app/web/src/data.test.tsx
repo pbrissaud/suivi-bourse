@@ -632,8 +632,9 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
       'L’application a refusé la requête faite par cette page.',
     )
     // The box stays open on the failure — everything behind the overlay is
-    // `aria-hidden`, so a band on the page would be a sentence nobody can read
-    // — and it still names the reduction it was opened on.
+    // `aria-hidden`, so a refusal rendered on the page behind it would be a
+    // sentence nobody can read — and it still names the reduction it was
+    // opened on.
     expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
   })
 
@@ -917,8 +918,8 @@ describe('the ledger at zero', () => {
 
 describe('the page’s own read', () => {
   it('names an unreadable store instead of showing an empty ledger', async () => {
-    // `/api/runtime` answers from process memory and never opens the store, so
-    // the shell's banner is silent on exactly this failure.
+    // Said in the journal's own space, as an empty state, and never as a band
+    // at the top of the tab (#829, ADR-0037).
     server.use(
       problemHandler(ROUTES.events, {
         status: 503,
@@ -928,7 +929,9 @@ describe('the page’s own read', () => {
     )
     renderApp({ url: '/donnees' })
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     // And *the store is unreadable* does not read as *you have recorded
     // nothing*: the two ways in are not offered here.

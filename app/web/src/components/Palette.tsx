@@ -193,9 +193,10 @@ export function Palette() {
   // **A read that failed is neither in flight nor empty**, and it is the state
   // where a palette that only knew those two rendered a dialog with a field and
   // a blank body. The product's own vocabulary says why — `problemMessageKey`,
-  // through the ordered list every page's band is built from — and it is a line
-  // and not a `Refusal`: the page underneath keeps its own announcer, and what this
-  // says is why a section is missing *here*.
+  // through the ordered list every surface's failed reads are folded by — and it
+  // is a line, neither a `Refusal` nor an `Unreadable`: the page underneath says
+  // why *it* is empty in its own space, and what this says is why a section is
+  // missing **here**, inside a dialog the reader opened one keystroke ago.
   const failure = oneFailure(
     readConditions({ errors: [positions.error, accounts.error, events.error] }),
   )

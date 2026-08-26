@@ -938,8 +938,9 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
 }
 
 /**
- * The body of `GET /health` (#818), which is what the **status dot** reads
- * since #819 (ADR-0036).
+ * The body of `GET /health` (#818), which is what the **bell** reads — the
+ * status dot's read since #819 (ADR-0036), inherited whole when #829 folded the
+ * dot into the bell (ADR-0037).
  *
  * The default is a well install: the three jobs have each had a pass, none of
  * them asks to be looked at, and the reconstruction has reached every first

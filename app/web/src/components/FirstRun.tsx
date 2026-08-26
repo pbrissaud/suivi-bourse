@@ -25,7 +25,8 @@
  *    answer it must not weigh what the answer weighs. Closing leaves an app that
  *    **works**: the scrape runs and stores the quote in its own currency, and
  *    the ledger is writable — what waits is the conversion and the performance
- *    series, which the band then says.
+ *    series, which the notifications panel's pinned card and each valued page's
+ *    empty state then say (#829, ADR-0037).
  *  - **Three sentences on what the app *is*, and no rule of calculation.**
  *    Explaining the weighted average cost here is exactly what ADR-0016 gives
  *    the convention bubble for: a rule is read beside the figure it governs, not
@@ -114,7 +115,7 @@ export function FirstRun() {
 
   // The two reads are **armed by the walk**, so an install that has answered the
   // question pays for neither on any page. The runtime is the shell's own read
-  // under the same key — the banner and the status dot ask for it everywhere —
+  // under the same key — the shell asks for it on every route —
   // so arming it here costs nothing and takes nothing away; the accounts are
   // read from the top of the walk rather than on arrival at their own passage,
   // which is what makes them there to be named when the reader gets to them.

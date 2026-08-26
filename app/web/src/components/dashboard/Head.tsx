@@ -9,14 +9,16 @@
  * exist for this installation is not a missing value. A sentence under the head
  * names what a ledger would add.
  *
- * **A read that fails is named by the page, not here** (#799). The band used to
- * be mounted in this block and rendered *instead* of it, which was right for the
- * two reads the head is made of and wrong for every other read on the page: a
- * `/api/positions/history` that failed would have wiped the total gain and its
- * four terms to say so. The band therefore went one step up, above the two
- * tracks, where it names any of the page's reads without emptying a block it is
- * not about (`pages/DashboardPage.tsx`). `lib/status.ts` still keeps the causal
- * order, and there is still one band on screen or none.
+ * **A read that fails is named by whoever is empty because of it, not here**
+ * (#799, then #829). The band used to be mounted in this block and rendered
+ * *instead* of it, which was right for the two reads the head is made of and
+ * wrong for every other read on the page: a `/api/positions/history` that failed
+ * would have wiped the total gain and its four terms to say so. #799 moved it a
+ * step up, above both tracks; ADR-0037 removed the strip altogether, and the
+ * sentence went down instead of up — the page renders its own empty state when
+ * the two reads *it* is made of refuse, and each other block carries the reason
+ * its own read did (`pages/DashboardPage.tsx`). The head keeps its figures in
+ * every one of those cases, which is the property both tickets bought.
  *
  * **The block reads nothing of its own** since the same ticket. The five reads
  * it renders are the page's, handed down as props, and the two shapes that can
@@ -100,7 +102,8 @@ const TERM_LABELS: Record<GainTermName, MessageKey> = {
 export interface DashboardHeadProps {
   /**
    * The two reads the block is **made of**, `null` while either is in flight —
-   * or while one of them has failed, which the page's band is what names.
+   * or while one of them has failed, in which case the page renders its own
+   * empty state instead of this block and names the failure there (#829).
    */
   positions: PositionsResponse | null
   totals: PortfolioTotalsResponse | null

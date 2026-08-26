@@ -20,8 +20,8 @@
  *    beside a purge button the figure is a lie by juxtaposition; hidden, it is
  *    still there for anyone who runs `du`, and only its explanation is gone.
  *  - **The last write of the ledger**, and never the last observed price. The
- *    second is liveness and belongs to the banner; here it would make a store
- *    whose last import was a year ago read as freshly written.
+ *    second is liveness, which the bell answers (#829, ADR-0037); here it would
+ *    make a store whose last import was a year ago read as freshly written.
  *
  * **Its rows come from two reads, so it waits a row at a time** (#777,
  * ADR-0026). The rule as ADR-0026 writes it — *a block that waits renders
@@ -40,10 +40,12 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
+import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
 import { api, type RuntimeStore, type StoreState } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import type { ReadFailure } from '@/lib/status'
 
 export interface StoreBlockProps {
   /**
@@ -58,9 +60,16 @@ export interface StoreBlockProps {
    * waits is what this read alone can say.
    */
   store: StoreState | null
+  /**
+   * `GET /api/store` refused — `null` when it answered or is still in flight.
+   * The two are **not** the same news: in flight the figures are simply not
+   * there yet, refused they are not coming, and since #829 there is no band
+   * above the tab to say so on the block's behalf (ADR-0037).
+   */
+  failure?: ReadFailure | null
 }
 
-export function StoreBlock({ runtimeStore, store }: StoreBlockProps) {
+export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockProps) {
   const { t } = useI18n()
   const format = useFormatters()
   const client = useQueryClient()
@@ -81,7 +90,13 @@ export function StoreBlock({ runtimeStore, store }: StoreBlockProps) {
   // product has none of. It is the only state where the block waits as a
   // whole — the moment *one* of the two answers, what that one knows is on
   // screen and stays there whatever becomes of the other.
-  if (!runtimeStore && !store) return null
+  if (!runtimeStore && !store) {
+    // Unless the read was **refused**, and then even a block with nothing in it
+    // owes the reason: an installation tab with a hole where the store's
+    // figures go, and no word anywhere, is the screen ADR-0037 moved the
+    // sentence down a floor to abolish.
+    return failure === null ? null : <Unreadable failure={failure} />
+  }
 
   return (
     <section aria-labelledby="installation-store" className="space-y-4">
@@ -154,6 +169,13 @@ export function StoreBlock({ runtimeStore, store }: StoreBlockProps) {
               </dd>
             </div>
           </>
+        ) : failure !== null ? (
+          // **The two rows the read owns, replaced by the reason they are not
+          // there** (#829, ADR-0037). In flight they simply do not exist yet;
+          // refused, they never will, and the path and the persistence beside
+          // them — which ride on `/api/runtime` — must not make the block look
+          // whole. It sits in the list, in the slot the rows would have taken.
+          <Unreadable failure={failure} />
         ) : null}
       </dl>
 

@@ -1839,7 +1839,7 @@ def acknowledge_installation_fact(key: str):
 
 @api_bp.get('/advisories')
 def list_advisories():
-    """What this portfolio says about itself, minus what is asleep.
+    """What this portfolio says about itself — the inventory, or the reading.
 
     A **read**, and one that writes nothing at all: an advisory is derived on
     every request and stored nowhere (ADR-0036), so there is no row to arm and
@@ -1847,10 +1847,28 @@ def list_advisories():
     consulted rather than written — an expired one is read as absent here and
     swept by the gesture next door.
 
+    **Two callers, two questions, and one query parameter tells them apart**
+    (ADR-0037). The notifications panel is the *inventory*: it asks what is left
+    to act on, so an acknowledged advisory disappears from it exactly as an
+    acknowledged installation fact does — and comes back when the window wears
+    off, which is the half a permanent acknowledgement could never do. The chip
+    beside the figure is the *reading*: the cash is still sitting there after
+    somebody pressed *not now*, so ``?asleep=include`` answers
+    :func:`advisories.standing` and the chip stays. Without that, one gesture in
+    the panel silenced both surfaces and the distinction the record draws had no
+    effect anybody could observe.
+
+    Anything but ``include`` is the default, deliberately: an unknown value is
+    not a request for the wider answer, and a ``400`` here would turn a typo in
+    a URL into a page with no chips and a refusal on it.
+
     ``200`` + ``[]`` on a portfolio with nothing to say, which is the ordinary
     case and the one the panel renders *Nothing to report* for.
     """
-    return jsonify([one.to_dict() for one in advisories.listing(_store())])
+    read = (advisories.standing
+            if request.args.get('asleep') == 'include'
+            else advisories.listing)
+    return jsonify([one.to_dict() for one in read(_store())])
 
 
 @api_bp.post('/advisories/<key>/acknowledgement')

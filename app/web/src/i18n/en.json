@@ -79,6 +79,7 @@
   "empty.noCurrency.title": "No base currency yet",
   "empty.noCurrency.body": "Nothing is valued and no gain is computed before the reporting currency has been answered. Your events are recorded all the same, and the ledger stays readable.",
   "empty.noCurrency.link": "Answer it in Settings",
+  "empty.unread.title": "This could not be read",
 
   "accounts.advisory.cash": "{share, number, percent} cash",
 

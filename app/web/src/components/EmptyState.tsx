@@ -5,11 +5,17 @@
  * Eight copies is eight chances to say *nothing here* in eight registers, and
  * it is how *the database is unreachable* and *you own nothing yet* ended up
  * looking alike. Here they cannot: this component says a thing is **empty**,
- * and a failure is the banner's job, one band or none.
+ * and it says **why** — the description is what tells the two apart. Since #829
+ * (ADR-0037) a failed read is one of the reasons it carries, through
+ * `Unreadable`: the band that used to announce failures at the top of the
+ * column is retired and not replaced, so the sentence lives where the missing
+ * content would have been.
  *
  * It is deliberately **not** `role="status"`. A live region announces a change,
- * and an empty section is a state the page is simply in; giving it one would
- * also put a second `status` on a page whose banner already owns that role.
+ * and an empty section is a state the page is simply in; a page can legitimately
+ * hold more than one of them — one per block that has nothing to show — and six
+ * live regions announcing one unreadable store is the noise ADR-0021 was written
+ * against. What announces the *installation* is the bell, once.
  *
  * It carries a `data-empty` attribute for the same reason it carries no role:
  * the marker is for **a test**, not for a reader (ADR-0026). Every page is

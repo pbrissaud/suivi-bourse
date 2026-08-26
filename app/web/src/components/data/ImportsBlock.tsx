@@ -2,7 +2,8 @@
  * **Import et export** — the way in, and the way back out (#728, #794, #811,
  * ADR-0020, ADR-0030, ADR-0032, ADR-0005).
  *
- * One band above the ledger table, and since #816 it holds **two** things: the
+ * One **imports bar** above the ledger table, and since #816 it holds **two**
+ * things: the
  * drop zone and the export menu. The third — the imported files with their
  * revocation — went with the population it described.
  *
@@ -54,7 +55,7 @@ export interface ImportsBlockProps {
   /**
    * The reduction the table holds, and how many rows it retains (#796) — what
    * the *filtered selection* entry of the menu exports. It comes down from the
-   * tab rather than being read here: the chips are the ledger's, and this band
+   * tab rather than being read here: the chips are the ledger's, and this bar
    * only offers the gesture.
    */
   selection: LedgerFilters
@@ -87,7 +88,7 @@ export function ImportsBlock({ upload, events, selection, selected }: ImportsBlo
 
           It is **not said twice**: with nothing recorded, the ledger's own
           empty state carries the same gesture as one of its two entries of
-          equal weight, one line below this band. */}
+          equal weight, one line below this bar. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         {events.length > 0 ? <UploadZone upload={upload} /> : null}
         {files.events ? (

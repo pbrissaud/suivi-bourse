@@ -233,7 +233,10 @@ describe('the chart, the list and the fundamentals stay', () => {
     const { user } = renderApp({ url: '/titres' })
     const sheet = await openSheet(user)
 
-    expect(await within(sheet).findByRole('status')).toBeInTheDocument()
+    // An empty state where the list would have been, and never a red strip
+    // somewhere else in the sheet (#829, ADR-0037).
+    expect(await within(sheet).findByText('Lecture impossible')).toBeInTheDocument()
+    expect(within(sheet).queryByRole('status')).not.toBeInTheDocument()
     expect(within(sheet).queryByText('Événements')).not.toBeInTheDocument()
   })
 })

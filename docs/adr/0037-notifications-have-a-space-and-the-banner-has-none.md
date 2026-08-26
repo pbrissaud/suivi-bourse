@@ -74,7 +74,11 @@ below.
   and the chip on the security stay: they are the *reading*, the panel is the *inventory*.
   What the chip never offers is the acknowledgement — one fact cannot propose two
   different gestures depending on where it is met, so the gesture belongs to the panel
-  and to the panel alone.
+  and to the panel alone. And the distinction has to be **observable** or it is not one:
+  *acknowledge for thirty days* is *not now*, said to the inventory, so the card goes and
+  the chip stays — the cash is still sitting in that account while the window is open.
+  The route serves both from one derivation: bare it answers `listing`, and
+  `?asleep=include` answers `standing`, which is the chip's read.
 - **A card's link lands on the figure, never on the page.** *See the account* opens
   Accounts **with that account selected**; *See the security* opens its sheet; *See the
   events concerned* opens the ledger **reduced to them**, the reduction naming itself and

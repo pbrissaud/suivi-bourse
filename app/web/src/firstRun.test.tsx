@@ -13,9 +13,12 @@
  *  - **a trial run walled in** — a bare `docker run` is a trial by design, so
  *    the three passages are traversed with nothing supplied and no write leaves
  *    the browser;
- *  - **a wall of bands** — the banner was validated in production on a `503`,
- *    something that happens and passes; two conditions that stand until somebody
- *    acts stack into a wall, so it renders one band or none, in causal order;
+ *  - **a wall of announcements** — the banner was validated in production on a
+ *    `503`, something that happens and passes; two conditions that stand until
+ *    somebody acts stack into a wall, which is why it rendered one band or none
+ *    in causal order, and why #829 retired the strip altogether (ADR-0037):
+ *    those conditions are cards of the notifications panel now, and the sentence
+ *    is one floor down, in the empty state of the page it explains;
  *  - **an escape hatch given the weight of the answer** — no *Later* button
  *    beside *Save*: the cross, `Escape` and the click outside are the *later*.
  */
@@ -209,7 +212,8 @@ describe('closing it', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
     // The ledger is writable: the app runs, it scrapes in the security's own
-    // currency, and what waits is the conversion — which the band then says.
+    // currency, and what waits is the conversion — which the panel's pinned card
+    // and each valued page's empty state then say (#829, ADR-0037).
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
     expect(await screen.findByRole('dialog', { name: /événement/i })).toBeInTheDocument()
   })

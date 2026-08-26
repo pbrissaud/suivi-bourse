@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bell } from 'lucide-react'
 
-import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { api } from '@/lib/api'
@@ -224,7 +224,7 @@ export function Notifications() {
         )}
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-          {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
+          {failure ? <Unreadable failure={failure} /> : null}
 
           {groups.map((group) => (
             <section key={group.subject} aria-labelledby={`notifications-${group.subject}`}>

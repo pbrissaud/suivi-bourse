@@ -2,6 +2,9 @@
  * What is true of the installation, what a page says of its own failed read,
  * and the problem table both of them come out of.
  */
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { ApiProblem } from '@/lib/api'
@@ -126,9 +129,12 @@ describe('the bell’s colour is a state, never a count', () => {
 
 describe('the banner is retired, and nothing replaces it (#829, ADR-0037)', () => {
   it('keeps the first failure of the causal order, never two', () => {
-    // The cap is what is left of *one band on screen or none*: an unreadable
-    // store fails every read a page is made of at once, and six sentences
-    // saying one thing is the defect the rule was written against.
+    // The cap is what is left of *one band on screen or none*, applied to a
+    // **surface** rather than to a screen: an unreadable store fails every read
+    // a page is made of at once, and one empty page owes one reason. What it no
+    // longer forbids is two surfaces each explaining their own emptiness — a
+    // block that lost its chart and a block that lost its comparison are two
+    // holes, and neither is filled by a sentence about the other.
     const failure = oneFailure([{ message: 'problem.unreachable' }, { message: 'problem.internal' }])
     expect(failure).toEqual({ message: 'problem.unreachable' })
   })
@@ -144,15 +150,39 @@ describe('the banner is retired, and nothing replaces it (#829, ADR-0037)', () =
   })
 })
 
-describe('a page names its own failed read, and the shell cannot do it for it', () => {
+describe('a surface names its own failed read, and nothing above it can do it', () => {
   const unreadable = new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })
 
   it('names a read nothing above it can see', () => {
-    // Without this the page renders nothing at all, and *"the store is
+    // Without this the surface renders nothing at all, and *"the store is
     // unreadable"* and *"you own nothing yet"* become the same blank screen.
     expect(oneFailure(readConditions({ errors: [unreadable] }))).toEqual({
       message: 'problem.storageUnavailable',
     })
+  })
+
+  it('takes no shell error, `/api/runtime` being in no surface’s list', () => {
+    // The docstring used to promise that a page lists `/api/runtime` first
+    // among its own errors, and no page did. It is in no list on purpose: it
+    // answers from process memory and never opens the store, so it refuses only
+    // when every store read refuses with it and says so. What names *the app is
+    // not answering* as a fact about the installation is the bell, which reads
+    // `/health` — a stricter route that falls wherever this one falls.
+    const pages = ['DashboardPage', 'SharesPage', 'AccountsPage']
+    for (const page of pages) {
+      const source = fs.readFileSync(
+        path.join(import.meta.dirname, '..', 'pages', `${page}.tsx`),
+        'utf8',
+      )
+      expect(source, page).not.toMatch(/runtime\.error/)
+    }
+    for (const block of ['data/Ledger', 'data/Installation']) {
+      const source = fs.readFileSync(
+        path.join(import.meta.dirname, '..', 'components', `${block}.tsx`),
+        'utf8',
+      )
+      expect(source, block).not.toMatch(/runtime\.error/)
+    }
   })
 
   it('says nothing where a surface above it is already saying it', () => {

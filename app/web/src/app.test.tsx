@@ -223,15 +223,18 @@ describe('when the app is not answering', () => {
       }),
     )
 
-  it('names the failure once, and never with the server’s own sentence', async () => {
+  it('names the failure once, where the page is empty, and never with the server’s own sentence', async () => {
     server.use(...unavailable())
     renderApp()
 
-    const said = await screen.findByRole('status')
-    expect(said).toHaveTextContent(/Les données ne sont pas lisibles pour l’instant/)
-    // One sentence, never two: `readConditions` short-circuits under the health
-    // read and `oneFailure` keeps the first of what is left.
-    expect(screen.getAllByRole('status')).toHaveLength(1)
+    // The page's own empty state, in the space the figures would have filled —
+    // and **no strip anywhere**: not one live region is raised on the whole
+    // screen, which is the criterion *there is no band anywhere* read off the
+    // rendering rather than off a file name.
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/Les données ne sont pas lisibles pour l’instant/)).toBeInTheDocument()
+    expect(screen.getAllByText('Lecture impossible')).toHaveLength(1)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     // `detail` and `title` are English diagnostics. They are carried, and
     // rendered nowhere — which is what put a French title over an English
     // sentence in the prototype's most consequential alert.
