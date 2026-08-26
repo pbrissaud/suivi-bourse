@@ -264,8 +264,13 @@
   "accounts.detail.dividends": "Dividendes",
   "accounts.detail.dividends.encashed": "Encaissés",
   "accounts.detail.dividends.explain": "Ce que ce compte vous a réellement versé, en espèces — les positions soldées de ce compte comprises, une ligne vendue ayant gardé les dividendes qu’elle a payés tant qu’elle était détenue. C’est l’un des quatre termes du gain total ci-dessus, promu ici parce que c’est le seul chiffre qui réponde à lui seul à *ce que ce compte m’a versé*.",
+  "accounts.detail.curve.period": "Dessiné sur {range, select, 1M {le dernier mois} YTD {l’année en cours} 1Y {les douze derniers mois} SINCE_OPENING {toute l’histoire de ce compte} other {}}",
+  "accounts.detail.dividends.onContributed": "Sur le versé",
   "accounts.detail.lines": "Lignes détenues",
+  "accounts.detail.lines.weight": "Poids",
   "accounts.detail.lines.link": "{count, plural, one {Voir la ligne de ce compte dans Titres} other {Voir les # lignes de ce compte dans Titres}}",
+  "accounts.detail.payers": "Titres distributeurs",
+  "accounts.detail.payers.period": "Depuis l’ouverture de ce compte",
   "accounts.detail.events": "Derniers événements",
   "accounts.detail.events.link": "Voir tout le grand livre",
 

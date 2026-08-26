@@ -4,7 +4,14 @@
  *
  * It lives on `/comptes` since ADR-0028 — with the page that reads the accounts
  * — and the removal came with it, out of a table cell and into the panel, where
- * its three refusals are the prose they always were.
+ * its refusals are the prose they always were — **two of them, and this file
+ * once said three**. The third was *a file declares this account*, and it
+ * stopped being knowable when ADR-0032 took `account.source_id` with the rest of
+ * the provenance apparatus: `account` carries `id`, `type` and `label`, and
+ * nothing in the store can say which row came from a file. ADR-0028 records the
+ * correction rather than applying it silently, and the count is written here for
+ * the same reason — a refusal a reader looks for and cannot find reads as a
+ * defect.
  *
  * Every case below names the reading it prevents, and two of them are the
  * measurements the ticket rests on:
@@ -149,7 +156,7 @@ describe('the form loses `currency`', () => {
 })
 
 describe('a removal that cannot happen is absent and names its reason', () => {
-  it('gives each of the three refusals the room a table cell never gave it', async () => {
+  it('gives each of the two refusals the room a table cell never gave it', async () => {
     const { user } = renderAccounts(
       anAccountsPayload([...anAccountsPayload().accounts, theSeededAccount()]),
     )

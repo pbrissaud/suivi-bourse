@@ -51,6 +51,7 @@ import {
   declaredType,
   degradedReason,
   distinctSymbols,
+  dividendPayers,
   isDefaultAccount,
   rebase,
   valueSeries,
@@ -76,11 +77,20 @@ import {
   termIsRendered,
   termRendering,
   type GainTermName,
+  type GainTerms,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { FIELDS, identityOf } from '@/lib/ledger'
 import { problemSentence } from '@/lib/problem'
-import { buildShareRows, heldRows, marketValue, unrealisedRatio } from '@/lib/shares'
+import {
+  buildShareRows,
+  heldRows,
+  marketValue,
+  placedValue,
+  unrealisedRatio,
+  weightRendering,
+  weightShare,
+} from '@/lib/shares'
 import { signClass } from '@/lib/sign'
 import { cn } from '@/lib/utils'
 
@@ -173,6 +183,11 @@ export function AccountDetail({
     [held, row.transfer_fees],
   )
   const total = terms === null ? null : gainTotal(terms)
+  // What the dividends are worth **against what was paid in** — the maquette's
+  // *sur versé*. `null` is the em dash's own case and covers three states at
+  // once: the positions have not landed, nothing was ever paid in, or the
+  // account was paid out of more than it took in. None of them is a rate.
+  const onContributed = terms === null ? null : dividendYield(terms, row.net_contributed)
 
   // One window for the curve and for the rate beside it. `windowStart` takes the
   // landed series because the bound at *since the opening* is a fact about the
@@ -205,6 +220,15 @@ export function AccountDetail({
     [held],
   )
   const symbols = held === null ? 0 : distinctSymbols(held)
+  // The whole the weight of each line divides — the shares page's own three
+  // functions, read here for the first time. They shipped with #791 and outlived
+  // the column that read them, which is why they are the ones called rather than
+  // a division written again in this file.
+  const placed = lines === null ? 0 : placedValue(lines)
+  // **Every position of the account**, closed ones included: a line that was
+  // sold kept the dividends it paid while it was held, which is the sentence the
+  // encashed figure one card up already carries.
+  const payers = useMemo(() => (held === null ? null : dividendPayers(held)), [held])
   const last = useMemo(
     () => (events === null ? null : accountEvents(events, row.id)),
     [events, row.id],
@@ -378,7 +402,12 @@ export function AccountDetail({
             {/* A block with nothing in it does not exist: an account with no
                 cash ledger has no value to trace against a contribution, and the
                 header above has already named that reason. */}
-            {curve.length === 0 ? null : <AccountCurve points={curve} currency={currency} />}
+            {curve.length === 0 ? null : (
+              // The window is handed down rather than read again: the legend
+              // states the span the curve was cut to, and the two cannot part
+              // company (ADR-0028, #833).
+              <AccountCurve points={curve} currency={currency} range={range} />
+            )}
           </CardContent>
         </Card>
       )}
@@ -464,26 +493,50 @@ export function AccountDetail({
                   />
                 }
               />
+              {/* What the maquette puts under the figure, and it is a **rate on
+                  the denominator this page already has**: the contribution
+                  block one card up is what the two rates beside it divide, so
+                  the dividends divide it too rather than acquiring a second
+                  base of their own. It carries no bubble — the convention is
+                  stated on the figure above it and on the contribution itself,
+                  and ADR-0016 puts one icon per figure and per surface. */}
+              <div className="mt-3 border-t pt-3">
+                <Stat
+                  size="term"
+                  label={t('accounts.detail.dividends.onContributed')}
+                  // `percentPoints` and never `percent`: this is a **share**,
+                  // not a change, and `lib/format.ts` reserves the sign for the
+                  // second — `+1,69 %` would read as a yield that went up.
+                  value={
+                    onContributed === null ? ABSENT : f.percentPoints(onContributed * 100)
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Held lines only: a sold position is worth exactly zero, and a list
-            ordered by value would put every one of them in one block at the
-            bottom saying nothing. The page they lead to folds them instead. */}
-        {lines === null || lines.length === 0 ? null : (
-          <Card>
-            <CardHeader>
-              <h3 className="text-sm font-medium">{t('accounts.detail.lines')}</h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <ul aria-label={t('accounts.detail.lines')} className="divide-y divide-border/60">
-                {lines.map((line) => {
-                  const ratio = unrealisedRatio(line)
-                  return (
-                    <li key={line.symbol} className="flex items-baseline gap-3 py-2 text-sm">
+      {/* **The lines take the whole track**, which is the maquette's own shape
+          for this block and not a preference: every other block on this page is
+          one figure and its terms, and this one is a table — the width it wants
+          is what a table wants. Held lines only: a sold position is worth
+          exactly zero, and a list ordered by value would put every one of them
+          in one block at the bottom saying nothing. The page they lead to folds
+          them instead. */}
+      {lines === null || lines.length === 0 ? null : (
+        <Card>
+          <CardHeader>
+            <h3 className="text-sm font-medium">{t('accounts.detail.lines')}</h3>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul aria-label={t('accounts.detail.lines')} className="divide-y divide-border/60">
+              {lines.map((line) => {
+                const ratio = unrealisedRatio(line)
+                const share = weightShare(line, placed)
+                return (
+                  <li key={line.symbol} className="flex flex-col gap-1 py-2 text-sm">
+                    <span className="flex items-baseline gap-3">
                       <span className="min-w-0 flex-1 truncate font-medium">{line.symbol}</span>
                       <span className="tabular shrink-0">
                         {f.currency(marketValue(line), currency)}
@@ -491,20 +544,96 @@ export function AccountDetail({
                       <span className={cn('tabular w-20 shrink-0 text-right', signClass(ratio))}>
                         {ratio === null ? ABSENT : f.percent(ratio)}
                       </span>
-                    </li>
-                  )
-                })}
+                    </span>
+                    {/* The weight, on a line of its own rather than in a fourth
+                        column: the detail is the narrow track at the width
+                        ADR-0022 measured, and a fourth figure on that row is
+                        what pushes it past its edge. Bar and figure together —
+                        the bar is `aria-hidden` because the percentage is
+                        written beside it, which is `ShareBar`'s own rule
+                        (#800). */}
+                    <span className="flex items-center gap-3 text-xs text-muted-foreground">
+                      {/* The figure is a bare percentage and the row already
+                          carries two others, so the word that says *which* one
+                          it is has to be announced — before it, or a reader
+                          hears the number first and the label after. */}
+                      <span className="sr-only">{t('accounts.detail.lines.weight')}</span>
+                      <ShareBar
+                        share={share}
+                        className="min-w-0 flex-1"
+                        // Chrome, like the composition split one card up: the
+                        // list is already sorted by value, so rank is read off
+                        // the order and a ramp would say it a second time —
+                        // which is the licence ADR-0023 gives and this list
+                        // does not need.
+                        fill="color-mix(in oklab, var(--foreground) 70%, transparent)"
+                      />
+                      <span className="tabular w-20 shrink-0 text-right">
+                        {renderFigure(
+                          weightRendering(line, placed),
+                          // `?? 0` is never reached: `weightRendering` answers
+                          // `figure` on exactly the rows where `weightShare`
+                          // answers a number, which is the whole reason the two
+                          // are one pair in `lib/shares.ts`.
+                          () => f.percentPoints((share ?? 0) * 100),
+                          t,
+                        )}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+            {/* The reduction is a URL, so it survives a reload and can be
+                handed to somebody else — and it counts what that page counts:
+                symbols, closed lines included, since it folds them there. */}
+            <Link
+              to="/titres"
+              search={{ compte: row.id }}
+              className="text-sm font-medium underline underline-offset-4"
+            >
+              {t('accounts.detail.lines.link', { count: symbols })}
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* **Which lines pay the dividends** — the question the encashed figure
+            raises and cannot answer (#833). It carries its own extent, for
+            ADR-0028's reason one figure over: `position.dividends` is a
+            lifetime total, so the span is the account's whole history and the
+            block says so rather than sitting under the range control above and
+            borrowing a window it does not obey. Nothing at all while the
+            positions are in flight, and no block where no line has ever paid. */}
+        {payers === null || payers.length === 0 ? null : (
+          <Card>
+            <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-sm font-medium">{t('accounts.detail.payers')}</h3>
+              <span className="text-xs text-muted-foreground">
+                {t('accounts.detail.payers.period')}
+              </span>
+            </CardHeader>
+            <CardContent>
+              <ul aria-label={t('accounts.detail.payers')} className="divide-y divide-border/60">
+                {payers.map((payer) => (
+                  <li key={payer.symbol} className="flex flex-col gap-1 py-2 text-sm">
+                    <span className="flex items-baseline gap-3">
+                      <span className="min-w-0 flex-1 truncate font-medium">{payer.symbol}</span>
+                      <span className="tabular shrink-0">
+                        {f.currency(payer.amount, currency)}
+                      </span>
+                      <span className="tabular w-16 shrink-0 text-right text-muted-foreground">
+                        {f.percentPoints(payer.share * 100)}
+                      </span>
+                    </span>
+                    <ShareBar
+                      share={payer.share}
+                      fill="color-mix(in oklab, var(--foreground) 70%, transparent)"
+                    />
+                  </li>
+                ))}
               </ul>
-              {/* The reduction is a URL, so it survives a reload and can be
-                  handed to somebody else — and it counts what that page counts:
-                  symbols, closed lines included, since it folds them there. */}
-              <Link
-                to="/titres"
-                search={{ compte: row.id }}
-                className="text-sm font-medium underline underline-offset-4"
-              >
-                {t('accounts.detail.lines.link', { count: symbols })}
-              </Link>
             </CardContent>
           </Card>
         )}
@@ -563,6 +692,22 @@ export function AccountDetail({
       </div>
     </section>
   )
+}
+
+/**
+ * The dividends as a share of what was paid in — the maquette's *sur versé*.
+ *
+ * It divides the **contribution** and nothing else, because that is what the
+ * two rates on this page already divide: a third base — the account's value, or
+ * its cost — would be a second denominator for one page to explain.
+ *
+ * `null` on all three of *no term yet*, *nothing paid in* and *more taken out
+ * than put in*: none of the three is a rate, and the em dash says so.
+ */
+function dividendYield(terms: GainTerms, contributed: number | null): number | null {
+  const dividends = termAmount(terms, 'dividends')
+  if (dividends === null || contributed === null || contributed <= 0) return null
+  return dividends / contributed
 }
 
 /** The row's own name — the ticker where there is one, the label otherwise. */
