@@ -102,15 +102,25 @@ describe('ICU is the format, and it is needed', () => {
     expect(formatMessage('fr', 'dashboard.gainTotal')).toBe('Gain total')
   })
 
-  it('writes the dot’s five states in both catalogues, as two sources', () => {
-    // The vocabulary the status dot and its card are said in (#819, ADR-0036).
+  it('writes the bell’s five states in both catalogues, as two sources', () => {
+    // The vocabulary the bell is said in (#819, #829, ADR-0036, ADR-0037).
     // Both catalogues carry all five branches, and neither is a rendering of
     // the other: the word `attention` used to say *scheduler stopped* in both,
-    // which stopped being true the day the dot started reading `/health` — one
+    // which stopped being true the day it started reading `/health` — one
     // stuck scrape, one wedged backfill and one failing perf pass all land on
     // it now.
     for (const state of ['ok', 'attention', 'rebuilding', 'unreachable'] as const) {
-      for (const key of ['status.dot', 'sidebar.status.title', 'sidebar.status.body'] as const) {
+      for (const language of ['fr', 'en'] as const) {
+        expect(formatMessage(language, 'status.dot', { state }), `${language}:${state}`).not.toBe('')
+      }
+    }
+
+    // The panel's health **card** says the state in prose, and it says it on
+    // the two states that are a card: health is repaired rather than
+    // dismissed, `ok` is not an entry at all, and a rebuild is carried by the
+    // installation fact whose subject it is — one fact, one announcer.
+    for (const state of ['attention', 'unreachable'] as const) {
+      for (const key of ['notification.health.title', 'notification.health.body'] as const) {
         for (const language of ['fr', 'en'] as const) {
           expect(formatMessage(language, key, { state }), `${language}:${key}:${state}`).not.toBe('')
         }
@@ -121,13 +131,13 @@ describe('ICU is the format, and it is needed', () => {
     // them: English has **job** for the three of them, and French has no crisp
     // equivalent — so the French sentence names them, which is a decision and
     // not a longer translation.
-    expect(formatMessage('en', 'sidebar.status.title', { state: 'attention' })).toBe(
+    expect(formatMessage('en', 'notification.health.title', { state: 'attention' })).toBe(
       'A job needs a look',
     )
-    expect(formatMessage('fr', 'sidebar.status.title', { state: 'attention' })).toBe(
+    expect(formatMessage('fr', 'notification.health.title', { state: 'attention' })).toBe(
       'Quelque chose s’est arrêté',
     )
-    expect(formatMessage('fr', 'sidebar.status.body', { state: 'attention' })).toContain(
+    expect(formatMessage('fr', 'notification.health.body', { state: 'attention' })).toContain(
       'Un relevé, une reconstruction ou un calcul de performance',
     )
   })

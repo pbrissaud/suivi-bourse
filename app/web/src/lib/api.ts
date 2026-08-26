@@ -101,6 +101,19 @@ export const ROUTES = {
   installationFacts: '/api/installation-facts',
   /** One installation fact's acknowledgement. A **pattern**, like {@link ROUTES.prices}. */
   installationFactAcknowledgement: '/api/installation-facts/:key/acknowledgement',
+  /**
+   * What the owner's **data** says about itself (#829, ADR-0037) — derived on
+   * every read and stored nowhere, so this is a collection with no ids to come
+   * back to and no dates but the instant it was derived at.
+   */
+  advisories: '/api/advisories',
+  /**
+   * One advisory put to sleep for thirty days. A **pattern**, like
+   * {@link ROUTES.prices} — and it is `acknowledgement` like its neighbour
+   * because it is the same gesture; what differs is how long it lasts, which is
+   * the payload's business and not the route's.
+   */
+  advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
   /** The store's own figures — size, last ledger write, orphans (#724). */
   store: '/api/store',
   /** The orphans as a collection: the only thing done to it is removing it. */
@@ -154,6 +167,7 @@ export const WRITE_ONLY_ROUTES = [
   'account',
   'accountReassignment',
   'installationFactAcknowledgement',
+  'advisoryAcknowledgement',
   'storeOrphans',
   // The two exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
@@ -185,6 +199,10 @@ export function accountReassignmentPath(id: string): string {
 
 export function installationFactAcknowledgementPath(key: string): string {
   return `/api/installation-facts/${encodeURIComponent(key)}/acknowledgement`
+}
+
+export function advisoryAcknowledgementPath(key: string): string {
+  return `/api/advisories/${encodeURIComponent(key)}/acknowledgement`
 }
 
 /**
@@ -1204,6 +1222,44 @@ export interface InstallationFact {
 
 export type InstallationFactsResponse = InstallationFact[]
 
+/**
+ * One standing advisory (#829, ADR-0037) — what the owner's **data** says about
+ * itself, as opposed to what is true of the install or of the app.
+ *
+ * Three members carry the whole of what the panel does with it, and the split
+ * is deliberately the installation fact's:
+ *
+ *  - **`kind`** is the family, and the front holds the *phrase* it is poured
+ *    into (ADR-0024): `message` is the log line and the headless payload, in
+ *    English for ever, and the reader is served a catalogue key instead;
+ *  - **`subject`** is the panel's heading, and it is the **server's** answer.
+ *    A front deriving it from the key would be a second authority on the
+ *    grouping, and it would have nothing at all to say about a family it does
+ *    not know;
+ *  - **`observed_at`** is the instant this was derived, which is the only date
+ *    an advisory has: it is recomputed on every read and stored nowhere, so
+ *    *noticed on* is *read on* and no older memory is claimed.
+ *
+ * There is no `acknowledged` here, and that is not an omission: an
+ * acknowledged advisory is **absent from this collection** for thirty days and
+ * then comes back on its own.
+ */
+export interface Advisory {
+  key: string
+  kind: string
+  subject: string
+  message: string
+  detail: Record<string, unknown>
+  observed_at: string
+}
+
+export type AdvisoriesResponse = Advisory[]
+
+/** What the acknowledgement answers: the advisory, and when it wakes up. */
+export interface AcknowledgedAdvisory extends Advisory {
+  acknowledged_until: string
+}
+
 /** One orphan symbol: nothing declares it, and this is the series it holds. */
 export interface OrphanSymbol {
   symbol: string
@@ -1342,6 +1398,9 @@ export const api = {
   installationFacts: () => get<InstallationFactsResponse>(ROUTES.installationFacts),
   acknowledgeInstallationFact: (key: string) =>
     send<InstallationFact>(installationFactAcknowledgementPath(key), 'POST', {}),
+  advisories: () => get<AdvisoriesResponse>(ROUTES.advisories),
+  acknowledgeAdvisory: (key: string) =>
+    send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
   // The way in (#811), and since #813 it is made twice on purpose: once with
   // `dryRun` for the forecast, once without it to commit — **the same file**,
   // re-sent. There is no pending-import id to hold instead, because holding one

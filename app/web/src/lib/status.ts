@@ -1,26 +1,24 @@
 /**
- * The two derivations the shell needs, pure and side by side because they are
- * the same fact seen by two surfaces with two different jobs (ADR-0021):
+ * What is true of the **installation**, pure, and read by one control.
  *
- *  - the **status dot** says what is true of the *installation*, indicates
- *    without demanding, and leads to the tab that explains it;
- *  - the **banner** says why *what you are looking at* is wrong or empty, and
- *    shows **one** band or none — never two.
+ * `installationState` folds `/health` into the five words the bell wears: its
+ * icon carries the colour, its badge carries the count, and its panel says the
+ * state in prose (ADR-0037). There is **one** global indicator in the whole
+ * app, which is what ADR-0022 asked for and what the sidebar's status card was
+ * a fourth rendering of until #829 took it away.
  *
- * The banner's list is now complete and it is **an ordered list, not a second
- * mechanism**. The order is **causal, not a ranking**, and each step is the
- * cause of the one under it: as long as the app is not answering, nothing
- * downstream has a figure to excuse; as long as the reporting currency is
- * unanswered nothing is converted and nothing is computed, so the
- * reconstruction has no figure to excuse either — answering frees the slot
- * (#726).
+ * **The banner's half of this module left with the banner.** `shellConditions`
+ * built an ordered list of live conditions for a band at the top of every page;
+ * ADR-0037 retires that band and does not replace it — the conditions are
+ * entries of the panel now (`lib/notifications.ts`) and the sentence descends
+ * into each page's empty state. What is left below is the *page's own* failed
+ * read, which is a different claim and has nowhere else to be said.
  */
 import {
   BACKFILL_RUNNING,
   HEALTH_STATUSES,
   type HealthState,
   type RuntimeAccount,
-  type RuntimeState,
 } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
@@ -128,34 +126,6 @@ export function installationState(input: {
 }
 
 /**
- * Where a band's own gesture leads. **A link, never an acknowledgement**
- * (ADR-0021, #726): the banner shows conditions the reader can make *stop*, and
- * what makes them stop is a field, not a button that says *seen*.
- */
-export interface BannerGesture {
-  to: string
-  hash?: string
-  label: MessageKey
-}
-
-/** One live condition of the content column. */
-export interface BannerCondition {
-  /** What the reader is told. Its own key, so nothing renders `detail`. */
-  message: MessageKey
-  /** What the sentence names — a lagging account, and nothing from a payload. */
-  values?: MessageValues
-  /**
-   * How far a condition that **advances** has got, `0`…`1`. Exactly one has
-   * one, and it is a bar rather than a date: the reconstruction's target is
-   * *the first event*, which the reader recognises, and a target *time* is a
-   * promise the app cannot keep (a mute symbol backs off to 24 h).
-   */
-  progress?: number
-  /** What the reader does about it, when there is something to do. */
-  gesture?: BannerGesture
-}
-
-/**
  * How far the reconstruction has got, and **which account is holding it back**
  * (#727, #708).
  *
@@ -168,7 +138,7 @@ export interface BannerCondition {
  * portfolio.
  *
  * `ratio: null` is *nothing to draw* — no account reports a horizon, or the
- * ledger's first event is today — and the band then says the reconstruction is
+ * ledger's first event is today — and the block then says the reconstruction is
  * running without pretending to measure it. An account **absent** from the list
  * is a pass that computed nothing (a perf job that has not run, or one that
  * raised), which is not a horizon of today: it is no observation at all.
@@ -208,100 +178,59 @@ export function rebuildProgress(
 }
 
 /**
- * The one band, or none. Takes the conditions **already in causal order** and
- * keeps the first: a page that renders two bands has made the first run a wall.
+ * A read of a page that failed, and the sentence that names it.
+ *
+ * **It is not a band, and there is none left anywhere** (#829, ADR-0037). The
+ * banner is retired: its three conditions — a missing base currency, a running
+ * reconstruction, a stopped scheduler — are entries of the notifications panel
+ * now, and its *sentence* descends one floor, into the empty state of each page
+ * it used to explain. What survives here is the other thing the component was
+ * used for and which the panel cannot say: **this page asked for something and
+ * did not get it**, which is true of the page rather than of the installation.
+ *
+ * It carries no gesture. The one condition that had one was the currency's, and
+ * what it led to is a card's link now.
  */
-export function oneBand(conditions: readonly BannerCondition[]): BannerCondition | null {
-  return conditions[0] ?? null
+export interface ReadFailure {
+  /** What the reader is told. Its own key, so nothing renders `detail`. */
+  message: MessageKey
+  /** What the sentence names — never anything read off a payload's prose. */
+  values?: MessageValues
 }
 
 /**
- * The conditions the shell can observe, **in causal order**. The app not
- * answering is the first cause of an empty screen, so it opens the list and
- * everything later queues behind it — including the reconstruction, which has
- * no figures to excuse while nothing is answering at all.
- *
- * The reconstruction is the banner's, and **only** the banner's: it is one of
- * #709's five keys, and #724 keeps it out of the installation tab's badge for
- * that reason — dropped from the badge alone it would still be in the block and
- * make the badge under-count what is on screen, left in both it would put two
- * announcers on one fact.
+ * The first failure, or none. Takes the conditions **already in causal order**
+ * and keeps the first: a page that names six failed reads has said one thing
+ * six times, and an unreadable store fails every read it is made of at once.
  */
-export function shellConditions(input: {
-  error?: unknown
-  /**
-   * Whether the reporting currency is unanswered, `undefined` while nothing
-   * has been observed about it. A band raised on a silence is a claim about the
-   * reader's installation made before anybody looked (ADR-0026), so only a
-   * positive observation puts this one in the list.
-   */
-  currencyUnanswered?: boolean
-  runtime?: RuntimeState
-}): BannerCondition[] {
-  if (input.error) return [{ message: problemMessageKey(input.error) }]
-
-  // Second, and above the reconstruction on the ticket's own argument: with no
-  // reporting currency nothing is converted and the perf job writes nothing at
-  // all (#702), so a rebuild running underneath has no figure to excuse yet.
-  // It is an **encart with a gesture**, never an acknowledgeable notice —
-  // acknowledging *I have no currency* means nothing, which is why it is not
-  // one of the acknowledgement table's five keys (ADR-0021).
-  if (input.currencyUnanswered === true) {
-    return [
-      {
-        message: 'banner.currency',
-        gesture: { to: '/donnees', hash: 'installation', label: 'banner.currency.gesture' },
-      },
-    ]
-  }
-
-  // **The reconstruction is no longer a band** (#787). It had one for the same
-  // reason it had a progress bar — it advances, and a reader waiting on it wants
-  // to know how far — but a band is the most expensive surface in the product:
-  // it takes the top of *every* page, on every route, for a condition that ends
-  // by itself. The dot carries the fact now (`installationState`) and the
-  // installation tab carries the detail, which is where the dot leads. What is
-  // left here is what the reader can act on.
-  return []
+export function oneFailure(failures: readonly ReadFailure[]): ReadFailure | null {
+  return failures[0] ?? null
 }
 
 /**
- * The conditions a **page's own reads** can observe — the same ordered list one
- * step down, and the reason it exists is that the shell's list cannot reach
- * them.
+ * The failures a surface's own reads can observe, in causal order.
  *
- * `/api/runtime` answers from the scheduler's process memory and touches no
- * store at all (#668), which is the property that leaves the shell's band
- * **silent** when the store is the thing that has failed. The dot no longer
- * rides on it: since #819 it reads `/health`, whose body goes when the store
- * goes, and red is what is left (ADR-0036) — so the band is now the only one of
- * the two surfaces that says nothing here. A page whose figures came back
- * `503` therefore has no announcer above it, and a block that renders nothing
- * turns *"the store is unreadable"* and *"you own nothing yet"* into the same
- * screen: an empty one, which is the worse half of the defect the product names
- * elsewhere.
+ * **Every page names its own now** (#829). `shellError` used to be the banner's
+ * and short-circuited this list to nothing, on the argument that the strip at
+ * the top of the column was already saying it. There is no strip: a page that
+ * stayed silent over a `503` would render nothing and no reason, which turns
+ * *"the store is unreadable"* and *"you own nothing yet"* into one empty screen.
+ * So a page lists `/api/runtime` first among its own errors — the app not
+ * answering is the cause of every failed read under it — and `oneFailure` keeps
+ * that one.
  *
- * `shellError` is taken so the causal order still holds across the two
- * surfaces: while the app is not answering it is the cause of every failed read
- * below it, the band at the top of the column already says so, and repeating it
- * here would put **two announcers on one fact**. One band on screen, never two,
- * stays true by construction rather than by inspection.
- *
- * **The reconstruction is deliberately not in that clause** (#727). It is a
- * shell condition and it is *not* a cause of a failed read: a store that will
- * not answer is a stronger, more specific and more actionable fact than a
- * rebuild running behind it, so a page keeps its own sentence rather than
- * standing under a band explaining something else. Which of the two holds the
- * slot when both are true is the banner's own ordering question, and it is
- * #726's — *the banner never renders two bands, and its order is causal* is that
- * ticket's criterion, tested there with two conditions true at once.
+ * What is left of the parameter is `namedElsewhere`, and it has exactly one
+ * caller: the notifications panel, whose **health card** already says *the
+ * store is not answering* in prose. Naming it a second time three lines above
+ * would put two announcers on one fact.
  */
 export function readConditions(input: {
-  shellError?: unknown
+  namedElsewhere?: unknown
   errors: readonly unknown[]
-}): BannerCondition[] {
-  if (input.shellError) return []
+}): ReadFailure[] {
+  if (input.namedElsewhere) return []
   return input.errors
     .filter((error) => Boolean(error))
     .map((error) => ({ message: problemMessageKey(error) }))
 }
+

@@ -1151,25 +1151,28 @@ describe('the four states of the page', () => {
   })
 })
 
-describe('the reconstruction, on the dot and in the tab it leads to', () => {
-  it('takes the green off the dot: the consolidated figures are behind', async () => {
+describe('the reconstruction, on the bell and in the block it leads to', () => {
+  it('takes the green off the bell: the consolidated figures are behind', async () => {
     // **Green means the quotes are read *and* the performance is up to date**
     // (#787). It used to mean the scheduler was running, which is true during a
-    // rebuild — so the dot said the installation was fine while a red band said
-    // the opposite at the top of the same page.
+    // rebuild — so the indicator said the installation was fine while a red
+    // band said the opposite at the top of the same page.
     server.use(
       http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
-      // The dot reads `/health` since #819 (ADR-0036), where the same fact is
-      // the backfill job's own verdict.
+      // It reads `/health` since #819 (ADR-0036), where the same fact is the
+      // backfill job's own verdict.
       http.get(ROUTES.health, () => HttpResponse.json(aRebuilding())),
     )
     renderApp()
 
     expect(
-      await screen.findByRole('link', { name: /L’historique est en cours de reconstruction/ }),
+      await screen.findByRole('button', {
+        name: /L’historique est en cours de reconstruction/,
+      }),
     ).toBeInTheDocument()
-    // And the band is gone with it: a condition that ends by itself does not
-    // take the top of every page on every route.
+    // And the band is gone with it (#829, ADR-0037): a condition that ends by
+    // itself does not take the top of every page on every route, and there is
+    // no band left anywhere to take it.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })

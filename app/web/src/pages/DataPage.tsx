@@ -1,7 +1,8 @@
 /**
- * The data page — **three tabs under one route** (#794, ADR-0030).
+ * The ledger page — **two tabs under one route**, and it was three (#794,
+ * ADR-0030, ADR-0037).
  *
- * The word matters: a tab is not a page, so the product's cut at four pages
+ * The word matters: a tab is not a page, so the product's cut at five pages
  * holds. ADR-0020 cut it in two — what the user *declared* against what the
  * installation *is* — and two things broke that arrangement. The **accounts
  * left the page** at #793, so the first half stopped being *what the owner
@@ -9,41 +10,29 @@
  * and a **notice is prose**, which a card in a column beside the store has
  * nowhere to say.
  *
- * So: *the ledger* (what you declared, and the way in and out of it), *the
- * notices* (what the app has to tell you), *the installation* (what it is).
+ * **The notices tab left with #829**, and with it the badge that sat on its
+ * trigger. There is one global indicator in the app now and it is the header's
+ * bell (ADR-0037): the installation facts are cards in its panel, beside the
+ * health and the advisories, so a second count on a tab of one page would be
+ * exactly the second badge ADR-0022 refused. What is left here is *the ledger*
+ * and *the installation* — and the second of the two leaves with #830, which
+ * takes the bar with it.
  *
- * Two things live here rather than in any one tab, because they are about the
- * set:
- *
- *  - **The badge counts unacknowledged notices and nothing else** (#724), and
- *    it sits on the tab those notices are on. Not the ephemeral store — a
- *    predicate that is never acknowledgeable would give a permanent badge,
- *    which is noise and takes down the notices that matter with it — not the
- *    orphan symbols, which are a choice and not a waste, and not the
- *    reconstruction, which has exactly one announcer and it is the block the
- *    dot leads to. `lib/installationFacts.ts` holds that list, so the badge and the
- *    tab it promises read the *same* one.
- *  - **The notice that names events leads to them.** The assumed-currency
- *    notice is the one with a gesture inside the app, and its subject is on
- *    another tab — so the switch and the ledger's reduction are decided here,
- *    where both halves are in scope.
+ * The reduction the assumed-currency notice leads to is not composed here any
+ * more either: it arrives as an **address** (`?symbol=`), because the card that
+ * asks for it is mounted in the shell and reachable from all five routes.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 
 import { Installation } from '@/components/data/Installation'
 import { Ledger, type LedgerFocus } from '@/components/data/Ledger'
-import { Notices } from '@/components/data/Notices'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
-import { unacknowledgedCount } from '@/lib/installationFacts'
-import { filtersFromSearch, NO_FILTERS } from '@/lib/ledger'
+import { filtersFromSearch } from '@/lib/ledger'
 import { usePageHeading } from '@/lib/pageHeading'
 
 const LEDGER = 'ledger'
-const NOTICES = 'notices'
 const INSTALLATION = 'installation'
 
 /**
@@ -54,7 +43,7 @@ const INSTALLATION = 'installation'
  * initialiser or an updater and called. `/donnees#valueOf` took the route down
  * that way. A list and a membership test have no prototype to fall through to.
  */
-const NAMED: readonly string[] = [NOTICES, INSTALLATION]
+const NAMED: readonly string[] = [INSTALLATION]
 
 /** The tab a hash names, or the ledger. */
 function tabNamed(hash: string): string {
@@ -104,10 +93,11 @@ export default function DataPage() {
         q: search.q,
         type: search.type,
         account: search.account,
+        symbol: search.symbol,
         since: search.since,
         until: search.until,
       }),
-    [search.q, search.type, search.account, search.since, search.until],
+    [search.q, search.type, search.account, search.symbol, search.since, search.until],
   )
 
   useEffect(() => {
@@ -133,6 +123,7 @@ export default function DataPage() {
         q: search.q,
         type: search.type,
         account: search.account,
+        symbol: search.symbol,
         since: search.since,
         until: search.until,
       },
@@ -143,6 +134,7 @@ export default function DataPage() {
     search.q,
     search.type,
     search.account,
+    search.symbol,
     search.since,
     search.until,
     navigate,
@@ -163,15 +155,6 @@ export default function DataPage() {
     void navigate({ to: '/donnees', search: {}, replace: true })
   }
 
-  // Read here as well as inside the tab: the badge is on a trigger, which is
-  // visible while another tab is. One query key, so it is one request.
-  const facts = useQuery({ queryKey: ['installation-facts'], queryFn: api.installationFacts })
-  // **An optional read, so the `?? []` survives** (ADR-0026): a badge at zero is
-  // *not rendered at all*, so a read in flight takes an ornament off a tab
-  // rather than making a claim — and the three tabs must be reachable while it
-  // is in flight.
-  const badge = unacknowledgedCount(facts.data ?? [])
-
   usePageHeading(t('page.ledger'))
 
   return (
@@ -179,17 +162,6 @@ export default function DataPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value={LEDGER}>{t('data.tab.ledger')}</TabsTrigger>
-          <TabsTrigger value={NOTICES}>
-            {t('data.tab.notices')}
-            {badge > 0 ? (
-              <span
-                className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-attention/15 px-1.5 text-xs font-medium text-attention"
-                aria-label={t('data.tab.notices.badge', { count: badge })}
-              >
-                {badge}
-              </span>
-            ) : null}
-          </TabsTrigger>
           <TabsTrigger value={INSTALLATION}>{t('data.tab.installation')}</TabsTrigger>
         </TabsList>
         <TabsContent value={LEDGER}>
@@ -204,20 +176,6 @@ export default function DataPage() {
             // The arming is spent where it was made, so a tab switched away from
             // and back to does not reopen a form the reader has closed.
             onComposed={() => setCompose(undefined)}
-          />
-        </TabsContent>
-        <TabsContent value={NOTICES}>
-          <Notices
-            onShowInLedger={(symbols) => {
-              // An address in force described the *other* reduction, so it goes
-              // first: two reductions cannot both be the table's, and the one
-              // the reader has just asked for is the one on screen.
-              release()
-              // The bar below names this one itself, every security of it in one
-              // line (#724) — so it does not ask for the sentence #797 added.
-              setFocus({ filters: { ...NO_FILTERS, symbols }, named: false })
-              setTab(LEDGER)
-            }}
           />
         </TabsContent>
         <TabsContent value={INSTALLATION}>

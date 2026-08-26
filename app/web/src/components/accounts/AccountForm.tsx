@@ -38,7 +38,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -325,7 +325,7 @@ export function AccountForm({
             </div>
           ) : null}
 
-          {write.error ? <Band>{problemSentence(t, write.error)}</Band> : null}
+          {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
           <div className="flex gap-2">
             <Button type="submit" disabled={write.isPending || waiting}>
@@ -375,7 +375,7 @@ export function AccountForm({
             )}
             {/* A refusal the reader could not foresee — the declaration moved
                 under them between the render and the click. */}
-            {remove.error ? <Band>{t(problemMessageKey(remove.error))}</Band> : null}
+            {remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null}
           </section>
         )}
       </SheetContent>

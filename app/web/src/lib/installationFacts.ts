@@ -1,74 +1,27 @@
 /**
- * What the *Notices* block shows, what the tab's badge counts, and what gesture
- * each notice carries (#724, ADR-0021).
+ * What an installation fact **says**, and what gesture it carries (#724, #768,
+ * ADR-0021, ADR-0037).
  *
  * **The word changed here and the notion did not** (ADR-0036, #820). *Advisory*
- * was carrying three things at once; it is freed for the one that does not
- * exist yet — what the owner's **data** says about itself — and what this file
- * decides about is now called an **installation fact**. The three keys are
- * untouched, and so is the place each of them is rendered.
+ * was carrying three things at once; it is freed for what the owner's **data**
+ * says about itself — `lib/advisories` on the server, and the third register of
+ * the notifications panel — and what this file decides about is an
+ * **installation fact**. The three keys are untouched.
  *
- * Pure — installation facts in, decisions out — because all three of those are
- * one question asked three times, and a component answering it per render is how
- * a badge and the block under it end up disagreeing about what is standing.
+ * Pure — installation facts in, decisions out — because the same question is
+ * asked by the panel's card and by its badge, and a component answering it per
+ * render is how a count and the list under it end up disagreeing.
  *
- * **The badge counts unacknowledged notices and nothing else.** That sentence is
- * the criterion, and it is written here as an exclusion list because the three
- * things it excludes are three things that *look* countable:
- *
- *  - **the ephemeral store** — its predicate is never acknowledgeable (a
- *    container either keeps nothing or it does), so counting it would give a
- *    permanent badge, which is noise and takes the notices that matter down
- *    with it. It is not an installation fact at all: `boot_conditions.py` says
- *    it, and ADR-0015's own rule is *the banner shows conditions the owner can
- *    end, the badge counts facts they can only acknowledge*;
- *  - **the orphan symbols** — a choice, not a waste. Nobody is being told
- *    anything;
- *  - **the reconstruction** — it has exactly **one** announcer, the banner
- *    (#726). It is one of the three keys, and that is precisely why it has to be
- *    named here: dropping it from the badge alone would leave it in the block
- *    and make the badge under-count what the reader can see, while leaving it in
- *    both would put two announcers on one fact.
+ * **What left with #829 is the selection, not the sentence.** `shownFacts` and
+ * `unacknowledgedCount` filtered a block and counted a tab badge; there is no
+ * notices tab and no per-tab badge any more, and the panel counts *every open
+ * entry* across three registers rather than the facts alone (ADR-0037), so both
+ * belonged to `lib/notifications.ts` the day the surfaces merged. `BANNER_FACT`
+ * left with the banner: `reconstruction_running` was excluded from the block
+ * because the band announced it, and now nothing does but its own card.
  */
 import type { InstallationFact } from '@/lib/api'
 import type { MessageKey, MessageValues } from '@/lib/i18n'
-
-/**
- * The installation fact the banner owns. It is excluded from the block **and**
- * from the badge together, because a badge is a promise that something is there
- * to read.
- */
-export const BANNER_FACT = 'reconstruction_running'
-
-/**
- * What the *Notices* block renders: standing, not acknowledged, and not the
- * one the banner announces.
- *
- * **An acknowledged notice disappears.** Kept greyed out it would make the
- * notice of somebody who decided to keep a v4 `.env` sourced into their
- * container for ever a permanent fixture of their screen — which is the
- * acknowledgement being refused after the fact. The server keeps the row while the predicate stands
- * (that is what makes a predicate coming back true **re-arm** the notice, with
- * a fresh date and a fresh log line); what the interface owes is not to show it.
- *
- * Order is the server's, which is declared and stable rather than sorted by
- * date — a badge whose contents reshuffle between two reads is a badge nobody
- * trusts.
- */
-export function shownFacts(facts: readonly InstallationFact[]): InstallationFact[] {
-  return facts.filter(
-    (fact) => fact.key !== BANNER_FACT && !fact.acknowledged,
-  )
-}
-
-/**
- * The badge. It counts **exactly what the block shows**, which is what makes
- * *a badge promises something to find* true by construction rather than by
- * inspection: the two read one list.
- */
-export function unacknowledgedCount(facts: readonly InstallationFact[]): number {
-  return shownFacts(facts).length
-}
 
 /**
  * The gesture a notice carries **in the app**, when it has one.

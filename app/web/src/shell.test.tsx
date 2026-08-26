@@ -10,9 +10,11 @@
  *  - **the navigation opens to five, in three and two** (ADR-0038) — the
  *    portfolio at the top, what the owner acts on at the foot, and the fold
  *    survives a reload;
- *  - **the status card is the dot's development, never its home** — it says in
- *    words what the dot says in a colour, and it is *absent* in the two sidebar
- *    states that cannot hold it, the dot staying put in all three (ADR-0022);
+ *  - **the bell is the one global indicator** (#829, ADR-0037) — its icon
+ *    carries the health colour, its badge the count, and it is in the content
+ *    header because that is the one surface surviving all three sidebar states.
+ *    The sidebar's status card is gone: it was a fourth rendering of one fact,
+ *    and the one that vanished in the rail and in the drawer;
  *  - **the density is the reader's third preference** — same shape of key as
  *    the theme and the language, two states because a density has no `auto`,
  *    and nothing of it reaches the store (ADR-0024).
@@ -35,6 +37,11 @@ import { problemHandler, server } from '@/test/server'
 
 function nav() {
   return screen.getByRole('navigation', { name: 'Sections' })
+}
+
+/** The navigation's own memory of its fold — the component's, read back. */
+function sidebar() {
+  return document.querySelector('[data-slot="sidebar"][data-state]') as HTMLElement
 }
 
 async function chooseInMenu(
@@ -141,18 +148,21 @@ describe('the navigation, five entries in three and two (ADR-0038)', () => {
     // the **read back** is the product's: upstream reads that cookie on a
     // server this app does not have, so without it the write landed and
     // nothing ever looked at it.
+    //
+    // The marker used to be the status card, which the rail could not hold and
+    // which #829 removed; what is left is the component's own state, read the
+    // way the density is read off a table.
     const { user, unmount } = renderApp()
-    await screen.findByText('Système opérationnel')
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+    expect(sidebar()).toHaveAttribute('data-state', 'expanded')
 
     await user.keyboard('{Meta>}b{/Meta}')
-    await waitFor(() => expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument())
+    await waitFor(() => expect(sidebar()).toHaveAttribute('data-state', 'collapsed'))
 
     unmount()
     renderApp()
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
-    // The card is what the rail cannot hold, so its absence is the fold, read
-    // off the accessible rendering rather than off a class.
-    expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
+    expect(sidebar()).toHaveAttribute('data-state', 'collapsed')
   })
 
   it('is a drawer at 390 px, behind a gesture, with the five entries in it', async () => {
@@ -170,31 +180,31 @@ describe('the navigation, five entries in three and two (ADR-0038)', () => {
   })
 })
 
-describe('the status dot reads /health (#819, ADR-0036)', () => {
-  const dot = () => screen.getByRole('link', { name: /état de l’installation/i })
+describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () => {
+  const bell = (hidden = false) =>
+    screen.getByRole('button', { name: /^Notifications/, hidden })
 
-  /** The tone a state is worn in, read off the one span that carries it. */
+  /** The tone the icon is worn in, read off the one node that carries it. */
   const toneOf = (node: HTMLElement) =>
-    Array.from(node.querySelectorAll('span[aria-hidden]'))
-      .flatMap((span) => Array.from(span.classList))
-      .find((name) => name.startsWith('bg-'))
+    Array.from(node.querySelectorAll('[aria-hidden]'))
+      .flatMap((child) => Array.from(child.classList))
+      .find((name) => name.startsWith('text-'))
 
   it('is amber on a writer frozen since Tuesday, which is a 200', async () => {
-    // The behaviour this ticket adds. Reading `/api/runtime` the dot had one
-    // detectable problem in it — the scheduler — so this install, whose
-    // scheduler is running and whose scrape has written nothing for days, was
-    // **green**. The route answers `200` and the body carries the fault, which
-    // is exactly the register split ADR-0036 draws: restarting the container
-    // repairs nothing that yfinance or the market broke.
+    // The behaviour #819 added and this ticket inherits. Reading `/api/runtime`
+    // the indicator had one detectable problem in it — the scheduler — so this
+    // install, whose scheduler is running and whose scrape has written nothing
+    // for days, was **green**. The route answers `200` and the body carries the
+    // fault, which is exactly the register split ADR-0036 draws.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
-    await waitFor(() => expect(dot()).toHaveAccessibleName(/demande un regard/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
   })
 
   it('stays green while everything is running', async () => {
     renderApp()
-    await waitFor(() => expect(dot()).toHaveAccessibleName(/va bien/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/va bien/))
   })
 
   it('is red when the app is not answering at all', async () => {
@@ -209,7 +219,7 @@ describe('the status dot reads /health (#819, ADR-0036)', () => {
     )
     renderApp()
 
-    await waitFor(() => expect(dot()).toHaveAccessibleName(/ne répond pas/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/ne répond pas/))
   })
 
   it('is red when the route answers with a body it cannot read', async () => {
@@ -219,100 +229,82 @@ describe('the status dot reads /health (#819, ADR-0036)', () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json({ alive: true })))
     renderApp()
 
-    await waitFor(() => expect(dot()).toHaveAccessibleName(/ne répond pas/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/ne répond pas/))
   })
 
-  it('leads to the installation tab, where the jobs and the store are', async () => {
-    const { user } = renderApp()
-    await waitFor(() => expect(dot()).toHaveAccessibleName(/va bien/))
-    expect(dot()).toHaveAttribute('href', expect.stringContaining('/donnees'))
-
-    await user.click(dot())
-    // Where one repairs — which is what ADR-0022 asked of the dot when it made
-    // it *lead* somewhere rather than indicate without pointing.
-    expect(await screen.findByRole('heading', { name: 'Le magasin' })).toBeInTheDocument()
-  })
-
-  it('and the card beside it says the same thing, in the same tone', async () => {
-    // The card is the **development** of the dot and never a second opinion on
-    // what *attention* covers: one read, one derivation, one table of tones.
+  it('carries the health colour on the icon and the count on the badge', async () => {
+    // **Two channels, one control** (ADR-0037). The badge is deliberately
+    // neutral in colour so the two do not compete for the same signal, and the
+    // count is in the accessible name because the badge itself is `aria-hidden`.
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
-    const title = await screen.findByText('Quelque chose s’est arrêté')
-    expect(dot()).toHaveAccessibleName(/demande un regard/)
-    const card = title.closest('div')!.parentElement as HTMLElement
-    expect(toneOf(card)).toBe('bg-attention')
-    expect(toneOf(dot())).toBe('bg-attention')
+    await waitFor(() => expect(toneOf(bell())).toBe('text-attention'))
+    // One health card, one installation fact: the fixture's own two.
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/2 entrées ouvertes/))
+  })
+
+  it('opens onto a panel that says the state in prose, and leads to the settings', async () => {
+    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
+    const { user } = renderApp()
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
+
+    await user.click(bell())
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+
+    // The card the sidebar's own used to be: the same sentence, in the one
+    // place that survives the three sidebar states.
+    expect(within(panel).getByText('Quelque chose s’est arrêté')).toBeInTheDocument()
+    // Health is **repaired, never dismissed**: a link, and no acknowledgement.
+    expect(within(panel).getByRole('link', { name: 'Voir dans Réglages' })).toBeInTheDocument()
+  })
+
+  it('has no sidebar card left to disagree with it', async () => {
+    // ADR-0037 removes the fourth rendering of one fact — and it was the one
+    // that vanished in the rail and in the drawer, which is to say on the
+    // widths where a reader has least to look at.
+    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
+    renderApp()
+
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
+    expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
+  })
+
+  it('stays put when the navigation folds, and in the drawer', async () => {
+    setViewportWidth(390)
+    const { user } = renderApp()
+    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
+
+    expect(bell()).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
+    await screen.findByRole('dialog', { name: 'Navigation' })
+    // `hidden` is not a loophole: a modal dialog hides the rest of the document
+    // from the accessibility tree, so this asks for the control the way a
+    // screen reader would find it once the drawer is shut.
+    expect(bell(true)).toBeInTheDocument()
   })
 
   it('holds the table of tones in one module, and one only', () => {
     // Held on the source, because no rendering can see it: a second copy of the
     // mapping renders identically on the day it is written and drifts on the
-    // next state added.
-    const declaring = ['components/StatusDot.tsx', 'components/AppSidebar.tsx', 'lib/status.ts']
+    // next state added. It used to be the dot's and to be read a second time by
+    // the sidebar card; there is one consumer now.
+    const declaring = ['components/Notifications.tsx', 'components/AppSidebar.tsx', 'lib/status.ts']
       .filter((file) =>
         /STATE_TONE(\s*:\s*Record|\s*=)/.test(
           fs.readFileSync(path.join(import.meta.dirname, file), 'utf8'),
         ),
       )
-    expect(declaring).toEqual(['components/StatusDot.tsx'])
-  })
-})
-
-describe('the status card of the sidebar', () => {
-  /**
-   * `hidden` is not a loophole: a modal dialog hides the rest of the document
-   * from the accessibility tree, so the drawer's own pass asks for the dot the
-   * way a screen reader would find it once the drawer is shut.
-   */
-  const dot = (hidden = false) =>
-    screen.getByRole('link', { name: /état de l’installation/i, hidden })
-
-  it('develops the dot in words while the navigation is unfolded', async () => {
-    renderApp()
-    expect(await screen.findByText('Système opérationnel')).toBeInTheDocument()
-    expect(dot()).toBeInTheDocument()
+    expect(declaring).toEqual(['components/Notifications.tsx'])
   })
 
-  it('says which fact the dot is showing, and not merely that there is one', async () => {
-    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    renderApp()
-    expect(await screen.findByText('Quelque chose s’est arrêté')).toBeInTheDocument()
-  })
-
-  it('claims nothing at all while the read that would fill it is in flight', async () => {
-    server.use(http.get(ROUTES.health, () => new Promise<never>(() => {})))
-    renderApp()
-
-    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
-    expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
-    // The dot is still there — it is a colour, and *unknown* is one of its five.
-    expect(dot()).toBeInTheDocument()
-  })
-
-  it('leaves with the navigation when it folds to icons, and the dot stays', async () => {
-    const { user } = renderApp()
-    await screen.findByText('Système opérationnel')
-
-    await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
-
-    await waitFor(() => expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument())
-    expect(dot()).toBeInTheDocument()
-  })
-
-  it('is not in the drawer either, where the whole navigation is behind a gesture', async () => {
-    setViewportWidth(390)
-    const { user } = renderApp()
-    await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
-
-    expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
-    expect(dot()).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
-    const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).queryByText('Système opérationnel')).not.toBeInTheDocument()
-    expect(dot(true)).toBeInTheDocument()
+  it('leaves no band anywhere, and no component named for one', () => {
+    // `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` are gone (#829, ADR-0037):
+    // the banner is retired without replacement, its conditions are cards in
+    // the panel, and its sentence descends into each page's empty state.
+    for (const gone of ['components/Banner.tsx', 'components/Band.tsx', 'components/StatusDot.tsx']) {
+      expect(fs.existsSync(path.join(import.meta.dirname, gone)), gone).toBe(false)
+    }
   })
 })
 

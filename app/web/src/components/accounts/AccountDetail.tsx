@@ -36,7 +36,7 @@ import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { AccountCurve } from '@/components/accounts/AccountCurve'
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
 import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
@@ -647,7 +647,7 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
             {t('accounts.reassign.submit')}
           </Button>
         </div>
-        {move.error ? <Band>{problemSentence(t, move.error)}</Band> : null}
+        {move.error ? <Refusal>{problemSentence(t, move.error)}</Refusal> : null}
       </CardContent>
     </Card>
   )

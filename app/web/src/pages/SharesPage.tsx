@@ -53,14 +53,16 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { EmptyState } from '@/components/EmptyState'
+import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { ClosedShares } from '@/components/shares/ClosedShares'
 import { SharesHead } from '@/components/shares/SharesHead'
 import { SharesTable } from '@/components/shares/SharesTable'
 import { ShareSheet } from '@/components/shares/ShareSheet'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
+import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import {
@@ -75,7 +77,7 @@ import {
   type ShareSort,
   type SortColumn,
 } from '@/lib/shares'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export default function SharesPage() {
@@ -114,6 +116,9 @@ export default function SharesPage() {
 
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The same read the bell and the first-run modal compose their own
+  // predicates from — one query key, so it is one request and no new API state.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
   // The counter of fruitless readings is what separates *asked and got nothing*
   // from *not asked yet*, and it lives on the app's own state — never in the
@@ -140,8 +145,8 @@ export default function SharesPage() {
 
   const rows = useMemo(() => buildShareRows(reduced, failures), [reduced, failures])
 
-  const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [positions.error] }),
+  const failure = oneFailure(
+    readConditions({ errors: [positions.error] }),
   )
 
   const held = heldRows(rows, sort)
@@ -197,6 +202,19 @@ export default function SharesPage() {
     t('page.shares'),
     pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
   )
+
+  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
+  // currency nothing is converted and the perf job writes nothing at all, so
+  // this page would be a column of em dashes with no reason given anywhere. It
+  // says why instead, and the ledger — where the events are *declared* — stays
+  // readable throughout.
+  //
+  // `=== true` and never a truthy test: `undefined` is *the config has not
+  // landed*, and a page emptied on a silence would be the claim ADR-0026
+  // forbids.
+  if (currencyUnanswered(config.data?.settings) === true) {
+    return <NoBaseCurrency />
+  }
 
   return (
     <div className="space-y-8">
@@ -257,7 +275,7 @@ export default function SharesPage() {
         </div>
       )}
 
-      {failure ? <Band>{t(failure.message)}</Band> : null}
+      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
 
       {/* **The reduction states itself, with the account it names and the way
           out.** A table silently shorter than expected is the defect #724 met

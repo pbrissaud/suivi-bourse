@@ -1,15 +1,17 @@
 /**
- * The two derivations of the shell, and the problem table they read.
+ * What is true of the installation, what a page says of its own failed read,
+ * and the problem table both of them come out of.
  */
 import { describe, expect, it } from 'vitest'
 
 import { ApiProblem } from '@/lib/api'
 import { formatMessage } from '@/lib/i18n'
 import { PROBLEM_TYPES, problemMessage, problemMessageKey } from '@/lib/problem'
-import { installationState, oneBand, readConditions, shellConditions } from '@/lib/status'
-import { NOW, aFrozenScrape, aHealth, aHealthJobs, aRuntime } from '@/test/factories'
+import * as status from '@/lib/status'
+import { installationState, oneFailure, readConditions } from '@/lib/status'
+import { NOW, aFrozenScrape, aHealth, aHealthJobs } from '@/test/factories'
 
-describe('the status dot is a state, never a count', () => {
+describe('the bell’s colour is a state, never a count', () => {
   it('says nothing before the first answer, rather than saying "fine"', () => {
     expect(installationState({})).toBe('unknown')
   })
@@ -122,104 +124,43 @@ describe('the status dot is a state, never a count', () => {
   })
 })
 
-describe('the banner shows one band or none', () => {
-  it('shows nothing when nothing is wrong', () => {
-    expect(oneBand(shellConditions({}))).toBeNull()
+describe('the banner is retired, and nothing replaces it (#829, ADR-0037)', () => {
+  it('keeps the first failure of the causal order, never two', () => {
+    // The cap is what is left of *one band on screen or none*: an unreadable
+    // store fails every read a page is made of at once, and six sentences
+    // saying one thing is the defect the rule was written against.
+    const failure = oneFailure([{ message: 'problem.unreachable' }, { message: 'problem.internal' }])
+    expect(failure).toEqual({ message: 'problem.unreachable' })
   })
 
-  it('keeps the first condition of the causal order, never two', () => {
-    const band = oneBand([{ message: 'problem.unreachable' }, { message: 'problem.internal' }])
-    expect(band).toEqual({ message: 'problem.unreachable' })
-  })
-})
-
-describe('the causal order of the shell’s two conditions (#726, #787)', () => {
-  const rebuilding = aRuntime({ rebuilding: true, accounts: [] })
-
-  it('puts the app not answering first: nothing under it has a figure to excuse', () => {
-    expect(
-      oneBand(
-        shellConditions({
-          error: new TypeError('Failed to fetch'),
-          currencyUnanswered: true,
-          runtime: rebuilding,
-        }),
-      ),
-    ).toEqual({ message: 'problem.unreachable' })
-  })
-
-  it('renders the currency band, whatever else is true of the installation', () => {
-    // The property is *what reaches the slot*, not how long the list is:
-    // `oneBand` is the cap, and asserting the length would fail on an ordered
-    // list built whole — which is the same behaviour on screen.
-    const conditions = shellConditions({ currencyUnanswered: true, runtime: rebuilding })
-    expect(oneBand(conditions)).toEqual({
-      message: 'banner.currency',
-      gesture: { to: '/donnees', hash: 'installation', label: 'banner.currency.gesture' },
-    })
-  })
-
-  it('frees the slot the moment the question is answered, and hands it to nobody', () => {
-    // The order is one condition shorter since #787: the reconstruction is a
-    // **state of the dot** now, not a band. A condition that ends by itself does
-    // not take the top of every page on every route, and the dot it moved to is
-    // a link — so the fact kept its address and lost its cost.
-    expect(oneBand(shellConditions({ currencyUnanswered: false, runtime: rebuilding }))).toBeNull()
-    // The dot's own reading of the same installation, off `/health` since #819:
-    // the fact is the backfill's verdict rather than the runtime's boolean, and
-    // the state it lands on is unchanged.
-    expect(
-      installationState({
-        health: aHealth({
-          jobs: aHealthJobs({
-            backfill: {
-              status: 'ok',
-              at: NOW,
-              verdict: 'running',
-              complete: 0,
-              in_scope: 2,
-              attention: [],
-            },
-          }),
-        }),
-      }),
-    ).toBe('rebuilding')
-  })
-
-  it('keeps its gesture, because the reader can make this condition stop', () => {
-    // A link to its own field, and never an acknowledgement: acknowledging
-    // *I have no currency* means nothing, which is why it is not one of the
-    // acknowledgement table's five keys (ADR-0021).
-    const band = oneBand(shellConditions({ currencyUnanswered: true }))
-    expect(band?.gesture?.to).toBe('/donnees')
-  })
-
-  it('raises no band on a silence', () => {
-    // `undefined` is *nothing has been observed about it* — a claim about the
-    // reader's installation made before anybody looked (ADR-0026).
-    expect(shellConditions({ currencyUnanswered: undefined })).toEqual([])
+  it('has no shell conditions left to build, the three being entries now', () => {
+    // `shellConditions` composed a missing currency, a running reconstruction
+    // and a stopped scheduler into a strip at the top of every page. ADR-0037
+    // takes the strip away: the three are cards behind the bell, and the
+    // sentence descends into each page's own empty state. What is left in this
+    // module is the page's failed read, which the panel cannot say.
+    expect(Object.keys(status)).not.toContain('shellConditions')
+    expect(Object.keys(status)).not.toContain('oneBand')
   })
 })
 
 describe('a page names its own failed read, and the shell cannot do it for it', () => {
   const unreadable = new ApiProblem({ status: 503, type: PROBLEM_TYPES.storageUnavailable })
 
-  it('names a read the shell is structurally blind to', () => {
-    // `/api/runtime` answers from process memory and never opens the store, so
-    // `shellConditions` is empty on precisely the failure that empties a page.
+  it('names a read nothing above it can see', () => {
     // Without this the page renders nothing at all, and *"the store is
     // unreadable"* and *"you own nothing yet"* become the same blank screen.
-    expect(shellConditions({})).toEqual([])
-    expect(oneBand(readConditions({ errors: [unreadable] }))).toEqual({
+    expect(oneFailure(readConditions({ errors: [unreadable] }))).toEqual({
       message: 'problem.storageUnavailable',
     })
   })
 
-  it('says nothing while the shell is already saying the app does not answer', () => {
-    // The order is causal: while nothing answers, that is the cause of every
-    // failed read under it, and two announcers for one fact is the defect.
+  it('says nothing where a surface above it is already saying it', () => {
+    // The one caller left is the notifications panel, whose health card says
+    // *the store is not answering* in prose: naming it again three lines above
+    // would put two announcers on one fact.
     expect(
-      readConditions({ shellError: new TypeError('Failed to fetch'), errors: [unreadable] }),
+      readConditions({ namedElsewhere: new TypeError('Failed to fetch'), errors: [unreadable] }),
     ).toEqual([])
   })
 

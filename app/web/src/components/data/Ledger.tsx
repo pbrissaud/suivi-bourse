@@ -29,16 +29,18 @@
  * answered once and handed back the ledger entire — which is why the control may
  * speak while the read never could.
  *
- * Reads and failures follow the rule the shares page keeps: `/api/runtime`
- * answers from process memory and never opens the store (#668), so the shell's
- * banner is **silent** on the one failure that empties this tab — and a tab that
- * rendered nothing would make *the store is unreadable* and *you have recorded
- * nothing yet* the same screen, in its worst form, a blank one.
+ * Reads and failures follow the rule the shares page keeps, and since #829
+ * there is nothing above this tab to keep it for: the banner is retired
+ * (ADR-0037), so a surface that stayed silent over a `503` would make *the
+ * store is unreadable* and *you have recorded nothing yet* the same screen, in
+ * its worst form, a blank one. `/api/runtime` left the reads here with the band
+ * that consulted it — it answers from process memory and never opens the store
+ * (#668), so it was in the list to be short-circuited on and nothing else.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/components/data/BulkDelete'
@@ -59,7 +61,7 @@ import {
   reveal,
   type LedgerFilters as Filters,
 } from '@/lib/ledger'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 
 export interface LedgerFocus {
   /**
@@ -165,7 +167,6 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   }, [compose, onComposed])
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The reporting currency is an **optional** read here: the ledger is a
   // journal, and a money column with no unit renders as a plain number rather
   // than guessing one (`formatCurrency`). It is not on the events resource —
@@ -224,9 +225,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // The accounts read joins the causal order rather than failing quietly: it is
   // a second read of the same store, and this tab now renders a table off it —
   // so *the store is unreadable* must not come out as *you have declared
-  // nothing*. `oneBand` keeps it to one band on screen or none.
-  const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [events.error, accounts.error] }),
+  // nothing*. `oneFailure` keeps it to one band on screen or none.
+  const failure = oneFailure(
+    readConditions({ errors: [events.error, accounts.error] }),
   )
   // **The band names both reads; the masking follows only the ledger's own.**
   // Folded into one condition, a failed `/api/accounts` erased the whole journal
@@ -235,15 +236,15 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // answers from process memory and has no `503` (#764), so *the store is
   // unreadable* is exactly the state where the two reads part company. A band
   // over a page that still has everything to show is the white screen #718
-  // mounted `Band` to abolish, arrived from the other side.
-  const ledgerFailure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [events.error] }),
+  // mounted refusal to abolish, arrived from the other side.
+  const ledgerFailure = oneFailure(
+    readConditions({ errors: [events.error] }),
   )
   const currency = totals.data?.base_currency ?? null
 
   return (
     <div className="space-y-6">
-      {failure ? <Band>{t(failure.message)}</Band> : null}
+      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
 
       {/* **Above the table, and one band** (#794, ADR-0030, ADR-0032): the drop
           zone and the export menu. The sources with their revocation were the

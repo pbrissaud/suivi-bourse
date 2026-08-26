@@ -190,12 +190,17 @@ const SURFACES: readonly Surface[] = [
   { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
   { name: 'le grand livre', url: '/donnees', heading: 'Grand livre' },
   {
-    name: 'le grand livre · les notices',
-    url: '/donnees',
-    heading: 'Grand livre',
+    // The notifications panel, which is mounted in the **shell** and therefore
+    // read from every route (#829). It is opened here rather than left closed
+    // because a closed panel renders nothing at all: what the net is about is
+    // the sentence *Rien à signaler*, which is a claim about the reader's
+    // installation and must not be said over a read that has not landed.
+    name: 'le tiroir des notifications',
+    url: '/',
+    heading: 'Tableau de bord',
     open: async ({ user }) => {
-      await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
-      return screen.findByRole('heading', { name: 'Faits d’installation' })
+      await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+      return screen.findByRole('dialog', { name: 'Notifications' })
     },
   },
   {

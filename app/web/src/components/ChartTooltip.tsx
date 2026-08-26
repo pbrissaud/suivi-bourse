@@ -10,7 +10,7 @@
  * becomes a shape.
  *
  * It is a component rather than a copy for the reason `Stat`, `EmptyState`,
- * `Band` and `EntryPair` are: the prototype had four spellings of the same
+ * `Refusal` and `EntryPair` are: the prototype had four spellings of the same
  * object, and two charts answering the pointer in two registers is that defect
  * arriving one surface at a time.
  *

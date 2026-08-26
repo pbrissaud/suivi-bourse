@@ -41,7 +41,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
 import {
@@ -133,7 +133,7 @@ export function BulkDelete({ selection, selected }: BulkDeleteProps) {
               failure, and Radix marks everything behind the overlay
               `aria-hidden`, so a band outside it is a sentence nobody can read
               while the only thing on screen is the box that produced it. */}
-          {remove.error ? <Band>{problemSentence(t, remove.error)}</Band> : null}
+          {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
 
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>

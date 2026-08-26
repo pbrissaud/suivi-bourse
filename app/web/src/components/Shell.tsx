@@ -1,6 +1,13 @@
 /**
- * The shell: the sidebar, the content header bar, the one band, and the content
- * column. Everything that outlives a page.
+ * The shell: the sidebar, the content header bar and the content column —
+ * everything that outlives a page.
+ *
+ * **There is no band any more** (#829, ADR-0037). The strip at the top of the
+ * column held three live conditions — a missing base currency, a running
+ * reconstruction, a stopped scheduler — and it is retired rather than replaced:
+ * they are entries of the notifications panel behind the header's bell, and the
+ * *sentence* the band carried descends one floor, into the empty state of each
+ * page it used to explain.
  *
  * **The column is uncapped** (ADR-0022, amended by #792). `max-w-7xl` was a
  * measured decision and its measurement expired: the two pages it was taken on
@@ -20,7 +27,6 @@
 import { Outlet } from '@tanstack/react-router'
 
 import { AppSidebar } from '@/components/AppSidebar'
-import { Banner } from '@/components/Banner'
 import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -60,9 +66,6 @@ export function Shell() {
       <AppSidebar />
       <SidebarInset>
         <ContentHeader />
-        {/* Inside the column and full width of it: mounted across the viewport
-            its left edge would run behind the sidebar (ADR-0022). */}
-        <Banner />
         {/* `SidebarInset` is already the `<main>` landmark, so this is a plain
             column — the padding, and nothing else. `mx-auto` went with the cap:
             centring a column that fills its parent does nothing, and what it

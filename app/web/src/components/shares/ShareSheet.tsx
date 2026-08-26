@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { PriceChart } from '@/components/shares/PriceChart'
@@ -290,7 +290,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
             />
 
             {ledger.error ? (
-              <Band>{t(problemMessageKey(ledger.error))}</Band>
+              <Refusal>{t(problemMessageKey(ledger.error))}</Refusal>
             ) : !ledger.data ? null : (
               <ShareEvents
                 events={events}

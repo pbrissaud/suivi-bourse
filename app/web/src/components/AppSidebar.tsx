@@ -7,12 +7,23 @@
  * worst realistic case (1 280), where twelve slices still sit in two columns of
  * six and eight columns neither truncate nor scroll. What separates the two
  * forms is **mechanical**: at 390 px the top bar loses its fourth route — it
- * overflows its row with no scroll and no drawer, taking the status dot with it.
+ * overflows its row with no scroll and no drawer, taking the global indicator
+ * with it.
  *
  * So: shadcn's `Sidebar`, `collapsible="icon"` when wide, a drawer under 768 px.
  * **Nothing is hand-written for the narrow case** — the rail, the drawer, the
  * ⌘B shortcut and the persisted state come with the component, which is what
  * removed the last open question instead of answering it.
+ *
+ * **It carries routes and nothing else since #829.** The status card at its
+ * foot was the dot's *development where there was room*, back when the dot was
+ * a colour and nothing more; the bell is not — it carries the count, it names
+ * its state in its accessible name, and it opens onto a health card that says
+ * that state in prose. The card was a fourth rendering of one fact, and it was
+ * the one that vanished in the rail and in the drawer, which is to say on the
+ * widths where a reader has least to look at (ADR-0037). The scrape cadence it
+ * alone used to show was never health: it is a setting, and it is a field on
+ * the settings page.
  *
  * **Five entries since ADR-0038, in three and two.** Settings left the data
  * page and the tab bar left with it, so the list grew — and it groups, because
@@ -23,27 +34,20 @@
  * count and it is declined on the second, which is ADR-0038's own arbitration.
  */
 import { Link, useRouterState } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { CircleDollarSign, Database, LayoutDashboard, Settings, Wallet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  useSidebar,
 } from '@/components/ui/sidebar'
-import { STATE_TONE } from '@/components/StatusDot'
-import { api } from '@/lib/api'
 import { useT, type MessageKey } from '@/lib/i18n'
-import { installationState } from '@/lib/status'
-import { cn } from '@/lib/utils'
 
 interface Entry {
   to: '/' | '/titres' | '/comptes' | '/donnees' | '/reglages'
@@ -105,10 +109,11 @@ export function AppSidebar() {
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}
             </SidebarMenu>
-            {/* The foot of the list, not the foot of the sidebar: the status
-                card lives there and it is not a route. `mt-auto` is what puts
-                the two entries at the bottom of the column without a second
-                menu having to know how tall the first one is. */}
+            {/* The foot of the *list* rather than of the sidebar, which is what
+                `mt-auto` buys: the two entries sit at the bottom of the column
+                without a second menu having to know how tall the first one is.
+                There is nothing under them any more — the status card left with
+                #829. */}
             <SidebarMenu className="mt-auto">
               {WORKINGS.map((entry) => (
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
@@ -117,7 +122,6 @@ export function AppSidebar() {
           </nav>
         </SidebarGroup>
       </SidebarContent>
-      <StatusCard />
       <SidebarRail />
     </Sidebar>
   )
@@ -140,50 +144,5 @@ function NavEntry({ entry, pathname }: { entry: Entry; pathname: string }) {
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
-  )
-}
-
-/**
- * The **development** of the status dot, never its home (ADR-0022, #789).
- *
- * The dot is a colour and a link; this says the same fact in words, where there
- * is room for words. Which is exactly why it is not the dot's home: it is
- * absent in the two sidebar states that cannot hold it — the icon rail, where
- * shadcn hides anything with a label, and the drawer, which takes the whole
- * navigation behind a gesture — and the reader must not lose the state of their
- * installation by folding a menu.
- *
- * It is **absent while the read is in flight** as well (ADR-0026). `unknown` is
- * a real state of the dot, because a grey dot claims nothing; a sentence cannot
- * be grey, and *the installation state is unknown* written out in the sidebar
- * is a claim about the reader's install made before anybody looked.
- *
- * It reads **the same route, through the same derivation, off the same tone
- * table** as the dot (#819). That is what *development* means here and it is a
- * rule rather than an economy: a card deciding for itself what *attention*
- * covers would be a second opinion on the reader's own installation, said one
- * column away from the first.
- */
-function StatusCard() {
-  const t = useT()
-  const { state: sidebar, isMobile } = useSidebar()
-  const health = useQuery({ queryKey: ['health'], queryFn: api.health })
-  const state = installationState({ health: health.data, error: health.error })
-
-  if (isMobile || sidebar === 'collapsed' || state === 'unknown') return null
-
-  return (
-    <SidebarFooter>
-      <div className="flex items-start gap-2.5 rounded-lg border bg-sidebar-accent/40 p-3">
-        <span
-          aria-hidden
-          className={cn('mt-1.5 size-2 shrink-0 rounded-full', STATE_TONE[state])}
-        />
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium">{t('sidebar.status.title', { state })}</p>
-          <p className="text-xs text-muted-foreground">{t('sidebar.status.body', { state })}</p>
-        </div>
-      </div>
-    </SidebarFooter>
   )
 }

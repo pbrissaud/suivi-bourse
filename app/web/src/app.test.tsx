@@ -208,12 +208,13 @@ describe('the reader preferences', () => {
 
 describe('when the app is not answering', () => {
   /**
-   * The two routes the shell reads, refusing together — which is what an app
-   * that is not answering looks like from a browser. They are two since #819:
-   * the band is the runtime's, and the dot is `/health`'s (ADR-0036).
+   * Every route the shell and the page read, refusing together — which is what
+   * an app that is not answering looks like from a browser. There is no band
+   * left to raise since #829 (ADR-0037): the bell is red, its panel says so in
+   * prose, and the page names its own failed reads.
    */
   const unavailable = () =>
-    [ROUTES.runtime, ROUTES.health].map((route) =>
+    [ROUTES.runtime, ROUTES.health, ROUTES.positions, ROUTES.portfolioTotals].map((route) =>
       problemHandler(route, {
         status: 503,
         type: PROBLEM_TYPES.storageUnavailable,
@@ -222,13 +223,14 @@ describe('when the app is not answering', () => {
       }),
     )
 
-  it('shows one band and never the server’s own sentence', async () => {
+  it('names the failure once, and never with the server’s own sentence', async () => {
     server.use(...unavailable())
     renderApp()
 
-    const band = await screen.findByRole('status')
-    expect(band).toHaveTextContent(/Les données ne sont pas lisibles pour l’instant/)
-    // One band, never two.
+    const said = await screen.findByRole('status')
+    expect(said).toHaveTextContent(/Les données ne sont pas lisibles pour l’instant/)
+    // One sentence, never two: `readConditions` short-circuits under the health
+    // read and `oneFailure` keeps the first of what is left.
     expect(screen.getAllByRole('status')).toHaveLength(1)
     // `detail` and `title` are English diagnostics. They are carried, and
     // rendered nowhere — which is what put a French title over an English
@@ -237,13 +239,21 @@ describe('when the app is not answering', () => {
     expect(screen.queryByText(/Storage unavailable/)).not.toBeInTheDocument()
   })
 
-  it('keeps the status dot, which is what explains the empty page', async () => {
+  it('keeps the bell, which is what explains the empty page', async () => {
     server.use(...unavailable())
-    renderApp()
+    const { user } = renderApp()
 
-    const dot = await screen.findByRole('link', { name: /installation/i })
-    await waitFor(() => expect(dot).toHaveAccessibleName(/ne répond pas/))
-    expect(dot).toHaveAttribute('href', expect.stringContaining('/donnees'))
+    const bell = await screen.findByRole('button', { name: /^Notifications/ })
+    await waitFor(() => expect(bell).toHaveAccessibleName(/ne répond pas/))
+
+    // And it *leads* somewhere rather than indicating without pointing: the
+    // panel's health card offers a link to where one repairs.
+    await user.click(bell)
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    expect(within(panel).getByRole('link', { name: 'Voir dans Réglages' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/reglages'),
+    )
   })
 })
 
@@ -255,7 +265,7 @@ describe('the content header', () => {
     const objects = () => [
       screen.queryByRole('button', { name: 'Afficher ou masquer la navigation' }),
       screen.queryByRole('heading', { level: 1 }),
-      screen.queryByRole('link', { name: /installation/i }),
+      screen.queryByRole('button', { name: /^Notifications/ }),
       screen.queryByRole('button', { name: 'Densité des tableaux' }),
       screen.queryByRole('button', { name: 'Langue' }),
       screen.queryByRole('button', { name: 'Thème' }),

@@ -39,7 +39,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { EmptyState } from '@/components/EmptyState'
 import { api, CHART_WINDOWS, type ChartWindow, type LedgerEvent } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
@@ -115,7 +115,7 @@ export function PriceChart({
       </div>
 
       {series.error ? (
-        <Band>{t(problemMessageKey(series.error))}</Band>
+        <Refusal>{t(problemMessageKey(series.error))}</Refusal>
       ) : !series.data ? null : series.data.points.length === 0 ? (
         <EmptyState title={t('shares.chart.empty')} />
       ) : (

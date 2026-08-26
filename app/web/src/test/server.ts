@@ -20,6 +20,7 @@ import {
   anAccount,
   anAccountHistory,
   anAccountsPayload,
+  anAdvisory,
   anInstallationFact,
   aConfig,
   aHealth,
@@ -145,6 +146,11 @@ export function defaultHandlers() {
     // exists to render.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
     http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
+    // **And nothing to advise on, by default** (#829). An advisory is an audit
+    // on the *data*, and the default portfolio is one nothing is wrong with —
+    // a test that wants a chip beside a figure asks for it by name, exactly as
+    // it asks for an ephemeral store.
+    http.get(ROUTES.advisories, () => HttpResponse.json([])),
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
@@ -164,6 +170,14 @@ export function defaultHandlers() {
           acknowledged_at: '2026-03-02T12:00:00.000Z',
         }),
       ),
+    ),
+    // The advisory's own, and the payload says what makes it a second gesture
+    // rather than the same one: it wears off (#829, ADR-0037).
+    http.post(ROUTES.advisoryAcknowledgement, ({ params }) =>
+      HttpResponse.json({
+        ...anAdvisory({ key: String(params.key) }),
+        acknowledged_until: '2026-04-01T12:00:00.000Z',
+      }),
     ),
     http.delete(ROUTES.storeOrphans, () =>
       HttpResponse.json({ symbols: ['ZZX'], points_removed: 1204 }),

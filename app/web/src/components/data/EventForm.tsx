@@ -38,7 +38,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { Explain } from '@/components/Explain'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
@@ -475,7 +475,7 @@ export function EventForm({ open, event, accounts, accountsFailed, onClose }: Ev
                 )}
               </Field>
 
-              {write.error ? <Band>{problemSentence(t, write.error)}</Band> : null}
+              {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
               <div className="flex gap-2">
                 {/* Withheld rather than offered and refused — the same rule the

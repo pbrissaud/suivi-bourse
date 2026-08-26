@@ -30,13 +30,13 @@
  */
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { SettingsBlock } from '@/components/data/SettingsBlock'
 import { RebuildBlock } from '@/components/data/RebuildBlock'
 import { StoreBlock } from '@/components/data/StoreBlock'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 
 export function Installation() {
   const { t } = useI18n()
@@ -56,19 +56,18 @@ export function Installation() {
     null,
   )
 
-  const failure = oneBand(
+  const failure = oneFailure(
     readConditions({
-      shellError: runtime.error,
       // Causal order: the dials and the store's own figures both come out of
       // the store, so the first of the two to fail is the one that names the
-      // cause.
+      // cause. `/api/runtime` is not in the list — see below.
       errors: [config.error, store.error],
     }),
   )
 
   return (
     <div className="space-y-8">
-      {failure ? <Band>{t(failure.message)}</Band> : null}
+      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
 
       {/* Full width and first, because it is what the dot sent the reader here
           for, and because a progress bar in a column is a progress bar nobody

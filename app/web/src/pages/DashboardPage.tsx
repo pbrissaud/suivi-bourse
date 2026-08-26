@@ -36,7 +36,7 @@
  *    every block that did answer keeps its figures. The alternative — a sentence
  *    inside each block, which is not a band and therefore does not compete with
  *    the shell's — was refused: an unreadable store fails every store read at
- *    once, so it would put three sentences on one screen where `oneBand` puts
+ *    once, so it would put three sentences on one screen where `oneFailure` puts
  *    one, and *one band on screen or none* is a rule about announcers rather
  *    than about a component's name.
  *  - **What empties the page and what is merely named are two lists.** The band
@@ -61,18 +61,20 @@
 import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { Allocation } from '@/components/dashboard/Allocation'
 import { DashboardHead } from '@/components/dashboard/Head'
 import { Movers } from '@/components/dashboard/Movers'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
+import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { api, type PerfPoint } from '@/lib/api'
 import { dashboardState, hasCashLedger } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
+import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { buildShareRows } from '@/lib/shares'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 import { usePageHeading } from '@/lib/pageHeading'
 import { cn } from '@/lib/utils'
 
@@ -84,13 +86,16 @@ export default function DashboardPage() {
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
+  // The same read the bell and the first-run modal compose their own
+  // predicates from — one query key, so it is one request and no new API state.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
   // **The two reads the page is made of, and them alone.** A block's own read
   // failing removes that block and is named in the band below; it never puts
   // the page in `failed`, which is a screen with nothing on it but a sentence.
   const state = dashboardState({
     failed: Boolean(
-      oneBand(readConditions({ shellError: runtime.error, errors: [positions.error, totals.error] })),
+      oneFailure(readConditions({ errors: [positions.error, totals.error] })),
     ),
     positions: positions.data,
     totals: totals.data,
@@ -169,7 +174,7 @@ export default function DashboardPage() {
 
   // **One band, for every read the page makes** — and one is the count, not the
   // maximum: `readConditions` short-circuits under the shell's own band and
-  // `oneBand` keeps the first of what is left, so an unreadable store, which
+  // `oneFailure` keeps the first of what is left, so an unreadable store, which
   // fails every one of them at once, is still one sentence on screen.
   //
   // The order is **causal down the page**: the two reads the page is made of
@@ -177,9 +182,8 @@ export default function DashboardPage() {
   // read under them, then the block reads in the order the blocks are read in.
   // The movers are here too, for the defect's own reason one block along: the
   // block renders nothing on `null` and a failed read reaches it as one.
-  const failure = oneBand(
+  const failure = oneFailure(
     readConditions({
-      shellError: runtime.error,
       errors: [
         positions.error,
         totals.error,
@@ -212,11 +216,24 @@ export default function DashboardPage() {
       : t('dashboard.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
+  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
+  // currency nothing is converted and the perf job writes nothing at all, so
+  // this page would be a column of em dashes with no reason given anywhere. It
+  // says why instead, and the ledger — where the events are *declared* — stays
+  // readable throughout.
+  //
+  // `=== true` and never a truthy test: `undefined` is *the config has not
+  // landed*, and a page emptied on a silence would be the claim ADR-0026
+  // forbids.
+  if (currencyUnanswered(config.data?.settings) === true) {
+    return <NoBaseCurrency />
+  }
+
   return (
     <div className="space-y-6">
       {/* Above both tracks, so that naming a failed read never costs the page a
           block that did answer (#799). */}
-      {failure ? <Band>{t(failure.message)}</Band> : null}
+      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
 
       <div
         className={cn(

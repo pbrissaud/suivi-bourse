@@ -245,11 +245,14 @@ describe('the store', () => {
 
     // The only screen where a trial run learns that it is a trial run.
     expect(screen.getByText('Ce conteneur ne garde rien')).toBeInTheDocument()
-    // And never a notice: its predicate is not acknowledgeable, so acknowledging
-    // it would make it go quiet while it was still true. Since #794 the notices
-    // are not even on this tab, and the tab that carries them is asserted on in
-    // `notices.test.tsx`.
-    expect(screen.getByRole('tab', { name: /Les notices/ })).not.toHaveTextContent(/notices? à lire/)
+    // And never a notification: its predicate is not acknowledgeable, so
+    // acknowledging it would make it go quiet while it was still true — and a
+    // badge that never decrements is the noise ADR-0021 wrote its rule against.
+    // The panel is where every open entry is counted since #829, so this is
+    // asked of the badge itself.
+    expect(screen.getByRole('button', { name: /^Notifications/ })).not.toHaveAccessibleName(
+      /conteneur/i,
+    )
   })
 
   it('says nothing about persistence it cannot observe', async () => {

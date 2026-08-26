@@ -39,8 +39,9 @@ import { useQuery } from '@tanstack/react-query'
 import { AccountDetail } from '@/components/accounts/AccountDetail'
 import { AccountForm } from '@/components/accounts/AccountForm'
 import { AccountsRail } from '@/components/accounts/AccountsRail'
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { EmptyState } from '@/components/EmptyState'
+import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Button } from '@/components/ui/button'
 import {
   buildAccountRows,
@@ -51,9 +52,10 @@ import {
 } from '@/lib/accounts'
 import { accountOf } from '@/lib/ledger'
 import { api, type Account, type LedgerEvent, type PerfPoint, type Position } from '@/lib/api'
+import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
@@ -79,6 +81,12 @@ export default function AccountsPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
+  // The same read the bell and the first-run modal compose their own
+  // predicates from — one query key, so it is one request and no new API state.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
+  // The same read the bell makes, under the same key: the panel is the
+  // inventory and the rail's chip is the reading, and one request serves both.
+  const advisories = useQuery({ queryKey: ['advisories'], queryFn: api.advisories })
 
   const declared = accounts.data?.accounts ?? []
   const rows = buildAccountRows(declared)
@@ -95,9 +103,8 @@ export default function AccountsPage() {
     enabled: opened !== null,
   })
 
-  const failure = oneBand(
+  const failure = oneFailure(
     readConditions({
-      shellError: runtime.error,
       errors: [accounts.error, totals.error, positions.error, events.error, history.error],
     }),
   )
@@ -143,9 +150,22 @@ export default function AccountsPage() {
   // which is the surface built for exactly that question.
   usePageHeading(t('page.accounts'))
 
+  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
+  // currency nothing is converted and the perf job writes nothing at all, so
+  // this page would be a column of em dashes with no reason given anywhere. It
+  // says why instead, and the ledger — where the events are *declared* — stays
+  // readable throughout.
+  //
+  // `=== true` and never a truthy test: `undefined` is *the config has not
+  // landed*, and a page emptied on a silence would be the claim ADR-0026
+  // forbids.
+  if (currencyUnanswered(config.data?.settings) === true) {
+    return <NoBaseCurrency />
+  }
+
   return (
     <div className="space-y-6">
-      {failure ? <Band>{t(failure.message)}</Band> : null}
+      {failure ? <Refusal>{t(failure.message)}</Refusal> : null}
 
       {/* **The declaration is what this page is made of, and the four other
           reads are what its blocks are made of.** A band is raised for any of
@@ -202,6 +222,9 @@ export default function AccountsPage() {
             // claiming there are unassigned events before the ledger has
             // answered would be the opposite mistake.
             offer={offer}
+            // `?? null` and never `?? []`: a chip is a claim about the
+            // reader's own account, and a read in flight is not one.
+            advisories={advisories.data ?? null}
           />
           <AccountDetail
             row={opened}

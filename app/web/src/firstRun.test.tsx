@@ -30,7 +30,7 @@ import { FIRST_RUN_STORAGE_KEY } from '@/lib/firstRun'
 import {
   aConfig,
   aLedgerPayload,
-  aRebuilding,
+  aFrozenScrape,
   aRuntime,
   noAccountsDeclared,
 } from '@/test/factories'
@@ -380,58 +380,67 @@ describe('the currency itself', () => {
   })
 })
 
-describe('the banner, with the currency unanswered', () => {
-  it('renders one band and it is the currency, gesture included', async () => {
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
+describe('the band is gone and its sentence descends (#829, ADR-0037)', () => {
+  const bell = () => screen.getByRole('button', { name: /^Notifications/ })
+
+  it('says why each page is empty, and keeps the ledger readable', async () => {
     const { user } = await firstRun()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
-    const bands = await screen.findAllByRole('status')
-    expect(bands).toHaveLength(1)
-    expect(bands[0]).toHaveTextContent(/Aucune devise de base n’a encore été choisie/)
-    // Its gesture is a link to its own field — never an acknowledgement — and
-    // it is followed rather than merely inspected: an `href` asserted alone
-    // passes on a link that lands on the wrong tab, which is what it did.
-    await user.click(within(bands[0]).getByRole('link', { name: 'La choisir' }))
-    expect(await screen.findByLabelText('Devise de base')).toBeInTheDocument()
-    // And still one band, never two: the gesture landed on the tab where the
-    // reconstruction's own block lives, and that block is not a band. Since
-    // #787 the rule holds by construction rather than by ordering — the rebuild
-    // stopped competing for the slot at all.
-    expect(screen.getAllByRole('status')).toHaveLength(1)
-    expect(screen.getByRole('status')).toHaveTextContent(/Aucune devise de base/)
+    // **No band, anywhere.** The strip that took the top of every route for
+    // this one condition is retired without replacement.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+    // What replaces it is one floor down, on the page whose figures are the
+    // ones that are missing — and it *says why*, in place of the em dashes it
+    // would otherwise line up.
+    expect(await screen.findByText('Aucune devise de base')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Rien n’est valorisé et aucun gain n’est calculé/),
+    ).toBeInTheDocument()
+
+    // **The ledger stays readable throughout**: the events are declared, and it
+    // is their valuation that waits.
+    await user.click(screen.getByRole('link', { name: 'Grand livre' }))
+    expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
+    expect(screen.queryByText('Aucune devise de base')).not.toBeInTheDocument()
   })
 
-  it('frees the slot the moment the question is answered, and hands it to nobody', async () => {
-    // The causal order still holds — it is simply one condition shorter. What
-    // used to take the slot next is the reconstruction, and it no longer
-    // competes for one.
-    server.use(
-      http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))),
-      // The dot reads `/health` since #819: same fact, the backfill's verdict.
-      http.get(ROUTES.health, () => HttpResponse.json(aRebuilding())),
-    )
+  it('is a pinned card in the panel, offering an answer and no acknowledgement', async () => {
+    const { user } = await firstRun()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(bell())
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+
+    expect(
+      within(panel).getByText('Aucune devise de base : rien n’est calculé'),
+    ).toBeInTheDocument()
+    // A link to its own field, never an acknowledgement: acknowledging *I have
+    // no currency* means nothing, which is why it was never one of the
+    // acknowledgement table's keys (ADR-0021).
+    const card = within(panel).getByText('Aucune devise de base : rien n’est calculé')
+      .parentElement as HTMLElement
+    expect(within(card).getByRole('link', { name: 'Répondre dans Réglages' })).toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
+  })
+
+  it('takes the entry away the moment the question is answered', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     await user.click(within(modal()).getByRole('button', { name: 'Enregistrer' }))
-    // The walk goes on after the answer, and a modal hides the page behind it
-    // from the accessibility tree — so the bands are read once the reader is out.
     expect(await within(modal()).findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
-    // The fact is not lost: the dot carries it, and it is a link.
-    expect(
-      screen.getByRole('link', { name: /L’historique est en cours de reconstruction/ }),
-    ).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Aucune devise de base')).not.toBeInTheDocument())
   })
 })
 
-describe('the ceiling loses nothing: what does not fit the slot is held by the panel', () => {
+describe('the ceiling loses nothing: the field is where the dial is', () => {
   it('keeps the currency answerable on the installation tab, and posts no notice about it', async () => {
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime({ rebuilding: true }))))
     const { user } = await firstRun({ url: '/donnees' })
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -439,25 +448,32 @@ describe('the ceiling loses nothing: what does not fit the slot is held by the p
     await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
     // The same field the modal mounts, still there — the panel holds it anyway,
-    // which is what licenses capping the banner at one band.
+    // which is what licenses the walk being escapable.
     const field = await screen.findByLabelText('Devise de base')
     expect((field as HTMLSelectElement).value).toBe('')
-    // And it is an *encart with a gesture*, never an acknowledgeable notice:
-    // acknowledging *I have no currency* means nothing (ADR-0021). The notices
-    // are a tab of their own since #794, so this is asked where they are.
-    await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
-    const notices = await screen.findByRole('region', { name: 'Faits d’installation' })
-    expect(within(notices).queryByText(/devise de base/i)).not.toBeInTheDocument()
+    // And it is a **condition with a gesture**, never an acknowledgeable
+    // installation fact: it has no row in `installation_fact` and its card
+    // offers no acknowledgement either — which is asked of *that* card, the
+    // panel holding others that legitimately do.
+    await user.click(screen.getByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    const card = within(panel).getByText('Aucune devise de base : rien n’est calculé')
+      .parentElement as HTMLElement
+    expect(within(card).queryByRole('button', { name: /Acquitter/ })).not.toBeInTheDocument()
   })
 })
 
-describe('the status dot is a state and a link, and the link arrives', () => {
-  it('opens the installation tab from any page, which is a trial user’s only hold', async () => {
+describe('the bell is a state and a link, and the link arrives', () => {
+  it('opens the settings from any page, which is a trial user’s only hold', async () => {
+    server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     const { user } = renderApp({ url: '/titres' })
 
-    await user.click(await screen.findByRole('link', { name: /État de l’installation/ }))
+    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
 
-    // Not merely `/donnees`: the tab the sentence about the container lives on.
+    // Where one repairs — which is what ADR-0022 asked of the indicator when it
+    // made it *lead* somewhere rather than indicate without pointing.
     expect(await screen.findByRole('heading', { name: 'Le magasin', level: 2 })).toBeInTheDocument()
   })
 })

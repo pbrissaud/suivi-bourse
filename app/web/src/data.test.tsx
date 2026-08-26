@@ -56,19 +56,17 @@ async function openTheForm(user: ReturnType<typeof renderApp>['user']) {
   return screen.getByRole('radiogroup', { name: 'Ce qui s’est passé' })
 }
 
-describe('the three tabs under one route', () => {
-  it('names them by what you declared, what the app has to say and what it is', async () => {
+describe('the tabs under one route', () => {
+  it('names them by what you declared and what the installation is', async () => {
     renderData()
 
-    // A tab is not a page: the product's cut at four pages holds. What the
-    // three names are is ADR-0030's: the ledger and its provenance, the
-    // notices, and ADR-0014's boot test transposed to the render.
+    // **Two, and it was three** (#829, ADR-0037): the notices tab is gone, and
+    // with it the badge on its trigger. The installation facts are cards in the
+    // panel behind the header's bell now, beside the health and the advisories,
+    // so a second count on one page's tab would be the second global indicator
+    // ADR-0022 refused.
     const tabs = await screen.findAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'Le grand livre',
-      'Les notices',
-      'L’installation',
-    ])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Le grand livre', 'L’installation'])
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
   })
@@ -88,13 +86,14 @@ describe('the three tabs under one route', () => {
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
   })
 
-  it('opens the tab the hash names, the notices included', async () => {
-    // The hash is what makes the links that point here arrive somewhere — the
-    // status dot, and the currency band's own gesture. Read, never written.
-    renderData(ledgerEvents(), '/donnees#notices')
+  it('opens the tab the hash names', async () => {
+    // The hash is what makes a link that points here arrive somewhere. Read,
+    // never written. `#notices` names no tab any more and lands on the ledger,
+    // which is what an unknown hash has always done.
+    renderData(ledgerEvents(), '/donnees#installation')
 
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Les notices/ })).toHaveAttribute(
+      expect(screen.getByRole('tab', { name: 'L’installation' })).toHaveAttribute(
         'aria-selected',
         'true',
       ),

@@ -240,7 +240,7 @@ describe('a gesture the palette armed is spent once', () => {
     expect(screen.queryByText(/Réduit aux événements/)).toBeNull()
   })
 
-  it('leaves no address behind when a notice reduces the ledger its own way', async () => {
+  it('hands the address over when a notification reduces the ledger its own way', async () => {
     server.use(
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
       http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
@@ -252,14 +252,16 @@ describe('a gesture the palette armed is spent once', () => {
     await user.click(await screen.findByRole('button', { name: /Virement entrant/ }))
     await screen.findByRole('table', { name: 'Vos événements' })
 
-    await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
-    await user.click(await screen.findByRole('button', { name: 'Voir les événements concernés' }))
+    // **The card's link lands on the figure** (#829, ADR-0037), and it does it
+    // from the shell — so the set of securities became addressable, and the
+    // reduction that arrived before it is replaced rather than added to: two
+    // reductions cannot both be the table's.
+    await user.click(screen.getByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    await user.click(within(panel).getByRole('link', { name: 'Voir les événements concernés' }))
     await screen.findByText(/Réduit à 3 titres/)
 
-    // Two reductions cannot both be the table's: the one that arrived by the
-    // address left with it, or the link handed to somebody else opens a ledger
-    // reduced another way than the one on screen.
-    expect(view.router.state.location.search).toEqual({})
+    expect(view.router.state.location.search).toEqual({ symbol: ['ZZA', 'ZZB', 'ZZC'] })
     expect(screen.queryByText(/Réduit aux événements de type/)).toBeNull()
   })
 })
