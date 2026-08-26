@@ -267,8 +267,13 @@
   "accounts.detail.dividends": "Dividends",
   "accounts.detail.dividends.encashed": "Encashed",
   "accounts.detail.dividends.explain": "What this account has actually paid you, cash in hand — the closed positions of this account included, since a line that was sold kept the dividends it paid while it was held. It is one of the four terms of the total P&L above, promoted here because it is the one figure that answers on its own what this account has paid its owner.",
+  "accounts.detail.curve.period": "Drawn over {range, select, 1M {the last month} YTD {the year to date} 1Y {the last twelve months} SINCE_OPENING {this account’s whole history} other {}}",
+  "accounts.detail.dividends.onContributed": "On contributions",
   "accounts.detail.lines": "Lines held",
+  "accounts.detail.lines.weight": "Weight",
   "accounts.detail.lines.link": "{count, plural, one {See this account’s line on Shares} other {See this account’s # lines on Shares}}",
+  "accounts.detail.payers": "Distributing securities",
+  "accounts.detail.payers.period": "Since this account opened",
   "accounts.detail.events": "Latest events",
   "accounts.detail.events.link": "See the whole ledger",
 

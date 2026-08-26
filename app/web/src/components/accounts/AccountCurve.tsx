@@ -18,20 +18,36 @@
  *    false), the same rule the price chart follows one page over: an install
  *    with no cash event has `net_contributed` at `null` for ever (#708), and a
  *    line drawn along the floor would say the owner put nothing in.
+ *  - **The drawing states the span it covers** (ADR-0028, #833). The clause is
+ *    *carry the period or carry no figure*, and it is not satisfied by the
+ *    range control sitting above: a control says what was **asked for**, a
+ *    legend says what is **drawn**, and the two part company on the one preset
+ *    whose bound is a fact about the data — `SINCE_OPENING`. The maquette puts
+ *    the span at the end of this very row, and that is where it goes: a curve
+ *    with no stated extent beside a total is the unbounded-window failure in
+ *    miniature. It is a **word** and not a stamp of the two dates, because the
+ *    window is a preset the reader chose and reading it back to them in figures
+ *    is a second announcer of the same choice.
  */
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import type { ValuePoint } from '@/lib/accounts'
+import type { Range, ValuePoint } from '@/lib/accounts'
 
 export interface AccountCurveProps {
   points: readonly ValuePoint[]
   currency: string | null
+  /**
+   * The window the points were cut to — **stated on the drawing** (ADR-0028).
+   * It is the same value the control above is set to, handed down rather than
+   * read again, so the legend cannot say one span while the curve draws another.
+   */
+  range: Range
 }
 
-export function AccountCurve({ points, currency }: AccountCurveProps) {
+export function AccountCurve({ points, currency, range }: AccountCurveProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -93,6 +109,10 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
           />
           {t('accounts.detail.curve.contributed')}
         </li>
+        {/* The span, at the end of the row the maquette puts it on. `ml-auto`
+            and never a third legend entry: it names no mark on the chart, it
+            names the extent of both. */}
+        <li className="sm:ml-auto">{t('accounts.detail.curve.period', { range })}</li>
       </ul>
     </section>
   )

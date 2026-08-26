@@ -29,11 +29,13 @@ import {
   anAccountsPayload,
   anAccountWithoutSeries,
   aLedgerPayload,
+  aPosition,
   aPositionsPayload,
   defaultAccounts,
   defaultPositions,
   ledgerEvents,
   positionsGoingNowhere,
+  sharesPortfolio,
 } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
@@ -224,6 +226,79 @@ describe('the five blocks', () => {
     )
   })
 
+  it('states what the dividends are worth against what was paid in', async () => {
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+
+    // 25,00 / 1 478,00 = 1,69 %. It divides the **contribution**, which is what
+    // the two rates on this page already divide — a third base would be a
+    // second denominator for one page to explain. And it wears no sign: a share
+    // is not a change (`lib/format.ts`).
+    expect(await within(detail).findByRole('group', { name: 'Sur le versé' })).toHaveTextContent(
+      /^Sur le versé1,69\s?%$/,
+    )
+  })
+
+  it('says nothing to compute where nothing was ever paid in', async () => {
+    // `gamma` has no cash movement at all, so there is no contribution to
+    // divide — the em dash's own sentence, and not a zero.
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Gamma')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
+
+    expect(within(detail).getByRole('group', { name: 'Sur le versé' })).toHaveTextContent('—')
+  })
+
+  it('names the securities that pay the dividends, and states their extent', async () => {
+    const { user } = renderAccounts(defaultAccounts(), sharesPortfolio())
+    const detail = await open(user, 'Alpha')
+
+    const payers = await within(detail).findByRole('list', { name: 'Titres distributeurs' })
+    const rows = within(payers).getAllByRole('listitem')
+    // Biggest payer first, the line that was sold kept what it paid, and the
+    // two shares close the whole: 25,00 and 10,00 of 35,00.
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent(/ZZA/)
+    expect(rows[0]).toHaveTextContent(/71,43\s?%/)
+    expect(rows[1]).toHaveTextContent(/ZZD/)
+    expect(rows[1]).toHaveTextContent(/28,57\s?%/)
+    // **Its own extent, and not the range control's**: `position.dividends` is
+    // a lifetime total, so a block sitting silently under that control would
+    // borrow a window it does not obey (ADR-0028).
+    expect(detail).toHaveTextContent('Depuis l’ouverture de ce compte')
+  })
+
+  it('has no distributing-securities block where no line has ever paid', async () => {
+    // A block with nothing in it does not exist — and every line at `0,00 €`
+    // answers *which lines pay me* with the whole portfolio.
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Gamma')
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
+
+    expect(
+      within(detail).queryByRole('list', { name: 'Titres distributeurs' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('draws the weight of each line beside the figure that states it', async () => {
+    const { user } = renderAccounts(defaultAccounts(), [
+      ...defaultPositions(),
+      aPosition({ account: 'alpha', symbol: 'ZZF', name: 'Zeta Phi', quantity: 2, cost_basis: 200 }),
+    ])
+    const detail = await open(user, 'Alpha')
+
+    const lines = await within(detail).findByRole('list', { name: 'Lignes détenues' })
+    const rows = within(lines).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    // 1 300,00 of 1 560,00, then 260,00 of it. The figure is written out, which
+    // is what lets the bar beside it be `aria-hidden` (#800) — and the word
+    // that says *which* percentage it is, this row carrying three, is
+    // announced.
+    expect(rows[0]).toHaveTextContent(/83,33\s?%/)
+    expect(rows[1]).toHaveTextContent(/16,67\s?%/)
+    expect(within(rows[0]).getByText('Poids')).toBeInTheDocument()
+  })
+
   it('lists the lines it holds, and leads to the page reduced to this account', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
@@ -317,6 +392,27 @@ describe('one range control, two figures', () => {
     await user.click(within(range()).getByRole('radio', { name: '1M' }))
     await waitFor(() =>
       expect(within(detail).getByRole('group', { name: 'perf' })).toHaveTextContent(/\+3,94/),
+    )
+  })
+
+  it('states on the drawing itself the span it was cut to', async () => {
+    // ADR-0028's sparkline clause is *carry the period or carry no figure*, and
+    // the control above does not satisfy it: a control says what was **asked
+    // for**, a legend says what is **drawn**. The two part company on the one
+    // preset whose bound is a fact about the data.
+    const { user } = renderAccounts()
+    const detail = await open(user, 'Alpha')
+    await waitFor(() =>
+      expect(detail).toHaveTextContent('Dessiné sur les douze derniers mois'),
+    )
+
+    await user.click(within(range()).getByRole('radio', { name: '1M' }))
+    await waitFor(() => expect(detail).toHaveTextContent('Dessiné sur le dernier mois'))
+    expect(detail).not.toHaveTextContent('Dessiné sur les douze derniers mois')
+
+    await user.click(within(range()).getByRole('radio', { name: 'Depuis l’ouverture' }))
+    await waitFor(() =>
+      expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
     )
   })
 

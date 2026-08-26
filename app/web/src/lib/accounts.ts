@@ -507,6 +507,57 @@ export function distinctSymbols(positions: readonly Position[]): number {
   return new Set(positions.map((one) => one.symbol)).size
 }
 
+/** One security, and what it has paid this account since it opened. */
+export interface DividendPayer {
+  symbol: string
+  /** Cash in hand, in the reporting currency — `position.dividends`. */
+  amount: number
+  /** Its share of what the account has been paid, `0`…`1`. */
+  share: number
+}
+
+/**
+ * Which securities paid the dividends, and in what proportion (#833).
+ *
+ * The maquette gives the encashed figure a block of its own — *what has this
+ * account paid me* answers on its own — and then asks the question that figure
+ * raises and cannot answer: **which lines pay it**. This is that list.
+ *
+ * Three things about it are decisions rather than arithmetic:
+ *
+ *  - **It sums `position.dividends` and never the ledger.** That is the very
+ *    field `lib/gain.ts` sums into the third term one card up, so the parts
+ *    close the whole by construction. Read off the ledger instead, the rows
+ *    would carry the event's own amount and the two figures would part company
+ *    on the first line quoted in another currency.
+ *  - **Closed positions count.** A line that was sold kept the dividends it paid
+ *    while it was held, which is the sentence the block above already carries —
+ *    so the population is *every* position of the account, not the held ones.
+ *  - **A line that paid nothing is not a row.** Zero is not an absence
+ *    (`lib/sign.ts`) and it is not a payer either: a list of every security the
+ *    account has ever held, most of them at `0,00 €`, answers *which lines pay
+ *    me* with the whole portfolio.
+ *
+ * The whole is the sum of the rows themselves. A negative total — which no
+ * dividend produces, the field being cash received — would make a share
+ * meaningless, so it is refused outright and the list comes back empty.
+ */
+export function dividendPayers(positions: readonly Position[]): DividendPayer[] {
+  const paid = new Map<string, number>()
+  for (const position of positions) {
+    if (position.dividends <= 0) continue
+    paid.set(position.symbol, (paid.get(position.symbol) ?? 0) + position.dividends)
+  }
+
+  let whole = 0
+  for (const amount of paid.values()) whole += amount
+  if (whole <= 0) return []
+
+  return [...paid.entries()]
+    .map(([symbol, amount]) => ({ symbol, amount, share: amount / whole }))
+    .sort((a, b) => (a.amount === b.amount ? a.symbol.localeCompare(b.symbol) : b.amount - a.amount))
+}
+
 /** One day of the account's own curve — value against what was paid in. */
 export interface ValuePoint {
   t: string

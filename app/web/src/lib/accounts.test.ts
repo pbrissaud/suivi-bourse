@@ -25,6 +25,7 @@ import {
   declaredType,
   degradedReason,
   DEFAULT_RANGE,
+  dividendPayers,
   firstDay,
   LAST_EVENTS,
   distinctSymbols,
@@ -44,6 +45,7 @@ import {
   anAccountsPayload,
   anAccountWithoutSeries,
   anEvent,
+  aPosition,
   aPortfolioHistory,
   defaultAccounts,
   ledgerEvents,
@@ -315,6 +317,50 @@ describe('what one account’s detail is about', () => {
     // the one a strict `event.account === id` would show as an empty detail.
     expect(accountEvents(unassignedLedger(), 'default')).toHaveLength(3)
     expect(accountEvents([anEvent({ account: '  ' })], 'default')).toHaveLength(1)
+  })
+})
+
+describe('which securities pay the dividends (#833)', () => {
+  it('sums the very field the encashed term is summed from', () => {
+    // The parts close the whole **by construction**: `lib/gain.ts` adds
+    // `position.dividends` into the third term, and this reads the same field.
+    // Off the ledger instead, the rows would carry the event's own amount and
+    // the two figures would part company on the first line quoted elsewhere.
+    const payers = dividendPayers(accountPositions(sharesPortfolio(), 'alpha'))
+    expect(payers.map((one) => one.symbol)).toEqual(['ZZA', 'ZZD'])
+    expect(payers.map((one) => one.amount)).toEqual([25, 10])
+    expect(payers.reduce((sum, one) => sum + one.share, 0)).toBeCloseTo(1)
+  })
+
+  it('keeps the lines that were sold, which kept what they paid', () => {
+    // `ZZD` is closed, and it is in the list above — the same sentence the
+    // encashed figure one card up already carries.
+    const alpha = accountPositions(sharesPortfolio(), 'alpha')
+    expect(alpha.find((one) => one.symbol === 'ZZD')?.quantity).toBe(0)
+    expect(dividendPayers(alpha).some((one) => one.symbol === 'ZZD')).toBe(true)
+  })
+
+  it('is not a list of every line the account has ever held', () => {
+    // Zero is not an absence (`lib/sign.ts`) and it is not a payer either: a
+    // list of the whole portfolio at `0,00 €` answers *which lines pay me* with
+    // *all of them*.
+    expect(dividendPayers(accountPositions(sharesPortfolio(), 'gamma'))).toEqual([])
+    expect(dividendPayers([])).toEqual([])
+  })
+
+  it('folds the holdings of one symbol into one row, as the page it names does', () => {
+    const rows = dividendPayers([
+      aPosition({ account: 'alpha', symbol: 'ZZA', dividends: 30 }),
+      aPosition({ account: 'alpha', symbol: 'ZZA', dividends: 10 }),
+      aPosition({ account: 'alpha', symbol: 'ZZB', dividends: 40 }),
+    ])
+    expect(rows.map((one) => [one.symbol, one.amount])).toEqual([
+      ['ZZA', 40],
+      ['ZZB', 40],
+    ])
+    // Ties are broken by name, or the order of two equal rows would depend on
+    // the order the store happened to answer in.
+    expect(rows.map((one) => one.share)).toEqual([0.5, 0.5])
   })
 })
 
