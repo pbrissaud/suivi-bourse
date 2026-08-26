@@ -114,15 +114,16 @@ export function requiredUnanswered(
  * already publishes (**no new API state**, #726).
  *
  * This one *is* about the currency, and legitimately names it: it feeds the
- * band that says *answer the currency* and the sentence that says it cannot be
- * taken back, both of which are about this dial and no other. The modal's
- * predicate is `requiredUnanswered`, and the two coincide only because
- * the currency is the one dial marked required today.
+ * pinned card that says *answer the currency*, the empty state each of the three
+ * valued pages renders in its place (#829, ADR-0037), and the sentence that says
+ * the answer cannot be taken back — all of which are about this dial and no
+ * other. The modal's predicate is `requiredUnanswered`, and the two coincide
+ * only because the currency is the one dial marked required today.
  *
  * `undefined` is *not observed from here*: the read has not landed, or the
  * registry does not carry the dial. A read in flight is not a fact (ADR-0026),
- * and the band is a claim about the reader's own installation — so it waits
- * for a positive observation rather than appearing on a silence.
+ * and each of those surfaces is a claim about the reader's own installation — so
+ * it waits for a positive observation rather than appearing on a silence.
  *
  * The absence it takes is `undefined` and **not `null`**, which is what every
  * caller produces (`config.data?.settings`) and what keeps this parameter out
@@ -245,8 +246,8 @@ export function rememberFirstRunWalked(mark: FirstRunMark) {
  * walked again the day a required dial is unanswered — which can only mean the
  * store that held the answer is gone.
  *
- * `false` while the settings read has not landed, which is the same rule the
- * bands follow: a surface that appears on a silence and disappears when the
+ * `false` while the settings read has not landed, which is the same rule every
+ * other surface follows: one that appears on a silence and disappears when the
  * answer arrives is worse than one that arrives late.
  */
 export function firstRunStands(input: {

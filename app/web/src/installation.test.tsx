@@ -218,7 +218,7 @@ describe('the store', () => {
     // French units, from `Intl` — the header of this very file writes them.
     expect(store).toHaveTextContent(/26,0\s*Mo/)
     // The last **write of the ledger**, never the last observed price — that
-    // second one is liveness and belongs to the banner.
+    // second one is liveness, which the bell answers (#829, ADR-0037).
     expect(store).toHaveTextContent('Dernière écriture du grand livre')
     expect(store).toHaveTextContent(/10 févr\. 2026/)
   })
@@ -245,11 +245,14 @@ describe('the store', () => {
 
     // The only screen where a trial run learns that it is a trial run.
     expect(screen.getByText('Ce conteneur ne garde rien')).toBeInTheDocument()
-    // And never a notice: its predicate is not acknowledgeable, so acknowledging
-    // it would make it go quiet while it was still true. Since #794 the notices
-    // are not even on this tab, and the tab that carries them is asserted on in
-    // `notices.test.tsx`.
-    expect(screen.getByRole('tab', { name: /Les notices/ })).not.toHaveTextContent(/notices? à lire/)
+    // And never a notification: its predicate is not acknowledgeable, so
+    // acknowledging it would make it go quiet while it was still true — and a
+    // badge that never decrements is the noise ADR-0021 wrote its rule against.
+    // The panel is where every open entry is counted since #829, so this is
+    // asked of the badge itself.
+    expect(screen.getByRole('button', { name: /^Notifications/ })).not.toHaveAccessibleName(
+      /conteneur/i,
+    )
   })
 
   it('says nothing about persistence it cannot observe', async () => {
@@ -349,13 +352,16 @@ describe('the tab’s own reads', () => {
     const { user } = renderApp({ url: '/donnees' })
     await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
 
-    // `/api/runtime` opens no store, so the shell's banner is silent on exactly
-    // this failure — and one band on screen, never two.
-    const bands = await screen.findAllByRole('status')
-    expect(bands.filter((band) => band.textContent?.includes('son magasin ne répond pas'))).toHaveLength(1)
+    // **Each block says why it is empty, and there is no band** (#829,
+    // ADR-0037): the settings column carries the reason the dials are not
+    // there, and the store block carries the reason its two figures are not.
+    await screen.findAllByText('Lecture impossible')
+    expect(screen.getAllByText('Lecture impossible')).toHaveLength(2)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     // The two facts that ride on the runtime survive it, which is why they are
     // there: this is the moment *where did my data go* gets asked.
     expect(block('Le magasin')).toHaveTextContent('/data/suivi-bourse.duckdb')
+    expect(block('Le magasin')).toHaveTextContent(/son magasin ne répond pas/)
     expect(screen.queryByRole('heading', { name: 'Réglages' })).not.toBeInTheDocument()
   })
 })

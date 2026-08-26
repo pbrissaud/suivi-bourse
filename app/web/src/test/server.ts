@@ -20,6 +20,7 @@ import {
   anAccount,
   anAccountHistory,
   anAccountsPayload,
+  anAdvisory,
   anInstallationFact,
   aConfig,
   aHealth,
@@ -83,9 +84,10 @@ export function defaultHandlers() {
       return HttpResponse.json(aPriceSeries({ symbol: String(params.symbol), window }))
     }),
     http.get(ROUTES.runtime, () => HttpResponse.json(aRuntime())),
-    // What the status dot reads since #819 (ADR-0036). The default is a well
-    // install; the amber this ticket exists for — a scrape frozen with a `200`
-    // — is `aFrozenScrape()`, and the red is the route refusing at all.
+    // What the bell reads — the status dot's read since #819 (ADR-0036),
+    // inherited whole when #829 folded the dot into it. The default is a well
+    // install; the amber — a scrape frozen with a `200` — is `aFrozenScrape()`,
+    // and the red is the route refusing at all.
     http.get(ROUTES.health, () => HttpResponse.json(aHealth())),
     http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
     // The two writes echo the row back, which is the contract's own shape: the
@@ -145,6 +147,11 @@ export function defaultHandlers() {
     // exists to render.
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
     http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
+    // **And nothing to advise on, by default** (#829). An advisory is an audit
+    // on the *data*, and the default portfolio is one nothing is wrong with —
+    // a test that wants a chip beside a figure asks for it by name, exactly as
+    // it asks for an ephemeral store.
+    http.get(ROUTES.advisories, () => HttpResponse.json([])),
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
@@ -164,6 +171,14 @@ export function defaultHandlers() {
           acknowledged_at: '2026-03-02T12:00:00.000Z',
         }),
       ),
+    ),
+    // The advisory's own, and the payload says what makes it a second gesture
+    // rather than the same one: it wears off (#829, ADR-0037).
+    http.post(ROUTES.advisoryAcknowledgement, ({ params }) =>
+      HttpResponse.json({
+        ...anAdvisory({ key: String(params.key) }),
+        acknowledged_until: '2026-04-01T12:00:00.000Z',
+      }),
     ),
     http.delete(ROUTES.storeOrphans, () =>
       HttpResponse.json({ symbols: ['ZZX'], points_removed: 1204 }),

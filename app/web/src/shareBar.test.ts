@@ -3,7 +3,7 @@
  * makes it true by construction and no rendering test can see it.
  *
  * The rule is the ticket's central criterion and its reason is the product's
- * own history: `Stat`, `EmptyState`, `Band` and `EntryPair` all exist because
+ * own history: `Stat`, `EmptyState`, `Refusal` and `EntryPair` all exist because
  * the prototype held four copies of one thing, and a share bar written three
  * times diverges three times. It had already started — the allocation's legend
  * wrote none, the rail wrote one, and the account's composition wrote a second

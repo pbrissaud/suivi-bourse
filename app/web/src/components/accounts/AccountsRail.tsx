@@ -61,6 +61,7 @@ import {
   type DegradedReason,
   type Reassignment as ReassignmentOffer,
 } from '@/lib/accounts'
+import type { Advisory } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -90,6 +91,33 @@ function segmentColour(index: number): string {
   return `oklch(0.62 0.15 ${SEGMENT_HUES[index % SEGMENT_HUES.length]})`
 }
 
+/**
+ * The advisory a rail entry wears, **as a chip and never as a gesture** (#829,
+ * ADR-0037).
+ *
+ * An advisory is read twice: here, beside the figure it comments on, which is
+ * the **reading**; and in the notifications panel, which is the **inventory**.
+ * What the chip never offers is the acknowledgement — one fact cannot propose
+ * two different gestures depending on where it is met, so the gesture belongs
+ * to the panel and to the panel alone.
+ *
+ * `null` is *the read has not landed*, and it draws nothing: a chip is a claim
+ * about the reader's own account (ADR-0026). An empty array is an answer — this
+ * portfolio has nothing to say about itself — and draws nothing either, which
+ * is the same rendering for two different truths and legitimately so: an
+ * absent chip asserts nothing at all.
+ */
+function cashShare(
+  advisories: readonly Advisory[] | null,
+  account: string,
+): number | null {
+  const found = (advisories ?? []).find(
+    (advisory) => advisory.kind === 'cash_share' && advisory.detail.account === account,
+  )
+  const share = found === undefined ? null : Number(found.detail.share)
+  return share === null || !Number.isFinite(share) ? null : share
+}
+
 export interface AccountsRailProps {
   rows: readonly AccountRow[]
   /** Which account the detail is about — the rail marks it `aria-current`. */
@@ -113,6 +141,11 @@ export interface AccountsRailProps {
   onDeclare: () => void
   /** The one currency everything is reported in (ADR-0002). */
   currency: string | null
+  /**
+   * What this portfolio says about itself, or `null` while the read is in
+   * flight. The rail renders the ones about **its** accounts, as chips.
+   */
+  advisories: readonly Advisory[] | null
 }
 
 export function AccountsRail({
@@ -122,6 +155,7 @@ export function AccountsRail({
   offer,
   onDeclare,
   currency,
+  advisories,
 }: AccountsRailProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -204,6 +238,7 @@ export function AccountsRail({
       <ul aria-label={t('accounts.rail.label')} className="max-h-[26rem] space-y-2 overflow-y-auto">
         {rows.map((row, index) => {
           const reason = degradedReason(row, rebuilding)
+          const cash = cashShare(advisories, row.id)
           const name = declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)
           const type =
             declaredType(row) ?? (isDefaultAccount(row.id) ? t(DEFAULT_ACCOUNT_TYPE) : row.id)
@@ -254,6 +289,15 @@ export function AccountsRail({
                 {reason === null ? null : (
                   <span className="mt-1 block text-xs text-attention">
                     {t(REASON_LABELS[reason])}
+                  </span>
+                )}
+
+                {/* The advisory, **read beside its figure and offering nothing**
+                    (ADR-0037). It says what the panel's card says in one line;
+                    what it does not carry is the acknowledgement. */}
+                {cash === null ? null : (
+                  <span className="mt-2 inline-flex rounded-full bg-attention/10 px-2 py-0.5 text-[11px] font-medium text-attention">
+                    {t('accounts.advisory.cash', { share: cash })}
                   </span>
                 )}
               </Link>

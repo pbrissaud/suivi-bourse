@@ -28,6 +28,7 @@ from flask import Blueprint, Response, jsonify, request
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
+import advisories
 import entries
 import installation_facts
 import ledger
@@ -1830,6 +1831,72 @@ def acknowledge_installation_fact(key: str):
             f"Nothing is standing under the installation fact {key!r}")
 
     return jsonify(fact.to_dict())
+
+
+# --------------------------------------------------------------------- #
+# The advisories (issue #829, ADR-0037)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/advisories')
+def list_advisories():
+    """What this portfolio says about itself — the inventory, or the reading.
+
+    A **read**, and one that writes nothing at all: an advisory is derived on
+    every request and stored nowhere (ADR-0036), so there is no row to arm and
+    no date to stamp. What the store does hold is the acknowledgement, and it is
+    consulted rather than written — an expired one is read as absent here and
+    swept by the gesture next door.
+
+    **Two callers, two questions, and one query parameter tells them apart**
+    (ADR-0037). The notifications panel is the *inventory*: it asks what is left
+    to act on, so an acknowledged advisory disappears from it exactly as an
+    acknowledged installation fact does — and comes back when the window wears
+    off, which is the half a permanent acknowledgement could never do. The chip
+    beside the figure is the *reading*: the cash is still sitting there after
+    somebody pressed *not now*, so ``?asleep=include`` answers
+    :func:`advisories.standing` and the chip stays. Without that, one gesture in
+    the panel silenced both surfaces and the distinction the record draws had no
+    effect anybody could observe.
+
+    Anything but ``include`` is the default, deliberately: an unknown value is
+    not a request for the wider answer, and a ``400`` here would turn a typo in
+    a URL into a page with no chips and a refusal on it.
+
+    ``200`` + ``[]`` on a portfolio with nothing to say, which is the ordinary
+    case and the one the panel renders *Nothing to report* for.
+    """
+    read = (advisories.standing
+            if request.args.get('asleep') == 'include'
+            else advisories.listing)
+    return jsonify([one.to_dict() for one in read(_store())])
+
+
+@api_bp.post('/advisories/<key>/acknowledgement')
+def acknowledge_advisory(key: str):
+    """Put one advisory to sleep for thirty days — and never for good.
+
+    That bound is the whole of ADR-0037's answer to the objection ADR-0036
+    raised by name: a permanent acknowledgement *"would silence the app the
+    second time the cash piled up"*. Here the window wears off on its own, so
+    nothing has to observe the condition going false — which nothing does, an
+    advisory being derived on every read.
+
+    ``404`` when nothing stands under the key, which covers an unknown family
+    and a figure that has moved back under its threshold alike: both mean
+    *there is nothing here to acknowledge*.
+    """
+    runtime = current_runtime()
+    try:
+        # The writers' mutex, like every other write in this blueprint.
+        with runtime.config_manager.writing() as opened:
+            advisory, acknowledged = advisories.acknowledge(opened, key)
+    except advisories.UnknownAdvisory:
+        return not_found(f"No advisory is standing under {key!r}")
+
+    return jsonify({
+        **advisory.to_dict(),
+        'acknowledged_until': acknowledged.to_dict()['expires_at'],
+    })
 
 
 # --------------------------------------------------------------------- #

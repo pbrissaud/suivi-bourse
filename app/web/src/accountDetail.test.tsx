@@ -526,7 +526,12 @@ describe('a read in flight is not an absence', () => {
     )
     renderApp({ url: '/comptes' })
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    // Said where the detail would have been, as an empty state (#829,
+    // ADR-0037): there is no band left at the top of the column, and the rail
+    // beside it keeps what it did read.
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
   })
 })

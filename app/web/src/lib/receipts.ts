@@ -4,12 +4,13 @@
  * A receipt **acknowledges a gesture**, and only a gesture. That single rule
  * settles what goes here and what does not:
  *
- *  - **It never replaces the banner.** The conditions this product carries do
+ *  - **It never states a condition.** The conditions this product carries do
  *    not resolve, they persist until somebody acts — an unanswered reporting
  *    currency, a reconstruction still running — and a toast at
- *    `duration: Infinity` is a band that covers the page instead of sitting at
- *    the top of the column. So a receipt is short-lived by construction, and the
- *    band is what states a condition.
+ *    `duration: Infinity` is a strip that covers the page for as long as one
+ *    holds. So a receipt is short-lived by construction, and what states a
+ *    condition is a card of the notifications panel (#829, ADR-0037), the
+ *    banner's three having landed there when it was retired.
  *  - **It is never the trace of an import** — and since #811 that sentence has
  *    changed sides rather than gone. It was written about the *drop folder*,
  *    which is watched at all times (#697): an import could start with no click,

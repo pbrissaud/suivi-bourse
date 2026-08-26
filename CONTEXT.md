@@ -214,7 +214,9 @@ acknowledged, but only **for a window** — never for good, because an acknowled
 that outlived its condition would silence the app the second time the condition arose.
 It is read twice: as a chip beside the figure it comments on, which is the reading, and
 as a card in the notifications panel, which is the inventory and the only place it is
-acknowledged.
+acknowledged. The two are two questions about the same instant, so they answer
+differently once the window is open: the card goes — that is what the gesture was for —
+and the chip stays, because the condition it reads is still standing.
 _Avoid_: alert, warning, recommendation
 
 **First run**:

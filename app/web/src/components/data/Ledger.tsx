@@ -10,11 +10,11 @@
  * successor: the unit of the gesture is the **import** (#728), not the line.
  *
  * What this tab owes is the journal itself, its reduction, the create form that
- * is the onboarding, and — as **one band above the table** since #794 — the
+ * is the onboarding, and — as **one imports bar above the table** since #794 — the
  * drop zone, the export menu and the sources with their revocation. Since #814
  * the reduction earns a gesture of its own: **deleting everything it retains**,
  * which is what makes losing the revocation by file survivable (ADR-0032). It
- * sits beside the chips rather than in the band, because the chips are its
+ * sits beside the chips rather than in that bar, because the chips are its
  * subject — `BulkDelete.tsx` holds the argument. The
  * declaration of the accounts left at #793 (ADR-0028): a declaration is made
  * where its subject is looked at. The blocks read one ledger between them: the
@@ -29,16 +29,18 @@
  * answered once and handed back the ledger entire — which is why the control may
  * speak while the read never could.
  *
- * Reads and failures follow the rule the shares page keeps: `/api/runtime`
- * answers from process memory and never opens the store (#668), so the shell's
- * banner is **silent** on the one failure that empties this tab — and a tab that
- * rendered nothing would make *the store is unreadable* and *you have recorded
- * nothing yet* the same screen, in its worst form, a blank one.
+ * **A read that did not answer is said where the journal would have been**
+ * (#829, ADR-0037). The banner and the band are retired and not replaced, so a
+ * surface that stayed silent over a `503` would make *the store is unreadable*
+ * and *you have recorded nothing yet* the same screen, in its worst form, a
+ * blank one. `/api/runtime` left the reads here with the band that consulted it
+ * — it answers from process memory and never opens the store (#668), so it was
+ * in the list to be short-circuited on and nothing else.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/components/data/BulkDelete'
@@ -59,7 +61,7 @@ import {
   reveal,
   type LedgerFilters as Filters,
 } from '@/lib/ledger'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 
 export interface LedgerFocus {
   /**
@@ -119,7 +121,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   // **The gesture is held here and nowhere lower** (#811): the first import
   // fills an empty ledger, which unmounts the entry pair the zone was in and
-  // mounts the band's own — so a receipt held by the zone would be destroyed by
+  // mounts the bar's own — so a receipt held by the zone would be destroyed by
   // the write it announces, for the one reader who has never seen this work.
   const upload = useEventUpload()
 
@@ -165,7 +167,6 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   }, [compose, onComposed])
   const events = useQuery({ queryKey: ['events'], queryFn: api.events })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
-  const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   // The reporting currency is an **optional** read here: the ledger is a
   // journal, and a money column with no unit renders as a plain number rather
   // than guessing one (`formatCurrency`). It is not on the events resource —
@@ -221,37 +222,32 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
     offeredMore.current = false
   }, [page.atEnd])
 
-  // The accounts read joins the causal order rather than failing quietly: it is
-  // a second read of the same store, and this tab now renders a table off it —
-  // so *the store is unreadable* must not come out as *you have declared
-  // nothing*. `oneBand` keeps it to one band on screen or none.
-  const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [events.error, accounts.error] }),
-  )
-  // **The band names both reads; the masking follows only the ledger's own.**
-  // Folded into one condition, a failed `/api/accounts` erased the whole journal
-  // half — the 285 events, the filters, the only button that opens the form —
-  // while its own read had answered. And that is not a corner: `GET /api/events`
-  // answers from process memory and has no `503` (#764), so *the store is
-  // unreadable* is exactly the state where the two reads part company. A band
-  // over a page that still has everything to show is the white screen #718
-  // mounted `Band` to abolish, arrived from the other side.
-  const ledgerFailure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [events.error] }),
+  // **The tab is its ledger, and only its ledger** (#829, ADR-0037). There is no
+  // band left to raise for the second read: `/api/accounts` failing costs this
+  // tab the *choice of account* inside the form, and the form says so itself —
+  // `accountChoice`'s `failed` branch, one prop below. Naming it again over a
+  // journal that has everything to show is the white screen #718 mounted
+  // refusal to abolish, arrived from the other side: `GET /api/events` answers
+  // from process memory and has no `503` (#764), so the two reads part company
+  // in exactly the state that matters.
+  //
+  // The events failing is the other news, and it empties the journal — so it is
+  // said there, in the space the table would have filled, rather than in a
+  // strip above a page that has nothing under it.
+  const ledgerFailure = oneFailure(
+    readConditions({ errors: [events.error] }),
   )
   const currency = totals.data?.base_currency ?? null
 
   return (
     <div className="space-y-6">
-      {failure ? <Band>{t(failure.message)}</Band> : null}
-
-      {/* **Above the table, and one band** (#794, ADR-0030, ADR-0032): the drop
+      {/* **Above the table, and one bar** (#794, ADR-0030, ADR-0032): the drop
           zone and the export menu. The sources with their revocation were the
           third and left with the population they described (#816) — undoing an
           import is the deletion on the reduction, below. What this renders on
           nothing at all is nothing, and the drop zone is then the empty state's
           own entry, one line below. */}
-      {failure || !events.data ? null : (
+      {ledgerFailure || !events.data ? null : (
         <ImportsBlock
           upload={upload}
           events={all}
@@ -265,20 +261,22 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
       )}
 
       {/* The receipt of the gesture above, mounted **outside** both surfaces
-          that offer it: the empty state's entry and the band's zone are two
+          that offer it: the empty state's entry and the bar's zone are two
           mounts of one control, and the first import swaps one for the other. */}
-      {failure ? null : <UploadReceipt upload={upload} />}
+      {ledgerFailure ? null : <UploadReceipt upload={upload} />}
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
-      {ledgerFailure || !events.data ? null : all.length === 0 ? (
+      {ledgerFailure !== null ? (
+        <Unreadable failure={ledgerFailure} />
+      ) : !events.data ? null : all.length === 0 ? (
         <EntryPair
           empty
           entries={[
             {
               title: t('data.empty.file.title'),
               body: t('data.empty.file.body'),
-              // **The entry carries the gesture itself** since #811: the band
+              // **The entry carries the gesture itself** since #811: the bar
               // above does not render on a ledger with nothing in it, so this
               // is the whole of the file entrance on a fresh install — which is
               // exactly the install ADR-0032 exists for, the one that never
@@ -335,7 +333,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
             />
             <div className="flex flex-wrap items-center gap-2">
               {/* **The destructive gesture sits under the reduction it
-                  consumes** (#814, ADR-0032), and not in the band above where
+                  consumes** (#814, ADR-0032), and not in the bar above where
                   the export menu is: what it acts on is the chips, and a button
                   one surface away from its subject is how somebody deletes two
                   hundred rows believing they are removing one thing. It renders

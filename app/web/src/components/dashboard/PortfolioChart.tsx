@@ -41,9 +41,10 @@
  *    failed — and the block renders **nothing at all, title included**: a frame
  *    with an empty body is a hand-written skeleton (ADR-0026), and a plot drawn
  *    on an empty array reads as *the portfolio is worth nothing*. The two are
- *    told apart one level up, where the page's band names the failure without
- *    emptying the head, which is what it did while this block's `settled` made
- *    a failed series and an unanswered one the same silence.
+ *    told apart by the `failure` prop since #829 (ADR-0037): in flight the slot
+ *    is empty and claims nothing, refused it carries the reason. The head is
+ *    never emptied either way, which is what this block's `settled` used to cost
+ *    by making a failed series and an unanswered one the same silence.
  *
  *  - **It explains no rule of the product** (#831). The block used to close on a
  *    caption per reading — what the gap between the curves is, what the
@@ -75,6 +76,7 @@ import {
 
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { EmptyState } from '@/components/EmptyState'
+import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { PerfPoint, ValuationPoint } from '@/lib/api'
@@ -94,6 +96,7 @@ import {
 } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export interface PortfolioChartProps {
@@ -110,21 +113,40 @@ export interface PortfolioChartProps {
    */
   performance: readonly PerfPoint[] | null
   valuation: readonly ValuationPoint[] | null
+  /**
+   * The block's own read, refused — `null` when it did answer or is still in
+   * flight. **The two are not the same news** and that is why it is a prop: an
+   * absent series in flight is nothing to say yet, and one that failed is the
+   * chart's whole slot standing empty for a reason the reader is owed (#829,
+   * ADR-0037, and #799's repair kept without the band).
+   */
+  failure?: ReadFailure | null
 }
 
-export function PortfolioChart({ ledger, currency, performance, valuation }: PortfolioChartProps) {
+export function PortfolioChart({
+  ledger,
+  currency,
+  performance,
+  valuation,
+  failure = null,
+}: PortfolioChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const [chosen, setChosen] = useState<Reading>('amounts')
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
-  // **Nothing at all, title included** (ADR-0026): the block's one series has
-  // not answered, and a frame carrying two tab labels and a range control over
-  // an empty plot is a skeleton written by hand. A **failed** series lands here
-  // too, and it is not silenced: the page's band names it one level up, which
-  // is the whole of #799 — said in the block it would be a second announcer of
-  // a fact `lib/status.ts` allows exactly one of.
-  if ((ledger ? performance : valuation) === null) return null
+  // **Nothing at all, title included** (ADR-0026): the block's one series is
+  // in flight, and a frame carrying two tab labels and a range control over an
+  // empty plot is a skeleton written by hand.
+  //
+  // A series that **failed** is the other news, and it is said here rather than
+  // in a strip at the top of the page (#829, ADR-0037): the slot the chart would
+  // have filled says the read did not answer, so what is missing and why are in
+  // one place. #799's repair survives the band's removal — the head keeps its
+  // figures either way.
+  if ((ledger ? performance : valuation) === null) {
+    return failure === null ? null : <Unreadable failure={failure} />
+  }
 
   const reading: Reading = ledger ? chosen : 'amounts'
   const floor = windowFloor(range, new Date())

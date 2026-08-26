@@ -9,7 +9,7 @@
  * gesture has to say what it is about — which is where this component's three
  * decisions come from.
  *
- * **It lives with the table, under the reduction it consumes.** Not in the band
+ * **It lives with the table, under the reduction it consumes.** Not in the bar
  * above, where the export menu is: what it acts on is the chips, and a
  * destructive button one surface away from the thing it destroys is how a
  * reader deletes two hundred and eighty-five events believing they are removing
@@ -41,7 +41,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Button } from '@/components/ui/button'
 import {
@@ -131,9 +131,9 @@ export function BulkDelete({ selection, selected }: BulkDeleteProps) {
 
           {/* Rendered **here** and not on the page: the box stays open on a
               failure, and Radix marks everything behind the overlay
-              `aria-hidden`, so a band outside it is a sentence nobody can read
+              `aria-hidden`, so a refusal outside it is a sentence nobody can read
               while the only thing on screen is the box that produced it. */}
-          {remove.error ? <Band>{problemSentence(t, remove.error)}</Band> : null}
+          {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
 
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>

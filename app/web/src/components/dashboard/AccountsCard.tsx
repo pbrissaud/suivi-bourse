@@ -41,13 +41,14 @@
  *    performance is *nothing to compare over this range*, which is a named
  *    absence. Per row the em dash stands, and there it is right — an account
  *    with no cash movement has no index at all (#708).
- *  - **A series that failed to read makes the card vanish, and the page says
- *    why** (#799). The vanishing is right — one band on screen or none, and a
- *    card cannot draw a comparison it has not read — but it used to be *all*
- *    that happened: the head's band named the two reads the head is made of and
- *    nothing else, so a `/api/accounts/:id/history` coming back `503` removed
- *    the comparison from the dashboard for ever, without a word. The band is the
- *    page's now, above both tracks, and these N reads are in it.
+ *  - **A series that failed to read empties the card, and the card says why**
+ *    (#799, then #829). The card cannot draw a comparison it has not read — but
+ *    vanishing used to be *all* that happened: the head's band named the two
+ *    reads the head is made of and nothing else, so a
+ *    `/api/accounts/:id/history` coming back `503` removed the comparison from
+ *    the dashboard for ever, without a word. #799 gave those N reads a band;
+ *    ADR-0037 retires the band and hands them to this component instead, so the
+ *    reason stands in the slot the comparison would have taken.
  *  - **The reads are the page's** for that reason, and they cross as
  *    `readonly PerfPoint[] | null` per account: *failed* and *in flight* are one
  *    silence in the block, and are told apart one level up.
@@ -66,6 +67,7 @@ import { useMemo, useState } from 'react'
 import { Line, LineChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
+import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
   DEFAULT_ACCOUNT_LABEL,
@@ -81,6 +83,7 @@ import type { Account, PerfPoint } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { signClass } from '@/lib/sign'
+import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export interface AccountsCardProps {
@@ -96,9 +99,15 @@ export interface AccountsCardProps {
    * (see {@link settledSeries}): the comparison *is* the object.
    */
   series: readonly (readonly PerfPoint[] | null)[]
+  /**
+   * The card's own reads, refused — the declaration or any of the series. In
+   * flight the card draws nothing and claims nothing; refused, it says so where
+   * the comparison would have been (#829, ADR-0037).
+   */
+  failure?: ReadFailure | null
 }
 
-export function AccountsCard({ accounts, series }: AccountsCardProps) {
+export function AccountsCard({ accounts, series, failure = null }: AccountsCardProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const [range, setRange] = useState<Range>(DEFAULT_RANGE)
@@ -125,9 +134,20 @@ export function AccountsCard({ accounts, series }: AccountsCardProps) {
     return accounts.map((account, index) => rebase(account.id, settled[index] ?? [], from))
   }, [series, accounts, from])
 
-  // Nothing at all while any of it is in flight, title included (ADR-0026) —
-  // nothing either when one of the reads failed, which the page's band names —
-  // and nothing where there is only one account to compare.
+  // Nothing at all while any of it is in flight, title included (ADR-0026),
+  // and nothing where there is only one account to compare — a comparison of
+  // one is the head's own figure with a border round it.
+  //
+  // A read that **failed** is neither of those, and it is named here since
+  // #829: there is no band left to name it, and a card that vanished over a
+  // `503` would take its reason with it. It is checked **before** the
+  // one-account case on purpose — `comparable` is counted off the declaration,
+  // so when that is what failed, *there is nothing to compare* is not a fact
+  // this card holds. At one account the declaration answered and no series is
+  // read at all, so there is no failure to reach this line with.
+  if (failure !== null && (accounts === null || landed === null)) {
+    return <Unreadable failure={failure} />
+  }
   if (accounts === null || !comparable || landed === null) return null
 
   /** How many accounts the window actually says something about. */

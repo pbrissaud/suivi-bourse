@@ -218,23 +218,25 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  * parameter on the two other pages: it survives a reload, it can be handed to
  * somebody else, and the way back is the browser's own button.
  *
- * **Four of the five dimensions, and the fifth on purpose.** `q`, `type`,
- * `account` and — since #810 — `since`/`until` are the names
- * {@link selectionParams} already gives them, so the address of a reduced ledger
- * *is* the query string of its own export. The set of securities is left out: it
- * arrives from a gesture made on the page itself — the assumed-currency notice,
- * one tab away — and a repeated parameter is not something the router serialises
- * in the resource's own spelling anyway. A dimension that has never needed an
- * address does not get half of one.
+ * **All five dimensions since #829**, under the names {@link selectionParams}
+ * already gives them — so the address of a reduced ledger *is* the query string
+ * of its own export.
  *
- * The period is the opposite case and therefore does get one: it is typed into
- * the bar, it is what an extract of a year is made of, and a reader who reloads
- * on it must not lose it.
+ * The set of securities was the one exception, and its argument was that it
+ * *"arrives from a gesture made on the page itself — the assumed-currency
+ * notice, one tab away"*. There is no tab and no page: the notice is a card in
+ * the notifications panel, which is mounted in the shell and reachable from all
+ * five routes, and ADR-0037 requires its link to land on **the figure** — the
+ * ledger reduced to the events concerned, the reduction naming itself and
+ * offering the way out. A reduction that has to cross a navigation travels in
+ * the URL, which is the whole of `?compte=`'s own reasoning one page over.
  */
 export interface LedgerSearch {
   q?: string
   type?: LedgerEventType
   account?: string
+  /** Repeated, as the export resource and `GET /api/events` both spell it. */
+  symbol?: string[]
   since?: string
   until?: string
 }
@@ -264,12 +266,21 @@ export function validateLedgerSearch(search: Record<string, unknown>): LedgerSea
     const trimmed = text(value)
     return trimmed === undefined ? undefined : (parseDay(trimmed) ?? undefined)
   }
+  // Repeated, so one value and several arrive in two shapes — a router hands
+  // over a string for `?symbol=AAA` and an array for two of them, and a hand
+  // typed address may hold anything at all. Blanks are dropped for the reason
+  // every other member drops them, and an empty set reduces **nothing**: it is
+  // the same distinction as `?account=`, one dimension over.
+  const symbols = (Array.isArray(search.symbol) ? search.symbol : [search.symbol])
+    .map((value) => text(value))
+    .filter((value): value is string => value !== undefined)
   const named = text(search.type)?.toUpperCase()
   const type = EVENT_TYPES.find((one) => one === named)
   return {
     ...(text(search.q) === undefined ? {} : { q: text(search.q) }),
     ...(type === undefined ? {} : { type }),
     ...(text(search.account) === undefined ? {} : { account: text(search.account) }),
+    ...(symbols.length === 0 ? {} : { symbol: symbols }),
     ...(day(search.since) === undefined ? {} : { since: day(search.since) }),
     ...(day(search.until) === undefined ? {} : { until: day(search.until) }),
   }
@@ -281,6 +292,7 @@ export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
     search.q === undefined &&
     search.type === undefined &&
     search.account === undefined &&
+    search.symbol === undefined &&
     search.since === undefined &&
     search.until === undefined
   ) {
@@ -291,6 +303,7 @@ export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
     query: search.q ?? '',
     type: search.type ?? null,
     account: search.account ?? null,
+    symbols: search.symbol ?? null,
     since: search.since ?? null,
     until: search.until ?? null,
   }
@@ -300,23 +313,23 @@ export function filtersFromSearch(search: LedgerSearch): LedgerFilters | null {
  * The reduction as an address — built off {@link selectionParams} rather than
  * beside it, so the two spellings cannot part company.
  *
- * **A set of securities is not addressable and is dropped here**, which is the
- * other half of {@link LedgerSearch}'s clause: that dimension arrives from a
- * gesture made on the page itself and has never had a link to travel on. The one
- * caller is the ⌘K palette, whose reductions are three coordinates of an event
- * and carry none.
+ * **All five dimensions since #829**, the securities included: the panel's card
+ * has to reach the ledger from any of the five routes, so the dimension that
+ * *"had never needed an address"* now needs one.
  */
 export function ledgerSearchOf(filters: LedgerFilters): LedgerSearch {
   const params = selectionParams(filters)
   const type = params.get('type')
   const account = params.get('account')
   const query = params.get('q')
+  const symbols = params.getAll('symbol')
   const since = params.get('since')
   const until = params.get('until')
   return {
     ...(query === null ? {} : { q: query }),
     ...(type === null ? {} : { type: type as LedgerEventType }),
     ...(account === null ? {} : { account }),
+    ...(symbols.length === 0 ? {} : { symbol: symbols }),
     ...(since === null ? {} : { since }),
     ...(until === null ? {} : { until }),
   }

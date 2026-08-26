@@ -25,8 +25,9 @@
  *    first of the two is occurrence 1.
  *  - **What it observes is the emptiness primitives** — `EmptyState` and
  *    `EntryPair`, marked by a `data-empty` attribute rather than by a role: an
- *    empty state is a state and not a change to announce, and the banner
- *    already owns `status` on the page — **and, since #777, every phrase
+ *    empty state is a state and not a change to announce, and a page may
+ *    legitimately hold several of them at once — one per block that has nothing
+ *    to show (#829, ADR-0037) — **and, since #777, every phrase
  *    carrying a word**, which is an amendment to ADR-0026 rather than a detail
  *    of this file: a sentence composed out of the absence of a value is a claim
  *    about the reader's own data that no marker could carry. Bare figures stay
@@ -190,12 +191,17 @@ const SURFACES: readonly Surface[] = [
   { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
   { name: 'le grand livre', url: '/donnees', heading: 'Grand livre' },
   {
-    name: 'le grand livre · les notices',
-    url: '/donnees',
-    heading: 'Grand livre',
+    // The notifications panel, which is mounted in the **shell** and therefore
+    // read from every route (#829). It is opened here rather than left closed
+    // because a closed panel renders nothing at all: what the net is about is
+    // the sentence *Rien à signaler*, which is a claim about the reader's
+    // installation and must not be said over a read that has not landed.
+    name: 'le tiroir des notifications',
+    url: '/',
+    heading: 'Tableau de bord',
     open: async ({ user }) => {
-      await user.click(await screen.findByRole('tab', { name: /Les notices/ }))
-      return screen.findByRole('heading', { name: 'Faits d’installation' })
+      await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+      return screen.findByRole('dialog', { name: 'Notifications' })
     },
   },
   {

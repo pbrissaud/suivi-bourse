@@ -36,7 +36,8 @@ import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { AccountCurve } from '@/components/accounts/AccountCurve'
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
+import { Unreadable } from '@/components/Unreadable'
 import { Explain } from '@/components/Explain'
 import { ShareBar } from '@/components/ShareBar'
 import { Stat } from '@/components/Stat'
@@ -92,6 +93,7 @@ import {
   weightShare,
 } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
+import type { ReadFailure } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 const TERM_LABELS: Record<GainTermName, MessageKey> = {
@@ -138,6 +140,22 @@ export interface AccountDetailProps {
    * them.
    */
   reassignment: ReassignmentOffer
+  /**
+   * **The reads above that refused**, one entry per read, `null` when it
+   * answered or is still in flight (#829, ADR-0037).
+   *
+   * The two are not the same news and the difference is what the reader is
+   * owed: in flight a block is simply not there yet and claims nothing, refused
+   * it is not coming and the block says so **in its own place**. There is no
+   * band at the top of the page to say it on the block's behalf any more — and
+   * one condition for the three reads would have taken a detail that had two of
+   * them off the screen to report the third.
+   */
+  failures?: {
+    positions?: ReadFailure | null
+    points?: ReadFailure | null
+    events?: ReadFailure | null
+  }
   /** Renaming, and removing — the panel this account's name opens. */
   onEdit: () => void
 }
@@ -150,6 +168,7 @@ export function AccountDetail({
   currency,
   rebuilding,
   reassignment,
+  failures = {},
   onEdit,
 }: AccountDetailProps) {
   const { t } = useI18n()
@@ -272,7 +291,11 @@ export function AccountDetail({
 
       {/* ADR-0018's four terms, per account — the one place in the product where
           that decomposition exists for anything but the portfolio. */}
-      {terms === null || total === null ? null : (
+      {terms === null || total === null ? (
+        // Refused, and not merely late: the four terms have nowhere to come
+        // from, so the reason stands where they would have (#829, ADR-0037).
+        failures.positions ? <Unreadable failure={failures.positions} /> : null
+      ) : (
         <Card>
           <CardContent className="space-y-4">
             <Stat
@@ -349,7 +372,9 @@ export function AccountDetail({
 
       {/* The chart and the rate beside it, under **one** range control. Nothing
           at all while the series is in flight, title and control included. */}
-      {points === null ? null : (
+      {points === null ? (
+        failures.points ? <Unreadable failure={failures.points} /> : null
+      ) : (
         <Card className="gap-4">
           {/* The header carries the control and no title of its own: what the
               card holds is a rate **and** a curve, and a heading naming the
@@ -638,7 +663,9 @@ export function AccountDetail({
           </Card>
         )}
 
-        {last === null || last.length === 0 ? null : (
+        {last === null ? (
+          failures.events ? <Unreadable failure={failures.events} /> : null
+        ) : last.length === 0 ? null : (
           <Card>
             <CardHeader>
               <h3 className="text-sm font-medium">{t('accounts.detail.events')}</h3>
@@ -792,7 +819,7 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
             {t('accounts.reassign.submit')}
           </Button>
         </div>
-        {move.error ? <Band>{problemSentence(t, move.error)}</Band> : null}
+        {move.error ? <Refusal>{problemSentence(t, move.error)}</Refusal> : null}
       </CardContent>
     </Card>
   )

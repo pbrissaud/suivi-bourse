@@ -1,12 +1,16 @@
 /**
- * The four questions the *Notices* block answers, asked once (#724, #768,
+ * What an installation fact **says** and what gesture it carries (#724, #768,
  * ADR-0021, ADR-0024).
  *
- * Under the page seam, and it is not a second seam: entries in, verdicts out.
- * What is pinned here is the exclusion list, because each of its three members
- * looks countable and is not — and, since #768, **the sentence itself**, on all
- * three keys and in both languages: the notice of a French reader was entirely
- * English, and only one of the three is easy to provoke.
+ * Under the page seam, and it is not a second seam: a fact in, a sentence and a
+ * destination out. What is pinned here is **the sentence itself**, on all three
+ * keys and in both languages: the notices of a French reader were entirely
+ * English until #768, and only one of the three is easy to provoke.
+ *
+ * The selection questions — *what does the block show*, *what does the badge
+ * count* — left with #829: there is no notices block and no per-tab badge, and
+ * what the panel counts is every open entry across three registers
+ * (`src/lib/notifications.test.ts`).
  */
 import { describe, expect, it } from 'vitest'
 
@@ -14,14 +18,7 @@ import type { InstallationFact } from '@/lib/api'
 import { formatList } from '@/lib/format'
 import { LOCALES, formatMessage } from '@/lib/i18n'
 import type { Language } from '@/lib/i18n'
-import {
-  BANNER_FACT,
-  FACT_KEYS,
-  factGesture,
-  factText,
-  shownFacts,
-  unacknowledgedCount,
-} from '@/lib/installationFacts'
+import { FACT_KEYS, factGesture, factText } from '@/lib/installationFacts'
 
 function fact(overrides: Partial<InstallationFact> = {}): InstallationFact {
   return {
@@ -35,99 +32,15 @@ function fact(overrides: Partial<InstallationFact> = {}): InstallationFact {
   }
 }
 
-describe('what the block shows', () => {
-  it('drops an acknowledged notice rather than greying it out', () => {
-    const shown = shownFacts([
-      fact(),
-      fact({ key: 'assumed_base_currency', acknowledged: true }),
-    ])
-
-    // Greyed out, the notice of somebody who decided to live with what it names
-    // for ever would be a permanent fixture of their screen.
-    expect(shown.map((entry) => entry.key)).toEqual(['unread_environment'])
-  })
-
-  it('leaves the reconstruction to the banner, its one announcer', () => {
-    const shown = shownFacts([fact(), fact({ key: 'reconstruction_running' })])
-
-    expect(shown.map((entry) => entry.key)).toEqual(['unread_environment'])
-  })
-
-  it('keeps the server’s declared order rather than sorting by date', () => {
-    const shown = shownFacts([
-      fact({ key: 'assumed_base_currency', first_seen_at: '2026-03-02T00:00:00.000Z' }),
-      fact({ key: 'unread_environment', first_seen_at: '2026-01-01T00:00:00.000Z' }),
-    ])
-
-    // A badge whose contents reshuffle between two reads is a badge nobody
-    // trusts: the list comes out in the order the server declared it, and the
-    // older of the two does **not** climb to the front.
-    expect(shown.map((entry) => entry.key)).toEqual([
-      'assumed_base_currency',
+describe('the three keys, and the closed list they are', () => {
+  it('names them in the server’s declared order', () => {
+    // Declared and stable rather than sorted by date: a panel whose contents
+    // reshuffle between two reads is a panel nobody trusts.
+    expect(FACT_KEYS).toEqual([
       'unread_environment',
+      'reconstruction_running',
+      'assumed_base_currency',
     ])
-  })
-})
-
-describe('what the badge counts', () => {
-  it('counts exactly what the block shows', () => {
-    const entries = [
-      fact(),
-      fact({ key: 'assumed_base_currency' }),
-      fact({ key: 'assumed_base_currency', acknowledged: true }),
-      fact({ key: 'reconstruction_running' }),
-    ]
-
-    expect(unacknowledgedCount(entries)).toBe(shownFacts(entries).length)
-    expect(unacknowledgedCount(entries)).toBe(2)
-  })
-
-  it('is zero when everything standing has been acknowledged', () => {
-    expect(unacknowledgedCount([fact({ acknowledged: true })])).toBe(0)
-  })
-})
-
-/**
- * **The banner shows conditions the owner can end; the badge counts facts they
- * can only acknowledge** (ADR-0021, carried into ADR-0036).
- *
- * That one sentence is what separates the three notions the word *advisory* used
- * to carry, so #820 renamed everything around it and left it standing. It is
- * asserted here rather than left to the prose: the rename touched every name the
- * rule is written in, and a rule that survives only in a comment is a rule the
- * next refactor drops.
- */
-describe('the rule that separates health, installation facts and advisories', () => {
-  it('keeps the one condition the owner can end out of the block and the badge', () => {
-    // `reconstruction_running` ends by itself when the reconstruction finishes —
-    // there is nothing to acknowledge — so the banner announces it and neither
-    // the block nor the badge says a word about it.
-    const entries = [fact({ key: BANNER_FACT }), fact()]
-
-    expect(shownFacts(entries).map((entry) => entry.key)).toEqual(['unread_environment'])
-    expect(unacknowledgedCount(entries)).toBe(1)
-  })
-
-  it('counts every other key, each being a fact one can only acknowledge', () => {
-    // The two that are left name something the app cannot undo for the owner —
-    // a variable set in the container, an assertion made once about imported
-    // amounts — so the only gesture is the acknowledgement, and the badge is
-    // what counts them.
-    const acknowledgeable = FACT_KEYS.filter((key) => key !== BANNER_FACT)
-
-    expect(acknowledgeable).toEqual(['unread_environment', 'assumed_base_currency'])
-    expect(unacknowledgedCount(acknowledgeable.map((key) => fact({ key })))).toBe(
-      acknowledgeable.length,
-    )
-  })
-
-  it('takes an acknowledged fact out of the block and the badge together', () => {
-    // A badge is a promise that something is there to read: the two read one
-    // list, so acknowledging cannot empty the block and leave the count on.
-    const entries = [fact({ key: 'assumed_base_currency', acknowledged: true })]
-
-    expect(shownFacts(entries)).toEqual([])
-    expect(unacknowledgedCount(entries)).toBe(0)
   })
 })
 

@@ -69,6 +69,7 @@ import type {
   Account,
   AccountHistoryResponse,
   AccountsResponse,
+  Advisory,
   ChartWindow,
   ConfigResponse,
   EnvironmentVariable,
@@ -937,8 +938,9 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
 }
 
 /**
- * The body of `GET /health` (#818), which is what the **status dot** reads
- * since #819 (ADR-0036).
+ * The body of `GET /health` (#818), which is what the **bell** reads — the
+ * status dot's read since #819 (ADR-0036), inherited whole when #829 folded the
+ * dot into the bell (ADR-0037).
  *
  * The default is a well install: the three jobs have each had a pass, none of
  * them asks to be looked at, and the reconstruction has reached every first
@@ -1152,6 +1154,37 @@ export function anEnvironmentFact(overrides: Partial<InstallationFact> = {}): In
     detail: { variables: ['SB_EXECUTOR_POOL'] },
     ...overrides,
   })
+}
+
+/**
+ * One standing advisory (#829, ADR-0037) — what the owner's **data** says about
+ * itself, which is the third register of the notifications panel.
+ *
+ * The default is the cash share of an account, which is the worked example
+ * ADR-0037 and `CONTEXT.md` both use, and it names an account the accounts
+ * fixture declares: a card's link lands **on the figure**, and a fixture
+ * pointing at nothing would make that untestable.
+ *
+ * `message` keeps the server's own English for the reason `anInstallationFact`
+ * does: it is the log line and what a client with no interface reads, and a
+ * test asserting the card does *not* render it needs it to be there.
+ */
+export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
+  return {
+    key: 'cash_share:alpha',
+    kind: 'cash_share',
+    subject: 'accounts',
+    message: 'Alpha holds 24.8% of its value in uninvested cash.',
+    detail: {
+      account: 'alpha',
+      label: 'Alpha',
+      share: 0.248,
+      cash_balance: 1430.56,
+      total_value: 5766.22,
+    },
+    observed_at: '2026-03-02T11:00:00.000Z',
+    ...overrides,
+  }
 }
 
 export function aStore(overrides: Partial<StoreState> = {}): StoreState {

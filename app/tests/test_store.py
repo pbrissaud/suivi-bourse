@@ -32,9 +32,9 @@ import store as store_module
 # A fresh file, and a second boot on it
 # --------------------------------------------------------------------------- #
 
-def test_a_new_file_carries_the_eleven_tables(store):
+def test_a_new_file_carries_the_twelve_tables(store):
     assert sorted(store.table_names()) == sorted(store_module.TABLES)
-    assert len(store_module.TABLES) == 11
+    assert len(store_module.TABLES) == 12
 
 
 def test_a_new_file_declares_no_provenance_at_all(store):

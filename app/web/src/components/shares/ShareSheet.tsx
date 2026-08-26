@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Unreadable } from '@/components/Unreadable'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { PriceChart } from '@/components/shares/PriceChart'
@@ -289,8 +289,10 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
               }}
             />
 
+            {/* The events could not be read — said in their own space, as an
+                empty state rather than an alert (#829, ADR-0037). */}
             {ledger.error ? (
-              <Band>{t(problemMessageKey(ledger.error))}</Band>
+              <Unreadable failure={{ message: problemMessageKey(ledger.error) }} />
             ) : !ledger.data ? null : (
               <ShareEvents
                 events={events}

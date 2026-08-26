@@ -35,7 +35,7 @@
  * The reason it is not held here is the **first import**, which is the gesture
  * this whole ticket exists for: an empty ledger renders the zone inside
  * `EntryPair`, the import fills the ledger, the pair unmounts and a second zone
- * mounts in the band above the table. A receipt held by the component would be
+ * mounts in the imports bar above the table. A receipt held by the component would be
  * destroyed by the very write it is announcing — it would flash and vanish for
  * the one reader who has never seen this app work. So the mutation is a hook
  * (`useEventUpload`) held by `Ledger`, which survives that swap, and the
@@ -156,7 +156,7 @@ export interface UploadZoneProps {
   /**
    * The rectangle, or the control alone.
    *
-   * `false` is the band above the ledger, where the zone *is* the surface.
+   * `false` is the imports bar above the ledger, where the zone *is* the surface.
    * `true` is the empty state's first entry (`EntryPair`), which is already a
    * bordered box saying the same thing — a second rectangle inside it would be
    * a border around a border and two instructions for one gesture.

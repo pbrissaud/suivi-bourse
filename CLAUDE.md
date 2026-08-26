@@ -113,11 +113,14 @@ Four workloads write to the store, each owning its own tables:
 - **Performance** — replays the ledger and rewrites the return series.
 
 The front is a packaged SPA, served by Flask, which talks to the app through
-`/api` and — for the status dot alone — `/health` (ADR-0036, #819). There is
-**one interface and one socket** (ADR-0033): the exporter and its second port
+`/api` and — for the header's bell alone — `/health` (ADR-0036, #819, #829).
+There is **one interface and one socket** (ADR-0033): the exporter and its port
 are gone, and `/api` is the front's interface rather than a contract held for
-anybody else. `/health` is the container's own probe, read by the dot because
-health is said in one place.
+anybody else. `/health` is the container's own probe, read by the **bell**
+because health is said in one place — and the bell is the app's one global
+indicator since ADR-0037: its icon carries the health colour, its badge counts
+every open entry, and the panel behind it holds health, installation facts and
+advisories together. There is no banner and no status dot.
 
 ## The rules that are expensive to break
 

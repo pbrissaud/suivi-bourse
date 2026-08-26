@@ -73,6 +73,10 @@ MANAGED_LOGGERS = (
     # The upload's own (#811). A file refused at the door leaves no row to look
     # at, so the log line is the whole of what an owner debugging one has.
     'uploads',
+    # The advisories' own (#829). An advisory is derived on every read and
+    # stored nowhere, so the acknowledgement's line is the only trace there is
+    # of one having ever been raised.
+    'advisories',
 )
 
 

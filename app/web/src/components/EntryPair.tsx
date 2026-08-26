@@ -26,7 +26,7 @@
  *    ways out are.
  *
  * The first-run modal's last step is this component, mounted as it is (#726).
- * That is why it lives beside `Stat`, `EmptyState` and `Band` rather than under
+ * That is why it lives beside `Stat`, `EmptyState` and `Refusal` rather than under
  * `components/data/`: a second design of it is exactly what the criterion
  * forbids.
  *

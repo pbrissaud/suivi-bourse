@@ -181,6 +181,19 @@ CREATE TABLE IF NOT EXISTS portfolio_totals (
 #: empty — which loses the acknowledgements it held. v5 has not shipped, so that
 #: is the assumed price of freeing the word (ADR-0036); it is written here so it
 #: is read rather than discovered.
+#: ``advisory_ack`` is the twelfth table, and it is **a new table rather than a
+#: column on the one above** (ADR-0037, issue #829). An advisory is acknowledged
+#: *for a window* — thirty days — and ``installation_fact`` deliberately carries
+#: no expiry: an acknowledgement that outlived its condition would silence the
+#: app the second time the condition arose, which is the failure a permanent one
+#: guarantees. Adding ``expires_at`` there would also be a column that exists on
+#: **no store created before it**, the DDL running with ``IF NOT EXISTS`` and
+#: there being no migration machinery; a table is created on an existing store
+#: like any other.
+#:
+#: There is no ``first_seen_at`` here because an advisory has none: it is derived
+#: on every read and stored nowhere, so the only thing worth keeping is the
+#: gesture — when it was made, and when it wears off.
 _DDL_SETTINGS_AND_FACTS = """
 CREATE TABLE IF NOT EXISTS setting (key VARCHAR PRIMARY KEY, value VARCHAR);
 
@@ -188,6 +201,11 @@ CREATE TABLE IF NOT EXISTS installation_fact (
     key              VARCHAR PRIMARY KEY,
     first_seen_at    TIMESTAMPTZ NOT NULL,
     acknowledged_at  TIMESTAMPTZ);
+
+CREATE TABLE IF NOT EXISTS advisory_ack (
+    key              VARCHAR PRIMARY KEY,
+    acknowledged_at  TIMESTAMPTZ NOT NULL,
+    expires_at       TIMESTAMPTZ NOT NULL);
 """
 
 DDL = ''.join((
@@ -200,16 +218,18 @@ DDL = ''.join((
 ))
 
 #: Every table the DDL creates, so a caller can assert the shape without parsing
-#: SQL. Eleven, and the count is meaningful: it is the whole product. It was
-#: twelve while a file was a *mounted truth* that had to be named to be revoked;
-#: an uploaded file is a payload, dead the instant it is parsed, so there is no
-#: ``import_source`` left to declare (ADR-0032).
+#: SQL. **Twelve**, and the count is meaningful: it is the whole product. It was
+#: twelve once before, while a file was a *mounted truth* that had to be named to
+#: be revoked; an uploaded file is a payload, dead the instant it is parsed, so
+#: there is no ``import_source`` left to declare (ADR-0032). The twelfth is
+#: ``advisory_ack``, which carries the bounded acknowledgement ADR-0037 refused
+#: to spell as a column on ``installation_fact``.
 TABLES = (
     'account', 'symbol', 'event',
     'position', 'account_state',
     'symbol_quote', 'price_point',
     'account_metrics', 'portfolio_totals',
-    'setting', 'installation_fact',
+    'setting', 'installation_fact', 'advisory_ack',
 )
 
 #: The account every event falls into until one is declared (ADR-0008: an empty

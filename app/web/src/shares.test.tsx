@@ -384,9 +384,10 @@ describe('the exception marker and the date', () => {
 
   it('says nothing about anomalies when the runtime read failed', async () => {
     // The same claim by the other road, and the quieter one: a `shellError`
-    // short-circuits `readConditions` to no band at all — the shell owns that
-    // band — so the page had nothing to show for the failure *and* went on
-    // saying nothing was wrong.
+    // used to short-circuit `readConditions` to nothing at all, on the argument
+    // that the shell's own band was saying it — so the page had nothing to show
+    // for the failure *and* went on saying nothing was wrong. The short-circuit
+    // left with the band (#829, ADR-0037); the counter waits either way.
     server.use(http.get(ROUTES.runtime, () => HttpResponse.error()))
     renderShares()
 
@@ -529,10 +530,11 @@ describe('the chart', () => {
 
 describe('the page’s own reads', () => {
   it('names an unreadable store instead of showing an empty table', async () => {
-    // `/api/runtime` answers from process memory and never opens the store, so
-    // the shell's banner is silent on exactly this failure — and a page that
-    // rendered nothing would make *the store is unreadable* and *you own
-    // nothing yet* one screen, in its worst form: a blank one.
+    // The bell reads `/health` and says the installation is unreachable, but a
+    // page that rendered nothing would still make *the store is unreadable* and
+    // *you own nothing yet* one screen, in its worst form: a blank one. Since
+    // #829 the sentence is the page's **empty state** — where the table would
+    // have been — and never a band at the top of the column (ADR-0037).
     server.use(
       problemHandler(ROUTES.positions, {
         status: 503,
@@ -542,7 +544,9 @@ describe('the page’s own reads', () => {
     )
     renderApp({ url: '/titres' })
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/son magasin ne répond pas/)
+    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 

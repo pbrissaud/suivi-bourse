@@ -43,24 +43,27 @@
  * one naming on one page, rather than a fifth read to fetch a label that would
  * disagree with the column beside it.
  *
- * Reads and failures follow the dashboard head's rule and for the same reason:
- * `/api/runtime` answers from process memory and never opens the store (#668),
- * so the shell's banner is silent on the one failure that empties this page.
- * `lib/status.ts` keeps the causal order across the two surfaces, so there is
- * one band on screen or none.
+ * **A read that did not answer is said where the table would have been** (#829,
+ * ADR-0037). There is no band, here or anywhere: the positions are the one read
+ * this page is made of, so a refusal empties it whole — and an empty page that
+ * does not say why turns *the store would not answer* and *you hold nothing*
+ * into one screen. The bell is the announcer of the installation; this is the
+ * page saying what **it** asked for and did not get.
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
+import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { ClosedShares } from '@/components/shares/ClosedShares'
 import { SharesHead } from '@/components/shares/SharesHead'
 import { SharesTable } from '@/components/shares/SharesTable'
 import { ShareSheet } from '@/components/shares/ShareSheet'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
+import { currencyUnanswered } from '@/lib/firstRun'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
 import {
@@ -75,7 +78,7 @@ import {
   type ShareSort,
   type SortColumn,
 } from '@/lib/shares'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 export default function SharesPage() {
@@ -114,6 +117,9 @@ export default function SharesPage() {
 
   const positions = useQuery({ queryKey: ['positions'], queryFn: api.positions })
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
+  // The same read the bell and the first-run modal compose their own
+  // predicates from — one query key, so it is one request and no new API state.
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
   // The counter of fruitless readings is what separates *asked and got nothing*
   // from *not asked yet*, and it lives on the app's own state — never in the
@@ -140,8 +146,8 @@ export default function SharesPage() {
 
   const rows = useMemo(() => buildShareRows(reduced, failures), [reduced, failures])
 
-  const failure = oneBand(
-    readConditions({ shellError: runtime.error, errors: [positions.error] }),
+  const failure = oneFailure(
+    readConditions({ errors: [positions.error] }),
   )
 
   const held = heldRows(rows, sort)
@@ -198,6 +204,27 @@ export default function SharesPage() {
     pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
+  // **The band's sentence, one floor down** (#829, ADR-0037). With no reporting
+  // currency nothing is converted and the perf job writes nothing at all, so
+  // this page would be a column of em dashes with no reason given anywhere. It
+  // says why instead, and the ledger — where the events are *declared* — stays
+  // readable throughout.
+  //
+  // `=== true` and never a truthy test: `undefined` is *the config has not
+  // landed*, and a page emptied on a silence would be the claim ADR-0026
+  // forbids.
+  if (currencyUnanswered(config.data?.settings) === true) {
+    return <NoBaseCurrency />
+  }
+
+  // **The page is its positions**, so a refusal on that read empties it whole —
+  // and it says so in the space the table would have filled (#829, ADR-0037).
+  // Everything below this line is composed off `positions.data`, header line
+  // included, so what stood here before was a red strip above a blank page.
+  if (failure !== null) {
+    return <Unreadable failure={failure} />
+  }
+
   return (
     <div className="space-y-8">
       {/* The page's name and the instant its figures are of are the header
@@ -216,10 +243,11 @@ export default function SharesPage() {
               anything is known; runtime in flight leaves every counter at zero,
               so `absenceCase` answers *carried at cost* where it owes *no
               quote* and three mute symbols read as none; and runtime in **error**
-              hands `readConditions` a `shellError`, which short-circuits to no
-              band at all — so the page said nothing was wrong on the strength
-              of a read that failed. The counter is the one part of this header
-              that asserts something, so it is the one part that waits. */}
+              used to hand `readConditions` a `shellError`, which short-circuited
+              the list to nothing — so the page said nothing was wrong on the
+              strength of a read that failed. That parameter left with the band
+              (#829, ADR-0037), and the counter waits for both reads either way:
+              it is the one part of this header that asserts something. */}
           {anomalies.length === 0 ? (
             <p>{t('shares.anomaly.count', { count: 0 })}</p>
           ) : (
@@ -257,8 +285,6 @@ export default function SharesPage() {
         </div>
       )}
 
-      {failure ? <Band>{t(failure.message)}</Band> : null}
-
       {/* **The reduction states itself, with the account it names and the way
           out.** A table silently shorter than expected is the defect #724 met
           on the ledger, and it is worse here: the header over it is a *sum* of
@@ -281,7 +307,7 @@ export default function SharesPage() {
           portfolio is empty. Reduced, *empty* is a different sentence — the
           portfolio's own emptiness would be a claim about the reader's data
           made on the strength of a filter they can lift in one click. */}
-      {failure || !positions.data ? null : rows.length === 0 ? (
+      {!positions.data ? null : rows.length === 0 ? (
         compte !== null ? (
           <EmptyState
             title={t('shares.reduced.empty.title')}

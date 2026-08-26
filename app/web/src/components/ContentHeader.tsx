@@ -1,8 +1,8 @@
 /**
  * The content header bar — an **object of the product**, not a mount for a
- * trigger (ADR-0022). It is on all four pages and carries the page's own name
- * on the left, beside the collapse trigger; the status dot and the reader's
- * three preferences on the right.
+ * trigger (ADR-0022). It is on all five pages and carries the page's own name
+ * on the left, beside the collapse trigger; the **bell** and the reader's three
+ * preferences on the right.
  *
  * It exists because it is the one surface that survives the **three** sidebar
  * states: shadcn hides `SidebarMenuBadge` in icon mode, and the drawer takes the
@@ -10,12 +10,17 @@
  * That is also why the page's `<h1>` came up here (#789): a bar that carried
  * four controls and no name left the reader deducing which page they were on
  * from the navigation, which is exactly what the drawer takes away.
+ *
+ * The status dot stood here until #829 and the bell is where it was: ADR-0037
+ * folds the dot, the sidebar's status card and the banner into **one** global
+ * indicator, whose icon carries the health colour and whose badge carries the
+ * count of everything the panel holds.
  */
 import { Languages, MonitorCog, Moon, Rows3, Sun } from 'lucide-react'
 
+import { Notifications } from '@/components/Notifications'
 import { Palette } from '@/components/Palette'
 import { PreferenceMenu } from '@/components/PreferenceMenu'
-import { StatusDot } from '@/components/StatusDot'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useDensityControl, type DensityChoice } from '@/lib/density'
 import { useI18n, type LanguageChoice } from '@/lib/i18n'
@@ -64,7 +69,7 @@ export function ContentHeader() {
             interface on a phone, and this bar is where a control that belongs to
             no page lives. */}
         <Palette />
-        <StatusDot />
+        <Notifications />
         <PreferenceMenu<DensityChoice>
           label={t('header.density')}
           value={density}

@@ -29,6 +29,7 @@
  * instead of the close it found announced a session that had not happened yet.
  */
 import { EmptyState } from '@/components/EmptyState'
+import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { Mover } from '@/lib/api'
 import { moversSplit } from '@/lib/dashboard'
@@ -36,6 +37,7 @@ import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
+import type { ReadFailure } from '@/lib/status'
 
 export interface MoversProps {
   /**
@@ -56,16 +58,26 @@ export interface MoversProps {
   /** The portfolio's lines, closed ones included — the block reduces them itself. */
   rows: readonly ShareRow[]
   currency: string | null
+  /**
+   * The block's own read, refused — `null` when it did answer or is still in
+   * flight. In flight there is nothing to say yet; refused, the slot says so
+   * rather than disappearing without a word (#829, ADR-0037).
+   */
+  failure?: ReadFailure | null
 }
 
-export function Movers({ movers, reference, rows, currency }: MoversProps) {
+export function Movers({ movers, reference, rows, currency, failure = null }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
   // **Nothing at all, title included** (ADR-0026): a frame with an empty body
   // is a hand-written skeleton, and this product has none. The block appears by
   // a jolt rather than fading in, and that cost is accepted.
-  if (movers === null) return null
+  //
+  // Unless the read was **refused**, which is not the same silence: the slot
+  // then says the comparison could not be read, in the place it would have
+  // been (#829, ADR-0037).
+  if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
 
   const { risers, fallers, others, unchanged } = moversSplit(movers, rows)
 

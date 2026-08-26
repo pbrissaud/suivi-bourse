@@ -101,8 +101,8 @@ describe('the three passages', () => {
 })
 
 describe('the currency keeps a reading of its own', () => {
-  it('is what the band and the immutability sentence are about', () => {
-    // Not the predicate: the band says *answer the currency*, so it is about
+  it('is what the pinned card and the immutability sentence are about', () => {
+    // Not the predicate: the card says *answer the currency*, so it is about
     // that dial and would be a lie over a second required one.
     expect(currencyUnanswered(unanswered())).toBe(true)
     expect(currencyUnanswered(defaultSettings())).toBe(false)

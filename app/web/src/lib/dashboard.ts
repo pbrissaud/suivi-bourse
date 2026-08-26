@@ -71,8 +71,9 @@ import { isClosed, marketValue, type ShareRow } from '@/lib/shares'
  *    the dash and the zero are read side by side at the scale of the portfolio.
  *
  * `pending` renders nothing at all — a read that has not landed is not a fact —
- * and `failed` is the head's band, which is the only announcer of a store that
- * will not answer (`/api/runtime` opens no store, so the shell is silent).
+ * and `failed` is the page's own empty state since #829 (ADR-0037): the two
+ * reads it is made of refused, so there is nothing to draw and the page says
+ * why, where the figures would have been. There is no band above it.
  */
 export type DashboardState = 'pending' | 'failed' | 'empty' | 'portfolio'
 

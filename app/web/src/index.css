@@ -202,7 +202,7 @@
   --grant: var(--chart-1);
   --dividend: var(--chart-2);
 
-  /* The status dot and the ephemeral-store notice have no colour in the preset:
+  /* The bell's icon and the ephemeral-store notice have no colour in the preset:
      `--gain` / `--loss` are semantic for *money*, `--destructive` says *error*,
      and neither says *worth a look*. Checked token by token against the preset
      before adding this one. Kept off `--grant`'s hue, and dark enough on white

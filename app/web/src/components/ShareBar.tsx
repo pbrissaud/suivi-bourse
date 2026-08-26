@@ -8,7 +8,7 @@
  * surfaces carry the same figure — the allocation's legend, the accounts rail
  * and the `Poids` column of the shares table (#791, which this file exists to
  * give its primitive to) — and that is the reason this is a primitive rather
- * than a fix: `Stat`, `EmptyState`, `Band` and `EntryPair` all exist because the
+ * than a fix: `Stat`, `EmptyState`, `Refusal` and `EntryPair` all exist because the
  * prototype held four copies of one thing, and a share bar written three times
  * diverges three times. It had already begun: the account's composition bar was
  * a second copy, hand-written under `AccountDetail`, and it now mounts this one.

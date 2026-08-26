@@ -2,7 +2,7 @@
  * **Import et export** (#728, #811, #813, ADR-0020, ADR-0032), at the one seam:
  * the whole app in jsdom, HTTP the only faked edge.
  *
- * The band above the ledger held three things and holds two: the drop zone and
+ * The imports bar above the ledger held three things and holds two: the drop zone and
  * the export menu. **The list of sources with its revocation left with the
  * population it described** (#816) — nothing persists that could be listed, so
  * the cases that named a file, ordered the list, counted what a revocation would
@@ -91,7 +91,7 @@ describe('one population, and no source to act on', () => {
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The band is still there — it holds the zone and the export — and what it
+    // The bar is still there — it holds the zone and the export — and what it
     // no longer holds is a table of files (#816, ADR-0032).
     expect(screen.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Import et export' })).toBeNull()
@@ -129,7 +129,7 @@ async function openExport(user: ReturnType<typeof renderApp>['user']) {
   return screen.findByRole('menu')
 }
 
-/** The band above the table: the drop zone and the export menu, and no more. */
+/** The imports bar above the table: the drop zone and the export menu, and no more. */
 function block() {
   return screen.getByRole('region', { name: 'Import et export' })
 }
@@ -301,31 +301,31 @@ describe('the export', () => {
     expect(saved).toEqual([])
   })
 
-  it('lives in the band, which holds the drop zone with it and nothing else', async () => {
+  it('lives in the bar, which holds the drop zone with it and nothing else', async () => {
     renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    // One band above the table (#794, ADR-0030, ADR-0032): the zone and the
+    // One bar above the table (#794, ADR-0030, ADR-0032): the zone and the
     // menu, and **no list of files** since #816. Getting one's data out is a
     // question of files, not of the ledger.
-    const band = block()
-    expect(within(band).getByText(/Importer un \.csv ou un \.xlsx/)).toBeInTheDocument()
-    expect(within(band).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
-    expect(within(band).queryByRole('table')).toBeNull()
+    const bar = block()
+    expect(within(bar).getByText(/Importer un \.csv ou un \.xlsx/)).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
+    expect(within(bar).queryByRole('table')).toBeNull()
   })
 
-  it('puts the band above the ledger it describes', async () => {
+  it('puts the bar above the ledger it describes', async () => {
     renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const band = block()
-    expect(band.compareDocumentPosition(ledger()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const bar = block()
+    expect(bar.compareDocumentPosition(ledger()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
 describe('an install that has imported nothing', () => {
   it('offers the file entrance once, with a declaration and nothing recorded', async () => {
-    // An install with something declared and no event. The band stood here while
+    // An install with something declared and no event. The bar stood here while
     // the declaration was itself a file worth handing back; ADR-0034 took that
     // file away, so what there is to hand back is the ledger — and there is
     // none. The gesture is then offered once, by the empty state's own entry.
@@ -336,9 +336,9 @@ describe('an install that has imported nothing', () => {
     expect(screen.getAllByLabelText('Choisir un fichier')).toHaveLength(1)
   })
 
-  it('renders no band at all with nothing recorded and nothing declared', async () => {
+  it('renders no bar at all with nothing recorded and nothing declared', async () => {
     // The drop zone is then the empty state's own entry, one line below: the
-    // band would say the same thing twice, and a block with nothing in it does
+    // bar would say the same thing twice, and a block with nothing in it does
     // not exist.
     renderImports({ events: [], accounts: [theSeededAccount()], declared: false })
     await screen.findByText('Importer un fichier')
@@ -664,7 +664,7 @@ describe('the file handed over', () => {
     // **The gesture this whole ticket exists for**, and the one place a receipt
     // held by the zone would be destroyed by the write it announces: an empty
     // ledger offers the file entrance inside the entry pair, the import fills
-    // the table, the pair unmounts and the band's own zone mounts in its place.
+    // the table, the pair unmounts and the bar's own zone mounts in its place.
     const { user } = renderImports({ events: [] })
     await screen.findByText('Importer un fichier')
     // The ledger the import leaves behind, armed **after** the empty one has

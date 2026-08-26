@@ -58,7 +58,7 @@ name: `/healthz` was examined and declined.
 
 ## The store
 
-`store.py` owns the file: the connection, the DDL of the eleven tables, the seed.
+`store.py` owns the file: the connection, the DDL of the twelve tables, the seed.
 
 - **One thread inside the connection at a time**, reentrant lock;
   `Store.transaction()` holds it from `BEGIN` to `COMMIT` (a transaction on one
@@ -66,7 +66,9 @@ name: `/healthz` was examined and declined.
 - **DDL with `IF NOT EXISTS`, no migration machinery.** A new column would exist
   on no store created before it: derive at read time instead.
 - **Every table has exactly one writer** — the configuration path owns
-  `account`/`symbol`/`installation_fact`, `entries.py` owns `event` **whole**
+  `account`/`symbol`/`installation_fact`, `advisories.py` owns `advisory_ack`
+  (one write path, and it is the acknowledgement), `entries.py` owns `event`
+  **whole**
   (ADR-0032, #816: one population, one writer, the named exception of
   `reassignment.py` apart), the ingestion `position`/`account_state`, the market
   `symbol_quote`/`price_point`, the perf job
@@ -153,6 +155,39 @@ There is **no `closed` flag**: the predicate is `quantity == 0` (ADR-0003).
 **A position with no price is carried at its cost** (`carrying.py`, ADR-0004), on
 two conditions: no quote was observed **and** the symbol's backfill is terminal. A
 quote is a number **and** a unit: with no nameable currency there is no quote.
+
+## The advisories
+
+`advisories.py` is the third register ADR-0036 separated and ADR-0037 gave a
+surface to: **what the owner's data says about itself**, as opposed to what is
+true of the install (`installation_facts.py`) or of the app (`/health`).
+
+- **Derived on every read and stored nowhere.** There is no row saying an
+  advisory stands, because the condition *is* the figures — so no arming, no
+  dropping, and no `first_seen_at`: the instant published is the instant it was
+  looked at.
+- **The acknowledgement is bounded**, thirty days (`ACK_WINDOW`), which is what
+  answers 0036's objection by name — a permanent one *"would silence the app the
+  second time the cash piled up"*. Nothing has to observe the condition going
+  false, because the expiry needs no observer.
+- **`standing` and `listing` are two questions, and the route asks both.**
+  `GET /api/advisories` answers the *inventory* — what is left to act on, an
+  acknowledged advisory dropped — and `?asleep=include` answers the *reading*,
+  which is `standing`: the cash is still sitting in that account while the card
+  sleeps, so the chip beside the figure goes on saying so (ADR-0037). Served
+  from one derivation, so the two cannot disagree about what stands; an unknown
+  value of the parameter is the inventory, a typo in a URL being no reason to
+  refuse a page.
+- **It is a table and not a column** on `installation_fact`: the DDL is
+  `IF NOT EXISTS` with no migration machinery, so a column added there would
+  exist on no store created before it. `advisory_ack` is the twelfth table, and
+  it carries the expiry the fact's own row deliberately does not.
+- **One family today** — the cash share of an account, over a constant
+  threshold (`CASH_SHARE_THRESHOLD`, ADR-0036: *"a setting nobody has ever
+  turned is a setting that should not have been written"*). The four **subjects**
+  the panel groups by are declared all the same, `portfolio` included: a front
+  inventing a heading for a key it does not know would be a second authority on
+  the grouping.
 
 ## Configuration
 
@@ -315,7 +350,7 @@ puts a constraint where the error enters, which is at the import.
 src/
 ├── boot.py             # entrypoint AND boot sequence (ADR-0039)
 ├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
-├── store.py            # the connection, the DDL of the eleven tables, the seed
+├── store.py            # the connection, the DDL of the twelve tables, the seed
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
@@ -336,6 +371,7 @@ src/
 ├── reassignment.py     # the named, bounded exception: the unassigned events
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
 ├── installation_facts.py  # the three facts: predicate in code, the table holds the ack
+├── advisories.py       # what the data says about itself: derived per read, the ack expires
 ├── runtime_state.py / runtime_view.py   # the jobs' last-pass records, and how they read
 ├── store_reads.py / portfolio_view.py   # the UI read primitives, and their page shapes
 ├── web/                # Flask: create_app, the /api blueprint, problem.py (RFC 9457), health

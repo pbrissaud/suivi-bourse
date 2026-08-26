@@ -29,8 +29,8 @@
  *    portfolio smaller than it is.
  *  - **A row with no figures names its reason.** *Without a cash ledger* and
  *    *being rebuilt* look alike — every figure absent — and the sentences do
- *    not. A reason, never a progress with a target date, which stays on the
- *    banner.
+ *    not. A reason, never a progress with a target date, which belongs to the
+ *    reconstruction's own card in the notifications panel (#829, ADR-0037).
  *  - **Which account the detail shows is a URL**, so it survives a reload and
  *    can be handed to somebody else; an id naming nothing falls back to the
  *    first declared account rather than to an empty page.

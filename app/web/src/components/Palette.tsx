@@ -43,7 +43,7 @@ import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/lib/accounts'
 import { useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import { identityOf, ledgerSearchOf } from '@/lib/ledger'
-import { oneBand, readConditions } from '@/lib/status'
+import { oneFailure, readConditions } from '@/lib/status'
 import {
   accountsMatching,
   eventReduction,
@@ -193,10 +193,11 @@ export function Palette() {
   // **A read that failed is neither in flight nor empty**, and it is the state
   // where a palette that only knew those two rendered a dialog with a field and
   // a blank body. The product's own vocabulary says why — `problemMessageKey`,
-  // through the ordered list every page's band is built from — and it is a line
-  // and not a `Band`: the page underneath keeps its own announcer, and what this
-  // says is why a section is missing *here*.
-  const failure = oneBand(
+  // through the ordered list every surface's failed reads are folded by — and it
+  // is a line, neither a `Refusal` nor an `Unreadable`: the page underneath says
+  // why *it* is empty in its own space, and what this says is why a section is
+  // missing **here**, inside a dialog the reader opened one keystroke ago.
+  const failure = oneFailure(
     readConditions({ errors: [positions.error, accounts.error, events.error] }),
   )
 

@@ -52,7 +52,8 @@
  *    rather than *not read yet*, and a rule that cannot tell those apart would
  *    be asserting something it does not know.
  *
- * The five optional `?? []` of #718's distinction — the banner's account name,
+ * The five optional `?? []` of #718's distinction — the account name the
+ * retired banner carried,
  * the shares page's failure counters, the installation badge, the orphan list,
  * the chart's marker rail — land in no such slot and are untouched, which is
  * the point of judging the slot rather than the operator.

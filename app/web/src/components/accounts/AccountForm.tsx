@@ -3,7 +3,8 @@
  * ADR-0002, ADR-0028).
  *
  * Nothing about it is invented: a lateral panel, opened from the account's own
- * name, one field per thing the row carries, a band for what the server refuses.
+ * name, one field per thing the row carries, a `Refusal` for what the server
+ * refuses — beside the button that asked, never as a strip at the top of a page.
  * That sameness is the criterion rather than a convenience — one shape for one
  * rule, a second shape for it being the defect *individually right, collectively
  * unreadable* by definition.
@@ -38,7 +39,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { Band } from '@/components/Band'
+import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -163,7 +164,7 @@ export function AccountForm({
     // **The mutations are reset with the panel.** It is mounted once for the
     // page and reused for every account, so a `409` earned declaring `delta`
     // was still on screen when the next account's name opened it — and a
-    // removal that failed on Gamma rendered its band under Alpha's refusal,
+    // removal that failed on Gamma rendered its refusal under Alpha's,
     // attributing one account's failure to another.
     write.reset()
     remove.reset()
@@ -325,7 +326,7 @@ export function AccountForm({
             </div>
           ) : null}
 
-          {write.error ? <Band>{problemSentence(t, write.error)}</Band> : null}
+          {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
 
           <div className="flex gap-2">
             <Button type="submit" disabled={write.isPending || waiting}>
@@ -375,7 +376,7 @@ export function AccountForm({
             )}
             {/* A refusal the reader could not foresee — the declaration moved
                 under them between the render and the click. */}
-            {remove.error ? <Band>{t(problemMessageKey(remove.error))}</Band> : null}
+            {remove.error ? <Refusal>{t(problemMessageKey(remove.error))}</Refusal> : null}
           </section>
         )}
       </SheetContent>
