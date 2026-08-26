@@ -140,17 +140,17 @@ interface Surface {
 }
 
 /**
- * Nine surfaces for five pages: two are a reader's gesture away — the share's
- * sheet and the data page's two other tabs — and two more are a state of the
+ * Eight surfaces for five pages: two are a reader's gesture away — the share's
+ * sheet and the notifications panel — and two more are a state of the
  * dashboard, whose chart reads **one** of two series and picks by the same
  * discriminant that decides its reading. Without the second the valuation
  * series is armed under a condition false by default and never enters the net.
  *
- * The ninth is `/reglages`, ADR-0038's fifth page. It reads exactly what the
- * installation tab reads, and it is in the list all the same: the net is driven
- * by the **surface** and not by the block, so a second address onto the same
- * reads is a second set of hanging states to walk — and the day #830 takes the
- * tab away, the surface that survives is already covered.
+ * **It was nine until #830**, the ledger page's installation tab having been a
+ * second address onto the settings page's reads. ADR-0038 took the tab bar
+ * away, so the surface that survives is `/reglages` — which is the one this
+ * list already carried, the net being driven by the **surface** and not by the
+ * block.
  */
 const SURFACES: readonly Surface[] = [
   { name: 'le tableau de bord', url: '/', heading: 'Tableau de bord' },
@@ -221,15 +221,6 @@ const SURFACES: readonly Surface[] = [
       })
       await user.type(field, 'alpha')
       return field
-    },
-  },
-  {
-    name: 'le grand livre · l’installation',
-    url: '/donnees',
-    heading: 'Grand livre',
-    open: async ({ user }) => {
-      await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
-      return screen.findByRole('heading', { name: 'Le magasin' })
     },
   },
   { name: 'les réglages', url: '/reglages', heading: 'Réglages' },

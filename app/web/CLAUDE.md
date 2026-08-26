@@ -164,16 +164,28 @@
 > livre` in French, the word `CONTEXT.md` and every French record already use,
 > never a third one. The navigation groups **three and two**: the top is the
 > portfolio, what the owner *looks at*; the foot is what they *act on*, and the
-> ledger's claim to the top is declined on that count. What `/reglages` renders
-> is `Installation` unchanged — the page is the address, and the tab bar around
-> that block, its move out of `components/data/` and ADR-0038's three
-> corrections of wording are #830's. **And the fold of the navigation is
-> persisted for the first time**: `SidebarProvider` had always written the
+> ledger's claim to the top is declined on that count. **And the fold of the
+> navigation is persisted for the first time**: `SidebarProvider` had always written the
 > `sidebar_state` cookie and never read it, upstream reading it on a Next.js
 > server this static bundle does not have, so `Shell` reads that same cookie for
 > `defaultOpen` — the component's own memory, read back, and **not** a fourth
 > `sb.*` key: the reader's preferences are three, and the fold of a menu is
 > chrome.
+>
+> **And the tab bar is gone** (#830, ADR-0038): `components/settings/` is where
+> the surface lives now, `DataPage` renders the table and nothing else, and
+> `/reglages` is five cards rather than one block — *what you can change*, **the
+> workloads**, the orphaned securities, the store, *what the container imposes*.
+> The block used to be headed *Réglages* under a page whose `<h1>` read
+> *Réglages*, which names the page twice and the card not at all; each card is
+> named for what it holds instead. The **workloads** card is new and it is what
+> the bell's health link now lands on: the three jobs `/health` folds its word
+> out of, each with its last pass and its verdict said as a sentence — three and
+> not the mock-up's four, ingestion being the boot or a write rather than a job
+> with a pass to report. ADR-0038's three corrections of wording are done:
+> *Dernière écriture du grand livre*, the currency's *fixée dès qu'elle est
+> répondue* with no field left around it, and the poll cadence living in its own
+> field on this page rather than on the sidebar card #829 removed.
 >
 > **The dashboard explains no rule of the product** (#831, ADR-0016). Its shape
 > landed with #790 — the plateau, the hero card where the total dominates its
@@ -246,7 +258,7 @@ or a DOM snapshot.
 
 Five nets hold a rule nothing made true by construction:
 
-- `src/readsInFlight.test.tsx` — for each of nine surfaces, the routes actually
+- `src/readsInFlight.test.tsx` — for each of eight surfaces, the routes actually
   requested are recorded off the MSW lifecycle, then replayed **one at a time with
   that read hanging for ever**, asserting an *absence*. It also fails when a route
   of `ROUTES` is visited by no surface. Since #777 it reads **every rendered
@@ -453,10 +465,11 @@ src/
 │   ├── AppSidebar (the navigation, and nothing else since #829)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
-│   ├── data/       # tab 1: ledger, create form, drop zone, import and export menu
+│   ├── data/       # the ledger, the create form, the drop zone, the export menu
 │   │               # (UploadZone: the file in, the receipt under it)
-│   │               # tab 2: settings, the store — the notices tab left with #829
-│   │               # (the accounts declaration moved to accounts/ — ADR-0028)
+│   │               # (the settings left for settings/ — #830, ADR-0038)
+│   ├── settings/   # the dials, the workloads, the orphans, the store, the environment
+│   │               # (RebuildBlock: where the bell's reconstruction card lands)
 │   └── accounts/   # the rail of weights, one account's detail, its curve, its form
 └── test/           # setup · MSW server · payload factory · renderApp
 ```
@@ -519,10 +532,12 @@ src/
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
-- **Ledger** (`/donnees`) — **two tabs** since #829 and the page is **named**
-  for the one it is about to be alone with (ADR-0038): the notices left with the
-  banner and the status dot, into the panel behind the header's bell, and the
-  tab bar leaves with #830. *The ledger* (the table — bounded,
+- **Ledger** (`/donnees`) — **no tab bar at all** since #830, and the page is
+  **named** for the one thing it holds (ADR-0038): the notices left with the
+  banner and the status dot, into the panel behind the header's bell, the
+  installation left for `/reglages`, and a bar holding a choice of one is not a
+  bar. The `#installation` hash went with it — it was an address on a tab, and
+  the surface it named has a path now. What is left is the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
   groups of chips, a search, a **period** — two date fields since #810, both
   bounds inclusive, and a chip that shows up only once a bound is in force, to
@@ -546,13 +561,24 @@ src/
   `events/export.py` and a rule written twice loses a branch; the fourth was the
   accounts, and it left with the file nothing could read back (ADR-0034) — and
   **no third entry** since #816: nothing persists that could be listed or revoked, so the
-  band is the zone and the menu) — and *The installation* (settings, the store
-  and its orphans), which `/reglages` now renders too.
+  band is the zone and the menu.
 - **Settings** (`/reglages`) — the fifth page (ADR-0038), and the only route of
   the five that reads nothing off its own address: a dial is not a reduction of
-  anything, so there is nothing here for a search parameter to describe. It
-  renders the installation block — the settings, the store with its size and its
-  last write, the orphaned securities, the rebuild — and the *why* of it is that
-  a two-tab bar is a bar that should not exist: it costs a control and a level
-  of nesting to hold a choice between what the owner declared and what the
-  installation is.
+  anything, so there is nothing here for a search parameter to describe. **Five
+  cards** since #830, in the mock-up's order and each named for what it holds:
+  *what you can change* (the registry's six dials, **stale-price horizon
+  included**, where `0` disables the sonde and the field says so; the currency
+  stops being a field once it is answered and says it cannot be taken back),
+  *the workloads* (the three jobs of `/health`, their last pass and their
+  verdict in prose, with a stopped scheduler said above them as the cause it
+  is), *the orphaned securities* (absent at zero, the count said and each one
+  named, one purge), *the store* (the path, whether it outlives the container,
+  the size with what a purge will not return, and the **last write of the
+  ledger**), and *what the container imposes* (a description, and nothing in it
+  is focusable). The rebuild card rides above them while a reconstruction is
+  under way, which is where the bell's `reconstruction_running` card lands. The
+  page is bounded at 880 px and centred — the shell's column is uncapped, and a
+  row of label and value is the one thing that must not be stretched. The *why*
+  of the page itself is that a two-tab bar is a bar that should not exist: it
+  costs a control and a level of nesting to hold a choice between what the owner
+  declared and what the installation is.

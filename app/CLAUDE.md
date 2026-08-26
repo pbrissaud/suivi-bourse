@@ -106,9 +106,11 @@ SCRAPE (per symbol)    INGESTION (not a job)    BACKFILL (dial)     PERFORMANCE 
   sleeps to the next open; a dead ticker backs off at `regular_interval ×
   2^(n−3)`. A freshness sonde watches for a writer that persists frozen values —
   purely diagnostic, and it says so twice: a `WARNING` in the logs and the
-  *stale* field of the scrape record, which the runtime tab renders as a
-  `frozen` pill and `/health`'s body folds into the scrape job's verdict. Its
-  threshold is the `staleness_horizon` dial.
+  *stale* field of the scrape record, which `/health`'s body folds into the
+  scrape job's verdict — read on the settings page's **workloads** card since
+  #830, as a sentence naming the securities concerned. Its threshold is the
+  `staleness_horizon` dial, which is on that same page and disables the sonde
+  at `0`.
 - **Ingestion** — armed by the boot or by a write through the API, and by
   nothing else since ADR-0032 took the drop folder and its watcher. Each run
   reconciles the per-symbol scrape jobs; the write's own passes `force=True`,

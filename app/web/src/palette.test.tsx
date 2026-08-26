@@ -213,8 +213,11 @@ describe('a gesture the palette armed is spent once', () => {
       expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull(),
     )
 
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
-    await user.click(await screen.findByRole('tab', { name: /Le grand livre/ }))
+    // Away and back, which since ADR-0038 is a **route** rather than a tab: the
+    // ledger unmounts either way, and what is asserted is that the arming does
+    // not survive the round trip.
+    await user.click(await screen.findByRole('link', { name: 'Réglages' }))
+    await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     await screen.findByRole('table', { name: 'Vos événements' })
     expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull()
   })
@@ -231,10 +234,10 @@ describe('a gesture the palette armed is spent once', () => {
     await user.click(screen.getByRole('button', { name: 'Afficher tout le grand livre' }))
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5))
 
-    // The address went with it, so the tab it is not on cannot restore it: a
-    // sentence naming a reduction over a table nobody reduced is two truths.
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
-    await user.click(await screen.findByRole('tab', { name: /Le grand livre/ }))
+    // The address went with it, so a remount cannot restore it: a sentence
+    // naming a reduction over a table nobody reduced is two truths.
+    await user.click(await screen.findByRole('link', { name: 'Réglages' }))
+    await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     const back = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(back).getAllByRole('row')).toHaveLength(5))
     expect(screen.queryByText(/Réduit aux événements/)).toBeNull()

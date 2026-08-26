@@ -1291,8 +1291,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
         ),
       ),
     )
-    const { user } = renderApp({ url: '/donnees' })
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+    renderApp({ url: '/reglages' })
 
     expect(
       await screen.findByText(/Alpha est le compte le plus en retard/),
@@ -1305,12 +1304,13 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
   })
 
   it('does not exist when nothing is being rebuilt', async () => {
-    // A block with nothing in it does not exist.
-    const { user } = renderApp({ url: '/donnees' })
-    await user.click(await screen.findByRole('tab', { name: /L’installation/ }))
+    // A block with nothing in it does not exist. The workloads card names the
+    // backfill whatever it is doing, which is why the absence is asked of *this*
+    // card's own name rather than of the word `reconstruction` on the page.
+    renderApp({ url: '/reglages' })
     await screen.findByRole('heading', { name: 'Le magasin' })
 
-    expect(screen.queryByText(/Reconstruction de l’historique/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Reconstruction en cours')).not.toBeInTheDocument()
   })
 })
 
