@@ -22,6 +22,7 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import accounts as accounts_module
+import advisories
 import entries
 import installation_facts
 import ledger
@@ -4053,6 +4054,79 @@ def test_acknowledging_one_that_is_not_standing_is_a_404(tmp_path):
         f'{installation_facts.UNREAD_ENVIRONMENT}/acknowledgement')
 
     assert response.status_code == 404
+
+
+# --------------------------------------------------------------------- #
+# The advisories (issue #829, ADR-0037)
+# --------------------------------------------------------------------- #
+
+def _cash_heavy_account(opened) -> None:
+    """One account whose newest perf day is a quarter cash — the worked example
+    ADR-0037 and ``CONTEXT.md`` both use."""
+    opened.execute(
+        'INSERT INTO account (id, type, label) VALUES (?, ?, ?) '
+        'ON CONFLICT (id) DO NOTHING',
+        ['cto', 'CTO', 'CTO Trade Republic'])
+    opened.execute(
+        'INSERT INTO account_metrics (account, day, cash_balance, '
+        '                             holdings_value, total_value) '
+        'VALUES (?, ?, ?, ?, ?)',
+        ['cto', date(2026, 8, 26), 1430.56, 4335.66, 5766.22])
+
+
+def test_a_portfolio_with_nothing_to_say_answers_an_empty_collection(tmp_path):
+    """``200`` + ``[]``, which is what the panel says *Nothing to report* on."""
+    response = build_client(tmp_path).get('/api/advisories')
+
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
+def test_an_advisory_is_listed_with_the_figure_it_comments_on(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+
+    (advisory,) = client.get('/api/advisories').get_json()
+
+    assert advisory['key'] == 'cash_share:cto'
+    assert advisory['kind'] == advisories.CASH_SHARE
+    assert advisory['subject'] == advisories.SUBJECT_ACCOUNTS
+    assert advisory['detail']['account'] == 'cto'
+    assert advisory['observed_at'] is not None
+
+
+def test_a_get_writes_no_row_at_all(tmp_path):
+    """An advisory is derived on every read and stored nowhere (ADR-0036)."""
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+
+    client.get('/api/advisories')
+
+    assert opened.query('SELECT count(*) FROM advisory_ack')[0][0] == 0
+
+
+def test_acknowledging_puts_it_to_sleep_and_the_row_carries_the_expiry(tmp_path):
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+
+    response = client.post('/api/advisories/cash_share:cto/acknowledgement')
+
+    assert response.status_code == 200
+    assert response.get_json()['acknowledged_until'] is not None
+    assert client.get('/api/advisories').get_json() == []
+    stored, expires = opened.query(
+        'SELECT acknowledged_at, expires_at FROM advisory_ack')[0]
+    # Thirty days, and never for good: the window is what answers ADR-0036's
+    # objection, so it is asserted as a duration rather than as *not null*.
+    assert expires - stored == advisories.ACK_WINDOW
+
+
+def test_acknowledging_an_advisory_that_does_not_stand_is_a_404(tmp_path):
+    response = build_client(tmp_path).post(
+        '/api/advisories/cash_share:nobody/acknowledgement')
+
+    assert response.status_code == 404
+    assert response.mimetype == 'application/problem+json'
 
 
 # --------------------------------------------------------------------- #
