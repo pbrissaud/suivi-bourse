@@ -123,7 +123,15 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
     )
   }
 
-  const jobs = health.jobs
+  // **The three keys are the server's contract, not the type's.** `readHealth`
+  // admits any object here — it checks `typeof jobs === 'object'` and no more —
+  // so a payload that passed the narrowing without them would crash this table
+  // on its first row. A fold that came back short is the same news as a fold
+  // that failed, and it is said with the same sentence rather than a second one.
+  const rows =
+    health.jobs !== null && JOB_KEYS.every((key) => health.jobs?.[key] != null)
+      ? health.jobs
+      : null
 
   return (
     <Card role="region" aria-labelledby={JOBS_HEADING}>
@@ -141,7 +149,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
         )}
       </CardHeader>
       <CardContent>
-        {jobs === null ? (
+        {rows === null ? (
           // The server could not fold its own three records — which is a defect
           // in the shaping and not a reason to restart anything, so it answers
           // `200` and says so. There is nothing to tabulate, and the sentence is
@@ -156,13 +164,13 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
               >
                 <dt className="font-medium">{t(JOB_NAMES[key])}</dt>
                 <dd className="space-y-1">
-                  <p className={cn('text-sm', JOB_TONE[jobs[key].status])}>
-                    {t(...verdictOf(key, jobs))}
+                  <p className={cn('text-sm', JOB_TONE[rows[key].status])}>
+                    {t(...verdictOf(key, rows))}
                   </p>
                   <p className="tabular text-xs text-muted-foreground">
-                    {jobs[key].at === null
+                    {rows[key].at === null
                       ? t('settings.jobs.never')
-                      : t('settings.jobs.last', { at: format.dateTime(jobs[key].at) })}
+                      : t('settings.jobs.last', { at: format.dateTime(rows[key].at) })}
                   </p>
                 </dd>
               </div>

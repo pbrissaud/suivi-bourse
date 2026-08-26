@@ -523,6 +523,29 @@ describe('the workloads, which the bell’s health card develops', () => {
     // announces the installation is the bell, once.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  it('says the same thing when the answer is a 200 that is not a health payload', async () => {
+    // **The other half of `unreachable`, and the one that used to take the
+    // route down with it.** `installationState` folds two answers onto that
+    // word: a refused request, and a `200` whose body is not this object —
+    // a proxy answering with its own JSON, a stale image, the SPA catch-all
+    // (ADR-0036, #819). The bell shouts identically in both and lands here in
+    // both. Before #830's repair this page read `health.error` alone, so the
+    // second answer reached the table, which tabulates three workloads out of
+    // `jobs` — and threw on the first row, with no error boundary under it.
+    server.use(http.get(ROUTES.health, () => HttpResponse.json({ status: 'ok' })))
+    const { user } = renderApp({ url: '/' })
+
+    await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
+    await user.click(within(panel).getByRole('link', { name: 'Voir dans Réglages' }))
+
+    // The route renders at all, which is the half that was broken.
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' })
+    const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
+    expect(within(jobs).getByText('Lecture impossible')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })
 
 describe('the page’s own reads', () => {

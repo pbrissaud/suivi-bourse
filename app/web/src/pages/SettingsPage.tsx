@@ -64,7 +64,17 @@ import { StoreBlock } from '@/components/settings/StoreBlock'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
-import { oneFailure, readConditions } from '@/lib/status'
+import { oneFailure, readConditions, readHealth } from '@/lib/status'
+
+/**
+ * What a `200` that is not a health payload is told as.
+ *
+ * `problemMessageKey` answers `problem.unreachable` for anything that is not an
+ * `ApiProblem`, which is exactly the sentence this state deserves: the app did
+ * not answer, whatever the status line said. A message key of its own would be
+ * a second name for the news the bell is already giving in one word.
+ */
+const UNREADABLE_HEALTH = new Error('/health answered with something that is not a health payload')
 
 export default function SettingsPage() {
   const { t } = useI18n()
@@ -105,7 +115,24 @@ export default function SettingsPage() {
   // mention the workloads at all.
   const settingsFailure = oneFailure(readConditions({ errors: [config.error] }))
   const storeFailure = oneFailure(readConditions({ errors: [store.error] }))
-  const healthFailure = oneFailure(readConditions({ errors: [health.error] }))
+
+  // **Narrowed with the bell's own validator, and that is the whole rule.**
+  // `installationState` folds *two* answers onto `unreachable`: a request that
+  // refused, and a `200` whose body is not a health payload — a proxy's own
+  // JSON, a stale bundle, the SPA catch-all (ADR-0036, #819). The bell shouts
+  // identically in both and its one link lands here in both, so this page owes
+  // the same sentence in both. Reading only `health.error` would leave the
+  // second answer handing `JobsBlock` an object it would tabulate three
+  // workloads out of.
+  const readableHealth = health.data === undefined ? null : readHealth(health.data)
+  const healthFailure = oneFailure(
+    readConditions({
+      errors: [
+        health.error,
+        health.data !== undefined && readableHealth === null ? UNREADABLE_HEALTH : null,
+      ],
+    }),
+  )
 
   return (
     // 880 px, from the mock-up, and centred in whatever the shell gives. Every
@@ -133,7 +160,7 @@ export default function SettingsPage() {
       {/* What the bell's colour is a fold of, one line per workload (ADR-0037)
           — and, when that read is the one that refused, the reason said in the
           card the bell's link named. */}
-      <JobsBlock health={health.data ?? null} failure={healthFailure} />
+      <JobsBlock health={readableHealth} failure={healthFailure} />
 
       {/* Absent at zero, and never a maintenance table: it is the visible
           consequence of a gesture the reader has just made. */}

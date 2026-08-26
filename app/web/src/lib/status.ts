@@ -52,7 +52,19 @@ export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 
  * which is the server's own way of saying the fold failed, and `error` is
  * optional because it rides with it.
  */
-function readHealth(payload: unknown): HealthState | null {
+/**
+ * The health payload, or `null` when what came back is not one.
+ *
+ * **Exported since #830, because the bell is no longer its only reader.** The
+ * settings page tabulates the three workloads out of this object, and
+ * `api.health` is a bare `get<HealthState>` — the cast is the caller's promise,
+ * not the wire's. A `200` carrying something else is a real state, named in
+ * ADR-0036: a proxy answering with its own JSON, a stale image whose body has
+ * moved on, a route the SPA catch-all served. Every reader has to refuse the
+ * same payloads or two surfaces disagree about one installation, which is the
+ * one thing the bell exists to prevent.
+ */
+export function readHealth(payload: unknown): HealthState | null {
   if (typeof payload !== 'object' || payload === null) return null
   const body = payload as Partial<Record<keyof HealthState, unknown>>
   if (typeof body.status !== 'string') return null
