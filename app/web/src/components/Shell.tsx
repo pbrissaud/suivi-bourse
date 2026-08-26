@@ -23,6 +23,17 @@
  * Width is answered by **tracks and not by longer rows**: the dashboard and the
  * accounts page gain a column where there is room for one. The bound a dense
  * table wants at 2 560 px is that table's subject and not the shell's.
+ *
+ * **And the column may be narrower than what is in it** (#832). `SidebarInset`
+ * is a flex item beside the navigation, so its `min-width` is `auto` — *never
+ * smaller than my content* — and a table wider than the column therefore pushed
+ * the column out instead of scrolling inside it. Measured on the shares page:
+ * at 768 px the page overflowed by 256, at 976 px by 238, and the
+ * `overflow-x-auto` that `components/ui/table.tsx` puts around every table did
+ * nothing at all, its parent having grown to fit. `min-w-0` is the whole
+ * repair, and it is the shell's rather than the table's: the same one line
+ * governs every dense surface, and a floor of zero is what puts the scrollers
+ * already written back in charge.
  */
 import { Outlet } from '@tanstack/react-router'
 
@@ -64,7 +75,10 @@ export function Shell() {
   return (
     <SidebarProvider defaultOpen={!navigationWasFolded()}>
       <AppSidebar />
-      <SidebarInset>
+      {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
+          a table wider than the column takes the whole page sideways with it,
+          and every `overflow-x-auto` under here is inert. */}
+      <SidebarInset className="min-w-0">
         <ContentHeader />
         {/* `SidebarInset` is already the `<main>` landmark, so this is a plain
             column — the padding, and nothing else. `mx-auto` went with the cap:

@@ -218,12 +218,13 @@ export function buildShareRows(
 
 /**
  * What the reader may order the live table by — **one name per column**, the
- * nine of them.
+ * ten of them.
  *
- * `weight` was here while the table carried a `Poids` column, and left with it:
- * a sort key for a column nobody renders is a control the reader cannot reach.
- * It cost nothing to keep and said something false — that the table has ten
- * columns. The weight itself is untouched below.
+ * `weight` left with the `Poids` column after #791 and comes back with it
+ * (#832): a sort key for a column nobody renders is a control the reader cannot
+ * reach, and a column with no sort key is the one column of ten that does not
+ * answer the page's own gesture. The list and the header row are read together
+ * or they drift.
  */
 export type SortColumn =
   | 'symbol'
@@ -231,6 +232,7 @@ export type SortColumn =
   | 'quantity'
   | 'avgCost'
   | 'value'
+  | 'weight'
   | 'unrealised'
   | 'realised'
   | 'dividends'
@@ -282,6 +284,17 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
     case 'avgCost':
       return unitCost(row)
     case 'value':
+      return marketValue(row)
+    case 'weight':
+      // **The valuation again, and that is the whole of it.** A weight is
+      // `Valorisation ÷ Valorisation placée`, and the divisor is one number for
+      // the whole table — so ordering by the share and ordering by the value
+      // are the same permutation, exactly. Dividing here would be arithmetic
+      // done to reach an order already in hand, and it would need the whole
+      // threaded into a pure comparator to say nothing new. The two columns
+      // agreeing is a *property* of the figure rather than a shortcut, and it
+      // is why the absence rule below needs no special case: a line with no
+      // value has no weight either, and it does not rise.
       return marketValue(row)
     case 'unrealised':
       return unrealised(row)
@@ -410,7 +423,7 @@ export function accountGroups(
 }
 
 // ------------------------------------------------------------------------- //
-// The weight (#791)
+// The weight (#791, rendered again by #832)
 // ------------------------------------------------------------------------- //
 
 /**
