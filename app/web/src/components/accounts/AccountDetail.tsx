@@ -605,9 +605,10 @@ export function AccountDetail({
             raises and cannot answer (#833). It carries its own extent, for
             ADR-0028's reason one figure over: `position.dividends` is a
             lifetime total, so the span is the account's whole history and the
-            block says so rather than sitting under the range control above and
-            borrowing a window it does not obey. Nothing at all while the
-            positions are in flight, and no block where no line has ever paid. */}
+            block says so rather than leaving it implied — there being no range
+            control above it any more to borrow a window from. Nothing at all
+            while the positions are in flight, and no block where no line has
+            ever paid. */}
         {payers === null || payers.length === 0 ? null : (
           <Card>
             <CardHeader className="flex flex-wrap items-baseline justify-between gap-2">

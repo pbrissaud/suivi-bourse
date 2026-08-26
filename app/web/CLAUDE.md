@@ -545,12 +545,11 @@ src/
   carries the **weight** of each line since #833 — `lib/shares.ts`'s three
   functions, which outlived the shares column that read them — and the two
   questions the encashed figure raises and cannot answer are answered in two
-  places, because they do not obey the same window: *what it is worth against
-  the contribution* sits under the figure itself, in the dividends block, and
-  **which securities pay it** is a card of its own below the lines, stating the
-  extent it was read over — `position.dividends` is a lifetime total, so that
-  block says the account's whole history rather than borrowing the range control
-  above it.
+  places: *what it is worth against the contribution* sits under the figure
+  itself, in the dividends block, and **which securities pay it** is a card of
+  its own below the lines, stating the extent it was read over —
+  `position.dividends` is a lifetime total, so that block says the account's
+  whole history, which since #833 is the only extent the page has.
   The reassignment rides with the **declaration** where nothing is
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
