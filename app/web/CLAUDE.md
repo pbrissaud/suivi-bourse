@@ -212,8 +212,11 @@
 > **`Répartition` is the shares page's**: ring and legend are in the `Titres`
 > branch and in no other, and the arithmetic agrees, the whole it divides being
 > what the header under it sums — so the total in the ring's hole and that
-> header's `Valorisation` are one number said twice, reduction and anomaly lens
-> included, the block being handed the rows on screen. The **`Poids` column
+> header's `Valorisation` are one number said twice wherever every line on
+> screen has a value, reduction and anomaly lens included, the block being
+> handed the rows on screen. They part on one inherited case, an unresolved rate
+> emptying the header while the ring divides what it could place, which was the
+> `Poids` column's tension before it was this block's. The **`Poids` column
 > goes**, the table returning to nine. And the **`Montants / Performance`
 > selector stops being tabs**: the maquette draws it segmented like the range
 > beside it, a tab is a *place* and the shell's navigation is what the product

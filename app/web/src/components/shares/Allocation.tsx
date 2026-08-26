@@ -7,10 +7,17 @@
  * moved it is the maquette, read *rendered* for the first time — the ring and
  * its legend are drawn in the `Titres` branch and there is nothing of them in
  * the dashboard's. The reading holds on its own arithmetic too: the divisor is
- * the value of the lines that can be placed, which is exactly what the page
- * header above the table sums, so the figure in the ring's hole and that
- * header's `Valorisation` are one number said twice rather than two figures
- * that agree. That is also how the reduction and the anomaly lens are answered
+ * the value of the lines that can be placed, which is what the page header
+ * above the table sums, so the figure in the ring's hole and that header's
+ * `Valorisation` are one number said twice — *wherever every line on screen
+ * has a value* — rather than two figures that agree. They part on exactly one
+ * case, and it is inherited rather than this block's: a held line quoted in a
+ * currency whose rate has not resolved empties the **header** outright
+ * (`valuationTotal` leaves at the first null, `lib/shares.ts`), while the ring
+ * goes on dividing the lines it could place and names the others under it — an
+ * em dash above a figure, for the one quantity. That tension was the `Poids`
+ * column's before it was this one's, and settling it is a ticket of its own.
+ * That is also how the reduction and the anomaly lens are answered
  * without a rule of their own: the block is handed the rows on screen, so a page
  * reduced to one account draws that account's split under a header that sums
  * that account's lines.
@@ -160,13 +167,18 @@ export function Allocation({ rows, currency }: AllocationProps) {
                 `grid-flow-col` with an explicit row count, since an implicit one
                 would let the browser choose the split.
 
-                It is under `xl:` alone, where the second column exists: one
-                column reads the same either way, and a row count set at every
-                width would spill the tail into an implicit third column. */}
+                It is two columns at **every** width, because the drawing
+                is: the maquette's legend carries `grid-template-columns:1fr 1fr`
+                under no condition at all, and the one split that does have a
+                condition is ring-beside-legend — its `donutCols`, at 768 px,
+                which is the `md:` on the grid above. Under `xl:` this rendered
+                a single column from 768 to 1279 px, a shape the drawing never
+                takes. The row count stays explicit for the same reason as the
+                flow: an implicit one would let the browser choose the split. */}
             <ul
               aria-label={t('shares.allocation.title')}
               style={{ '--legend-rows': Math.ceil(slices.length / 2) } as CSSProperties}
-              className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm xl:grid-flow-col xl:grid-cols-2 xl:[grid-template-rows:repeat(var(--legend-rows),auto)]"
+              className="grid grid-flow-col grid-cols-2 gap-x-6 gap-y-1.5 text-sm [grid-template-rows:repeat(var(--legend-rows),auto)]"
             >
               {slices.map((slice, rank) => (
                 <li key={slice.symbol ?? 'others'} className="flex flex-col gap-1">

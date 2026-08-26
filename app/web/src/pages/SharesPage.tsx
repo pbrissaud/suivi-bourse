@@ -344,11 +344,14 @@ export default function SharesPage() {
         <>
           {/* **The same rows the header sums, one block up** (#831). The ring's
               centre states the total the slices divide, and that total is the
-              header's `Valorisation`: handed anything else — the held lines
-              alone, or the payload — the two figures would be two answers to
-              one question, on one screen, which is the defect this page was
-              rebuilt around. Reduced by `?compte=` it draws that account's
-              split; under the anomaly lens it draws what is on screen. */}
+              header's `Valorisation` wherever every line on screen has a value:
+              handed anything else — the held lines alone, or the payload — the
+              two figures would be two answers to one question, on one screen,
+              which is the defect this page was rebuilt around. They still part
+              on one inherited case, an unresolved rate emptying the header and
+              not the ring (`Allocation.tsx` says why). Reduced by `?compte=` it
+              draws that account's split; under the anomaly lens it draws what
+              is on screen. */}
           <Allocation rows={onScreen} currency={currency} />
 
           {/* The rows it sits above, closed ones included — the argument is the
