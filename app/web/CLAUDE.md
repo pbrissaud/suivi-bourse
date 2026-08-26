@@ -93,6 +93,32 @@
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed
 > and removed.
+> **The bell is the app's one global indicator, and the band is gone** (#829,
+> ADR-0037). `Banner.tsx`, `Band.tsx` and `StatusDot.tsx` no longer exist, the
+> sidebar's status card left with them, and the notices tab left too: what
+> carries all four is **one control in the content header** — its icon wears the
+> health colour (`STATE_TONE`, declared once, in `Notifications.tsx`), its badge
+> counts **every open entry**, and the panel behind it holds health, installation
+> facts and advisories together, grouped by **subject** (Santé, Installation,
+> Portefeuille, Comptes). The *register* — `health` · `fact` · `advisory` — is
+> never a word on screen: it decides what a card offers. Health offers a link
+> and no acknowledgement, an installation fact is acknowledged for good, an
+> advisory is put to sleep for **thirty days** and the card says so.
+> **The band is not replaced.** Its three conditions are entries in the panel,
+> and its *sentence* descends one floor: with no reporting currency the
+> dashboard, the securities and the accounts render an empty state that **says
+> why**, and the ledger stays readable — the events are declared, it is their
+> valuation that waits. `Refusal.tsx` is what is left of `Band.tsx`, and it says
+> only what has no other home: a gesture the server refused, and a read that did
+> not answer, named by the surface that asked for it. `readConditions` therefore
+> no longer short-circuits on a `shellError`; its one remaining caller of that
+> clause is the panel itself, whose health card already says it in prose.
+> **A card's link lands on the figure**: the account selected, the security's
+> sheet open, the ledger reduced — which is why the set of securities became
+> **addressable** (`?symbol=`), the panel being mounted in the shell and reached
+> from all five routes. And an **advisory is read twice**: as a chip beside the
+> figure it comments on, which never offers the acknowledgement, and as a card in
+> the panel, which is the only place it is acknowledged.
 > **The shell opens to five** (#828, ADR-0038): the settings have an address of
 > their own, `/reglages`, and the data page is called the **ledger** — `Grand
 > livre` in French, the word `CONTEXT.md` and every French record already use,
@@ -225,7 +251,9 @@ Four nets hold a rule nothing made true by construction:
   there.
 - **A block with nothing in it does not exist**, and since #821 there is **no
   exception anywhere** — the notices held the last one. The layout shifts when a
-  notice appears.
+  notice appears. The notifications panel keeps it one level up: *Rien à
+  signaler* is said when the panel is **empty**, never over a pinned card, never
+  over a read that failed, and never while one is in flight.
 - **A receipt lasts as long as the operation, never three seconds** (#796,
   `CONTEXT.md` § Receipt). Two gestures have one and they render it two ways,
   which is a property of what they answer rather than an inconsistency: the
@@ -243,38 +271,41 @@ Four nets hold a rule nothing made true by construction:
   back. This is the one wait the product dresses, and it is not in contention
   with the spinner rule: that rule is about a **read**, whose subject nothing
   may be claimed about; this is the reader's own act.
-- **One band on screen or none.** `lib/status.ts` holds the causal order between
-  the shell's band (what is true of the installation) and a page's own (a read of
-  its own that failed). Since #787 that order is **two conditions**, not three:
-  the reconstruction left the band for the **dot**, which gained a fifth state
-  for it, and its detail — the bar and the lagging account — is a block on the
-  installation tab, where the dot leads.
-- **A page's band belongs to the page, above its blocks** (#799). Mounted inside
-  a block it renders *instead* of it, so it can only ever name the reads that
-  block is made of — and the dashboard's four other reads therefore entered no
-  condition at all: a `503` on a series took the chart, or the comparison, off
-  the page on every load without a word. The page reads and the blocks render;
-  `readConditions` is handed **every** read, and `oneBand` after it is why an
-  unreadable store is still one sentence. What empties a page and what is merely
-  named stay two lists: only the reads a page is *made of* reach
-  `dashboardState`.
+- **There is no band anywhere** (#829, ADR-0037). What is left of it is one
+  sentence per surface, and it is the surface's own: a read that did not answer,
+  named where it was asked for. `lib/status.ts` keeps the causal order and
+  `oneFailure` keeps the first, which is why an unreadable store — which fails
+  every read a page is made of at once — is still **one** sentence.
+- **A page's own sentence belongs to the page, above its blocks** (#799).
+  Mounted inside a block it renders *instead* of it, so it can only ever name
+  the reads that block is made of — and the dashboard's four other reads
+  therefore entered no condition at all: a `503` on a series took the chart, or
+  the comparison, off the page on every load without a word. The page reads and
+  the blocks render; `readConditions` is handed **every** read the page is made
+  of. What empties a page and what is merely named stay two lists: only the
+  reads a page is *made of* reach `dashboardState`. `/api/runtime` is in neither
+  — it answers from process memory and never opens the store, so it fails only
+  when everything else does.
 - **Green means the quotes are read *and* the performance is up to date** (#787).
-  The dot used to hold one predicate, the scheduler, and stayed green while a red
-  band announced a rebuild on every page — two surfaces disagreeing about one
-  installation. With the rebuild folded in, one glance answers *are the figures I
-  am looking at any good*, which is why no page dates its own figures any more.
-- **And the dot reads `/health`** (#819, ADR-0036), which is the one route the
+  The indicator used to hold one predicate, the scheduler, and stayed green while
+  a red band announced a rebuild on every page — two surfaces disagreeing about
+  one installation. With the rebuild folded in, one glance answers *are the
+  figures I am looking at any good*, which is why no page dates its own figures
+  any more. **One fact has one announcer**: `rebuilding` is a colour of the bell
+  *and* the subject of the `reconstruction_running` installation fact, so the
+  panel raises a health card for `attention` and `unreachable` alone.
+- **And it reads `/health`** (#819, ADR-0036), which is the one route the
   front reads with no `/api` prefix — the container's own probe, so `vite.config.ts`
   proxies it beside `/api` or the dev server answers it with `index.html`. It read
   `/api/runtime` until then, whose one *detectable* problem is a stopped
-  scheduler: a scrape frozen since Tuesday left the dot green. The body's own
+  scheduler: a scrape frozen since Tuesday left it green. The body's own
   word carries the four facts now, so **amber is a `200`**, and the trade is
   assumed — the body goes when the store goes, and the `503` under it is red,
   the one colour that needs no body to be true. Red also covers a route that
   answers with a body `installationState` cannot read; grey stays *nothing has
   run yet* and never *something is wrong*. `STATE_TONE` is declared **once**, in
-  `StatusDot.tsx`, and the sidebar card reads it: the card is the dot's
-  development, never a second opinion on what *attention* covers.
+  `Notifications.tsx`, and it has exactly one consumer since #829: the sidebar
+  card that used to be its second reader is gone.
 - **The theme, the language and the table density are the reader's three
   preferences, one mechanism** (ADR-0024 decided the first two): three states each
   for theme and language (`light|dark|auto`, `fr|en|auto`), **two** for density
@@ -323,7 +354,8 @@ src/
 │   ├── density.tsx           # the third preference: two states, same key shape
 │   ├── pageHeading.tsx       # what the header's `<h1>` says, declared by the page
 │   ├── alloc.ts format.ts    # the twelve allocation stops · the nine Intl sites
-│   ├── problem.ts status.ts  # problem.type → key (+ values) · the dot's state, who says a band
+│   ├── problem.ts status.ts  # problem.type → key (+ values) · the bell's state, a failed read
+│   ├── notifications.ts      # the panel's entries: two axes, four subjects, three counts
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
 │   ├── gain.ts               # ADR-0018's four terms and their sum
 │   ├── shares.ts             # a row is a symbol; the carried value; the day-markers
@@ -336,18 +368,20 @@ src/
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
 │   ├── currencies.ts firstRun.ts receipts.ts docs.ts save.ts
 ├── components/
-│   ├── Explain · Stat · EmptyState · Band · EntryPair · ShareBar
+│   ├── Explain · Stat · EmptyState · Refusal · EntryPair · ShareBar
+│   ├── NoBaseCurrency         # the band's sentence, in each page's empty state
 │   ├── FirstRun · CurrencyField
 │   ├── ChartTooltip           # what a chart answers the pointer (#787: the axes went)
-│   ├── Shell · ContentHeader (the title, the dot, ⌘K, the three preferences)
+│   ├── Shell · ContentHeader (the title, the bell, ⌘K, the three preferences)
 │   │                          # Shell also reads back the navigation's fold
+│   ├── Notifications          # the bell and its panel: health · facts · advisories
 │   ├── Palette                # ⌘K: five sections, three of them optional reads
-│   ├── AppSidebar (the navigation, and the status card that develops the dot)
+│   ├── AppSidebar (the navigation, and nothing else since #829)
 │   ├── dashboard/  # the hero head, the chart, the allocation, the movers, the accounts card
 │   ├── shares/     # the head, the table, the fold of closed lines, the chart, the sheet
 │   ├── data/       # tab 1: ledger, create form, drop zone, import and export menu
 │   │               # (UploadZone: the file in, the receipt under it)
-│   │               # tab 2: notices  ·  tab 3: settings, the store
+│   │               # tab 2: settings, the store — the notices tab left with #829
 │   │               # (the accounts declaration moved to accounts/ — ADR-0028)
 │   └── accounts/   # the rail of weights, one account's detail, its curve, its form
 └── test/           # setup · MSW server · payload factory · renderApp
@@ -394,16 +428,19 @@ src/
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
-- **Ledger** (`/donnees`) — still ADR-0030's three tabs, and the page is
-  **named** for the one it is about to be alone with (ADR-0038): the notices
-  leave with #829 and the tab bar with #830. *The ledger* (the table — bounded,
+- **Ledger** (`/donnees`) — **two tabs** since #829 and the page is **named**
+  for the one it is about to be alone with (ADR-0038): the notices left with the
+  banner and the status dot, into the panel behind the header's bell, and the
+  tab bar leaves with #830. *The ledger* (the table — bounded,
   sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
   groups of chips, a search, a **period** — two date fields since #810, both
   bounds inclusive, and a chip that shows up only once a bound is in force, to
   name the interval and be the way out of it — and, since #797, by an
-  **address**: `q`, `type`, `account` and, since #810, `since` and `until`, which
-  are the five the export resource already parses, so a reduced ledger's URL is
-  the query string of its own export. A reduction that arrived that way names
+  **address**: `q`, `type`, `account`, `since`, `until` and — since #829 —
+  a repeated `symbol`, which are the **five** dimensions the export resource
+  parses, so a reduced ledger's URL is the query string of its own export. The
+  securities were the one dimension with no address until a card in the panel
+  had to reach them from all five routes. A reduction that arrived that way names
   what it retains and offers the way out; the reader's first gesture on the chips
   takes the address back off, an address being a description of the table. Since
   #814 the reduction also has a **destructive gesture of its own**, beside the
@@ -418,10 +455,8 @@ src/
   `events/export.py` and a rule written twice loses a branch; the fourth was the
   accounts, and it left with the file nothing could read back (ADR-0034) — and
   **no third entry** since #816: nothing persists that could be listed or revoked, so the
-  band is the zone and the menu), *The notices* — an **ordinary block** since
-  #821: the tab is always there, what is on it is not, and an installation with
-  nothing to report renders nothing at all — and *The installation* (settings,
-  the store and its orphans), which `/reglages` now renders too.
+  band is the zone and the menu) — and *The installation* (settings, the store
+  and its orphans), which `/reglages` now renders too.
 - **Settings** (`/reglages`) — the fifth page (ADR-0038), and the only route of
   the five that reads nothing off its own address: a dial is not a reduction of
   anything, so there is nothing here for a search parameter to describe. It
