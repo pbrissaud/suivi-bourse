@@ -66,26 +66,18 @@ From the `app` folder:
 
 ```bash
 SB_STORE_DIR=/var/lib/suivi-bourse \
-uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+uv run python src/boot.py
 ```
 
-`gunicorn.conf.py` is not a server tuning file, it is the boot sequence: it opens
-the store, binds the one socket the app has, and refuses to start with
-more than one worker. Raise `threads` if you ever need to; never `workers` —
-each extra worker would run a second scheduler, and every scrape and every
-rebuild would happen twice.
+`boot.py` is not a server launcher, it is the boot sequence: it reads the
+environment, opens the store, builds the application, arms the scheduled jobs and
+binds the one socket the app has — in that order, in one process. There is no
+worker count to set anywhere, and that is deliberate: the scheduler lives in this
+process and all of its state is in memory, so a second one would scrape every
+symbol twice. Concurrency comes from a thread pool inside the process.
 
 Then open the app and answer the one question it asks: that half is
 [Get started](./get-started.mdx), and it is the same on every install.
-
-:::warning macOS runs the container, not the process
-Started this way on macOS, the app dies as soon as it scrapes its first symbol.
-gunicorn forks its worker, and libcurl's macOS-only initialisation
-(`Curl_macos_init`, reached from `curl_easy_init` inside the HTTP backend
-yfinance uses) reads the system proxy configuration through CoreFoundation,
-which is not safe in a process forked without `exec`. Linux has no such
-initialisation and is unaffected. On a Mac, run the image.
-:::
 
 ## Keeping it running
 
@@ -101,7 +93,7 @@ After=network-online.target
 Type=simple
 Restart=always
 WorkingDirectory=<installation_path>/app
-ExecStart=/usr/local/bin/uv run gunicorn -c src/gunicorn.conf.py 'web:create_app()'
+ExecStart=/usr/local/bin/uv run python src/boot.py
 User=<user>
 Group=<group>
 Environment=PYTHONUNBUFFERED=1
