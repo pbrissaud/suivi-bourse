@@ -45,6 +45,30 @@ export function inSrgb(lightness: number, chroma: number, hue: number): boolean 
     .every((channel) => channel >= -0.001 && channel <= 1.001)
 }
 
+/**
+ * The colour **with its hue taken away**: WCAG relative luminance, which is the
+ * one reading of a colour that survives every form of colour blindness.
+ *
+ * `alloc.ts` states a ramp in OKLCH lightness, and OKLCH lightness is not what
+ * a screen emits: chroma falls with rank on both grounds, and chroma carries
+ * light of its own, so the *rendered* order of the twelve is a different claim
+ * from the declared one. This is what lets the ramp's own test ask the question
+ * ADR-0023 answers — *can the rank be read without the hue?* — of the colours
+ * that are actually painted.
+ */
+export function luminance(lightness: number, chroma: number, hue: number): number {
+  const [red, green, blue] = linearSrgb(lightness, chroma, hue).map((channel) =>
+    Math.min(1, Math.max(0, channel)),
+  )
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+/** The WCAG contrast of two luminances — the same formula for text and marks. */
+export function contrast(one: number, other: number): number {
+  const [lighter, darker] = one >= other ? [one, other] : [other, one]
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
 /** The most chroma this lightness and hue can hold — what a failure should say. */
 export function maxChroma(lightness: number, hue: number): number {
   let inside = 0
