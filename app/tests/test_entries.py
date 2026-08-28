@@ -342,7 +342,7 @@ def test_this_module_is_the_writer_of_the_event_table(store, tmp_path):
     assert writers == ['entries.py', 'reassignment.py']
     assert set(entries.__all__) == {
         'DUPLICATE_KEY_COLUMNS',
-        'UnknownEntry', 'InvalidEntry',
+        'UnknownEntry', 'InvalidEntry', 'Duplicate',
         'create', 'create_many', 'update', 'remove', 'remove_selection',
         'content_key', 'split_duplicates', 'judge'}
 

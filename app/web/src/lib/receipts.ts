@@ -75,6 +75,15 @@ export type Receipt =
   | { kind: 'import.known'; count: number }
   | { kind: 'import.known.forecast'; count: number }
   /**
+   * The same lines, once the reader has said *these are real orders* (#835).
+   *
+   * Its own sentence rather than a value the forecast's selects on, because it
+   * is the opposite claim: *they will be skipped* and *they will be written a
+   * second time* are two futures for one set of rows, and the block that states
+   * them is the one the owner is answering in.
+   */
+  | { kind: 'import.known.kept'; count: number }
+  /**
    * It landed: what the gesture produced, in the units the owner counts in.
    *
    * The two days arrive **already rendered**, like `currency.saved`'s code and
@@ -148,6 +157,8 @@ export function receiptMessage(receipt: Receipt): { message: MessageKey; values:
       return { message: 'receipt.import.known', values: { count: receipt.count } }
     case 'import.known.forecast':
       return { message: 'receipt.import.known.forecast', values: { count: receipt.count } }
+    case 'import.known.kept':
+      return { message: 'receipt.import.known.kept', values: { count: receipt.count } }
     case 'events.removed':
       return { message: 'receipt.events.removed', values: { count: receipt.count } }
   }

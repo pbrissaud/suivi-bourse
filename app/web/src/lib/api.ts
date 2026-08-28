@@ -1355,14 +1355,74 @@ export interface ImportReceipt {
   period: ImportPeriod | null
   accounts: string[]
   symbols: string[]
+  /**
+   * **The accounts the file names, with their volumes** (#835) — the census the
+   * modal's lines are made of, read off the file *before* any correspondence is
+   * applied, so the question does not move under the reader as they answer it.
+   *
+   * `name` is the label as the file writes it, `''` for the blank column, which
+   * is a line like any other: it means `default` only while nothing is declared
+   * and is an error afterwards.
+   */
+  file_accounts: FileAccount[]
+  /**
+   * **The one thing that details, rather than summarises** (#835). The rest of
+   * this object answers *which*, not *how many times*; a skipped line is argued
+   * with one at a time, and a count cannot be argued with.
+   *
+   * `duplicate_of` is the id of the stored row this line repeats, or `null`
+   * where what it repeats is another line of the file itself. Empty under
+   * `writeDuplicates`: the flag moves those rows into `written`, so there is
+   * nothing skipped left to name.
+   */
+  duplicate_rows: DuplicateRow[]
+  /** What the file declares as its reporting currency, and what is done with it. */
+  currency: DeclaredCurrency | null
 }
 
-/** How the file is to be read — the gesture's two parameters (#813). */
+/** One account the file names, and how many of its rows carry it (#835). */
+export interface FileAccount {
+  name: string
+  rows: number
+}
+
+/** One line of the file the ledger already holds, and the line it repeats. */
+export interface DuplicateRow extends LedgerEvent {
+  duplicate_of: string | null
+}
+
+/**
+ * The reporting currency a file declares (#710, ADR-0021) and what this import
+ * would do with it: `adopting` is true when the install has never answered the
+ * question and this gesture writes the file's answer into the dial. A file that
+ * **contradicts** the dial never reaches here — that is a refusal in prose.
+ */
+export interface DeclaredCurrency {
+  declared: string
+  adopting: boolean
+}
+
+/** How the file is to be read — the gesture's parameters (#813, #835). */
 export interface ImportOptions {
   /** Judge and count, and **write nothing**: the forecast the owner may refuse. */
   dryRun?: boolean
   /** *These are real orders, write them* — the rows the ledger already has. */
   writeDuplicates?: boolean
+  /**
+   * **Where each account the file names is to go** (#835) — file label to the id
+   * of a declared account. Sent as one JSON object, on the query string with the
+   * rest of *how the file is to be read*.
+   *
+   * Its **presence** is itself an answer: it says the modal is collecting the
+   * correspondence, so the preview reports the account column rather than
+   * refusing a file over the very question it is being asked to put. That is why
+   * it is sent from the first preview on, empty object and all.
+   */
+  mapping?: Record<string, string>
+  /** The labels to declare as accounts with the import — repeated `declare=`. */
+  declaring?: readonly string[]
+  /** Decline the reporting currency the file offers. Absent means *take it up*. */
+  declineCurrency?: boolean
 }
 
 export const api = {
@@ -1459,6 +1519,13 @@ export const api = {
     upload<ImportReceipt>(ROUTES.eventsImport, file, [
       ...(options.dryRun ? ['dry_run=1'] : []),
       ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
+      // The correspondence and its two companions (#835). `mapping` is sent
+      // whenever there is one to send, empty object included: the parameter's
+      // presence is what tells the preview it is being asked a question rather
+      // than being asked to judge.
+      ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
+      ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
+      ...(options.declineCurrency ? ['adopt_currency=0'] : []),
     ]),
   store: () => get<StoreState>(ROUTES.store),
   purgeOrphans: () => remove<PurgeResult>(ROUTES.storeOrphans),

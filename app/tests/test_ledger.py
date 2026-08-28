@@ -19,12 +19,14 @@ fingerprints it — the two things every page and every job go through.
 import io
 from dataclasses import replace
 from datetime import date
+from urllib.parse import urlencode
 
 import openpyxl
 import pytest
 
 import entries
 import ledger
+import store as store_module
 import uploads
 from events import EventLoader
 from events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, EventType
@@ -920,3 +922,458 @@ def test_a_file_of_exactly_the_bound_is_not_refused_by_its_envelope(tmp_path):
     assert response.status_code == 422
     assert 'event_type' in response.get_json()['detail']
     assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+# --------------------------------------------------------------------------- #
+# The account correspondence: a parameter of the gesture, consumed and dropped
+# (#835, ADR-0006, ADR-0032)
+#
+# It is **not** the mapping table ``reassignment.py`` refused. That one was a
+# second, persistent truth about the account an event names; this one is read off
+# the query string, applied to the drafts before a single row is written, and
+# then it is gone — which is why the assertions below are on the ``event`` rows
+# and on the ``account`` table, and why one of them is that a second file asks
+# the question again.
+# --------------------------------------------------------------------------- #
+
+#: A file naming an account the seeded install has never heard of, plus one row
+#: that names none at all — the two lines the modal has to put a question about.
+NAMES_TR = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,TR\n"
+    "2024-02-15,BUY,AAPL,Apple Inc,5,160.00,2.50,,TR\n"
+    "2024-03-15,DIVIDEND,AAPL,Apple Inc,,,,8.50,\n"
+).encode('utf-8')
+
+
+def _query(**params):
+    """The gesture's parameters as a client spells them on the query string."""
+    return '?' + urlencode(params, doseq=True)
+
+
+def _declared(store):
+    """Every declared account id, in one sorted list."""
+    return sorted(row[0] for row in store.query('SELECT id FROM account'))
+
+
+def _rows_by_account(store):
+    """Which account each event landed on, in the order they were written."""
+    return [row[0] for row in
+            store.query('SELECT account FROM event ORDER BY id')]
+
+
+def test_the_receipt_names_the_accounts_the_file_carries_with_their_volumes(
+        tmp_path):
+    """The line the modal is built out of: **which** account, and **how many**.
+
+    A volume is the half only the server can answer, and it is the half that
+    makes the question answerable — *where do these two events go* is a
+    decision, *where does TR go* is a riddle. The blank column is a line like
+    the others and sorts first, because it is the likeliest one to need an
+    answer.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    receipt = _upload(client, NAMES_TR,
+                      query=_query(dry_run=1, map='{}')).get_json()
+
+    assert receipt['file_accounts'] == [
+        {'name': '', 'rows': 1},
+        {'name': 'TR', 'rows': 2}]
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_preview_collecting_a_correspondence_reports_what_it_would_refuse(
+        tmp_path):
+    """The ``422`` this feature exists to repair, at the one moment it is wrong.
+
+    A file naming an undeclared account is refused — and the refusal is right at
+    the write, where nothing more can be said. At the **preview that is
+    collecting the correspondence** it is not: refusing there would refuse the
+    file over the very question the response is being asked in order to put, and
+    the reader would be sent off to declare an account by hand holding a file the
+    app had just turned back.
+
+    So the ``map`` parameter — present, empty object included — says *I am the
+    modal*, and the account column is reported rather than judged. Nothing is
+    written either way.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    offered = _upload(client, NAMES_TR, query=_query(dry_run=1, map='{}'))
+    silent = _upload(client, NAMES_TR, query="?dry_run=1")
+
+    assert offered.status_code == 200
+    assert [account['name']
+            for account in offered.get_json()['file_accounts']] == ['', 'TR']
+    # And the preview that offered nothing is answered exactly as it was before
+    # this ticket: #813's forecast refuses what the write refuses.
+    assert silent.status_code == 422
+    assert "'TR' is not declared" in silent.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_the_write_judges_the_account_column_whatever_was_offered(tmp_path):
+    """The leniency is the **preview's**, and it has no write-path twin.
+
+    What the modal gives up at the forecast it gives back at the button: it
+    blocks until every line has a target, and a commit that carries an
+    incomplete correspondence is refused exactly as it always was. The guarantee
+    *no refusal arrives after the button* is held by the two together, never by
+    the server alone forgetting a rule.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    response = _upload(client, NAMES_TR, query=_query(map='{}'))
+
+    assert response.status_code == 422
+    assert "'TR' is not declared" in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_correspondence_sends_a_file_account_to_a_declared_one(tmp_path):
+    """The first of the two answers: *these rows go into the account I keep*.
+
+    ``TR`` is the broker's own word for it and ``pea`` is the reader's; the rows
+    land under ``pea``, and no account named ``TR`` is created on the way.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    response = _upload(client, NAMES_TR,
+                       query=_query(map='{"TR": "pea", "": "pea"}'))
+
+    assert response.status_code == 201
+    assert _rows_by_account(opened) == ['pea', 'pea', 'pea']
+    assert _declared(opened) == ['default', 'pea']
+
+
+def test_a_correspondence_declares_the_account_nobody_had_declared(tmp_path):
+    """The second answer, and it is the one that repairs the refusal.
+
+    *Declare « TR » as a new account* is a target like any other, and it is the
+    entry that stops a file being rejected whole. The account is born in the app
+    (ADR-0034) — the file did not declare it, the reader did, in the modal — and
+    it takes the seed row's own neutral type, retyping and relabelling being the
+    Accounts page's two gestures.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    response = _upload(client, NAMES_TR,
+                       query=_query(declare='TR', map='{"": "pea"}'))
+
+    assert response.status_code == 201
+    assert _declared(opened) == ['TR', 'default', 'pea']
+    assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
+    assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
+        [(store_module.DEFAULT_ACCOUNT_ROW[1],)]
+
+
+def test_the_correspondence_applies_before_the_split_at_both_moments(tmp_path):
+    """**The symmetry the whole feature rests on** (#835).
+
+    The duplicate key carries the account, so a correspondence applied to the
+    write alone would make the preview count duplicates against accounts the
+    write is not going to use: the reader would be told *nothing of this file is
+    in your ledger*, press the button, and write a second copy of every line.
+
+    The ledger below holds a purchase on ``pea``; the file states the same
+    purchase under the broker's own ``TR``. Mapped onto ``pea`` it **is** that
+    purchase — the forecast says so and the write skips it — and the two
+    payloads are compared member for member, which is the assertion
+    ``test_the_forecast_and_the_fact_are_the_same_object`` makes of a file with
+    no correspondence at all.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    already = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,pea\n"
+    ).encode('utf-8')
+    _upload(client, already)
+    mapped = _query(map='{"TR": "pea", "": "pea"}')
+
+    forecast = _upload(client, NAMES_TR, query=mapped + '&dry_run=1').get_json()
+    fact = _upload(client, NAMES_TR, query=mapped).get_json()
+
+    assert forecast == fact
+    assert forecast['duplicates'] == 1
+    assert forecast['written'] == 2
+    # And the ledger has the one row it had, plus the two that were not in it.
+    assert _rows_by_account(opened) == ['pea', 'pea', 'pea']
+
+
+def test_without_the_correspondence_the_same_file_duplicates_nothing(tmp_path):
+    """The other half of the assertion above: the account really is in the key.
+
+    The same file, the same ledger, no correspondence — ``TR`` is not ``pea``,
+    so nothing is a duplicate. Read together, the two say that the split sees
+    exactly what the correspondence did to the rows and nothing else.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE)
+    already = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,account\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,pea\n"
+    ).encode('utf-8')
+    _upload(client, already)
+
+    forecast = _upload(client, NAMES_TR,
+                       query=_query(dry_run=1, map='{}')).get_json()
+
+    assert forecast['duplicates'] == 0
+
+
+def test_the_correspondence_is_consumed_and_kept_nowhere(tmp_path):
+    """ADR-0006 intact: no second truth about the account an event names.
+
+    The correspondence is a parameter of *this* gesture. Nothing records that
+    ``TR`` once meant ``pea``, so the next file naming ``TR`` asks the question
+    again — which is the property that separates this from the mapping layer
+    :mod:`reassignment` refused, and it is asserted as the absence of memory
+    rather than as the absence of a table.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    _upload(client, NAMES_TR, query=_query(map='{"TR": "pea", "": "pea"}'))
+    again = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,account\n"
+        "2024-06-15,BUY,MSFT,Microsoft,5,380.00,2.50,TR\n"
+    ).encode('utf-8')
+
+    response = _upload(client, again)
+
+    assert response.status_code == 422
+    assert "'TR' is not declared" in response.get_json()['detail']
+    assert _declared(opened) == ['default', 'pea']
+
+
+def test_a_target_nobody_declared_is_refused_at_both_moments(tmp_path):
+    """A file's account is sent to an account that exists, or to nothing.
+
+    Refused identically at the preview and at the write, which is what keeps the
+    modal's button honest: what the forecast accepts, the button writes.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    query = _query(map='{"TR": "cto", "": "pea"}')
+
+    forecast = _upload(client, NAMES_TR, query=query + '&dry_run=1')
+    written = _upload(client, NAMES_TR, query=query)
+
+    for response in (forecast, written):
+        assert response.status_code == 422
+        assert 'cto' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+def test_a_correspondence_for_an_account_the_file_does_not_name_is_refused(
+        tmp_path):
+    """It answers for the accounts the file carries, and for no others.
+
+    Otherwise ``?declare=`` would be a way of creating an account that nothing
+    in the file names, through a route whose whole subject is the file.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    response = _upload(client, NAMES_TR,
+                       query=_query(dry_run=1, map='{}', declare='CTO'))
+
+    assert response.status_code == 422
+    assert 'CTO' in response.get_json()['detail']
+    assert _declared(opened) == ['default', 'pea']
+
+
+def test_a_label_declared_between_the_forecast_and_the_button_is_not_refused(
+        tmp_path):
+    """**No refusal arrives after the button** — including this one.
+
+    The reader may declare ``TR`` from the Accounts page while their forecast
+    stands. Answering *that account already exists* to somebody pressing
+    *Import* would be exactly the refusal this ticket forbids, so the
+    declaration is dropped rather than refused and the rows land where they were
+    going to.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    assert client.post('/api/accounts',
+                       json={'id': 'TR', 'type': 'CTO'}).status_code == 201
+
+    response = _upload(client, NAMES_TR,
+                       query=_query(declare='TR', map='{"": "pea"}'))
+
+    assert response.status_code == 201
+    assert _rows_by_account(opened) == ['TR', 'TR', 'pea']
+    # And it is still the account the reader declared, with the type they gave.
+    assert opened.query('SELECT type FROM account WHERE id = ?', ['TR']) == \
+        [('CTO',)]
+
+
+def test_a_correspondence_that_is_not_one_is_refused_before_anything(tmp_path):
+    """The shape is judged where a file's shape is judged: at the door.
+
+    Two answers to one question is the case worth naming — a label both sent to
+    a declared account and declared itself — because picking either silently is
+    how a reader's rows land somewhere they never asked for.
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+
+    unreadable = _upload(client, NAMES_TR, query=_query(dry_run=1, map='TR'))
+    twice = _upload(client, NAMES_TR,
+                    query=_query(dry_run=1, map='{"TR": "pea"}', declare='TR'))
+
+    assert unreadable.status_code == 422
+    assert twice.status_code == 422
+    assert 'TR' in twice.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+# --------------------------------------------------------------------------- #
+# The two other offers the server already made and nobody had collected
+# --------------------------------------------------------------------------- #
+
+def test_the_duplicates_are_named_with_the_row_they_repeat(tmp_path):
+    """A count cannot be argued with; a line can (#835).
+
+    *Two lines will be skipped* is not a sentence the owner can act on — only
+    *this 15 January purchase of ten AAPL, which you already have* is. Each
+    skipped line therefore carries the id of the **stored** row it repeats, or
+    ``null`` where what it repeats is another line of the file itself: the
+    comparison runs against both, and a file appended to itself has no ledger row
+    to point at.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    repeats = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,2.50,,\n"
+        "2024-06-01,BUY,MSFT,Microsoft,5,380.00,2.50,,\n"
+        "2024-06-01,BUY,MSFT,Microsoft,5,380.00,2.50,,\n"
+    ).encode('utf-8')
+    (held,) = opened.query('SELECT id FROM event')
+
+    receipt = _upload(client, repeats, query="?dry_run=1").get_json()
+
+    named = receipt['duplicate_rows']
+    assert [row['duplicate_of'] for row in named] == [str(held[0]), None]
+    assert [(row['date'], row['symbol'], row['quantity']) for row in named] == [
+        ('2024-01-15', 'AAPL', 10.0),
+        ('2024-06-01', 'MSFT', 5.0)]
+    assert receipt['duplicates'] == len(named) == 2
+
+
+def test_the_flag_that_writes_the_duplicates_leaves_none_to_name(tmp_path):
+    """The three numbers close, so there is nothing skipped left to detail.
+
+    ``?write_duplicates=1`` moves those rows from ``duplicates`` into
+    ``written`` rather than inventing a fourth column, and the named list
+    follows: a line that is being written is not a line the reader is being asked
+    about.
+    """
+    client = build_client(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+
+    receipt = _upload(client, ONE_BUY.encode('utf-8'),
+                      query="?dry_run=1&write_duplicates=1").get_json()
+
+    assert receipt['duplicate_rows'] == []
+    assert receipt['rows'] == receipt['written'] == 1
+    assert receipt['duplicates'] == 0
+
+
+def test_the_preview_refuses_the_duplicates_the_write_would_refuse(tmp_path):
+    """The flag is judged **at the preview**, or the refusal lands after the button.
+
+    ``?write_duplicates=1`` is not a rendering choice a client can settle by
+    arithmetic: writing the rows the ledger already holds is a *different ledger
+    to replay*, and a ``SELL`` that only got through because its duplicate was
+    skipped stops replaying once it is not. The preview therefore runs
+    :func:`entries.judge` over the set the flag really writes, so the two moments
+    answer the same status and the same sentence — which is what lets #835's
+    window put the box without promising something the button cannot keep.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    sold = "2024-02-01,SELL,AAPL,Apple Inc,10,180.00,2.00,,\n"
+    _upload(client, (ONE_BUY + sold).encode('utf-8'))
+    again = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        + sold
+    ).encode('utf-8')
+
+    skipping = _upload(client, again, query="?dry_run=1")
+    keeping = _upload(client, again, query="?dry_run=1&write_duplicates=1")
+    written = _upload(client, again, query="?write_duplicates=1")
+
+    # Skipped, the line is one the ledger already holds and the forecast is
+    # ordinary: nothing to write, nothing to refuse.
+    assert skipping.status_code == 200
+    assert skipping.get_json()['duplicates'] == 1
+    # Kept, the same file oversells — and the **preview** says so, with the
+    # status and the prose the write answers, having written nothing.
+    assert keeping.status_code == 409
+    assert keeping.get_json()['type'] == problem.TYPE_UNREPLAYABLE
+    assert written.status_code == 409
+    assert keeping.get_json()['detail'] == written.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
+def test_the_receipt_says_what_the_file_declares_and_what_becomes_of_it(
+        tmp_path):
+    """The currency is an **offer** on an install that has never answered.
+
+    The file states the unit its amounts are recorded in (ADR-0021: the app
+    reads a declaration, it never asserts one), and the receipt says both halves
+    — what was declared, and whether this gesture takes it up — so the modal can
+    put the question rather than adopting behind the reader's back.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,eur\n"
+    ).encode('utf-8')
+
+    receipt = _upload(client, body, query="?dry_run=1").get_json()
+
+    # Upper-cased through the settings registry: the receipt announces the
+    # spelling the dial would hold, never the one the cell happened to carry.
+    assert receipt['currency'] == {'declared': 'EUR', 'adopting': True}
+    assert opened.setting('base_currency') is None
+
+
+def test_the_offer_is_one_the_reader_may_decline(tmp_path):
+    """An offer whose default is *yes* is still an offer.
+
+    ``?adopt_currency=0`` is the box unticked in the modal: the rows land, and
+    the dial is left unanswered. A client that says nothing takes it up, which is
+    the round trip ADR-0021 exists for — upload the export, and the install is
+    the install it came from.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,EUR\n"
+    ).encode('utf-8')
+
+    receipt = _upload(client, body, query="?adopt_currency=0").get_json()
+
+    assert receipt['currency'] == {'declared': 'EUR', 'adopting': False}
+    assert opened.setting('base_currency') is None
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_declining_does_not_reach_the_disagreement(tmp_path):
+    """The refusal is not an offer, and it is not declinable.
+
+    A file recorded in another unit than this install's is refused in prose
+    whatever the flag says: declining to adopt does not make those amounts
+    re-readable, and reinterpreting every stored figure is the unrecoverable act
+    ADR-0002 names.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _upload(client, ONE_BUY.encode('utf-8'))
+    assert client.put('/api/settings',
+                      json={'base_currency': 'EUR'}).status_code == 200
+    body = (
+        "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+        "2024-02-15,BUY,AAPL,Apple Inc,10,150.00,USD\n"
+    ).encode('utf-8')
+
+    response = _upload(client, body, query="?adopt_currency=0")
+
+    assert response.status_code == 422
+    assert 'USD' in response.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]

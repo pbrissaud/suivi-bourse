@@ -77,6 +77,7 @@ import type {
   Fundamentals,
   HealthJobs,
   HealthState,
+  DuplicateRow,
   ImportReceipt,
   InstallationFact,
   LedgerEvent,
@@ -909,6 +910,30 @@ export function aReceipt(overrides: Partial<ImportReceipt> = {}): ImportReceipt 
     period: { from: '2026-01-05', to: '2026-02-27' },
     accounts: ['beta'],
     symbols: ['ZETA', 'ZZX'],
+    // **The simple case is the default** (#835): the one account the file names
+    // is one this install declares, nothing of the file is already in the
+    // ledger, and no reporting currency is offered. That is the shape the
+    // ticket's own note describes — the block of accounts reduced to a line of
+    // affirmation, and no block of duplicates at all — and a test that is about
+    // a question the modal has to put asks for it by name.
+    file_accounts: [{ name: 'beta', rows: 3 }],
+    duplicate_rows: [],
+    currency: null,
+    ...overrides,
+  }
+}
+
+/**
+ * ONE LINE THE LEDGER ALREADY HOLDS (#835) — named, with what it repeats.
+ *
+ * `duplicate_of` is the id of the stored row; `null` says the line repeats
+ * another line **of the file itself**, which is the one difference the reader
+ * can see and the one no count carries.
+ */
+export function aDuplicateRow(overrides: Partial<DuplicateRow> = {}): DuplicateRow {
+  return {
+    ...anEvent(),
+    duplicate_of: '1',
     ...overrides,
   }
 }

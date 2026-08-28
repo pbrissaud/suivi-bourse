@@ -20,8 +20,9 @@ So the rules here are thin on purpose. What the routes *do* own:
   renaming one cannot cut its history in two.
 """
 import re
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import duckdb
 from flask import Blueprint, Response, jsonify, request
@@ -1002,6 +1003,33 @@ def import_events():
     vigilance at all; with it the comparison is not made and the file lands
     whole. The app never decides on the owner's behalf what is a duplicate: it
     reports, skips, and offers.
+
+    **And three more since #835, all of them the reader's answer to what the
+    preview showed them.**
+
+    ``?map=`` and repeated ``?declare=`` carry the **account correspondence**
+    (:func:`uploads.mapping`): where each account the file names is to go, and
+    which of those labels is to be declared as an account with the import. It is
+    applied to the parsed events **before** :func:`_to_write`, identically in
+    both branches — a correspondence applied to the write alone would leave the
+    preview counting duplicates against accounts the write is not going to use,
+    the duplicate key carrying the account, and that is precisely the lie
+    :func:`entries.judge` exists to make impossible.
+
+    A correspondence being **offered at all** also changes what the preview
+    refuses, and only the preview: a ``map`` parameter says *I am the modal
+    collecting this answer*, so the account column is reported (in
+    ``file_accounts``) rather than judged. Refusing it there would refuse a file
+    over the very question the response is being asked in order to put. The
+    **write** judges the column exactly as it always did, so the guarantee is
+    unchanged where it is spent: nothing the reader could have answered is
+    refused after the button, because the button is blocked until they have.
+
+    ``?adopt_currency=0`` declines the reporting currency the file declares —
+    the one offer of the three, and the reader is allowed to say no to an offer.
+    It does **not** reach the disagreement: a file recorded in another unit than
+    this install's is refused in prose whatever this parameter says, because
+    declining to adopt does not make those amounts re-readable (ADR-0002).
     """
     if uploads.oversize(request.content_length):
         return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
@@ -1014,6 +1042,7 @@ def import_events():
 
     dry_run = _asked('dry_run')
     write_duplicates = _asked('write_duplicates')
+    adopt_currency = _unless_declined('adopt_currency')
 
     try:
         # Read and parsed **outside** the writers' mutex: the parse is the slow
@@ -1021,10 +1050,17 @@ def import_events():
         # the one connection through it would stop the scrape writing for the
         # length of a spreadsheet.
         parsed = uploads.read(upload.filename or '', upload.stream)
+        correspondence = uploads.mapping(request.args.get('map'),
+                                         request.args.getlist('declare'))
     except uploads.UploadTooLarge as exc:
         return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
     except uploads.UploadRefused as exc:
         return unprocessable_file(str(exc))
+
+    # The file's own census, read **before** the correspondence is applied: it is
+    # what the modal's lines are made of, and it must not move under the reader
+    # as they answer it (#835).
+    census = uploads.census(parsed.events)
 
     runtime = current_runtime()
     try:
@@ -1034,10 +1070,14 @@ def import_events():
             # so it cannot serialise against an ingestion and cannot leave a
             # row behind. Everything below it reads.
             opened = runtime.config_manager.store
-            ledger.currency_to_adopt(opened, parsed.declared_currency)
-            fresh, duplicates = _to_write(opened, parsed.events,
-                                          write_duplicates)
-            entries.judge(opened, fresh)
+            settled = _settled_mapping(opened, correspondence, census)
+            declared = ledger.currency_to_adopt(opened,
+                                                parsed.declared_currency)
+            stated = _stated_currency(parsed.declared_currency)
+            rows = settled.applied(parsed.events)
+            fresh, duplicates = _to_write(opened, rows, write_duplicates)
+            entries.judge(opened, fresh, declaring=settled.declaring,
+                          accounts_pending=settled.stated)
             written = len(fresh)
         else:
             # The writers' mutex, like every other write here: a Flask handler
@@ -1047,16 +1087,27 @@ def import_events():
             # exactly where the write decides it — and written
             # inside the one transaction that also writes the rows.
             with runtime.config_manager.writing() as opened:
-                adopted = ledger.currency_to_adopt(opened,
-                                                   parsed.declared_currency)
+                settled = _settled_mapping(opened, correspondence, census)
+                declared = ledger.currency_to_adopt(opened,
+                                                    parsed.declared_currency)
+                stated = _stated_currency(parsed.declared_currency)
+                # **The same line, one branch over** (#835): the correspondence
+                # is applied to the parsed events and never to the write alone,
+                # or the two moments would disagree about what a duplicate is.
+                rows = settled.applied(parsed.events)
                 # The split is read **inside** the mutex, for
                 # ``remove_selection``'s reason: what is skipped is what the
                 # ledger held at the instant of the write, never a set assembled
                 # against a ledger another writer has moved since.
-                fresh, duplicates = _to_write(opened, parsed.events,
-                                              write_duplicates)
-                written = len(entries.create_many(opened, fresh,
-                                                  base_currency=adopted))
+                fresh, duplicates = _to_write(opened, rows, write_duplicates)
+                written = len(entries.create_many(
+                    opened, fresh,
+                    base_currency=declared if adopt_currency else None,
+                    declare_accounts=settled.declaring))
+    except uploads.UploadRefused as exc:
+        return unprocessable_file(str(exc))
+    except accounts_module.AccountSourceError as exc:
+        return unprocessable_file(str(exc))
     except settings_registry.InvalidSetting as exc:
         return unprocessable_file(str(exc))
     except entries.InvalidEntry as exc:
@@ -1066,9 +1117,65 @@ def import_events():
 
     if not dry_run:
         main.replay_after_write(runtime)
-    return jsonify(_receipt_to_dict(uploads.receipt(
-        parsed.filename, parsed.events,
-        written=written, duplicates=len(duplicates)))), 200 if dry_run else 201
+    return jsonify(_receipt_to_dict(
+        uploads.receipt(parsed.filename, rows,
+                        written=written, duplicates=len(duplicates),
+                        file_accounts=census),
+        duplicates=duplicates,
+        currency=declared if adopt_currency else None,
+        declared_currency=stated,
+    )), 200 if dry_run else 201
+
+
+def _stated_currency(declared: Optional[str]) -> Optional[str]:
+    """What the file declares, in the one spelling this app stores (#835).
+
+    Through :mod:`settings_registry` rather than upper-cased here: what a
+    reporting currency looks like has one authority, and a receipt announcing
+    ``eur`` about a dial that would hold ``EUR`` is two spellings of one answer.
+    It cannot refuse anything :func:`ledger.currency_to_adopt` has not already
+    refused a line earlier — it is the same call, on the same string.
+    """
+    if not declared:
+        return None
+    return settings_registry.validate('base_currency', declared)
+
+
+def _settled_mapping(opened, correspondence, census):
+    """The correspondence read against the declaration, or a named refusal.
+
+    The one place the two halves meet: :mod:`uploads` judged the *shape* with no
+    store to ask, and this judges the **substance** — a target that nobody
+    declared, a label the file does not name. It runs identically in both
+    branches, so a correspondence the write would refuse is refused at the
+    preview, which is the one guarantee this whole surface is built on.
+
+    A label asked for declaration that is **already declared** is dropped rather
+    than refused, and that is deliberate: the reader may have declared it from
+    the Accounts page between the forecast and the button, and answering *that
+    account already exists* to somebody pressing *Import* is exactly the refusal
+    after the button that #835 forbids. The rows land where they were going to.
+    """
+    named = {account.name for account in census}
+    declared = accounts_module.account_ids(opened)
+
+    unknown = sorted(set(correspondence.targets.values()) - declared)
+    if unknown:
+        raise uploads.UploadRefused(
+            f"the correspondence sends rows to {', '.join(unknown)}, which "
+            f"{'are' if len(unknown) > 1 else 'is'} not declared; an account is "
+            f"declared in the app, and a file's account is sent to one that is")
+
+    answered = set(correspondence.targets) | set(correspondence.declaring)
+    stray = sorted(answered - named)
+    if stray:
+        raise uploads.UploadRefused(
+            f"the correspondence answers for {', '.join(stray)}, which this "
+            f"file does not name; it answers for the accounts the file carries")
+
+    return replace(correspondence,
+                   declaring=tuple(label for label in correspondence.declaring
+                                   if label not in declared))
 
 
 def _to_write(opened, events, write_duplicates: bool):
@@ -1097,7 +1204,26 @@ def _asked(name: str) -> bool:
     return value is not None and value.strip().lower() not in ('', '0', 'false')
 
 
-def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
+def _unless_declined(name: str) -> bool:
+    """:func:`_asked` upside down: **yes unless the caller said no** (#835).
+
+    Its own reader because its subject is its own. The two flags above are
+    *things the reader asked for*, absent by default; this one is an **offer the
+    app makes** — the reporting currency a file declares, taken up by an install
+    that has never answered the question (ADR-0021). An offer whose default is
+    *no* is not an offer, and a client that says nothing about it is a client
+    that did not open the modal at all: ``curl`` uploads the export and the
+    install is the install it came from, which is the round trip that rule
+    exists for.
+    """
+    value = request.args.get(name)
+    return value is None or value.strip().lower() not in ('0', 'false')
+
+
+def _receipt_to_dict(receipt: uploads.Receipt, *,
+                     duplicates: Sequence[entries.Duplicate] = (),
+                     currency: Optional[str] = None,
+                     declared_currency: Optional[str] = None) -> dict:
     """One :class:`uploads.Receipt`, on the wire.
 
     ``period`` is an object or ``null`` rather than two nullable members: the two
@@ -1109,6 +1235,28 @@ def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
     ``rows``, ``written`` and ``duplicates`` are the glossary's three numbers and
     they close — ``rows == written + duplicates`` — so a client renders the
     skipped lines without subtracting anything.
+
+    **The summary, and the one thing that details** (#835). ``file_accounts``,
+    the period, the accounts and the securities are sets and counts — *which,
+    not how many times* — and ``duplicate_rows`` is the exception the ticket
+    grants by name: a skipped line is argued with or accepted one at a time, and
+    a count cannot be argued with. Each carries the row it repeats through
+    ``duplicate_of``, the id of the **stored** line, or ``null`` where what it
+    repeats is another line of the file itself. It is empty under
+    ``?write_duplicates=1``, and that is the three numbers closing rather than an
+    omission: the flag moves those rows into ``written``, so there is nothing
+    skipped left to name.
+
+    The duplicates are the route's to say rather than the receipt's, because the
+    comparison is :mod:`entries`' — :mod:`uploads` has no store and cannot know
+    what the ledger already holds.
+
+    ``currency`` is the file's own declaration and what this import does with it
+    (ADR-0021): ``declared`` is what the file says, ``adopting`` whether this
+    gesture writes it into the dial. Both are ``null`` on a file that declares
+    nothing. A file declaring the currency already in force is
+    ``adopting: false`` with nothing to offer, and a file that **contradicts**
+    one never reaches here at all: it is a ``422`` in prose, at both moments.
     """
     return {
         'filename': receipt.filename,
@@ -1121,6 +1269,17 @@ def _receipt_to_dict(receipt: uploads.Receipt) -> dict:
         },
         'accounts': list(receipt.accounts),
         'symbols': list(receipt.symbols),
+        'file_accounts': [{'name': account.name, 'rows': account.rows}
+                          for account in receipt.file_accounts],
+        'duplicate_rows': [
+            dict(_event_to_dict(duplicate.event),
+                 duplicate_of=(None if duplicate.held is None
+                               else str(duplicate.held.id)))
+            for duplicate in duplicates],
+        'currency': None if not declared_currency else {
+            'declared': declared_currency,
+            'adopting': currency is not None,
+        },
     }
 
 

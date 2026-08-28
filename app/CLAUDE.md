@@ -351,13 +351,41 @@ identifier would be the `import_source` table #816 deleted, under another name
 and with a lifetime and a sweeper to write, so the front commits by re-uploading
 the same file.
 
+**And the gesture takes an account correspondence** (#835, ADR-0006). `?map=`
+carries one JSON object — each account the file names to the id of a **declared**
+one — and repeated `?declare=` names the labels to be declared *with* the import,
+which is what repairs the `422` that rejected a whole file over an account nobody
+had declared. It is applied to `parsed.events` **before `_to_write` and
+identically in both branches**: the duplicate key carries the account, so a
+correspondence applied to the write alone would leave the preview counting
+duplicates against accounts the write is not going to use. It is **consumed and
+dropped** — a parameter of the gesture, not the persistent mapping layer
+`reassignment.py` refused: no `UPDATE`, no table, no window, and the next file
+asks the question again. The receipt gains the file's own **census**
+(`file_accounts`: each label the `account` column carries, with its volume, read
+before the correspondence), the **named duplicates** (`duplicate_rows`, each with
+`duplicate_of` — the stored row it repeats, or `null` where it repeats another
+line of the file), and what the file declares as its reporting currency with what
+this import does with it (`currency`, `?adopt_currency=0` declining the offer —
+never the disagreement, which stays a refusal in prose). One asymmetry, and it is
+written down: a **preview carrying a `map` parameter** does not judge the account
+column at all (`entries.judge(..., accounts_pending=True)`), because refusing
+there would refuse a file over the very question the response is being asked in
+order to put. The **write** judges it exactly as before, so what the front gives
+up at the forecast it gives back by blocking its button.
+
 **Duplicates are caught by content and never by a constraint.** The key is
 `entries.DUPLICATE_KEY_COLUMNS` — `(date, event_type, account, symbol, quantity,
 unit_price, fee, amount)`; `name` and `notes` are out, or annotating a row would
 make it re-importable. `entries.split_duplicates` compares it against the ledger
 **and** against the file itself, the receipt counts what it finds, the import
 skips it, and `?write_duplicates=1` writes it anyway — the owner is the only one
-who knows whether two identical `BUY` are one order filled twice. The key is
+who knows whether two identical `BUY` are one order filled twice. **The flag is
+judged at the preview as well**, and that is load-bearing rather than incidental:
+keeping the duplicated rows is a *different ledger to replay*, so a `SELL` that
+only got through because its duplicate was skipped stops replaying once it does
+not, and a preview that ignored the flag would answer `200` to a file the write
+then refuses — the refusal after the button #835 forbids. The key is
 declared **nowhere in the DDL**: a `UNIQUE` over those eight columns would make
 that order impossible to record from the keyboard as well, and ADR-0007's rule
 puts a constraint where the error enters, which is at the import.

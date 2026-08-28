@@ -18,11 +18,12 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ROUTES, type Account, type LedgerEvent } from '@/lib/api'
+import { ROUTES, type Account, type ImportReceipt, type LedgerEvent } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
   anAccount,
   anAccountsPayload,
+  aDuplicateRow,
   aReceipt,
   aLedgerPayload,
   ledgerEvents,
@@ -726,6 +727,26 @@ describe('the file handed over', () => {
     expect(screen.getByText(/3 événements écrits/)).toBeInTheDocument()
   })
 
+  it('says its own sentence for every import, including a file already dismissed once', async () => {
+    // **The receipt lasts as long as the operation** (#787's story 42) — and
+    // *the operation* is this import, not this filename. The broker's weekly
+    // export is called the same thing every week, and so is the file somebody
+    // corrected and handed back; an import whose sentence never appears is one
+    // the reader has no way of reading at all.
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await handOver(user, aFile('operations.csv'))
+    expect(await screen.findByText(/3 événements écrits/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Fermer ce reçu' }))
+    expect(screen.queryByText(/3 événements écrits/)).not.toBeInTheDocument()
+
+    await handOver(user, aFile('operations.csv'))
+
+    expect(await screen.findByText(/3 événements écrits/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fermer ce reçu' })).toBeInTheDocument()
+  })
+
   it('reads the ledger again once the rows have landed', async () => {
     // The server replays before answering (#697), so the receipt is the moment
     // every figure downstream of the ledger is stale — and the table below is
@@ -746,5 +767,492 @@ describe('the file handed over', () => {
     await screen.findByText(/3 événements écrits/)
 
     await waitFor(() => expect(reads).toBeGreaterThan(0))
+  })
+})
+
+/**
+ * **La correspondance des comptes** (#835) — the window that collects the three
+ * answers, at the one seam: the whole app in jsdom, HTTP the only faked edge.
+ *
+ * The receipts below are the ones the server answers, so what is exercised is
+ * the reading of them: which line the modal puts a question about, what blocks
+ * the button and in what words, what the gesture then carries on the wire, and
+ * what the reader is spared when there is nothing to ask.
+ */
+describe('what this import would do', () => {
+  function aFile(name = 'zeta-events_2.csv') {
+    return new File(['date,event_type\n'], name, { type: 'text/csv' })
+  }
+
+  /**
+   * The requests the route saw, so the answers can be read off the wire.
+   *
+   * It answers `?write_duplicates=1` **as the route does** (`test_ledger.py`'s
+   * `test_the_flag_that_writes_the_duplicates_leaves_none_to_name`): the flag
+   * moves the rows the ledger already holds out of `duplicates` and into
+   * `written`, and there is nothing skipped left to name. A double that ignored
+   * the flag would let the window read the wrong receipt for the answer the
+   * reader gave and no test would see it.
+   */
+  function watching(receipt: () => ImportReceipt) {
+    const seen: URL[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const url = new URL(request.url)
+        seen.push(url)
+        const answered = receipt()
+        return HttpResponse.json(
+          url.searchParams.has('write_duplicates')
+            ? { ...answered, written: answered.rows, duplicates: 0, duplicate_rows: [] }
+            : answered,
+          { status: url.searchParams.has('dry_run') ? 200 : 201 },
+        )
+      }),
+    )
+    return seen
+  }
+
+  async function hand(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
+    await user.upload(screen.getByLabelText('Choisir un fichier'), file)
+  }
+
+  it('puts one line per account the file names, with its volume', async () => {
+    // The census is the server's — nobody parses a spreadsheet in a browser to
+    // count it — and the volume is what makes the question answerable: *where do
+    // these 47 events go* is a decision, *where does TR go* is a riddle.
+    watching(() =>
+      aReceipt({
+        file_accounts: [
+          { name: '', rows: 3 },
+          { name: 'TR', rows: 47 },
+        ],
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    const window = await screen.findByRole('dialog')
+    expect(await within(window).findByText('47 événements')).toBeInTheDocument()
+    expect(within(window).getByText('3 événements')).toBeInTheDocument()
+    // The blank column is a line like the others, named rather than swallowed:
+    // it means `default` only while nothing is declared.
+    expect(within(window).getByText('(aucun compte)')).toBeInTheDocument()
+  })
+
+  it('blocks the button in prose while a target is missing', async () => {
+    // A control that refuses without saying why is a control the reader cannot
+    // act on — and *no refusal arrives after the button* is held here, by the
+    // button, and not by the server forgetting a rule.
+    watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(await screen.findByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(
+      screen.getByText('Une correspondance manque : dites où vont les 47 événements de ce compte.'),
+    ).toBeInTheDocument()
+    // And the line says whose answer is missing, beside the control that gives it.
+    expect(screen.getByText('Personne n’a déclaré « TR »')).toBeInTheDocument()
+  })
+
+  it('sends the file account to a declared one, and reads the file again', async () => {
+    // The answer travels on the query string with the gesture's other
+    // parameters, and it costs a **fresh forecast**: the duplicate key carries
+    // the account, so what is skipped changes with the answer.
+    const seen = watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    await user.selectOptions(await screen.findByLabelText('Cible pour TR'), 'beta')
+
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(JSON.parse(seen[1].searchParams.get('map') ?? '{}')).toEqual({ TR: 'beta' })
+    expect(seen[1].searchParams.has('dry_run')).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen).toHaveLength(3))
+    expect(JSON.parse(seen[2].searchParams.get('map') ?? '{}')).toEqual({ TR: 'beta' })
+    expect(seen[2].searchParams.has('dry_run')).toBe(false)
+  })
+
+  it('declares the account nobody had declared, from the window', async () => {
+    // The entry that repairs the `422`: the file is no longer refused whole, and
+    // the reader never leaves the window holding a file the app turned back.
+    const seen = watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    await user.selectOptions(
+      await screen.findByLabelText('Cible pour TR'),
+      screen.getByRole('option', { name: 'Déclarer « TR » comme un nouveau compte' }),
+    )
+
+    expect(await screen.findByText('« TR » sera déclaré avec le fichier')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen[seen.length - 1].searchParams.has('dry_run')).toBe(false))
+    expect(seen[seen.length - 1].searchParams.getAll('declare')).toEqual(['TR'])
+  })
+
+  it('says the correspondence is dropped with the gesture', async () => {
+    // ADR-0006 said to the reader and not only in a record: this is not the
+    // mapping table `reassignment.py` refused, and the next file asks again.
+    watching(() => aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(
+      await screen.findByText(
+        'Cette correspondance sert à cet import, puis elle est jetée. Le prochain fichier reposera la question.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('reduces the accounts to one line and asks nothing when everything lands', async () => {
+    // **The simple case**, which the maquette does not draw because no prop
+    // exercises it: everything declared and nothing duplicated. One line of
+    // affirmation, no selector, and no block of duplicates at all — a block with
+    // nothing in it does not exist.
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    const window = await screen.findByRole('dialog')
+    expect(
+      within(window).getByText('Le compte que ce fichier nomme est déjà déclaré.'),
+    ).toBeInTheDocument()
+    expect(within(window).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(window).queryByText('Les doublons')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled()
+  })
+
+  it('names the duplicated lines and says what each of them repeats', async () => {
+    // A count cannot be argued with; a line can. The stored row is pointed at,
+    // and a line the **file** repeats is told apart from it, that being the one
+    // difference the reader can see and no count carries.
+    watching(() =>
+      aReceipt({
+        rows: 3,
+        written: 1,
+        duplicates: 2,
+        duplicate_rows: [
+          aDuplicateRow({ date: '2026-02-10', symbol: 'ZZA', quantity: 2, unit_price: 120 }),
+          aDuplicateRow({ date: '2026-01-12', symbol: 'ZZA', duplicate_of: null }),
+        ],
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(await screen.findByText(/10 févr\. 2026 · Achat · ZZA · 2 × 120,00/)).toBeInTheDocument()
+    expect(screen.getByText('déjà présente')).toBeInTheDocument()
+    expect(screen.getByText('répétée dans le fichier')).toBeInTheDocument()
+  })
+
+  it('makes the footer follow the reader’s answer about the duplicates', async () => {
+    // The three numbers close — `rows === written + duplicates` — so the flag
+    // moves the same rows from one column to the other and the footer is
+    // arithmetic rather than a second question put to the server.
+    watching(() => aReceipt({ rows: 3, written: 1, duplicates: 2 }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
+    expect(screen.getByText('2 doublons sautés')).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+
+    expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
+    expect(screen.getByText('aucun doublon sauté')).toBeInTheDocument()
+    expect(screen.getByText('Ces 2 lignes seront écrites en double.')).toBeInTheDocument()
+  })
+
+  it('judges the duplicates the reader keeps at the box, and never after the button', async () => {
+    // **The criterion, on the one answer that used to escape it** (#835). Writing
+    // the rows the ledger already holds is a *different ledger to replay*: the
+    // file's `SELL` only got through because its duplicate was skipped, and it
+    // stops replaying once it is not. Left to the button, that refusal arrives
+    // after it — so the box re-reads the file under the flag, and what the
+    // reader meets is a sentence beside a control they can still take back.
+    const seen: URL[] = []
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        const url = new URL(request.url)
+        seen.push(url)
+        if (url.searchParams.has('write_duplicates')) {
+          return HttpResponse.json(
+            {
+              type: PROBLEM_TYPES.unreplayableLedger,
+              title: 'Ledger does not replay',
+              status: 409,
+              detail: 'Cannot sell 4.0 shares of ZZA (only 2.0 owned) on 2026-02-10',
+              gesture: 'write',
+              symbol: 'ZZA',
+              wanted: 4,
+              owned: 2,
+              day: '2026-02-10',
+            },
+            { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+          )
+        }
+        return HttpResponse.json(
+          aReceipt({
+            rows: 2,
+            written: 1,
+            duplicates: 1,
+            duplicate_rows: [aDuplicateRow({ date: '2026-02-10', symbol: 'ZZA' })],
+          }),
+          { status: url.searchParams.has('dry_run') ? 200 : 201 },
+        )
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    const box = await screen.findByLabelText(
+      'Écrire quand même les lignes déjà dans mon grand livre',
+    )
+    await user.click(box)
+
+    expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled()
+    // The answer was judged on a **preview**: the flag reached the server on a
+    // request that writes nothing, and no write was ever made.
+    expect(
+      seen.some(
+        (url) => url.searchParams.has('write_duplicates') && url.searchParams.has('dry_run'),
+      ),
+    ).toBe(true)
+    expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
+    // And the window is not a dead end: the census stands beside the refusal, so
+    // the box that caused it is still there to untick.
+    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importer' })).toBeEnabled())
+    expect(screen.queryByText(/ce geste vend 4 parts de ZZA/)).not.toBeInTheDocument()
+  })
+
+  it('states the count the server answers for the answer the reader gave', async () => {
+    // The footer is not arithmetic done here: there is a real forecast of the
+    // real answer to read it off, and a number the front computed beside it
+    // would be a second authority on what the button does.
+    const seen = watching(() => aReceipt({ rows: 3, written: 1, duplicates: 2 }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    expect(await screen.findByText(/1 événement sera écrit/)).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Écrire quand même les lignes déjà dans mon grand livre'))
+
+    expect(await screen.findByText(/3 événements seront écrits/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        seen.filter((url) => url.searchParams.has('write_duplicates')).length,
+      ).toBeGreaterThan(0),
+    )
+  })
+
+  it('keeps its body and its footer standing while a second forecast is in flight', async () => {
+    // **A second forecast must not take the window down** (#835). The answer
+    // re-reads the file, and a body that unmounted for the length of that round
+    // trip would take the select the reader has just used with it — focus and
+    // all — and, on a file naming three accounts, the two lines they had not
+    // answered yet. What guards the figures meanwhile is `pending`: every
+    // control is disabled, so nothing can be done with a forecast that is one
+    // answer behind.
+    let hold: (() => void) | null = null
+    let calls = 0
+    server.use(
+      http.post(ROUTES.eventsImport, async ({ request }) => {
+        calls += 1
+        if (calls > 1) {
+          await new Promise<void>((resolve) => {
+            hold = resolve
+          })
+        }
+        return HttpResponse.json(aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }), {
+          status: new URL(request.url).searchParams.has('dry_run') ? 200 : 201,
+        })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    const select = await screen.findByLabelText('Cible pour TR')
+    await user.selectOptions(select, 'beta')
+
+    await waitFor(() => expect(hold).not.toBeNull())
+    // The very same control, still in the document — not a second one mounted in
+    // its place, and not nothing.
+    expect(screen.getByLabelText('Cible pour TR')).toBe(select)
+    expect(select.isConnected).toBe(true)
+    expect(select).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
+
+    hold!()
+
+    await waitFor(() => expect(screen.getByLabelText('Cible pour TR')).toBeEnabled())
+    expect(screen.getByLabelText('Cible pour TR')).toBe(select)
+  })
+
+  it('disables the button when the answer itself is refused, and keeps the select', async () => {
+    // **The other half of the criterion, and the one two passes missed** (#835).
+    // The first read is the one carrying `map` and `declare`, so it is the read
+    // `_settled_mapping` and `entries.judge` refuse when the reader retargets an
+    // account — and it is thrown, so the forecast standing on screen is the
+    // *previous* answer's. Left alone the window promises what that stale
+    // forecast promised, with `Importer` live above it, and the refusal arrives
+    // after the button rather than before it.
+    const seen: URL[] = []
+    let calls = 0
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        calls += 1
+        const url = new URL(request.url)
+        seen.push(url)
+        if (calls > 1) {
+          return HttpResponse.json(
+            {
+              type: PROBLEM_TYPES.unreplayableLedger,
+              title: 'Ledger does not replay',
+              status: 409,
+              detail: 'Cannot sell 4.0 shares of ZZA (only 2.0 owned) on 2026-02-10',
+              gesture: 'write',
+              symbol: 'ZZA',
+              wanted: 4,
+              owned: 2,
+              day: '2026-02-10',
+            },
+            { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+          )
+        }
+        return HttpResponse.json(aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }), {
+          status: url.searchParams.has('dry_run') ? 200 : 201,
+        })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    const select = await screen.findByLabelText('Cible pour TR')
+    await user.selectOptions(select, 'beta')
+
+    // The refusal is read before the button, and the button cannot be pressed.
+    expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled(),
+    )
+    // The window is not a dead end: the select the reader has just used is the
+    // same node, still there to answer differently.
+    expect(screen.getByLabelText('Cible pour TR')).toBe(select)
+    expect(select.isConnected).toBe(true)
+    // And nothing was written — every request this walk made was a preview.
+    expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
+  })
+
+  it('offers the currency the file declares, and lets it be declined', async () => {
+    // The app reads a declaration and never asserts one (ADR-0021). The box is
+    // ticked, because the round trip is the whole point of the column — upload
+    // the export and the install is the install it came from — and it is a box,
+    // because the answer cannot be taken back.
+    const seen = watching(() => aReceipt({ currency: { declared: 'EUR', adopting: true } }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    expect(
+      await screen.findByText(
+        'Ce fichier déclare des montants en EUR, et votre installation n’a pas encore de devise de base. L’adopter ? Elle ne pourra plus être reprise.',
+      ),
+    ).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Adopter EUR comme devise de base'))
+    await user.click(screen.getByRole('button', { name: 'Importer' }))
+
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(seen[1].searchParams.get('adopt_currency')).toBe('0')
+  })
+
+  it('asks nothing about a currency the install has already answered', async () => {
+    // `adopting: false` — nothing is being offered, so there is no question to
+    // put and no block to render.
+    watching(() => aReceipt({ currency: { declared: 'EUR', adopting: false } }))
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    await screen.findByRole('button', { name: 'Importer' })
+    expect(screen.queryByText('La devise')).not.toBeInTheDocument()
+  })
+
+  it('keeps the window open on a refusal, with the button beside it', async () => {
+    // A file the server turned back is still in the reader's hands. The window
+    // stays, the sentence is the front's own (ADR-0024), and the gesture that
+    // leaves nothing behind is the one on offer.
+    server.use(
+      http.post(ROUTES.eventsImport, () =>
+        HttpResponse.json(
+          {
+            type: PROBLEM_TYPES.invalidFile,
+            title: 'Invalid file',
+            status: 422,
+            detail: 'the file declares USD as the reporting currency',
+          },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+
+    const window = await screen.findByRole('dialog')
+    expect(
+      await within(window).findByText(/L’application a refusé ce fichier et n’a rien écrit/),
+    ).toBeInTheDocument()
+    // There is no forecast behind a refusal, so the button is **disabled beside
+    // the sentence** rather than absent: the window says what it would do and
+    // why it will not.
+    expect(within(window).getByRole('button', { name: 'Importer' })).toBeDisabled()
+    expect(within(window).getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
+  })
+
+  it('closes the window on the receipt, which stays until it is dismissed', async () => {
+    // *A receipt lasts as long as the operation, never three seconds* — and the
+    // window is not where it lives: the write is done, and what is left is the
+    // sentence the app owes the reader.
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    await user.click(await screen.findByRole('button', { name: 'Importer' }))
+
+    expect(await screen.findByText(/3 événements écrits/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Fermer ce reçu' }))
+
+    expect(screen.queryByText(/3 événements écrits/)).not.toBeInTheDocument()
   })
 })
