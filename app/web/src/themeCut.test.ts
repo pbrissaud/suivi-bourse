@@ -36,9 +36,28 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { blocks, declarations, oklch, WEB_ROOT } from '@/test/stylesheet'
+import { contrast, luminance } from '@/test/oklch'
+import { blocks, declarations, type Oklch, oklch, read, WEB_ROOT } from '@/test/stylesheet'
 
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
+
+/** A token's `oklch()` on one ground, whichever block declared it. */
+function declared(name: string, ground: 'light' | 'dark'): Oklch {
+  for (const block of blocks()) {
+    const value = declarations(block, ground).get(name)
+    if (value) return oklch(value)
+  }
+  throw new Error(`no ${name} declared for the ${ground} theme`)
+}
+
+/** The token `index.css` paints the progress track with, read off the rule. */
+function trackToken(source: string): string {
+  const rule = /progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\((--[\w-]+)\)/.exec(
+    source,
+  )
+  if (!rule) throw new Error('index.css draws no progress track from a token')
+  return rule[1]
+}
 
 describe('the cut of index.css', () => {
   it('has exactly three blocks: the preset, the domain, the bridge', () => {
@@ -104,6 +123,89 @@ describe('the cut of index.css', () => {
       expect(light, `${token} is declared on both grounds`).toBeDefined()
       expect(dark).toBeDefined()
       expect(light, `${token} may not be the dark value reused`).not.toBe(dark)
+    }
+  })
+})
+
+describe('the controls the browser paints itself', () => {
+  /**
+   * **The theme reaches the native controls too** (#837).
+   *
+   * `ThemeProvider` writes `color-scheme` beside the `.dark` class, and that is
+   * only half of what a user agent needs: it says *paint your light furniture
+   * or your dark one*, never *paint it in our colours*. The initial
+   * `accent-color: auto` is the reader's **desktop** accent, so the settings
+   * page's rebuild bar came out in whatever colour the machine was set to —
+   * measured green on one Mac, and the mint by coincidence rather than by
+   * decision. On the light ground the bar's *track*, which no accent reaches,
+   * read as a mid-grey rule drawn across a white card.
+   *
+   * Both are stated in `@layer base`, which is where the file already puts what
+   * an element is rather than what a token means — so ADR-0023's three blocks
+   * are untouched and the sizing rule is not tested: no token is added, two
+   * existing ones are spent.
+   */
+  it('states the accent rather than inheriting the reader’s desktop', () => {
+    expect(read()).toMatch(/accent-color:\s*var\(--primary\)/)
+  })
+
+  it('draws the one progress bar from the tokens, both halves of it', () => {
+    const source = read()
+    // The value is the accent's; the track is the half `accent-color` does not
+    // reach, and it is the one that broke on the light ground.
+    expect(source).toMatch(/progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--input\)/)
+    expect(
+      source,
+    ).toMatch(/progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/)
+    expect(source).toMatch(/progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/)
+  })
+
+  it('keeps the track apart from the card it is drawn on', () => {
+    // Naming two tokens is not the claim. The claim is that the reader can see
+    // **an extent** and the fraction of it that is filled, and a track that
+    // matches the card leaves a mint stroke floating with nothing to read it
+    // against — the proportion then survives in the `aria-label` alone, which
+    // is the sighted reader losing the figure the bar exists to show. That is
+    // what `--muted` did: 1,16:1 against `--card` on the light ground, 1,10:1
+    // on the dark.
+    //
+    // 1,5 is not a WCAG figure and does not pretend to be: no neutral in the
+    // preset reaches 3:1 against `--card`, because a card and its furniture are
+    // deliberately close. It is the floor that separates *a surface* from *two
+    // surfaces nobody can tell apart*, and it is what picking the best of the
+    // preset's neutrals buys — so a later tidy that reaches back for `--muted`
+    // fails here rather than in front of a reader.
+    const track = trackToken(read())
+    for (const ground of ['light', 'dark'] as const) {
+      const painted = (name: string) => {
+        const { lightness, chroma, hue } = declared(name, ground)
+        return luminance(lightness, chroma, hue)
+      }
+      expect(
+        contrast(painted(track), painted('--card')),
+        `the ${ground} track (${track}) is the card it sits on`,
+      ).toBeGreaterThanOrEqual(1.5)
+      // And the filled half still separates from the track it fills, which is
+      // the pair that says *how much*.
+      expect(
+        contrast(painted('--primary'), painted(track)),
+        `the ${ground} bar does not show how far it has come`,
+      ).toBeGreaterThanOrEqual(2.5)
+    }
+  })
+
+  it('never puts two agents’ pseudo-elements in one selector list', () => {
+    // A selector list containing a pseudo-element the agent does not know is a
+    // list the agent drops **whole**, taking the half it does know with it. So
+    // the two names are two rules, and this is the assertion that keeps them
+    // apart when someone tidies the file.
+    // Comments go first: a selector list runs over several lines, so the span
+    // this reads is *everything between one brace and the next*, and a prose
+    // paragraph in there would be scanned as if it were a selector.
+    const source = read().replace(/\/\*[\s\S]*?\*\//g, '')
+    for (const list of source.matchAll(/(?:^|[{}])([^{}]*::-[\w-]+[^{}]*)\{/g)) {
+      const vendors = new Set([...list[1].matchAll(/::-(\w+)-/g)].map((prefix) => prefix[1]))
+      expect(vendors.size, `two vendors in one selector list: ${list[1].trim()}`).toBeLessThan(2)
     }
   })
 })

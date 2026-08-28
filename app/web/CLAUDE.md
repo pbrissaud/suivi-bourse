@@ -498,6 +498,25 @@ Five nets hold a rule nothing made true by construction:
   dates follow the **language**, not the currency. ADR-0024 says *two* because
   density came later; a record is dated, and it is this line that carries the
   count.
+- **The light ground is derived, and it was measured** (#837, ADR-0029). The
+  maquette carries **one** artboard and it is the dark one, so the light theme
+  is not a drawing to copy but two rules applied — the mint has its own value on
+  white, and the two allocation ramps are opposite because rank 1 is the most
+  contrasted **on each ground**. Both are held on the source
+  (`themeCut.test.ts`, `lib/alloc.test.ts`), and the ramp's colour-blind
+  criterion is asked of the **painted** colours rather than the declared ones:
+  chroma falls with rank too and chroma emits light, so a ramp can be monotone
+  in OKLCH and not monotone on a screen. What closed the pass is what it
+  measured on the running app, and it is worth knowing **exactly how far it
+  reached**: the five routes as they first render, on both grounds — no text
+  under 4,5:1 there, and nothing overflowing sideways at 390, 768, 976, 1280 or
+  1536. It did **not** open what a click opens, and the share sheet is where
+  that shows: `PriceChart` mounts recharts' `CartesianGrid`, `XAxis` and `YAxis`
+  with no colour of its own, so the library paints them from its own defaults —
+  a `#666` tick text that measures 3,24:1 against `--card` on the dark ground.
+  That one is **open**, and it is a colour recharts chose rather than a token,
+  so an audit that ends at the routes will keep missing it. The defect the pass
+  itself found is the bullet three below — the controls the agent paints itself.
 - **`en.json` is the source, and `fr.json` is kept in step by hand until
   Crowdin's first import.** `crowdin.yml` covers this catalogue alongside the
   site (ADR-0024) and declares `fr.json` to be Crowdin's output — but that
@@ -515,6 +534,27 @@ Five nets hold a rule nothing made true by construction:
   `--loss` and `--attention` are really added), and an `@theme inline` bridge.
   `src/themeCut.test.ts` holds all of that on the source, including that no
   theme JSON is versioned anywhere and that no third party is in the build.
+- **The controls the browser paints itself are the theme's too** (#837). The
+  parity pass of the light ground found an object whose colour the product had
+  not chosen at all: the settings page's rebuild bar. A
+  `<progress>` and a checkbox are drawn by the user agent, and `accent-color`'s
+  initial `auto` is the **reader's desktop accent** — so the bar wore whatever
+  the machine was set to, the mint by coincidence, and its *track*, the half no
+  accent reaches, came out a mid grey that read as a rule drawn across a white
+  card. `color-scheme`, which `ThemeProvider` writes beside the `.dark` class,
+  says *paint your light furniture or your dark one* and never *paint it in
+  ours*. Both are stated in `@layer base` — `accent-color: var(--primary)` on
+  `html`, and the two halves of `progress` from `--input` and `--primary` —
+  which adds **no token**, so ADR-0023's three blocks and its sizing rule are
+  untouched. The track is `--input` and not `--muted` because the bar sits on a
+  `--card` and `--muted` *is* that card to within 1,16:1 (1,10:1 on the dark
+  ground): a track nobody sees leaves a mint stroke with no extent to read the
+  fraction against, and the proportion would survive in the `aria-label` alone.
+  `themeCut.test.ts` holds the **separation** and not the two names, so a tidy
+  that reaches back for `--muted` fails there. The two vendor pseudo-elements
+  are two rules and never one
+  selector list: a list holding a name the agent does not know is a list the
+  agent drops whole, taking the half it does know with it.
 - **`lib/api.ts` is the only module that knows a URL**, and the paths it exports
   are what the test handlers fake.
 - The front branches on `problem.type` and renders `detail` nowhere. A refusal

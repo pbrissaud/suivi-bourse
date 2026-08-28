@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ALLOCATION_SLICES, allocationRamp, allocationTokenNames } from '@/lib/alloc'
-import { inSrgb, maxChroma } from '@/test/oklch'
+import { contrast, inSrgb, luminance, maxChroma } from '@/test/oklch'
 import { ground } from '@/test/stylesheet'
 
 function components(stop: string): { lightness: number; chroma: number; hue: number } {
@@ -34,13 +34,66 @@ describe('the allocation ramp', () => {
     )
   })
 
-  it('is one hue in twelve lightnesses, not twelve hues', () => {
+  it('is one hue in twelve lightnesses, not twelve hues, on both grounds', () => {
     // Twelve hues at constant lightness sit at the edge of discriminability,
     // and below it for a colour-blind reader. Colour here encodes rank, which
     // the legend and the angle already carry — so it may be redundant, and must
     // be readable.
-    const hues = new Set(allocationRamp('light').map((stop) => components(stop).hue))
-    expect(hues.size).toBe(1)
+    //
+    // Asked of **both** grounds since #837, which is the ticket that has to
+    // mean it: the light ramp is derived rather than drawn, and a derivation
+    // that reached for a second hue to buy back the chroma green loses on white
+    // would satisfy every other assertion in this file.
+    for (const theme of ['light', 'dark'] as const) {
+      const hues = new Set(allocationRamp(theme).map((stop) => components(stop).hue))
+      expect(hues.size, `the ${theme} ramp must be one hue`).toBe(1)
+    }
+  })
+
+  it('orders the twelve ranks with the hue taken away, on both grounds', () => {
+    // **The criterion a colour-blind reader is actually held to** (#837): the
+    // rank has to survive the loss of the hue, in *both* themes. One hue in
+    // twelve lightnesses is the design that buys that, and this is the
+    // measurement of it — relative luminance, which is what is left of a colour
+    // once no hue can be told from any other.
+    //
+    // It is not the same claim as *lightness falls with rank*, which the test
+    // below makes on the declared values. Chroma falls with rank too, and
+    // chroma emits light: a ramp whose lightness stepped by less than its
+    // chroma gave back would read as monotone in OKLCH and **not** monotone on
+    // a screen, which is the failure this catches and that one cannot.
+    for (const theme of ['light', 'dark'] as const) {
+      const painted = allocationRamp(theme)
+        .map(components)
+        .map((stop) => luminance(stop.lightness, stop.chroma, stop.hue))
+
+      // Every step goes the same way and none of them is nothing: two ranks
+      // that render as one value are two ranks the reader cannot tell apart,
+      // and one step back the other way is a rank read backwards.
+      for (let index = 1; index < ALLOCATION_SLICES; index += 1) {
+        const [lower, higher] = theme === 'light' ? [index - 1, index] : [index, index - 1]
+        expect(
+          painted[higher],
+          `${theme} ranks ${index} and ${index + 1} do not separate once the hue is gone`,
+        ).toBeGreaterThan(painted[lower])
+      }
+
+      // Monotone is *not enough on its own*: twelve values inside one hair of
+      // each other are monotone and unreadable. The span is what makes the
+      // twelve a scale — measured at 3,86 on white and 5,75 on the midnight
+      // ground, so the floor sits under both without pinning either.
+      expect(
+        contrast(painted[0], painted[ALLOCATION_SLICES - 1]),
+        `the ${theme} ramp must span a range a grey reading can resolve`,
+      ).toBeGreaterThanOrEqual(3)
+
+      // And it runs the right way: rank 1 is the one furthest from the ground,
+      // which on a grey reading means darkest on white and lightest on black.
+      const ascending = painted[0] < painted[ALLOCATION_SLICES - 1]
+      expect(ascending, `the ${theme} ramp runs the wrong way once the hue is gone`).toBe(
+        theme === 'light',
+      )
+    }
   })
 
   it('makes rank 1 the most contrasted on both grounds, which flips the ramp', () => {

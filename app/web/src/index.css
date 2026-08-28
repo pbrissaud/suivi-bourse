@@ -340,5 +340,48 @@
   }
   html {
     @apply font-sans;
+    /* **The native controls stop being the operating system's** (#837). A
+       checkbox and a `<progress>` are painted by the user agent, and the
+       initial `accent-color: auto` means *the reader's desktop accent* — so the
+       one figure the settings page draws as a bar wore whatever colour the
+       machine was set to, and the mint only by coincidence. `color-scheme`,
+       which `ThemeProvider` already writes beside the `.dark` class, decides
+       whether the agent paints its light or its dark furniture; it does not
+       make either of them ours. Stating the accent does, in one place, for
+       every control the agent draws. */
+    accent-color: var(--primary);
+  }
+  /* The one `<progress>` in the product — the rebuild's bar (#830) — measured on
+     the light ground: the agent painted its track a mid grey that reads as a
+     rule drawn across a white card, because a track is the half `accent-color`
+     does not reach. So it is drawn from the tokens, and the token is `--input`
+     rather than `--muted`: the bar sits on a `--card`, and `--muted` *is* the
+     card to within 1,16:1 on the light ground and 1,10:1 on the dark. A track
+     nobody can see is not a repair — it leaves a mint stroke floating with no
+     extent to read the fraction against, and the proportion survives in the
+     `aria-label` alone. `--input` is the preset's *empty half of a control*,
+     and it is the neutral that separates most from the card on both grounds;
+     `themeCut.test.ts` holds that separation rather than the two names. The
+     element stays native: the figure is *announced*, and this is its
+     rendering. */
+  progress {
+    appearance: none;
+    border: 0;
+    border-radius: calc(var(--radius) / 2);
+    overflow: hidden;
+    background-color: var(--input);
+  }
+  /* Two agents, two names for the same two halves, and **never one selector
+     list**: a list containing a pseudo-element the agent does not know is a
+     list the agent drops whole, which would take the half it *does* know with
+     it. */
+  progress::-webkit-progress-bar {
+    background-color: var(--input);
+  }
+  progress::-webkit-progress-value {
+    background-color: var(--primary);
+  }
+  progress::-moz-progress-bar {
+    background-color: var(--primary);
   }
 }
