@@ -36,9 +36,28 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { blocks, declarations, oklch, read, WEB_ROOT } from '@/test/stylesheet'
+import { contrast, luminance } from '@/test/oklch'
+import { blocks, declarations, type Oklch, oklch, read, WEB_ROOT } from '@/test/stylesheet'
 
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
+
+/** A token's `oklch()` on one ground, whichever block declared it. */
+function declared(name: string, ground: 'light' | 'dark'): Oklch {
+  for (const block of blocks()) {
+    const value = declarations(block, ground).get(name)
+    if (value) return oklch(value)
+  }
+  throw new Error(`no ${name} declared for the ${ground} theme`)
+}
+
+/** The token `index.css` paints the progress track with, read off the rule. */
+function trackToken(source: string): string {
+  const rule = /progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\((--[\w-]+)\)/.exec(
+    source,
+  )
+  if (!rule) throw new Error('index.css draws no progress track from a token')
+  return rule[1]
+}
 
 describe('the cut of index.css', () => {
   it('has exactly three blocks: the preset, the domain, the bridge', () => {
@@ -134,11 +153,45 @@ describe('the controls the browser paints itself', () => {
     const source = read()
     // The value is the accent's; the track is the half `accent-color` does not
     // reach, and it is the one that broke on the light ground.
-    expect(source).toMatch(/progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--muted\)/)
+    expect(source).toMatch(/progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--input\)/)
     expect(
       source,
     ).toMatch(/progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/)
     expect(source).toMatch(/progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/)
+  })
+
+  it('keeps the track apart from the card it is drawn on', () => {
+    // Naming two tokens is not the claim. The claim is that the reader can see
+    // **an extent** and the fraction of it that is filled, and a track that
+    // matches the card leaves a mint stroke floating with nothing to read it
+    // against — the proportion then survives in the `aria-label` alone, which
+    // is the sighted reader losing the figure the bar exists to show. That is
+    // what `--muted` did: 1,16:1 against `--card` on the light ground, 1,10:1
+    // on the dark.
+    //
+    // 1,5 is not a WCAG figure and does not pretend to be: no neutral in the
+    // preset reaches 3:1 against `--card`, because a card and its furniture are
+    // deliberately close. It is the floor that separates *a surface* from *two
+    // surfaces nobody can tell apart*, and it is what picking the best of the
+    // preset's neutrals buys — so a later tidy that reaches back for `--muted`
+    // fails here rather than in front of a reader.
+    const track = trackToken(read())
+    for (const ground of ['light', 'dark'] as const) {
+      const painted = (name: string) => {
+        const { lightness, chroma, hue } = declared(name, ground)
+        return luminance(lightness, chroma, hue)
+      }
+      expect(
+        contrast(painted(track), painted('--card')),
+        `the ${ground} track (${track}) is the card it sits on`,
+      ).toBeGreaterThanOrEqual(1.5)
+      // And the filled half still separates from the track it fills, which is
+      // the pair that says *how much*.
+      expect(
+        contrast(painted('--primary'), painted(track)),
+        `the ${ground} bar does not show how far it has come`,
+      ).toBeGreaterThanOrEqual(2.5)
+    }
   })
 
   it('never puts two agents’ pseudo-elements in one selector list', () => {
