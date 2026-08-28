@@ -45,11 +45,12 @@ no sweeper — the receipt is computed from what was written and handed back, an
 the store keeps no memory of the file. That is the property #813's preview is
 free because of.
 """
+import json
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
@@ -125,6 +126,85 @@ class Upload:
 
 
 @dataclass(frozen=True)
+class FileAccount:
+    """One account the **file** names, and how many of its rows carry it.
+
+    The line the import modal is built out of (#835): *a line per account the
+    file names, with its volume and its target*. The volume is the half only the
+    server can answer — nobody is going to parse a spreadsheet in a browser to
+    count it — and it is the half that makes the question answerable: *where do
+    these 47 events go* is a decision, *where does TR go* is a riddle.
+
+    ``name`` is the label **as the file writes it**, stripped, and ``''`` for the
+    blank column. The blank is a line like the others rather than a special case
+    swallowed early: it means ``default`` only while nothing is declared and is
+    an error afterwards (#698), so on the install that has since declared ``pea``
+    it is exactly the line the reader has to answer.
+
+    Read off the file **as it arrived**, before any correspondence is applied —
+    which is what keeps the modal's own question stable while the reader answers
+    it, and what makes the census the same at both moments of the gesture.
+    """
+
+    name: str
+    rows: int
+
+
+@dataclass(frozen=True)
+class AccountMapping:
+    """Where each account the file names is to go — **the gesture's parameter**.
+
+    ADR-0006 is the record this is written against, and it holds: this is *not*
+    the correspondence table :mod:`reassignment` refused. That one was a second,
+    **persistent** truth about the account an event names, standing beside the
+    rows for ever; this one is read off the request, applied to the drafts before
+    a single row is written, and then it is gone. No ``UPDATE``, no table, no
+    window — the next file asks the question again.
+
+    Two members, because the reader has two different answers to give:
+
+    ``targets`` sends every row carrying one label to an account that **is
+    already declared** — the file's ``TR`` into the ``cto`` the owner keeps, or
+    the blank column into ``default``.
+
+    ``declaring`` names the labels to be **declared as accounts** with the
+    import. That is the entry repairing the ``422`` that used to reject the whole
+    file and send the reader off to declare an account by hand, holding a file
+    the app had just refused.
+
+    ``stated`` is whether a correspondence was offered **at all** — the ``map``
+    parameter present, empty object included. It separates the modal, which is
+    collecting an answer and must be told what the file names rather than refused
+    over it, from a ``curl`` that offered nothing and is answered exactly as it
+    was before this ticket.
+    """
+
+    targets: Dict[str, str]
+    declaring: Tuple[str, ...]
+    stated: bool
+
+    def applied(self, events: Sequence[Event]) -> List[Event]:
+        """The file's rows read through the correspondence — a **new** list.
+
+        Applied here, on the drafts, and therefore **before** the duplicate
+        split: the duplicate key carries the account (:data:`entries.
+        DUPLICATE_KEY_COLUMNS`), so a correspondence applied to the write alone
+        would make the preview count duplicates against accounts the write is not
+        going to use — the forecast would say *four lines are already there* of a
+        file that, once mapped, has none. One application, both branches.
+
+        A label the correspondence says nothing about is **left as it is**, and a
+        label being declared keeps its own name: it is about to become an account
+        under that very id.
+        """
+        if not self.targets:
+            return list(events)
+        return [replace(event, account=self.targets.get(_label(event),
+                                                        event.account))
+                for event in events]
+
+
+@dataclass(frozen=True)
 class Receipt:
     """What the gesture produced, in the units the owner counts in.
 
@@ -152,6 +232,14 @@ class Receipt:
     ``first_day``/``last_day`` are ``None`` together, and only on a file with no
     row in it — a header and nothing under it. There is no period to state then,
     and stating today's would be a figure nobody's file carries.
+
+    ``file_accounts`` is the one member that is **not** a summary of what landed
+    but a census of what was handed over: the labels the file's ``account``
+    column carries, each with its volume, read before any correspondence is
+    applied (#835). It is here rather than beside the receipt because it is the
+    same kind of fact as the period — *what this file is* — and because the modal
+    needs it at the very first moment, which is the moment the receipt is the
+    only thing there is.
     """
 
     filename: str
@@ -162,6 +250,7 @@ class Receipt:
     last_day: Optional[date]
     accounts: Tuple[str, ...]
     symbols: Tuple[str, ...]
+    file_accounts: Tuple[FileAccount, ...] = ()
 
 
 def oversize(content_length: Optional[int]) -> bool:
@@ -232,8 +321,96 @@ def read(filename: str, stream) -> Upload:
     return loaded
 
 
+def census(rows: Sequence[Event]) -> Tuple[FileAccount, ...]:
+    """Every account label the file names, with its volume, sorted (#835).
+
+    Read off the file **as it arrived** — the caller applies no correspondence
+    before asking — so the modal's own question does not move under the reader
+    while they answer it, and the two moments of the gesture state the same
+    census for one file.
+
+    Sorted by the label, blank first: ``''`` sorts before every id, which puts
+    *the rows that name no account* at the top of the list, where the line most
+    likely to need an answer belongs.
+    """
+    volumes: Dict[str, int] = {}
+    for event in rows:
+        label = _label(event)
+        volumes[label] = volumes.get(label, 0) + 1
+    return tuple(FileAccount(name=name, rows=volumes[name])
+                 for name in sorted(volumes))
+
+
+def mapping(stated: Optional[str],
+            declaring: Sequence[str] = ()) -> AccountMapping:
+    """The correspondence a request carries, read once and judged for shape.
+
+    It travels on the **query string**, with the gesture's other parameters and
+    never in the form: what a multipart body carries is the reader's *ledger*,
+    and what the query carries is how it is to be read (#813's rule, applied to
+    the one parameter that is not a flag).
+
+    ``stated`` is one JSON object, ``{"TR": "cto", "": "default"}`` — file label
+    to the id of a **declared** account. An object rather than repeated pairs
+    because a correspondence *is* a mapping: repeated ``from=``/``to=``
+    parameters would let a client send four of one and three of the other, and
+    the server would have to invent which pairs with which.
+
+    ``declaring`` is the repeated ``declare`` parameter, and it is a second name
+    rather than a value inside the object on purpose: an account id is the
+    reader's own string, so **any** sentinel written among the targets would be
+    an id somebody could really have declared. Two parameters cannot collide.
+
+    Nothing here is judged against the store — this module has none. Whether
+    those targets are declared and whether the file names those labels is the
+    route's, with the ledger open.
+
+    Raises:
+        UploadRefused: the object is not one — the same ``422`` the file's own
+            refusals get, because it is the same request being turned back.
+    """
+    wanted = tuple(dict.fromkeys(
+        name.strip() for name in declaring if name and name.strip()))
+    if stated is None:
+        return AccountMapping(targets={}, declaring=wanted, stated=False)
+
+    try:
+        read_back = json.loads(stated)
+    except ValueError:
+        raise UploadRefused(
+            "the account correspondence is not readable: it is one JSON object "
+            "mapping each account the file names to a declared account")
+    if not isinstance(read_back, dict) or not all(
+            isinstance(target, str) for target in read_back.values()):
+        raise UploadRefused(
+            "the account correspondence is one JSON object mapping each account "
+            "the file names to the id of a declared account")
+
+    targets = {str(label).strip(): target.strip()
+               for label, target in read_back.items() if target.strip()}
+    both = sorted(set(targets) & set(wanted))
+    if both:
+        # Two answers to one question, and picking either silently is how a
+        # reader's rows land somewhere they never asked for.
+        raise UploadRefused(
+            f"{', '.join(both)} is both sent to a declared account and declared "
+            f"itself; one account of the file takes one answer")
+    return AccountMapping(targets=targets, declaring=wanted, stated=True)
+
+
+def _label(event: Event) -> str:
+    """The account an event names, as the **file** writes it — ``''`` for blank.
+
+    The same folding :func:`entries._settled` does at the write (whitespace is
+    the blank), so the census, the correspondence and the row that lands all
+    agree on what one label is.
+    """
+    return (event.account or '').strip()
+
+
 def receipt(filename: str, rows: Sequence[Event], *,
-            written: int, duplicates: int) -> Receipt:
+            written: int, duplicates: int,
+            file_accounts: Tuple[FileAccount, ...] = ()) -> Receipt:
     """The receipt for one file, in the order a reader reads it.
 
     ``rows`` is **the file**, whole, duplicates included — the period, the
@@ -261,6 +438,7 @@ def receipt(filename: str, rows: Sequence[Event], *,
                                for event in rows})),
         symbols=tuple(sorted({event.symbol for event in rows
                               if event.symbol})),
+        file_accounts=file_accounts,
     )
 
 
@@ -311,6 +489,7 @@ def _parse(path: Path, name: str) -> Upload:
 __all__ = [
     'MAX_UPLOAD_BYTES', 'MAX_BODY_BYTES', 'MIGRATION_PAGE', 'LEGACY_FILENAMES',
     'IMPORT_SUFFIXES',
+    'AccountMapping', 'FileAccount',
     'Receipt', 'Upload', 'UploadRefused', 'UploadTooLarge',
-    'oversize', 'too_large_detail', 'read', 'receipt',
+    'census', 'mapping', 'oversize', 'too_large_detail', 'read', 'receipt',
 ]

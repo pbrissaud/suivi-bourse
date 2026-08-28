@@ -71,7 +71,7 @@ one (the foreign key wants it), and never removed — the orphan is #695 § 10's
 deliberate one, named and purgeable, because a row can be typed again and a
 price series cannot.
 """
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -80,6 +80,7 @@ from logfmt_logger import getLogger
 import accounts as accounts_module
 import ledger
 import settings_registry
+import store as store_module
 from events import EventAggregator, EventValidator
 from events import export as events_export
 from events.schemas import DEFAULT_ACCOUNT, Event
@@ -122,6 +123,28 @@ class InvalidEntry(Exception):
     def __init__(self, message: str, field: Optional[str] = None):
         super().__init__(message)
         self.field = field
+
+
+@dataclass(frozen=True)
+class Duplicate:
+    """One line of the file the ledger already holds, and the line it repeats.
+
+    The pair is the whole of #835's *les doublons sont **nommés** ligne à ligne
+    avec la ligne du store qu'ils dupliquent*: a count says four lines will be
+    skipped, and only the pair says **which** four and **what** they repeat. The
+    owner is the one who knows whether that 12 August purchase is an export
+    handed over twice or an order filled twice, and they cannot know it from a
+    number.
+
+    ``held`` is the stored row, or ``None`` when what the draft repeats is
+    another line **of the file itself** — :func:`split_duplicates` compares
+    against both, and a file appended to itself has no ledger row to point at.
+    That difference is the reader's to see, so it is carried rather than
+    flattened.
+    """
+
+    event: Event
+    held: Optional[Event]
 
 
 # --------------------------------------------------------------------------- #
@@ -167,7 +190,8 @@ def create(store, draft: Event) -> Event:
 
 
 def create_many(store, drafts: Sequence[Event], *,
-                base_currency: Optional[str] = None) -> List[Event]:
+                base_currency: Optional[str] = None,
+                declare_accounts: Sequence[str] = ()) -> List[Event]:
     """Record a whole file's worth of events. One transaction, one replay.
 
     :func:`create` N times would be N replays of the ledger, which is quadratic
@@ -197,18 +221,41 @@ def create_many(store, drafts: Sequence[Event], *,
     exactly as it found it, and an amount re-read in another unit is the
     unrecoverable act ADR-0002 names.
 
+    ``declare_accounts`` is the other thing the **gesture** says rather than a
+    row (#835): the accounts the reader chose to declare from the import modal,
+    for the labels their file names and nobody had declared. It is written
+    **before the validator is built**, and that ordering is the whole feature:
+    :func:`_validator` reads ``account_ids`` off the store, so a label declared
+    in this same breath is one the rows naming it are judged against — which is
+    what turns *the file is refused whole because nobody declared ``TR``* into
+    *``TR`` is declared with the file*. Inside the one transaction, so a file
+    the replay then refuses leaves no account behind either.
+
+    The declaration is a plain :func:`accounts.create_account`, with the seed
+    row's own neutral type: the modal collects a *target*, not a broker's
+    paperwork, and retyping and relabelling are the Accounts page's two gestures
+    for exactly this.
+
     Returns the events as stored, keys included, in the order they were written.
 
     Raises:
         InvalidEntry: a row is not one the ledger takes; **nothing is written**,
             the whole file included, which is the loader's rule at the door.
+        accounts.AccountSourceError, accounts.DuplicateAccount: a declaration
+            that cannot stand — refused before a row is written, like the rest.
         events.aggregator.AggregationError: the ledger it would make does not
             replay (an oversell).
     """
-    if not drafts and base_currency is None:
+    if not drafts and base_currency is None and not declare_accounts:
         return []
 
     with store.transaction():
+        for account_id in declare_accounts:
+            accounts_module.create_account(
+                store, account_id, store_module.DEFAULT_ACCOUNT_ROW[1])
+            logger.info(f"The file names {account_id} and nobody had declared "
+                        f"it; declaring it with the import")
+
         if base_currency is not None:
             store.execute(
                 'INSERT INTO setting (key, value) VALUES (?, ?) '
@@ -392,11 +439,13 @@ def content_key(event: Event) -> Tuple:
 
 
 def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
-                                                              List[Event]]:
+                                                              List[Duplicate]]:
     """One file, cut in two: what is new, and what the ledger already has.
 
     Returns ``(fresh, duplicates)`` in the file's own order, and the two lists
-    partition ``drafts`` — nothing is dropped and nothing is counted twice.
+    partition ``drafts`` — nothing is dropped and nothing is counted twice. Each
+    duplicate carries **the row it repeats** (:class:`Duplicate`), because the
+    modal names them one by one and a count cannot be argued with (#835).
 
     **The comparison is against the ledger and against the file itself**, in one
     pass: the set starts as every key the store holds and grows as the file is
@@ -411,20 +460,28 @@ def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
     the caller's business, and ``?dry_run=1`` is exactly the caller that does
     not.
     """
-    seen = {content_key(event) for event in ledger.read_events(store)}
+    # The map is keyed by content and **valued by the stored row**, which is the
+    # one addition #835 makes to a set: the value is what the modal points at
+    # when it says *this line is already there*. A key the file itself
+    # introduces maps to ``None`` — there is no stored row to point at, and
+    # inventing one would name a row nobody can go and look at.
+    seen: Dict[Tuple, Optional[Event]] = {
+        content_key(event): event for event in ledger.read_events(store)}
     fresh: List[Event] = []
-    duplicates: List[Event] = []
+    duplicates: List[Duplicate] = []
     for draft in drafts:
         key = content_key(draft)
         if key in seen:
-            duplicates.append(draft)
+            duplicates.append(Duplicate(event=draft, held=seen[key]))
         else:
-            seen.add(key)
+            seen[key] = None
             fresh.append(draft)
     return fresh, duplicates
 
 
-def judge(store, drafts: Sequence[Event]) -> None:
+def judge(store, drafts: Sequence[Event], *,
+          declaring: Sequence[str] = (),
+          accounts_pending: bool = False) -> None:
     """Refuse what :func:`create_many` would refuse, **without writing a row**.
 
     A forecast that only counted lines would be a forecast the commit could
@@ -441,12 +498,32 @@ def judge(store, drafts: Sequence[Event]) -> None:
     ids come from ``max(id) + 1``, so on a day the ledger already has rows for,
     the file's rows follow them.
 
+    **Two arguments are the correspondence's** (#835), and both say the same
+    thing from either side of the gesture the write does with a row:
+
+    ``declaring`` names the accounts this import will declare, so the preview
+    judges the rows against the declaration the commit will make rather than
+    against the one that stands. Without it the forecast would refuse the very
+    label the modal is about to create, which is the ``422`` this whole feature
+    exists to repair.
+
+    ``accounts_pending`` says the correspondence is **still being collected** —
+    the modal has the census and has not been answered yet — and it is what a
+    preview carrying a ``map`` parameter sets. The account column is then not
+    judged at all, because judging it would refuse a file for the one question
+    this very response is being asked in order to put. It is a **preview**
+    argument and there is no write-path twin: :func:`create_many` judges the
+    column as it always did, so a commit without a complete correspondence is
+    refused exactly as before — the symmetry the preview gives up here is the
+    symmetry the modal restores by blocking its button.
+
     Raises:
         InvalidEntry, events.aggregator.AggregationError: as
             :func:`create_many`, and for the same reasons.
     """
     settled = _settled_all(store, drafts)
-    _refuse_all(store, settled)
+    _refuse_all(store, settled, declaring=declaring,
+                accounts_pending=accounts_pending)
     if not settled:
         return
 
@@ -480,7 +557,9 @@ def _settled_all(store, drafts: Sequence[Event]) -> List[Event]:
     return settled
 
 
-def _refuse_all(store, settled: Sequence[Event]) -> None:
+def _refuse_all(store, settled: Sequence[Event], *,
+                declaring: Sequence[str] = (),
+                accounts_pending: bool = False) -> None:
     """:func:`_refuse` over a whole file, on one build of the validator.
 
     Only the first issue is raised, for :func:`_refuse`'s own reason: a form
@@ -488,7 +567,8 @@ def _refuse_all(store, settled: Sequence[Event]) -> None:
     there is one, and on the write path that is the transaction's doing — on the
     preview's it is that there is no write to undo.
     """
-    issues = _validator(store).issues(settled)
+    issues = _validator(store, declaring=declaring,
+                        accounts_pending=accounts_pending).issues(settled)
     if issues:
         raise InvalidEntry(issues[0].message, field=issues[0].field)
 
@@ -603,16 +683,26 @@ def _refuse(store, event: Event) -> None:
         raise InvalidEntry(issues[0].message, field=issues[0].field)
 
 
-def _validator(store) -> EventValidator:
+def _validator(store, *, declaring: Sequence[str] = (),
+               accounts_pending: bool = False) -> EventValidator:
     """The one validator, with the context a row needs to be judged in.
 
     Built from a **read of the store**, which is what makes a declaration made
     in the same breath the one an event is judged against — and built once per
     gesture, however many rows the gesture carries: the two queries below are
     about the ledger, not about the row.
+
+    ``accounts_pending`` is :func:`judge`'s preview argument, and the two
+    values below are how *the account column is not judged* is said in this
+    class's own vocabulary rather than in a branch of its own: no set of ids to
+    check a label against, and nothing declared for a blank cell to be measured
+    against. Both halves are needed — an install that declares ``pea`` refuses
+    the blank column too, and the blank is a line of the modal like any other.
     """
+    if accounts_pending:
+        return EventValidator(account_ids=None, accounts_declared=False)
     return EventValidator(
-        account_ids=accounts_module.account_ids(store),
+        account_ids=accounts_module.account_ids(store) | set(declaring),
         accounts_declared=accounts_module.accounts_are_declared(store))
 
 
@@ -644,7 +734,7 @@ def _replays(store) -> None:
 
 __all__ = [
     'DUPLICATE_KEY_COLUMNS',
-    'UnknownEntry', 'InvalidEntry',
+    'UnknownEntry', 'InvalidEntry', 'Duplicate',
     'create', 'create_many', 'update', 'remove', 'remove_selection',
     'content_key', 'split_duplicates', 'judge',
 ]
