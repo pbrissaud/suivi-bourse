@@ -242,14 +242,19 @@ Your portfolio can leave the way it came in. **The export format is the import
 format**, so the round trip is round by construction: what comes out is a file
 this same app reads, with no conversion and no special path.
 
-In the app, the export menu is beside the upload zone, and it offers three
+In the app, the export menu is beside the upload zone, and it offers four
 files: every event, the same events as a **workbook with one sheet per year**,
-and the **selection your filters hold** at the moment you click. Away from the
-page, they are requests:
+the **selection your filters hold** at the moment you click, and your
+**accounts with their positions** — the one that is a report rather than a
+backup, described below. Away from the page, they are requests:
 
 ```bash
 curl -O http://localhost:8080/api/export/events.csv
 curl -O http://localhost:8080/api/export/events.xlsx
+
+# The accounts and what is held in them. It takes no filter: the parameters
+# below are the ledger's, and a position has none of them.
+curl -O http://localhost:8080/api/export/portfolio.csv
 
 # The selection, by the same names the filters on the page carry.
 # `symbol` may be repeated; anything left out is simply not narrowed.
@@ -277,16 +282,44 @@ The workbook is importable too — the app reads every sheet of it. The plain
 significant digit fewer than a text file does: a broker's `0.34898399999999996`
 comes back exactly from a CSV and as `0.348984` from a workbook.
 
-**Your accounts do not leave in a file, and that is deliberate.** They are
-declared in the app and nowhere else, so nothing reads an accounts file back in
-— and a file nothing restores from is worse than no file at all, because it
-sits in your backup looking like half a round trip. Redeclare your accounts in
-the app on the far side, with the same ids the `account` column names; the
-events file carries those ids on every row.
-
-It is an HTTP route rather than a button only, for the reason every write path
+They are HTTP routes rather than buttons only, for the reason every write path
 in this app is: the page is one client of the API and never a privileged one.
 One `curl` is a complete backup.
+
+### Your accounts and their positions
+
+The fourth file is the odd one out, and it helps to know why before you save it.
+The three above are **backups**: they hold what you recorded, and this app reads
+them back. `portfolio.csv` holds what the app *worked out* from what you
+recorded — the cash standing in each account, each holding's quantity and
+average unit cost, and what it is worth at the last price observed. It is for
+reading, for a spreadsheet, for your accountant. **Nothing reads it back in**,
+and the app will tell you so in one sentence if you try to hand it over: it has
+no `date` and no `event_type` columns, so it is not an events file and is
+refused as one.
+
+That refusal is the point. **Your accounts' declaration does not leave in a
+file, and that is deliberate**: accounts are declared in the app and nowhere
+else, so a file that restored them does not exist — and a file nothing restores
+from is worse than no file at all when it sits in your backup looking like half
+a round trip. Redeclare your accounts in the app on the far side, with the same
+ids the `account` column names; the events file carries those ids on every row.
+
+Two things about the shape are worth knowing before you open it in a
+spreadsheet:
+
+* **Each account gets a row of its own, followed by the rows of what it holds.**
+  A figure appears once — the balance is on the account's row, the valuation on
+  the position's — so every money column sums to something true. What repeats is
+  the account's name and type, which sum to nothing and let you filter.
+* **A position the app has never seen a price for has no valuation**, and the
+  cell is empty rather than zero or a cost standing in for a price. On the page
+  that same position is drawn at its cost, under a convention that needs to know
+  the app has finished looking for a price; a file states what was observed.
+
+An account nobody has ever moved money in has **empty** cash cells too, and not
+zeros: never having had a cash movement and having a balance of nothing are two
+different things.
 
 ### The reporting currency
 
