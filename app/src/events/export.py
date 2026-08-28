@@ -45,6 +45,15 @@ instead of once over two. Since #810 there are **five** of them: the period
 joined the four, because an import is an interval of dates before it is anything
 else — and because *extract a year* is what a backup with no period cannot do.
 
+Since #836 it renders one more thing, and that one is **not a backup**. The
+*accounts and positions* file is a **report**: balances, weighted-average unit
+costs and valuations, which are derived state and not a declaration anybody
+could hand back. Nothing reads it in — the loader refuses it by name, for want
+of ``date`` and ``event_type`` — and that refusal is what keeps it on the right
+side of ADR-0034, which retired the old ``accounts.csv`` precisely because it
+*looked* like a restorable backup and was not one. A file the import turns away
+in one sentence cannot be mistaken for half a restore.
+
 The two files are not interchangeable, and the difference is a precision.
 ``openpyxl`` writes a double as ``%.16g``, one significant digit short of the
 shortest string that reads back as the same double, so the CSV is the one that
@@ -64,11 +73,11 @@ import re
 import unicodedata
 from datetime import date
 from typing import (
-    Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple,
+    Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple,
 )
 
 from .loader import BASE_CURRENCY_COLUMN
-from .schemas import DEFAULT_ACCOUNT, Event
+from .schemas import DEFAULT_ACCOUNT, Event, unit_cost
 
 #: The columns of an exported event file, in the order the documentation shows
 #: them (``website/docs/import-your-events.mdx``). ``base_currency`` closes the
@@ -388,9 +397,155 @@ def _haystack(event: Event) -> str:
                          (event.symbol, event.notes, account_of(event)) if part))
 
 
+# --------------------------------------------------------------------- #
+# Accounts and positions — the one file that is a report (issue #836)
+# --------------------------------------------------------------------- #
+
+#: The columns of the accounts-and-positions file, in reading order: the account
+#: first, its cash next, then the holding and what it is worth. ``base_currency``
+#: closes the list because it closes :data:`EVENT_COLUMNS` — it is the one column
+#: that is a fact about the *file* rather than about the row.
+#:
+#: The store's own names are used throughout (``realized_gain``,
+#: ``received_dividend``), the way ``event_type`` is one: this module renders
+#: what the tables hold, and a second vocabulary invented on the way out is a
+#: translation to keep in step by hand. ``unit_cost`` is the one exception and it
+#: is not a rename — it is the *PMP*, derived and never stored (ADR-0003).
+PORTFOLIO_COLUMNS = (
+    'account', 'account_label', 'account_type',
+    'cash_balance', 'net_contributed',
+    'symbol', 'name', 'quantity', 'unit_cost', 'cost_basis',
+    'price', 'market_value', 'realized_gain', 'received_dividend',
+    BASE_CURRENCY_COLUMN,
+)
+
+
+def render_portfolio(accounts: Iterable[Any],
+                     states: Mapping[str, Any],
+                     positions: Iterable[Mapping[str, Any]],
+                     base_currency: Optional[str] = None) -> str:
+    """The accounts and their positions — balances, PMP and valuations (#836).
+
+    The fourth entry of the export menu, and the only one of the four that is
+    **not a backup**. The three others render the ledger, which is the truth
+    (ADR-0032) and re-enters by the ordinary import path; this renders what the
+    replay *derived* from it — a position, a unit cost, a cash balance — none of
+    which anybody hands back.
+
+    **The loader refuses this file by name**, for want of ``date`` and
+    ``event_type``, and that refusal is the whole reason it may exist at all.
+    ADR-0034 retired the old ``accounts.csv`` because a file nothing reads back
+    *looks* like a restorable backup; one the import turns away in one sentence
+    does not, and its name says report where the other said declaration. The
+    accounts are still born in the app and nowhere else — nothing here declares
+    anything.
+
+    **A figure appears once, a name repeats.** An account's own two figures — the
+    cash standing in it and what was put into it — are on the account's own row,
+    where the position columns are empty; a position's figures are on the
+    position's row, where the cash columns are. So every money column of this
+    file sums to something true, which is the one thing a spreadsheet reader will
+    actually do with it. The account's *label* and *type* repeat on the rows
+    under it, because a name summed is nothing and a name missing is a filter
+    that cannot be drawn.
+
+    **An account with no cash ledger has empty cells, never zeros.** ``0.00`` and
+    *nobody has ever moved money in this account* are two states, and the store
+    keeps them apart by having no ``account_state`` row at all for the second —
+    ADR-0006's rule read at the level of a cell.
+
+    **The price is the observed one, and blank when there is none.** The carrying
+    convention (ADR-0004) is deliberately not applied: it is a *named helper*
+    whose domain is exactly *the symbol's backfill is terminal*, and establishing
+    that takes the published snapshot's holding windows — which is the one read
+    an export must not make, a backup being of **what is stored**. A file that
+    substituted a cost for a price would publish a valuation nobody observed,
+    and it would do it in the one place the reader cannot see the em dash that
+    says so on the page.
+    """
+    declared = {account.id: account for account in accounts}
+    held: Dict[str, List[Mapping[str, Any]]] = {}
+    for position in positions:
+        account = (position.get('account') or '').strip() or DEFAULT_ACCOUNT
+        held.setdefault(account, []).append(position)
+
+    rows: List[dict] = []
+    # Every account the store names, declared or merely held in. A declared
+    # account holding nothing is ordinary and keeps its row — its cash figures
+    # are the point. The other side, held and undeclared, is unreachable by
+    # construction: the validator refuses an event naming an account nothing
+    # declared (#698), and ``accounts.delete_account`` refuses any account an
+    # event names (ADR-0013). The union is defensive, and it costs one ``|``:
+    # were that ever to stop holding, a position the reader owns would fall out
+    # of the file in silence.
+    for account in sorted(set(declared) | set(held)):
+        rows.append(_account_row(account, declared.get(account),
+                                 states.get(account), base_currency))
+        for position in sorted(held.get(account, []),
+                               key=lambda row: str(row.get('symbol') or '')):
+            rows.append(_position_row(account, declared.get(account),
+                                      position, base_currency))
+    return _render(PORTFOLIO_COLUMNS, rows)
+
+
+def _account_row(account: str, declaration: Optional[Any],
+                 state: Optional[Any], base_currency: Optional[str]) -> dict:
+    """The account itself: what it is called, and what cash stands in it.
+
+    The declaration is written **as the store holds it**, the seeded ``default``
+    row included: :func:`accounts.as_declared` is what the *wire* owes a front
+    that must not render an English seed (ADR-0024), and a file is not a
+    rendering — it states the row, and a reader who has never named that account
+    reads the name the app gave it.
+    """
+    return {
+        'account': account,
+        'account_label': None if declaration is None else declaration.label,
+        'account_type': None if declaration is None else declaration.type,
+        'cash_balance': None if state is None else state.cash_balance,
+        'net_contributed': None if state is None else state.net_contributed,
+        BASE_CURRENCY_COLUMN: base_currency,
+    }
+
+
+def _position_row(account: str, declaration: Optional[Any],
+                  position: Mapping[str, Any],
+                  base_currency: Optional[str]) -> dict:
+    """One holding: what is held, what it cost, and what it is worth.
+
+    ``market_value`` is ``quantity × price``, and absent the moment either is —
+    the arithmetic :mod:`portfolio_view` does for the wire, done here for a cell
+    and returning nothing rather than zero, since *a share nobody has priced* and
+    *a share worth nothing* are not the same line.
+
+    A **sold** position travels like any other (ADR-0017): its quantity is zero,
+    it has no unit cost — a position nobody holds has a realized gain instead —
+    and it is that gain the row has left to state.
+    """
+    quantity = position.get('quantity')
+    price = position.get('price')
+    return {
+        'account': account,
+        'account_label': None if declaration is None else declaration.label,
+        'account_type': None if declaration is None else declaration.type,
+        'symbol': position.get('symbol'),
+        'name': position.get('name'),
+        'quantity': quantity,
+        'unit_cost': unit_cost(quantity or 0.0,
+                               position.get('cost_basis') or 0.0),
+        'cost_basis': position.get('cost_basis'),
+        'price': price,
+        'market_value': (None if quantity is None or price is None
+                         else quantity * price),
+        'realized_gain': position.get('realized_gain'),
+        'received_dividend': position.get('received_dividend'),
+        BASE_CURRENCY_COLUMN: base_currency,
+    }
+
+
 __all__ = [
-    'EVENT_COLUMNS', 'BASE_CURRENCY_COLUMN',
+    'EVENT_COLUMNS', 'BASE_CURRENCY_COLUMN', 'PORTFOLIO_COLUMNS',
     'UNDATED_SHEET', 'NO_SELECTION', 'Selection',
-    'render_events', 'render_events_workbook',
+    'render_events', 'render_events_workbook', 'render_portfolio',
     'select', 'account_of', 'fold',
 ]

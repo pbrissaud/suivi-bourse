@@ -140,7 +140,10 @@ function block() {
 }
 
 describe('the export', () => {
-  it('offers three files: the ledger, the workbook and the selection', async () => {
+  it('offers four files: the ledger, the workbook, the selection and the portfolio', async () => {
+    // **The criterion of #836**, said on the rendering. Each entry carries its
+    // own perimeter under it and its format beside it, which is what lets two
+    // of them share a label without being the same gesture.
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
     const menu = await openExport(user)
@@ -150,24 +153,62 @@ describe('the export', () => {
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
     ).toEqual([
-      'Vos événements',
-      'Un classeur, un onglet par année',
-      // The count is the label: what the entry will produce, said before the
+      'Tous vos événements4 lignes du grand livreCSV',
+      'Tous vos événementsClasseur avec un onglet par annéeXLSX',
+      // The count is part of the entry: what it will produce, said before the
       // click rather than discovered in a file.
-      'La sélection filtrée (4 événements)',
+      'La sélection filtrée4 lignes retenuesCSV',
+      'Comptes et positionsSoldes, PRU et valorisationsCSV',
     ])
-    // And nothing announces that a round trip takes two files: it does not
+    // And the menu says once what its four entries answer.
+    expect(within(menu).getByText('Ce que vous exportez')).toBeInTheDocument()
+    // Nothing announces that a round trip takes two files: it does not
     // (ADR-0034). A label saying so would send the reader looking for a second
     // file the menu no longer has.
     expect(within(menu).queryByText(/deux fichiers/)).not.toBeInTheDocument()
   })
 
-  it('offers no accounts file, whatever this install has declared', async () => {
-    // ADR-0034. Nothing reads an accounts file back in, so one offered here
-    // would be a backup that restores nothing — the residue that is worst
-    // because it *looks* like half a round trip.
+  it('offers no accounts declaration, whatever this install has declared', async () => {
+    // ADR-0034, and the fourth entry does not reopen it. Nothing reads an
+    // accounts *file* back in, so one offered here would be a backup that
+    // restores nothing — the residue that is worst because it *looks* like half
+    // a round trip. What the menu offers instead is a **report**, named after
+    // what is in it, and the import refuses it by name.
     const declared = await openExport(renderImports({ accounts: [anAccount({ id: 'zeta' })] }).user)
     expect(within(declared).queryByRole('menuitem', { name: 'Vos comptes' })).not.toBeInTheDocument()
+    expect(
+      within(declared).getByRole('menuitem', { name: /Comptes et positions/ }),
+    ).toHaveTextContent('Soldes, PRU et valorisations')
+  })
+
+  it('asks the portfolio route for the accounts and their positions, with no reduction', async () => {
+    // The five parameters are the **ledger's** dimensions and a position has
+    // none of them, so nothing of the reduction travels — even with a chip
+    // pressed. The perimeter of this file is the portfolio.
+    const asked: string[] = []
+    server.use(
+      http.get(ROUTES.exportPortfolio, ({ request }) => {
+        asked.push(request.url)
+        return csvNamed('suivi-bourse-portfolio.csv')
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: /^Achat/ }))
+    await user.click(
+      within(await openExport(user)).getByRole('menuitem', { name: /Comptes et positions/ }),
+    )
+
+    await waitFor(() => expect(asked).toHaveLength(1))
+    expect(new URL(asked[0]).search).toBe('')
+    // The name is the server's here as everywhere, and it never becomes a
+    // *selection*: nothing was held back.
+    await waitFor(() => expect(saved).toEqual(['suivi-bourse-portfolio.csv']))
+    // The receipt names what was made, and it is not *your events*.
+    expect(
+      await screen.findByText('Vos comptes et positions sont sur votre disque.'),
+    ).toBeInTheDocument()
   })
 
   it('asks the server for the whole ledger, and saves it under the name it answers with', async () => {
@@ -181,7 +222,7 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
 
     await waitFor(() => expect(asked).toHaveLength(1))
     // No parameter at all: this entry is the backup, and the backup is whole.
@@ -247,7 +288,7 @@ describe('the export', () => {
     await waitFor(() => expect(block()).toBeInTheDocument())
 
     await user.click(
-      within(await openExport(user)).getByRole('menuitem', { name: 'Un classeur, un onglet par année' }),
+      within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*Classeur/ }),
     )
 
     await waitFor(() => expect(saved).toEqual(['suivi-bourse-events.xlsx']))
@@ -269,7 +310,7 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
 
     // It says what is being made, and it is still saying it a while later: the
     // sentence is not on a clock of its own.
@@ -296,7 +337,7 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.click(within(await openExport(user)).getByRole('menuitem', { name: 'Vos événements' }))
+    await user.click(within(await openExport(user)).getByRole('menuitem', { name: /Tous vos événements.*grand livre/ }))
 
     // Read by `problem.type` like every other refusal, never by the sentence
     // the server wrote for a log.

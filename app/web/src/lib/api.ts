@@ -93,6 +93,21 @@ export const ROUTES = {
    */
   exportEvents: '/api/export/events.csv',
   exportEventsWorkbook: '/api/export/events.xlsx',
+  /**
+   * The accounts and their positions — **the entry that is a report** (#836,
+   * spec #787). Balances, weighted-average unit costs and valuations: what the
+   * replay made of the ledger, rather than the ledger.
+   *
+   * It is not `accounts.csv`, which is a `404` and stays one (ADR-0034). That
+   * file was a *declaration* nothing reads back, and it looked like half a
+   * restore; this one the import refuses by name, for want of `date` and
+   * `event_type`, so it cannot be filed beside a backup and mistaken for one.
+   *
+   * **It takes no reduction.** The five parameters are the ledger's dimensions
+   * and a position has none of them: the perimeter of this file is the
+   * portfolio, and the entry that reduces is the one that says so.
+   */
+  exportPortfolio: '/api/export/portfolio.csv',
   /** What this install is configured with: the dials and the boot variables. */
   config: '/api/config',
   /** The dials' one writer, and it is an HTTP route so headless stays whole. */
@@ -169,15 +184,17 @@ export const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
-  // The two exports are in here for what they are, not for who fetches them:
+  // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
   // exactly the property this list names. Since #796 the client does fetch them
   // — the receipt has to last as long as the operation, and an `href` the
   // browser follows on its own settles at no observable moment — but a gesture
   // in flight holds no surface hostage, so none of them is a read the net has
-  // anything to say about.
+  // anything to say about. The report added at #836 is one of them: it is a
+  // file the reader asked for, not a figure any block draws.
   'exportEvents',
   'exportEventsWorkbook',
+  'exportPortfolio',
 ] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */
@@ -336,13 +353,17 @@ async function upload<T>(path: string, file: File, params: string[] = []): Promi
 }
 
 /**
- * The three files a reader can ask for (#796, ADR-0034), named so a receipt can
- * say which one is being made. They are names of *files*, not of routes: all
- * three are one resource — two reductions of it, and one of those in the other
- * shape. There was a fourth, the declaration, and it left with the accounts
- * file it was half of.
+ * The four files a reader can ask for (#796, #836, ADR-0034), named so a
+ * receipt can say which one is being made. They are names of *files*, not of
+ * routes: three of them are one resource — two reductions of it, and one of
+ * those in the other shape — and the fourth is a different subject altogether.
+ *
+ * `portfolio` is that fourth, and it is **the one that is not a backup**: the
+ * accounts and their positions, balances and valuations included. It is not the
+ * declaration file ADR-0034 retired, which nothing reads back and which
+ * therefore looked like half a restore; this one the import refuses by name.
  */
-export const EXPORT_FILES = ['events', 'workbook', 'selection'] as const
+export const EXPORT_FILES = ['events', 'workbook', 'selection', 'portfolio'] as const
 
 export type ExportFile = (typeof EXPORT_FILES)[number]
 
