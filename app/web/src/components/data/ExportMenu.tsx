@@ -1,35 +1,43 @@
 /**
- * **The way back out — three entries** (#710, #794, #796, ADR-0020, ADR-0030,
- * ADR-0034).
+ * **The way back out — four entries** (#710, #794, #796, #836, ADR-0020,
+ * ADR-0030, ADR-0034, spec #787).
  *
  * Every event as an importable `.csv`, the same ledger as a **workbook with one
- * sheet per year**, and the **filtered selection** — what the chips retain at
- * the instant of the click. There was a fourth, the declared accounts, and it
- * left with the accounts file: nothing reads one back in, so a file offered
- * here would be a backup that restores nothing (ADR-0034). The accounts are
- * redeclared in the app, where they are declared in the first place.
+ * sheet per year**, the **filtered selection** — what the chips retain at the
+ * instant of the click — and the **accounts with their positions**. The fourth
+ * had left with the accounts file (ADR-0034) and comes back a different thing
+ * altogether: #787 puts it in the menu on an argument that is not the one that
+ * removed it, *declaring an account is a gesture of the domain, exporting is a
+ * gesture on data* — so the way out of the accounts lives where the data are
+ * looked at, and what leaves is a **report** (balances, PMP, valuations) rather
+ * than a declaration nothing reads back. The trap ADR-0034 closed stays closed
+ * because the import refuses this file **by name**, for want of `date` and
+ * `event_type`: it cannot be filed beside a backup and mistaken for one.
  *
- * **All three entries are a perimeter stated by the entry itself.** The
- * workbook is the ledger *entire*, deliberately: the resource takes the
- * reduction in either shape, so a workbook of the selection is one parameter
- * away, and what stops the menu from offering it is that the reader was
- * promised entries they could tell apart. The perimeter is named by the one
- * entry that reduces, which is what keeps the other two unambiguous.
+ * **Every entry states its own perimeter**, and the menu is laid out so that it
+ * does: a label, the note under it saying what is in the file, and the format on
+ * the right. The workbook is the ledger *entire*, deliberately — the resource
+ * takes the reduction in either shape, so a workbook of the selection is one
+ * parameter away, and what stops the menu from offering it is that the reader
+ * was promised entries they can tell apart. The perimeter is named by the one
+ * entry that reduces, and by no other.
  *
  * **Nothing here narrows anything.** The selection is the ledger's own
  * reduction, carried to the server as the five names the chips hold (`q`,
- * `type`, `account`, `symbol`, and since #810 `since`/`until`) and answered there: the importable form belongs
- * to `events/export.py`, and a partial file assembled in TypeScript would be a
- * second spelling of a format written once. What comes back is therefore an
- * ordinary event file — droppable, re-importable — and not an extract that
- * looks like one.
+ * `type`, `account`, `symbol`, and since #810 `since`/`until`) and answered
+ * there: the importable form belongs to `events/export.py`, and a partial file
+ * assembled in TypeScript would be a second spelling of a format written once.
+ * What comes back is therefore an ordinary event file — droppable,
+ * re-importable — and not an extract that looks like one. The fourth entry
+ * sends no parameter at all: a position has no type and no date, so the
+ * reduction is not a question that resource can be asked.
  *
  * It is also read from the **store** and not from the snapshot this page draws.
  * The two hold the same rows on the common path and part exactly where it
  * matters: a snapshot the validator refused leaves the previous one standing,
- * and a backup is of what is stored. The count on the third entry is this
- * page's own — it describes the table the reader is looking at, which is what
- * makes it an honest label for the gesture.
+ * and a backup is of what is stored. The counts in the notes are this page's
+ * own — they describe the table the reader is looking at, which is what makes
+ * them honest labels for the gesture.
  *
  * **The confirmation is the receipt, and it lasts as long as the operation.**
  * That is why the entries are gestures rather than `<a download>` links: a link
@@ -50,8 +58,7 @@
  * install are droppable side by side and every event they share is recorded
  * twice. A *reduction* does get its own name, which is the same argument from
  * the other end — a partial file must not replace a whole one on a disk. The
- * arbitration is beside `EXPORT_FILENAMES` in `web/api.py`, and the date a
- * reader wants is on the import list, in `Importé le`.
+ * arbitration is beside `EXPORT_FILENAMES` in `web/api.py`.
  */
 import { toast } from 'sonner'
 
@@ -60,6 +67,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api, ROUTES, type ExportFile } from '@/lib/api'
@@ -74,11 +82,13 @@ export interface ExportMenuProps {
   files: { events: boolean }
   /** The reduction in force, as the table holds it at the instant of the click. */
   selection: LedgerFilters
-  /** How many rows it retains — the third entry's own label. */
+  /** How many rows it retains — the third entry's own note. */
   selected: number
+  /** How many the ledger holds entire — the first entry's, and the workbook's. */
+  total: number
 }
 
-export function ExportMenu({ files, selection, selected }: ExportMenuProps) {
+export function ExportMenu({ files, selection, selected, total }: ExportMenuProps) {
   const { t } = useI18n()
 
   function run(file: ExportFile, path: string) {
@@ -104,37 +114,98 @@ export function ExportMenu({ files, selection, selected }: ExportMenuProps) {
           {t('data.export.title')}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-w-xs">
+      <DropdownMenuContent align="end" className="w-72">
+        {/* The menu says what the four entries answer, once, rather than four
+            times over: *what you are exporting*. */}
+        <DropdownMenuLabel className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          {t('data.export.heading')}
+        </DropdownMenuLabel>
         {files.events ? (
           <>
-            <DropdownMenuItem onSelect={() => run('events', ROUTES.exportEvents)}>
-              {t('data.export.events')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
+            <Entry
+              label={t('data.export.events')}
+              note={t('data.export.events.note', { count: total })}
+              format="CSV"
+              onSelect={() => run('events', ROUTES.exportEvents)}
+            />
+            <Entry
+              label={t('data.export.workbook')}
+              note={t('data.export.workbook.note')}
+              format="XLSX"
               onSelect={() => run('workbook', ROUTES.exportEventsWorkbook)}
-            >
-              {t('data.export.workbook')}
-            </DropdownMenuItem>
-            {/* The count is the label: it is what the entry will produce, said
-                before the click rather than discovered in a file. With nothing
-                pressed the reduction is the whole ledger, which is what the
-                chips retain then — and the receipt then says *your events*,
+            />
+            {/* The count is part of the label: it is what the entry will
+                produce, said before the click rather than discovered in a file.
+                It is the reduction's own count and **not** the number of rows
+                drawn — the table reveals forty at a time (ADR-0031), so *what
+                is on screen* would be a sentence the file contradicts. With
+                nothing pressed the reduction is the whole ledger, which is what
+                the chips retain then — and the receipt then says *your events*,
                 like the file the server answers under. The kind is read off the
                 reduction and never off the entry that was clicked, or the one
                 sentence on screen would contradict the name on the disk. */}
-            <DropdownMenuItem
+            <Entry
+              label={t('data.export.selection')}
+              note={t('data.export.selection.note', { count: selected })}
+              format="CSV"
               onSelect={() =>
                 run(
                   selectionParams(selection).size > 0 ? 'selection' : 'events',
                   exportHref(ROUTES.exportEvents, selection),
                 )
               }
-            >
-              {t('data.export.selection', { count: selected })}
-            </DropdownMenuItem>
+            />
+            {/* **The fourth does not follow the declaration** (#787), and that
+                is the whole of why it is here rather than on the accounts page:
+                declaring an account is a gesture of the domain, exporting is a
+                gesture on data, and the ledger is where the data are looked at.
+                It is under the same condition as the other three all the same —
+                not because it is about the ledger, but because this whole bar
+                is: a block with nothing in it does not exist (#724), and a
+                portfolio derived from no event is one seeded account and no
+                position, which is a file with nothing to say. */}
+            <Entry
+              label={t('data.export.portfolio')}
+              note={t('data.export.portfolio.note')}
+              format="CSV"
+              onSelect={() => run('portfolio', ROUTES.exportPortfolio)}
+            />
           </>
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * One entry: what leaves, what is in it, and the shape it leaves in.
+ *
+ * The format rides on the right as a badge rather than inside the sentence,
+ * because it is the one thing a reader scans the column of entries for — two of
+ * the four differ by nothing else. It is **not** hidden from the accessible
+ * name for exactly that reason: the two entries it separates are read out
+ * identically without it.
+ */
+function Entry({
+  label,
+  note,
+  format,
+  onSelect,
+}: {
+  label: string
+  note: string
+  format: string
+  onSelect: () => void
+}) {
+  return (
+    <DropdownMenuItem onSelect={onSelect} className="gap-3">
+      <span className="min-w-0 flex-1">
+        {label}
+        <span className="block text-xs text-muted-foreground">{note}</span>
+      </span>
+      <span className="shrink-0 rounded border px-1.5 font-mono text-[11px] text-muted-foreground">
+        {format}
+      </span>
+    </DropdownMenuItem>
   )
 }

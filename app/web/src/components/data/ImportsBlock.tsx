@@ -24,15 +24,17 @@
  *
  * Two things about what is left are still decisions:
  *
- *  - **The export is three files and one of them is the reduction** (#796,
- *    ADR-0034). It
- *    was *total or nothing* until that ticket, on the argument that a partial
+ *  - **The export is four files, one of which is the reduction and one of which
+ *    is not a backup at all** (#796, #836, ADR-0034). It
+ *    was *total or nothing* until #796, on the argument that a partial
  *    file is not a round trip and makes re-importing look like a restore. What
  *    settles it is the **name**: the server calls a reduction a selection and
  *    not a backup, so the file cannot replace the whole one on a disk — and the
  *    reduction is taken on the side that owns the importable form, so what comes
  *    back is an ordinary event file rather than an extract wearing one's
- *    clothes. The menu itself is `ExportMenu.tsx`.
+ *    clothes. The fourth, since #836, is the accounts and their positions: a
+ *    *report*, refused by the import in one sentence, which is what keeps it on
+ *    the right side of ADR-0034. The menu itself is `ExportMenu.tsx`.
  *  - **A block with nothing in it does not exist** (#724). Here *nothing* is
  *    both halves at once: nothing to hand over to and nothing to hand back.
  */
@@ -92,7 +94,15 @@ export function ImportsBlock({ upload, events, selection, selected }: ImportsBlo
       <div className="flex flex-wrap items-start justify-between gap-4">
         {events.length > 0 ? <UploadZone upload={upload} /> : null}
         {files.events ? (
-          <ExportMenu files={files} selection={selection} selected={selected} />
+          <ExportMenu
+            files={files}
+            selection={selection}
+            selected={selected}
+            // The ledger entire, for the two entries whose perimeter it is: the
+            // count is a note on what the file will hold, and the tab already
+            // holds the rows it counts.
+            total={events.length}
+          />
         ) : null}
       </div>
     </section>

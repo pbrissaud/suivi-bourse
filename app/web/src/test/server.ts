@@ -140,6 +140,9 @@ export function defaultHandlers() {
     http.get(ROUTES.exportEventsWorkbook, ({ request }) =>
       exported(new URL(request.url).search === '' ? 'events' : 'selection', 'xlsx'),
     ),
+    // The fourth file, and the one that is not a backup (#836): it takes no
+    // reduction, so its name never moves.
+    http.get(ROUTES.exportPortfolio, () => exported('portfolio', 'csv')),
 
     // The installation tab (#724). The default install has one notice standing,
     // a store on a mount and no orphan — the ephemeral store and the orphan
@@ -192,7 +195,7 @@ export function defaultHandlers() {
  * it, and a fixture with rows in it would suggest an assertion nobody can make
  * about a file the browser owns.
  */
-function exported(kind: 'events' | 'selection' | 'accounts', suffix: 'csv' | 'xlsx') {
+function exported(kind: 'events' | 'selection' | 'portfolio', suffix: 'csv' | 'xlsx') {
   return new HttpResponse('date,event_type\n', {
     headers: {
       'Content-Type': suffix === 'csv' ? 'text/csv; charset=utf-8' : 'application/octet-stream',
