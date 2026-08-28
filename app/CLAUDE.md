@@ -297,6 +297,22 @@ retains nothing removes nothing and is a `200`. The answer is
 `{"events_removed": n}`, and the replay follows it like every other write, the
 performance series included.
 
+**The way out is three routes and one of them is not a backup** (#796, #836).
+`GET /api/export/events.csv` and `…/events.xlsx` render the ledger — the second
+one sheet per year — and both take the five reduction parameters above off the
+same `web.api._selection`, so a *selection* is a name the server gives a file
+and never a shape assembled in the front. `GET /api/export/portfolio.csv` is the
+third and it is a **report**: the accounts with their cash, and their positions
+with the PMP and what the last observed price makes of them. It takes no
+reduction (a position has no event type and no date), it reads the **store** and
+not the published snapshot like the two beside it, and it does not apply the
+carrying convention — establishing that a symbol's backfill is terminal takes
+the snapshot's holding windows, which is the one read an export must not make,
+so an unpriced holding is an empty cell. `/api/export/accounts.csv` is still a
+`404` and stays one: ADR-0034 retired a *declaration* nothing reads back, and
+what keeps this file on the right side of that record is that the loader refuses
+it by name for want of `date` and `event_type`.
+
 The upload's own refusals are all `422` and **none of them writes**: an
 unrecognised header (naming the column), an undeclared account (naming the
 account), a v4 file (naming it, with the migration page), a declaration of

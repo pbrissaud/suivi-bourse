@@ -641,13 +641,20 @@ src/
   the table,
   one band holding the **upload zone** (a real target since #811: a file
   dropped on it or chosen from it is handed to `POST /api/events/import`, and the
-  receipt is said under it), the export menu — **three entries** since #817:
-  every event, a workbook with one sheet per year and the filtered selection,
-  all three server-side because the importable form belongs to
-  `events/export.py` and a rule written twice loses a branch; the fourth was the
-  accounts, and it left with the file nothing could read back (ADR-0034) — and
-  **no third entry** since #816: nothing persists that could be listed or revoked, so the
-  band is the zone and the menu.
+  receipt is said under it), the export menu — **four entries** since #836:
+  every event, a workbook with one sheet per year, the filtered selection and
+  the **accounts with their positions**. The first three are server-side
+  because the importable form belongs to `events/export.py` and a rule written
+  twice loses a branch; the fourth is not on that axis at all — it is a
+  **report** (balances, PMP, valuations) and not a backup, which is what lets it
+  stand where ADR-0034 removed an `accounts.csv`: that file was a *declaration*
+  nothing could read back, and this one the import refuses by name for want of
+  `date` and `event_type`. It takes no reduction either — the five parameters
+  are the ledger's dimensions, and a position has none of them. Each entry
+  carries its perimeter under it and its format beside it, which is what lets
+  the first two share a label. And **no third thing in the band** since #816:
+  nothing persists that could be listed or revoked, so the band is the zone and
+  the menu.
 - **Settings** (`/reglages`) — the fifth page (ADR-0038), and the only route of
   the five that reads nothing off its own address: a dial is not a reduction of
   anything, so there is nothing here for a search parameter to describe. **Five
