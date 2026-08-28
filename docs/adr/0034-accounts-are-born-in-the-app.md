@@ -25,6 +25,20 @@ here for the same reason.
   trip no longer exists for accounts, so an `accounts.csv` nothing can read back is a trap
   that **looks** like a restorable backup. The export writes the events, and the accounts are
   redeclared by hand.
+
+  **Amended (#836): what this refuses is a declaration, not a report.** The clause above was
+  read as forbidding any export that mentions an account, and it does not — it forbids a file
+  that *offers itself as the way back in*. `suivi-bourse-portfolio.csv` is the other thing: a
+  line per account carrying its balance and net contribution, then a line per position
+  carrying quantity, average cost, cost, observed price and valuation. It is figures about a
+  state, not the state itself, and three properties keep it that way. It is **not**
+  `/api/export/accounts.csv`, which stays a `404`. The loader **refuses it by name**, having
+  no `date` and no `event_type` — asserted on both sides. And the name promises nothing: a
+  *portfolio* is what one reads, an *account* is what one declares.
+
+  The test the clause actually states is therefore **round trip or not**, and it is the ledger
+  that has one. A file the app cannot read back is a trap only when a reader could mistake it
+  for the road home; a report that says so in its name, its columns and its refusal cannot be.
 - **`coming-from-v4.mdx` loses a section rather than gaining one.** Its whole *"`alone` is
   the operative word"* paragraph exists to warn that an `accounts.csv` left beside the events
   takes a v4 install down. There is no longer an `accounts.csv` to leave anywhere.
