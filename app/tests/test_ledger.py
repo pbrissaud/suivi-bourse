@@ -1275,6 +1275,42 @@ def test_the_flag_that_writes_the_duplicates_leaves_none_to_name(tmp_path):
     assert receipt['duplicates'] == 0
 
 
+def test_the_preview_refuses_the_duplicates_the_write_would_refuse(tmp_path):
+    """The flag is judged **at the preview**, or the refusal lands after the button.
+
+    ``?write_duplicates=1`` is not a rendering choice a client can settle by
+    arithmetic: writing the rows the ledger already holds is a *different ledger
+    to replay*, and a ``SELL`` that only got through because its duplicate was
+    skipped stops replaying once it is not. The preview therefore runs
+    :func:`entries.judge` over the set the flag really writes, so the two moments
+    answer the same status and the same sentence — which is what lets #835's
+    window put the box without promising something the button cannot keep.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    sold = "2024-02-01,SELL,AAPL,Apple Inc,10,180.00,2.00,,\n"
+    _upload(client, (ONE_BUY + sold).encode('utf-8'))
+    again = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,notes\n"
+        + sold
+    ).encode('utf-8')
+
+    skipping = _upload(client, again, query="?dry_run=1")
+    keeping = _upload(client, again, query="?dry_run=1&write_duplicates=1")
+    written = _upload(client, again, query="?write_duplicates=1")
+
+    # Skipped, the line is one the ledger already holds and the forecast is
+    # ordinary: nothing to write, nothing to refuse.
+    assert skipping.status_code == 200
+    assert skipping.get_json()['duplicates'] == 1
+    # Kept, the same file oversells — and the **preview** says so, with the
+    # status and the prose the write answers, having written nothing.
+    assert keeping.status_code == 409
+    assert keeping.get_json()['type'] == problem.TYPE_UNREPLAYABLE
+    assert written.status_code == 409
+    assert keeping.get_json()['detail'] == written.get_json()['detail']
+    assert opened.query('SELECT count(*) FROM event') == [(2,)]
+
+
 def test_the_receipt_says_what_the_file_declares_and_what_becomes_of_it(
         tmp_path):
     """The currency is an **offer** on an install that has never answered.

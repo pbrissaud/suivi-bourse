@@ -26,9 +26,14 @@
  *
  * **The other two are offers the server already made.** The duplicates, named
  * line by line with the ledger row each repeats, skipped by default and written
- * if the reader says so — and the count in the footer follows that choice
- * without asking the server again, because the flag moves rows from one column
- * to the other and the three numbers close (`rows === written + duplicates`).
+ * if the reader says so — and that answer **costs a forecast of its own**, for a
+ * harder reason than the correspondence's: writing the rows the ledger already
+ * holds is a different ledger to replay, and a file whose `SELL` only replays
+ * because its duplicate was skipped stops replaying once it is not. Left to
+ * arithmetic here, that is a `409` arriving **after** the button. So the box
+ * re-reads the file under `?write_duplicates=1`, the footer states the figure
+ * that reading answers, and a refusal lands *at the box*, beside a census the
+ * reader can untick against.
  * The currency, offered for adoption where this install has never answered, and
  * **refused in prose** where it contradicts one — which is a `422` at both
  * moments and therefore a window with no forecast in it and a disabled button.
@@ -40,7 +45,10 @@
  *
  * **No refusal arrives after the button.** The button is blocked while a line
  * has no target, and it says why in prose rather than being merely grey; what
- * the forecast accepted, the write writes.
+ * the forecast accepted, the write writes. Which holds only because **every**
+ * answer the window collects is sent to the forecast — the correspondence and
+ * the duplicates alike: a parameter the preview never carried is a parameter the
+ * server judges for the first time under the button.
  *
  * **The simple case renders neither block.** Everything declared and nothing
  * duplicated: the accounts block is one line of affirmation, and the duplicates
@@ -105,7 +113,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   const [writeDuplicates, setWriteDuplicates] = useState(false)
   const [adoptCurrency, setAdoptCurrency] = useState(true)
   const forecast = upload.forecast
-  const previewed = forecast?.filename
+  const previewed = forecast?.file.filename
   const [lastFile, setLastFile] = useState<string | undefined>(previewed)
   if (!upload.held && (lastFile !== undefined || Object.keys(chosen).length > 0)) {
     // The file was put down or written: nothing the reader said about it
@@ -120,12 +128,14 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
   }
 
   const declared = accounts.data
-  const lines = accountLines(
-    forecast?.file_accounts ?? [],
-    new Set((declared?.accounts ?? []).map((account) => account.id)),
-    declared?.declared ?? false,
-    chosen,
-  )
+  const linesUnder = (picks: Readonly<Record<string, AccountTarget>>) =>
+    accountLines(
+      forecast?.file.file_accounts ?? [],
+      new Set((declared?.accounts ?? []).map((account) => account.id)),
+      declared?.declared ?? false,
+      picks,
+    )
+  const lines = linesUnder(chosen)
   const missing = unanswered(lines)
   const ready = forecast !== undefined && declared !== undefined
 
@@ -134,12 +144,23 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
     setChosen(next)
     // The forecast is re-read under the new correspondence: the duplicate key
     // carries the account, so what is skipped changes with the answer.
-    upload.reconsider(correspondenceOf(accountLines(
-      forecast?.file_accounts ?? [],
-      new Set((declared?.accounts ?? []).map((account) => account.id)),
-      declared?.declared ?? false,
-      next,
-    )))
+    upload.reconsider({ correspondence: correspondenceOf(linesUnder(next)), writeDuplicates })
+  }
+
+  /**
+   * **The box is re-read like the selectors are**, and for a harder reason
+   * (#835).
+   *
+   * *Write them anyway* is not a rendering choice the front can settle by
+   * arithmetic: writing the rows the ledger already holds is a different ledger
+   * to replay, and a file whose `SELL` only replayed because its duplicate was
+   * skipped stops replaying once it is not. Judged for the first time under the
+   * button, that is a `409` **after** the button — the one thing this window
+   * exists to make impossible.
+   */
+  const decideDuplicates = (value: boolean) => {
+    setWriteDuplicates(value)
+    upload.reconsider({ correspondence: correspondenceOf(lines), writeDuplicates: value })
   }
 
   return (
@@ -159,7 +180,7 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
           ) : null}
           {forecast ? (
             <span className="text-sm text-muted-foreground tabular-nums">
-              {covers(t, f, forecast)}
+              {covers(t, f, forecast.file)}
             </span>
           ) : null}
           <DialogDescription>{t('data.import.preview.body')}</DialogDescription>
@@ -192,19 +213,24 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
               onAnswer={answer}
             />
 
-            {forecast.duplicates > 0 ? (
+            {/* Read off the **census** and never off the answer's own forecast:
+                under `?write_duplicates=1` the server moves those rows into
+                `written` and leaves none to name, so a block mounted on that
+                reading would take itself away — box and all — the moment the
+                reader ticked it. */}
+            {forecast.file.duplicates > 0 ? (
               <DuplicatesBlock
-                forecast={forecast}
+                forecast={forecast.file}
                 currency={totals.data?.base_currency ?? null}
                 writeDuplicates={writeDuplicates}
                 busy={upload.pending}
-                onToggle={setWriteDuplicates}
+                onToggle={decideDuplicates}
               />
             ) : null}
 
-            {forecast.currency?.adopting ? (
+            {forecast.file.currency?.adopting ? (
               <CurrencyBlock
-                currency={forecast.currency.declared}
+                currency={forecast.file.currency.declared}
                 adopt={adoptCurrency}
                 busy={upload.pending}
                 onToggle={setAdoptCurrency}
@@ -222,15 +248,18 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
         {ready || upload.error ? (
           <div className="flex flex-wrap items-center gap-3 border-t pt-4">
             <span className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
-              {ready ? (
+              {/* The figures are the **answer's own forecast**, straight off the
+                  server, and they are absent where that answer is refused: a
+                  window that goes on stating what it would write while saying it
+                  will not is stating a number about a gesture that is not on
+                  offer. */}
+              {ready && forecast.writing ? (
                 <>
                   <span className="text-sm font-medium tabular-nums">
-                    {foreseen(t, f, forecast, writeDuplicates)}
+                    {foreseen(t, f, forecast.writing)}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {t('data.import.skipped', {
-                      count: writeDuplicates ? 0 : forecast.duplicates,
-                    })}
+                    {t('data.import.skipped', { count: forecast.writing.duplicates })}
                   </span>
                 </>
               ) : null}
@@ -240,10 +269,13 @@ export function ImportPreview({ upload }: { upload: EventUpload }) {
             </Button>
             <Button
               type="button"
-              disabled={!ready || missing.length > 0 || upload.pending}
-              onClick={() =>
-                upload.commit({ writeDuplicates, declineCurrency: !adoptCurrency })
+              disabled={
+                !ready ||
+                forecast.writing === undefined ||
+                missing.length > 0 ||
+                upload.pending
               }
+              onClick={() => upload.commit({ declineCurrency: !adoptCurrency })}
             >
               {t('data.import.confirm')}
             </Button>
@@ -607,27 +639,27 @@ function covers(
  * **What would be written** — `import.written`'s sentence with its tense moved,
  * so the reader recognises afterwards what they read before (#813).
  *
- * The count **follows the reader's choice about the duplicates**, and it is
- * computed here rather than asked of the server again: the flag moves the same
- * rows from one column to the other and the three numbers close, so
- * `rows === written + duplicates` is all the arithmetic there is.
+ * The count **follows the reader's choice about the duplicates**, and it is the
+ * **server's** count under that choice rather than arithmetic done here: the
+ * preview is re-read under the box, so there is a real forecast of the real
+ * answer to read the figure off, and a number the front computed would be a
+ * second authority on what the button does.
  */
 function foreseen(
   t: ReturnType<typeof useI18n>['t'],
   f: ReturnType<typeof useFormatters>,
-  forecast: ImportReceipt,
-  writeDuplicates: boolean,
+  writing: ImportReceipt,
 ): string {
   const said =
-    forecast.period === null
-      ? receiptMessage({ kind: 'import.forecast.empty', filename: forecast.filename })
+    writing.period === null
+      ? receiptMessage({ kind: 'import.forecast.empty', filename: writing.filename })
       : receiptMessage({
           kind: 'import.forecast',
-          count: writeDuplicates ? forecast.rows : forecast.written,
-          from: f.date(forecast.period.from),
-          to: f.date(forecast.period.to),
-          accounts: forecast.accounts.length,
-          symbols: forecast.symbols.length,
+          count: writing.written,
+          from: f.date(writing.period.from),
+          to: f.date(writing.period.to),
+          accounts: writing.accounts.length,
+          symbols: writing.symbols.length,
         })
   return t(said.message, said.values)
 }

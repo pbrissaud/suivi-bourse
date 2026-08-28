@@ -364,7 +364,12 @@ unit_price, fee, amount)`; `name` and `notes` are out, or annotating a row would
 make it re-importable. `entries.split_duplicates` compares it against the ledger
 **and** against the file itself, the receipt counts what it finds, the import
 skips it, and `?write_duplicates=1` writes it anyway — the owner is the only one
-who knows whether two identical `BUY` are one order filled twice. The key is
+who knows whether two identical `BUY` are one order filled twice. **The flag is
+judged at the preview as well**, and that is load-bearing rather than incidental:
+keeping the duplicated rows is a *different ledger to replay*, so a `SELL` that
+only got through because its duplicate was skipped stops replaying once it does
+not, and a preview that ignored the flag would answer `200` to a file the write
+then refuses — the refusal after the button #835 forbids. The key is
 declared **nowhere in the DDL**: a `UNIQUE` over those eight columns would make
 that order impossible to record from the keyboard as well, and ADR-0007's rule
 puts a constraint where the error enters, which is at the import.

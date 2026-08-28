@@ -134,8 +134,18 @@
 > — a parameter of the gesture, never the persistent mapping ADR-0006 forbids,
 > and the window says so. The two others were already served and never gathered:
 > the **duplicates** named line by line with the ledger row each repeats
-> (`duplicate_rows`, `duplicate_of`), the footer's count following the box
-> without asking the server again, and the **currency** offered for adoption
+> (`duplicate_rows`, `duplicate_of`) — and the box **costs a forecast of its
+> own**, for a harder reason than the correspondence's: writing the rows the
+> ledger already holds is a different ledger to replay, so a file whose `SELL`
+> only replays because its duplicate was skipped stops replaying once it is not,
+> and left to arithmetic here that is a `409` *after* the button. `useEventUpload`
+> therefore holds **two** receipts for one answer (`Forecast`): the file read with
+> the duplicates skipped, which is the census every block is drawn from — the
+> flag empties `duplicate_rows` server-side, so a block mounted on the other
+> reading would take its own box away — and what the answer would really write,
+> which is where the footer's count comes from. A refusal of the second lands
+> *beside* the first, so the window says it before the button and the reader can
+> untick. And the **currency** offered for adoption
 > where the install has never answered (`?adopt_currency=0` declines) and refused
 > in prose where it contradicts one — a `422` at both moments, so the window
 > stands with the sentence in it and the button disabled beside it. **The simple
