@@ -470,10 +470,14 @@ def render_portfolio(accounts: Iterable[Any],
         held.setdefault(account, []).append(position)
 
     rows: List[dict] = []
-    # Every account the store names, declared or merely held in. An id on one
-    # side and not the other is historical residue rather than an error — the
-    # same population ``ledger.orphans`` exists for — and dropping it here would
-    # be a file silently short of a position the reader owns.
+    # Every account the store names, declared or merely held in. A declared
+    # account holding nothing is ordinary and keeps its row — its cash figures
+    # are the point. The other side, held and undeclared, is unreachable by
+    # construction: the validator refuses an event naming an account nothing
+    # declared (#698), and ``accounts.delete_account`` refuses any account an
+    # event names (ADR-0013). The union is defensive, and it costs one ``|``:
+    # were that ever to stop holding, a position the reader owns would fall out
+    # of the file in silence.
     for account in sorted(set(declared) | set(held)):
         rows.append(_account_row(account, declared.get(account),
                                  states.get(account), base_currency))
