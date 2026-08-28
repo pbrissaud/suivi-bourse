@@ -36,7 +36,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { blocks, declarations, oklch, WEB_ROOT } from '@/test/stylesheet'
+import { blocks, declarations, oklch, read, WEB_ROOT } from '@/test/stylesheet'
 
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
 
@@ -104,6 +104,55 @@ describe('the cut of index.css', () => {
       expect(light, `${token} is declared on both grounds`).toBeDefined()
       expect(dark).toBeDefined()
       expect(light, `${token} may not be the dark value reused`).not.toBe(dark)
+    }
+  })
+})
+
+describe('the controls the browser paints itself', () => {
+  /**
+   * **The theme reaches the native controls too** (#837).
+   *
+   * `ThemeProvider` writes `color-scheme` beside the `.dark` class, and that is
+   * only half of what a user agent needs: it says *paint your light furniture
+   * or your dark one*, never *paint it in our colours*. The initial
+   * `accent-color: auto` is the reader's **desktop** accent, so the settings
+   * page's rebuild bar came out in whatever colour the machine was set to —
+   * measured green on one Mac, and the mint by coincidence rather than by
+   * decision. On the light ground the bar's *track*, which no accent reaches,
+   * read as a mid-grey rule drawn across a white card.
+   *
+   * Both are stated in `@layer base`, which is where the file already puts what
+   * an element is rather than what a token means — so ADR-0023's three blocks
+   * are untouched and the sizing rule is not tested: no token is added, two
+   * existing ones are spent.
+   */
+  it('states the accent rather than inheriting the reader’s desktop', () => {
+    expect(read()).toMatch(/accent-color:\s*var\(--primary\)/)
+  })
+
+  it('draws the one progress bar from the tokens, both halves of it', () => {
+    const source = read()
+    // The value is the accent's; the track is the half `accent-color` does not
+    // reach, and it is the one that broke on the light ground.
+    expect(source).toMatch(/progress::-webkit-progress-bar\s*\{\s*background-color:\s*var\(--muted\)/)
+    expect(
+      source,
+    ).toMatch(/progress::-webkit-progress-value\s*\{\s*background-color:\s*var\(--primary\)/)
+    expect(source).toMatch(/progress::-moz-progress-bar\s*\{\s*background-color:\s*var\(--primary\)/)
+  })
+
+  it('never puts two agents’ pseudo-elements in one selector list', () => {
+    // A selector list containing a pseudo-element the agent does not know is a
+    // list the agent drops **whole**, taking the half it does know with it. So
+    // the two names are two rules, and this is the assertion that keeps them
+    // apart when someone tidies the file.
+    // Comments go first: a selector list runs over several lines, so the span
+    // this reads is *everything between one brace and the next*, and a prose
+    // paragraph in there would be scanned as if it were a selector.
+    const source = read().replace(/\/\*[\s\S]*?\*\//g, '')
+    for (const list of source.matchAll(/(?:^|[{}])([^{}]*::-[\w-]+[^{}]*)\{/g)) {
+      const vendors = new Set([...list[1].matchAll(/::-(\w+)-/g)].map((prefix) => prefix[1]))
+      expect(vendors.size, `two vendors in one selector list: ${list[1].trim()}`).toBeLessThan(2)
     }
   })
 })
