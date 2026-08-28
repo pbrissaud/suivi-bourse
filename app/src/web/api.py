@@ -34,6 +34,7 @@ import installation_facts
 import ledger
 import main
 import portfolio_view
+import positions as positions_module
 import quotes
 import reassignment
 import runtime_view
@@ -1400,11 +1401,17 @@ def _number_member(body: dict, name: str) -> Optional[float]:
 #: reader's downloads folder, and dropped back in would *replace* the import
 #: that carried every row it left out. So there are two names for one resource,
 #: chosen by whether anything is being held back.
+#:
+#: **The fourth file is not on that axis at all** (issue #836). *Accounts and
+#: positions* is a report and not a backup, so it neither reduces nor restores:
+#: it carries one name, ``portfolio``, and the word is the promise — what leaves
+#: under it is the state of the portfolio, not the ledger it was derived from.
 EXPORT_FILENAMES = {
     'events.csv': 'suivi-bourse-events.csv',
     'events.xlsx': 'suivi-bourse-events.xlsx',
     'selection.csv': 'suivi-bourse-selection.csv',
     'selection.xlsx': 'suivi-bourse-selection.xlsx',
+    'portfolio.csv': 'suivi-bourse-portfolio.csv',
 }
 
 #: The media type OOXML registered for a workbook. Written out rather than
@@ -1482,6 +1489,49 @@ def export_events_workbook():
             opened.setting('base_currency')),
         _export_name('xlsx', selection),
         XLSX_MIME)
+
+
+@api_bp.get('/export/portfolio.csv')
+def export_portfolio():
+    """The accounts and their positions — **the entry that is a report** (#836).
+
+    The fourth entry of the export menu, and the odd one out: the three others
+    hand back the ledger, this hands back what the replay made of it — the cash
+    standing in each account, each holding's weighted-average unit cost, and what
+    it is worth. Spec #787 puts it in the menu on an argument that is exactly the
+    one this route is: *declaring an account is a gesture of the domain,
+    exporting is a gesture on data*, so the way out of the accounts lives where
+    the data is looked at and not where they are declared.
+
+    **It is not** ``/api/export/accounts.csv``, which is a ``404`` and stays one
+    (ADR-0034). That file was a *declaration* — accounts are born in the app, and
+    a file nothing reads back looked like a restore and was not one. This carries
+    valuations, and it is refused by the import in one sentence for want of
+    ``date`` and ``event_type``, so it cannot be taken for half a backup.
+
+    **It takes no reduction**, deliberately. The five parameters are the
+    *ledger's* dimensions — a type of event, a period — and a position has none
+    of them; the perimeter of this file is the portfolio, and the entry that
+    reduces is the one that says so.
+
+    Read from the **store**, like its neighbours and for the same reason (#658):
+    the four reads below are all queries on the open connection, and none of them
+    is the published snapshot. That is what settles the carrying convention too —
+    see :func:`events.export.render_portfolio`, which would need the snapshot's
+    holding windows to apply it and therefore does not.
+    """
+    opened = _store()
+    return _file_response(
+        events_export.render_portfolio(
+            accounts_module.read_accounts(opened),
+            positions_module.read_account_states(opened),
+            # The joined read, so a holding arrives with the newest price
+            # observed for it — one query for the whole portfolio, the one
+            # ``GET /api/positions`` already makes.
+            PortfolioReader(opened).positions(),
+            opened.setting('base_currency')),
+        EXPORT_FILENAMES['portfolio.csv'],
+        'text/csv; charset=utf-8')
 
 
 class _InvalidParameter(Exception):

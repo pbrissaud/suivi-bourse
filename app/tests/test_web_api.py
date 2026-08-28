@@ -2909,6 +2909,125 @@ def test_an_unreadable_store_fails_the_export_rather_than_emptying_it(tmp_path):
 
 
 # --------------------------------------------------------------------- #
+# The fourth entry: accounts and positions (issue #836, spec #787)
+# --------------------------------------------------------------------- #
+
+def test_the_accounts_and_their_positions_are_reachable_over_http(tmp_path):
+    """The menu's fourth entry, and it is a route like the other three.
+
+    *Declaring an account is a gesture of the domain, exporting is a gesture on
+    data* (#787): the way out of the accounts lives beside the ledger, where the
+    data is looked at, and not on the page that declares them.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE,
+        seed=lambda opened: opened.execute(
+            "INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR')"))
+
+    response = client.get('/api/export/portfolio.csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'] == 'text/csv; charset=utf-8'
+    assert 'suivi-bourse-portfolio.csv' in \
+        response.headers['Content-Disposition']
+    body = response.get_data(as_text=True)
+    assert body.splitlines()[0].split(',') == \
+        list(events_export.PORTFOLIO_COLUMNS)
+    # The declared account with its holding under it, and the seeded row that
+    # every install owns whether or not anything was ever put in it.
+    rows = list(csv.DictReader(io.StringIO(body)))
+    assert [(row['account'], row['symbol']) for row in rows] == [
+        ('default', ''), ('pea', ''), ('pea', 'AAPL'),
+    ]
+    assert rows[1]['account_label'] == 'PEA Boursorama'
+    assert rows[1]['cash_balance'] != '' and rows[2]['cash_balance'] == ''
+    opened.close()
+
+
+def test_the_report_takes_no_reduction_because_it_has_no_ledger(tmp_path):
+    """The five parameters are the **ledger's**, and a position has none.
+
+    An export reduced on a type of event or on a period is an extract of the
+    journal; this file is the state of the portfolio, whose perimeter is the
+    portfolio. A query string is therefore neither refused nor obeyed — the
+    entry that reduces is the one that says it does, and it is not this one.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    whole = client.get('/api/export/portfolio.csv')
+    asked = client.get('/api/export/portfolio.csv?type=BUY&since=2024-02-01')
+
+    assert asked.status_code == 200
+    assert asked.get_data(as_text=True) == whole.get_data(as_text=True)
+    # And the name never becomes a *selection*: nothing was held back, so
+    # nothing on a reader's disk is at risk of being replaced by a part of it.
+    assert 'suivi-bourse-portfolio.csv' in asked.headers['Content-Disposition']
+    opened.close()
+
+
+def test_the_report_does_not_resurrect_the_accounts_declaration(tmp_path):
+    """``/api/export/accounts.csv`` is still a ``404`` (ADR-0034).
+
+    The two files are not the same file under two names. What that record
+    retired was a *declaration* nothing reads back — a file its owner keeps with
+    their backup believing they can restore from it. What this serves is
+    valuations, and the import refuses it by name, so the trap ADR-0034 closed
+    stays closed.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    assert client.get('/api/export/accounts.csv').status_code == 404
+    assert client.get('/api/export/portfolio.csv').status_code == 200
+    # A `422` naming a required column, and not a file half read: the loader's
+    # own refusal, arriving over the road the front actually uses.
+    body = client.get('/api/export/portfolio.csv').get_data()
+    refused = client.post(
+        '/api/events/import',
+        data={'file': (io.BytesIO(body), 'suivi-bourse-portfolio.csv')},
+        content_type='multipart/form-data')
+    assert refused.status_code == 422
+    opened.close()
+
+
+def test_the_report_reads_the_store_and_not_the_published_snapshot(tmp_path):
+    """A backup is of what is stored, and so is the report beside it (#658).
+
+    The two hold the same rows on the common path and part exactly where it
+    matters: a snapshot the validator refused leaves the previous one standing,
+    so a file taken from it would hand back a portfolio from before the last
+    write. The discriminator is written here rather than described — an account
+    is declared **in the store** and nothing is republished, so
+    ``GET /api/accounts``, which reads the publication, has not heard of it while
+    the file already names it.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    accounts_module.create_account(opened, 'cto', 'CTO', 'Compte-titres')
+
+    served = client.get('/api/accounts').get_json()
+    assert 'cto' not in [row['id'] for row in served['accounts']]
+
+    body = client.get('/api/export/portfolio.csv').get_data(as_text=True)
+    rows = list(csv.DictReader(io.StringIO(body)))
+    assert ('cto', 'Compte-titres') in [
+        (row['account'], row['account_label']) for row in rows]
+    opened.close()
+
+
+def test_an_unreadable_store_fails_the_report_rather_than_emptying_it(tmp_path):
+    """The blueprint's one contract: a query error is a ``503``, never a ``[]``."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+    opened.execute('DROP TABLE position')
+
+    assert client.get('/api/export/portfolio.csv').status_code == 503
+    opened.close()
+
+
+# --------------------------------------------------------------------- #
 # The catch-all
 # --------------------------------------------------------------------- #
 #

@@ -24,11 +24,13 @@ import accounts as accounts_module
 import entries
 import ledger
 import main
+import positions as positions_module
 import settings_registry
 import store as store_module
 from events import export as events_export
 from events.loader import BASE_CURRENCY_COLUMN, EventLoader, EventLoaderError
 from events.schemas import Event, EventType
+from store_reads import PortfolioReader
 
 #: A ledger with something of every shape in it: two accounts, a valued grant
 #: and a dilution, a partial sale, cash events, a fee, a note carrying a comma,
@@ -144,6 +146,39 @@ def export_of(opened):
     """
     return events_export.render_events(ledger.read_events(opened),
                                        opened.setting('base_currency'))
+
+
+def portfolio_of(opened):
+    """The accounts-and-positions file, by the route's own three reads (#836).
+
+    All three are queries on the open store and none of them is the published
+    snapshot, which is the criterion — a backup, and a report beside it, are of
+    what is *stored*.
+    """
+    return events_export.render_portfolio(
+        accounts_module.read_accounts(opened),
+        positions_module.read_account_states(opened),
+        PortfolioReader(opened).positions(),
+        opened.setting('base_currency'))
+
+
+def quote(opened, symbol, price, currency='EUR'):
+    """One observed quote, laid down the way the scrape lays it down.
+
+    The ``symbol`` row is what the foreign key asks for and it belongs to the
+    configuration path, so it is inserted here rather than reached for through
+    the market writer — the same shape :func:`conftest.declare_positions` uses.
+    """
+    opened.execute('INSERT INTO symbol (symbol) VALUES (?) '
+                   'ON CONFLICT (symbol) DO NOTHING', [symbol])
+    opened.execute(
+        'INSERT INTO symbol_quote (symbol, currency, last_price_native, '
+        '                          last_price_converted) VALUES (?, ?, ?, ?) '
+        'ON CONFLICT (symbol) DO UPDATE SET '
+        '  currency = excluded.currency, '
+        '  last_price_native = excluded.last_price_native, '
+        '  last_price_converted = excluded.last_price_converted',
+        [symbol, currency, price, price])
 
 
 def figures(opened):
@@ -739,3 +774,195 @@ def test_a_reduction_on_the_period_alone_is_still_a_reduction():
     assert events_export.Selection(since=date(2024, 1, 1)).reduces
     assert events_export.Selection(until=date(2024, 12, 31)).reduces
     assert not events_export.Selection().reduces
+
+
+# --------------------------------------------------------------------- #
+# Accounts and positions — the entry that is a report (issue #836)
+# --------------------------------------------------------------------- #
+
+def test_the_report_states_each_account_then_the_positions_under_it(tmp_path):
+    """The file's shape: an account, then what is held in it (spec #787).
+
+    The order is the reading order of the menu entry that names it — *comptes
+    et positions* — and it is the order that lets a spreadsheet fold on the
+    first column with nothing sorted first.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    rows = rows_of(portfolio_of(opened))
+    opened.close()
+
+    assert [(row['account'], row['symbol']) for row in rows] == [
+        ('cto', ''), ('cto', 'MC.PA'),
+        ('default', ''),
+        ('pea', ''), ('pea', 'AI.PA'),
+    ]
+
+
+def test_the_report_carries_the_columns_the_menu_entry_promises(tmp_path):
+    """*Soldes, PRU et valorisations* — the three, and the file states them."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    text = portfolio_of(opened)
+    opened.close()
+
+    assert text.splitlines()[0].split(',') == \
+        list(events_export.PORTFOLIO_COLUMNS)
+    for column in ('cash_balance', 'unit_cost', 'market_value'):
+        assert column in events_export.PORTFOLIO_COLUMNS
+
+
+def test_a_figure_appears_once_and_a_name_repeats(tmp_path):
+    """The cash is on the account's row alone; the label is on every row.
+
+    It is what makes a money column of this file summable: a balance repeated
+    beside each position would be counted once per holding — a figure nobody
+    can use and everybody would.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    rows = {(row['account'], row['symbol']): row
+            for row in rows_of(portfolio_of(opened))}
+    opened.close()
+
+    account, position = rows[('pea', '')], rows[('pea', 'AI.PA')]
+    assert account['cash_balance'] != ''
+    assert account['net_contributed'] != ''
+    assert position['cash_balance'] == ''
+    assert position['net_contributed'] == ''
+    # The name is not a figure, so it repeats: a filter on *PEA Boursorama* has
+    # to reach the holdings and not the balance line alone.
+    assert account['account_label'] == 'PEA Boursorama'
+    assert position['account_label'] == 'PEA Boursorama'
+    assert position['account_type'] == 'PEA'
+    # And nothing of the position is on the account's own row.
+    assert account['quantity'] == '' and account['market_value'] == ''
+
+
+def test_an_account_with_no_cash_ledger_has_empty_cells_never_zeros(tmp_path):
+    """``0.00`` and *no cash has ever moved here* are two states (ADR-0006).
+
+    The seeded ``default`` account is the one every install owns and nobody has
+    used, so the store holds no ``account_state`` row for it — and the file says
+    so with an empty cell rather than with a balance of nothing.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    rows = {(row['account'], row['symbol']): row
+            for row in rows_of(portfolio_of(opened))}
+    opened.close()
+
+    assert rows[('default', '')]['cash_balance'] == ''
+    assert rows[('default', '')]['net_contributed'] == ''
+
+
+def test_the_valuation_is_the_quantity_at_the_observed_price(tmp_path):
+    """What the holding is worth, and the unit cost it is measured against."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    quote(opened, 'AI.PA', 200.00)
+    rows = {(row['account'], row['symbol']): row
+            for row in rows_of(portfolio_of(opened))}
+    (quantity, cost_basis), = opened.query(
+        "SELECT quantity, cost_basis FROM position "
+        " WHERE account = 'pea' AND symbol = 'AI.PA'")
+    opened.close()
+
+    held = rows[('pea', 'AI.PA')]
+    assert float(held['quantity']) == pytest.approx(quantity)
+    assert float(held['price']) == pytest.approx(200.00)
+    assert float(held['market_value']) == pytest.approx(quantity * 200.00)
+    # The PMP, and it is the one division the product makes (ADR-0003).
+    assert float(held['unit_cost']) == pytest.approx(cost_basis / quantity)
+
+
+def test_a_position_nobody_has_priced_has_no_valuation(tmp_path):
+    """No quote, no price, no market value — and never a zero (ADR-0004).
+
+    The carrying convention is a *rendering* of the page and stays there: it
+    needs the published snapshot's holding windows to know that no price is
+    coming, and this file is read from the store alone. So the cell is empty,
+    which is what the page draws as an em dash.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    quote(opened, 'AI.PA', 200.00)
+    rows = {(row['account'], row['symbol']): row
+            for row in rows_of(portfolio_of(opened))}
+    opened.close()
+
+    unpriced = rows[('cto', 'MC.PA')]
+    assert unpriced['price'] == ''
+    assert unpriced['market_value'] == ''
+    # What the position *does* know is stated all the same: a cost is not a
+    # price, and it is the figure the reader has left.
+    assert float(unpriced['cost_basis']) > 0
+    assert float(unpriced['unit_cost']) > 0
+
+
+def test_every_row_of_the_report_states_the_reporting_currency(tmp_path):
+    """One file, one unit — the events export's rule, on the same axis."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    rows = rows_of(portfolio_of(opened))
+    opened.close()
+
+    assert {row[BASE_CURRENCY_COLUMN] for row in rows} == {'EUR'}
+
+
+def test_an_unanswered_install_reports_a_blank_currency_column(tmp_path):
+    """Nothing has been interpreted, so the file states nothing."""
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS})
+    rows = rows_of(portfolio_of(opened))
+    opened.close()
+
+    assert {row[BASE_CURRENCY_COLUMN] for row in rows} == {''}
+
+
+def test_the_report_is_refused_by_the_import_rather_than_half_read(tmp_path):
+    """It is a **report**, and the import says so in one sentence (ADR-0034).
+
+    This is the property that lets the fourth entry exist at all. ADR-0034
+    retired ``accounts.csv`` because a file nothing reads back *looks* like a
+    restorable backup; a file the loader turns away by name — for want of
+    ``date`` and ``event_type`` — cannot be mistaken for half a restore, and
+    nothing about the declaration has moved: an account is still born in the app
+    and nowhere else.
+    """
+    _, opened = install(tmp_path / 'a', {'2024.csv': _LEDGER,
+                                         'accounts.csv': _ACCOUNTS},
+                        currency='EUR')
+    text = portfolio_of(opened)
+    opened.close()
+
+    back = tmp_path / 'b'
+    back.mkdir(parents=True, exist_ok=True)
+    path = back / 'suivi-bourse-portfolio.csv'
+    path.write_text(text, encoding='utf-8')
+
+    with pytest.raises(EventLoaderError) as refused:
+        EventLoader(str(path)).load()
+    assert 'date' in str(refused.value) and 'event_type' in str(refused.value)
+
+
+def test_an_install_with_nothing_in_it_reports_its_one_account(tmp_path):
+    """A header and the seeded row: the file exists and says what there is.
+
+    Not an empty file — every install owns the ``default`` account (ADR-0013),
+    so a report with no row at all would be one that had failed to look.
+    """
+    opened = empty_store(tmp_path / 'a')
+    rows = rows_of(portfolio_of(opened))
+    opened.close()
+
+    assert [(row['account'], row['symbol']) for row in rows] == [
+        ('default', ''),
+    ]
