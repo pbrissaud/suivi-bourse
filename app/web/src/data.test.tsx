@@ -90,7 +90,10 @@ describe('the columns of the ledger', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // `Provenance` was the ninth and it left with its subject (#816,
-    // ADR-0032): there is no source to name and no revocation to lead to.
+    // ADR-0032): there is no source to name and no revocation to lead to. What
+    // closes the row since #834 is not a column of that family either — it is
+    // the row's **removal**, a control named for the reader who cannot see the
+    // icon in it (ADR-0032).
     expect(columnNames(ledger())).toEqual([
       'Date',
       'Type',
@@ -100,6 +103,7 @@ describe('the columns of the ledger', () => {
       'Frais',
       'Montant',
       'Compte',
+      'Supprimer cet événement',
     ])
   })
 
@@ -173,8 +177,10 @@ describe('the columns of the ledger', () => {
     // ADR-0016's own — a grant raises no question of a fee.
     const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
-    expect(cells[cells.length - 1]).toHaveTextContent('alpha')
-    expect(cells[cells.length - 1]).not.toHaveTextContent('—')
+    // The last cell is the removal since #834 — a gesture, not a fact about the
+    // row — so what closes what the row *says* is the one before it.
+    expect(cells[cells.length - 2]).toHaveTextContent('alpha')
+    expect(cells[cells.length - 2]).not.toHaveTextContent('—')
   })
 })
 
@@ -195,42 +201,93 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
   })
 
-  it('lays the six types out as chips, the one in force pressed', async () => {
+  it('lays the six types out as facets, each carrying what it would leave', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     const types = screen.getByRole('group', { name: 'Type' })
 
     // A `<select>` collapsed to `Tous` said the absence of a reduction and
-    // nothing else: the vocabulary of the ledger was behind a menu.
-    expect(within(types).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
-      'Tous les types',
-      'Achat',
-      'Vente',
-      'Attribution',
-      'Dividende',
-      'Versement',
-      'Retrait',
+    // nothing else: the vocabulary of the ledger was behind a menu. Since #834
+    // each option also says **what pressing it would leave**, which is the
+    // question a ledger is opened with — and an option retaining nothing stays
+    // on screen, because *no sale ever* is a fact about the reader's ledger.
+    expect(
+      within(types)
+        .getAllByRole('button')
+        .map((facet) => facet.getAttribute('aria-label')),
+    ).toEqual([
+      'Tous les types · 4 événements',
+      'Achat · 2 événements',
+      'Vente · 0 événement',
+      'Attribution · 1 événement',
+      'Dividende · 0 événement',
+      'Versement · 1 événement',
+      'Retrait · 0 événement',
     ])
-    expect(within(types).getByRole('button', { name: 'Tous les types' })).toHaveAttribute(
+    expect(within(types).getByRole('button', { name: /^Tous les types/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
 
     expect(screen.getByText('4 événements')).toBeInTheDocument()
-    await user.click(within(types).getByRole('button', { name: 'Versement' }))
+    await user.click(within(types).getByRole('button', { name: /^Versement/ }))
 
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    // The chip states what it retains, and the count follows the reduction.
-    expect(within(types).getByRole('button', { name: 'Versement' })).toHaveAttribute(
+    // The facet states what it retains, and the count follows the reduction —
+    // saying, since #834, that it *is* one.
+    expect(within(types).getByRole('button', { name: /^Versement/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    expect(screen.getByText('1 événement')).toBeInTheDocument()
+    expect(screen.getByText('Réduction · 1 événement')).toBeInTheDocument()
 
-    // And it offers the way out, which is the chip beside it.
-    await user.click(within(types).getByRole('button', { name: 'Tous les types' }))
+    // And it offers the way out, which is the option beside it.
+    await user.click(within(types).getByRole('button', { name: /^Tous les types/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
     expect(screen.getByText('4 événements')).toBeInTheDocument()
+  })
+
+  it('counts every facet with its own axis excluded, which is what a facet is', async () => {
+    // **The criterion** (#834). The number beside *Achat* is *what is left if I
+    // press Achat*, so the type facets do not move when a type is pressed — the
+    // account, the period and the search do apply, and the axis being counted
+    // does not. Counted off the rows on screen instead, five of the six would
+    // read zero the instant one was chosen, and the panel would be answering a
+    // question nobody asks.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const types = screen.getByRole('group', { name: 'Type' })
+    const period = screen.getByRole('group', { name: 'Période' })
+    expect(
+      within(period)
+        .getAllByRole('button')
+        .map((facet) => facet.getAttribute('aria-label')),
+    ).toEqual(['Toutes · 4 événements', '2026 · 3 événements', '2025 · 1 événement'])
+
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+
+    // Its own axis: unmoved, every option still counting the ledger.
+    expect(
+      within(types)
+        .getAllByRole('button')
+        .map((facet) => facet.getAttribute('aria-label')),
+    ).toEqual([
+      'Tous les types · 4 événements',
+      'Achat · 2 événements',
+      'Vente · 0 événement',
+      'Attribution · 1 événement',
+      'Dividende · 0 événement',
+      'Versement · 1 événement',
+      'Retrait · 0 événement',
+    ])
+    // The other axis: reduced by the type in force, down to the two purchases.
+    expect(
+      within(period)
+        .getAllByRole('button')
+        .map((facet) => facet.getAttribute('aria-label')),
+    ).toEqual(['Toutes · 2 événements', '2026 · 2 événements', '2025 · 0 événement'])
   })
 
   it('offers account chips only where there are two accounts to tell apart', async () => {
@@ -250,26 +307,29 @@ describe('the reduction, which is what pays for no pagination', () => {
     await user.click(screen.getByRole('link', { name: 'Grand livre' }))
 
     const accounts = await screen.findByRole('group', { name: 'Compte' })
-    expect(within(accounts).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
-      'Tous les comptes',
+    expect(
+      within(accounts)
+        .getAllByRole('button')
+        .map((facet) => facet.getAttribute('aria-label')),
+    ).toEqual([
+      'Tous les comptes · 5 événements',
       // The order the ledger names them in, which is the sorted table's own.
-      'beta',
-      'alpha',
+      'beta · 1 événement',
+      'alpha · 4 événements',
     ])
 
-    await user.click(within(accounts).getByRole('button', { name: 'beta' }))
+    await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    expect(screen.getByText('1 événement')).toBeInTheDocument()
+    expect(screen.getByText('Réduction · 1 événement')).toBeInTheDocument()
   })
 
-  it('reduces to a period, names the interval on a chip, and lets it go', async () => {
+  it('reduces to a period, names the interval on a pastille, and lets it go', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // Two fields and no chip while nothing is in force: the days are not a
-    // vocabulary to lay out, so there is nothing to press until a bound exists.
-    const period = screen.getByRole('group', { name: 'Période' })
-    expect(within(period).queryAllByRole('button')).toHaveLength(0)
+    // No pastille while nothing is in force: what is on screen is the panel's
+    // own vocabulary, and there is nothing to let go of yet.
+    expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument()
 
     // `fireEvent` and not `user.type`: a date field takes its value whole, and
     // jsdom sanitises anything it cannot parse to an empty string before any
@@ -280,18 +340,18 @@ describe('the reduction, which is what pays for no pagination', () => {
     // Both bounds retain the day they name: the 24th and the 12th are in, and
     // a half-open reading would have dropped one of the three rows.
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    expect(screen.getByText('3 événements')).toBeInTheDocument()
+    expect(screen.getByText('Réduction · 3 événements')).toBeInTheDocument()
 
-    const chip = within(period).getByRole('button', {
-      name: 'Du 24 déc. 2025 au 12 janv. 2026',
+    const chips = screen.getByRole('group', { name: 'Filtres actifs' })
+    const chip = within(chips).getByRole('button', {
+      name: 'Retirer ce filtre : Du 24 déc. 2025 au 12 janv. 2026',
     })
-    expect(chip).toHaveAttribute('aria-pressed', 'true')
 
     // A table shorter than the reader's ledger always has, on screen, the
     // sentence that says why and the control that undoes it.
     await user.click(chip)
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
-    expect(within(period).queryAllByRole('button')).toHaveLength(0)
+    expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument()
   })
 
   it('takes one bound alone, which is an interval open on the other side', async () => {
@@ -304,10 +364,64 @@ describe('the reduction, which is what pays for no pagination', () => {
     // Read out as what it is — *everything since that day* — rather than as
     // half of a pair the reader forgot to fill in.
     expect(
-      within(screen.getByRole('group', { name: 'Période' })).getByRole('button', {
-        name: 'Depuis le 6 janv. 2026',
+      within(screen.getByRole('group', { name: 'Filtres actifs' })).getByRole('button', {
+        name: 'Retirer ce filtre : Depuis le 6 janv. 2026',
       }),
     ).toBeInTheDocument()
+  })
+
+  it('presses a year, then a month of it, and the months exist only then', async () => {
+    // **The period is one axis with three controls** (#834): the years are the
+    // vocabulary, and the months appear only once the period fits inside a
+    // year — which is the state pressing a year puts the reader in.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    expect(screen.queryByRole('group', { name: 'Mois' })).not.toBeInTheDocument()
+
+    await user.click(
+      within(screen.getByRole('group', { name: 'Période' })).getByRole('button', {
+        name: /^2026/,
+      }),
+    )
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+
+    const months = await screen.findByRole('group', { name: 'Mois' })
+    expect(within(months).getAllByRole('button')).toHaveLength(12)
+    expect(
+      within(months).getByRole('button', { name: 'janv. · 2 événements' }),
+    ).toBeInTheDocument()
+
+    await user.click(within(months).getByRole('button', { name: /^janv\./ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    // The pastille names the month the two bounds spell, and the year it
+    // belongs to is still the one in force in the panel.
+    expect(
+      within(screen.getByRole('group', { name: 'Filtres actifs' })).getByRole('button', {
+        name: 'Retirer ce filtre : Du 1 janv. 2026 au 31 janv. 2026',
+      }),
+    ).toBeInTheDocument()
+
+    // Pressing the month in force goes back **up** to its year, which is where
+    // the reader came from, rather than releasing the period whole.
+    await user.click(within(months).getByRole('button', { name: /^janv\./ }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+  })
+
+  it('folds the panel under 768 px, and the control says whether it is open', async () => {
+    // The fold itself is two classes and jsdom lays nothing out, so what is
+    // asserted here is the **control**: it exists, it says it is closed, and it
+    // opens. The pair of classes that makes it a fold below `md` and nothing at
+    // all above is held on the source, in `contentWidth.test.ts`.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const toggle = screen.getByRole('button', { name: 'Afficher les filtres' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(toggle)
+    expect(await screen.findByRole('button', { name: 'Masquer les filtres' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
   })
 
   it('carries the period on the export’s own address', async () => {
@@ -345,10 +459,12 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    const period = screen.getByRole('group', { name: 'Période' })
+    const chips = screen.getByRole('group', { name: 'Filtres actifs' })
     expect(screen.getByLabelText('Du')).toHaveValue('2026-01-06')
 
-    await user.click(within(period).getByRole('button', { name: 'Depuis le 6 janv. 2026' }))
+    await user.click(
+      within(chips).getByRole('button', { name: 'Retirer ce filtre : Depuis le 6 janv. 2026' }),
+    )
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
     // The address stopped describing the table, so it stops being one — a
     // reload restoring a reduction the reader has just lifted is the defect.
@@ -436,14 +552,18 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     // them — and the budget starts over, or a reader asking a question would
     // get every row answering it at once.
     const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
     expect(screen.getByText('40 sur 120 affichés')).toBeInTheDocument()
-    expect(screen.getByText('120 événements')).toBeInTheDocument()
+    expect(screen.getByText('Réduction · 120 événements')).toBeInTheDocument()
 
-    await user.click(within(types).getByRole('button', { name: 'Versement' }))
+    await user.click(within(types).getByRole('button', { name: /^Versement/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    expect(screen.getByText('Fin du grand livre · 3 événements')).toBeInTheDocument()
+    // **Of the reduction, never of the store** (#834, ADR-0031): *the end of
+    // the ledger* said over three rows out of a hundred and twenty-three is the
+    // sentence that record refuses by name.
+    expect(screen.getByText('Fin de la réduction · 3 événements')).toBeInTheDocument()
+    expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
   })
 })
 
@@ -474,21 +594,21 @@ describe('a reduction in force always has the chip that releases it', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     const accounts = screen.getByRole('group', { name: 'Compte' })
-    await user.click(within(accounts).getByRole('button', { name: 'beta' }))
+    await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
-    await user.click(screen.getByRole('button', { name: 'Supprimer ces 1 événement' }))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 1 événement' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
 
     // The reduction survives the re-read, so the way out has to survive it too.
     const after = await screen.findByRole('group', { name: 'Compte' })
-    expect(within(after).getByRole('button', { name: 'beta' })).toHaveAttribute(
+    expect(within(after).getByRole('button', { name: /^beta/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    await user.click(within(after).getByRole('button', { name: 'Tous les comptes' }))
+    await user.click(within(after).getByRole('button', { name: /^Tous les comptes/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
   })
 
@@ -512,45 +632,103 @@ describe('a reduction in force always has the chip that releases it', () => {
 })
 
 describe('deleting the reduction, which is what replaces forgetting an import', () => {
-  it('is not offered while nothing is reduced, nor while nothing is retained', async () => {
-    // With no chip pressed the reduction is the **whole ledger**, so the button
-    // would read *delete everything* in the clothes of *delete this year* —
-    // told apart by a count the reader has to read first. Emptying the ledger
-    // stays possible, by reducing on something that covers it.
+  it('is not offered while a reduction retains nothing, and never on an empty ledger', async () => {
+    // A reduction that retains nothing has a subject and no rows: *delete these
+    // 0 events* beside *no event matches* is the same button saying two things
+    // at once.
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    expect(screen.queryByRole('button', { name: /Supprimer ces/ })).not.toBeInTheDocument()
-
-    // And a reduction that retains nothing has a subject and no rows: *delete
-    // these 0 events* beside *no event matches* is the same button saying two
-    // things at once.
     await user.type(screen.getByLabelText('Rechercher'), 'zzzz')
     expect(await screen.findByText('Aucun événement ne correspond')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Supprimer ces/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument()
   })
 
-  it('names the reduction and counts its rows before destroying anything', async () => {
+  it('recites the reduction in full, and counts its rows, before destroying anything', async () => {
     // Never a bare *are you sure*: the rule #794 wrote when three consecutive
     // rows showed three identical red buttons — the reader has to read the
     // **subject** of what they are destroying, and here the subject is the
-    // dimensions in force rather than a file name.
+    // dimensions in force rather than a file name. Since #834 it is a
+    // **sentence**: the clauses are the pastilles', in the vocabulary they
+    // carry, and the period reads the interval out of the same key the pastille
+    // does.
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-01' } })
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
 
-    await user.click(screen.getByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements' }))
 
     const box = await screen.findByRole('dialog')
-    expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
-    // Both dimensions, each in the vocabulary its own chip carries — and the
-    // period reads the interval the chip reads, out of the same sentence.
-    expect(within(box).getByText('Type Achat')).toBeInTheDocument()
-    expect(within(box).getByText('Depuis le 1 janv. 2026')).toBeInTheDocument()
+    expect(
+      within(box).getByRole('heading', {
+        name: 'Supprimer les 2 événements de type Achat, depuis le 1 janv. 2026 ?',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('refuses the gesture with nothing reduced, and points at the other one', async () => {
+    // **The criterion** (#834, ADR-0032, #787): with no reduction the box is a
+    // **different** box, not the same one with a bigger number. It says no
+    // reduction is active and names the gesture that does empty a ledger, which
+    // then asks for itself — the whole ledger counted, and what stays said.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Supprimer la réduction' }))
+
+    const refusal = await screen.findByRole('dialog')
+    expect(
+      within(refusal).getByRole('heading', { name: 'Aucune réduction active' }),
+    ).toBeInTheDocument()
+    expect(within(refusal).getByText(/il s’appelle Vider le grand livre/)).toBeInTheDocument()
+    // The count of the ledger is nowhere in it: this is not the reduction's box
+    // wearing four instead of two.
+    expect(within(refusal).queryByText(/4 événements/)).not.toBeInTheDocument()
+
+    await user.click(within(refusal).getByRole('button', { name: 'Vider le grand livre' }))
+    const wipe = await screen.findByRole('dialog')
+    expect(
+      within(wipe).getByRole('heading', { name: 'Vider le grand livre · 4 événements ?' }),
+    ).toBeInTheDocument()
+    expect(within(wipe).getByText(/Les comptes déclarés et vos réglages restent/)).toBeInTheDocument()
+  })
+
+  it('empties the ledger by reducing on its own first day, which is what the server asks for', async () => {
+    // `DELETE /api/events` refuses a request with no parameter at all and says
+    // what to do instead in as many words: *reduce on something that covers the
+    // whole ledger*. `event.date` is `NOT NULL`, so a lower bound on the oldest
+    // day retains every row — and the request carries that, never an empty
+    // query string the server would answer `422` to.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let asked: string | null = null
+    server.use(
+      http.delete(ROUTES.events, ({ request }) => {
+        asked = new URL(request.url).search
+        server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
+        return HttpResponse.json({ events_removed: 4 })
+      }),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Supprimer la réduction' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Vider le grand livre',
+      }),
+    )
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Vider le grand livre',
+      }),
+    )
+
+    await waitFor(() => expect(asked).toBe('?since=2025-12-24'))
+    expect(await screen.findByText('4 événements supprimés.')).toBeInTheDocument()
   })
 
   it('sends the reduction’s own five parameters, and says what actually left', async () => {
@@ -574,9 +752,9 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     )
 
     const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: 'Achat' }))
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(screen.getByRole('button', { name: 'Supprimer les 2 événements' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -606,8 +784,8 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     )
 
     const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: 'Achat' }))
-    await user.click(await screen.findByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
+    await user.click(await screen.findByRole('button', { name: 'Supprimer les 2 événements' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -618,9 +796,11 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     )
     // The box stays open on the failure — everything behind the overlay is
     // `aria-hidden`, so a refusal rendered on the page behind it would be a
-    // sentence nobody can read — and it still names the reduction it was
+    // sentence nobody can read — and it still recites the reduction it was
     // opened on.
-    expect(within(box).getByRole('heading', { name: 'Supprimer 2 événements ?' })).toBeInTheDocument()
+    expect(
+      within(box).getByRole('heading', { name: 'Supprimer les 2 événements de type Achat ?' }),
+    ).toBeInTheDocument()
   })
 
   it('says a withdrawal a later sale rests on in its own words (#824)', async () => {
@@ -652,8 +832,8 @@ describe('deleting the reduction, which is what replaces forgetting an import', 
     )
 
     const types = screen.getByRole('group', { name: 'Type' })
-    await user.click(within(types).getByRole('button', { name: 'Achat' }))
-    await user.click(await screen.findByRole('button', { name: 'Supprimer ces 2 événements' }))
+    await user.click(within(types).getByRole('button', { name: /^Achat/ }))
+    await user.click(await screen.findByRole('button', { name: 'Supprimer les 2 événements' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
@@ -695,6 +875,113 @@ describe('the editor, and where it does not appear', () => {
       'true',
     )
     expect(screen.queryByLabelText('Frais')).not.toBeInTheDocument()
+  })
+
+  it('opens on a click anywhere on the row, the name staying the keyboard’s way in', async () => {
+    // **The criterion** (#834): the row is the target, which is the shares
+    // table's own gesture one page over. The button on the name is not a
+    // duplicate — it is the one thing a reader tabbing through the table can
+    // reach — and the two land on the same panel.
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    await user.click(within(row).getAllByRole('cell')[0])
+
+    expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
+    expect(screen.getByRole('radio', { name: 'Attribution' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+})
+
+describe('a row is removed at the unit', () => {
+  it('names the row in the box, and never asks *are you sure* on its own', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
+
+    const box = await screen.findByRole('dialog')
+    expect(
+      within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
+    ).toBeInTheDocument()
+    // What names a row is what the row shows — its type, its identity, its day
+    // — and never its key: a ledger row has no address (ADR-0020).
+    expect(within(box).getByText(/Attribution · ZZC · 24 déc\. 2025/)).toBeInTheDocument()
+    // The editor did not open underneath it: the gesture on the cell stops
+    // where it was made.
+    expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).not.toBeInTheDocument()
+  })
+
+  it('sends the row’s own key and says what left', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    let asked: string | null = null
+    server.use(
+      http.delete(`${ROUTES.events}/:id`, ({ params, request }) => {
+        asked = String(params.id)
+        void request
+        server.use(
+          http.get(ROUTES.events, () =>
+            HttpResponse.json(aLedgerPayload(ledgerEvents().slice(0, 3))),
+          ),
+        )
+        return HttpResponse.json({ id: asked, removed: true })
+      }),
+    )
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Supprimer cet événement',
+      }),
+    )
+
+    await waitFor(() => expect(asked).toBe('typed-1'))
+    expect(await screen.findByText('1 événement supprimé.')).toBeInTheDocument()
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+  })
+
+  it('keeps the box open on a refusal and says it in the reader’s language', async () => {
+    const { user } = renderData()
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+
+    server.use(
+      http.delete(`${ROUTES.events}/:id`, () =>
+        HttpResponse.json(
+          {
+            status: 409,
+            type: PROBLEM_TYPES.unreplayableLedger,
+            title: 'Ledger does not replay',
+            gesture: 'remove',
+            symbol: 'ZZC',
+            wanted: 2,
+            owned: 0,
+            day: '2026-02-10',
+          },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+
+    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Supprimer cet événement' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Supprimer cet événement',
+      }),
+    )
+
+    const box = await screen.findByRole('dialog')
+    expect(await within(box).findByRole('status')).toHaveTextContent(/une vente postérieure de ZZC/)
+    expect(
+      within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
+    ).toBeInTheDocument()
   })
 })
 
@@ -942,6 +1229,7 @@ describe('the page in English', () => {
       'Fee',
       'Amount',
       'Account',
+      'Delete this event',
     ])
     // `Free shares`, `Cash in`, `Cash out` — the effect, not the six codes at a
     // difference of case.
@@ -949,7 +1237,7 @@ describe('the page in English', () => {
     expect(within(table).getByText('Free shares')).toBeInTheDocument()
     // The reveal speaks English too, and the English is the source (ADR-0024).
     expect(screen.getByRole('group', { name: 'Type' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'All types' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All types · 4 events' })).toBeInTheDocument()
     expect(screen.getByText('The end of the ledger · 4 events')).toBeInTheDocument()
   })
 })
