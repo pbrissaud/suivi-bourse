@@ -7,8 +7,8 @@
  *
  * **The format follows the language, not the currency** (ADR-0024). `const
  * LOCALE = 'fr-FR'` is gone: every `Intl` site below takes the locale as its
- * first argument, and the nine of them — six numbers, two dates and one list
- * (#768) — read the
+ * first argument, and the ten of them — six numbers, three dates and one list
+ * (#768, #834) — read the
  * reader's current language through `useFormatters()`. ADR-0002's *a currency is
  * a unit, not a locale* is what licenses this rather than what contradicts it:
  * precisely because a currency is a unit, it cannot dictate a decimal
@@ -186,6 +186,22 @@ export function formatDate(
 }
 
 /**
+ * A month, named short — `janv.`, `Jan` (#834).
+ *
+ * The tenth `Intl` site, and the first that names a *part* of a date rather
+ * than a date: the ledger's facet panel lays the twelve out in a grid three
+ * cells wide, where `1 janv. 2026` would not fit and would repeat the year
+ * twelve times besides. A hand-written table of twelve French names would be
+ * the bug this module exists to prevent — the reader chooses their language,
+ * and the months would stay French in English.
+ */
+export function formatMonth(locale: string, year: string, month: number): string {
+  const date = new Date(Date.UTC(Number(year), month - 1, 1))
+  if (Number.isNaN(date.getTime())) return ABSENT
+  return new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }).format(date)
+}
+
+/**
  * An enumeration, in the reader's language (#768).
  *
  * The ninth `Intl` site, and the first that is not a number or a date. It exists
@@ -206,7 +222,7 @@ export function formatList(locale: string, items: readonly string[]): string {
 }
 
 /**
- * The nine sites, bound to the reader's language. A component calls
+ * The ten sites, bound to the reader's language. A component calls
  * `formatCurrency(value, currency)` and never learns which locale it got, which
  * is what keeps the language out of every call site.
  */
@@ -229,6 +245,7 @@ export function useFormatters() {
       bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+      month: (year: string, month: number) => formatMonth(locale, year, month),
       list: (items: readonly string[]) => formatList(locale, items),
     }),
     [locale],

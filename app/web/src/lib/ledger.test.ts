@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { aLongLedger, anEvent, aTypedEvent, ledgerEvents } from '@/test/factories'
 import {
+  accountFacets,
   accountOf,
   byDateDescending,
   exportHref,
@@ -18,15 +19,24 @@ import {
   filterEvents,
   identityOf,
   isEditable,
+  monthBounds,
+  monthFacets,
   NO_FILTERS,
   PAGE,
   parseDay,
   parseDecimal,
+  rangeYear,
+  reduces,
   reveal,
   selectionParams,
   filtersFromSearch,
   ledgerSearchOf,
+  typeFacets,
   validateLedgerSearch,
+  wholeLedger,
+  yearBounds,
+  yearFacets,
+  yearsNamed,
 } from '@/lib/ledger'
 
 describe('the fields of a type', () => {
@@ -344,5 +354,87 @@ describe('the address of a reduced ledger', () => {
     expect(validateLedgerSearch({ since: '  ', until: 'hier' })).toEqual({})
     expect(validateLedgerSearch({ since: '2026-02-31' })).toEqual({})
     expect(validateLedgerSearch({ until: 20260210 })).toEqual({})
+  })
+})
+
+describe('the facets, and the axis each count excludes', () => {
+  const ledger = ledgerEvents()
+
+  it('counts an option as *what would be left if I pressed it*', () => {
+    // Two purchases, one grant, one deposit — and the option that retains
+    // nothing is counted rather than dropped: *no sale ever* is a fact about
+    // this ledger, and an option leaving the panel at every gesture would make
+    // the vocabulary move under the reader's hand.
+    expect(typeFacets(ledger, NO_FILTERS).map((facet) => [facet.value, facet.count])).toEqual([
+      [null, 4],
+      ['BUY', 2],
+      ['SELL', 0],
+      ['GRANT', 1],
+      ['DIVIDEND', 0],
+      ['DEPOSIT', 1],
+      ['WITHDRAWAL', 0],
+    ])
+  })
+
+  it('leaves an axis untouched by its own value, and reduces every other', () => {
+    // **The criterion** (#834). With `BUY` in force the type counts are the
+    // ledger's — the axis being counted is the one replaced — while the years
+    // are counted through it.
+    const buying = { ...NO_FILTERS, type: 'BUY' as const }
+    expect(typeFacets(ledger, buying).map((facet) => facet.count)).toEqual([4, 2, 0, 1, 0, 1, 0])
+    expect(yearFacets(ledger, buying).map((facet) => [facet.value, facet.count])).toEqual([
+      [null, 2],
+      ['2026', 2],
+      ['2025', 0],
+    ])
+    // And the account axis reads the same way, through the type in force.
+    expect(
+      accountFacets(ledger, buying, ['alpha']).map((facet) => [facet.value, facet.count]),
+    ).toEqual([
+      [null, 2],
+      ['alpha', 2],
+    ])
+  })
+
+  it('says which option is in force, a year holding while a month of it is', () => {
+    expect(yearsNamed(ledger)).toEqual(['2026', '2025'])
+    expect(yearBounds('2026')).toEqual({ since: '2026-01-01', until: '2026-12-31' })
+    // February of a leap year: the last day is asked of the calendar, never of
+    // a table of lengths.
+    expect(monthBounds('2024', 2)).toEqual({ since: '2024-02-01', until: '2024-02-29' })
+
+    const january = { ...NO_FILTERS, ...monthBounds('2026', 1) }
+    expect(rangeYear(january)).toBe('2026')
+    expect(yearFacets(ledger, january).find((facet) => facet.value === '2026')?.active).toBe(true)
+    const months = monthFacets(ledger, january)
+    expect(months).toHaveLength(12)
+    expect(months[0]).toEqual({ value: 1, count: 2, active: true })
+    // The months exist only while the period fits inside one year — otherwise
+    // a cell of the grid would have to name a year of its own.
+    expect(monthFacets(ledger, NO_FILTERS)).toEqual([])
+    expect(rangeYear({ ...NO_FILTERS, since: '2025-12-01', until: '2026-01-31' })).toBeNull()
+  })
+})
+
+describe('emptying the ledger is a reduction that covers it', () => {
+  it('is nothing at all while nothing is reduced, and one bound for the whole', () => {
+    // `reduces` is asked of the parameters and not of the six members: what
+    // reduces is what crosses the wire, so a blank search is not one.
+    expect(reduces(NO_FILTERS)).toBe(false)
+    expect(reduces({ ...NO_FILTERS, query: '   ' })).toBe(false)
+    expect(reduces({ ...NO_FILTERS, symbols: [] })).toBe(false)
+    expect(reduces({ ...NO_FILTERS, since: '2026-01-01' })).toBe(true)
+  })
+
+  it('reduces on the oldest day the ledger holds, and retains all of it', () => {
+    // `DELETE /api/events` refuses an empty query string and says what to do
+    // instead: reduce on something that covers the ledger. `event.date` is
+    // `NOT NULL`, so the oldest day is that something.
+    const whole = wholeLedger(ledgerEvents())
+    expect(whole).toEqual({ ...NO_FILTERS, since: '2025-12-24' })
+    expect(filterEvents(ledgerEvents(), whole ?? NO_FILTERS)).toHaveLength(4)
+    expect(selectionParams(whole ?? NO_FILTERS).toString()).toBe('since=2025-12-24')
+    // Nothing to empty is nothing to ask for.
+    expect(wholeLedger([])).toBeNull()
   })
 })

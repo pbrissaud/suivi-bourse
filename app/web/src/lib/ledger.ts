@@ -22,6 +22,10 @@
  *  - **the reveal.** Forty rows at a time (ADR-0031), which is a rendering
  *    budget and not a fetch: the whole ledger is already in memory when the
  *    first row is drawn.
+ *  - **the facets, and the count each of them carries** (#834). A facet answers
+ *    *how many rows are left if I press this*, so its count is the reduction
+ *    run again with **its own axis replaced** — which is why the arithmetic
+ *    lives beside the reduction rather than inside the panel that draws it.
  *  - **the two parses.** `<input type="date">` silently discards what it cannot
  *    parse, and `<input type="number">` does exactly the same with a decimal
  *    comma; both hand back an empty string, which reads as *the user left it
@@ -170,6 +174,176 @@ export function filterEvents(
     if (needle === '') return true
     return haystack(event).includes(needle)
   })
+}
+
+/**
+ * **A facet: what pressing it would put in force, and how many rows that would
+ * retain** (#834).
+ *
+ * The count is the whole of why the panel is not a row of chips with a number
+ * beside each: it answers *what is left if I press this*, which is a question
+ * about a reduction the reader has not made yet. So it is computed by
+ * **replacing this axis' value** with the candidate and running the reduction
+ * whole — which is exactly *each count excludes its own axis*, said in the one
+ * function that already knows what a reduction is. Written as *count what the
+ * table shows, grouped by type* it would be a different number and a lie: every
+ * facet but the one in force would read zero the moment a type was pressed.
+ */
+export interface Facet<Value> {
+  /** What the axis holds once it is pressed — `null` is the axis released. */
+  value: Value
+  /** How many rows the reduction would then retain. */
+  count: number
+  /** It is what the axis holds now. */
+  active: boolean
+}
+
+/** The six types and *all of them*, each counted as if it were pressed. */
+export function typeFacets(
+  events: readonly LedgerEvent[],
+  filters: LedgerFilters,
+): Facet<LedgerEventType | null>[] {
+  return [null, ...EVENT_TYPES].map((type) => ({
+    value: type,
+    count: filterEvents(events, { ...filters, type }).length,
+    active: filters.type === type,
+  }))
+}
+
+/** The accounts the ledger names, and *all of them*. */
+export function accountFacets(
+  events: readonly LedgerEvent[],
+  filters: LedgerFilters,
+  accounts: readonly string[],
+): Facet<string | null>[] {
+  return [null, ...accounts].map((account) => ({
+    value: account,
+    count: filterEvents(events, { ...filters, account }).length,
+    active: filters.account === account,
+  }))
+}
+
+/** The years the ledger names, most recent first. */
+export function yearsNamed(events: readonly LedgerEvent[]): string[] {
+  const years = new Set<string>()
+  for (const event of events) if (event.date !== null) years.add(event.date.slice(0, 4))
+  return [...years].sort().reverse()
+}
+
+/** A whole year, as the pair of inclusive bounds the period is made of. */
+export function yearBounds(year: string): { since: string; until: string } {
+  return { since: `${year}-01-01`, until: `${year}-12-31` }
+}
+
+/**
+ * A whole month, same pair. The last day is asked of the calendar rather than
+ * of a table of lengths — February is the reason, and a leap year is the reason
+ * a table of lengths would be wrong every fourth one.
+ */
+export function monthBounds(year: string, month: number): { since: string; until: string } {
+  const last = new Date(Date.UTC(Number(year), month, 0)).getUTCDate()
+  const padded = String(month).padStart(2, '0')
+  return { since: `${year}-${padded}-01`, until: `${year}-${padded}-${String(last).padStart(2, '0')}` }
+}
+
+/**
+ * The year the months are drawn for, or `null`.
+ *
+ * **The months only exist once the period fits inside one year**, which is what
+ * keeps the panel from laying out a grid of twelve that would have to name a
+ * year on every cell. A reader lands on it by pressing a year, which is the
+ * gesture the grid is the second half of.
+ */
+export function rangeYear(filters: LedgerFilters): string | null {
+  if (filters.since === null || filters.until === null) return null
+  const year = filters.since.slice(0, 4)
+  return year === filters.until.slice(0, 4) ? year : null
+}
+
+/**
+ * The years, counted as the two other axes are — the period replaced by that
+ * year's bounds, everything else left in force.
+ *
+ * A year is **active while the period in force is inside it**, and not only
+ * when it is exactly its two bounds: pressing a month narrows the period to
+ * that month, and the year it belongs to has to go on saying where the reader
+ * is. `null` is *every day*, active when no bound is in force at all.
+ */
+export function yearFacets(
+  events: readonly LedgerEvent[],
+  filters: LedgerFilters,
+): Facet<string | null>[] {
+  const all: Facet<string | null> = {
+    value: null,
+    count: filterEvents(events, { ...filters, since: null, until: null }).length,
+    active: filters.since === null && filters.until === null,
+  }
+  return [
+    all,
+    ...yearsNamed(events).map((year) => {
+      const bounds = yearBounds(year)
+      return {
+        value: year,
+        count: filterEvents(events, { ...filters, ...bounds }).length,
+        active:
+          filters.since !== null &&
+          filters.until !== null &&
+          filters.since >= bounds.since &&
+          filters.until <= bounds.until,
+      }
+    }),
+  ]
+}
+
+/** The twelve months of {@link rangeYear}, or nothing at all. */
+export function monthFacets(
+  events: readonly LedgerEvent[],
+  filters: LedgerFilters,
+): Facet<number>[] {
+  const year = rangeYear(filters)
+  if (year === null) return []
+  return Array.from({ length: 12 }, (_, index) => {
+    const bounds = monthBounds(year, index + 1)
+    return {
+      value: index + 1,
+      count: filterEvents(events, { ...filters, ...bounds }).length,
+      active: filters.since === bounds.since && filters.until === bounds.until,
+    }
+  })
+}
+
+/**
+ * **Is anything reduced at all**, and it is asked of the parameters rather than
+ * of the six members: a reduction is what crosses the wire, so a member that
+ * reduces nothing — a blank search, an empty set of securities — is not one
+ * here either. The button, the box and the request cannot come to disagree
+ * about it, all three reading this.
+ */
+export function reduces(filters: LedgerFilters): boolean {
+  return selectionParams(filters).toString() !== ''
+}
+
+/**
+ * **The reduction that covers the ledger entire** — what *empty the ledger* is
+ * made of (#834, ADR-0032).
+ *
+ * `DELETE /api/events` refuses a request with no parameter at all, on purpose,
+ * and says what to do instead in as many words: *reduce on something that
+ * covers the whole ledger to empty it*. This is that something. `event.date` is
+ * `NOT NULL` in the store, so a lower bound on the oldest day the ledger holds
+ * retains every row of it — and the count the box states is read back through
+ * {@link filterEvents}, so what the reader is shown is what the request
+ * retains rather than a second reading of *all of them*.
+ *
+ * `null` where there is nothing to empty.
+ */
+export function wholeLedger(events: readonly LedgerEvent[]): LedgerFilters | null {
+  let earliest: string | null = null
+  for (const event of events) {
+    if (event.date === null) continue
+    if (earliest === null || event.date < earliest) earliest = event.date
+  }
+  return earliest === null ? null : { ...NO_FILTERS, since: earliest }
 }
 
 /**
