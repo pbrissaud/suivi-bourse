@@ -121,6 +121,28 @@
 > import and a pending-import id would be `import_source` under another name.
 > Duplicates are skipped by default and a checkbox — offered only when the file
 > has some — writes them anyway.
+> **And the forecast is a window since #835** (`ImportPreview.tsx`), because it
+> stopped being a sentence: it collects **three** answers and the receipt alone
+> is left under the zone. The new one is the **account correspondence** — a line
+> per account the file names (`file_accounts`, the server's census), with its
+> volume and a target chosen among the declared accounts *plus* **declare this
+> one with the file**, which is what repairs the `422` that used to reject the
+> whole file. A missing target **blocks the button in prose**, and every answer
+> costs a fresh forecast: the duplicate key carries the account, so what is
+> skipped changes with the answer (`?map=` + repeated `?declare=`, applied
+> server-side before the split in both branches). It is **consumed and dropped**
+> — a parameter of the gesture, never the persistent mapping ADR-0006 forbids,
+> and the window says so. The two others were already served and never gathered:
+> the **duplicates** named line by line with the ledger row each repeats
+> (`duplicate_rows`, `duplicate_of`), the footer's count following the box
+> without asking the server again, and the **currency** offered for adoption
+> where the install has never answered (`?adopt_currency=0` declines) and refused
+> in prose where it contradicts one — a `422` at both moments, so the window
+> stands with the sentence in it and the button disabled beside it. **The simple
+> case renders neither block**: one line of affirmation for the accounts, and no
+> duplicates block at all. The arithmetic is `lib/imports.ts` (`accountLines`,
+> `unanswered`, `correspondenceOf`), pure and asserted on the list rather than
+> through a control.
 > **The reduction can be deleted** (#814, ADR-0032): `BulkDelete.tsx` sits
 > beside the chips — under the reduction it consumes, never in the band above —
 > sends the five export parameters to `DELETE /api/events`, and renders nothing

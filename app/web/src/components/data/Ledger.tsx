@@ -51,6 +51,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/components/data/BulkDelete'
 import { EventForm } from '@/components/data/EventForm'
+import { ImportPreview } from '@/components/data/ImportPreview'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
 import { LedgerFacets } from '@/components/data/LedgerFacets'
 import { LedgerChips, LedgerSearch } from '@/components/data/LedgerFilters'
@@ -276,6 +277,11 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
           that offer it: the empty state's entry and the bar's zone are two
           mounts of one control, and the first import swaps one for the other. */}
       {ledgerFailure ? null : <UploadReceipt upload={upload} />}
+
+      {/* And the window the forecast is read in (#835), mounted here for the
+          same reason: it is open across the swap the first import makes, and
+          the three answers it collects are held by the hook above it. */}
+      {ledgerFailure ? null : <ImportPreview upload={upload} />}
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
