@@ -1,8 +1,15 @@
 /**
- * The ledger — **eight columns** (#723, ADR-0020, ADR-0032).
+ * The ledger — **eight columns and one gesture** (#723, #834, ADR-0020,
+ * ADR-0032).
  *
  *     Date · Type · De quoi il s'agit · Quantité · Prix unitaire · Frais ·
  *     Montant · Compte
+ *
+ * Plus a ninth cell holding the row's **removal**, which is a control and not a
+ * column: it says the same thing on all 285 rows, and that is exactly what the
+ * padlock was refused for — except that a gesture repeating is a gesture
+ * offered where it applies, where a *marker* repeating is noise. The row itself
+ * opens the editor.
  *
  * Two decisions were taken here **against** the interview, both in front of a
  * board mounted on the 285 real events:
@@ -44,6 +51,9 @@
  * **Zero explanation icons.** The page's two live on the create form, where the
  * sentence can still change a behaviour (#684 D7).
  */
+import { Trash2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -112,9 +122,11 @@ export interface LedgerTableProps {
   currency: string | null
   /** Opens the panel on a row. Offered for every row that has a key. */
   onEdit: (event: LedgerEvent) => void
+  /** Asks for a row to be removed — the confirmation is the caller's. */
+  onRemove: (event: LedgerEvent) => void
 }
 
-export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
+export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
@@ -141,13 +153,28 @@ export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
           <TableHead className={cn(head, 'text-right')}>{t('data.column.fee')}</TableHead>
           <TableHead className={cn(head, 'text-right')}>{t('data.column.amount')}</TableHead>
           <TableHead className={head}>{t('data.column.account')}</TableHead>
+          {/* The ninth heading is the row's own gesture, and it is named for a
+              reader who cannot see the icon under it. It is not the provenance
+              column coming back: what it carries discriminates on every row,
+              which is the exact test the padlock failed. */}
+          <TableHead className={cn(head, 'w-11')}>
+            <span className="sr-only">{t('data.row.delete')}</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {events.map((event, index) => {
           const identity = identityOf(event)
           return (
-            <TableRow key={rowKey(event, index)}>
+            // **The whole row opens the editor** (#834), which is the shares
+            // table's own gesture one page over: the button on the name stays,
+            // and it is the keyboard's way in rather than a duplicate. A row
+            // with no key is addressable by nothing, so it opens nothing.
+            <TableRow
+              key={rowKey(event, index)}
+              className={cn(isEditable(event) && 'cursor-pointer')}
+              onClick={isEditable(event) ? () => onEdit(event) : undefined}
+            >
               <TableCell className="tabular whitespace-nowrap">{f.date(event.date)}</TableCell>
               <TableCell>
                 <span
@@ -191,6 +218,28 @@ export function LedgerTable({ events, currency, onEdit }: LedgerTableProps) {
                   says so, and it is the one the accounts page already sets an
                   id in (`AccountDetail`, `AccountsRail`). */}
               <TableCell className="font-mono text-xs">{accountOf(event)}</TableCell>
+
+              {/* The removal, at the unit (ADR-0032). It stops the click from
+                  reaching the row: the two gestures live on one line, and a
+                  reader who asks to delete must not be handed the editor
+                  underneath the box that asks them to confirm. */}
+              <TableCell className="p-0 pr-2 text-right">
+                {isEditable(event) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t('data.row.delete')}
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                    onClick={(click) => {
+                      click.stopPropagation()
+                      onRemove(event)
+                    }}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                ) : null}
+              </TableCell>
             </TableRow>
           )
         })}
