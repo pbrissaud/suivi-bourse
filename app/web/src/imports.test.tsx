@@ -1072,6 +1072,62 @@ describe('what this import would do', () => {
     expect(screen.getByLabelText('Cible pour TR')).toBe(select)
   })
 
+  it('disables the button when the answer itself is refused, and keeps the select', async () => {
+    // **The other half of the criterion, and the one two passes missed** (#835).
+    // The first read is the one carrying `map` and `declare`, so it is the read
+    // `_settled_mapping` and `entries.judge` refuse when the reader retargets an
+    // account — and it is thrown, so the forecast standing on screen is the
+    // *previous* answer's. Left alone the window promises what that stale
+    // forecast promised, with `Importer` live above it, and the refusal arrives
+    // after the button rather than before it.
+    const seen: URL[] = []
+    let calls = 0
+    server.use(
+      http.post(ROUTES.eventsImport, ({ request }) => {
+        calls += 1
+        const url = new URL(request.url)
+        seen.push(url)
+        if (calls > 1) {
+          return HttpResponse.json(
+            {
+              type: PROBLEM_TYPES.unreplayableLedger,
+              title: 'Ledger does not replay',
+              status: 409,
+              detail: 'Cannot sell 4.0 shares of ZZA (only 2.0 owned) on 2026-02-10',
+              gesture: 'write',
+              symbol: 'ZZA',
+              wanted: 4,
+              owned: 2,
+              day: '2026-02-10',
+            },
+            { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+          )
+        }
+        return HttpResponse.json(aReceipt({ file_accounts: [{ name: 'TR', rows: 47 }] }), {
+          status: url.searchParams.has('dry_run') ? 200 : 201,
+        })
+      }),
+    )
+    const { user } = renderImports()
+    await waitFor(() => expect(block()).toBeInTheDocument())
+
+    await hand(user)
+    const select = await screen.findByLabelText('Cible pour TR')
+    await user.selectOptions(select, 'beta')
+
+    // The refusal is read before the button, and the button cannot be pressed.
+    expect(await screen.findByText(/ce geste vend 4 parts de ZZA/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Importer' })).toBeDisabled(),
+    )
+    // The window is not a dead end: the select the reader has just used is the
+    // same node, still there to answer differently.
+    expect(screen.getByLabelText('Cible pour TR')).toBe(select)
+    expect(select.isConnected).toBe(true)
+    // And nothing was written — every request this walk made was a preview.
+    expect(seen.every((url) => url.searchParams.has('dry_run'))).toBe(true)
+  })
+
   it('offers the currency the file declares, and lets it be declined', async () => {
     // The app reads a declaration and never asserts one (ADR-0021). The box is
     // ticked, because the round trip is the whole point of the column — upload

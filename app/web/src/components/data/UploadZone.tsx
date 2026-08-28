@@ -236,6 +236,25 @@ export function useEventUpload(): EventUpload {
       }
     },
     onSuccess: (forecast) => setStanding(forecast),
+    // **A refused census takes the writable half of the standing forecast with
+    // it**, and that is the whole of the criterion on this path. The first read
+    // carries `map` and `declare`, so it is the one `_settled_mapping` (422) and
+    // `entries.judge` (409) refuse when the reader retargets an account — and it
+    // is *thrown*, so `onSuccess` never runs and `standing` keeps the previous
+    // answer's forecast. Left alone, the window would show a footer promising
+    // *three events will be written* for a mapping the server has just refused,
+    // with `Importer` still live above it: the refusal would arrive after the
+    // button, which is the one thing #835 exists to prevent.
+    //
+    // The forecast is not dropped, though — dropping it would unmount the body
+    // and the select the reader has just used, which is what D3 repaired. What
+    // leaves is `writing`: the button is disabled on its absence, the footer is
+    // rendered on its presence, and the refusal takes its place in `error`. So
+    // the reader keeps every control they need to answer differently, and none
+    // that would write.
+    onError: (refused) =>
+      setStanding((previous) =>
+        previous === undefined ? previous : { ...previous, writing: undefined, refused }),
   })
   const write = useMutation({
     mutationFn: ({ file, answer: given, declineCurrency }: Written) =>
