@@ -33,6 +33,10 @@ const SOURCE = path.resolve(import.meta.dirname)
 
 const SHELL = fs.readFileSync(path.join(SOURCE, 'components', 'Shell.tsx'), 'utf8')
 const TABLE = fs.readFileSync(path.join(SOURCE, 'components', 'ui', 'table.tsx'), 'utf8')
+const FACETS = fs.readFileSync(
+  path.join(SOURCE, 'components', 'data', 'LedgerFacets.tsx'),
+  'utf8',
+)
 
 /** The opening tag of the content column, whatever else is on it. */
 const INSET = /<SidebarInset\b[^>]*>/
@@ -57,5 +61,43 @@ describe('the content column may be narrower than what is in it', () => {
     // lost the rule entirely.
     expect(SHELL).toMatch(/SidebarInset/)
     expect(INSET.test('<SidebarInset>')).toBe(true)
+  })
+})
+
+/**
+ * **The ledger's facet panel folds under 768 px** (#834), and it is the same
+ * kind of pair for the same reason: two classes, each inert without the other,
+ * and jsdom lays neither of them out. What a rendering test *can* see — that
+ * the control exists and says whether the panel is open — is asserted in
+ * `data.test.tsx`; what only a browser has is here.
+ *
+ *  - the panel's body carries `hidden md:flex`, so the state folds it on the
+ *    narrow layout and can never fold it on the wide one — a reader who folded
+ *    it on a phone and turned the phone would otherwise find the ledger's whole
+ *    vocabulary missing;
+ *  - the toggle carries `md:hidden`, so the control that does nothing above
+ *    that width is not on screen there.
+ *
+ * Lose the first and the panel is a fold nobody asked for at every width; lose
+ * the second and there is a dead control above 768. Neither failure carries a
+ * word.
+ */
+describe('the facet panel folds where there is no room for it', () => {
+  it('hides its body under `md` alone, never above', () => {
+    expect(FACETS).toMatch(/'hidden md:flex'/)
+  })
+
+  it('keeps the toggle off the wide layout, where it would do nothing', () => {
+    // The first class list after the control's own attribute, which is that
+    // control's: an arrow function in between makes `>` a poor terminator.
+    const [, classes] = FACETS.match(/aria-controls="ledger-facets"[\s\S]*?className="([^"]*)"/) ?? []
+    expect(classes).toBeDefined()
+    expect(classes).toMatch(/\bmd:hidden\b/)
+  })
+
+  it('reads the panel it is supposed to be reading', () => {
+    // The coverage half: a body that stopped being addressed by that id would
+    // make both assertions above pass on a panel that had lost the fold.
+    expect(FACETS).toMatch(/id="ledger-facets"/)
   })
 })

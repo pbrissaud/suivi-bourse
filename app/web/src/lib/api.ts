@@ -1363,6 +1363,17 @@ export const api = {
   createEvent: (draft: EventDraft) => send<LedgerEvent>(ROUTES.events, 'POST', draft),
   updateEvent: (id: string, draft: EventDraft) => send<LedgerEvent>(eventPath(id), 'PATCH', draft),
   /**
+   * **One row, removed** (#834, ADR-0032).
+   *
+   * The pair of the edit above, and the gesture the bulk one is not: an event
+   * recorded twice, or on the wrong day, is removed rather than corrected — and
+   * a reduction that would retain it retains its neighbours too. The server
+   * refuses nothing here that `PATCH` does not, the population being one since
+   * #816; a ledger that would not replay without the row is the `409` both
+   * meet.
+   */
+  removeEvent: (id: string) => remove<{ id: string; removed: boolean }>(eventPath(id)),
+  /**
    * The reduction, deleted whole (#814, ADR-0032).
    *
    * It carries the **five export parameters** and never a list of ids: what the

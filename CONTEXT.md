@@ -248,6 +248,17 @@ silently shorter than expected is the defect; worse where a total sits over it, 
 correct sum of the wrong perimeter reads exactly like the figure it is not.
 _Avoid_: filter (as a hidden state), view, scope selector
 
+**Facet**:
+One option of one axis of a reduction, carrying **the count it would leave**. The count
+is what makes it a facet rather than a chip, and it is taken with **its own axis
+excluded**: the number beside *Dividend* is *what is left if I press Dividend*, so every
+other axis in force applies and this one is replaced. Counted off the rows on screen
+instead, every option but the pressed one reads zero and the panel answers a question
+nobody asks. An option retaining nothing stays on screen and stays pressable: *no sale
+ever* is a fact about the owner's ledger, and a vocabulary that moves under the hand at
+every gesture is not one.
+_Avoid_: filter chip (for a counted option), tag, category
+
 **Notifications**:
 The one place the app says what it has to say: a panel behind the header's bell, holding
 health, installation facts and advisories together. The three keep their registers — what

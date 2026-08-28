@@ -96,6 +96,11 @@ describe('one population, and no source to act on', () => {
     expect(screen.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Import et export' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Oublier/ })).toBeNull()
+    // And the band **says** nothing of it either (#834): the mock-up's zone
+    // still carried *« La révocation s'effectue par fichier »*, a sentence
+    // about an apparatus that has no subject left — there is no provenance,
+    // no column and no link.
+    expect(screen.queryByText(/révocation/i)).toBeNull()
   })
 
   it('renders no provenance column, and nothing that leads to a source', async () => {
@@ -197,9 +202,9 @@ describe('the export', () => {
     const { user } = renderImports()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The reduction, made with the controls the reader has: a type chip and the
-    // search field.
-    await user.click(screen.getByRole('button', { name: 'Achat' }))
+    // The reduction, made with the controls the reader has: a type facet and
+    // the search field.
+    await user.click(screen.getByRole('button', { name: /^Achat/ }))
     await user.type(screen.getByRole('searchbox'), 'zza')
 
     await user.click(

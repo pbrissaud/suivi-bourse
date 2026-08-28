@@ -1,33 +1,39 @@
 /**
- * Tab 1 — the ledger, and where it came from (#723, #794, ADR-0020, ADR-0030).
+ * The ledger — the journal, its reduction and its two destructive gestures
+ * (#723, #794, #834, ADR-0020, ADR-0031, ADR-0032).
  *
- * The page was a **repair** surface and becomes a **revocation** one: #662's
+ * The page was a **repair** surface and became a **revocation** one: #662's
  * whole apparatus — the inline editor, the opaque token over `(file, sheet,
  * row)`, the content fingerprint as an `ETag`, its `409` and the *invalid →
  * invalid allowed* rule — existed because the faulty line lived *in* the truth.
  * With the store as the truth a bad file is not imported at all, so the
- * apparatus loses its subject in one go, and none of it has a row-by-row
- * successor: the unit of the gesture is the **import** (#728), not the line.
+ * apparatus lost its subject in one go, and none of it has a row-by-row
+ * successor: the unit of the *import* gesture is the file (#728), never the
+ * line.
  *
- * What this tab owes is the journal itself, its reduction, the create form that
- * is the onboarding, and — as **one imports bar above the table** since #794 — the
- * drop zone, the export menu and the sources with their revocation. Since #814
- * the reduction earns a gesture of its own: **deleting everything it retains**,
- * which is what makes losing the revocation by file survivable (ADR-0032). It
- * sits beside the chips rather than in that bar, because the chips are its
- * subject — `BulkDelete.tsx` holds the argument. The
- * declaration of the accounts left at #793 (ADR-0028): a declaration is made
- * where its subject is looked at. The blocks read one ledger between them: the
- * count a refusal is made of, and the count a revocation announces, are that
- * same table grouped two ways.
+ * What this surface owes is the journal itself, its reduction, the create form
+ * that is the onboarding, and — as **one imports bar above the table** since
+ * #794 — the drop zone and the export menu. Since #814 the reduction earns a
+ * gesture of its own, **deleting everything it retains**, and since #834 the
+ * row does too, at the unit: ADR-0032 asks for both by name, the removal being
+ * *the* gesture now that no file is ever read again. The declaration of the
+ * accounts left at #793 (ADR-0028): a declaration is made where its subject is
+ * looked at.
+ *
+ * **The reduction is laid out in three places since #834**, and they are three
+ * questions: the **panel** on the left, where an axis is chosen and every
+ * option carries the count it would leave (`LedgerFacets.tsx`); the **search**
+ * above the table, the one dimension with no vocabulary to lay out; and the
+ * **pastilles** under it, where the reduction is read back and let go of. What
+ * lives here is the state they all write to, so a reduction that moves starts
+ * its reveal over wherever it was moved from.
  *
  * Since #795 the table is **revealed forty rows at a time** (ADR-0031), and the
  * budget lives here rather than in the table because it is a property of the
- * *reduction*: the chips and the search are on this component, so a reduction
- * that moves has to start its reveal over, and the two sentences under the table
- * count what survives them. Nothing about that is a fetch — `GET /api/events`
- * answered once and handed back the ledger entire — which is why the control may
- * speak while the read never could.
+ * *reduction*: the two sentences under the table count what survives it, and
+ * say — since #834 — that it *is* a reduction they are counting. Nothing about
+ * that is a fetch — `GET /api/events` answered once and handed back the ledger
+ * entire — which is why the control may speak while the read never could.
  *
  * **A read that did not answer is said where the journal would have been**
  * (#829, ADR-0037). The banner and the band are retired and not replaced, so a
@@ -46,8 +52,10 @@ import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/components/data/BulkDelete'
 import { EventForm } from '@/components/data/EventForm'
 import { ImportsBlock } from '@/components/data/ImportsBlock'
-import { LedgerFilters } from '@/components/data/LedgerFilters'
+import { LedgerFacets } from '@/components/data/LedgerFacets'
+import { LedgerChips, LedgerSearch } from '@/components/data/LedgerFilters'
 import { LedgerTable, TYPE_LABEL } from '@/components/data/LedgerTable'
+import { RowDelete } from '@/components/data/RowDelete'
 import { UploadReceipt, UploadZone, useEventUpload } from '@/components/data/UploadZone'
 import { Button } from '@/components/ui/button'
 import { api, type LedgerEvent } from '@/lib/api'
@@ -58,6 +66,7 @@ import {
   filterEvents,
   NO_FILTERS,
   PAGE,
+  reduces,
   reveal,
   type LedgerFilters as Filters,
 } from '@/lib/ledger'
@@ -159,6 +168,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
   // `undefined` is *the panel is shut*; `null` is *open on a new event*; a row is
   // *open on that row*. Three states, because "shut" and "creating" are two.
   const [editing, setEditing] = useState<LedgerEvent | null | undefined>(undefined)
+  // The row a removal was asked for, or `null`. Held here rather than in the
+  // table, because the box that asks is mounted once for all the rows.
+  const [removing, setRemoving] = useState<LedgerEvent | null>(null)
 
   useEffect(() => {
     if (!compose) return
@@ -324,75 +336,109 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <LedgerFilters
+          {/* **The facets on the left, the ledger on the right** (#834), and
+              one column below 1024 px: the panel is the vocabulary of the
+              ledger laid out, so on a narrow screen it belongs above the table
+              rather than beside it in a track nothing fits in. `items-start` is
+              what lets the panel be sticky without stretching to the height of
+              the table — and **the table's height depends on no panel at all**:
+              it is bounded by the viewport, in `LedgerTable`, so nothing here
+              measures anything. */}
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
+            <LedgerFacets
               filters={filters}
               onChange={reduce}
+              // The ledger entire, never the rows on screen: a facet count is
+              // *what would be left*, which is a question about the whole.
+              events={all}
               accounts={accountsNamed(all)}
-              shown={shown.length}
             />
-            <div className="flex flex-wrap items-center gap-2">
-              {/* **The destructive gesture sits under the reduction it
-                  consumes** (#814, ADR-0032), and not in the bar above where
-                  the export menu is: what it acts on is the chips, and a button
-                  one surface away from its subject is how somebody deletes two
-                  hundred rows believing they are removing one thing. It renders
-                  nothing at all while nothing is reduced. */}
-              <BulkDelete selection={filters} selected={shown.length} />
-              <Button type="button" onClick={() => setEditing(null)}>
-                {t('data.new')}
-              </Button>
+
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <LedgerSearch filters={filters} onChange={reduce} shown={shown.length} />
+                {/* **The destructive gesture sits under the reduction it
+                    consumes** (#814, #834, ADR-0032), and not in the bar above
+                    where the export menu is: what it acts on is the reduction,
+                    and a button one surface away from its subject is how
+                    somebody deletes two hundred rows believing they are
+                    removing one thing. With nothing reduced it is a refusal
+                    naming the other gesture, never the same box with a bigger
+                    number. */}
+                <BulkDelete selection={filters} selected={shown.length} events={all} />
+                <Button type="button" className="ml-auto" onClick={() => setEditing(null)}>
+                  {t('data.new')}
+                </Button>
+              </div>
+
+              {/* What the reduction retains, dimension by dimension, each
+                  pastille clearing its own — the way out, wherever the
+                  reduction came from. */}
+              <LedgerChips filters={filters} onChange={reduce} />
+
+              {shown.length === 0 ? (
+                <EmptyState
+                  title={t('data.filter.none.title')}
+                  description={t('data.filter.none.body')}
+                />
+              ) : (
+                <div className="space-y-3">
+                  <LedgerTable
+                    events={page.rows}
+                    currency={currency}
+                    onEdit={setEditing}
+                    onRemove={setRemoving}
+                  />
+
+                  {/* **The reveal speaks, and the read did not** (ADR-0031).
+                      Both sentences below describe rows the app already holds —
+                      one of them counts what is drawn against what the
+                      reduction holds, the other says the last of them is drawn
+                      — so neither is a claim made on a silence, and the
+                      in-flight rule is not in contention here: this whole
+                      branch sits behind `events.data`.
+
+                      And there is **no spinner**, in this state or in any
+                      other. There is not even a wait to dress: the next forty
+                      rows are in memory, and pressing the button is a
+                      `setState` and a render. */}
+                  <div
+                    ref={tail}
+                    tabIndex={-1}
+                    aria-live="polite"
+                    className="flex flex-wrap items-center justify-center gap-3 outline-none"
+                  >
+                    {page.atEnd ? (
+                      <p className="text-xs text-muted-foreground">
+                        {/* **True of the reduction, and not of the store**
+                            (ADR-0031): *the end of the ledger*, said over a
+                            reduced table, is the sentence that record refuses
+                            by name. */}
+                        {t('data.ledger.end', {
+                          count: page.total,
+                          reduced: reduces(filters) ? 'yes' : 'no',
+                        })}
+                      </p>
+                    ) : (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          {t('data.ledger.shown', { shown: page.shown, total: page.total })}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBudget((current) => current + PAGE)}
+                        >
+                          {t('data.ledger.more')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
-          {shown.length === 0 ? (
-            <EmptyState title={t('data.filter.none.title')} description={t('data.filter.none.body')} />
-          ) : (
-            <div className="space-y-3">
-              <LedgerTable
-                events={page.rows}
-                currency={currency}
-                onEdit={setEditing}
-              />
-
-              {/* **The reveal speaks, and the read did not** (ADR-0031). Both
-                  sentences below describe rows the app already holds — one of
-                  them counts what is drawn against what the reduction holds,
-                  the other says the last of them is drawn — so neither is a
-                  claim made on a silence, and the in-flight rule is not in
-                  contention here: this whole branch sits behind `events.data`.
-
-                  And there is **no spinner**, in this state or in any other.
-                  There is not even a wait to dress: the next forty rows are in
-                  memory, and pressing the button is a `setState` and a render. */}
-              <div
-                ref={tail}
-                tabIndex={-1}
-                aria-live="polite"
-                className="flex flex-wrap items-center justify-center gap-3 outline-none"
-              >
-                {page.atEnd ? (
-                  <p className="text-xs text-muted-foreground">
-                    {t('data.ledger.end', { count: page.total })}
-                  </p>
-                ) : (
-                  <>
-                    <span className="text-xs text-muted-foreground">
-                      {t('data.ledger.shown', { shown: page.shown, total: page.total })}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setBudget((current) => current + PAGE)}
-                    >
-                      {t('data.ledger.more')}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
         </>
       )}
 
@@ -403,6 +449,9 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
         accountsFailed={accounts.isError}
         onClose={() => setEditing(undefined)}
       />
+
+      {/* One box for all the rows, handed the one it is about (#834). */}
+      <RowDelete event={removing} onClose={() => setRemoving(null)} />
     </div>
   )
 }

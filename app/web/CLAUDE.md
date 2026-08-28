@@ -1,5 +1,40 @@
 # app/web/ — the front
 
+> **The ledger has its facets, and its two removals** (#834, ADR-0031,
+> ADR-0032). The reduction is laid out in **three** places and they are three
+> questions: `LedgerFacets.tsx` on the left, where an axis is *chosen* — type,
+> account, period — and **every option carries the count it would leave**; the
+> search above the table, the one dimension with no vocabulary to lay out; and
+> the pastilles under it (`LedgerChips`), where the reduction is *read back and
+> let go of*, one per dimension in force. **Each count excludes its own axis**,
+> which is what a facet is: the number beside *Dividende* is *what is left if I
+> press Dividende*, so it is the reduction run again with that axis replaced —
+> `lib/ledger.ts`'s `typeFacets`/`accountFacets`/`yearFacets`/`monthFacets`,
+> because a count that lived in the panel would be taken off the rows on screen
+> and every option but the pressed one would read zero. The **period is one axis
+> with three controls** writing to the same two bounds: the years are the
+> vocabulary, the twelve months appear **only once the period fits inside a
+> year** (`rangeYear`), and the two date fields stay for the interval neither
+> spells. Under 768 px the panel **folds** — `hidden md:flex` on the body and
+> `md:hidden` on the toggle, the pair held on the source in
+> `contentWidth.test.ts` — and the account axis keeps #795's *N ≥ 2 only*.
+>
+> **The count and the end sentence say they are a reduction's** (ADR-0031):
+> *Réduction · 47 événements* and *Fin de la réduction*, never *Fin du grand
+> livre* over a reduced table. And **a row is corrected and removed like any
+> other** (ADR-0032): the whole row opens the editor — the name stays a button,
+> which is the keyboard's way in, the shares table's own gesture — and a ninth
+> cell holds the row's removal, `RowDelete.tsx` naming the row in the box rather
+> than asking *are you sure*. `BulkDelete.tsx` **recites** the reduction now
+> rather than listing it (*« Supprimer les 47 événements de type Dividende, sur
+> le compte pea, entre le … et le … ? »*), the clauses being the pastilles' own
+> and joined by a comma because they are qualifiers stacked on one noun. **With
+> nothing reduced the gesture is refused and points**: a different box, never
+> the same one with a bigger number, naming *Vider le grand livre* — which has
+> its own confirmation and reduces on the ledger's **oldest day**, `event.date`
+> being `NOT NULL` and `DELETE /api/events` refusing an empty query string in as
+> many words.
+>
 > **The shares table has its two gestures** (#791): it **sorts on any of its
 > nine columns** and it **groups by account** with each subtotal in the group
 > header. Neither removes a line: an order is a permutation and a grouping is a
@@ -470,7 +505,7 @@ src/
 │   ├── i18n.tsx theme.tsx    # language and theme: three states, localStorage
 │   ├── density.tsx           # the third preference: two states, same key shape
 │   ├── pageHeading.tsx       # what the header's `<h1>` says, declared by the page
-│   ├── alloc.ts format.ts    # the twelve allocation stops · the nine Intl sites
+│   ├── alloc.ts format.ts    # the twelve allocation stops · the ten Intl sites
 │   ├── problem.ts status.ts  # problem.type → key (+ values) · the bell's state, a failed read
 │   ├── notifications.ts      # the panel's entries: two axes, four subjects, three counts
 │   ├── absence.ts sign.ts    # the four renderings of absence · the colour of a figure
@@ -480,7 +515,8 @@ src/
 │   │                         # and the twelve slices, since #831
 │   ├── dashboard.ts          # the two readings, the four states, the day
 │   ├── accounts.ts           # the rebasing to 100, the weights, the reassignment
-│   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal · what there is to export
+│   ├── ledger.ts imports.ts  # a type's fields, the two parses, the reveal, the facets
+│   │                         # and the reduction that covers the whole · what there is to export
 │   ├── installationFacts.ts  # what the block shows, what the badge counts
 │   ├── installation.ts       # the cadence's reach, and only what moved is sent
 │   ├── palette.ts            # ⌘K's five sections · the reduction an event leads to
@@ -500,7 +536,8 @@ src/
 │   ├── dashboard/  # the hero head, the chart, the movers, the accounts card
 │   ├── shares/     # the allocation, the head, the table, the fold of closed lines,
 │   │               # the chart, the sheet
-│   ├── data/       # the ledger, the create form, the drop zone, the export menu
+│   ├── data/       # the ledger, its facets, the create form, the drop zone,
+│   │               # the export menu, and the two removals (row and reduction)
 │   │               # (UploadZone: the file in, the receipt under it)
 │   │               # (the settings left for settings/ — #830, ADR-0038)
 │   ├── settings/   # the dials, the workloads, the orphans, the store, the environment
@@ -578,22 +615,30 @@ src/
   banner and the status dot, into the panel behind the header's bell, the
   installation left for `/reglages`, and a bar holding a choice of one is not a
   bar. The `#installation` hash went with it — it was an address on a tab, and
-  the surface it named has a path now. What is left is the table — bounded,
-  sticky-headed and revealed forty rows at a time since ADR-0031, reduced by two
-  groups of chips, a search, a **period** — two date fields since #810, both
-  bounds inclusive, and a chip that shows up only once a bound is in force, to
-  name the interval and be the way out of it — and, since #797, by an
-  **address**: `q`, `type`, `account`, `since`, `until` and — since #829 —
-  a repeated `symbol`, which are the **five** dimensions the export resource
-  parses, so a reduced ledger's URL is the query string of its own export. The
-  securities were the one dimension with no address until a card in the panel
-  had to reach them from all five routes. A reduction that arrived that way names
-  what it retains and offers the way out; the reader's first gesture on the chips
-  takes the address back off, an address being a description of the table. Since
-  #814 the reduction also has a **destructive gesture of its own**, beside the
-  chips: it deletes everything the reduction retains — the rows a file carried
-  included — behind a box that names the five dimensions in force and counts
-  them, and it is not offered at all while nothing is reduced. Above the table,
+  the surface it named has a path now. What is left is a **panel of facets and
+  the table** — bounded, sticky-headed and revealed forty rows at a time since
+  ADR-0031 — reduced since #834 from a panel on the left carrying type, account
+  and period with **a count on every option, its own axis excluded**, the months
+  showing only once the period fits inside a year, the two date fields of #810
+  under them (both bounds inclusive), and the pastilles above the table, one per
+  dimension in force, each stating what it retains and clearing itself. The
+  panel folds under 768 px. And the reduction is also an **address** since #797:
+  `q`, `type`, `account`, `since`, `until` and — since #829 — a repeated
+  `symbol`, which are the **five** dimensions the export resource parses, so a
+  reduced ledger's URL is the query string of its own export. The securities
+  were the one dimension with no address until a card in the panel had to reach
+  them from all five routes. A reduction that arrived that way names what it
+  retains and offers the way out; the reader's first gesture takes the address
+  back off, an address being a description of the table. The two sentences under
+  the table are true of the **reduction** and say so (*Réduction · 47
+  événements*, *Fin de la réduction*). Since #814 the reduction has a
+  **destructive gesture of its own**, beside it: it deletes everything the
+  reduction retains — the rows a file carried included — behind a box that
+  **recites** the reduction since #834; with nothing reduced that gesture is
+  **refused** and points at *Vider le grand livre*, which has a confirmation of
+  its own and reduces on the ledger's oldest day. A row is corrected by a click
+  anywhere on it and removed from a ninth cell, one at a time (ADR-0032). Above
+  the table,
   one band holding the **upload zone** (a real target since #811: a file
   dropped on it or chosen from it is handed to `POST /api/events/import`, and the
   receipt is said under it), the export menu — **three entries** since #817:

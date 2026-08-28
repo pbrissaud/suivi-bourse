@@ -1,113 +1,59 @@
 /**
- * The reduction bar — **chips, and a count that is true of what they hold**
- * (#723, #795, ADR-0020, ADR-0031).
+ * The reduction, said above the table — **the search, the count, and the
+ * pastilles that name what is retained** (#723, #795, #834, ADR-0020,
+ * ADR-0031).
  *
- * A ledger is opened to check what has just happened, so the rows come sorted by
- * date descending and *« page 4 sur 6 »* was never on the table: a page number
- * means nothing on an axis of dates, and a reader looking for last Tuesday would
- * have to guess which page holds it. Since ADR-0031 the table **reveals** forty
- * rows at a time instead, which is a rendering budget rather than a place in a
- * sequence — and nothing about that changes what this bar is for. What reduces
- * is here, and it is named.
+ * The reduction is made in three places since #834 and they are three
+ * questions, not three copies:
  *
- * **The two filters are chips rather than dropdowns**, which is the change #795
- * makes and it is not only a shape: a `<select>` collapsed to `Tous` states the
- * absence of a reduction and nothing else, so the six types and the accounts an
- * install actually uses were facts a reader had to open a menu to learn. Laid
- * out, the vocabulary of the ledger is on screen before the first click, the one
- * in force is pressed, and the way out is the chip beside it. Two groups,
- * because they are two questions: the types on one side, the accounts on the
- * other.
+ *  - the **panel** (`LedgerFacets.tsx`) is where an axis is *chosen*, and every
+ *    option there carries the count it would leave;
+ *  - the **search** is here, because it is the one dimension with no vocabulary
+ *    at all to lay out. It is not a convenience either: on nineteen purchases of
+ *    the same ETF the free-text label is the only discriminant a row owns, and
+ *    on a cash movement it is the only name there is. It reads the ticker, the
+ *    label and the account — everything the identity and account columns show —
+ *    with accents folded;
+ *  - the **pastilles** are here too, and they are where a reduction is *read
+ *    back and let go of*. One per dimension in force, each stating what it
+ *    retains and clearing itself, which is #724's rule applied to all five at
+ *    once rather than to the one dimension that had arrived from a gesture.
  *
- * **The full-text search stays, and it is not a convenience.** It is the
- * consequence of the identity column: on nineteen purchases of the same ETF the
- * free-text label is the only discriminant a row owns, and on a cash movement it
- * is the only name at all. It reads the ticker, the label and the account —
- * everything the identity and account columns show — with accents folded, and
- * nothing about it is expressible as a chip.
+ * **The count is the reduction's, and it says so.** *Réduction · 47 événements*
+ * where something is in force, the bare count where nothing is: ADR-0031 asks
+ * that both sentences under this table be true of the reduction rather than of
+ * the store, and a number that does not say which of the two it counts is the
+ * defect that record names — a table silently shorter than expected.
  *
- * The account chips appear **at N ≥ 2 only**. ADR-0013 seeds a `default` row
- * that is never removed, so a single-account install would get a group with one
- * option beside its own exit: a filter that cannot filter, which is the same
- * defect as a column that cannot discriminate. The one exception is a reduction
- * already **in force**: the group stays whatever N is, because a filter with no
- * way out is worse than a filter that cannot filter.
- *
- * **The period is two day fields and one chip** (#810). It is the one dimension
- * with no vocabulary to lay out — the six types are six, the accounts are what
- * the install uses, and the days are all of them — so the control is a pair of
- * `<input type="date">` and never a row of chips. What the chip does is the
- * other half: while a period is in force it **names the interval** and is the
- * way out of it, exactly as the securities line is for the reduction that
- * arrives from a gesture. Without it a reader who typed one bound and scrolled
- * would have a table shorter than their ledger with two small fields, somewhere
- * above, as the only explanation.
- *
- * The bounds are **inclusive on both sides**, and the chip says so in words: a
- * ledger is dated to the day, so the interval a reader typed is the interval
- * they get, and there is no half-open bound to reason about.
- *
- * **A reduction that came from a gesture names itself and can be undone** (#724).
- * The securities filter has no control to type into — it arrives from the
- * assumed-currency notice of the other tab, which names *every* security it
- * concerns — so without a line stating it the ledger would simply be shorter
- * than the reader expects, with the search field empty and nothing on screen
- * saying why or how to get the rest back. It lists them all, in one line, for
- * the same reason: a set stated as its first element reads as its whole.
- *
- * **The count is the reduction's**, not the store's: it is rendered here, beside
- * the chips that made it, and it moves when they move.
+ * The securities are a pastille like the rest since #834. They were a line of
+ * their own, in a dashed box, because they arrive from a gesture and have no
+ * control to type into; with every other dimension wearing a pastille that
+ * exception has nothing left to be an exception to, and the sentence it carried
+ * — *« Réduit à trois titres : … »* — is the pastille's own label, a set stated
+ * as its first element reading as its whole.
  */
-import { Button } from '@/components/ui/button'
+import { X } from 'lucide-react'
+
+import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Input } from '@/components/ui/input'
-import { EVENT_TYPES } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { parseDay, type LedgerFilters as Filters } from '@/lib/ledger'
-import { TYPE_LABEL } from '@/components/data/LedgerTable'
-import { cn } from '@/lib/utils'
+import { reduces, type LedgerFilters as Filters } from '@/lib/ledger'
 
-export interface LedgerFiltersProps {
+export interface LedgerSearchProps {
   filters: Filters
   onChange: (filters: Filters) => void
-  /** The accounts the ledger actually names — never the declared list. */
-  accounts: readonly string[]
   /** How many rows survive the reduction, stated where the reduction is made. */
   shown: number
 }
 
-export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFiltersProps) {
+/** The free-text field, and the count of what the reduction retains. */
+export function LedgerSearch({ filters, onChange, shown }: LedgerSearchProps) {
   const { t } = useI18n()
-  const f = useFormatters()
-
-  // **A reduction in force always has a chip that releases it.** `accounts` is
-  // what the *ledger* names, and the ledger changes under the reader: revoking
-  // from the imports bar above this one the import that carried every `beta` event
-  // takes `beta` out of the list while `filters.account` still holds it, and the
-  // group would then disappear with the only control that could clear it —
-  // leaving a table that is simply shorter than it should be and nothing on
-  // screen saying why, which is the defect #724 was written against.
-  const named =
-    filters.account !== null && !accounts.includes(filters.account)
-      ? [...accounts, filters.account]
-      : accounts
-
-  // Which of the three sentences the chip reads out. `both` is the interval,
-  // and the two others are the bound that was typed alone — an interval open on
-  // the other side, which is a legitimate reduction and has to be readable as
-  // one rather than as half of a missing pair.
-  const period =
-    filters.since !== null && filters.until !== null
-      ? 'both'
-      : filters.since !== null
-        ? 'since'
-        : filters.until !== null
-          ? 'until'
-          : null
 
   return (
-    <div className="flex min-w-0 grow flex-wrap items-center gap-x-4 gap-y-3">
-      <div className="grow sm:max-w-xs">
+    <>
+      <div className="min-w-0 grow sm:max-w-xs">
         <label htmlFor="ledger-search" className="sr-only">
           {t('data.search.label')}
         </label>
@@ -119,163 +65,106 @@ export function LedgerFilters({ filters, onChange, accounts, shown }: LedgerFilt
           onChange={(event) => onChange({ ...filters, query: event.target.value })}
         />
       </div>
-
-      {/* The group carries the question, so a chip only has to carry its own
-          answer: read out, `Type · Achat` rather than six buttons named after
-          nothing. */}
-      <div role="group" aria-label={t('data.filter.type')} className="flex flex-wrap gap-1.5">
-        <Chip
-          pressed={filters.type === null}
-          label={t('data.filter.type.all')}
-          onPress={() => onChange({ ...filters, type: null })}
-        />
-        {EVENT_TYPES.map((type) => (
-          <Chip
-            key={type}
-            pressed={filters.type === type}
-            label={t(TYPE_LABEL[type])}
-            // Pressing the one in force does **not** clear it: the exit is a
-            // chip of its own and it is always on screen, so a second gesture
-            // meaning *undo* would give the same control two behaviours
-            // depending on a state the reader has to have noticed.
-            onPress={() => onChange({ ...filters, type })}
-          />
-        ))}
-      </div>
-
-      {named.length > 1 || filters.account !== null ? (
-        <div role="group" aria-label={t('data.filter.account')} className="flex flex-wrap gap-1.5">
-          <Chip
-            pressed={filters.account === null}
-            label={t('data.filter.account.all')}
-            onPress={() => onChange({ ...filters, account: null })}
-          />
-          {named.map((account) => (
-            <Chip
-              key={account}
-              pressed={filters.account === account}
-              label={account}
-              mono
-              onPress={() => onChange({ ...filters, account })}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {/* The period. Two fields rather than chips — the days are not a
-          vocabulary to lay out — and a chip that appears only once a bound is
-          in force, naming the interval and releasing it. */}
-      <div
-        role="group"
-        aria-label={t('data.filter.period')}
-        className="flex flex-wrap items-center gap-x-2 gap-y-1.5"
-      >
-        <label htmlFor="ledger-since" className="text-xs text-muted-foreground">
-          {t('data.filter.since')}
-        </label>
-        <Input
-          id="ledger-since"
-          type="date"
-          className="h-8 w-auto text-xs"
-          value={filters.since ?? ''}
-          // A field a reader emptied is *no bound*, and a day the field could
-          // not read is the same thing: `<input type="date">` hands back an
-          // empty string for both, and `parseDay` refuses what has the shape of
-          // a day without being one.
-          onChange={(event) => onChange({ ...filters, since: parseDay(event.target.value) })}
-        />
-        <label htmlFor="ledger-until" className="text-xs text-muted-foreground">
-          {t('data.filter.until')}
-        </label>
-        <Input
-          id="ledger-until"
-          type="date"
-          className="h-8 w-auto text-xs"
-          value={filters.until ?? ''}
-          onChange={(event) => onChange({ ...filters, until: parseDay(event.target.value) })}
-        />
-        {period === null ? null : (
-          <Chip
-            pressed
-            label={t('data.filter.period.chip', {
-              bounds: period,
-              since: f.date(filters.since),
-              until: f.date(filters.until),
-            })}
-            // A toggle that is pressed releases when it is pressed again, which
-            // is what `aria-pressed` promises — and unlike the type chips there
-            // is no second control here to be the way out.
-            onPress={() => onChange({ ...filters, since: null, until: null })}
-          />
-        )}
-      </div>
-
-      <p className="ml-auto text-sm text-muted-foreground">
-        {t('data.filter.count', { count: shown })}
+      <p className="text-sm text-muted-foreground">
+        {t('data.filter.count', {
+          count: shown,
+          reduced: reduces(filters) ? 'yes' : 'no',
+        })}
       </p>
-
-      {filters.symbols && filters.symbols.length > 0 ? (
-        <div className="flex w-full flex-wrap items-center gap-3 rounded-md border border-dashed border-input px-3 py-2">
-          <p className="text-sm text-muted-foreground">
-            {t('data.filter.symbols', {
-              count: filters.symbols.length,
-              // A sentence, so the enumeration is the language's (#768) and
-              // not a machine-readable list wearing a sentence's clothes.
-              symbols: f.list(filters.symbols),
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => onChange({ ...filters, symbols: null })}
-          >
-            {t('data.filter.symbols.clear')}
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    </>
   )
 }
 
+export interface LedgerChipsProps {
+  filters: Filters
+  onChange: (filters: Filters) => void
+}
+
 /**
- * One chip. `aria-pressed` and not a `radio`: a reader arriving by keyboard on
- * a radiogroup lands on the *checked* option and moves with the arrows, which
- * would make the six types one stop and hide five of them behind a gesture the
- * chips exist to remove. Pressed is also stated in **two** ways — the state and
- * the ground — because a colour alone is not read by everyone.
+ * The pastilles: one per dimension in force, and nothing at all while nothing
+ * is reduced — a heading over an empty row would be a block with nothing in it.
  */
-function Chip({
-  pressed,
-  label,
-  mono,
-  onPress,
-}: {
-  pressed: boolean
-  label: string
-  mono?: boolean
-  onPress: () => void
-}) {
+export function LedgerChips({ filters, onChange }: LedgerChipsProps) {
+  const { t } = useI18n()
+  const f = useFormatters()
+
+  const chips: { key: string; label: string; clear: () => void }[] = []
+  const query = filters.query.trim()
+  if (query !== '') {
+    chips.push({
+      key: 'query',
+      label: t('data.chip.query', { subject: query }),
+      clear: () => onChange({ ...filters, query: '' }),
+    })
+  }
+  if (filters.type !== null) {
+    chips.push({
+      key: 'type',
+      label: t(TYPE_LABEL[filters.type]),
+      clear: () => onChange({ ...filters, type: null }),
+    })
+  }
+  if (filters.account !== null) {
+    chips.push({
+      key: 'account',
+      label: filters.account,
+      clear: () => onChange({ ...filters, account: null }),
+    })
+  }
+  if (filters.symbols && filters.symbols.length > 0) {
+    chips.push({
+      key: 'symbols',
+      label: t('data.filter.symbols', {
+        count: filters.symbols.length,
+        // A sentence, so the enumeration is the language's (#768) and not a
+        // machine-readable list wearing a sentence's clothes.
+        symbols: f.list(filters.symbols),
+      }),
+      clear: () => onChange({ ...filters, symbols: null }),
+    })
+  }
+  if (filters.since !== null || filters.until !== null) {
+    chips.push({
+      key: 'period',
+      // The three sentences a period reads out: the interval, and each bound
+      // typed alone — an interval open on the other side, which is a legitimate
+      // reduction and has to be readable as one.
+      label: t('data.filter.period.chip', {
+        bounds:
+          filters.since !== null && filters.until !== null
+            ? 'both'
+            : filters.since !== null
+              ? 'since'
+              : 'until',
+        since: f.date(filters.since),
+        until: f.date(filters.until),
+      }),
+      clear: () => onChange({ ...filters, since: null, until: null }),
+    })
+  }
+
+  if (chips.length === 0) return null
+
   return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onPress}
-      className={cn(
-        'h-7 rounded-full border px-3 text-xs font-medium transition-colors',
-        'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-        mono && 'font-mono',
-        // Solid, and not the mint on a wash of the mint: that pairing reads at
-        // 4,06:1 at 12 px on the light ground, where `--primary` against
-        // `--primary-foreground` is the contrast the preset guarantees (5,21
-        // light, 10,84 dark) — the same one every primary button rests on.
-        pressed
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-input text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {label}
-    </button>
+    <div role="group" aria-label={t('data.chips.title')} className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        {t('data.chips.title')}
+      </span>
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          type="button"
+          // The name says the **gesture**, the label being on screen beside it:
+          // a control whose accessible name is only what it retains reads as a
+          // second way of pressing that dimension rather than as the way out.
+          aria-label={t('data.chips.clear', { label: chip.label })}
+          onClick={chip.clear}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-primary bg-primary/12 px-3 text-xs font-medium text-primary"
+        >
+          <span aria-hidden>{chip.label}</span>
+          <X className="size-3" aria-hidden />
+        </button>
+      ))}
+    </div>
   )
 }
