@@ -344,7 +344,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
               the table — and **the table's height depends on no panel at all**:
               it is bounded by the viewport, in `LedgerTable`, so nothing here
               measures anything. */}
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
             <LedgerFacets
               filters={filters}
               onChange={reduce}

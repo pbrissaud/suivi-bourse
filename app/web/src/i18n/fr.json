@@ -428,7 +428,7 @@
   "data.export.workbook": "Un classeur, un onglet par année",
   "data.export.selection": "La sélection filtrée ({count, plural, one {# événement} other {# événements}})",
 
-  "data.bulk.title": "{reduced, select, yes {Supprimer les {count, plural, one {# événement} other {# événements}}} other {Supprimer la réduction}}",
+  "data.bulk.title": "{reduced, select, yes {{count, plural, one {Supprimer l’événement} other {Supprimer les # événements}}} other {Supprimer la réduction}}",
   "data.bulk.confirm.title": "{count, plural, one {Supprimer l’événement {clauses} ?} other {Supprimer les # événements {clauses} ?}}",
   "data.bulk.confirm.body": "Tout ce que la réduction retient quitte le grand livre, quelle qu’en soit l’origine — les lignes venues d’un fichier comprises.",
   "data.bulk.clause.query": "contenant « {subject} »",

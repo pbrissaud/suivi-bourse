@@ -428,7 +428,7 @@
   "data.export.workbook": "A workbook, one sheet per year",
   "data.export.selection": "The filtered selection ({count, plural, one {# event} other {# events}})",
 
-  "data.bulk.title": "{reduced, select, yes {Delete the {count, plural, one {# event} other {# events}}} other {Delete the reduction}}",
+  "data.bulk.title": "{reduced, select, yes {{count, plural, one {Delete the event} other {Delete the # events}}} other {Delete the reduction}}",
   "data.bulk.confirm.title": "{count, plural, one {Delete the event {clauses}?} other {Delete the # events {clauses}?}}",
   "data.bulk.confirm.body": "Everything the reduction retains leaves the ledger, whatever brought it in — the rows a file carried included.",
   "data.bulk.clause.query": "containing “{subject}”",

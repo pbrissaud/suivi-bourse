@@ -597,7 +597,7 @@ describe('a reduction in force always has the chip that releases it', () => {
     await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
-    await user.click(screen.getByRole('button', { name: 'Supprimer les 1 événement' }))
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’événement' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
     )
