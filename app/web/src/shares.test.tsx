@@ -933,7 +933,7 @@ describe('the allocation', () => {
     const rows = within(list)
       .getAllByRole('listitem')
       .map((row) => (row.textContent ?? '').replace(/\s/g, ''))
-    expect(rows).toEqual(['ZetaAlpha56,52%', 'ZetaGamma26,09%', 'ZetaBeta17,39%'])
+    expect(rows).toEqual(['ZetaAlpha56,5%', 'ZetaGamma26,1%', 'ZetaBeta17,4%'])
 
     // The total, in the ring's own hole — **one named group and two lines**,
     // not a sentence: `2 300,00 € de titres` measured wider than the hole and
@@ -969,7 +969,7 @@ describe('the allocation', () => {
     // And the line it kept is the whole of what it counted.
     const legend = within(screen.getByRole('list', { name: 'Répartition' }))
     expect(legend.getAllByRole('listitem')).toHaveLength(1)
-    expect(legend.getByRole('listitem')).toHaveTextContent(/100,00\D?%/)
+    expect(legend.getByRole('listitem')).toHaveTextContent(/100,0\D?%/)
   })
 
   it('adds no selector of its own beside the gestures the page already has', async () => {
@@ -1000,7 +1000,7 @@ describe('the allocation', () => {
 
     const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
     expect(legend.getAllByRole('listitem').map((row) => (row.textContent ?? '').replace(/\s/g, ''))).toEqual([
-      'ZetaAlpha100,00%',
+      'ZetaAlpha100,0%',
     ])
     const card = screen
       .getByRole('list', { name: 'Répartition' })

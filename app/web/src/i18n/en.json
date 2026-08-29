@@ -207,6 +207,7 @@
   "shares.allocation.title": "Allocation",
   "shares.allocation.others": "{count, plural, one {# other holding} other {# other holdings}}",
   "shares.allocation.scope": "{lines} lines · top {top} detailed, {folded} grouped",
+  "shares.allocation.scope.all": "{lines, plural, one {# line held} other {# lines held}}",
   "shares.allocation.total": "Securities",
   "shares.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
   "shares.allocation.empty": "Nothing held",

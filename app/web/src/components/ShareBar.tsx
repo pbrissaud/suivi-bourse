@@ -66,17 +66,30 @@ export interface ShareBarProps {
    */
   fill: string
   size?: 'line' | 'block'
+  /**
+   * The share the bar is drawn **full** at — the largest one on the surface,
+   * where a list is compared down its own column (#838). `1` is the default and
+   * means *full at the whole*, which is what a single bar under one figure says.
+   *
+   * The drawing uses it on the allocation's legend: the biggest line fills its
+   * track and the rest are read against it, which is what makes a column of
+   * 26, 18 and 11 per cent legible at all. It changes nothing about what is
+   * **written** — the exact percentage stands beside the bar either way — and
+   * that is why the bar can be scaled without lying: `aria-hidden`, it claims
+   * nothing on its own.
+   */
+  scale?: number
   /** Where the bar sits, and nothing else: a margin, a flex basis. */
   className?: string
 }
 
-export function ShareBar({ share, fill, size = 'line', className }: ShareBarProps) {
+export function ShareBar({ share, fill, size = 'line', scale = 1, className }: ShareBarProps) {
   if (share === null) return null
   // Floored and capped **here**, so that no call site has to know why: a
   // browser drops `width: -12.5%` without a word, and the bars beside it then
   // read as a whole they no longer divide (`lib/accounts.ts` met the same edge
   // on the stacked bar and answers it by refusing the share outright).
-  const percent = Math.min(Math.max(share * 100, 0), 100)
+  const percent = Math.min(Math.max((share / (scale || 1)) * 100, 0), 100)
   return (
     <span
       aria-hidden

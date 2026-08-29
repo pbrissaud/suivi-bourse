@@ -100,12 +100,16 @@ export function formatPercent(locale: string, value: number | null | undefined):
  * `formatPercent` next to `12.34 %` from this one, two spellings of a
  * percentage on one screen.
  */
-export function formatPercentPoints(locale: string, value: number | null | undefined): string {
+export function formatPercentPoints(
+  locale: string,
+  value: number | null | undefined,
+  fractionDigits = 2,
+): string {
   if (value === null || value === undefined) return ABSENT
   return new Intl.NumberFormat(locale, {
     style: 'percent',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(value / 100)
 }
 
@@ -271,7 +275,8 @@ export function useFormatters() {
         formatNumber(locale, value, digits),
       quantity: (value: number | null | undefined) => formatQuantity(locale, value),
       percent: (value: number | null | undefined) => formatPercent(locale, value),
-      percentPoints: (value: number | null | undefined) => formatPercentPoints(locale, value),
+      percentPoints: (value: number | null | undefined, digits?: number) =>
+        formatPercentPoints(locale, value, digits),
       compact: (value: number | null | undefined, currency: string | null | undefined) =>
         formatCompact(locale, value, currency),
       bytes: (value: number | null | undefined) => formatBytes(locale, value),

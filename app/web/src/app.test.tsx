@@ -23,6 +23,7 @@ import {
   defaultAccounts,
 } from '@/test/factories'
 import { setPrefersDark, setViewportWidth } from '@/test/media'
+import { ALLOCATION_SLICES } from '@/lib/alloc'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -185,12 +186,12 @@ describe('the reader preferences', () => {
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'))
   })
 
-  it('write the twelve allocation stops for the ground in force', async () => {
+  it('write the eight allocation stops for the ground in force', async () => {
     const { user } = renderApp()
     await screen.findByRole('heading', { name: 'Tableau de bord' })
 
     const stopsOf = () =>
-      Array.from({ length: 12 }, (_, index) =>
+      Array.from({ length: ALLOCATION_SLICES }, (_, index) =>
         document.documentElement.style.getPropertyValue(`--alloc-${index + 1}`),
       )
 

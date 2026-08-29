@@ -430,7 +430,7 @@ export interface AllocationSlice {
 }
 
 export interface Allocation {
-  /** Descending by value, **at most twelve**, the tail last if there is one. */
+  /** Descending by value, **at most eight**, the tail last if there is one. */
   slices: AllocationSlice[]
   total: number
   /**
@@ -442,23 +442,32 @@ export interface Allocation {
 }
 
 /**
- * The whole portfolio in one figure, **twelve slices and the full width**.
+ * The whole portfolio in one figure, **seven slices, the fold, and the full
+ * width**.
  *
  * It divided the dashboard until #831 and it divides the shares page now: the
  * maquette draws the ring over the table it is the division of, and the block
  * is handed exactly the rows the page header sums, so the figure in the ring's
  * hole and the header's `Valorisation` are one number read twice.
  *
- * Eight was the threshold and it is measurably wrong: the tail *Autres (4)* was
- * worth **10,1 %**, more than four of the named slices put together. What
- * decided the *layout* is what that threshold costs at half width — four names
- * out of twelve folded, a block twice the height of the movers beside it, and
- * 350 px of nothing under them.
+ * **The cap is the drawing's, and it reverses a measurement** (#838). It was
+ * twelve, and the reason is on the record: at eight, the tail *Autres (4)* was
+ * worth **10,1 %** on the real portfolio, more than four of the named slices
+ * put together — a fold that outweighs what it hides. The drawing caps at seven
+ * arcs all the same, and it answers that objection rather than ignoring it: the
+ * fold **names its own count** (*Autres · 13 lignes*), it carries the ramp's
+ * last stop so it reads as a remainder and not as a holding, and every line it
+ * hides is in the table directly under it. What twelve bought in fidelity it
+ * paid for in the reading — a ring of twelve arcs is not a ranking anybody can
+ * see, and its legend is two columns six rows deep beside a 240 px circle.
+ *
+ * It folds only **past** eight lines: at exactly eight there is nothing to gain
+ * by hiding one of them behind a word.
  *
  * A **closed** line is not a slice: it is worth exactly zero and a legend of
  * zeros is noise, so the folded section of the shares page is where it lives. A
  * held line worth zero stays — that is a figure about a line the owner holds.
- * The predicate is `isClosed`, above, and `moversSplit` calls the same one one
+ * The predicate is `isClosed`, above, and `moversList` calls the same one one
  * module over: the two blocks describe one portfolio, so what is *in* it cannot
  * be two questions — which is why the predicate did not travel with the block.
  */
@@ -488,9 +497,11 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
       : right.value - left.value,
   )
 
-  // The ramp has twelve stops (ADR-0023) and the tail is one slice like any
-  // other, so it takes the twelfth: the least contrasted rank, which is what a
-  // fold of the smallest lines should be.
+  // **Seven ranked lines and the fold** (#838, the drawing's own cap). The tail
+  // is one slice like any other, so it takes the ramp's last stop — the least
+  // contrasted rank, which is what a fold of the smallest lines should be. It
+  // folds only past `ALLOCATION_SLICES` lines: at exactly eight there is
+  // nothing to gain by hiding one of them behind a word.
   let slices = placed
   if (placed.length > ALLOCATION_SLICES) {
     const named = placed.slice(0, ALLOCATION_SLICES - 1)

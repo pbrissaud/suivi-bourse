@@ -168,10 +168,10 @@
  * What remains is what a preset genuinely cannot say: whether a figure is money
  * gained or money lost, and whether something is worth a look. Three tokens.
  *
- * The twelve `--alloc-*` are **absent on purpose**: they are the one ramp whose
+ * The eight `--alloc-*` are **absent on purpose**: they are the one ramp whose
  * *direction* depends on the ground rather than merely adapting to it, so they
  * are generated in `lib/alloc.ts` and written onto the root element by
- * `ThemeProvider` when it resolves the ground. One source, twelve stops, no
+ * `ThemeProvider` when it resolves the ground. One source, eight stops, no
  * palette to maintain — and `@theme inline` below still exposes them as
  * `bg-alloc-3`, so a call site cannot tell where they came from.
  * ========================================================================== */
@@ -278,10 +278,6 @@
   --color-alloc-6: var(--alloc-6);
   --color-alloc-7: var(--alloc-7);
   --color-alloc-8: var(--alloc-8);
-  --color-alloc-9: var(--alloc-9);
-  --color-alloc-10: var(--alloc-10);
-  --color-alloc-11: var(--alloc-11);
-  --color-alloc-12: var(--alloc-12);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

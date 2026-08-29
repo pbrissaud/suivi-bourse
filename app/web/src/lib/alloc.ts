@@ -1,11 +1,11 @@
 /**
- * The allocation ramp — twelve stops, generated, never enumerated (ADR-0023).
+ * The allocation ramp — eight stops, generated, never enumerated (ADR-0023).
  *
  * The allocation is **sorted descending and legended**, so position already
  * pairs a legend row to its slice and the legend already carries the name and
  * the percentage. Colour therefore never had to *identify*; it only has to
- * encode **rank**, redundantly with the angle — which one hue in twelve
- * lightnesses does better than twelve hues, twelve hues at constant lightness
+ * encode **rank**, redundantly with the angle — which one hue in eight
+ * lightnesses does better than eight hues, eight hues at constant lightness
  * being at the edge of discriminability and below it for a colour-blind reader.
  *
  * Three consequences are load-bearing and all three live in the table below:
@@ -25,10 +25,10 @@
  * satisfied *within*, and it is what sets the chroma ends apart between grounds.
  *
  * The ramp holds *only because* the allocation is sorted and legended. A
- * surface that drew these twelve shares without a legend, or in another order,
+ * surface that drew these eight shares without a legend, or in another order,
  * falls outside ADR-0023 and has to reopen it.
  *
- * Pure, and deliberately not CSS: the twelve tokens are the one place in the
+ * Pure, and deliberately not CSS: the eight tokens are the one place in the
  * product where the *value* depends on the ground rather than merely adapting
  * to it, so they are written onto the root element by `ThemeProvider` at the
  * moment it resolves the ground. `index.css` bridges them, so a call site still
@@ -36,7 +36,19 @@
  */
 
 /** How many slices the allocation draws before it stops answering (ADR-0018). */
-export const ALLOCATION_SLICES = 12
+/**
+ * **Seven ranked slices and the fold, which is eight** (#838). The drawing caps
+ * the ring at seven arcs and gives the rest one slice of its own — *Autres · 13
+ * lignes* — and it folds only past **eight** lines: at exactly eight there is
+ * nothing to gain by hiding one behind a word. It was twelve here, which drew a
+ * ring nobody could read as a ranking and a legend two columns of six deep.
+ *
+ * The fold takes the ramp's **last** stop, the least contrasted of the eight,
+ * which is what a fold of the smallest lines should be — the drawing paints it
+ * a flat grey and this paints it the ramp's own end, which lands in the same
+ * place: 0,42 lightness at 0,03 chroma is a mint nobody reads as a mint.
+ */
+export const ALLOCATION_SLICES = 8
 
 export type Ground = 'light' | 'dark'
 
@@ -61,7 +73,7 @@ export interface RampEnds {
  * else, beside a chart stroked in `--price`, which *is* `--primary`. The
  * allocation ended up the only surface that did not look like the application.
  *
- * So the ramp is twelve lightnesses of the **accent's own hue**, `165` — the
+ * So the ramp is eight lightnesses of the **accent's own hue**, `165` — the
  * value `--primary` carries on both grounds. What the mint is spoken for is a
  * *state* (`--gain`) and a *mark* (`--price`), and neither is a slice: a share
  * of a whole is unsigned and always positive, it is legended, and it never sits
@@ -94,7 +106,7 @@ function interpolate(from: number, to: number, step: number, steps: number): num
 }
 
 /**
- * The twelve stops for one ground, rank 1 first, as `oklch()` strings.
+ * The eight stops for one ground, rank 1 first, as `oklch()` strings.
  *
  * Rounded because these end up in the DOM: an unrounded stop reads as
  * `oklch(0.48000000000000004 …)` in the inspector, which invites someone to

@@ -94,8 +94,16 @@ export function Allocation({ rows, currency }: AllocationProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const { slices, total, unplaced } = allocation(rows)
+  // The bar under each name is drawn full at the **largest** slice, which is
+  // the drawing's own scale: read down a column, shares of 26, 18 and 11 per
+  // cent are told apart by the comparison and not by the distance to a hundred.
+  const largest = slices.reduce((most, slice) => Math.max(most, slice.share), 0)
   // The lines the last slice folds together, which is what the note counts.
   const folded = slices.reduce((count, slice) => (slice.symbol === null ? slice.count : count), 0)
+  // **The lines the ring divides, and not the rows the page holds**: a closed
+  // position is worth nothing and is not a slice, so counting it here would say
+  // *14 lignes · top 7 détaillé, 3 regroupées* over a ring that divides ten.
+  const placed = folded === 0 ? slices.length : slices.length - 1 + folded
 
   const name = (slice: AllocationSlice) =>
     slice.symbol === null ? t('shares.allocation.others', { count: slice.count }) : slice.label
@@ -114,13 +122,15 @@ export function Allocation({ rows, currency }: AllocationProps) {
             twenty is a reading and not a truncation. Said only where there is
             something folded: at twelve lines or fewer the sentence would count
             nothing. */}
-        {folded === 0 ? null : (
+        {slices.length === 0 ? null : (
           <span className="text-2xs text-muted-foreground">
-            {t('shares.allocation.scope', {
-              lines: rows.length,
-              top: slices.length - 1,
-              folded,
-            })}
+            {folded === 0
+              ? t('shares.allocation.scope.all', { lines: placed })
+              : t('shares.allocation.scope', {
+                  lines: placed,
+                  top: slices.length - 1,
+                  folded,
+                })}
           </span>
         )}
       </CardHeader>
@@ -214,14 +224,14 @@ export function Allocation({ rows, currency }: AllocationProps) {
                         what it renders (`+56,52 %`), which is right for a
                         movement and reads as one here. */}
                     <span className="tabular shrink-0 font-mono text-xs text-muted-foreground">
-                      {f.percentPoints(slice.share * 100)}
+                      {f.percentPoints(slice.share * 100, 1)}
                     </span>
                   </span>
                   {/* The same figure, drawn (#800). The percentages are exact
                       and comparing two of them is arithmetic; the bars are the
                       glance, and they are in the ramp the slice already wears,
                       so the row and its arc stay one object. */}
-                  <ShareBar share={slice.share} fill={stop(rank)} />
+                  <ShareBar share={slice.share} scale={largest} fill={stop(rank)} />
                 </li>
               ))}
             </ul>

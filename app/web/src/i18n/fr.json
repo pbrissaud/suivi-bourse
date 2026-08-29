@@ -207,6 +207,7 @@
   "shares.allocation.title": "Répartition",
   "shares.allocation.others": "{count, plural, one {# autre ligne} other {# autres lignes}}",
   "shares.allocation.scope": "{lines} lignes · top {top} détaillé, {folded} regroupées",
+  "shares.allocation.scope.all": "{lines, plural, one {# ligne en portefeuille} other {# lignes en portefeuille}}",
   "shares.allocation.total": "Titres",
   "shares.allocation.unplaced": "{count, plural, one {# ligne n’est pas} other {# lignes ne sont pas}} dans cette répartition, cotée{count, plural, one {} other {s}} sans taux résolu : {symbols}. Les y compter rendrait tous les autres pourcentages faux.",
   "shares.allocation.empty": "Aucune position détenue",

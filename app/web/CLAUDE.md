@@ -47,6 +47,14 @@
 > - **The movements are one list of five**, best first, each line carrying its
 >   ticker as a badge: the two columns and their two *nothing went down* lines
 >   paid for what a short list says by being short.
+>   The ring is **seven arcs and the fold**, which the drawing caps it at and
+>   which reverses a measurement of ours: at eight, the tail *Autres (4)* was
+>   worth 10,1 % — more than four named slices together — and twelve was the
+>   answer. The drawing answers it differently: the fold names its own count,
+>   wears the ramp's last stop so it reads as a remainder, and every line it
+>   hides is in the table directly under it. Its legend bars are drawn full at
+>   the **largest** slice rather than at a hundred, which is what makes a column
+>   of 26, 18 and 11 per cent legible.
 > - **The shares page leads with the ring and frames its table**, whose header is
 >   a strip of four totals — `Valorisation · Latente · Réalisée · Dividendes`,
 >   the sums of four of its own columns. The 52 px `Gain total` that stood
