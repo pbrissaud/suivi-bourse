@@ -139,6 +139,22 @@ def current_runtime():
     return _current()
 
 
+def _rebuilding() -> bool:
+    """Is the reconstruction still covering windows? — process memory, no query.
+
+    The same reading ``/api/runtime`` publishes, through the same pure function,
+    so the two resources cannot disagree about whether this install is still
+    being rebuilt. A runtime with no metrics cannot see the scheduler at all and
+    answers ``False``, which is :func:`runtime_view.is_rebuilding`'s own rule
+    and the safe one: what the flag enables here is *withholding* a judgement,
+    and an observer that cannot see the scheduler has no ground to withhold.
+    """
+    runtime = current_runtime()
+    return runtime_view.is_rebuilding(
+        runtime.metrics.reconstruction_state()
+        if runtime.metrics is not None else None)
+
+
 def _unreplayable(exc: AggregationError, gesture: str):
     """The one answer every route gives an oversell (issue #824).
 
@@ -2078,7 +2094,12 @@ def list_advisories():
     read = (advisories.standing
             if request.args.get('asleep') == 'include'
             else advisories.listing)
-    return jsonify([one.to_dict() for one in read(_store())])
+    # The reconstruction withholds the account advisories, and it withholds them
+    # from **both** answers: the chip beside the figure and the card in the panel
+    # are two readings of one set, and a rebuild that silenced one of them would
+    # leave the other alarming about a series still being built.
+    return jsonify([one.to_dict()
+                    for one in read(_store(), rebuilding=_rebuilding())])
 
 
 @api_bp.post('/advisories/<key>/acknowledgement')
@@ -2099,7 +2120,8 @@ def acknowledge_advisory(key: str):
     try:
         # The writers' mutex, like every other write in this blueprint.
         with runtime.config_manager.writing() as opened:
-            advisory, acknowledged = advisories.acknowledge(opened, key)
+            advisory, acknowledged = advisories.acknowledge(
+                opened, key, rebuilding=_rebuilding())
     except advisories.UnknownAdvisory:
         return not_found(f"No advisory is standing under {key!r}")
 

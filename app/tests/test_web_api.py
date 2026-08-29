@@ -4263,6 +4263,53 @@ def test_an_advisory_is_listed_with_the_figure_it_comments_on(tmp_path):
     assert advisory['observed_at'] is not None
 
 
+def test_a_reconstruction_withholds_the_accounts_it_cannot_speak_for(tmp_path):
+    """The route reads the scheduler's memory, not a second definition of it.
+
+    ``is_rebuilding`` is the same pure function ``/api/runtime`` publishes
+    ``rebuilding`` through, so the resource that *says* a rebuild is running and
+    the resource that *acts on it* cannot disagree. Both answers are withheld —
+    the panel's and the chip's — because they are two readings of one set.
+
+    What it buys: while the backfill still has windows to cover, the perf series
+    can be a run of days from before the account's first purchase, and the cash
+    share read off it announces an account holding nothing but cash. The advisory
+    comes back by itself when the reconstruction concludes; nothing is stored.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+
+    runtime = web_module.current_runtime()
+
+    runtime.metrics.reconstruction = (1, 2)
+    rebuilding = client.get('/api/advisories').get_json()
+    asleep_too = client.get('/api/advisories?asleep=include').get_json()
+
+    runtime.metrics.reconstruction = (2, 2)
+    concluded = client.get('/api/advisories').get_json()
+
+    assert rebuilding == []
+    assert asleep_too == []
+    assert [one['key'] for one in concluded] == ['cash_share:cto']
+
+
+def test_what_the_reconstruction_withholds_cannot_be_acknowledged(tmp_path):
+    """``404``, and no row: the gesture follows what the listing shows.
+
+    Acknowledging binds for thirty days, so a gesture reaching an advisory the
+    rebuild is withholding would silence for a month a condition the reader was
+    never shown — and one the rebuild was about to withdraw on its own.
+    """
+    client, opened = build_client_and_store(tmp_path)
+    _cash_heavy_account(opened)
+    web_module.current_runtime().metrics.reconstruction = (1, 2)
+
+    response = client.post('/api/advisories/cash_share:cto/acknowledgement')
+
+    assert response.status_code == 404
+    assert opened.query('SELECT count(*) FROM advisory_ack') == [(0,)]
+
+
 def test_a_get_writes_no_row_at_all(tmp_path):
     """An advisory is derived on every read and stored nowhere (ADR-0036)."""
     client, opened = build_client_and_store(tmp_path)

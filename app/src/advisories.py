@@ -228,29 +228,71 @@ def acknowledgements(opened, now: Optional[datetime] = None
     }
 
 
-def standing(opened, now: Optional[datetime] = None) -> List[Advisory]:
-    """Every advisory this portfolio raises right now, asleep ones included."""
+def standing(opened, now: Optional[datetime] = None, *,
+             rebuilding: bool = False) -> List[Advisory]:
+    """Every advisory this portfolio raises right now, asleep ones included.
+
+    ``rebuilding`` withholds the :data:`SUBJECT_ACCOUNTS` ones, and it is the
+    whole of what it does. Those observations divide one figure of an account's
+    perf series by another, and while the reconstruction runs that series is not
+    a statement about the portfolio — it is a statement about how far the
+    backfill got. :func:`performance.account_horizon` blocks every day a held
+    symbol has no price for, and the right edge walks left past those blocks:
+    an account whose oldest line is quoted nowhere yet can be left publishing a
+    run of days from *before its first purchase*, where it did hold nothing but
+    cash. ``cash_share`` then reads the newest row of that run and says the
+    account is 100 % cash — an alarm, in the reader's own words, about an
+    account whose shares page shows them the securities.
+
+    Withheld rather than repaired here, and the two are different tickets: what
+    the horizon publishes is the horizon's business (#708, #765, #766), and a
+    judgement passed on figures still being reconstructed is this module's. It is
+    ADR-0026's rule one table over — *a read in flight is not an absence* — read
+    as *a series still being built is not a portfolio to judge*. The advisory
+    comes back on its own when the reconstruction concludes, since nothing here
+    is stored: it is derived per read (ADR-0036).
+
+    **A subject and not a family**, so the next observation about an account
+    inherits the rule instead of rediscovering it. The other three subjects are
+    untouched: health, installation and portfolio say nothing that divides one
+    day of a series by another.
+
+    The predicate is complete for the cause. The pocket needs a held symbol
+    whose backfill is not terminal, which is a window the reconstruction has not
+    covered — so a pocket implies a rebuild, and once the rebuild concludes the
+    dead ticker is settled and the horizon is whole again.
+    """
     now = now or datetime.now(timezone.utc)
     raised: List[Advisory] = []
     for observe in OBSERVATIONS:
         raised.extend(observe(opened, now))
+    if rebuilding:
+        return [one for one in raised if one.subject != SUBJECT_ACCOUNTS]
     return raised
 
 
-def listing(opened, now: Optional[datetime] = None) -> List[Advisory]:
+def listing(opened, now: Optional[datetime] = None, *,
+            rebuilding: bool = False) -> List[Advisory]:
     """What the API answers: the advisories that stand and are not asleep.
 
     An acknowledged advisory **disappears**, exactly as an acknowledged
     installation fact does — and **comes back** when the window wears off, which
     is the half a permanent acknowledgement could never do.
+
+    ``rebuilding`` is :func:`standing`'s, passed through rather than re-read:
+    the two answers differ by the acknowledgements alone, and an argument that
+    reached one of them and not the other would make the chip and the panel
+    disagree about which advisories exist.
     """
     now = now or datetime.now(timezone.utc)
     asleep = acknowledgements(opened, now)
-    return [one for one in standing(opened, now) if one.key not in asleep]
+    return [one for one in standing(opened, now, rebuilding=rebuilding)
+            if one.key not in asleep]
 
 
 def acknowledge(opened, key: str,
-                now: Optional[datetime] = None
+                now: Optional[datetime] = None, *,
+                rebuilding: bool = False
                 ) -> Tuple[Advisory, Acknowledgement]:
     """Put one advisory to sleep for :data:`ACK_WINDOW`.
 
@@ -270,7 +312,12 @@ def acknowledge(opened, key: str,
     lives nowhere else.
     """
     now = now or datetime.now(timezone.utc)
-    raised = {one.key: one for one in standing(opened, now)}
+    # ``rebuilding`` here too, and for the reason the raise below states: what
+    # cannot be listed cannot be put to sleep, or a reader would silence for
+    # thirty days an advisory they were never shown — and one the rebuild was
+    # about to withdraw on its own.
+    raised = {one.key: one
+              for one in standing(opened, now, rebuilding=rebuilding)}
     advisory = raised.get(key)
     if advisory is None:
         raise UnknownAdvisory(key)

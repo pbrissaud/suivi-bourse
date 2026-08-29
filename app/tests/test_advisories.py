@@ -129,6 +129,78 @@ def test_it_reads_the_newest_day_and_not_the_series(store):
 
 
 # --------------------------------------------------------------------------- #
+# The reconstruction withholds them (the horizon's pocket)
+# --------------------------------------------------------------------------- #
+
+def _pocket(store):
+    """The series a rebuild can leave behind, and it is not a portfolio.
+
+    ``account_horizon`` blocks every day a held symbol has no price for and
+    walks the right edge left past those blocks, so an account holding a line
+    quoted nowhere *yet* can be left publishing a run of days from **before its
+    first purchase** — days on which it really did hold nothing but cash. The
+    newest row of that run is what the observation reads.
+    """
+    _account(store, 'pea', 'PEA LCL')
+    _metrics(store, 'pea', date(2019, 11, 20), cash=1030.0, total=1030.0)
+
+
+def test_a_reconstruction_withholds_what_it_would_say_about_an_account(store):
+    """*100 % of its value in cash*, about a day seven years old.
+
+    The figure is arithmetically right and the sentence is a falsehood: it reads
+    a series that is not about now, and it tells the owner their account holds
+    no securities while the shares page shows them the securities. A judgement
+    passed on figures still being reconstructed is withheld until they are
+    figures — ADR-0026's rule one table over, and it needs no threshold and no
+    second reading of the horizon.
+    """
+    _pocket(store)
+
+    assert _keys(advisories.listing(store, NOW)) == ['cash_share:pea']
+    assert advisories.listing(store, NOW, rebuilding=True) == []
+    # The chip beside the figure reads the wider answer, and it is withheld from
+    # that one too: two readings of one set cannot disagree about what exists.
+    assert advisories.standing(store, NOW, rebuilding=True) == []
+
+
+def test_the_reconstruction_withholds_nothing_of_the_other_subjects(store):
+    """A subject, and only that subject.
+
+    Health, installation and portfolio say nothing that divides one day of a
+    series by another, so nothing about them is waiting on a backfill. The rule
+    is written on ``subject`` rather than on ``cash_share`` so the next account
+    observation inherits it — which is also what this asserts, on the only
+    surface that can: every family withheld is an accounts family.
+    """
+    _pocket(store)
+
+    withheld = {one.key for one in advisories.standing(store, NOW)} - {
+        one.key for one in advisories.standing(store, NOW, rebuilding=True)}
+    subjects = {one.subject for one in advisories.standing(store, NOW)
+                if one.key in withheld}
+
+    assert subjects == {advisories.SUBJECT_ACCOUNTS}
+
+
+def test_what_cannot_be_listed_cannot_be_put_to_sleep(store):
+    """The gesture follows the listing, and it has to.
+
+    Acknowledging binds for thirty days. An advisory the rebuild is withholding
+    is one the reader was never shown and one the rebuild is about to withdraw
+    on its own, so a gesture that reached it would silence, for a month, a
+    condition nobody observed — which is the very thing :func:`acknowledge`
+    refuses on a figure back under its threshold.
+    """
+    _pocket(store)
+
+    with pytest.raises(advisories.UnknownAdvisory):
+        advisories.acknowledge(store, 'cash_share:pea', NOW, rebuilding=True)
+
+    assert store.query('SELECT count(*) FROM advisory_ack') == [(0,)]
+
+
+# --------------------------------------------------------------------------- #
 # The acknowledgement: thirty days, and never for good
 # --------------------------------------------------------------------------- #
 
