@@ -14,34 +14,66 @@
  * that will not release somebody without a CSV in hand turns the trial into a
  * wall. *Mandatory* here means **traversed, never answered**.
  *
+ * **The drawing was read again** (`docs/design-revamp-v2-onboarding.html`), and
+ * what it decided that this screen did not do is four things:
+ *
+ *  - **the walk is drawn, not merely counted.** `Passage 2 sur 3` states the
+ *    fact and states it only to whoever reads that one line; the rail states it
+ *    as a shape — three marks on one rule, each one filling as it is crossed —
+ *    so a reader who opens the modal knows before reading a word how long this
+ *    is and where they are in it. Numbered markers are the one structural device
+ *    that has to earn itself, and here they do: the passages **are** a sequence,
+ *    walked in order, and the order is what the reader needs. The sentence stays
+ *    underneath as the eyebrow, because a shape is not something a screen reader
+ *    can be given (`aria-current` says *which*, the eyebrow says *how far*);
+ *  - **the way out is spelt** — `Échap pour fermer`, beside the control that
+ *    walks on, and on the first passage alone. The three ways out were always
+ *    there and none of them was written down: a reader looking for a *Later*
+ *    button found the cross only by not finding anything else;
+ *  - **the body holds one height.** Three passages of three different lengths
+ *    made the footer jump under the cursor between one `Continuer` and the next;
+ *  - **the accounts passage offers what it was only naming.** It comes second so
+ *    the notion exists *before* a file naming accounts is handed over — and a
+ *    reader who already knows how their holdings are split had, until here, to
+ *    take that knowledge to another page and come back. The offer is an offer:
+ *    the button opens a form, and the passage is satisfied without it.
+ *
  * Six things about it are decisions:
  *
  *  - **It closes without a button.** The cross, `Escape` and the click outside
  *    *are* the *later*. A `Later` button beside `Save` would give the way out
  *    the same visual weight as the answer, and the answer is the one thing this
- *    surface exists for. That is also why the control that walks the passages is
- *    a **ghost** and the answer is filled: continuing is the walk, never a
+ *    surface exists for. That is also why the control that walks the passages
+ *    carries no colour and the answer does: continuing is the walk, never a
  *    second spelling of the escape hatch, and on the one passage that carries an
- *    answer it must not weigh what the answer weighs. Closing leaves an app that
- *    **works**: the scrape runs and stores the quote in its own currency, and
- *    the ledger is writable — what waits is the conversion and the performance
- *    series, which the notifications panel's pinned card and each valued page's
- *    empty state then say (#829, ADR-0037).
+ *    answer it must not weigh what the answer weighs. It is `secondary` and not
+ *    `ghost` since the drawing was read: a ghost control at the one corner every
+ *    reader is looking for reads as nothing at all, and *quieter than the
+ *    answer* is what the argument asks for — not *invisible*. Closing leaves an
+ *    app that **works**: the scrape runs and stores the quote in its own
+ *    currency, and the ledger is writable — what waits is the conversion and the
+ *    performance series, which the notifications panel's pinned card and each
+ *    valued page's empty state then say (#829, ADR-0037).
  *  - **Three sentences on what the app *is*, and no rule of calculation.**
  *    Explaining the weighted average cost here is exactly what ADR-0016 gives
  *    the convention bubble for: a rule is read beside the figure it governs, not
  *    in a modal read once before any figure exists. They are the frame of the
  *    whole walk and not of its first passage, so they stay put while the body
- *    underneath changes.
+ *    underneath changes. The third one is about **the walk** rather than about
+ *    the currency: the currency is now said where it is asked, one block down,
+ *    and what a reader needs at the top is how long this is and that it releases
+ *    them.
  *  - **The ephemeral-store warning is here**, and it is the only surface *every*
  *    trial user meets: the installation tab is two clicks down, and the boot
  *    lines are at a terminal nobody watching a browser is reading. It does not
  *    leave the tab either — the ceiling loses nothing (#724).
- *  - **The accounts passage shows and demands nothing.** It is satisfied by the
- *    seeded row every install owns — a declaration the owner may decline to add
- *    to — and its whole job is that the notion exists *before* a file naming
- *    accounts is handed over. It reads them to name them, and while that read is
- *    in flight it says nothing at all about them (ADR-0026).
+ *  - **The accounts passage demands nothing.** It is satisfied by the seeded row
+ *    every install owns — a declaration the owner may decline to add to — and
+ *    its whole job is that the notion exists *before* a file naming accounts is
+ *    handed over. It reads them to name them, and while that read is in flight
+ *    it says nothing at all about them (ADR-0026): neither the rows, nor the
+ *    offer to add one, a form opening onto a list nobody can see being a way of
+ *    asking for a name against nothing.
  *  - **The last passage is the ledger's own pair of entrances**, the same
  *    component at equal weight and with no primary action (`EntryPair`), and it
  *    is named for the **events** rather than for the import: naming it *first
@@ -60,13 +92,15 @@
  *    volume ask again** in the browser that answered, rather than only in some
  *    other one. No `onboarding_done` row anywhere.
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { Check, CreditCard, Plus, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { CurrencyField } from '@/components/CurrencyField'
 import { EntryPair } from '@/components/EntryPair'
+import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -75,8 +109,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { api, type ConfigResponse } from '@/lib/api'
-import { DEFAULT_ACCOUNT_LABEL, declaredLabel } from '@/lib/accounts'
+import { Input } from '@/components/ui/input'
+import { api, type AccountDraft, type ConfigResponse } from '@/lib/api'
+import {
+  DEFAULT_ACCOUNT_LABEL,
+  DEFAULT_ACCOUNT_TYPE,
+  declaredLabel,
+  declaredType,
+} from '@/lib/accounts'
 import { suggestedCurrency } from '@/lib/currencies'
 import {
   CURRENCY_KEY,
@@ -92,10 +132,24 @@ import {
   type FirstRunMark,
   type Passage,
 } from '@/lib/firstRun'
-import { useI18n } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
+import { problemSentence } from '@/lib/problem'
 import { receiptMessage } from '@/lib/receipts'
+import { cn } from '@/lib/utils'
 
 const FIELD_ID = 'first-run-currency'
+
+/**
+ * What each passage is called **on the rail**, which is not what its heading
+ * says: a heading has the width of the modal and a mark on a rail has a third
+ * of it, so `Votre devise de base` is `Devise` there. One noun each, and the
+ * three of them name the three nouns of the product.
+ */
+const RAIL: Record<Passage, MessageKey> = {
+  settings: 'firstRun.rail.settings',
+  accounts: 'firstRun.rail.accounts',
+  events: 'firstRun.rail.events',
+}
 
 export function FirstRun() {
   const { t } = useI18n()
@@ -185,99 +239,142 @@ export function FirstRun() {
 
   return (
     <Dialog open onOpenChange={(shown) => (shown ? undefined : leave())}>
-      <DialogContent aria-labelledby="first-run-title" aria-describedby="first-run-what">
-        <DialogHeader>
-          <DialogTitle id="first-run-title">{t('firstRun.title')}</DialogTitle>
+      <DialogContent
+        aria-labelledby="first-run-title"
+        aria-describedby="first-run-what"
+        className="gap-5 sm:max-w-xl"
+      >
+        <DialogHeader className="gap-2.5 pr-8">
+          <DialogTitle id="first-run-title" className="text-xl tracking-tight">
+            {t('firstRun.title')}
+          </DialogTitle>
           {/* Three sentences on what the app *is*, and not one rule of
               calculation: the rules are read beside the figures they govern. */}
-          <DialogDescription id="first-run-what" className="space-y-2">
+          <DialogDescription id="first-run-what" className="space-y-1 leading-relaxed text-pretty">
             <span className="block">{t('firstRun.what.ledger')}</span>
             <span className="block">{t('firstRun.what.quotes')}</span>
-            <span className="block">{t('firstRun.what.currency')}</span>
+            <span className="block">{t('firstRun.what.walk')}</span>
           </DialogDescription>
         </DialogHeader>
 
         {ephemeral ? (
-          <p className="rounded-md border border-attention/40 bg-attention/10 p-3 text-sm text-attention">
-            {t('firstRun.ephemeral')}
+          <p className="flex gap-2.5 rounded-lg border border-attention/40 bg-attention/10 p-3 text-sm leading-relaxed text-attention text-pretty">
+            <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            <span>{t('firstRun.ephemeral')}</span>
           </p>
         ) : null}
 
-        <div className="space-y-3">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        <PassageRail current={passage} />
+
+        {/* **One height for three passages.** The rail is above and the footer
+            below, and both of them moved under the cursor when the body was as
+            tall as whichever passage happened to be showing. */}
+        <div className="min-h-56 space-y-3">
+          <p className="eyebrow font-mono">
             {t('firstRun.step', { step: passageNumber(passage), total: PASSAGES.length })}
           </p>
 
           {/* Passage one — the one question, and a reader who may walk past it. */}
           {passage === 'settings' ? (
             <>
-              <h3 className="font-medium">{t('firstRun.pass.settings.title')}</h3>
-              <p className="text-sm text-muted-foreground">{t('firstRun.pass.settings.body')}</p>
+              <h3 className="text-lg font-semibold tracking-tight">
+                {t('firstRun.pass.settings.title')}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
+                {t('firstRun.pass.settings.body')}
+              </p>
               <form
-                className="space-y-3"
+                className="space-y-2"
                 onSubmit={(event) => {
                   event.preventDefault()
                   if (choice) save.mutate(choice)
                 }}
               >
-                <label htmlFor={FIELD_ID} className="text-sm font-medium">
+                <label htmlFor={FIELD_ID} className="block text-xs font-semibold">
                   {t('settings.base_currency')}
                 </label>
-                <CurrencyField
-                  id={FIELD_ID}
-                  value={choice}
-                  onChange={(value) => {
-                    // A refusal is about the value that was sent. Left standing,
-                    // it reads as this app having refused the code just picked.
-                    if (save.isError) save.reset()
-                    setChoice(value)
-                  }}
-                  // The dial's rule, read off the dial. Here it settles itself —
-                  // the modal only stands on an unanswered one — and it is
-                  // passed rather than assumed, so the field states one rule on
-                  // both of its mounts.
-                  fixed={currencyFixed(config.data?.settings)}
-                  // The note is about **this value**: a reader who overrode the
-                  // suggestion is no longer reading a pre-filled field, and the
-                  // reservation would then be about a code the browser never
-                  // named.
-                  suggested={suggestion !== null && choice === suggestion}
-                />
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={!choice || save.isPending}>
-                    {t('firstRun.save')}
-                  </Button>
-                  {save.isError ? (
-                    <p role="alert" className="text-sm text-destructive">
-                      {t('firstRun.refused')}
-                    </p>
-                  ) : null}
+                {/* **The question is one row**: the field and the gesture that
+                    answers it, side by side. Stacked, the button sat under two
+                    lines of reservation and read as belonging to them. */}
+                <div className="flex flex-wrap items-start gap-2.5">
+                  <div className="min-w-50 flex-1">
+                    <CurrencyField
+                      id={FIELD_ID}
+                      value={choice}
+                      onChange={(value) => {
+                        // A refusal is about the value that was sent. Left
+                        // standing, it reads as this app having refused the code
+                        // just picked.
+                        if (save.isError) save.reset()
+                        setChoice(value)
+                      }}
+                      // The dial's rule, read off the dial. Here it settles
+                      // itself — the modal only stands on an unanswered one —
+                      // and it is passed rather than assumed, so the field
+                      // states one rule on both of its mounts.
+                      fixed={currencyFixed(config.data?.settings)}
+                      // The note is about **this value**: a reader who overrode
+                      // the suggestion is no longer reading a pre-filled field,
+                      // and the reservation would then be about a code the
+                      // browser never named.
+                      suggested={suggestion !== null && choice === suggestion}
+                    />
+                  </div>
+                  {currencyFixed(config.data?.settings) === true ? null : (
+                    <Button type="submit" disabled={!choice || save.isPending}>
+                      {t('firstRun.save')}
+                    </Button>
+                  )}
                 </div>
+                {save.isError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t('firstRun.refused')}
+                  </p>
+                ) : null}
               </form>
             </>
           ) : null}
 
-          {/* Passage two — **satisfied by the seeded row**, and asking nothing.
-              The list is the install's own accounts, named through
+          {/* Passage two — **satisfied by the seeded row**, and demanding
+              nothing. The list is the install's own accounts, named through
               `declaredLabel` so the seeded one reads its catalogue entry rather
-              than the words the schema wrote for whoever opens the file. Nothing
-              at all is rendered about them while the read is in flight: *this is
-              what you own* is a claim about the reader's own installation, and a
-              read that has not landed is not an absence (ADR-0026). */}
+              than the words the schema wrote for whoever opens the file, and
+              carrying on its right the identifier **events actually name** —
+              which is the whole reason this passage comes before the file.
+              Nothing at all is rendered about them while the read is in flight:
+              *this is what you own* is a claim about the reader's own
+              installation, and a read that has not landed is not an absence
+              (ADR-0026). */}
           {passage === 'accounts' ? (
             <>
-              <h3 className="font-medium">{t('firstRun.pass.accounts.title')}</h3>
-              <p className="text-sm text-muted-foreground">{t('firstRun.pass.accounts.body')}</p>
+              <h3 className="text-lg font-semibold tracking-tight">
+                {t('firstRun.pass.accounts.title')}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
+                {t('firstRun.pass.accounts.body')}
+              </p>
               {accounts.data ? (
-                <div className="rounded-lg border p-4">
-                  <p className="text-sm font-medium">{t('firstRun.pass.accounts.yours')}</p>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {accounts.data.accounts.map((account) => (
-                      <li key={account.id}>
-                        {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="space-y-3">
+                  <div className="rounded-xl border bg-muted/30 px-4 py-3.5">
+                    <p className="text-xs font-semibold">{t('firstRun.pass.accounts.yours')}</p>
+                    <ul className="mt-2.5 space-y-1.5">
+                      {accounts.data.accounts.map((account) => (
+                        <li
+                          key={account.id}
+                          className="flex items-center gap-2.5 text-sm text-muted-foreground"
+                        >
+                          <CreditCard aria-hidden className="size-3.5 shrink-0" />
+                          <span className="truncate">
+                            {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                          </span>
+                          <span className="ml-auto shrink-0 font-mono text-2xs">
+                            {account.id} · {declaredType(account) ?? t(DEFAULT_ACCOUNT_TYPE)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <DeclareAccount />
                 </div>
               ) : null}
             </>
@@ -294,8 +391,12 @@ export function FirstRun() {
               Taking neither ends it too, one control down. */}
           {passage === 'events' ? (
             <>
-              <h3 className="font-medium">{t('firstRun.pass.events.title')}</h3>
-              <p className="text-sm text-muted-foreground">{t('firstRun.pass.events.body')}</p>
+              <h3 className="text-lg font-semibold tracking-tight">
+                {t('firstRun.pass.events.title')}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
+                {t('firstRun.pass.events.body')}
+              </p>
               <EntryPair
                 entries={[
                   {
@@ -326,22 +427,323 @@ export function FirstRun() {
           ) : null}
         </div>
 
-        {/* The walk itself, and never the answer: ghost on both, so that on the
-            one passage carrying a filled button the way forward does not weigh
-            what answering weighs (ADR-0021's argument, one control over). */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* The walk itself, and never the answer: quieter than the filled
+            answer on the one passage that carries one, and never a second
+            spelling of the escape hatch (ADR-0021's argument, one control
+            over). The way out is **written** beside it, on the passage where a
+            reader is still deciding whether to be here at all. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
           {back === null ? (
             <span />
           ) : (
-            <Button type="button" variant="ghost" onClick={() => setPassage(back)}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => setPassage(back)}
+            >
               {t('firstRun.back')}
             </Button>
           )}
-          <Button type="button" variant="ghost" onClick={forward}>
-            {last ? t('firstRun.finish') : t('firstRun.next')}
-          </Button>
+          <div className="flex items-center gap-2.5">
+            {back === null ? (
+              <span className="text-xs text-muted-foreground">{t('firstRun.escape')}</span>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={forward}>
+              {last ? t('firstRun.finish') : t('firstRun.next')}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * **The walk, drawn.** Three marks on one rule, joined by segments that fill as
+ * they are crossed — the modal's one piece of ornament, and it is ornament that
+ * carries a fact: how long this is, and where the reader is inside it.
+ *
+ * It is the one place a numbered marker is *earned*. `01 / 02 / 03` down a page
+ * of unordered cards is decoration; here the passages are a sequence, walked in
+ * order, and the number is the reader's position in it. A crossed mark drops its
+ * number for a tick, because at that point *which one it was* has stopped being
+ * the news and *it is behind you* has started.
+ *
+ * **It is not the accessible statement of the same thing, and does not try to
+ * be.** A rule filling with colour is not something a screen reader can be
+ * handed: `aria-current="step"` says which passage is standing, the tick's own
+ * word says which are behind, and the eyebrow under the rail — `Passage 2 sur
+ * 3` — says the whole of it in one sentence. The segments are hidden outright.
+ *
+ * It lives here rather than in `components/` because nothing else mounts it:
+ * it is the walk's own furniture, exactly as `Field` below is the declaration's.
+ */
+function PassageRail({ current }: { current: Passage }) {
+  const { t } = useI18n()
+  const here = PASSAGES.indexOf(current)
+
+  return (
+    <nav aria-label={t('firstRun.rail')} className="flex items-center border-y py-3.5">
+      {PASSAGES.map((passage, index) => {
+        const walked = index < here
+        const standing = index === here
+
+        return (
+          <div
+            key={passage}
+            aria-current={standing ? 'step' : undefined}
+            className="flex min-w-0 flex-1 items-center gap-2.5"
+          >
+            <span
+              className={cn(
+                'inline-flex size-5.5 shrink-0 items-center justify-center rounded-full border font-mono text-2xs font-semibold',
+                walked && 'border-primary bg-primary text-primary-foreground',
+                standing && 'border-primary/60 bg-primary/15 text-foreground',
+                !walked && !standing && 'border-border text-muted-foreground',
+              )}
+            >
+              {walked ? (
+                <>
+                  <Check aria-hidden className="size-3" strokeWidth={3} />
+                  <span className="sr-only">{t('firstRun.rail.walked')}</span>
+                </>
+              ) : (
+                index + 1
+              )}
+            </span>
+            <span
+              className={cn(
+                'min-w-0 truncate text-xs',
+                // The three states are told apart by the **mark**, never by
+                // fading the word: an opacity invented for the dark ground put
+                // the two passages ahead at 2,2:1 on the light one.
+                standing ? 'font-semibold text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {t(RAIL[passage])}
+            </span>
+            {index < PASSAGES.length - 1 ? (
+              <span
+                aria-hidden
+                className={cn(
+                  'h-px min-w-2.5 flex-1',
+                  walked ? 'bg-primary/45' : 'bg-border',
+                )}
+              />
+            ) : null}
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
+
+/**
+ * **Declaring an account from inside the walk** — an offer, and never a demand.
+ *
+ * The passage exists so the notion of an account is there *before* a file naming
+ * accounts is handed over, and until the drawing was read it stopped at naming
+ * them: a reader who already knew their holdings were split across a PEA and a
+ * brokerage account had to leave the walk, find the accounts page, declare, and
+ * come back. The button repairs that and nothing more — it is closed by default,
+ * the passage is satisfied without it, and `Continuer` never waits on it.
+ *
+ * **It is not `AccountForm`, and the difference is the reason.** That panel is
+ * the accounts page's, and two of the three things it carries have no referent
+ * here: a removal, of a row that does not exist yet, and #725's reassignment
+ * offer — a box that says *move the N events naming no account onto this one*,
+ * whose N comes off the ledger. This walk does not read the ledger, deliberately
+ * (`lib/firstRun.ts`: nothing about the modal is derived from the data it is
+ * about to collect), so the count is not in hand and ADR-0026 forbids stating
+ * it. What is left of that panel once both are gone is these three fields, and
+ * they are the store's own: the identifier events name, the type, the name. The
+ * catalogue is shared with it down to the key, so the two forms cannot drift
+ * into saying two different things about one rule.
+ *
+ * The label falls back to the identifier, which is `accounts.create_account`'s
+ * own rule for a file's empty cell — one rule for the two roads in.
+ */
+function DeclareAccount() {
+  const { t } = useI18n()
+  const client = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState({ id: '', type: '', label: '' })
+  const [errors, setErrors] = useState<Partial<Record<'id' | 'type', MessageKey>>>({})
+
+  const write = useMutation({
+    mutationFn: (body: AccountDraft) => api.createAccount(body),
+    onSuccess: () => {
+      // A declaration moves what an event file is allowed to say and what every
+      // page groups by, so the whole cache goes rather than a list of keys that
+      // would drift from the pages reading them — `AccountForm`'s rule, for the
+      // same reason.
+      void client.invalidateQueries()
+      close()
+    },
+  })
+
+  function close() {
+    setOpen(false)
+    setDraft({ id: '', type: '', label: '' })
+    setErrors({})
+    write.reset()
+  }
+
+  function set(field: 'id' | 'type' | 'label', value: string) {
+    setDraft((previous) => ({ ...previous, [field]: value }))
+    setErrors((previous) => ({ ...previous, [field]: undefined }))
+  }
+
+  function submit() {
+    const id = draft.id.trim()
+    const type = draft.type.trim()
+    const found: Partial<Record<'id' | 'type', MessageKey>> = {}
+    if (id === '') found.id = 'accounts.form.required'
+    if (type === '') found.type = 'accounts.form.required'
+
+    setErrors(found)
+    if (Object.values(found).some(Boolean)) return
+
+    const label = draft.label.trim()
+    write.mutate({ id, type, label: label || id })
+  }
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="border-dashed bg-transparent dark:bg-transparent dark:border-border"
+        onClick={() => setOpen(true)}
+      >
+        <Plus aria-hidden />
+        {t('firstRun.pass.accounts.declare')}
+      </Button>
+    )
+  }
+
+  return (
+    <form
+      className="space-y-3 rounded-xl border bg-muted/30 p-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit()
+      }}
+    >
+      <p className="text-xs font-semibold">{t('accounts.form.create.title')}</p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field name="id" label="accounts.form.id" hint="accounts.form.id.hint" error={errors.id}>
+          {(id, described) => (
+            <Input
+              id={id}
+              value={draft.id}
+              autoComplete="off"
+              placeholder="pea"
+              className="font-mono"
+              aria-invalid={errors.id !== undefined}
+              aria-describedby={described}
+              onChange={(changed) => set('id', changed.target.value)}
+            />
+          )}
+        </Field>
+        <Field
+          name="type"
+          label="accounts.form.type"
+          hint="accounts.form.type.hint"
+          error={errors.type}
+        >
+          {(id, described) => (
+            <Input
+              id={id}
+              value={draft.type}
+              autoComplete="off"
+              placeholder="PEA"
+              aria-invalid={errors.type !== undefined}
+              aria-describedby={described}
+              onChange={(changed) => set('type', changed.target.value)}
+            />
+          )}
+        </Field>
+      </div>
+
+      <Field name="label" label="accounts.form.label" optional>
+        {(id, described) => (
+          <Input
+            id={id}
+            value={draft.label}
+            autoComplete="off"
+            aria-describedby={described}
+            onChange={(changed) => set('label', changed.target.value)}
+          />
+        )}
+      </Field>
+
+      {write.error ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={write.isPending}>
+          {t('accounts.form.submit')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={close}>
+          {t('accounts.form.cancel')}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * The declaration's field — the ledger form's, at the modal's measure.
+ *
+ * The identifiers are prefixed `first-run-`: this modal is mounted by the shell
+ * on **every** route, `/accounts` included, so an unprefixed `account-id` would
+ * be the same `id` twice in one document the moment a reader opened the walk
+ * over the page that owns the panel.
+ */
+function Field({
+  name,
+  label,
+  hint,
+  error,
+  optional,
+  children,
+}: {
+  name: 'id' | 'type' | 'label'
+  label: MessageKey
+  /** What the value is for, under the control — never a second label. */
+  hint?: MessageKey
+  error?: MessageKey
+  optional?: boolean
+  children: (id: string, describedBy: string | undefined) => ReactNode
+}) {
+  const { t } = useI18n()
+  const id = `first-run-account-${name}`
+  const errorId = `${id}-error`
+  const hintId = `${id}-hint`
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <label htmlFor={id} className="text-xs font-medium">
+          {t(label)}
+        </label>
+        {optional ? (
+          <span className="text-2xs text-muted-foreground">— {t('data.form.optional')}</span>
+        ) : null}
+      </div>
+      {children(id, error ? errorId : hint ? hintId : undefined)}
+      {error ? (
+        <p id={errorId} className="text-xs text-attention">
+          {t(error)}
+        </p>
+      ) : hint ? (
+        <p id={hintId} className="text-2xs leading-relaxed text-muted-foreground text-pretty">
+          {t(hint)}
+        </p>
+      ) : null}
+    </div>
   )
 }

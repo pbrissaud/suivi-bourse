@@ -36,6 +36,7 @@ import {
   aFrozenScrape,
   aRuntime,
   noAccountsDeclared,
+  theSeededAccount,
 } from '@/test/factories'
 import { renderApp, type RenderAppOptions } from '@/test/render'
 import { server } from '@/test/server'
@@ -93,8 +94,8 @@ async function firstRun(options: RenderAppOptions = {}) {
 type Reader = ReturnType<typeof renderApp>['user']
 
 /**
- * Walk on, one passage at a time. The control is a **ghost** and the answer is
- * filled, which is ADR-0021's *no escape hatch at the weight of the answer* one
+ * Walk on, one passage at a time. The control carries no colour and the answer
+ * does, which is ADR-0021's *no escape hatch at the weight of the answer* one
  * control over: continuing is the walk, not a second spelling of the way out.
  */
 async function walk(user: Reader, passages = 1) {
@@ -125,7 +126,7 @@ describe('the modal opens on a predicate, never on a moment', () => {
   it('opens wherever the reader landed, because first run is not a place', async () => {
     await firstRun({ url: '/shares' })
 
-    expect(within(modal()).getByRole('heading', { name: /une question/ })).toBeInTheDocument()
+    expect(within(modal()).getByRole('heading', { name: /Bienvenue dans SuiviBourse/ })).toBeInTheDocument()
     // The page the reader asked for is behind it — no route of its own, and no
     // redirection conditioned on the data. `hidden`, because a modal dialog
     // hides the rest of the document from the accessibility tree.
@@ -155,9 +156,9 @@ describe('what it says, and what it refuses to say', () => {
     await firstRun()
 
     const described = within(modal())
-    expect(described.getByText(/ce que vous avez acheté, quand, et à quel prix/)).toBeInTheDocument()
-    expect(described.getByText(/va chercher les cours toute seule/)).toBeInTheDocument()
-    expect(described.getByText(/une seule devise/)).toBeInTheDocument()
+    expect(described.getByText(/vos achats et vos ventes : le titre, la date, le prix/)).toBeInTheDocument()
+    expect(described.getByText(/relève les cours tout seul/)).toBeInTheDocument()
+    expect(described.getByText(/Trois passages pour démarrer/)).toBeInTheDocument()
     // ADR-0016 gives a rule its own surface, beside the figure it governs.
     expect(described.queryByText(/PRU|prix de revient|moyen pondéré/i)).not.toBeInTheDocument()
   })
@@ -485,7 +486,7 @@ describe('the walk is three passages, and they are walked in order', () => {
     // One: what the app has to be told, which is one thing and has no default.
     expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
     expect(
-      within(modal()).getByRole('heading', { name: 'Les réglages obligatoires' }),
+      within(modal()).getByRole('heading', { name: 'Votre devise de base' }),
     ).toBeInTheDocument()
     expect(within(modal()).getByLabelText('Devise de base')).toBeInTheDocument()
 
@@ -547,8 +548,214 @@ describe('the walk is three passages, and they are walked in order', () => {
 
     const passage = within(modal())
     expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
-    expect(passage.queryByText(/Ce que cette installation possède/)).not.toBeInTheDocument()
+    expect(passage.queryByText(/Vos comptes actuels/)).not.toBeInTheDocument()
     expect(passage.queryByText('Non affecté')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * **What the drawing decided** (`docs/design-revamp-v2-onboarding.html`), and
+ * what each case here prevents.
+ *
+ * The four are not styling: each one is a thing a reader could not do, or could
+ * not know, before the drawing was read.
+ *
+ *  - a walk whose **length is a sentence and not a shape** — `Passage 2 sur 3`
+ *    is read by whoever reads that line, and by nobody who is scanning;
+ *  - **three ways out and none of them written down** — the reader looking for
+ *    a *Later* button found the cross by not finding anything else;
+ *  - **a passage that names accounts and will not let one be declared**, which
+ *    sent a reader who already knew their split off to another page and back;
+ *  - and, under all three, **a body that changed height** between passages, so
+ *    the control the reader was aiming at moved as they arrived.
+ */
+describe('the walk is drawn, and the drawing carries the facts', () => {
+  it('states where the reader is, as a shape and as a sentence', async () => {
+    const { user } = await firstRun()
+
+    const rail = within(modal()).getByRole('navigation', { name: 'Passages' })
+    // The three nouns of the product, in the order they are walked.
+    expect(rail).toHaveTextContent(/Devise.*Comptes.*Premiers événements/s)
+
+    // Which one is standing is said to the machine as well as drawn.
+    const standing = () => rail.querySelector('[aria-current="step"]')
+    expect(standing()).toHaveTextContent('Devise')
+    // And how far along it is stays a sentence: a rule filling with colour is
+    // not something a screen reader can be handed.
+    expect(within(modal()).getByText('Passage 1 sur 3')).toBeInTheDocument()
+
+    await walk(user)
+    expect(standing()).toHaveTextContent('Comptes')
+    expect(await within(modal()).findByText('Passage 2 sur 3')).toBeInTheDocument()
+  })
+
+  it('says of a crossed passage that it is crossed, and not merely which one it was', async () => {
+    const { user } = await firstRun()
+
+    const rail = () => within(modal()).getByRole('navigation', { name: 'Passages' })
+    expect(within(rail()).queryByText('franchi')).not.toBeInTheDocument()
+
+    await walk(user)
+    // One behind, and the mark has dropped its number for the word: at that
+    // point *which one it was* has stopped being the news.
+    await waitFor(() => expect(within(rail()).getAllByText('franchi')).toHaveLength(1))
+
+    await walk(user)
+    expect(within(rail()).getAllByText('franchi')).toHaveLength(2)
+  })
+
+  it('writes the way out where a reader is still deciding whether to be here', async () => {
+    const { user } = await firstRun()
+
+    // The first passage: no way back, so the corner that would carry one
+    // carries the sentence that says how to leave instead.
+    expect(within(modal()).getByText('Échap pour fermer')).toBeInTheDocument()
+
+    // Past it, the corner is the way back, and the way out is no longer the
+    // question: the reader has already chosen to walk.
+    await walk(user)
+    await waitFor(() =>
+      expect(within(modal()).queryByText('Échap pour fermer')).not.toBeInTheDocument(),
+    )
+    expect(within(modal()).getByRole('button', { name: 'Revenir' })).toBeInTheDocument()
+
+    // And it is still true, which is the only reason it may be written.
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('holds one height across the three, so the control does not move under the cursor', async () => {
+    const { user } = await firstRun()
+
+    const body = () => modal().querySelector('.min-h-56')
+    expect(body()).not.toBeNull()
+
+    await walk(user, 2)
+    expect(await within(modal()).findByText('Passage 3 sur 3')).toBeInTheDocument()
+    expect(body()).not.toBeNull()
+  })
+})
+
+/**
+ * **The accounts passage offers what it was only naming** — and the offer is an
+ * offer.
+ *
+ * The passage comes second so the notion of an account exists *before* a file
+ * naming accounts is handed over; until the drawing was read it stopped at
+ * naming them, and a reader who already knew their holdings were split had to
+ * leave the walk to act on it. Every case below holds one half of *offer*: the
+ * gesture is there, and nothing waits on it.
+ */
+describe('an account can be declared from inside the walk', () => {
+  /** The declaration route, **stateful**: a row declared has to join the list. */
+  function withAccounts(payload = noAccountsDeclared()) {
+    let current = payload
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(current)),
+      http.post(ROUTES.accounts, async ({ request }) => {
+        const draft = (await request.json()) as { id: string; type: string; label: string }
+        const row = { ...theSeededAccount(), ...draft }
+        current = { declared: true, accounts: [...current.accounts, row] }
+        return HttpResponse.json(row, { status: 201 })
+      }),
+    )
+  }
+
+  it('names the rows by the identifier events carry, which is why this comes before the file', async () => {
+    withAccounts()
+    const { user } = await firstRun()
+    await walk(user)
+
+    const passage = within(modal())
+    expect(await passage.findByText('Vos comptes actuels')).toBeInTheDocument()
+    // The catalogue's name for the row nobody declared, and beside it the value
+    // a `.csv` would have to spell to land on it.
+    expect(passage.getByText('Non affecté')).toBeInTheDocument()
+    expect(passage.getByText('default · Autre')).toBeInTheDocument()
+  })
+
+  it('is closed until it is asked for, and the passage is satisfied without it', async () => {
+    withAccounts()
+    const { user } = await firstRun()
+    await walk(user)
+
+    const passage = within(modal())
+    expect(await passage.findByRole('button', { name: 'Déclarer un compte' })).toBeInTheDocument()
+    // Nothing is being asked for: no field is on screen, and walking on never
+    // waits on one. *Mandatory* here is traversed, never answered.
+    expect(passage.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(passage.getByRole('button', { name: 'Continuer' })).toBeEnabled()
+  })
+
+  it('declares, and the row joins the list the reader is looking at', async () => {
+    withAccounts()
+    const { user } = await firstRun()
+    await walk(user)
+
+    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.type(within(modal()).getByLabelText('Identifiant'), 'pea')
+    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
+    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+
+    // Declared, and read back: the list is the installation's own accounts, so
+    // the row is there because the server has it and not because a form said so.
+    expect(await within(modal()).findByText('pea · PEA')).toBeInTheDocument()
+    // The form closes behind it — the offer is not a place the reader stays.
+    await waitFor(() =>
+      expect(within(modal()).queryByLabelText('Identifiant')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('does not ask the server for a row it can see is incomplete', async () => {
+    withAccounts()
+    const writes = writesMade()
+    const { user } = await firstRun()
+    await walk(user)
+
+    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+
+    // The two required fields say so where they are, and nothing crossed the
+    // wire to be told what this form already knew.
+    expect(within(modal()).getAllByText('Ce champ est obligatoire.')).toHaveLength(2)
+    expect(writes).not.toContain('POST /api/accounts')
+  })
+
+  it('carries the server’s refusal beside the button that earned it', async () => {
+    server.use(
+      http.get(ROUTES.accounts, () => HttpResponse.json(noAccountsDeclared())),
+      http.post(ROUTES.accounts, () =>
+        HttpResponse.json(
+          { type: PROBLEM_TYPES.conflict, title: 'Conflict', status: 409 },
+          { status: 409, headers: { 'content-type': 'application/problem+json' } },
+        ),
+      ),
+    )
+    const { user } = await firstRun()
+    await walk(user)
+
+    await user.click(await within(modal()).findByRole('button', { name: 'Déclarer un compte' }))
+    await user.type(within(modal()).getByLabelText('Identifiant'), 'default')
+    await user.type(within(modal()).getByLabelText('Type'), 'PEA')
+    await user.click(within(modal()).getByRole('button', { name: 'Déclarer ce compte' }))
+
+    // The refusal is in the form, and the form stays open on what was typed:
+    // a gesture the server refused is answered beside the control that made it.
+    expect(await within(modal()).findByRole('status')).toBeInTheDocument()
+    expect(within(modal()).getByLabelText('Identifiant')).toHaveValue('default')
+  })
+
+  it('offers nothing at all while the accounts read is in flight', async () => {
+    // ADR-0026, on the offer as much as on the list: a form asking which
+    // identifier is free, over a list nobody can see, asks for a name against
+    // nothing.
+    server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
+    const { user } = await firstRun()
+    await walk(user)
+
+    const passage = within(modal())
+    expect(await passage.findByRole('heading', { name: 'Vos comptes' })).toBeInTheDocument()
+    expect(passage.queryByRole('button', { name: 'Déclarer un compte' })).not.toBeInTheDocument()
   })
 })
 
@@ -571,7 +778,7 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     // recommendation, and it would be wrong for whichever reader it misses. Both
     // doors are outlined, which is what *equal weight* is made of.
     expect(pair.getByRole('link', { name: 'Saisir un événement' }).className).toContain('border')
-    expect(pair.getByRole('link', { name: 'Remettre un fichier' }).className).toContain('border')
+    expect(pair.getByRole('link', { name: 'Choisir un fichier…' }).className).toContain('border')
   })
 
   it('states no emptiness: it offers two doors before anything has been read', async () => {
@@ -588,7 +795,7 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     const { user } = await firstRun()
     await walk(user, 2)
 
-    await user.click(await within(modal()).findByRole('link', { name: 'Remettre un fichier' }))
+    await user.click(await within(modal()).findByRole('link', { name: 'Choisir un fichier…' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     // Not merely `/ledger`: the target the file is actually handed to, which is

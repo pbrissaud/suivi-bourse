@@ -302,6 +302,25 @@
 > every browser that has already closed the old modal. Nothing in the predicate
 > reads the data the walk collects, which is what answers #726's refusal: an
 > emptied ledger reopens nothing.
+>
+> **And its own drawing was read** (`docs/design-revamp-v2-onboarding.html`),
+> which decided four things the walk did not do. The passages are **drawn** and
+> not merely counted: a rail of three marks joined by rules that fill as they are
+> crossed, `aria-current="step"` saying which is standing and the eyebrow under
+> it still saying *Passage 2 sur 3* — a rule filling with colour is not something
+> a screen reader can be handed. The way out is **written** (`Échap pour fermer`)
+> beside the control that walks on, and on the first passage alone, where a
+> reader is still deciding whether to be here; the three ways out were always
+> there and none of them was spelt. The body **holds one height**, the footer
+> having jumped under the cursor between one `Continuer` and the next. And the
+> accounts passage **offers what it was only naming**: a dashed control opens a
+> three-field declaration, closed by default, that `Continuer` never waits on —
+> it is not `AccountForm`, because that panel's removal has no row to act on here
+> and #725's reassignment box states a count off the ledger, which this walk
+> deliberately does not read (ADR-0026). The catalogue is shared with it key for
+> key, so the two cannot drift. The forward control is `secondary` rather than
+> `ghost`: *quieter than the answer* is what ADR-0021 asks for, and a ghost at
+> the one corner every reader looks at reads as nothing at all.
 > **ADR-0029 has landed** (#788): the preset below is the one the app runs on.
 > **ADR-0028 has landed whole** (#792, #793): the accounts page is the
 > master-detail described below, and it is where an account is declared, renamed
