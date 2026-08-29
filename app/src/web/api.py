@@ -143,7 +143,7 @@ def _unreplayable(exc: AggregationError, gesture: str):
     """The one answer every route gives an oversell (issue #824).
 
     Written once, because it is one refusal met from several sides and the
-    mapping — the exception's four members onto the problem's four extension
+    mapping — the exception's five members onto the problem's five extension
     members — must not exist in seven copies that can drift apart. What each
     caller supplies is the only thing it alone knows: which **gesture** was
     refused, ``write`` or ``remove``. The reader is told two different pieces of
@@ -156,7 +156,8 @@ def _unreplayable(exc: AggregationError, gesture: str):
     return unreplayable(
         str(exc), gesture,
         symbol=exc.symbol, wanted=exc.wanted, owned=exc.owned,
-        day=exc.day.isoformat() if exc.day is not None else None)
+        day=exc.day.isoformat() if exc.day is not None else None,
+        account=exc.account)
 
 
 @api_bp.errorhandler(Exception)

@@ -143,7 +143,8 @@ GESTURE_REMOVE = 'remove'
 def unreplayable(detail: str, gesture: str, symbol: Optional[str] = None,
                  wanted: Optional[float] = None,
                  owned: Optional[float] = None,
-                 day: Optional[str] = None):
+                 day: Optional[str] = None,
+                 account: Optional[str] = None):
     """409 — the ledger this gesture would leave does not replay (issue #824).
 
     :func:`conflict`'s status and not its sentence. The four routes that meet an
@@ -161,6 +162,14 @@ def unreplayable(detail: str, gesture: str, symbol: Optional[str] = None,
     :class:`~events.aggregator.AggregationError` raised somewhere that does not
     know them must be answerable all the same.
 
+    ``account`` joins them because ``owned`` is a figure about **one account**
+    and never about the ledger entire: a position is keyed by ``(account,
+    symbol)``, so a file whose rows land one account over is refused with
+    ``owned`` at ``0`` on a security the reader demonstrably holds. Naming the
+    account is what lets the sentence be about *placement* when placement is
+    what went wrong — one more member rather than a second problem type, the
+    refusal being the same refusal met with one more fact.
+
     ``detail`` stays the exception's own message, unchanged: it is what a log
     and a ``curl`` read, and it is deliberately not what a page renders.
     """
@@ -173,6 +182,8 @@ def unreplayable(detail: str, gesture: str, symbol: Optional[str] = None,
         extra['owned'] = owned
     if day is not None:
         extra['day'] = day
+    if account is not None:
+        extra['account'] = account
     return problem(
         409, 'Ledger does not replay', detail, TYPE_UNREPLAYABLE, **extra)
 

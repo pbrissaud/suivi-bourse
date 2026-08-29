@@ -274,6 +274,40 @@ describe('the oversell says a sentence with values in it (#824)', () => {
     expect(formatMessage('en', said.message, said.values)).toContain('10.5')
   })
 
+  it('names the account the count is about, when the server sends one', () => {
+    // `owned` is what **one account** holds — the server keys a position by
+    // `(account, symbol)` — so *your ledger holds 0* is the wrong sentence as
+    // soon as an install has two accounts, and wrong in the commonest way this
+    // refusal is met: rows landing one account over. The sentence has to be
+    // able to say *this account*, or it contradicts a reader whose own shares
+    // page shows them holding the security.
+    const values = { symbol: 'EMEIS.PA', wanted: 3, owned: 0, account: 'PEA.LCL' }
+    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
+      .toEqual({ message: 'problem.unreplayableLedger.write.inAccount', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'remove' })))
+      .toEqual({ message: 'problem.unreplayableLedger.remove.inAccount', values })
+
+    for (const language of ['fr', 'en'] as const) {
+      const said = problemMessage(oversell({ ...values, gesture: 'write' }))
+      const sentence = formatMessage(language, said.message, said.values)
+      expect(sentence).toContain('PEA.LCL')
+      expect(sentence).toContain('EMEIS.PA')
+      expect(sentence).not.toContain('{')
+    }
+  })
+
+  it('keeps the two sentences without an account for a payload that has none', () => {
+    // The member is optional on the wire — an `AggregationError` raised where
+    // no account is known leaves it absent — so the pair that says nothing
+    // about accounts is not dead code, and a member of the wrong shape is an
+    // absent member rather than a cast.
+    const values = { symbol: 'AAPL', wanted: 12, owned: 10 }
+    expect(problemMessage(oversell({ ...values, gesture: 'write' })))
+      .toEqual({ message: 'problem.unreplayableLedger.write', values })
+    expect(problemMessage(oversell({ ...values, gesture: 'write', account: 42 })))
+      .toEqual({ message: 'problem.unreplayableLedger.write', values })
+  })
+
   it('agrees the counted noun with the quantity, from the catalogue', () => {
     // A file selling one share of a security never bought is reachable, and
     // *vend 1 parts* / *sells 1 shares* is the catalogue rendering its own

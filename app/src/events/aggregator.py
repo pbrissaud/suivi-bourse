@@ -31,11 +31,21 @@ class AggregationError(Exception):
     what it was. The sentence — ``Cannot sell 12.0 shares of AAPL (only 10.0
     owned) on 2024-09-15`` — is English the server writes for a log and for the
     ``detail`` a ``curl`` reads, and ADR-0024 forbids rendering it to a reader;
-    the four members below are the same facts **as data**, which a front can put
+    the five members below are the same facts **as data**, which a front can put
     in its own language. Re-deriving them by parsing the message would be the
     prose becoming a contract.
 
-    All four are optional and default to ``None``: the oversell in
+    **``account`` is one of them, and leaving it out was a defect of its own.**
+    A position is keyed by ``(account, symbol)`` (:meth:`EventAggregator.
+    replay`), so ``owned`` is never *what the ledger holds* — it is what **one
+    account** holds, and the two read alike only on an install that declared
+    one. Without it, rows landing one account over are announced as a ledger
+    contradiction: the reader is told they hold none of a security their own
+    screens show them holding, and nothing on the wire says the refusal is about
+    **placement** rather than about quantity. It stays out of the message, which
+    does not move; it goes beside it, where a front can say it.
+
+    All five are optional and default to ``None``: the oversell in
     :meth:`EventAggregator._process_sell` is the only place that knows them
     today, and a later raise from somewhere that does not must be able to say
     so rather than promise a symbol it has not got.
@@ -44,7 +54,8 @@ class AggregationError(Exception):
     def __init__(self, message: str, *, symbol: Optional[str] = None,
                  wanted: Optional[float] = None,
                  owned: Optional[float] = None,
-                 day: Optional[date] = None):
+                 day: Optional[date] = None,
+                 account: Optional[str] = None):
         super().__init__(message)
         #: The security the refusal is about.
         self.symbol = symbol
@@ -54,6 +65,8 @@ class AggregationError(Exception):
         self.owned = owned
         #: The calendar day of the sale that does not replay.
         self.day = day
+        #: The account ``owned`` is counted in — the key's other half.
+        self.account = account
 
 
 class EventAggregator:
@@ -287,14 +300,17 @@ class EventAggregator:
         if quantity > state.quantity + DUST_FRACTION * acquired:
             # The message is **word for word** what it has always been: it goes
             # into the logs and into the problem's ``detail``, and changing it
-            # would break the sentence a `curl` reads. The four members beside
+            # would break the sentence a `curl` reads. The five members beside
             # it are the same facts as data (issue #824), posted here because
-            # this is the only place that holds all four.
+            # this is the only place that holds all five — ``state.account``
+            # included, which is the half of the position's key ``owned`` is
+            # counted under, and without which *only 0.0 owned* is a sentence
+            # about a ledger rather than about one account of it.
             raise AggregationError(
                 f"Cannot sell {quantity} shares of {event.symbol} "
                 f"(only {state.quantity} owned) on {event.date}",
                 symbol=event.symbol, wanted=quantity, owned=state.quantity,
-                day=event.date)
+                day=event.date, account=state.account)
         quantity = min(quantity, state.quantity)
 
         unit = unit_cost(state.quantity, state.cost_basis) or 0.0

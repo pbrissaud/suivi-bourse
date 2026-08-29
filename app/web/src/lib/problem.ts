@@ -106,6 +106,18 @@ function quantity(problem: ApiProblem, member: string): number | null {
  * The oversell is the one type that reaches its own branch, and it takes it
  * only when the server sent the three facts. Absent them there is still a true
  * sentence to say, and it is the table's.
+ *
+ * **`account` selects a fourth and fifth sentence rather than joining the two.**
+ * `owned` is what *one account* holds — a position is keyed by `(account,
+ * symbol)` on the server — so *your ledger holds 0 of them* is the wrong
+ * sentence the moment more than one account exists, and it is wrong in the
+ * commonest way this refusal is met: rows landing one account over, which the
+ * import's own account question makes an ordinary mistake rather than a rare
+ * one. Naming the account turns *you do not hold this* into *this account does
+ * not*, which is the difference between contradicting the reader and telling
+ * them where to look. The member is optional on the wire, so the two sentences
+ * without it stay exactly as they were and go on being what an older server
+ * reaches.
  */
 export function problemMessage(error: unknown): {
   message: MessageKey
@@ -122,6 +134,15 @@ export function problemMessage(error: unknown): {
       // drift, and the writing sentence is the one that is true of a file —
       // which is how the refusal is overwhelmingly met.
       const removing = text(error, 'gesture') === 'remove'
+      const account = text(error, 'account')
+      if (account !== null) {
+        return {
+          message: removing
+            ? 'problem.unreplayableLedger.remove.inAccount'
+            : 'problem.unreplayableLedger.write.inAccount',
+          values: { symbol, wanted, owned, account },
+        }
+      }
       return {
         message: removing
           ? 'problem.unreplayableLedger.remove'

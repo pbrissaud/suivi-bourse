@@ -563,6 +563,8 @@
   "problem.unreplayableLedger": "Refused, and nothing changed: the ledger would end up selling shares it does not hold.",
   "problem.unreplayableLedger.write": "The app refused and wrote nothing: this sells {wanted, plural, one {{wanted, number, ::.####} share} other {{wanted, number, ::.####} shares}} of {symbol}, and your ledger holds {owned, number, ::.####} of them that day.",
   "problem.unreplayableLedger.remove": "The app refused and removed nothing: a later sale of {symbol} rests on this — it sells {wanted, plural, one {{wanted, number, ::.####} share} other {{wanted, number, ::.####} shares}}, and {owned, number, ::.####} would be left.",
+  "problem.unreplayableLedger.write.inAccount": "The app refused and wrote nothing: this sells {wanted, plural, one {{wanted, number, ::.####} share} other {{wanted, number, ::.####} shares}} of {symbol} out of the {account} account, and that account holds {owned, number, ::.####} of them that day. If these rows belong to another account, it is the account to correct, not the file.",
+  "problem.unreplayableLedger.remove.inAccount": "The app refused and removed nothing: a later sale of {symbol} in the {account} account rests on this — it sells {wanted, plural, one {{wanted, number, ::.####} share} other {{wanted, number, ::.####} shares}}, and {owned, number, ::.####} would be left.",
   "problem.invalidFile": "The app refused this file and wrote nothing. Check that it is an event ledger, that the accounts it names are declared, and that its columns are the ones the export writes.",
   "problem.tooLarge": "This file is larger than the app takes in one go. Export a narrower range, or split it.",
   "problem.internal": "The app hit an error it did not expect.",

@@ -2359,6 +2359,55 @@ def test_an_oversell_answers_a_type_of_its_own_and_writes_nothing(tmp_path):
     assert opened.query('SELECT count(*) FROM event') == [(1,)]
 
 
+def test_the_oversell_names_the_account_its_count_is_about(tmp_path):
+    """``owned`` is a figure about **one account**, and it now says which.
+
+    A position is keyed by ``(account, symbol)``, so *only 0.0 owned* is true of
+    an account and not of a ledger. Left unsaid, the commonest way to produce
+    this refusal — rows landing one account over — reads as the app contradicting
+    the reader about their own holdings: they are told they hold none of a
+    security the shares page shows them holding, with nothing on the wire
+    pointing at placement.
+
+    The English ``detail`` does not move. The fact travels beside it, as data,
+    for the front to say in the reader's language (ADR-0024).
+    """
+    client, opened = build_client_and_store(tmp_path, accounts=ACCOUNTS_FILE)
+    client.post('/api/events', json=_draft(quantity=10, account='pea'))
+
+    # The same security, the same day, sold out of the account that holds none
+    # of it — which is what a correspondence answered wrong produces.
+    response = client.post('/api/events', json=_draft(
+        date='2024-06-10', event_type='SELL', quantity=3, unit_price=180.0,
+        account='default'))
+
+    assert response.status_code == 409
+    assert response.get_json()['account'] == 'default'
+    assert response.get_json()['owned'] == 0.0
+    # And the account that does hold them is untouched by the refusal.
+    assert opened.query(
+        "SELECT count(*) FROM event WHERE account = 'pea'") == [(1,)]
+
+
+def test_an_oversell_that_knows_no_account_still_answers(tmp_path):
+    """The member is optional, exactly as the other four are.
+
+    :class:`~events.aggregator.AggregationError` admits every member being
+    absent — a raise from somewhere that does not know them — so nothing here
+    may require the account to be present. The install that declared no account
+    names the seeded one and says so; what must not happen is a member promised
+    and missing.
+    """
+    client, _ = build_client_and_store(tmp_path)
+    client.post('/api/events', json=_draft(quantity=10))
+
+    response = client.post('/api/events', json=_draft(
+        date='2024-06-10', event_type='SELL', quantity=12, unit_price=180.0))
+
+    assert response.status_code == 409
+    assert response.get_json()['account'] == 'default'
+
+
 def test_the_refused_gesture_is_named_rather_than_deduced(tmp_path):
     """*Your file oversells* and *what you are taking away is depended on*.
 
