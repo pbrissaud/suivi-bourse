@@ -392,7 +392,16 @@ export function AccountsRail({
  * It is `sticky` while being its own horizontal scroller, which is the
  * drawing's arrangement and works because the two axes are independent: the row
  * scrolls its chips sideways and stays put vertically. The page's ground and a
- * shadow are what say the detail passes **under** it.
+ * hairline are what say the detail passes **under** it.
+ *
+ * **A chip is not a card**, and that is the one thing about it that is drawn
+ * rather than arranged. Bordered and filled with the card's own ground, two of
+ * them read as two objects of the page — and the second is *clipped by the
+ * viewport*, which is a card cut in half at the edge of a phone. What the row
+ * is is one control with several options, so the ground and the edge go: a chip
+ * is a colour, a name and its figures, and the one in force is the only one
+ * filled. The bar keeps a hairline under it rather than a shadow, a shadow
+ * being the other half of what made the strip read as a raised card.
  */
 export function AccountsChips({
   rows,
@@ -409,7 +418,7 @@ export function AccountsChips({
     <div
       role="group"
       aria-label={t('accounts.rail.label')}
-      className="sticky top-0 z-10 -mt-1.5 flex gap-2 overflow-x-auto overflow-y-hidden bg-background py-2.5 shadow-md wide:hidden"
+      className="sticky top-0 z-10 -mt-1.5 flex gap-1 overflow-x-auto overflow-y-hidden border-b bg-background py-2.5 wide:hidden"
     >
       {rows.map((row, index) => {
         const performance = onContributed(row.gain_absolu, row.net_contributed)
@@ -420,8 +429,8 @@ export function AccountsChips({
             search={{ account: row.id }}
             aria-current={row.id === selected ? 'true' : undefined}
             className={cn(
-              'flex shrink-0 items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2.25',
-              row.id === selected && 'border-primary/50 bg-muted',
+              'flex shrink-0 items-center gap-2.5 rounded-full px-3 py-1.5 text-muted-foreground',
+              row.id === selected && 'bg-muted text-foreground',
             )}
           >
             <span
