@@ -66,9 +66,9 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
   const dividends = rows.reduce((sum, row) => sum + row.dividends, 0)
 
   return (
-    <section className="rounded-lg border">
+    <section className="rounded-xl border bg-card">
       <h2 className="sr-only">{t('shares.closed.label')}</h2>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5">
         <button
           type="button"
           aria-expanded={open}
@@ -85,11 +85,15 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
         {/* The summary line — the information is legible folded. */}
         <span className="text-sm text-muted-foreground">
           {t('shares.column.realised')}{' '}
-          <span className={`tabular ${signClass(realised)}`}>{f.currency(realised, currency)}</span>
+          <span className={`tabular font-mono ${signClass(realised)}`}>
+            {f.currency(realised, currency)}
+          </span>
         </span>
         <span className="text-sm text-muted-foreground">
           {t('shares.column.dividends')}{' '}
-          <span className={`tabular ${signClass(0)}`}>{f.currency(dividends, currency)}</span>
+          <span className={`tabular font-mono ${signClass(0)}`}>
+            {f.currency(dividends, currency)}
+          </span>
         </span>
       </div>
 
@@ -112,12 +116,14 @@ export function ClosedShares({ rows, currency, onSelect }: ClosedSharesProps) {
                   <TableCell>
                     <button
                       type="button"
-                      className="font-medium underline-offset-4 hover:underline"
+                      className="text-md font-medium underline-offset-4 hover:underline"
                       onClick={() => onSelect(row.symbol)}
                     >
                       {row.name ?? row.symbol}
                     </button>
-                    <span className="block text-xs text-muted-foreground">{row.symbol}</span>
+                    <span className="block font-mono text-2xs text-muted-foreground">
+                      {row.symbol}
+                    </span>
                   </TableCell>
                   {/* The one column that discriminates these rows. An em dash
                       where the store has no date: there is nothing to compute. */}

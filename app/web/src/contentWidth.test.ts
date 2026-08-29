@@ -8,7 +8,7 @@
  * it is the flex sibling of the grid one next door. `SidebarInset` is a flex
  * item beside the navigation, so its `min-width` resolves to `auto` — *never
  * narrower than my content* — and a table wider than the column therefore
- * **grew the column** instead of scrolling inside it. Measured on `/titres`
+ * **grew the column** instead of scrolling inside it. Measured on `/shares`
  * against a real API at the five prescribed widths: the page itself overflowed
  * by 256 px at 768 and by 238 px at 976, and the `overflow-x-auto` that
  * `components/ui/table.tsx` wraps around every table did nothing whatsoever —

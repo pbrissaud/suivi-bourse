@@ -60,20 +60,40 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
  * Absent, unreadable or anything but `false`, the navigation is open: the fold
  * is the choice, and *not remembered* has to fall back to the ordinary state.
  */
-function navigationWasFolded(): boolean {
+function navigationWasFolded(): boolean | null {
   try {
-    return document.cookie
+    const stored = document.cookie
       .split('; ')
-      .some((entry) => entry === 'sidebar_state=false')
+      .find((entry) => entry.startsWith('sidebar_state='))
+    if (stored === undefined) return null
+    return stored === 'sidebar_state=false'
   } catch {
     // A document that refuses cookies is not a reason to refuse a navigation.
-    return false
+    return null
   }
+}
+
+/**
+ * **And where nothing was ever chosen, the width chooses** (#838).
+ *
+ * The drawing folds the navigation to its rail below 1 024 px and leaves it
+ * open above — not as a breakpoint on the component, but as the *default* a
+ * reader who has never pressed the toggle gets. That is the difference between
+ * `null` and `false` above: a fold that was chosen is honoured at every width,
+ * and one that was never chosen is the one the room decides. Under 768 px the
+ * question does not arise — the navigation is a drawer there, and the component
+ * owns that.
+ */
+const WIDE_ENOUGH_TO_LEAVE_IT_OPEN = 1024
+
+function navigationOpens(): boolean {
+  const folded = navigationWasFolded()
+  return folded === null ? window.innerWidth >= WIDE_ENOUGH_TO_LEAVE_IT_OPEN : !folded
 }
 
 export function Shell() {
   return (
-    <SidebarProvider defaultOpen={!navigationWasFolded()}>
+    <SidebarProvider defaultOpen={navigationOpens()}>
       <AppSidebar />
       {/* `min-w-0`, and it is not cosmetic — see the header comment: without it
           a table wider than the column takes the whole page sideways with it,
@@ -84,11 +104,13 @@ export function Shell() {
             column — the padding, and nothing else. `mx-auto` went with the cap:
             centring a column that fills its parent does nothing, and what it
             centred in was never the viewport. */}
-        <div className="w-full p-6">
+        {/* The page's gutter is the header's, and it is the drawing's ladder:
+            14 px on a phone, 20 from `md`, 28 from `lg`. */}
+        <div className="w-full p-3.5 md:p-5 lg:p-7">
           <Outlet />
         </div>
         {/* Mounted by the shell and not by a route: *first run* is a predicate,
-            not a place, and it is as true on `/titres` as on `/` (#726). */}
+            not a place, and it is as true on `/shares` as on `/` (#726). */}
         <FirstRun />
       </SidebarInset>
     </SidebarProvider>

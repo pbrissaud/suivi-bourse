@@ -332,6 +332,13 @@ export interface AccountRow {
    * so the detail could not read it off `/api/positions` with the other three.
    */
   transfer_fees: number | null
+  /**
+   * The time-weighted index on 100, read as a move by the surfaces that show
+   * it. It is the second of the two rates the account's detail carries since
+   * #838 — the drawing puts it under the annualised one rather than in a card
+   * of its own.
+   */
+  twr_index: number | null
 }
 
 /**
@@ -360,6 +367,7 @@ export function buildAccountRows(accounts: readonly Account[]): AccountRow[] {
     gain_absolu: account.gain_absolu ?? null,
     xirr: account.xirr ?? null,
     transfer_fees: account.transfer_fees ?? null,
+    twr_index: account.twr_index ?? null,
   }))
 }
 
@@ -813,4 +821,26 @@ export function submittedAccount(choice: AccountChoice, typed: string): Submitte
     case 'failed':
       return { error: 'data.form.account.failed' }
   }
+}
+
+/**
+ * **The identity wheel** — which account a mark belongs to, said in hue (#838).
+ *
+ * It was `AccountsRail`'s and it is now shared, because the dashboard's
+ * comparison draws the same accounts as the rail and two wheels would put one
+ * account in two colours on two surfaces. The twelve allocation stops are
+ * deliberately not reused: those encode **rank** on a sorted, legended figure,
+ * where this says *which account* — which is what a hue does and a lightness
+ * does not.
+ *
+ * **It starts on the accent's own hue** (#787), `165`, and turns by sixty
+ * degrees from there. An identity palette cannot be one colour — that is the
+ * whole of what it is for — but it can start somewhere rather than nowhere: at
+ * `264` the first account, which on most installs is the only one anybody looks
+ * at, was drawn in a blue the product uses nowhere.
+ */
+const ACCOUNT_HUES = [165, 225, 285, 345, 45, 105] as const
+
+export function accountColour(index: number): string {
+  return `oklch(0.62 0.15 ${ACCOUNT_HUES[index % ACCOUNT_HUES.length]})`
 }

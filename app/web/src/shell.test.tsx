@@ -136,9 +136,9 @@ describe('the navigation, five entries in three and two (ADR-0038)', () => {
   })
 
   it('answers on its own address, so a bookmark on the settings survives', async () => {
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
 
-    // It is not `/donnees#installation` under a shorter name: a hash names a
+    // It is not `/ledger#installation` under a shorter name: a hash names a
     // tab, and ADR-0038 took the tab bar away.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
   })
@@ -199,12 +199,12 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande votre attention/))
   })
 
   it('stays green while everything is running', async () => {
     renderApp()
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/va bien/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/Tout fonctionne/))
   })
 
   it('is red when the app is not answering at all', async () => {
@@ -247,7 +247,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
   it('opens onto a panel that says the state in prose, and leads to the settings', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     const { user } = renderApp()
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande votre attention/))
 
     await user.click(bell())
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
@@ -266,7 +266,7 @@ describe('the bell is the one global indicator (#829, ADR-0036, ADR-0037)', () =
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     renderApp()
 
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande un regard/))
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/demande votre attention/))
     expect(screen.queryByText('Système opérationnel')).not.toBeInTheDocument()
   })
 
@@ -372,7 +372,7 @@ describe('the density, the reader’s third preference', () => {
       }),
     )
 
-    const { user, unmount } = renderApp({ url: '/titres' })
+    const { user, unmount } = renderApp({ url: '/shares' })
     const table = await screen.findByRole('table')
     expect(table).toHaveAttribute('data-density', 'comfortable')
 
@@ -380,7 +380,7 @@ describe('the density, the reader’s third preference', () => {
     await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))
 
     unmount()
-    renderApp({ url: '/titres' })
+    renderApp({ url: '/shares' })
     // Read back from the browser, where the three preferences live — the store
     // has no dial for any of them.
     await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'))

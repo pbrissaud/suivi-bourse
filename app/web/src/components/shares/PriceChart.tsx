@@ -93,7 +93,7 @@ export function PriceChart({
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium">{t('shares.chart.title')}</h3>
+        <h3 className="eyebrow">{t('shares.chart.title')}</h3>
         {/* One control, one radio group — the reader sets the range once. */}
         <div role="radiogroup" aria-label={t('shares.chart.range')} className="flex gap-1">
           {CHART_WINDOWS.map((candidate) => (

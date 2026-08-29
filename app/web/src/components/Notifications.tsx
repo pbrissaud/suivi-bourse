@@ -79,6 +79,26 @@ const SUBJECT_LABELS: Record<Subject, MessageKey> = {
   accounts: 'notification.subject.accounts',
 }
 
+/**
+ * **The subject, as a chip on the card rather than as a heading over a group**
+ * (#838). The drawing lays the panel out as one list and marks each card with
+ * what it is *about*: a drawer of three entries under three headings of one
+ * line each is a table of contents for three lines.
+ *
+ * The tone is the subject's, not the register's — the register decides what a
+ * card *offers* and is never a word on screen (ADR-0037). Health takes the
+ * bell's own colour, since a health card is only ever raised on `attention` or
+ * `unreachable`; the two that ask the owner to look at something take the
+ * attention colour; the accounts take the one mark of the preset that is
+ * neither of those.
+ */
+const SUBJECT_TONE: Record<Subject, string> = {
+  health: 'bg-attention/14 text-attention',
+  installation: 'bg-attention/14 text-attention',
+  portfolio: 'bg-attention/14 text-attention',
+  accounts: 'bg-dividend/16 text-dividend',
+}
+
 export function Notifications() {
   const { t } = useI18n()
   const f = useFormatters()
@@ -163,7 +183,7 @@ export function Notifications() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="relative flex size-7 items-center justify-center rounded-md hover:bg-accent"
+        className="relative flex size-8 items-center justify-center rounded-lg hover:bg-accent"
         // **Two channels in one name.** The state is the icon's colour, which
         // says nothing to a screen reader, and the count is the badge, which is
         // `aria-hidden` for the same reason every figure drawn twice is. The
@@ -182,7 +202,7 @@ export function Notifications() {
         {pending || count === 0 ? null : (
           <span
             aria-hidden
-            className="tabular absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-muted-foreground px-1 text-[10px] leading-4 font-semibold text-background"
+            className="tabular absolute top-0.5 right-0 inline-flex h-3.75 min-w-3.75 items-center justify-center rounded-full bg-muted-foreground px-1 text-2xs leading-none font-bold text-background"
           >
             {count}
           </span>
@@ -194,9 +214,9 @@ export function Notifications() {
         sideOffset={8}
         collisionPadding={16}
         aria-label={t('notification.title')}
-        className="flex max-h-[min(32rem,calc(100vh-6rem))] w-[min(24rem,calc(100vw-2rem))] flex-col gap-0 p-0"
+        className="flex max-h-[min(72vh,calc(100vh-6rem))] w-[min(26.25rem,calc(100vw-2rem))] flex-col gap-0 rounded-xl p-0"
       >
-        <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+        <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3.5">
           <h2 className="text-sm font-semibold tracking-tight">{t('notification.title')}</h2>
           {pending ? null : (
             <Button
@@ -226,27 +246,32 @@ export function Notifications() {
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
           {failure ? <Unreadable failure={failure} /> : null}
 
-          {groups.map((group) => (
-            <section key={group.subject} aria-labelledby={`notifications-${group.subject}`}>
-              <h3
-                id={`notifications-${group.subject}`}
-                className="px-1 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
-              >
-                {t(SUBJECT_LABELS[group.subject])}
-              </h3>
-              <ul className="space-y-2">
-                {group.entries.map((entry) => (
-                  <li key={entry.id} className="space-y-2 rounded-xl border bg-card p-3">
+          {/* **One list, and the subject is a mark on each card** (#838). */}
+          {groups.length === 0 ? null : (
+            <ul className="space-y-2.5">
+              {groups.flatMap((group) =>
+                group.entries.map((entry) => (
+                  <li key={entry.id} className="space-y-2 rounded-xl border bg-card p-3.5">
+                    <p className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'rounded-lg px-2 py-0.5 text-2xs font-semibold tracking-wider uppercase',
+                          SUBJECT_TONE[group.subject],
+                        )}
+                      >
+                        {t(SUBJECT_LABELS[group.subject])}
+                      </span>
+                      {entry.at === null ? null : (
+                        <span className="ml-auto text-2xs text-muted-foreground">
+                          {t('notification.seen', { date: f.dateTime(entry.at) })}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-sm font-semibold">{say(entry.title)}</p>
-                    {entry.at === null ? null : (
-                      <p className="text-xs text-muted-foreground">
-                        {t('notification.seen', { date: f.dateTime(entry.at) })}
-                      </p>
-                    )}
                     <p className="text-xs leading-relaxed text-muted-foreground">
                       {say(entry.body)}
                     </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
                       {entry.link === null ? null : (
                         <CardLink
                           label={t(entry.link.label)}
@@ -275,15 +300,15 @@ export function Notifications() {
                         it is the difference between the two acknowledgements
                         and the reader has no other way to know it. */}
                     {entry.register === 'advisory' ? (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-2xs text-muted-foreground">
                         {t('notification.ack.advisory.note')}
                       </p>
                     ) : null}
                   </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+                )),
+              )}
+            </ul>
+          )}
 
           {/* **Said only when the panel is truly empty**, and never over a read
               that has not landed or one that failed: a pinned red card and this
@@ -320,29 +345,29 @@ function CardLink({
   const className =
     'inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:border-primary/50 hover:text-primary'
 
-  if (to.to === '/comptes') {
+  if (to.to === '/accounts') {
     return (
-      <Link to="/comptes" search={to.search} className={className} onClick={onFollow}>
+      <Link to="/accounts" search={to.search} className={className} onClick={onFollow}>
         {label}
       </Link>
     )
   }
-  if (to.to === '/titres') {
+  if (to.to === '/shares') {
     return (
-      <Link to="/titres" search={to.search} className={className} onClick={onFollow}>
+      <Link to="/shares" search={to.search} className={className} onClick={onFollow}>
         {label}
       </Link>
     )
   }
-  if (to.to === '/donnees') {
+  if (to.to === '/ledger') {
     return (
-      <Link to="/donnees" search={to.search} className={className} onClick={onFollow}>
+      <Link to="/ledger" search={to.search} className={className} onClick={onFollow}>
         {label}
       </Link>
     )
   }
   return (
-    <Link to="/reglages" className={className} onClick={onFollow}>
+    <Link to="/settings" className={className} onClick={onFollow}>
       {label}
     </Link>
   )

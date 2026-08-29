@@ -57,7 +57,7 @@ async function openSettings(
   }
   // **The address, and no gesture**: the surface is a page since ADR-0038, so
   // there is no tab to click and nothing between the URL and what it renders.
-  return renderApp({ url: '/reglages' })
+  return renderApp({ url: '/settings' })
 }
 
 function block(name: RegExp | string) {
@@ -160,11 +160,11 @@ describe('the settings, which are one surface', () => {
     // (#787, #794).
     const settings = block('Ce que vous pouvez changer')
     for (const dial of [
-      'Cadence de relevé (secondes)',
-      'Cadence de reconstruction (secondes)',
-      'Délai entre deux requêtes de reconstruction (secondes)',
-      'Historique récupéré par requête (jours)',
-      'Horizon de cours figé (secondes)',
+      'Cadence de relevé',
+      'Cadence de reconstruction',
+      'Délai entre deux requêtes',
+      'Historique par requête',
+      'Horizon de cours figé',
       'Devise de base',
     ]) {
       expect(within(settings).getByText(dial)).toBeInTheDocument()
@@ -180,7 +180,7 @@ describe('the settings, which are one surface', () => {
     // its own has to say what it means — `0` disables the sonde altogether,
     // which is the registry's own reading (`settings_registry.py`).
     expect(
-      screen.getByText(/0 désactive la surveillance/),
+      screen.getByText(/0 pour ne jamais signaler/),
     ).toBeInTheDocument()
 
     let sent: Record<string, string> | null = null
@@ -191,7 +191,7 @@ describe('the settings, which are one surface', () => {
       }),
     )
 
-    const field = screen.getByLabelText('Horizon de cours figé (secondes)')
+    const field = screen.getByLabelText('Horizon de cours figé')
     expect(field).toHaveAttribute('min', '0')
     await user.clear(field)
     await user.type(field, '0')
@@ -207,11 +207,11 @@ describe('the settings, which are one surface', () => {
     // Two markets open, one shut: a portfolio-wide dial that reaches part of
     // the portfolio has to say so, or the other symbols read as misconfigured.
     expect(
-      screen.getByText(/s’applique à 2 titres maintenant, et à 1 autre à l’ouverture de son marché/),
+      screen.getByText(/S’applique maintenant à 2 titres, et à 1 autre à l’ouverture de son marché/),
     ).toBeInTheDocument()
     // No interface can hide it: the number in the form is the number in the
     // back-off's own formula.
-    expect(screen.getByText(/rééchelonne donc ce délai rétroactivement/)).toBeInTheDocument()
+    expect(screen.getByText(/s’applique aussi aux titres déjà en échec/)).toBeInTheDocument()
   })
 
   it('writes only what moved, and reports what the write reached', async () => {
@@ -230,8 +230,8 @@ describe('the settings, which are one surface', () => {
       }),
     )
 
-    await user.clear(screen.getByLabelText('Cadence de relevé (secondes)'))
-    await user.type(screen.getByLabelText('Cadence de relevé (secondes)'), '300')
+    await user.clear(screen.getByLabelText('Cadence de relevé'))
+    await user.type(screen.getByLabelText('Cadence de relevé'), '300')
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 
     // `reschedule_job` recomputes the next run from *now*, so a save button that
@@ -242,8 +242,8 @@ describe('the settings, which are one surface', () => {
     // the past tense and one of them not.
     const receipt = await screen.findByRole('status')
     expect(receipt).toHaveTextContent('1 réglage enregistré')
-    expect(receipt).toHaveTextContent(/2 titres ont été réarmés/)
-    expect(receipt).toHaveTextContent(/1 autre lira la nouvelle valeur/)
+    expect(receipt).toHaveTextContent(/2 titres réarmés/)
+    expect(receipt).toHaveTextContent(/1 autre à l’ouverture de son marché/)
   })
 
   it('renders the container card as a description and never as fields', async () => {
@@ -275,7 +275,7 @@ describe('the store', () => {
 
     const store = block('Le magasin')
     expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
-    expect(store).toHaveTextContent(/sur un montage qui survit au conteneur/)
+    expect(store).toHaveTextContent(/sur un volume qui survit au conteneur/)
     // French units, from `Intl` — the header of this very file writes them.
     expect(store).toHaveTextContent(/26,0\s*Mo/)
     // The last **write of the ledger**, never the last observed price — that
@@ -291,7 +291,7 @@ describe('the store', () => {
     // Measured: 79 % of the rows purged for zero bytes returned. Shown bare
     // beside a purge button, the figure is a lie by juxtaposition.
     expect(
-      within(block('Le magasin')).getByText(/retire des lignes, pas des octets/),
+      within(block('Le magasin')).getByText(/libère des lignes, pas des octets/),
     ).toBeInTheDocument()
   })
 
@@ -327,7 +327,7 @@ describe('the store', () => {
 
     // The observation is a property of the kernel: off Linux there is nothing
     // to report, and a reader must not be told either of the other two answers.
-    expect(block('Le magasin')).toHaveTextContent(/Impossible d’observer d’ici/)
+    expect(block('Le magasin')).toHaveTextContent(/ne peut pas dire si ce chemin survit/)
     expect(screen.queryByText('Ce conteneur ne garde rien')).not.toBeInTheDocument()
   })
 
@@ -359,7 +359,7 @@ describe('the store', () => {
     // The two facts that ride on `/api/runtime` are why the block does not wait
     // as a whole (#668, #724): they are on screen in flight as in failure.
     expect(store).toHaveTextContent('/data/suivi-bourse.duckdb')
-    expect(store).toHaveTextContent(/sur un montage qui survit au conteneur/)
+    expect(store).toHaveTextContent(/sur un volume qui survit au conteneur/)
     // What the store itself was to say does not exist yet — the block's own
     // rule applied one notch lower, never a dash and never a sentence.
     expect(store).not.toHaveTextContent('Rien n’a encore été importé')
@@ -391,7 +391,7 @@ describe('the orphaned securities', () => {
     expect(orphans).toHaveTextContent('ZZX')
     expect(orphans).toHaveTextContent('1 204 cours')
     // A sold position is not one of them — its events are still recorded.
-    expect(orphans).toHaveTextContent(/Une position que vous avez soldée n’en fait pas partie/)
+    expect(orphans).toHaveTextContent(/Les positions que vous avez soldées ne sont pas concernées/)
 
     server.use(http.get(ROUTES.store, () => HttpResponse.json(aStore())))
     await user.click(within(orphans).getByRole('button', { name: 'Purger ces historiques' }))
@@ -420,7 +420,7 @@ describe('the workloads, which the bell’s health card develops', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Réglages' })
     const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
-    expect(jobs).toHaveTextContent(/Un cours enregistré est resté figé/)
+    expect(jobs).toHaveTextContent(/Cours figés alors que leur marché bouge/)
   })
 
   it('names the three the body carries, and never a fourth', async () => {
@@ -434,7 +434,7 @@ describe('the workloads, which the bell’s health card develops', () => {
     expect(within(jobs).getByText('Reconstruction de l’historique')).toBeInTheDocument()
     expect(within(jobs).getByText('Calcul de la performance')).toBeInTheDocument()
     expect(within(jobs).queryByText(/Écriture du grand livre/)).not.toBeInTheDocument()
-    expect(jobs).toHaveTextContent('Tout est passé et rien ne demande à être regardé.')
+    expect(jobs).toHaveTextContent('Tout fonctionne normalement.')
   })
 
   it('renders a verdict as a sentence, and names the securities it is about', async () => {
@@ -443,8 +443,8 @@ describe('the workloads, which the bell’s health card develops', () => {
     await openSettings(undefined, undefined, aFrozenScrape())
     const jobs = await screen.findByRole('region', { name: 'Les plans de charge' })
 
-    expect(jobs).toHaveTextContent('Quelque chose demande à être regardé.')
-    expect(jobs).toHaveTextContent(/Un cours enregistré est resté figé/)
+    expect(jobs).toHaveTextContent('Quelque chose demande votre attention.')
+    expect(jobs).toHaveTextContent(/Cours figés alors que leur marché bouge/)
     // The server's own word is never rendered raw, and the count alone would
     // leave the one thing the reader cannot look up: which line to go and read.
     expect(jobs).not.toHaveTextContent('frozen')
@@ -478,7 +478,7 @@ describe('the workloads, which the bell’s health card develops', () => {
 
     // An em dash is *there is nothing to compute* (ADR-0021), and a container a
     // minute old has plenty to compute and has simply not got there yet.
-    expect(jobs).toHaveTextContent('Ce processus n’a encore vu aucun passage')
+    expect(jobs).toHaveTextContent('Pas encore passé')
   })
 
   it('does not exist while the health read is in flight', async () => {
@@ -562,7 +562,7 @@ describe('the page’s own reads', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
 
     // **Each block says why it is empty, and there is no band** (#829,
     // ADR-0037): the space the dials would have filled carries the reason they
@@ -588,7 +588,7 @@ describe('the page’s own reads', () => {
 
 describe('the page in English', () => {
   it('renders the cards whole', async () => {
-    renderApp({ url: '/reglages', browserLanguages: ['en-GB'] })
+    renderApp({ url: '/settings', browserLanguages: ['en-GB'] })
 
     expect(
       await screen.findByRole('heading', { name: 'What you can change' }),

@@ -80,14 +80,21 @@ import {
   type ShareRow,
 } from '@/lib/shares'
 import { signClass } from '@/lib/sign'
+import { cn } from '@/lib/utils'
 
 /** Three terms and not four: no security carries the fees taken from a transfer. */
 const SHEET_TERMS = ['unrealised', 'realised', 'dividends'] as const
 
+/**
+ * **The table's own column names, not the portfolio's long ones** (#838). The
+ * drawer sets the three terms in boxes a third of its width, where *Plus-value
+ * latente* wraps onto two lines and *Latente* does not — and the reader has the
+ * same three words in the table this drawer opened from.
+ */
 const TERM_LABELS: Record<(typeof SHEET_TERMS)[number], MessageKey> = {
-  unrealised: 'gain.term.unrealised',
-  realised: 'gain.term.realised',
-  dividends: 'gain.term.dividends',
+  unrealised: 'shares.column.unrealised',
+  realised: 'shares.column.realised',
+  dividends: 'shares.column.dividends',
 }
 
 const TERM_EXPLAIN: Record<(typeof SHEET_TERMS)[number], { body: MessageKey; anchor: DocsAnchor }> =
@@ -159,76 +166,112 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
   // where `null` says *there is no day to bound existing fees by* (#775).
   const terms = securityTerms(held)
   const total = gainTotal(terms)
+  // What the gain is of what was put in — the drawer's own sentence, and the
+  // one place a **single line**'s ratio is stated. `null` where the basis is
+  // nothing to divide by, which is a sentence with the clause left out rather
+  // than a percentage of nothing.
+  const onCost =
+    !total.known || row.cost_basis === null || row.cost_basis <= 0
+      ? null
+      : total.value / row.cost_basis
   const renderings = positionRenderings(row)
   const value = marketValue(row)
   const breakdown = accountBreakdown(positions, row.symbol, failures)
 
   return (
     <Sheet open onOpenChange={(open) => (open ? undefined : onClose())}>
-      <SheetContent className="w-full gap-6 overflow-y-auto sm:max-w-xl">
+      <SheetContent className="w-full gap-5 overflow-y-auto sm:max-w-120">
         <SheetHeader>
           <SheetTitle>{row.name ?? row.symbol}</SheetTitle>
           <SheetDescription>{t('shares.sheet.description')}</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-8 px-4 pb-8">
-          {/* ADR-0016's form, naked: the total, then its terms **under** it and
-              inside its own group. Vertical, because subordination is. */}
-          <Stat
-            size="head"
-            label={t('shares.gainTotal')}
-            value={renderFigure(
-              sumRendering(total),
-              () => f.currency(total.known ? total.value : null, currency),
-              t,
-            )}
-            valueClassName={signClass(total.known ? total.value : null)}
-            explain={
-              <Explain
-                figure={t('shares.gainTotal')}
-                body="shares.sheet.gainTotal.explain"
-                anchor="total-gain"
-              />
-            }
-          >
-            <ul className="mt-3 flex flex-col gap-3 border-t pt-3">
+          {/* **ADR-0016's form, in the drawer's own type** (#838). The total,
+              then its three terms **under** it and inside its own group —
+              subordination is vertical, and the drawer keeps it. What changed
+              with the redesign is the setting: a drawer is a column of data
+              beside a page, so every figure in it is in the mono face, the
+              total is 30 px rather than the page's 52, and the three terms are
+              three boxes on one row instead of three lines down one.
+
+              It is written here rather than through `Stat` because it is not
+              the same object: `Stat` is a figure on a page, at one of three
+              distances, and these are cells of a drawer. The accessible shape
+              is identical — a group named by its label, the terms inside the
+              total's own group — which is what the tests take hold of. */}
+          <div role="group" aria-label={t('shares.gainTotal')} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <span className="eyebrow flex items-center gap-1.5">
+                {t('shares.gainTotal')}
+                <Explain
+                  figure={t('shares.gainTotal')}
+                  body="shares.sheet.gainTotal.explain"
+                  anchor="total-gain"
+                />
+              </span>
+              <span
+                className={cn(
+                  'tabular font-mono text-4xl font-heavy tracking-tight',
+                  signClass(total.known ? total.value : null),
+                )}
+              >
+                {renderFigure(
+                  sumRendering(total),
+                  () => f.currency(total.known ? total.value : null, currency),
+                  t,
+                )}
+              </span>
+              {/* What the total *is*, and what it is of what was put in — the
+                  drawing's one sentence on this drawer, and the only place the
+                  ratio of a **single line** is stated. */}
+              <span className="text-xs text-muted-foreground">
+                {t('shares.sheet.gainNote', {
+                  known: onCost === null ? 'no' : 'yes',
+                  percent: onCost === null ? '' : f.percent(onCost),
+                })}
+              </span>
+            </div>
+            <ul className="grid grid-cols-3 gap-2">
               {SHEET_TERMS.map((term) => {
                 const amount = termAmount(terms, term as GainTermName)
                 return (
-                  <li key={term}>
-                    <Stat
-                      size="term"
-                      label={t(TERM_LABELS[term])}
-                      value={renderFigure(
-                        termRendering(terms, term as GainTermName),
-                        () => f.currency(amount, currency),
-                        t,
-                      )}
-                      valueClassName={
+                  <li
+                    key={term}
+                    role="group"
+                    aria-label={t(TERM_LABELS[term])}
+                    className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.75"
+                  >
+                    <span className="eyebrow flex items-center gap-1">
+                      {t(TERM_LABELS[term])}
+                      <Explain
+                        figure={t(TERM_LABELS[term])}
+                        body={TERM_EXPLAIN[term].body}
+                        anchor={TERM_EXPLAIN[term].anchor}
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        'tabular font-mono text-md font-semibold',
                         amount === null
                           ? signClass(null)
                           : termCarriesSign(term as GainTermName)
                             ? signClass(amount)
-                            : signClass(0)
-                      }
-                      explain={
-                        <Explain
-                          figure={t(TERM_LABELS[term])}
-                          body={TERM_EXPLAIN[term].body}
-                          anchor={TERM_EXPLAIN[term].anchor}
-                        />
-                      }
-                    />
+                            : signClass(0),
+                      )}
+                    >
+                      {renderFigure(
+                        termRendering(terms, term as GainTermName),
+                        () => f.currency(amount, currency),
+                        t,
+                      )}
+                    </span>
                   </li>
                 )
               })}
             </ul>
-          </Stat>
-
-          {/* Second rank. `Cours` and `Valorisation` carry no bubble here for the
-              reason the table's own headers do not: the carrying rule is stated
-              once, on the page header this sheet was opened from. */}
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4 border-t pt-6 sm:grid-cols-3">
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-4 border-t pt-5 sm:grid-cols-3">
             <Stat
               size="term"
               label={t('shares.column.price')}
@@ -309,7 +352,7 @@ export function ShareSheet({ row, positions, failures, currency, onClose }: Shar
           {/* Absent at one account: it would repeat the block above it. */}
           {breakdown.length === 0 ? null : (
             <section className="space-y-3 border-t pt-6">
-              <h3 className="text-sm font-medium">{t('shares.breakdown.title')}</h3>
+              <h3 className="eyebrow">{t('shares.breakdown.title')}</h3>
               <Table>
                 <caption className="sr-only">{t('shares.breakdown.label')}</caption>
                 <TableHeader>
@@ -418,7 +461,7 @@ function Fundamentals({ row }: { row: ShareRow }) {
 
   return (
     <section className="space-y-3 border-t pt-6">
-      <h3 className="text-sm font-medium">{t('shares.fundamentals.title')}</h3>
+      <h3 className="eyebrow">{t('shares.fundamentals.title')}</h3>
       <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
         {lines.map((line) => (
           <div key={line.label} className="min-w-0">

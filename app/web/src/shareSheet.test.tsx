@@ -37,19 +37,22 @@ function renderShares(positions = sharesPortfolio(), events = shareLedger()) {
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(positions))),
     http.get(ROUTES.events, () => HttpResponse.json(events)),
   )
-  return renderApp({ url: '/titres' })
+  return renderApp({ url: '/shares' })
 }
 
 /** Open one share's sheet — the gesture the table offers, and the only one. */
 async function openSheet(user: ReturnType<typeof renderApp>['user'], name = 'Zeta Alpha') {
+  // The page has settled when its table's header strip states the valuation of
+  // the lines under it. The shares page carries no `Gain total` of its own
+  // since #838 — the sheet's own is the one below.
   await waitFor(() =>
-    expect(screen.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/460,00/),
+    expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?300,00/),
   )
   await user.click(screen.getByRole('button', { name }))
   return screen.findByRole('dialog', { name })
 }
 
-/** The sheet's own `Gain total` — the page's header carries the same name. */
+/** The sheet's own `Gain total` — and the only one on screen since #838. */
 function sheetHead(sheet: HTMLElement) {
   return within(sheet).getByRole('group', { name: 'Gain total' })
 }
@@ -64,16 +67,19 @@ describe('ADR-0016’s form, naked', () => {
     // horizontal axis, so a total beside its terms is four numeric figures of
     // equal weight and nothing says the last three are inside the first — the
     // addition ADR-0018 exists to prevent. Here they are literally inside.
-    for (const term of ['Plus-value latente', 'Plus-value réalisée', 'Dividendes reçus']) {
+    // The drawer names them as the table does — `Latente`, `Réalisée`,
+    // `Dividendes` (#838): three boxes a third of a drawer wide, where the
+    // portfolio's long names wrap onto two lines.
+    for (const term of ['Latente', 'Réalisée', 'Dividendes']) {
       expect(within(head).getByRole('group', { name: term })).toBeInTheDocument()
     }
 
     // Zeta Alpha: 1 300,00 − 1 000,00 = +300,00 latent, nothing realised,
     // 25,00 of dividends — and their sum is the head, checkable by eye.
-    expect(within(head).getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
+    expect(within(head).getByRole('group', { name: 'Latente' })).toHaveTextContent(
       /300,00/,
     )
-    expect(within(head).getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
+    expect(within(head).getByRole('group', { name: 'Dividendes' })).toHaveTextContent(/25,00/)
     expect(head).toHaveTextContent(/325,00/)
   })
 
@@ -141,7 +147,7 @@ describe('the per-account breakdown', () => {
       aPosition({ account: 'beta', symbol: 'ZZF', name: 'Zeta Phi', quantity: 3, cost_basis: 300, price: 110 }),
     ])
     await waitFor(() =>
-      expect(screen.getByRole('group', { name: 'Gain total' })).toHaveTextContent(/510,00/),
+      expect(screen.getByRole('group', { name: 'Valorisation' })).toHaveTextContent(/2\D?850,00/),
     )
     await user.click(screen.getByRole('button', { name: 'Zeta Phi' }))
     const sheet = await screen.findByRole('dialog', { name: 'Zeta Phi' })
@@ -230,7 +236,7 @@ describe('the chart, the list and the fundamentals stay', () => {
         title: 'storage unavailable',
       }),
     )
-    const { user } = renderApp({ url: '/titres' })
+    const { user } = renderApp({ url: '/shares' })
     const sheet = await openSheet(user)
 
     // An empty state where the list would have been, and never a red strip

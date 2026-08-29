@@ -67,7 +67,7 @@ import {
 import { positionRenderings, renderFigure, type Rendering } from '@/lib/absence'
 import type { DocsAnchor } from '@/lib/docs'
 import { ABSENT, useFormatters } from '@/lib/format'
-import { gainTotal, securityTerms, sumRendering } from '@/lib/gain'
+import { sumRendering } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
   isAnomalous,
@@ -238,34 +238,27 @@ export function SharesTable({
 function GroupHead({ group, currency }: { group: ShareGroup; currency: string | null }) {
   const { t } = useI18n()
   const f = useFormatters()
-  const total = gainTotal(securityTerms(group.positions))
   const valuation = valuationTotal(group.rows)
-
   return (
-    <TableRow className="bg-muted/40 hover:bg-muted/40">
-      <th scope="rowgroup" colSpan={9} className="px-3 py-2 text-left [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5">
-        <span className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          <span className="text-sm font-medium">{group.account}</span>
-          <span className="text-xs text-muted-foreground">
-            {t('shares.column.value')}{' '}
-            <span className="tabular">
-              {renderFigure(
-                sumRendering(valuation),
-                () => f.currency(valuation.known ? valuation.value : null, currency),
-                t,
-              )}
-            </span>
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {t('shares.gainTotal')}{' '}
-            <span className={`tabular ${signClass(total.known ? total.value : null)}`}>
-              {renderFigure(
-                sumRendering(total),
-                () => f.currency(total.known ? total.value : null, currency),
-                t,
-              )}
-            </span>
-          </span>
+    <TableRow className="bg-background hover:bg-background">
+      {/* **The subtotal is in the header, never in a footer row** (ADR-0016
+          one level down: a total and its terms never share a row). It is the
+          account's **valuation** and nothing else since #838 — the drawing puts
+          one figure here, and the strip above the table is where the four
+          totals of the whole are read. */}
+      <th
+        scope="rowgroup"
+        colSpan={9}
+        className="px-1.5 py-2 text-left text-2xs font-semibold tracking-widest text-primary uppercase xl:px-4"
+      >
+        {group.account}
+        {' · '}
+        <span className="tabular">
+          {renderFigure(
+            sumRendering(valuation),
+            () => f.currency(valuation.known ? valuation.value : null, currency),
+            t,
+          )}
         </span>
       </th>
     </TableRow>
@@ -304,7 +297,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
               recognises the line by, and it is short by construction. */}
           <button
             type="button"
-            className="max-w-[10rem] truncate font-medium underline-offset-4 hover:underline"
+            className="max-w-[10rem] truncate text-md font-medium underline-offset-4 hover:underline"
             onClick={() => onSelect(row.symbol)}
           >
             {row.name ?? row.symbol}
@@ -322,7 +315,7 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
             </span>
           ) : null}
         </span>
-        <span className="block text-xs text-muted-foreground">{row.symbol}</span>
+        <span className="block font-mono text-2xs text-muted-foreground">{row.symbol}</span>
       </TableCell>
 
       {/* The native quote, deliberately: it is the price the reader's
@@ -375,13 +368,23 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
  * of the domain, and that none of the nineteen real symbols shows it is
  * contingent — so it is the rendering that bends, not the shape.
  */
+/**
+ * The account a line sits in, **as a chip** (#838). The drawing sets an account
+ * id in a filled mark rather than as running text: it is an identifier and not
+ * a word, it is the same id the ledger's own rows carry, and one folded line
+ * may name two of them — where a comma-separated sentence in a cell of nine
+ * would be the only prose in the table.
+ */
+const ACCOUNT_CHIP =
+  'inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85'
+
 export function renderAccounts(accounts: readonly string[]) {
   if (accounts.length === 0) return ABSENT
-  if (accounts.length === 1) return <span>{accounts[0]}</span>
+  if (accounts.length === 1) return <span className={ACCOUNT_CHIP}>{accounts[0]}</span>
   return (
     <ul className="flex flex-wrap gap-1">
       {accounts.map((account) => (
-        <li key={account} className="rounded border px-1.5 py-0.5 text-xs">
+        <li key={account} className={ACCOUNT_CHIP}>
           {account}
         </li>
       ))}

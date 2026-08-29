@@ -140,7 +140,7 @@ describe('a single account', () => {
     )
     unmount()
 
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
     expect(await screen.findByRole('heading', { name: 'Comptes' })).toBeInTheDocument()
   })
 })
@@ -232,7 +232,7 @@ describe('when the app is not answering', () => {
     // screen, which is the criterion *there is no band anywhere* read off the
     // rendering rather than off a file name.
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
-    expect(screen.getByText(/Les données ne sont pas lisibles pour l’instant/)).toBeInTheDocument()
+    expect(screen.getByText(/Vos données sont illisibles pour l’instant/)).toBeInTheDocument()
     expect(screen.getAllByText('Lecture impossible')).toHaveLength(1)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     // `detail` and `title` are English diagnostics. They are carried, and
@@ -255,7 +255,7 @@ describe('when the app is not answering', () => {
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
     expect(within(panel).getByRole('link', { name: 'Voir dans Réglages' })).toHaveAttribute(
       'href',
-      expect.stringContaining('/reglages'),
+      expect.stringContaining('/settings'),
     )
   })
 })

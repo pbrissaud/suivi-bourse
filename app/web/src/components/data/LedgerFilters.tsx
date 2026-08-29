@@ -32,7 +32,7 @@
  * — *« Réduit à trois titres : … »* — is the pastille's own label, a set stated
  * as its first element reading as its whole.
  */
-import { X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 
 import { TYPE_LABEL } from '@/components/data/LedgerTable'
 import { Input } from '@/components/ui/input'
@@ -53,16 +53,25 @@ export function LedgerSearch({ filters, onChange, shown }: LedgerSearchProps) {
 
   return (
     <>
-      <div className="min-w-0 grow sm:max-w-xs">
+      {/* **The magnifier is inside the field** (#838): the drawing sets the
+          search as a field with its own mark rather than as a bare box, which
+          is what tells it apart from the form's inputs at a glance. The label
+          stays screen-reader only — the icon is decoration and never a name. */}
+      <div className="relative min-w-0 grow basis-60 sm:max-w-md">
         <label htmlFor="ledger-search" className="sr-only">
           {t('data.search.label')}
         </label>
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3.5 size-3.75 -translate-y-1/2 text-muted-foreground"
+        />
         <Input
           id="ledger-search"
           type="search"
           value={filters.query}
           placeholder={t('data.search.placeholder')}
           onChange={(event) => onChange({ ...filters, query: event.target.value })}
+          className="h-9.5 rounded-lg bg-card pl-9.5"
         />
       </div>
       <p className="text-sm text-muted-foreground">

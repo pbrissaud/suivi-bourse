@@ -80,7 +80,7 @@ function renderImports({
   if (accounts) {
     server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts, declared))))
   }
-  return renderApp({ url: '/donnees' })
+  return renderApp({ url: '/ledger' })
 }
 
 function ledger() {
@@ -343,7 +343,7 @@ describe('the export', () => {
     // Read by `problem.type` like every other refusal, never by the sentence
     // the server wrote for a log.
     expect(
-      await screen.findByText(/Les données ne sont pas lisibles pour l’instant/),
+      await screen.findByText(/Vos données sont illisibles pour l’instant/),
     ).toBeInTheDocument()
     expect(saved).toEqual([])
   })
@@ -356,7 +356,7 @@ describe('the export', () => {
     // menu, and **no list of files** since #816. Getting one's data out is a
     // question of files, not of the ledger.
     const bar = block()
-    expect(within(bar).getByText(/Importer un \.csv ou un \.xlsx/)).toBeInTheDocument()
+    expect(within(bar).getByText(/Déposez un fichier \.csv ou \.xlsx/)).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
     expect(within(bar).queryByRole('table')).toBeNull()
   })
@@ -380,7 +380,7 @@ describe('an install that has imported nothing', () => {
     await screen.findByText('Importer un fichier')
 
     expect(screen.queryByRole('region', { name: 'Import et export' })).not.toBeInTheDocument()
-    expect(screen.getAllByLabelText('Choisir un fichier')).toHaveLength(1)
+    expect(screen.getAllByLabelText('Parcourir…')).toHaveLength(1)
   })
 
   it('renders no bar at all with nothing recorded and nothing declared', async () => {
@@ -395,7 +395,7 @@ describe('an install that has imported nothing', () => {
     // And the file entrance is **still there**: it is the empty state's own
     // entry, which is the whole of story 2 — an install that mounted nothing is
     // not an install missing half the product.
-    expect(screen.getByLabelText('Choisir un fichier')).toBeInTheDocument()
+    expect(screen.getByLabelText('Parcourir…')).toBeInTheDocument()
   })
 })
 
@@ -411,7 +411,7 @@ describe('the file handed over', () => {
    * so in one line rather than spelling the confirmation out five times.
    */
   async function handOver(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
-    await user.upload(screen.getByLabelText('Choisir un fichier'), file)
+    await user.upload(screen.getByLabelText('Parcourir…'), file)
     await user.click(await screen.findByRole('button', { name: 'Importer' }))
   }
 
@@ -431,7 +431,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
       await screen.findByText(
@@ -471,7 +471,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
     await user.click(await screen.findByRole('button', { name: 'Annuler' }))
 
     expect(screen.queryByText(/seront écrits/)).not.toBeInTheDocument()
@@ -492,7 +492,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
       await screen.findByText(
@@ -528,7 +528,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
     await user.click(
       await screen.findByLabelText('Écrire quand même les lignes déjà dans mon grand livre'),
     )
@@ -543,7 +543,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
     await screen.findByRole('button', { name: 'Importer' })
 
     expect(
@@ -605,7 +605,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile('vide.csv'))
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile('vide.csv'))
 
     // The forecast says it first, in its own tense — there is nothing to write.
     expect(
@@ -636,7 +636,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
       await screen.findByText(/L’application a refusé ce fichier et n’a rien écrit/),
@@ -674,7 +674,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
       await screen.findByText(
@@ -700,7 +700,7 @@ describe('the file handed over', () => {
     const { user } = renderImports()
     await waitFor(() => expect(block()).toBeInTheDocument())
 
-    await user.upload(screen.getByLabelText('Choisir un fichier'), aFile())
+    await user.upload(screen.getByLabelText('Parcourir…'), aFile())
 
     expect(
       await screen.findByText(/dépasse ce que l’application accepte en une fois/),
@@ -813,7 +813,7 @@ describe('what this import would do', () => {
   }
 
   async function hand(user: ReturnType<typeof renderImports>['user'], file = aFile()) {
-    await user.upload(screen.getByLabelText('Choisir un fichier'), file)
+    await user.upload(screen.getByLabelText('Parcourir…'), file)
   }
 
   it('puts one line per account the file names, with its volume', async () => {
@@ -912,7 +912,7 @@ describe('what this import would do', () => {
 
     expect(
       await screen.findByText(
-        'Cette correspondance sert à cet import, puis elle est jetée. Le prochain fichier reposera la question.',
+        'Cette correspondance ne vaut que pour cet import. Le prochain fichier reposera la question.',
       ),
     ).toBeInTheDocument()
   })
@@ -1182,10 +1182,10 @@ describe('what this import would do', () => {
 
     expect(
       await screen.findByText(
-        'Ce fichier déclare des montants en EUR, et votre installation n’a pas encore de devise de base. L’adopter ? Elle ne pourra plus être reprise.',
+        'Ce fichier enregistre ses montants en EUR, et vous n’avez pas encore choisi de devise de base. L’utiliser ? Elle ne pourra plus être changée.',
       ),
     ).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Adopter EUR comme devise de base'))
+    await user.click(screen.getByLabelText('Utiliser EUR comme devise de base'))
     await user.click(screen.getByRole('button', { name: 'Importer' }))
 
     await waitFor(() => expect(seen).toHaveLength(2))

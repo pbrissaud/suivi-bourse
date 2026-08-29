@@ -69,16 +69,19 @@ function card(title: string | RegExp) {
 }
 
 describe('the panel holds three registers under four subjects', () => {
-  it('groups by subject, and names no register anywhere', async () => {
+  it('marks each card with its subject, and names no register anywhere', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     await openPanel({ facts: [anEnvironmentFact()], advisories: [anAdvisory()] })
 
     // The reader sees **subjects** and infers the rest from what each card lets
-    // them do (ADR-0037). The three register words are never on screen.
-    const headings = within(panel())
-      .getAllByRole('heading', { level: 3 })
-      .map((heading) => heading.textContent)
-    expect(headings).toEqual(['Santé', 'Installation', 'Comptes'])
+    // them do (ADR-0037). Since #838 the subject is a mark *on the card* rather
+    // than a heading over a group of one: the drawer is one list, and three
+    // headings of one line each are a table of contents for three lines. The
+    // order the subjects come in is unchanged — it is `lib/notifications.ts`'s.
+    const subjects = within(panel())
+      .getAllByRole('listitem')
+      .map((entry) => entry.firstElementChild?.firstElementChild?.textContent)
+    expect(subjects).toEqual(['Santé', 'Installation', 'Comptes'])
     expect(panel().textContent).not.toMatch(/avis|registre|installation fact/i)
   })
 
@@ -150,7 +153,7 @@ describe('the control that clears says what it clears', () => {
     })
 
     expect(
-      within(panel()).getByRole('button', { name: 'Acquitter les 3 acquittables' }),
+      within(panel()).getByRole('button', { name: 'Tout acquitter (3)' }),
     ).toBeEnabled()
   })
 
@@ -193,7 +196,7 @@ describe('the control that clears says what it clears', () => {
       advisories: [anAdvisory()],
     })
 
-    await user.click(within(panel()).getByRole('button', { name: /Acquitter les 2/ }))
+    await user.click(within(panel()).getByRole('button', { name: /Tout acquitter \(2\)/ }))
 
     await waitFor(() => expect(asked).toEqual(['unread_environment', 'cash_share:alpha']))
   })
@@ -243,7 +246,7 @@ describe('nothing to report is said of the panel, or it is not said', () => {
     await openPanel({ facts: [] })
 
     expect(
-      await within(panel()).findByText(/Les données ne sont pas lisibles pour l’instant/),
+      await within(panel()).findByText(/Vos données sont illisibles pour l’instant/),
     ).toBeInTheDocument()
     expect(within(panel()).queryByText('Rien à signaler')).not.toBeInTheDocument()
   })
@@ -256,10 +259,10 @@ describe('a card’s link lands on the figure, not on the page', () => {
 
     await user.click(within(panel()).getByRole('link', { name: 'Voir le compte' }))
 
-    // Not merely `/comptes`: the account the card names, **selected** — which
-    // the rail says with `aria-current` and the address says with `?compte=`.
+    // Not merely `/accounts`: the account the card names, **selected** — which
+    // the rail says with `aria-current` and the address says with `?account=`.
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
-    await waitFor(() => expect(view.router.state.location.search).toEqual({ compte: 'alpha' }))
+    await waitFor(() => expect(view.router.state.location.search).toEqual({ account: 'alpha' }))
     const rail = await screen.findByRole('list', { name: 'Vos comptes' })
     // `aria-current` is what says *this one is open* to a screen reader, and
     // the router writes `page` on the entry whose address is the one in force.
@@ -276,7 +279,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
     // one fact cannot propose two different gestures depending on where it is
     // met, so the acknowledgement belongs to the panel and to the panel alone.
     server.use(http.get(ROUTES.advisories, () => HttpResponse.json([anAdvisory()])))
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     const chip = await screen.findByText('25 % de cash')
     const railEntry = chip.closest('a') as HTMLElement
@@ -286,7 +289,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
 
   it('draws none while the read has not landed', async () => {
     server.use(http.get(ROUTES.advisories, () => new Promise<never>(() => {})))
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
     expect(screen.queryByText(/% de cash/)).not.toBeInTheDocument()
@@ -316,7 +319,7 @@ describe('the advisory is read twice, and acknowledged in one place', () => {
         })
       }),
     )
-    const { user } = renderApp({ url: '/comptes' })
+    const { user } = renderApp({ url: '/accounts' })
 
     expect(await screen.findByText('25 % de cash')).toBeInTheDocument()
 

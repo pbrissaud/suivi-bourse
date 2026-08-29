@@ -42,7 +42,7 @@
  * and a permutation both leave the set alone, and that is the property the page
  * is built on.
  *
- * **And one reduction, `?compte=`** (#722), which an account's panel leads to in
+ * **And one reduction, `?account=`** (#722), which an account's panel leads to in
  * place of a positions table of its own. It is not the switch this page refuses:
  * that one hid a *part of the table the header summed*, silently and with
  * nothing on screen able to say which of two correct figures was the owner's
@@ -62,9 +62,11 @@
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { TriangleAlert } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
+import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Allocation } from '@/components/shares/Allocation'
@@ -97,14 +99,14 @@ export default function SharesPage() {
   const f = useFormatters()
   const [onlyAnomalies, setOnlyAnomalies] = useState(false)
   // The order and the grouping are **states of the page**, exactly like the
-  // fold and the anomaly lens beside them — not addresses. `?titre=` and
-  // `?compte=` are in the URL because something outside this page leads to
+  // fold and the anomaly lens beside them — not addresses. `?symbol=` and
+  // `?account=` are in the URL because something outside this page leads to
   // them (⌘K, an account's panel); nobody leads to *this table sorted by PRU*,
   // and a search parameter nothing links to is a shape to maintain for no
   // reader.
   const [sort, setSort] = useState<ShareSort>(DEFAULT_SORT)
   const [grouped, setGrouped] = useState(false)
-  const { compte = null, titre = null } = useSearch({ from: '/titres' })
+  const { account = null, symbol = null } = useSearch({ from: '/shares' })
   const navigate = useNavigate()
   // **Which sheet is open is a URL** (#797), the same clause as the reduction
   // beside it: the ⌘K palette reaches a held security from any of the four
@@ -114,15 +116,15 @@ export default function SharesPage() {
   //
   // **It replaces rather than pushes, in both directions.** A sheet is a modal
   // and not a place: pushed on the way in and replaced on the way out, three
-  // sheets opened and dismissed leave three identical `/titres` entries the
+  // sheets opened and dismissed leave three identical `/shares` entries the
   // reader has to press Back through before anything moves. Escape, the cross
   // and the overlay are its way out; the address exists so that somebody can
   // **arrive** at one — which is what ⌘K does — not so that the history holds a
   // record of every row that was looked at.
   const select = (symbol: string | null) =>
     void navigate({
-      to: '/titres',
-      search: (previous) => ({ ...previous, titre: symbol ?? undefined }),
+      to: '/shares',
+      search: (previous) => ({ ...previous, symbol: symbol ?? undefined }),
       replace: true,
     })
 
@@ -152,8 +154,8 @@ export default function SharesPage() {
   // account's quantity under a bar naming this one.
   const reduced = useMemo(() => {
     const all = positions.data?.positions ?? []
-    return compte === null ? all : all.filter((position) => position.account === compte)
-  }, [positions.data, compte])
+    return account === null ? all : all.filter((position) => position.account === account)
+  }, [positions.data, account])
 
   const rows = useMemo(() => buildShareRows(reduced, failures), [reduced, failures])
 
@@ -237,74 +239,16 @@ export default function SharesPage() {
   }
 
   return (
-    <div className="space-y-8">
-      {/* The page's name and the instant its figures are of are the header
-          bar's now (#789), which leaves this line with the one thing it ever
-          asserted — and a line asserting nothing does not exist, so it waits
-          for the two reads rather than drawing an empty row above the table. */}
-      {!positions.data || !runtime.isSuccess ? null : (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {/* At zero it is a sentence, not a control: there is nothing to filter
-              to, and the absence is the information.
-
-              **And the sentence waits for both reads** (ADR-0026, the fourth
-              occurrence after #775, #777 and #778). *Aucun titre en anomalie* is
-              a claim, and three chains used to make it on a silence: positions
-              in flight leaves `rows` empty, so the count is zero before
-              anything is known; runtime in flight leaves every counter at zero,
-              so `absenceCase` answers *carried at cost* where it owes *no
-              quote* and three mute symbols read as none; and runtime in **error**
-              used to hand `readConditions` a `shellError`, which short-circuited
-              the list to nothing — so the page said nothing was wrong on the
-              strength of a read that failed. That parameter left with the band
-              (#829, ADR-0037), and the counter waits for both reads either way:
-              it is the one part of this header that asserts something. */}
-          {anomalies.length === 0 ? (
-            <p>{t('shares.anomaly.count', { count: 0 })}</p>
-          ) : (
-            <button
-              type="button"
-              aria-pressed={onlyAnomalies}
-              onClick={() => setOnlyAnomalies((previous) => !previous)}
-              className={cn(
-                'rounded underline underline-offset-4',
-                onlyAnomalies ? 'text-attention' : 'text-muted-foreground',
-              )}
-            >
-              {t('shares.anomaly.count', { count: anomalies.length })}
-            </button>
-          )}
-
-          {/* **A partition, offered only where there is something to partition.**
-              At one account the group header would repeat the page header line
-              for line, which is the argument `accountBreakdown` already makes
-              one file over — and a control that cannot change anything is the
-              per-row marker rule met at the level of a button. */}
-          {accountCount < 2 ? null : (
-            <button
-              type="button"
-              aria-pressed={grouped}
-              onClick={() => setGrouped((previous) => !previous)}
-              className={cn(
-                'rounded underline underline-offset-4',
-                grouped ? 'text-foreground' : 'text-muted-foreground',
-              )}
-            >
-              {t('shares.group.toggle')}
-            </button>
-          )}
-        </div>
-      )}
-
+    <div className="space-y-6">
       {/* **The reduction states itself, with the account it names and the way
           out.** A table silently shorter than expected is the defect #724 met
           on the ledger, and it is worse here: the header over it is a *sum* of
           the lines it shows. */}
-      {compte === null ? null : (
+      {account === null ? null : (
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-          <p>{t('shares.reduced', { account: compte })}</p>
+          <p>{t('shares.reduced', { account })}</p>
           <Link
-            to="/titres"
+            to="/shares"
             search={{}}
             className="text-muted-foreground underline underline-offset-4"
           >
@@ -319,12 +263,12 @@ export default function SharesPage() {
           portfolio's own emptiness would be a claim about the reader's data
           made on the strength of a filter they can lift in one click. */}
       {!positions.data ? null : rows.length === 0 ? (
-        compte !== null ? (
+        account !== null ? (
           <EmptyState
             title={t('shares.reduced.empty.title')}
-            description={t('shares.reduced.empty.body', { account: compte })}
+            description={t('shares.reduced.empty.body', { account })}
             action={
-              <Link to="/titres" search={{}} className="font-medium underline underline-offset-4">
+              <Link to="/shares" search={{}} className="font-medium underline underline-offset-4">
                 {t('shares.reduced.undo')}
               </Link>
             }
@@ -334,7 +278,7 @@ export default function SharesPage() {
             title={t('shares.empty.title')}
             description={t('shares.empty.body')}
             action={
-              <Link to="/donnees" className="font-medium underline underline-offset-4">
+              <Link to="/ledger" className="font-medium underline underline-offset-4">
                 {t('shares.empty.link')}
               </Link>
             }
@@ -349,22 +293,89 @@ export default function SharesPage() {
               two figures would be two answers to one question, on one screen,
               which is the defect this page was rebuilt around. They still part
               on one inherited case, an unresolved rate emptying the header and
-              not the ring (`Allocation.tsx` says why). Reduced by `?compte=` it
+              not the ring (`Allocation.tsx` says why). Reduced by `?account=` it
               draws that account's split; under the anomaly lens it draws what
               is on screen. */}
           <Allocation rows={onScreen} currency={currency} />
 
-          {/* The rows it sits above, closed ones included — the argument is the
-              rule, and handing it the held lines alone is what printed the
-              other correct figure. */}
-          <SharesHead positions={summed} rows={onScreen} currency={currency} />
-          <SharesTable
-            groups={groups}
-            currency={currency}
-            sort={sort}
-            onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
-            onSelect={select}
-          />
+          {/* **The two controls of the table, between the ring and it** (#838).
+              The drawing sets them as chips on the page's ground rather than as
+              underlined words in a caption line: a partition of the rows and a
+              lens on them are gestures, and the anomaly one carries the
+              attention colour because what it names is something to repair.
+
+              **And the sentence waits for both reads** (ADR-0026, the fourth
+              occurrence after #775, #777 and #778). *Aucun symbol en anomalie* is
+              a claim, and three chains used to make it on a silence: positions
+              in flight leaves `rows` empty, so the count is zero before
+              anything is known; runtime in flight leaves every counter at zero,
+              so `absenceCase` answers *carried at cost* where it owes *no
+              quote* and three mute symbols read as none; and runtime in **error**
+              used to hand `readConditions` a `shellError`, which short-circuited
+              the list to nothing — so the page said nothing was wrong on the
+              strength of a read that failed. */}
+          {!runtime.isSuccess ? null : (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* **A partition, offered only where there is something to
+                  partition.** At one account the group header would repeat the
+                  strip line for line, which is the argument `accountBreakdown`
+                  already makes one file over — and a control that cannot change
+                  anything is the per-row marker rule met at the level of a
+                  button. */}
+              {accountCount < 2 ? null : (
+                <button
+                  type="button"
+                  aria-pressed={grouped}
+                  onClick={() => setGrouped((previous) => !previous)}
+                  className={cn(
+                    'h-8 rounded-lg border px-3.5 text-xs font-medium',
+                    grouped
+                      ? 'border-primary/50 bg-primary/12 text-gain'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {t('shares.group.toggle')}
+                </button>
+              )}
+
+              {/* At zero it is nothing at all: the drawing draws no chip where
+                  there is nothing to repair, and *a block with nothing in it
+                  does not exist* is the same rule one object down. */}
+              {anomalies.length === 0 ? null : (
+                <button
+                  type="button"
+                  aria-pressed={onlyAnomalies}
+                  onClick={() => setOnlyAnomalies((previous) => !previous)}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-lg bg-attention/14 px-3 text-xs font-medium text-attention',
+                    onlyAnomalies && 'ring-1 ring-attention/60',
+                  )}
+                >
+                  <TriangleAlert aria-hidden className="size-3.25" />
+                  {t('shares.anomaly.count', { count: anomalies.length })}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* **One card, and the totals are its header** (#838). The strip and
+              the nine columns are one object — a table and the sum of what it
+              shows — so they share a frame, and the frame clips the table's own
+              horizontal scroll to the card's rounded edge.
+
+              The rows the strip sums are the ones on screen, closed ones
+              included: the argument is the rule, and handing it the held lines
+              alone is what printed the other correct figure. */}
+          <Card className="gap-0 overflow-hidden py-0">
+            <SharesHead positions={summed} rows={onScreen} currency={currency} />
+            <SharesTable
+              groups={groups}
+              currency={currency}
+              sort={sort}
+              onSort={(column: SortColumn) => setSort((previous) => nextSort(previous, column))}
+              onSelect={select}
+            />
+          </Card>
           <ClosedShares rows={closed} currency={currency} onSelect={select} />
         </>
       )}
@@ -373,7 +384,7 @@ export default function SharesPage() {
           is keyed by `(account, symbol)`, which is exactly what `buildShareRows`
           has just folded away. */}
       <ShareSheet
-        row={rows.find((row) => row.symbol === titre) ?? null}
+        row={rows.find((row) => row.symbol === symbol) ?? null}
         positions={reduced}
         failures={failures}
         currency={currency}

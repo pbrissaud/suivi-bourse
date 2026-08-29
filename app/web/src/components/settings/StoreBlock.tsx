@@ -90,7 +90,7 @@ export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockPr
   return (
     <Card role="region" aria-labelledby={STORE_HEADING}>
       <CardHeader>
-        <h2 id={STORE_HEADING} className="text-lg font-semibold tracking-tight">
+        <h2 id={STORE_HEADING} className="eyebrow">
           {t('installation.store')}
         </h2>
       </CardHeader>

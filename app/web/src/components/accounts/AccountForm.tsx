@@ -9,7 +9,7 @@
  * rule, a second shape for it being the defect *individually right, collectively
  * unreadable* by definition.
  *
- * It lives on `/comptes` since ADR-0028, with the page that reads the accounts,
+ * It lives on `/accounts` since ADR-0028, with the page that reads the accounts,
  * and it is where an account is **removed** as well as declared and renamed.
  * That move is the point of the removal rather than a side effect of it: the
  * two refusals are **prose** — the account every install owns, and the *n*

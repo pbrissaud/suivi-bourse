@@ -56,14 +56,17 @@ export function ChartTooltip({ format }: ChartTooltipProps) {
         )
         if (lines.length === 0) return null
         return (
-          <div className="rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-            <p className="mb-1 font-medium">{f.date(label)}</p>
+          // The drawing's own box: the sidebar's ground rather than the
+          // popover's, a hairline, and the date above the figures at the size
+          // of a caption. Each row is the curve's **name in the curve's own
+          // colour** and its figure in the mono face — the pairing is what
+          // makes a tooltip readable without a legend under the pointer.
+          <div className="min-w-42.5 rounded-lg border bg-sidebar px-3 py-2.5 text-sm shadow-lg">
+            <p className="mb-1.5 text-2xs text-muted-foreground">{f.date(label)}</p>
             {lines.map((line) => (
-              <p key={line.key} className="flex items-baseline gap-3">
-                <span className="text-muted-foreground">{line.name}</span>
-                <span className="tabular ml-auto" style={{ color: line.colour }}>
-                  {format(line.value)}
-                </span>
+              <p key={line.key} className="flex items-baseline gap-3.5">
+                <span style={{ color: line.colour }}>{line.name}</span>
+                <span className="tabular ml-auto font-mono">{format(line.value)}</span>
               </p>
             ))}
           </div>

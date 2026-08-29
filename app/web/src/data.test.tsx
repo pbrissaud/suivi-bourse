@@ -31,7 +31,7 @@ import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 import type { LedgerEvent } from '@/lib/api'
 
-function renderData(events: LedgerEvent[] = ledgerEvents(), url = '/donnees') {
+function renderData(events: LedgerEvent[] = ledgerEvents(), url = '/ledger') {
   server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(events))))
   return renderApp({ url })
 }
@@ -62,7 +62,7 @@ describe('one route, one thing', () => {
 
     // **Three, then two, then none** (#829, #830, ADR-0037, ADR-0038): the
     // notices left for the panel behind the bell, the installation left for
-    // `/reglages`, and a bar holding a choice of one is not a bar.
+    // `/settings`, and a bar holding a choice of one is not a bar.
     expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
     expect(await screen.findByRole('heading', { level: 1, name: 'Grand livre' })).toBeInTheDocument()
@@ -76,7 +76,7 @@ describe('one route, one thing', () => {
     // literal answers it with an inherited **function**, which is truthy, and a
     // function handed to `useState` is called as an initialiser.
     for (const hash of ['#installation', '#toString']) {
-      const view = renderData(ledgerEvents(), `/donnees${hash}`)
+      const view = renderData(ledgerEvents(), `/ledger${hash}`)
       expect(await screen.findByRole('table', { name: 'Vos événements' })).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: 'Le magasin' })).not.toBeInTheDocument()
       view.unmount()
@@ -455,7 +455,7 @@ describe('the reduction, which is what pays for no pagination', () => {
   it('takes the period from the address, and gives it back when it is released', async () => {
     // A reduced ledger has an address, and since #810 the period is one of its
     // dimensions: a reader who reloads on an extract of a year keeps it.
-    const { user, router } = renderData(ledgerEvents(), '/donnees?since=2026-01-06')
+    const { user, router } = renderData(ledgerEvents(), '/ledger?since=2026-01-06')
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
@@ -590,7 +590,7 @@ describe('a reduction in force always has the chip that releases it', () => {
         return HttpResponse.json({ events_removed: 1 })
       }),
     )
-    const { user } = renderApp({ url: '/donnees' })
+    const { user } = renderApp({ url: '/ledger' })
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     const accounts = screen.getByRole('group', { name: 'Compte' })
@@ -1065,7 +1065,7 @@ describe('the create form, which is the onboarding', () => {
 
     // On the date, the sentence arrives while it can still change a behaviour.
     await user.click(bubbles[0])
-    expect(await screen.findByText(/à partir des dates de vos événements/)).toBeInTheDocument()
+    expect(await screen.findByText(/calculés à partir de ces dates/)).toBeInTheDocument()
   })
 
   it('says what an empty grant price means, where the reader is leaving it empty', async () => {
@@ -1080,7 +1080,7 @@ describe('the create form, which is the onboarding', () => {
     const label = await within(panel).findByText('Prix unitaire')
     expect(label.parentElement).toHaveTextContent('facultatif')
     await user.click(screen.getByRole('button', { name: 'Ce que veut dire Prix unitaire' }))
-    expect(await screen.findByText(/dilution/)).toBeInTheDocument()
+    expect(await screen.findByText(/ajoute seulement des titres/)).toBeInTheDocument()
     expect(screen.getByText(/vos versements et dans votre base de coût/)).toBeInTheDocument()
   })
 
@@ -1177,7 +1177,7 @@ describe('the ledger at zero', () => {
     // **Both entrances are gestures now** (#811): the file one is a real target
     // rather than the name of a folder, so the pair is two doors and not a
     // door beside an instruction.
-    expect(within(file).getByLabelText('Choisir un fichier')).toBeInTheDocument()
+    expect(within(file).getByLabelText('Parcourir…')).toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })
@@ -1199,7 +1199,7 @@ describe('the page’s own read', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/donnees' })
+    renderApp({ url: '/ledger' })
 
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
@@ -1217,7 +1217,7 @@ describe('the page in English', () => {
       http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())),
       http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     )
-    renderApp({ url: '/donnees', browserLanguages: ['en-GB'] })
+    renderApp({ url: '/ledger', browserLanguages: ['en-GB'] })
 
     const table = await screen.findByRole('table', { name: 'Your events' })
     expect(columnNames(table)).toEqual([

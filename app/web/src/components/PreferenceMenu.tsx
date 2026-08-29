@@ -42,7 +42,7 @@ export function PreferenceMenu<T extends string>({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-7" aria-label={label}>
+        <Button variant="ghost" size="icon" className="size-8 rounded-lg" aria-label={label}>
           {icon}
         </Button>
       </DropdownMenuTrigger>

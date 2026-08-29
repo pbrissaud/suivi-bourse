@@ -52,11 +52,19 @@ const STACKED_BAR = 'src/components/accounts/AccountsRail.tsx'
  * left when the column did, came back with it at #832 and has left with it again
  * (#831, the maquette read rendered): the weight of a line is drawn on that page
  * by the allocation's legend above the table now, and `AccountDetail` is where a
- * per-line share is still a cell. Three surfaces, no fourth.
+ * per-line share is still a cell — twice, since #838: the account's composition
+ * split and the weight of each of its lines.
+ *
+ * **The rail left the list at #838**, and its stacked bar stayed. The drawing's
+ * weights card is that bar and a legend under it — a colour, a name, a share —
+ * and the per-line bars the block used to draw beneath each legend row were the
+ * same figure said twice on one card, once as a segment of the whole and once
+ * as a bar of its own. The exemption below is unchanged: the stacked bar is
+ * still hand-written, still argued for on the file, and still asserted to be
+ * the only hand-written bar in it.
  */
 const MOUNTS = [
   'src/components/shares/Allocation.tsx',
-  'src/components/accounts/AccountsRail.tsx',
   'src/components/accounts/AccountDetail.tsx',
 ]
 

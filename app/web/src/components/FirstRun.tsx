@@ -4,7 +4,7 @@
  *
  * It is mounted by the shell rather than by a route, because *first run* is not
  * a place: the predicate is `lib/firstRun.ts`'s, a **required** dial being
- * unanswered, and it is as true on `/titres` as on `/`. No launch counter, no
+ * unanswered, and it is as true on `/shares` as on `/`. No launch counter, no
  * redirection, and `/` stays the dashboard unconditionally.
  *
  * **What it walks** (ADR-0035): the required settings, the accounts, the first
@@ -290,7 +290,7 @@ export function FirstRun() {
               folder there being none left to name. Taking either one ends the
               walk and lands the reader where that gesture is made — the upload
               zone for the file, the create form for the event
-              (`?ouvrir=evenement`, the gesture the palette already arms).
+              (`?open=event`, the gesture the palette already arms).
               Taking neither ends it too, one control down. */}
           {passage === 'events' ? (
             <>
@@ -303,7 +303,7 @@ export function FirstRun() {
                     body: t('data.empty.file.body'),
                     action: (
                       <Button asChild type="button" variant="outline">
-                        <Link to="/donnees" onClick={leave}>
+                        <Link to="/ledger" onClick={leave}>
                           {t('firstRun.pass.events.file')}
                         </Link>
                       </Button>
@@ -314,7 +314,7 @@ export function FirstRun() {
                     body: t('data.empty.manual.body'),
                     action: (
                       <Button asChild type="button" variant="outline">
-                        <Link to="/donnees" search={{ ouvrir: 'evenement' }} onClick={leave}>
+                        <Link to="/ledger" search={{ open: 'event' }} onClick={leave}>
                           {t('data.new')}
                         </Link>
                       </Button>

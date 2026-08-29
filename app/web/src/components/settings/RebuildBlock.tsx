@@ -75,7 +75,7 @@ export function RebuildBlock({ runtime, firstEvent, accounts }: RebuildBlockProp
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-lg font-semibold tracking-tight">{t('installation.rebuild.title')}</h2>
+        <h2 className="eyebrow">{t('installation.rebuild.title')}</h2>
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Named or not, it is not the same sentence: *which* account is late is

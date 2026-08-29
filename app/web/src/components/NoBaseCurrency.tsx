@@ -34,7 +34,7 @@ export function NoBaseCurrency() {
       action={
         // To the field, and never to an acknowledgement: this is a condition
         // the reader can make stop, and what makes it stop is an answer.
-        <Link to="/reglages" className="font-medium underline underline-offset-4">
+        <Link to="/settings" className="font-medium underline underline-offset-4">
           {t('empty.noCurrency.link')}
         </Link>
       }

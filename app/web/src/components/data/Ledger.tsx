@@ -59,6 +59,7 @@ import { LedgerTable, TYPE_LABEL } from '@/components/data/LedgerTable'
 import { RowDelete } from '@/components/data/RowDelete'
 import { UploadReceipt, UploadZone, useEventUpload } from '@/components/data/UploadZone'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { api, type LedgerEvent } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import {
@@ -388,7 +389,12 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                   description={t('data.filter.none.body')}
                 />
               ) : (
-                <div className="space-y-3">
+                // **The table and its footing are one card** (#838): the
+                // drawing frames the ledger the way it frames the shares
+                // table, and the sentence under it — *fin de la réduction*, or
+                // the count and the reveal — sits inside that frame, above the
+                // card's own edge, rather than floating under it.
+                <Card className="gap-0 overflow-hidden py-0">
                   <LedgerTable
                     events={page.rows}
                     currency={currency}
@@ -412,7 +418,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                     ref={tail}
                     tabIndex={-1}
                     aria-live="polite"
-                    className="flex flex-wrap items-center justify-center gap-3 outline-none"
+                    className="flex flex-wrap items-center justify-center gap-3 border-t px-4 py-3.5 outline-none"
                   >
                     {page.atEnd ? (
                       <p className="text-xs text-muted-foreground">
@@ -441,7 +447,7 @@ export function Ledger({ focus, onReduced, compose, onComposed }: LedgerProps = 
                       </>
                     )}
                   </div>
-                </div>
+                </Card>
               )}
             </div>
           </div>

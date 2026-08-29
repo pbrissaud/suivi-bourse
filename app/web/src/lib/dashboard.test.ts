@@ -17,7 +17,7 @@ import {
   dashboardState,
   dayMove,
   hasCashLedger,
-  moversSplit,
+  moversList,
   performanceRows,
   windowFloor,
   yFloor,
@@ -172,8 +172,8 @@ describe('the movers', () => {
 
   it('counts what it does not show, and a line that moved by nothing with it', () => {
     // Measured: the portfolio's second line, at 16,6 % of it, moved 0,00 % — so
-    // it entered neither column and vanished from both.
-    const split = moversSplit(
+    // it entered no column and vanished from the list.
+    const reading = moversList(
       [
         aMover({ symbol: 'A', change_pct: 0.05 }),
         aMover({ symbol: 'B', change_pct: 0 }),
@@ -182,12 +182,13 @@ describe('the movers', () => {
       heldLines(['A', 'B', 'C', 'D', 'E', 'F']),
     )
 
-    expect(split.risers.map((mover) => mover.symbol)).toEqual(['A'])
-    expect(split.fallers.map((mover) => mover.symbol)).toEqual(['C'])
-    expect(split.unchanged).toBe(1)
+    // One list, best first: the riser, then the faller. The line that moved by
+    // nothing is in neither, and is counted by the sentence instead.
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['A', 'C'])
+    expect(reading.unchanged).toBe(1)
     // Six held, two shown: the unchanged one, and the three lines the server
     // never served because they have nothing to compare a first day against.
-    expect(split.others).toBe(4)
+    expect(reading.others).toBe(4)
   })
 
   it('leaves a closed line out of the sentence it is not part of', () => {
@@ -204,7 +205,7 @@ describe('the movers', () => {
       aClosedPosition({ symbol: 'ZZD', closed_at: '2025-11-04' }),
       aClosedPosition({ symbol: 'ZZE', closed_at: '2025-11-05' }),
     ])
-    const split = moversSplit(
+    const reading = moversList(
       [
         aMover({ symbol: 'ZZA', change_pct: 0.05 }),
         aMover({ symbol: 'ZZB', change_pct: 0 }),
@@ -217,25 +218,25 @@ describe('the movers', () => {
       rows,
     )
 
-    expect(split.unchanged).toBe(1)
-    expect(split.risers.map((mover) => mover.symbol)).toEqual(['ZZA'])
-    expect(split.fallers).toEqual([])
+    expect(reading.unchanged).toBe(1)
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['ZZA'])
     // Two held, one shown: the one that moved by nothing. The two closed lines
     // are in neither figure, which is what makes the pair one set.
-    expect(split.others).toBe(1)
-    expect(split.unchanged).toBeLessThanOrEqual(split.others)
+    expect(reading.others).toBe(1)
+    expect(reading.unchanged).toBeLessThanOrEqual(reading.others)
   })
 
-  it('takes five each way, biggest first', () => {
+  it('takes five, biggest first, whichever way they went', () => {
     const symbols = Array.from({ length: 8 }, (_, index) => `U${index}`)
+    // Four up and four down, so the list has to choose across the whole set and
+    // not five from one end of it: the day's best and its worst both belong.
     const movers = symbols.map((symbol, index) =>
-      aMover({ symbol, change_pct: (index + 1) / 100 }),
+      aMover({ symbol, change_pct: (index - 3.5) / 100 }),
     )
-    const split = moversSplit(movers, heldLines(symbols))
+    const reading = moversList(movers, heldLines(symbols))
 
-    expect(split.risers.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
-    expect(split.fallers).toEqual([])
-    expect(split.others).toBe(3)
+    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U6', 'U5', 'U4', 'U3'])
+    expect(reading.others).toBe(3)
   })
 })
 

@@ -78,7 +78,7 @@ describe('the two axes, and only one of them is a word on screen', () => {
     const [entry] = notifications({ ...QUIET, health: 'unreachable' })
 
     expect(entry.acknowledge).toBeNull()
-    expect(entry.link?.to).toEqual({ to: '/reglages' })
+    expect(entry.link?.to).toEqual({ to: '/settings' })
   })
 
   it('acknowledges an installation fact for good and an advisory for a window', () => {
@@ -96,7 +96,7 @@ describe('the two axes, and only one of them is a word on screen', () => {
     const [entry] = notifications({ ...QUIET, currencyUnanswered: true })
 
     expect(entry.acknowledge).toBeNull()
-    expect(entry.link?.to).toEqual({ to: '/reglages' })
+    expect(entry.link?.to).toEqual({ to: '/settings' })
   })
 })
 
@@ -230,7 +230,7 @@ describe('a card’s link lands on the figure, never on the page', () => {
   it('opens the account selected', () => {
     const [entry] = notifications({ ...QUIET, advisories: [advisory()] })
 
-    expect(entry.link?.to).toEqual({ to: '/comptes', search: { compte: 'alpha' } })
+    expect(entry.link?.to).toEqual({ to: '/accounts', search: { account: 'alpha' } })
   })
 
   it('opens the ledger reduced to every security the fact names', () => {
@@ -248,7 +248,7 @@ describe('a card’s link lands on the figure, never on the page', () => {
     })
 
     expect(entry.link?.to).toEqual({
-      to: '/donnees',
+      to: '/ledger',
       search: { symbol: ['ZZA', 'ZZB', 'ZZC'] },
     })
   })

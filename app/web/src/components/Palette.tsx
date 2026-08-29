@@ -61,10 +61,10 @@ import {
  */
 const PAGES = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
-  { to: '/titres', label: 'nav.shares', icon: Coins },
-  { to: '/comptes', label: 'nav.accounts', icon: Wallet },
-  { to: '/donnees', label: 'nav.ledger', icon: Table2 },
-  { to: '/reglages', label: 'nav.settings', icon: Settings },
+  { to: '/shares', label: 'nav.shares', icon: Coins },
+  { to: '/accounts', label: 'nav.accounts', icon: Wallet },
+  { to: '/ledger', label: 'nav.ledger', icon: Table2 },
+  { to: '/settings', label: 'nav.settings', icon: Settings },
 ] as const satisfies readonly { to: string; label: MessageKey; icon: LucideIcon }[]
 
 /** One line of the palette: what it says, and what it does. */
@@ -128,7 +128,7 @@ export function Palette() {
 
   // **An entry lands on an address of its own, and never on the one in force.**
   // The five sections are read over the whole portfolio, so a title reached from
-  // a page reduced to one account has to be shown: carrying `?compte=` along
+  // a page reduced to one account has to be shown: carrying `?account=` along
   // would open the sheet of a row that reduction removed — which is to say open
   // nothing at all, the palette's one entry that does nothing. What the reader
   // sees instead is the reduction lifted, on a page that says so where it says
@@ -138,7 +138,7 @@ export function Palette() {
     mark: <span className="font-mono text-[10px]">{title.symbol.slice(0, 4)}</span>,
     label: title.name ?? title.symbol,
     hint: title.name === null ? null : title.symbol,
-    run: () => leave(() => void navigate({ to: '/titres', search: { titre: title.symbol } })),
+    run: () => leave(() => void navigate({ to: '/shares', search: { symbol: title.symbol } })),
   }))
 
   const books: Entry[] = accountsMatching(named, query).map((account) => ({
@@ -146,7 +146,7 @@ export function Palette() {
     mark: <Wallet className="size-3.5" />,
     label: account.name,
     hint: account.name === account.id ? null : account.id,
-    run: () => leave(() => void navigate({ to: '/comptes', search: { compte: account.id } })),
+    run: () => leave(() => void navigate({ to: '/accounts', search: { account: account.id } })),
   }))
 
   const rows: Entry[] = eventsMatching(ledger, query).map((event, index) => {
@@ -160,7 +160,7 @@ export function Palette() {
       // name what it retains and offer the way out of it (`lib/palette.ts`).
       run: () =>
         leave(() =>
-          void navigate({ to: '/donnees', search: ledgerSearchOf(eventReduction(event)) }),
+          void navigate({ to: '/ledger', search: ledgerSearchOf(eventReduction(event)) }),
         ),
     }
   })
@@ -211,19 +211,27 @@ export function Palette() {
 
   return (
     <>
+      {/* **A field, not a word** (#838). The drawing gives the search the shape
+          of what it opens — a bordered box on the card's ground, the sentence
+          it searches written inside it, the shortcut set in a chip at its
+          right edge — and it takes the room for that only from `lg`. Below
+          that the box would eat the bar, so what is left is the icon at the
+          size of the three preferences beside it: the shortcut is the half a
+          finger cannot use, and the button is the other half (#797). */}
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        className="h-7 gap-2 px-2 text-muted-foreground"
+        size="icon"
+        aria-label={t('palette.open')}
+        className="size-8 rounded-lg text-muted-foreground lg:h-8.5 lg:w-50 lg:justify-start lg:gap-2.5 lg:border lg:border-input lg:bg-card lg:pr-2 lg:pl-2.5 xl:w-70"
         onClick={() => setOpen(true)}
       >
-        <Search />
-        {/* The word is the button's name at every width; the badge goes below
-            `sm` and the word stays, a shortcut being the half of the pair a
-            finger cannot use. */}
-        <span>{t('palette.open')}</span>
-        <span aria-hidden className="hidden rounded border px-1.5 font-mono text-[11px] sm:inline">
+        <Search className="size-3.75" />
+        <span className="hidden min-w-0 truncate text-sm lg:inline">{t('palette.open')}</span>
+        <span
+          aria-hidden
+          className="ml-auto hidden shrink-0 rounded-sm border px-1.25 py-px font-mono text-2xs lg:inline"
+        >
           {t('palette.shortcut')}
         </span>
       </Button>
@@ -305,13 +313,13 @@ const ACTIONS = [
     label: 'palette.action.event',
     keywords: 'palette.action.event.keywords',
     icon: Plus,
-    go: { to: '/donnees', search: { ouvrir: 'evenement' } },
+    go: { to: '/ledger', search: { open: 'event' } },
   },
   {
     label: 'palette.action.account',
     keywords: 'palette.action.account.keywords',
     icon: Plus,
-    go: { to: '/comptes', search: { ouvrir: 'compte' } },
+    go: { to: '/accounts', search: { open: 'account' } },
   },
 ] as const
 // The literals are held by `t()` itself: a key that is in neither catalogue

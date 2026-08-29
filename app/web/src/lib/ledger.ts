@@ -388,7 +388,7 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  *
  * The ⌘K palette leads to an event, and it leads there from another route — so
  * the reduction has to cross a navigation. It does it in the URL rather than in
- * a state a link would have to carry, which is the reason `?compte=` is a search
+ * a state a link would have to carry, which is the reason `?account=` is a search
  * parameter on the two other pages: it survives a reload, it can be handed to
  * somebody else, and the way back is the browser's own button.
  *
@@ -403,7 +403,7 @@ export function selectionParams(filters: LedgerFilters): URLSearchParams {
  * five routes, and ADR-0037 requires its link to land on **the figure** — the
  * ledger reduced to the events concerned, the reduction naming itself and
  * offering the way out. A reduction that has to cross a navigation travels in
- * the URL, which is the whole of `?compte=`'s own reasoning one page over.
+ * the URL, which is the whole of `?account=`'s own reasoning one page over.
  */
 export interface LedgerSearch {
   q?: string
@@ -416,7 +416,7 @@ export interface LedgerSearch {
 }
 
 /**
- * The address, validated rather than read raw — the rule `?compte=` follows.
+ * The address, validated rather than read raw — the rule `?account=` follows.
  *
  * **Blank counts as unset**, which is what the server reads `?type=&account=`
  * as, and a word outside the closed set of six types reduces *nothing* rather

@@ -11,7 +11,7 @@
  *  - **The rail is the master, and it carries the weights.** It is sticky, so
  *    the way into another account does not scroll off the top of a detail five
  *    blocks long.
- *  - **Which account is open is a URL** (`?compte=`), the same reduction the
+ *  - **Which account is open is a URL** (`?account=`), the same reduction the
  *    shares page carries and for the same three reasons: it survives a reload,
  *    it can be handed to somebody else, and the way out is the browser's own
  *    back button. An id naming nothing falls back to the first declared account
@@ -40,7 +40,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { AccountDetail } from '@/components/accounts/AccountDetail'
 import { AccountForm } from '@/components/accounts/AccountForm'
-import { AccountsRail } from '@/components/accounts/AccountsRail'
+import { AccountsChips, AccountsRail } from '@/components/accounts/AccountsRail'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
@@ -61,7 +61,7 @@ import { oneFailure, readConditions } from '@/lib/status'
 
 export default function AccountsPage() {
   const { t } = useI18n()
-  const { compte, ouvrir } = useSearch({ from: '/comptes' })
+  const { account, open } = useSearch({ from: '/accounts' })
   const navigate = useNavigate()
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
   // account is *open on that account*. Three states, the ledger's three.
@@ -73,10 +73,10 @@ export default function AccountsPage() {
   // arming is **spent on arrival**: a gesture is not an address, so a reload
   // must not make it again.
   useEffect(() => {
-    if (ouvrir !== 'compte') return
+    if (open !== 'account') return
     setEditing(null)
-    void navigate({ to: '/comptes', search: { compte }, replace: true })
-  }, [ouvrir, compte, navigate])
+    void navigate({ to: '/accounts', search: { account }, replace: true })
+  }, [open, account, navigate])
 
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: api.accounts })
   const totals = useQuery({ queryKey: ['portfolio-totals'], queryFn: api.portfolioTotals })
@@ -100,7 +100,7 @@ export default function AccountsPage() {
 
   const declared = accounts.data?.accounts ?? []
   const rows = buildAccountRows(declared)
-  const opened = chooseAccount(rows, compte)
+  const opened = chooseAccount(rows, account)
 
   // **One read per opened account, and only for the one that is open.** The
   // series is some two and a half thousand days long, and the rail owes it
@@ -218,49 +218,63 @@ export default function AccountsPage() {
         // width of a phone and every card under it with it. `grid-cols-1` is
         // `repeat(1, minmax(0, 1fr))`, and the `0` is what puts the truncations
         // back in charge (`src/gridColumns.test.ts`).
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
-          <AccountsRail
-            rows={rows}
-            selected={opened.id}
-            rebuilding={runtime.data?.rebuilding ?? null}
-            onDeclare={() => setEditing(null)}
-            currency={currency}
-            // Whether there is anything to reassign — the module's own answer
-            // (#725), which is *events still naming a row nobody declared* and
-            // not *a row called `default` exists*: renamed, retyped or taken
-            // over by a file, that row is an ordinary account and the offer
-            // would be about nothing.
-            //
-            // `?? []` here is the legitimate one ADR-0026 leaves open: an
-            // absent read **removes the offer** instead of falsifying it, and
-            // claiming there are unassigned events before the ledger has
-            // answered would be the opposite mistake.
-            offer={offer}
-            // `?? null` and never `?? []`: a chip is a claim about the
-            // reader's own account, and a read in flight is not one.
-            advisories={advisories.data ?? null}
-          />
-          <AccountDetail
-            row={opened}
-            positions={heldPositions}
-            events={ledger}
-            points={series}
-            currency={currency}
-            rebuilding={runtime.data?.rebuilding ?? null}
-            // The standing offer belongs to the account carrying the events, so
-            // it is composed here — where both reads are — and handed to the
-            // detail that is about that account. Everywhere else it is `none`
-            // and the block does not exist.
-            reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
-            // **One entry per read, handed to the block it composes** (#829,
-            // ADR-0037). There is no band above the column any more, and one
-            // condition for the three would have taken a detail that read two
-            // of them off the screen to report the third — the exact
-            // disappearance #799 repaired on the dashboard.
-            failures={detailFailures}
-            onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
-          />
-        </div>
+        <>
+          {/* **The stacked width's rail, and it is a bar** (#838). It is
+              mounted here rather than inside `AccountsRail` because a sticky
+              element sticks within its *containing block*: put in the rail's
+              own column it came unstuck where that column ends, which is a
+              third of the way down the page. Above the grid, its containing
+              block is the page's column and it holds all the way down. */}
+          <AccountsChips rows={rows} selected={opened.id} currency={currency} />
+
+          <div className="grid grid-cols-1 items-start gap-6 wide:grid-cols-[minmax(0,16.5rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+            <AccountsRail
+              rows={rows}
+              selected={opened.id}
+              rebuilding={runtime.data?.rebuilding ?? null}
+              onDeclare={() => setEditing(null)}
+              currency={currency}
+              // Whether there is anything to reassign — the module's own answer
+              // (#725), which is *events still naming a row nobody declared* and
+              // not *a row called `default` exists*: renamed, retyped or taken
+              // over by a file, that row is an ordinary account and the offer
+              // would be about nothing.
+              //
+              // `?? []` here is the legitimate one ADR-0026 leaves open: an
+              // absent read **removes the offer** instead of falsifying it, and
+              // claiming there are unassigned events before the ledger has
+              // answered would be the opposite mistake.
+              offer={offer}
+              // `?? null` and never `?? []`: a chip is a claim about the
+              // reader's own account, and a read in flight is not one.
+              advisories={advisories.data ?? null}
+            />
+            <AccountDetail
+              // Which of the wheel's hues this account wears — the rail's own,
+              // so the curve and the composition here are drawn in the colour the
+              // rail already gave it (#838).
+              hue={rows.findIndex((one) => one.id === opened.id)}
+              row={opened}
+              positions={heldPositions}
+              events={ledger}
+              points={series}
+              currency={currency}
+              rebuilding={runtime.data?.rebuilding ?? null}
+              // The standing offer belongs to the account carrying the events, so
+              // it is composed here — where both reads are — and handed to the
+              // detail that is about that account. Everywhere else it is `none`
+              // and the block does not exist.
+              reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
+              // **One entry per read, handed to the block it composes** (#829,
+              // ADR-0037). There is no band above the column any more, and one
+              // condition for the three would have taken a detail that read two
+              // of them off the screen to report the third — the exact
+              // disappearance #799 repaired on the dashboard.
+              failures={detailFailures}
+              onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
+            />
+          </div>
+        </>
       )}
 
       {/* One panel for the page, opened from the rail and from the detail. It

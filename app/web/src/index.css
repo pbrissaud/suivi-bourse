@@ -44,7 +44,7 @@
  * ========================================================================== */
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --background: oklch(0.9695 0.0045 258.3246);
   --foreground: oklch(0.1993 0.0154 261.5830);
   --card: oklch(0.9906 0.0017 247.8388);
@@ -132,7 +132,7 @@
   --sidebar-border: oklch(0.2389 0.0207 264.0671);
   --sidebar-ring: oklch(0.8189 0.1395 164.9312);
   --destructive-foreground: oklch(0.1547 0.0159 266.3824);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --font-sans: 'Geist Variable', Geist, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
@@ -215,8 +215,8 @@
   /* Lifted in lightness for the darker ground, which is the legibility
      correction the redesign makes — and **not** in chroma towards the theme's
      red, which is the correction ADR-0029 refuses. */
-  --gain: oklch(0.7600 0.1400 163);
-  --loss: oklch(0.7200 0.1300 25);
+  --gain: oklch(0.8500 0.1400 163);
+  --loss: oklch(0.7200 0.1500 25);
   --price: var(--primary);
   --grant: var(--chart-1);
   --dividend: var(--chart-2);
@@ -300,6 +300,68 @@
   --font-serif: Georgia, serif;
   --font-heading: var(--font-sans);
 
+  /* **The type scale is the maquette's, and it is stated once** (#838). The
+     drawing works on a 15 px body and a ladder that is not Tailwind's — 11 px
+     for an uppercase eyebrow, 12 px for a figure's label, 13 px for everything
+     read inside a card, 19 px for a statistic, 52 px for the one figure a page
+     leads with. Redeclaring the `--text-*` scale is what puts that ladder
+     behind the class names already written: a block goes on saying `text-sm`
+     and lands on the drawing's 13 px, and no component carries a pixel of its
+     own. `--text-2xs` is the one rung Tailwind has no name for, and it is the
+     eyebrow's. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-xs: 0.75rem;
+  --text-xs--line-height: calc(1.125 / 0.75);
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: calc(1.25 / 0.8125);
+  --text-md: 0.875rem;
+  --text-md--line-height: calc(1.375 / 0.875);
+  --text-base: 0.9375rem;
+  --text-base--line-height: calc(1.4375 / 0.9375);
+  --text-lg: 1rem;
+  --text-lg--line-height: calc(1.5 / 1);
+  --text-xl: 1.1875rem;
+  --text-xl--line-height: calc(1.5 / 1.1875);
+  --text-2xl: 1.25rem;
+  --text-2xl--line-height: calc(1.625 / 1.25);
+  --text-3xl: 1.625rem;
+  --text-3xl--line-height: 1.15;
+  --text-4xl: 1.75rem;
+  --text-4xl--line-height: 1.1;
+  --text-5xl: 2.125rem;
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 2.625rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 3.25rem;
+  --text-7xl--line-height: 1;
+
+  /* **The one figure a page leads with, and it is the only fluid rung.** The
+     drawing gives it four sizes — 30 px on a phone, 36, 42, and 52 from
+     1 024 px — which is a ramp and not four decisions: written as four
+     breakpoints it would be four classes every page-leading figure has to
+     repeat and keep in step. The `clamp` is that ramp, fitted to the drawing's
+     own two anchors (42 px at 768, 52 px at 1 024) and floored and ceilinged
+     where the drawing stops. */
+  --text-hero: clamp(1.875rem, 0.75rem + 3.906vw, 3.25rem);
+  --text-hero--line-height: 1;
+
+  /* The one weight above `font-semibold` the drawing asks for, and it asks for
+     it once: the figure a page leads with, at 52 px, where 600 reads thin. */
+  --font-weight-heavy: 650;
+
+  /* **The 976 px reflow target, as a breakpoint of its own.** It is the width
+     the redesign was measured at — the worst realistic case, a narrow laptop
+     beside a browser panel — and the drawing switches the accounts page from
+     stacked to master-detail exactly there, between the framework's `md` and
+     its `lg`. Written as `lg:` it lands 48 px late, which is one whole reflow
+     off on the one width somebody chose to measure. */
+  --breakpoint-wide: 61rem;
+
+  /* The eyebrow's tracking, which is a letter-spacing the preset has no rung
+     for: `tracking-widest` stops at +0.1em and the drawing sets 0.12em. */
+  --tracking-caps: calc(var(--tracking-normal) + 0.12em);
+
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);
@@ -321,7 +383,30 @@
   --shadow-spread: var(--shadow-spread);
   --shadow-blur: var(--shadow-blur);
   --shadow-opacity: var(--shadow-opacity);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
+}
+
+/**
+ * **The one composed utility, and it is a shape rather than a token.**
+ *
+ * Every heading of a card in the redesign is the same object: 11 px, semibold,
+ * uppercase, widely tracked, in the muted colour. Written out at each of its
+ * two dozen call sites it is six classes to keep in step, and the first one to
+ * drift takes a card out of the system without anything failing.
+ *
+ * It is **not a fourth block** (ADR-0023): it declares no token and it composes
+ * only what the three above already say, so the cut the file is held to — the
+ * preset owns the chrome, the domain owns the meaning, the bridge joins them —
+ * is untouched. A block is a place values are *decided*; this is a name for
+ * six of them used together.
+ */
+@utility eyebrow {
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
 }
 
 @layer base {
@@ -329,7 +414,9 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* `text-base` is the drawing's 15 px since the scale above says so — the
+       size is read off the ladder here like it is everywhere else. */
+    @apply bg-background text-base text-foreground;
     letter-spacing: var(--tracking-normal);
   }
   /* Numbers in a portfolio are read *down a column*, so their glyphs have to
@@ -337,6 +424,16 @@
      and one you have to read. */
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+  /* **And in a table it is set in the mono face** (#838). The drawing puts
+     every figure inside a table in `Geist Mono` and every figure outside one —
+     a statistic, the one figure a page leads with — in the sans: a column of
+     amounts is read as a column, where a headline figure is read as a word. It
+     is one rule scoped to the cell rather than a second class every numeric
+     cell in five tables has to remember, which is what `.tabular` itself is
+     for. */
+  :is(td, th) :is(.tabular), :is(td, th).tabular {
+    font-family: var(--font-mono);
   }
   html {
     @apply font-sans;

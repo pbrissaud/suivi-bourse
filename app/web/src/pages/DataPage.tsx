@@ -8,7 +8,7 @@
  * the owner declared* and became the ledger; the **notices** at #829, into the
  * panel behind the header's bell, a notice being prose that a card in a column
  * beside the store has nowhere to say; and the **installation** here, to
- * `/reglages`. What is left is *the ledger*, which is what the page is now
+ * `/settings`. What is left is *the ledger*, which is what the page is now
  * called — `Grand livre`, the word the glossary and every French record already
  * use, never a third one.
  *
@@ -43,10 +43,10 @@ export default function DataPage() {
   // `q`, `type`, `account` and — since #810 — `since`/`until` are the ledger's
   // own dimensions under the names the export resource parses, so a reduced
   // ledger's address is the query string of its own export, and it survives a
-  // reload the way `?compte=` does two pages over. A *gesture* is not: `ouvrir`
+  // reload the way `?account=` does two pages over. A *gesture* is not: `open`
   // arms the create form and is spent on arrival, because a form reopening on
   // every reload is a state nobody asked for twice.
-  const search = useSearch({ from: '/donnees' })
+  const search = useSearch({ from: '/ledger' })
   const navigate = useNavigate()
   const reduction = useMemo(
     () =>
@@ -67,7 +67,7 @@ export default function DataPage() {
   }, [reduction])
 
   useEffect(() => {
-    if (search.ouvrir !== 'evenement') return
+    if (search.open !== 'event') return
     setCompose({})
     // Spent on arrival: what the address armed is about to happen, and an
     // address that went on saying so would arm it again on the next reload. The
@@ -76,7 +76,7 @@ export default function DataPage() {
     // gesture. A reduction hand-typed beside it rides on: the palette never
     // sends both, and an address that carries the two means both.
     void navigate({
-      to: '/donnees',
+      to: '/ledger',
       search: {
         q: search.q,
         type: search.type,
@@ -88,7 +88,7 @@ export default function DataPage() {
       replace: true,
     })
   }, [
-    search.ouvrir,
+    search.open,
     search.q,
     search.type,
     search.account,
@@ -108,7 +108,7 @@ export default function DataPage() {
   const release = () => {
     setFocus(undefined)
     if (reduction === null) return
-    void navigate({ to: '/donnees', search: {}, replace: true })
+    void navigate({ to: '/ledger', search: {}, replace: true })
   }
 
   usePageHeading(t('page.ledger'))

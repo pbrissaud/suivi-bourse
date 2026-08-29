@@ -32,15 +32,14 @@
  * header off screen. The folded section is not a surface but a part of the page,
  * which is what takes eleven icons down to nine (#684 D7).
  */
-import { Explain } from '@/components/Explain'
-import { Stat } from '@/components/Stat'
+import type { ReactNode } from 'react'
+
 import type { Position } from '@/lib/api'
 import type { ShareRow } from '@/lib/shares'
 import { valuationTotal } from '@/lib/shares'
 import { useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import {
-  gainTotal,
   securityTerms,
   sumRendering,
   termAmount,
@@ -49,8 +48,8 @@ import {
   type GainTermName,
 } from '@/lib/gain'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import type { DocsAnchor } from '@/lib/docs'
 import { signClass } from '@/lib/sign'
+import { cn } from '@/lib/utils'
 
 /**
  * Three terms and not four. `transferFees` is deliberately absent: it belongs
@@ -61,28 +60,16 @@ import { signClass } from '@/lib/sign'
 const SHARES_TERMS = ['unrealised', 'realised', 'dividends'] as const
 
 const TERM_LABELS: Record<(typeof SHARES_TERMS)[number], MessageKey> = {
-  unrealised: 'gain.term.unrealised',
-  realised: 'gain.term.realised',
-  dividends: 'gain.term.dividends',
+  unrealised: 'shares.column.unrealised',
+  realised: 'shares.column.realised',
+  dividends: 'shares.column.dividends',
 }
 
-const TERM_EXPLAIN: Record<(typeof SHARES_TERMS)[number], { body: MessageKey; anchor: DocsAnchor }> =
-  {
-    unrealised: { body: 'shares.unrealised.explain', anchor: 'latent-gain' },
-    realised: { body: 'shares.realised.explain', anchor: 'realized-gain' },
-    dividends: { body: 'shares.dividends.explain', anchor: 'dividends' },
-  }
 
 /** Identical to the dashboard head's, and for the same reason: written per site,
  *  the dash wins every time — including where the rule says *name it*. */
 
 export interface SharesHeadProps {
-  /**
-   * The positions of **the rows the page is showing**, closed ones included —
-   * the argument is the decision. Handed the held ones alone this block prints
-   * the other correct figure, and handed the whole portfolio while the page
-   * shows a subset it stops being the summary of what is under it.
-   */
   positions: readonly Position[]
   rows: readonly ShareRow[]
   currency: string | null
@@ -91,98 +78,72 @@ export interface SharesHeadProps {
 export function SharesHead({ positions, rows, currency }: SharesHeadProps) {
   const { t } = useI18n()
   const f = useFormatters()
-
-  // The same arithmetic the dashboard's head runs, on a surface where the
-  // fourth term has **no subject** — which is `securityTerms` and not
-  // `portfolioTerms(positions, null)`: since #775 that `null` says *there is no
-  // day to bound the fees by*, and read here it would put an em dash over a
-  // table whose rows do add up.
   const terms = securityTerms(positions)
-  const total = gainTotal(terms)
   const valuation = valuationTotal(rows)
-
   return (
-    <div className="space-y-6">
-      <Stat
-        size="head"
-        label={t('shares.gainTotal')}
-        value={renderFigure(
-          sumRendering(total),
-          () => f.currency(total.known ? total.value : null, currency),
-          t,
-        )}
-        valueClassName={signClass(total.known ? total.value : null)}
-        explain={
-          <Explain
-            figure={t('shares.gainTotal')}
-            body="shares.gainTotal.explain"
-            anchor="total-gain"
-          />
-        }
-      />
-
-      {/* The three terms, on their own row and never on the head's — and the
-          same three the table carries as columns. */}
-      {/* **A row that spreads rather than one that packs left.** `flex
-            flex-wrap` put a fixed gap between the figures and left the rest of
-            the card empty — invisible while the content column was capped at
-            1 280 px, and the whole right half of the card since #792 uncapped it
-            (ADR-0022, amended). `auto-fit` collapses the tracks nothing fills,
-            so the figures that **do** exist share the width whatever their
-            number, which is what these rows need: both render only the terms and
-            the statistics this installation has. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b px-4 py-3.5">
+      <h2 className="eyebrow">
+        {t('shares.head.title')}
+      </h2>
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+        <Figure
+          label={t('shares.column.value')}
+          value={renderFigure(
+            sumRendering(valuation),
+            () => f.currency(valuation.known ? valuation.value : null, currency),
+            t,
+          )}
+        />
         {SHARES_TERMS.map((term) => {
           const value = termAmount(terms, term as GainTermName)
           return (
-            <Stat
+            <Figure
               key={term}
-              size="term"
               label={t(TERM_LABELS[term])}
               value={renderFigure(
                 termRendering(terms, term as GainTermName),
                 () => f.currency(value, currency),
                 t,
               )}
-              // Colour only where the sign can turn: a dividend received is
-              // never negative, so painting it steals the signal from the red
-              // of a realised loss.
-              valueClassName={
+              tone={
                 value === null
                   ? signClass(null)
                   : termCarriesSign(term as GainTermName)
                     ? signClass(value)
                     : signClass(0)
               }
-              explain={
-                <Explain
-                  figure={t(TERM_LABELS[term])}
-                  body={TERM_EXPLAIN[term].body}
-                  anchor={TERM_EXPLAIN[term].anchor}
-                />
-              }
             />
           )
         })}
       </div>
-
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
-        <Stat
-          label={t('shares.value')}
-          value={renderFigure(
-            sumRendering(valuation),
-            () => f.currency(valuation.known ? valuation.value : null, currency),
-            t,
-          )}
-          explain={
-            <Explain
-              figure={t('shares.value')}
-              body="shares.value.explain"
-              anchor="carrying-price"
-            />
-          }
-        />
-      </div>
     </div>
+  )
+}
+
+/**
+ * One of the strip's four: the label at the size of a caption, the figure a
+ * rung above it in the mono face — subordination said in size, on one line,
+ * which is what a header of a table has room for.
+ */
+function Figure({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: ReactNode
+  tone?: string
+}) {
+  return (
+    <span
+      role="group"
+      aria-label={label}
+      className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
+    >
+      <span>{label}</span>
+      <span className={cn('tabular font-mono text-sm font-semibold text-foreground', tone)}>
+        {value}
+      </span>
+    </span>
   )
 }

@@ -2,7 +2,7 @@
  * The declaration of the accounts (#729, #793, ADR-0013, ADR-0002, ADR-0028), at
  * the one seam: the whole app in jsdom, HTTP the only faked edge.
  *
- * It lives on `/comptes` since ADR-0028 — with the page that reads the accounts
+ * It lives on `/accounts` since ADR-0028 — with the page that reads the accounts
  * — and the removal came with it, out of a table cell and into the panel, where
  * its refusals are the prose they always were — **two of them, and this file
  * once said three**. The third was *a file declares this account*, and it
@@ -45,7 +45,7 @@ import { server } from '@/test/server'
 function renderAccounts(
   accounts = anAccountsPayload(),
   events: LedgerEvent[] = ledgerEvents(),
-  url = '/comptes',
+  url = '/accounts',
 ) {
   server.use(
     http.get(ROUTES.accounts, () => HttpResponse.json(accounts)),
@@ -63,19 +63,24 @@ function detail(name: string) {
   return screen.findByRole('region', { name })
 }
 
-/** Open one account's panel: its detail, then its name, which is the affordance. */
+/**
+ * Open one account's panel: its detail, then the **pencil** beside its name,
+ * which is the affordance since #838. It was the name itself; the drawing gives
+ * the editor an icon, and one gesture gets one control — a heading that is also
+ * a button reads as a link to somewhere else.
+ */
 async function openPanel(user: ReturnType<typeof renderApp>['user'], name: string) {
   await user.click(within(await screen.findByRole('list', { name: 'Vos comptes' })).getByRole(
     'link',
     { name: new RegExp(name) },
   ))
   const opened = await detail(name)
-  await user.click(within(opened).getByRole('button', { name }))
+  await user.click(within(opened).getByRole('button', { name: 'Modifier le compte' }))
   return screen.findByRole('dialog')
 }
 
 describe('the same form as the ledger, not a second one', () => {
-  it('makes the account’s own name the affordance, and nothing else', async () => {
+  it('gives the editor one control, beside the name and nothing else', async () => {
     const { user } = renderAccounts()
     await detail('Alpha')
 
@@ -86,14 +91,16 @@ describe('the same form as the ledger, not a second one', () => {
     }
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
 
-    // **Every** account's name is the affordance, since ADR-0034: one was text
-    // rather than a button while a file could declare a row the app must not
-    // correct, and there is no such row any more.
+    // **Every** account is editable, since ADR-0034: one was read-only while a
+    // file could declare a row the app must not correct, and there is no such
+    // row any more. The control is the pencil beside the name (#838), and the
+    // name itself is a heading and not a button — one gesture, one control.
     await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
     const beta = await detail('Beta')
-    expect(within(beta).getByRole('button', { name: 'Beta' })).toBeInTheDocument()
+    expect(within(beta).getByRole('button', { name: 'Modifier le compte' })).toBeInTheDocument()
+    expect(within(beta).queryByRole('button', { name: 'Beta' })).not.toBeInTheDocument()
 
-    // `Gamma` was declared here too: its name opens the panel.
+    // `Gamma` was declared here too: its pencil opens the panel.
     const panel = await openPanel(user, 'Gamma')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
     expect(within(panel).getByLabelText('Type')).toHaveValue('CTO')
@@ -165,7 +172,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     const alpha = await openPanel(user, 'Alpha')
     const removal = within(alpha).getByRole('region', { name: 'Supprimer ce compte' })
     expect(removal).toHaveTextContent('4 événements nomment ce compte')
-    expect(removal).toHaveTextContent(/nommerait alors quelque chose qui n’existe pas/)
+    expect(removal).toHaveTextContent(/ne pointeraient plus sur rien/)
     expect(within(removal).queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument()
     await user.click(within(alpha).getByRole('button', { name: 'Annuler' }))
 
@@ -185,7 +192,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     const panel = await openPanel(user, 'Beta')
 
     expect(within(panel).getByRole('region', { name: 'Supprimer ce compte' })).toHaveTextContent(
-      /Rien ne nomme ce compte/,
+      /Aucun événement ne nomme ce compte/,
     )
     // And no refusal names a file: none of them can any more.
     expect(panel).not.toHaveTextContent(/oubliez/)
@@ -196,7 +203,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     const panel = await openPanel(user, 'Gamma')
 
     const removal = within(panel).getByRole('region', { name: 'Supprimer ce compte' })
-    expect(removal).toHaveTextContent(/Rien ne nomme ce compte/)
+    expect(removal).toHaveTextContent(/Aucun événement ne nomme ce compte/)
 
     server.use(
       http.get(ROUTES.accounts, () =>
@@ -236,8 +243,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
 
     expect(
       await within(panel).findByText(
-        'L’application a refusé : ce que ce geste nomme existe déjà, ou quelque chose ' +
-          'repose encore dessus.',
+        'Refusé : ce nom existe déjà, ou quelque chose en dépend encore.',
       ),
     ).toBeInTheDocument()
   })
@@ -246,7 +252,7 @@ describe('a removal that cannot happen is absent and names its reason', () => {
     // The count a refusal is made of comes off the ledger, so a removal offered
     // before it lands offers a gesture the server is about to refuse.
     server.use(http.get(ROUTES.events, () => new Promise<never>(() => {})))
-    const { user } = renderApp({ url: '/comptes' })
+    const { user } = renderApp({ url: '/accounts' })
     const panel = await openPanel(user, 'Alpha')
 
     expect(
@@ -271,9 +277,11 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // server's own English about a row nobody declared.
     const opened = await detail('Non affecté')
     expect(within(rail()).getByRole('link', { name: /Non affecté/ })).toBeInTheDocument()
-    // The id is on screen where it is not the name: it is what every event
-    // names and what a file's `account` column has to spell.
-    expect(opened).toHaveTextContent(DEFAULT_ACCOUNT_ID)
+    // **The id is not on this page any more** (#838): the drawing heads an
+    // account with what the owner called it and what kind it is, and nothing
+    // else. It is still what every event names, and it is still read where an
+    // event is — the ledger's `Compte` column and the shares table's chip.
+    expect(opened).not.toHaveTextContent(DEFAULT_ACCOUNT_ID)
     expect(screen.queryByText('Default account')).not.toBeInTheDocument()
     expect(screen.queryByText('OTHER')).not.toBeInTheDocument()
   })
@@ -308,7 +316,9 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     // The name given wins, and the id it is addressed by does not move.
     expect(await within(rail()).findByRole('link', { name: /Mon PEA/ })).toBeInTheDocument()
     expect(within(rail()).queryByRole('link', { name: /Non affecté/ })).not.toBeInTheDocument()
-    expect(await detail('Mon PEA')).toHaveTextContent(DEFAULT_ACCOUNT_ID)
+    // Renamed, and the row is still `default` underneath — which this page no
+    // longer writes down (#838); what proves it is the request the form sent.
+    await detail('Mon PEA')
     expect(patched).toMatchObject({ label: 'Mon PEA', type: 'PEA' })
   })
 
@@ -343,7 +353,7 @@ describe('`default` on this page, under the name the catalogue gives it', () => 
     const { user } = renderAccounts(
       anAccountsPayload([anAccount({ id: 'alpha', label: 'Alpha' }), theSeededAccount()]),
       [anEvent({ account: DEFAULT_ACCOUNT_ID })],
-      '/donnees',
+      '/ledger',
     )
 
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
@@ -382,7 +392,7 @@ describe('the declaration is reachable at every N', () => {
     // `/api/accounts` never serves an empty list, so *no rail* is *nothing has
     // arrived* and never a state of the declaration.
     server.use(http.get(ROUTES.accounts, () => new Promise<never>(() => {})))
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     await screen.findByRole('heading', { level: 1, name: 'Comptes' })
     expect(screen.queryByRole('list', { name: 'Vos comptes' })).not.toBeInTheDocument()
@@ -398,7 +408,7 @@ describe('the create form on an install that has declared nothing', () => {
     const { user } = renderAccounts(
       noAccountsDeclared(),
       [anEvent({ account: DEFAULT_ACCOUNT_ID })],
-      '/donnees',
+      '/ledger',
     )
 
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
@@ -460,7 +470,7 @@ describe('the create form on an install that has declared nothing', () => {
         ),
       ),
     )
-    const { user } = renderApp({ url: '/donnees' })
+    const { user } = renderApp({ url: '/ledger' })
 
     // **The ledger is still there.** Its own read answered (`GET /api/events`
     // comes off process memory and has no `503`), so masking it would take the

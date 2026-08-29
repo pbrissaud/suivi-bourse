@@ -48,7 +48,7 @@ function renderAccounts(
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts))),
     http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(positions))),
   )
-  return renderApp({ url: '/comptes' })
+  return renderApp({ url: '/accounts' })
 }
 
 /** Open one account's detail — a click on its rail entry, which is a URL. */
@@ -58,71 +58,64 @@ async function open(user: ReturnType<typeof renderApp>['user'], name: string) {
   return screen.findByRole('region', { name })
 }
 
+/**
+ * The head's own gain — **`Gain`, and no longer `Gain total`** (#838). The
+ * drawing states it on one line beside the contribution it is a change of,
+ * rather than as a 52 px figure with four terms nested under it.
+ */
 function head(detail: HTMLElement) {
-  return within(detail).getByRole('group', { name: 'Gain total' })
+  return within(detail).getByRole('group', { name: 'Gain' })
 }
 
-describe('the four terms explain the total', () => {
-  it('mounts them **inside** the total rather than beside it', async () => {
+describe('the head states the account, and the curve is in it', () => {
+  it('leads with the value, and puts the two figures it is a change of under it', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(found).toHaveTextContent(/322,00/)
-      return found
-    })
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    // The nesting **is** the subordination, and it is the other half of
-    // ADR-0016's rule rather than an exception to it: a table row has the
-    // horizontal axis and nothing else, so the terms had to leave the table —
-    // a block is the only place they can be *inside* the total.
-    for (const term of ['Plus-value latente', 'Plus-value réalisée', 'Dividendes reçus']) {
-      expect(within(group).getByRole('group', { name: term })).toBeInTheDocument()
-    }
-    expect(within(group).getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /300,00/,
+    // **What the drawing leads an account with** (#838): what it is worth, then
+    // — one rung down and on one line — what was paid in and what that has
+    // become. The four-term list that used to be nested in a 52 px `Gain total`
+    // is gone with the figure: the dividends have a card of their own on this
+    // page, the fees are the line below, and the latent gain is a column of the
+    // lines table further down.
+    expect(within(detail).getByRole('group', { name: 'Valeur totale' })).toHaveTextContent(
+      /1\s?800,00/,
     )
-    expect(within(group).getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/25,00/)
-    expect(within(group).getByRole('group', { name: /Frais/ })).toHaveTextContent(/3,00/)
+    expect(within(detail).getByRole('group', { name: 'Versé net' })).toHaveTextContent(
+      /1\s?478,00/,
+    )
+    expect(within(detail).queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+    expect(
+      within(detail).queryByRole('group', { name: 'Plus-value latente' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('keeps the contribution out of the four, being the denominator and not a term', async () => {
+  it('states the fees this account paid, and what they are of what was paid in', async () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(found).toHaveTextContent(/322,00/)
-      return found
-    })
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    // 1 800,00 − 322,00. It is what makes a gain legible as *this account went
-    // nowhere* rather than as a typo — and it is not one of the four, so it
-    // does not live inside the total's own group.
-    const contributed = within(detail).getByRole('group', { name: 'Versé net' })
-    expect(contributed).toHaveTextContent(/1\s?478,00/)
-    expect(within(group).queryByRole('group', { name: 'Versé net' })).not.toBeInTheDocument()
+    // ADR-0018's fourth term belongs to no security, so it is the one the head
+    // says in its own words rather than in a column — and it says it against
+    // the same denominator the ratio beside it divides.
+    const fees = within(detail).getByRole('group', { name: /Frais/ })
+    expect(fees).toHaveTextContent(/3,00/)
+    expect(fees).toHaveTextContent(/du versé/)
   })
 
-  it('reads an account that went nowhere while its terms did not', async () => {
+  it('reads an account that went nowhere, and says so with the gain and not a term', async () => {
     const { user } = renderAccounts(
       [...defaultAccounts(), anAccountGoingNowhere()],
       [...defaultPositions(), ...positionsGoingNowhere()],
     )
     const detail = await open(user, 'Nowhere')
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(found).toHaveTextContent(/-0,63/)
-      return found
-    })
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/-0,63/))
 
-    expect(within(group).getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-      /-47,65/,
-    )
-    expect(within(group).getByRole('group', { name: 'Plus-value réalisée' })).toHaveTextContent(
-      /60,97/,
-    )
-    expect(within(group).getByRole('group', { name: 'Dividendes reçus' })).toHaveTextContent(/0,00/)
-    expect(within(group).getByRole('group', { name: /Frais/ })).toHaveTextContent(/13,95/)
+    // The four terms are not on this page any more (#838) — what stays is that
+    // the gain is **computed** from them and never read off `gain_absolu`, and
+    // that the fees this account paid are its own.
+    expect(within(detail).getByRole('group', { name: /Frais/ })).toHaveTextContent(/13,95/)
   })
 
   it('carries this account’s fees and never the portfolio’s', async () => {
@@ -130,14 +123,10 @@ describe('the four terms explain the total', () => {
     // Read here it would make the detail of one account state another's cost.
     const { user } = renderAccounts()
     const detail = await open(user, 'Beta')
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(found).toHaveTextContent(/48,00/)
-      return found
-    })
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/48,00/))
 
-    expect(within(group).getByRole('group', { name: /Frais/ })).toHaveTextContent(/2,00/)
-    expect(group).not.toHaveTextContent(/5,00/)
+    expect(within(detail).getByRole('group', { name: /Frais/ })).toHaveTextContent(/2,00/)
+    expect(within(detail).queryByText(/5,00\s?€/)).not.toBeInTheDocument()
   })
 
   it('drops the fourth term where the broker took nothing', async () => {
@@ -145,13 +134,9 @@ describe('the four terms explain the total', () => {
     // learns the fourth exists. `0,00 €` there is not a figure worth a line.
     const { user } = renderAccounts()
     const detail = await open(user, 'Gamma')
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(found).toHaveTextContent(/0,00/)
-      return found
-    })
+    await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    expect(within(group).queryByRole('group', { name: /Frais/ })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: /Frais/ })).not.toBeInTheDocument()
   })
 
   it('computes the head instead of reading the figure written beside it', async () => {
@@ -177,18 +162,16 @@ describe('the four terms explain the total', () => {
     const { user } = renderAccounts([anAccountWithoutSeries(), ...defaultAccounts().slice(1)])
     const detail = await open(user, 'Alpha')
 
-    const group = await waitFor(() => {
-      const found = head(detail)
-      expect(within(found).getByRole('group', { name: 'Plus-value latente' })).toHaveTextContent(
-        /300,00/,
-      )
-      return found
-    })
-    expect(within(group).getByRole('group', { name: /Frais/ })).toHaveTextContent('—')
+    // **And the term renders, as a dash**: a headline that goes out with no
+    // visible cause under it is worse than the wrong number it replaces. The
+    // fees line is dropped at **zero** and never at `null`, which is the
+    // server's own *no day to bound them by*.
+    const fees = await within(detail).findByRole('group', { name: /Frais/ })
+    expect(fees).toHaveTextContent('—')
     // The three terms it does hold sum to `+325,00`, and that figure is exactly
     // what must **not** be written under the name of a total whose fourth term
     // nobody could state.
-    expect(group).not.toHaveTextContent(/325,00/)
+    expect(head(detail)).not.toHaveTextContent(/325,00/)
   })
 })
 
@@ -287,7 +270,7 @@ describe('the five blocks', () => {
     ])
     const detail = await open(user, 'Alpha')
 
-    const lines = await within(detail).findByRole('list', { name: 'Lignes détenues' })
+    const lines = await within(detail).findByRole('list', { name: 'Titres du compte' })
     const rows = within(lines).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
     // 1 300,00 of 1 560,00, then 260,00 of it. The figure is written out, which
@@ -303,7 +286,7 @@ describe('the five blocks', () => {
     const { user } = renderAccounts()
     const detail = await open(user, 'Alpha')
 
-    const lines = await within(detail).findByRole('list', { name: 'Lignes détenues' })
+    const lines = await within(detail).findByRole('list', { name: 'Titres du compte' })
     expect(within(lines).getAllByRole('listitem')).toHaveLength(1)
     expect(lines).toHaveTextContent('ZZA')
     // The link counts what the page it leads to shows — **symbols**, closed
@@ -313,7 +296,7 @@ describe('the five blocks', () => {
     // the reduction is a URL, so it survives a reload.
     expect(
       within(detail).getByRole('link', { name: 'Voir la ligne de ce compte dans Titres' }),
-    ).toHaveAttribute('href', '/titres?compte=alpha')
+    ).toHaveAttribute('href', '/shares?account=alpha')
   })
 
   it('has no lines block at all where the account holds nothing', async () => {
@@ -323,7 +306,7 @@ describe('the five blocks', () => {
     const detail = await open(user, 'Gamma')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
-    expect(within(detail).queryByRole('list', { name: 'Lignes détenues' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('list', { name: 'Titres du compte' })).not.toBeInTheDocument()
     expect(within(detail).queryByRole('link', { name: /ligne/ })).not.toBeInTheDocument()
   })
 
@@ -337,7 +320,7 @@ describe('the five blocks', () => {
     expect(within(events).getAllByRole('listitem')[0]).toHaveTextContent('10 févr. 2026')
     expect(
       within(detail).getByRole('link', { name: 'Voir tout le grand livre' }),
-    ).toHaveAttribute('href', '/donnees')
+    ).toHaveAttribute('href', '/ledger')
   })
 
   it('has no events block where no event names the account', async () => {
@@ -420,7 +403,7 @@ describe('no range control, and a cumulative ratio in its place', () => {
       expect(detail).toHaveTextContent('Dessiné sur toute l’histoire de ce compte'),
     )
     expect(
-      within(detail).getByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).getByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
     ).toBeInTheDocument()
   })
 
@@ -432,7 +415,7 @@ describe('no range control, and a cumulative ratio in its place', () => {
     await waitFor(() => expect(head(detail)).toHaveTextContent(/0,00/))
 
     expect(
-      within(detail).queryByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).queryByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
     ).not.toBeInTheDocument()
   })
 })
@@ -447,19 +430,19 @@ describe('a read in flight is not an absence', () => {
       // Never settles: the read is in flight for the whole of the test.
       http.get(ROUTES.positions, () => new Promise<never>(() => {})),
     )
-    const { user } = renderApp({ url: '/comptes' })
+    const { user } = renderApp({ url: '/accounts' })
     const detail = await open(user, 'Alpha')
 
     // The detail's other reads *have* landed — the curve comes from
     // `/api/accounts/alpha/history`, which answers. So what follows is an
     // absence under a rendered detail, not a detail that has not rendered.
     expect(
-      await within(detail).findByRole('heading', {
+      await within(detail).findByRole('region', {
         name: 'Valeur face à ce que vous avez versé',
       }),
     ).toBeInTheDocument()
 
-    expect(within(detail).queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+    expect(within(detail).queryByRole('group', { name: 'Gain' })).not.toBeInTheDocument()
     for (const term of [
       'Plus-value latente',
       'Plus-value réalisée',
@@ -478,14 +461,14 @@ describe('a read in flight is not an absence', () => {
 
   it('draws no curve while the series has not answered, and keeps the ratio', async () => {
     server.use(http.get(ROUTES.accountHistory, () => new Promise<never>(() => {})))
-    const { user } = renderApp({ url: '/comptes' })
+    const { user } = renderApp({ url: '/accounts' })
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
     // The whole card, its title included: a drawing of a series nobody has read
     // is not a drawing that is loading, it is a claim about the reader's data.
     expect(
-      within(detail).queryByRole('heading', { name: 'Valeur face à ce que vous avez versé' }),
+      within(detail).queryByRole('region', { name: 'Valeur face à ce que vous avez versé' }),
     ).not.toBeInTheDocument()
     // And the head figure stands, because it reads none of that: `Performance
     // totale` divides the four terms by the contribution, both of which landed.
@@ -507,7 +490,7 @@ describe('a read in flight is not an absence', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     // Said where the detail would have been, as an empty state (#829,
     // ADR-0037): there is no band left at the top of the column, and the rail
@@ -515,7 +498,7 @@ describe('a read in flight is not an absence', () => {
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Gain' })).not.toBeInTheDocument()
   })
 })
 
@@ -525,9 +508,9 @@ describe('the bubbles', () => {
     const detail = await open(user, 'Alpha')
     await waitFor(() => expect(head(detail)).toHaveTextContent(/322,00/))
 
-    await user.click(within(detail).getByRole('button', { name: 'Ce que veut dire Gain total' }))
+    await user.click(within(detail).getByRole('button', { name: 'Ce que veut dire Gain' }))
     const bubble = (await screen.findAllByRole('dialog')).find((node) =>
-      /leur somme est le total/.test(node.textContent ?? ''),
+      /positions soldées de ce compte/.test(node.textContent ?? ''),
     ) as HTMLElement
     expect(bubble).toBeDefined()
     expect(within(bubble).getByRole('link')).toHaveAttribute(
@@ -551,7 +534,7 @@ describe('the bubbles', () => {
     // What the figure is **not**, which is the whole reason it can stand with no
     // range beside it: a cumulative ratio, not annualised, saying nothing about
     // when the money went in.
-    expect(bubble).toHaveTextContent(/rapport cumulé et non un taux/)
+    expect(bubble).toHaveTextContent(/ce n’est pas un taux annuel/)
     expect(bubble).toHaveTextContent(/toute la vie du compte/)
     expect(within(bubble).getByRole('link')).toHaveAttribute(
       'href',

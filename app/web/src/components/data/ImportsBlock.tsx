@@ -75,36 +75,46 @@ export function ImportsBlock({ upload, events, selection, selected }: ImportsBlo
   if (events.length === 0 && !files.events) return null
 
   return (
-    <section
-      aria-labelledby="data-imports"
-      className="space-y-4 rounded-lg border border-dashed p-4"
-    >
+    <section aria-labelledby="data-imports">
       <h2 id="data-imports" className="sr-only">
         {t('data.imports.title')}
       </h2>
 
-      {/* The drop zone and the way back out, on one line: the two gestures a
-          file is the unit of. Since #811 the zone is a **target** rather than
-          the name of a folder — there is a route now, and a rectangle that
-          named a mount was the honest answer only while there was not.
+      {/* **One band, and the two gestures a file is the unit of are on it**
+          (#838). The drop zone is a *target* rather than the name of a folder
+          (#811), and the way back out rides at its right rather than in a
+          second box beside it — which is the drawing's own row, and what keeps
+          the two together at the widths the band folds at.
 
           It is **not said twice**: with nothing recorded, the ledger's own
           empty state carries the same gesture as one of its two entries of
-          equal weight, one line below this bar. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        {events.length > 0 ? <UploadZone upload={upload} /> : null}
-        {files.events ? (
+          equal weight, one line below this band. */}
+      {events.length > 0 ? (
+        <UploadZone
+          upload={upload}
+          trailing={
+            files.events ? (
+              <ExportMenu
+                files={files}
+                selection={selection}
+                selected={selected}
+                // The ledger entire, for the two entries whose perimeter it is:
+                // the count is a note on what the file will hold.
+                total={events.length}
+              />
+            ) : null
+          }
+        />
+      ) : files.events ? (
+        <div className="flex justify-end">
           <ExportMenu
             files={files}
             selection={selection}
             selected={selected}
-            // The ledger entire, for the two entries whose perimeter it is: the
-            // count is a note on what the file will hold, and the tab already
-            // holds the rows it counts.
             total={events.length}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </section>
   )
 }

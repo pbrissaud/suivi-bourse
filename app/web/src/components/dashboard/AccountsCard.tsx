@@ -63,16 +63,17 @@
  * same page — is where the time-weighted convention is stated, warning about
  * the period in the sentence this card's percentage rests on.
  */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { Link } from '@tanstack/react-router'
+import { ArrowRight } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer } from 'recharts'
 
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
+  accountColour,
   DEFAULT_ACCOUNT_LABEL,
-  DEFAULT_RANGE,
-  RANGES,
   declaredLabel,
   rebase,
   settledSeries,
@@ -100,6 +101,15 @@ export interface AccountsCardProps {
    */
   series: readonly (readonly PerfPoint[] | null)[]
   /**
+   * The page's period. The card had a control of its own until #838 — four
+   * options identical to the chart's, one row up, saying a different thing —
+   * and ADR-0019's *one range for every figure on the surface* is kept by there
+   * being one control on the page rather than one per card.
+   */
+  range: Range
+  /** The reporting currency the values are said in. */
+  currency: string | null
+  /**
    * The card's own reads, refused — the declaration or any of the series. In
    * flight the card draws nothing and claims nothing; refused, it says so where
    * the comparison would have been (#829, ADR-0037).
@@ -107,10 +117,15 @@ export interface AccountsCardProps {
   failure?: ReadFailure | null
 }
 
-export function AccountsCard({ accounts, series, failure = null }: AccountsCardProps) {
+export function AccountsCard({
+  accounts,
+  range,
+  currency,
+  series,
+  failure = null,
+}: AccountsCardProps) {
   const { t } = useI18n()
   const f = useFormatters()
-  const [range, setRange] = useState<Range>(DEFAULT_RANGE)
 
   const declared = accounts ?? []
   /** Two accounts is where a comparison starts — and where the page's reads do. */
@@ -155,33 +170,19 @@ export function AccountsCard({ accounts, series, failure = null }: AccountsCardP
 
   return (
     <Card className="gap-4">
-      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">{t('dashboard.accounts.title')}</h2>
-        {/* **The** range control of the card, and it drives both figures on
-            every row. Radios rather than tabs: it is a setting of one thing. */}
-        <div
-          role="radiogroup"
-          aria-label={t('dashboard.accounts.range')}
-          className="flex shrink-0 gap-1"
-        >
-          {RANGES.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              role="radio"
-              aria-checked={candidate === range}
-              onClick={() => setRange(candidate)}
-              className={cn(
-                'rounded px-2 py-1 text-xs',
-                candidate === range ? 'bg-secondary font-medium' : 'text-muted-foreground',
-              )}
-            >
-              {t('accounts.chart.rangeName', { range: candidate })}
-            </button>
-          ))}
-        </div>
+      <CardHeader>
+        {/* **The perimeter names itself here** (#838). The drawing heads this
+            card with the count of accounts the figures are consolidated over,
+            as a link to the page that holds them — so the statistic block one
+            card up carries no `2 comptes` line, and the count is stated once,
+            on the surface that *is* the comparison. */}
+        <h2 className="eyebrow">
+          <Link to="/accounts" className="inline-flex items-center gap-1.5 hover:text-foreground">
+            {t('dashboard.scope', { count: declared.length })}
+            <ArrowRight aria-hidden className="size-2.75" />
+          </Link>
+        </h2>
       </CardHeader>
-
       <CardContent>
         {drawn === 0 ? (
           // A **fact**: the reads have landed and not one account's series says
@@ -189,25 +190,35 @@ export function AccountsCard({ accounts, series, failure = null }: AccountsCardP
           // like — named, rather than spelled as N em dashes.
           <EmptyState title={t('dashboard.accounts.empty')} />
         ) : (
-          <ul aria-label={t('dashboard.accounts.title')} className="divide-y divide-border/60">
+          <ul aria-label={t('dashboard.accounts.title')} className="flex flex-col gap-4">
             {declared.map((account, index) => {
               const series = rebased[index]
               const performance = series?.performance ?? null
               return (
-                <li key={account.id} className="flex items-center gap-3 py-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">
-                    {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
-                  </span>
-                  {/* The curve and the figure beside it are one rebasing over
-                      one window — the card's whole rule, made structural. */}
-                  <span aria-hidden className="h-7 w-20 shrink-0 sm:w-28">
+                <li key={account.id} className="flex flex-col gap-1.5">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-sm font-medium">
+                      {declaredLabel(account) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                    </span>
+                    {/* What the account is worth, which is the figure the two
+                        rates below are rates *of*. Set in the mono face like
+                        every other amount read down a column. */}
+                    <span className="tabular shrink-0 font-mono text-sm">
+                      {f.currency(account.total_value ?? null, currency)}
+                    </span>
+                  </div>
+                  {/* The curve and the windowed figure beside it are one
+                      rebasing over one window — the card's whole rule, made
+                      structural. The hue is the account's own, and it is the
+                      rail's wheel rather than a second one. */}
+                  <span aria-hidden className="block h-7.5">
                     {series && series.points.length > 1 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={series.points}>
                           <Line
                             type="monotone"
                             dataKey="index"
-                            stroke="var(--foreground)"
+                            stroke={accountColour(index)}
                             strokeWidth={1.5}
                             dot={false}
                             isAnimationActive={false}
@@ -216,12 +227,22 @@ export function AccountsCard({ accounts, series, failure = null }: AccountsCardP
                       </ResponsiveContainer>
                     ) : null}
                   </span>
-                  <span className={cn('tabular w-20 shrink-0 text-right', signClass(performance))}>
+                  <p className="text-xs text-muted-foreground">
+                    {t('accounts.chart.rangeName', { range })}
+                    {' · '}
+                    {t('dashboard.accounts.perf')}{' '}
                     {/* The em dash, and it is right: an account with no cash
-                        movement has no index at all (#708), so there is
-                        nothing to compute rather than something missing. */}
-                    {performance === null ? ABSENT : f.percent(performance)}
-                  </span>
+                        movement has no index at all (#708), so there is nothing
+                        to compute rather than something missing. */}
+                    <span className={cn('tabular', signClass(performance))}>
+                      {performance === null ? ABSENT : f.percent(performance)}
+                    </span>
+                    {' · '}
+                    {t('dashboard.accounts.xirr')}{' '}
+                    <span className={cn('tabular', signClass(account.xirr ?? null))}>
+                      {f.percent(account.xirr ?? null)}
+                    </span>
+                  </p>
                 </li>
               )
             })}

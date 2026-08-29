@@ -45,9 +45,12 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
   const f = useFormatters()
 
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium">{t('accounts.detail.curve.title')}</h3>
-      <div className="h-56">
+    // **No heading of its own** (#838): the curve is drawn inside the head card
+    // it is the history of, under the figure it plots — a title over it would
+    // name the card a second time. Its accessible name is kept on the section,
+    // for a screen reader and for a test.
+    <section aria-label={t('accounts.detail.curve.title')} className="space-y-2">
+      <div className="h-26">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points as ValuePoint[]}>
             {/* **Hidden, not removed** — the dashboard's chart to the letter
@@ -86,11 +89,11 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
       {/* The legend is written rather than drawn by the chart: it has to be
           readable by a test and by a screen reader, and Recharts' own is
           neither. */}
-      <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+      <ul className="flex flex-wrap gap-x-4 gap-y-2 text-2xs text-muted-foreground">
         <li className="flex items-baseline gap-2">
           <span
             aria-hidden
-            className="inline-block size-2.5 rounded-full"
+            className="inline-block h-0.5 w-3.5"
             style={{ backgroundColor: 'var(--color-price)' }}
           />
           {t('accounts.detail.curve.value')}
@@ -98,7 +101,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
         <li className="flex items-baseline gap-2">
           <span
             aria-hidden
-            className="inline-block h-0.5 w-4 border-t-2 border-dashed border-muted-foreground"
+            className="inline-block h-0 w-3.5 border-t-[1.5px] border-dashed border-muted-foreground"
           />
           {t('accounts.detail.curve.contributed')}
         </li>

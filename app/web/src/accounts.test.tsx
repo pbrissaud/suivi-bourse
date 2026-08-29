@@ -33,7 +33,7 @@ import {
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-function renderAccounts(accounts: Account[] = defaultAccounts(), url = '/comptes') {
+function renderAccounts(accounts: Account[] = defaultAccounts(), url = '/accounts') {
   server.use(http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload(accounts))))
   return renderApp({ url })
 }
@@ -57,14 +57,19 @@ function weights() {
  * The written half of a row is `weights()`, and the two are not the same
  * assertion (#800): a bar is `aria-hidden` and carries no word, so every
  * equality on `textContent` above holds identically whether the row draws the
- * right bar, the wrong one or nothing at all. `data-share-bar` is the handle
- * `ShareBar` carries for exactly this, and the fill's own width is what it
- * claims.
+ * right share, the wrong one or nothing at all.
+ *
+ * **The drawing is the stacked bar's segment** since #838: the block used to
+ * put a bar of its own under every legend row, which drew each share twice on
+ * one card — once as a slice of the whole and once against an empty track. The
+ * segment is looked up by account rather than by position, an account with no
+ * share drawing no segment at all.
  */
 function drawnWeight(index: number): number | null {
-  const bar = weightRows()[index].querySelector('[data-share-bar]')
-  if (bar === null) return null
-  return Number.parseFloat((bar.firstElementChild as HTMLElement).style.width)
+  const account = weightRows()[index].getAttribute('data-account')
+  const segment = document.querySelector(`[data-weights-bar] [data-account="${account}"]`)
+  if (segment === null) return null
+  return Number.parseFloat((segment as HTMLElement).style.width)
 }
 
 function entries() {
@@ -177,7 +182,7 @@ describe('the rail', () => {
     // page since ADR-0028, rather than on another one.
     expect(
       await screen.findByRole('link', { name: 'Affecter ces événements à un compte' }),
-    ).toHaveAttribute('href', '/comptes?compte=default')
+    ).toHaveAttribute('href', '/accounts?account=default')
   })
 
   it('offers the reassignment for events, never for a row named `default`', async () => {
@@ -203,9 +208,17 @@ describe('the rail', () => {
         HttpResponse.json(anAccountsPayload([...defaultAccounts(), theSeededAccount()])),
       ),
     )
-    renderApp({ url: '/comptes', browserLanguages: ['en-GB'] })
+    renderApp({ url: '/accounts', browserLanguages: ['en-GB'] })
 
-    expect(await screen.findByRole('link', { name: /Unassigned/ })).toBeInTheDocument()
+    // Both renderings of the choice carry it — the column of cards and the
+    // sticky row of chips the stacked width draws instead (#838) — so the
+    // assertion is scoped to one of them rather than counting on there being
+    // exactly one link with that name on screen.
+    expect(
+      within(await screen.findByRole('list', { name: 'Your accounts' })).getByRole('link', {
+        name: /Unassigned/,
+      }),
+    ).toBeInTheDocument()
     expect(
       within(screen.getByRole('list', { name: 'Your accounts' })).getByRole('link', {
         name: /Alpha/,
@@ -221,18 +234,18 @@ describe('which account is open', () => {
 
     await user.click(within(rail()).getByRole('link', { name: /Beta/ }))
     await settled('Beta')
-    expect(router.state.location.href).toBe('/comptes?compte=beta')
+    expect(router.state.location.href).toBe('/accounts?account=beta')
   })
 
   it('is read off the URL on arrival', async () => {
-    renderAccounts(defaultAccounts(), '/comptes?compte=gamma')
+    renderAccounts(defaultAccounts(), '/accounts?account=gamma')
     await settled('Gamma')
   })
 
   it('falls back to the first declared account rather than to an empty page', async () => {
     // An id naming nothing is what a bookmark becomes when an account is
     // renamed away or an import revoked.
-    renderAccounts(defaultAccounts(), '/comptes?compte=gone')
+    renderAccounts(defaultAccounts(), '/accounts?account=gone')
     await settled('Alpha')
   })
 
@@ -274,8 +287,7 @@ describe('what the page stopped doing', () => {
           button.getAttribute('aria-label'),
         ),
       ).toEqual([
-        'Ce que veut dire Gain total',
-        'Ce que veut dire Versé net',
+        'Ce que veut dire Gain',
         'Ce que veut dire Performance totale',
         'Ce que veut dire TRI',
         'Ce que veut dire Encaissés',
@@ -327,7 +339,7 @@ describe('the page’s own reads', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     // The declaration is what the page is made of, so the page is empty — and
     // it says why, in an empty state and never in a band (#829, ADR-0037).
@@ -349,7 +361,7 @@ describe('the page’s own reads', () => {
         title: 'storage unavailable',
       }),
     )
-    renderApp({ url: '/comptes' })
+    renderApp({ url: '/accounts' })
 
     const detail = await settled()
     expect(rail()).toBeInTheDocument()

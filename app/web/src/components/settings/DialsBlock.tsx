@@ -89,6 +89,20 @@ const DIAL_LABEL: Record<string, MessageKey> = {
   base_currency: 'settings.base_currency',
 }
 
+/**
+ * The unit a dial is counted in, **beside the field and not inside its label**
+ * (#838). The drawing sets a short field and the word next to it — which is how
+ * a form reads a quantity — where the label carried `(secondes)` in brackets.
+ * The currency has none: its value *is* the unit.
+ */
+const DIAL_UNIT: Record<string, MessageKey> = {
+  regular_interval: 'settings.unit.seconds',
+  backfill_interval: 'settings.unit.seconds',
+  backfill_delay: 'settings.unit.seconds',
+  backfill_chunk_days: 'settings.unit.days',
+  staleness_horizon: 'settings.unit.seconds',
+}
+
 const DIAL_HINT: Record<string, MessageKey> = {
   regular_interval: 'settings.regular_interval.hint',
   backfill_interval: 'settings.backfill_interval.hint',
@@ -149,12 +163,12 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
     // inherited from a `<section>` — the shape one page over (`AccountDetail`).
     <Card role="region" aria-labelledby={DIALS_HEADING}>
       <CardHeader>
-        <h2 id={DIALS_HEADING} className="text-lg font-semibold tracking-tight">
+        <h2 id={DIALS_HEADING} className="eyebrow">
           {t('installation.settings.editable')}
         </h2>
         {/* The counterpart of the environment card's own note, and the reason
             the two are told apart at a glance: nothing here needs a restart. */}
-        <p className="max-w-prose text-sm text-muted-foreground">
+        <p className="max-w-prose text-xs text-muted-foreground">
           {t('installation.settings.editable.note')}
         </p>
       </CardHeader>
@@ -166,7 +180,7 @@ export function DialsBlock({ config, runtime }: DialsBlockProps) {
           save.mutate()
         }}
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
           {config.settings.map((setting) => (
             <Dial
               key={setting.key}
@@ -232,11 +246,12 @@ function Dial({
   // under the section: read at the bottom of a form they would be about the
   // save, and only one of the six dials rescales anything retroactively.
   const retroactive = setting.key === RETROACTIVE_DIAL
+  const unit = DIAL_UNIT[setting.key]
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       {drawn ? (
-        <label htmlFor={id} className="text-sm text-muted-foreground">
+        <label htmlFor={id} className="block text-sm">
           {label ? t(label) : setting.key}
         </label>
       ) : (
@@ -249,26 +264,38 @@ function Dial({
       {setting.type === 'currency' ? (
         <CurrencyField id={id} value={value} onChange={onChange} fixed={fixed} />
       ) : (
-        <Input
-          id={id}
-          // The type comes from the registry, so a dial added there renders with
-          // its own bounds without a line changing here.
-          type={setting.type === 'integer' ? 'number' : 'text'}
-          inputMode={setting.type === 'integer' ? 'numeric' : undefined}
-          min={setting.minimum ?? undefined}
-          max={setting.maximum ?? undefined}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        // **A quantity gets the width of a quantity, and its unit beside it**
+        // (#838): an integer of at most four digits in a field as wide as the
+        // card is a field that reads as free text, and `(secondes)` in the
+        // label was the unit written where the eye does not look for it.
+        <div className="flex items-center gap-2.5">
+          <Input
+            id={id}
+            // The type comes from the registry, so a dial added there renders
+            // with its own bounds without a line changing here.
+            type={setting.type === 'integer' ? 'number' : 'text'}
+            inputMode={setting.type === 'integer' ? 'numeric' : undefined}
+            min={setting.minimum ?? undefined}
+            max={setting.maximum ?? undefined}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="tabular h-9.5 w-27 rounded-lg bg-background font-mono"
+          />
+          {unit ? <span className="text-xs text-muted-foreground">{t(unit)}</span> : null}
+        </div>
       )}
-      <p className="text-xs text-muted-foreground">{hint ? t(hint) : setting.doc}</p>
+      <p className="text-2xs leading-relaxed text-muted-foreground">
+        {hint ? t(hint) : setting.doc}
+      </p>
       {retroactive && reach ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-2xs leading-relaxed text-muted-foreground">
           {t('settings.cadence.reach', { now: reach.now, later: reach.atMarketOpen })}
         </p>
       ) : null}
       {retroactive ? (
-        <p className="text-xs text-muted-foreground">{t('settings.backoff.retroactive')}</p>
+        <p className="text-2xs leading-relaxed text-muted-foreground">
+          {t('settings.backoff.retroactive')}
+        </p>
       ) : null}
     </div>
   )

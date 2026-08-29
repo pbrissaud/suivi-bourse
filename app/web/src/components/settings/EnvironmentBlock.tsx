@@ -31,7 +31,7 @@ export function EnvironmentBlock({ config }: EnvironmentBlockProps) {
   return (
     <Card role="region" aria-labelledby={ENVIRONMENT_HEADING}>
       <CardHeader>
-        <h2 id={ENVIRONMENT_HEADING} className="text-lg font-semibold tracking-tight">
+        <h2 id={ENVIRONMENT_HEADING} className="eyebrow">
           {t('installation.settings.imposed')}
         </h2>
         {/* Written once for the card, never under each of three rows. */}

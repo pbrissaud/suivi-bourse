@@ -61,12 +61,21 @@ export function CurrencyField({ id, value, onChange, fixed, suggested }: Currenc
       <div className="space-y-1">
         {/* No `id`: nothing labels a paragraph, and the name sits above it —
             the shape the installation tab already gives what it only reads. */}
-        <p className="tabular text-sm font-medium">
-          {value === '' ? t('currency.unanswered')
-            : isSupported(value) ? value
-            : t('currency.offList', { code: value })}
+        {/* **The answer, and a mark saying it is settled** (#838). The drawing
+            sets the code beside a small chip rather than under a sentence
+            explaining it — the sentence stays, one rung down, because *why* it
+            cannot be taken back is not something a chip can say. */}
+        <p className="flex items-center gap-2.5">
+          <span className="tabular text-lg font-semibold">
+            {value === '' ? t('currency.unanswered')
+              : isSupported(value) ? value
+              : t('currency.offList', { code: value })}
+          </span>
+          <span className="eyebrow rounded-md bg-accent px-1.5 py-0.5">
+            {t('currency.fixed.mark')}
+          </span>
         </p>
-        <p className="text-xs text-muted-foreground">{t('currency.fixed')}</p>
+        <p className="text-2xs leading-relaxed text-muted-foreground">{t('currency.fixed')}</p>
       </div>
     )
   }

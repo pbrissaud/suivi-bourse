@@ -179,7 +179,7 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
               <TableCell>
                 <span
                   className={cn(
-                    'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                    'inline-block rounded-md px-2 py-0.5 text-2xs font-medium',
                     TYPE_BADGE[event.event_type],
                   )}
                 >
@@ -192,7 +192,7 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
               <TableCell>
                 <Identity event={event} onEdit={onEdit} />
                 {identity.ticker !== null && identity.label !== null ? (
-                  <span className="block text-xs text-muted-foreground">{identity.label}</span>
+                  <span className="block text-2xs text-muted-foreground">{identity.label}</span>
                 ) : null}
               </TableCell>
 
@@ -217,7 +217,11 @@ export function LedgerTable({ events, currency, onEdit, onRemove }: LedgerTableP
               {/* An account id is typed, not written: the mono face is what
                   says so, and it is the one the accounts page already sets an
                   id in (`AccountDetail`, `AccountsRail`). */}
-              <TableCell className="font-mono text-xs">{accountOf(event)}</TableCell>
+              <TableCell>
+                <span className="inline-block rounded-md bg-accent px-2 py-0.5 font-mono text-2xs text-foreground/85">
+                  {accountOf(event)}
+                </span>
+              </TableCell>
 
               {/* The removal, at the unit (ADR-0032). It stops the click from
                   reaching the row: the two gestures live on one line, and a

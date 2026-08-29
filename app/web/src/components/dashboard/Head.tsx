@@ -74,7 +74,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Explain } from '@/components/Explain'
 import { Stat } from '@/components/Stat'
 import { Card, CardContent } from '@/components/ui/card'
-import type { Account, PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
+import type { PerfPoint, PortfolioTotalsResponse, PositionsResponse } from '@/lib/api'
 import { ABSENT, useFormatters } from '@/lib/format'
 import { renderFigure } from '@/lib/absence'
 import {
@@ -112,7 +112,6 @@ export interface DashboardHeadProps {
    * The perimeter the consolidated figures name. `null` is *unknown*, and an
    * unknown perimeter is not written down at all (ADR-0026).
    */
-  accounts: readonly Account[] | null
   /** Whether the reconstruction is running. `null` — nothing says yet. */
   rebuilding: boolean | null
   /**
@@ -126,7 +125,6 @@ export interface DashboardHeadProps {
 export function DashboardHead({
   positions,
   totals,
-  accounts,
   rebuilding,
   history,
 }: DashboardHeadProps) {
@@ -158,7 +156,7 @@ export function DashboardHead({
         title={t('dashboard.empty.title')}
         description={t('dashboard.empty.body')}
         action={
-          <Link to="/donnees" className="font-medium underline underline-offset-4">
+          <Link to="/ledger" className="font-medium underline underline-offset-4">
             {t('dashboard.empty.link')}
           </Link>
         }
@@ -221,7 +219,6 @@ export function DashboardHead({
   // the statement of their perimeter. A read that has not landed, or one that
   // failed, means the perimeter is *unknown*, and an unknown perimeter is not
   // written down at all: the figures above it are exact either way.
-  const accountCount = accounts?.length ?? null
 
   // The series reaches here as `readonly PerfPoint[] | null` and the `null` is
   // load-bearing: a series that has not answered is not a day on which nothing
@@ -248,8 +245,8 @@ export function DashboardHead({
     // card washed in the colour of a gain is a card that says something about
     // the figure on it. It also survives the light ground, which a hand-written
     // midnight value would not (ADR-0023).
-    <Card className="gap-0 border-border/60 bg-linear-160 from-accent to-card to-60%">
-      <CardContent className="space-y-6">
+    <Card className="gap-0 bg-linear-160 from-chart-2/9 to-card to-55% py-7">
+      <CardContent className="px-7">
         {/* **The total and its terms, side by side and never at equal weight.**
             ADR-0016 is amended in its wording and not in its rule (#787): what
             it refuses is four numeric columns of the *same* weight, where
@@ -258,7 +255,14 @@ export function DashboardHead({
             position, and `head` against `term` is a factor of three: read here,
             nobody adds the four to the one. What the ADR buys is that the
             reader cannot sum them by accident, and this arrangement buys it. */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+        {/* **A row that wraps, and not a grid of two fixed tracks** (#838).
+            The drawing lays the total and the four terms out with
+            `flex-wrap: wrap` and `space-between`: at the widths where the four
+            do not fit beside a 52 px figure they go **under** it, where a grid
+            column of `minmax(0,1fr)` instead squeezes the figure until it
+            overruns its own cell — measured at 1 160 px, the total ran into the
+            first term. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-5">
           <Stat
             size="head"
             label={t('dashboard.gainTotal')}
@@ -313,7 +317,7 @@ export function DashboardHead({
               as a row under it: at two columns the eye takes them as one
               object. Below `md` they fall under it and the rule comes back —
               side by side is a statement the width has to be able to make. */}
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t pt-4 md:border-0 md:pt-0">
+          <div className="grid w-full grid-cols-1 gap-x-9 gap-y-2.5 border-t pt-4 sm:w-auto sm:grid-cols-[repeat(4,minmax(8.75rem,auto))] sm:border-0 sm:pt-1.5 xl:grid-cols-[repeat(2,minmax(8.75rem,auto))]">
             {GAIN_TERMS.map((term) => {
               const value = termAmount(terms, term)
               if (!termIsRendered(term, value)) return null
@@ -358,7 +362,7 @@ export function DashboardHead({
             number. The floor is **8rem and not 9**, measured: at 9 the five
             statistics came to more than the card holds and the row wrapped four
             and one. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4">
+        <div className="mt-6.5 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4 border-t pt-4.5">
           {totalsRow?.total_value == null ? null : (
             <Stat
               label={t('dashboard.totalValue')}
@@ -395,7 +399,16 @@ export function DashboardHead({
           {totalsRow?.xirr == null ? null : (
             <Stat
               label={t('dashboard.xirr')}
-              value={t('dashboard.xirr.value', { percent: f.percent(totalsRow.xirr) })}
+              value={
+                <>
+                  {f.percent(totalsRow.xirr)}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {' '}
+                    {t('dashboard.xirr.unit')}
+                  </span>
+                </>
+              }
+              valueClassName={signClass(totalsRow.xirr)}
               explain={
                 <Explain figure={t('dashboard.xirr')} body="dashboard.xirr.explain" anchor="xirr" />
               }
@@ -405,6 +418,7 @@ export function DashboardHead({
             <Stat
               label={t('dashboard.twr')}
               value={f.percent(twrMove)}
+              valueClassName={signClass(twrMove)}
               explain={
                 <Explain figure={t('dashboard.twr')} body="dashboard.twr.explain" anchor="twr" />
               }
@@ -424,7 +438,7 @@ export function DashboardHead({
                   other: a bare dash here says, by the product's own rule, *there
                   is nothing to compute*, when what is going on is a history not
                   yet rebuilt that far — nameable and repairable. */}
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {ytdTwr === null
                   ? ytdAbsence(ytdTwr)
                   : t('dashboard.twr.ytd', { percent: f.percent(ytdTwr) })}
@@ -432,20 +446,6 @@ export function DashboardHead({
             </Stat>
           )}
         </div>
-
-        {/* The consolidated figures name their perimeter — and at N = 1 the link
-            disappears of itself, the accounts page having left the navigation. */}
-        {accountCount === null ? null : (
-          <p className="text-sm text-muted-foreground">
-            {accountCount > 1 ? (
-              <Link to="/comptes" className="underline underline-offset-4">
-                {t('dashboard.scope', { count: accountCount })}
-              </Link>
-            ) : (
-              t('dashboard.scope', { count: accountCount })
-            )}
-          </p>
-        )}
 
         {/* `totals: null` has **two** causes and they are not the same sentence
             (#745): no ledger at all, or a reporting currency nobody has answered.
@@ -501,7 +501,7 @@ function Period({ amount, text }: { amount: number; text: string }) {
   return (
     <span
       className={cn(
-        'tabular inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium',
+        'tabular inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium',
         PERIOD_TONES[sign],
       )}
     >

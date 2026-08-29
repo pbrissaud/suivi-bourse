@@ -16,6 +16,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, delay, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
+import { ACCOUNT_RANGE } from '@/lib/dashboard'
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
 import {
@@ -56,8 +57,18 @@ function totalsOf(overrides: Parameters<typeof aTotals>[0]) {
  * card** it is about.
  */
 async function chartCard(): Promise<HTMLElement> {
-  const range = await screen.findByRole('radiogroup', { name: 'Plage' })
-  return range.closest('[data-slot="card"]') as HTMLElement
+  // The chart's own frame is the card carrying the **reading** selector — the
+  // group where there are two readings, the heading where there is only one.
+  // The range control left every card at #838: the page has one, and it sits
+  // on a row of its own between the head and the chart.
+  const anchor = await waitFor(() => {
+    const found =
+      screen.queryByRole('group', { name: 'Lecture' }) ??
+      screen.queryByRole('heading', { name: 'Montants' })
+    if (found === null) throw new Error('the chart slot has not landed')
+    return found
+  })
+  return anchor.closest('[data-slot="card"]') as HTMLElement
 }
 
 describe('the gain is computed, never read', () => {
@@ -127,14 +138,14 @@ describe('the year-to-date is two figures that do not touch', () => {
     expect(within(figure('TWR')).queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.queryByRole('radio', { name: '1S' })).not.toBeInTheDocument()
 
-    // Two on the page, and they are two **figures**, not two settings of one:
-    // the chart's drives the portfolio's own series, the accounts card's drives
-    // the comparison ADR-0028 moved here — one range for every figure drawn on
-    // that card, sparkline included (ADR-0019, carried over by ADR-0028).
+    // **One on the page**, and it is the page's (#838). It used to be two —
+    // the chart's and the comparison's — offering the same four options one row
+    // apart and saying different things; ADR-0019's *one range for every figure
+    // on the surface* is kept by there being one control, not one per card.
     await waitFor(() =>
       expect(
         screen.getAllByRole('radiogroup').map((group) => group.getAttribute('aria-label')),
-      ).toEqual(['Plage', 'Plage comparée']),
+      ).toEqual(['Plage']),
     )
   })
 
@@ -161,7 +172,7 @@ describe('the two periods of the total', () => {
     // A period is the same figure through another window; a term is a *part* of
     // it. Mounted among the four they read as two more things to add, which is
     // the addition ADR-0018's subordination exists to prevent.
-    expect(head).toHaveTextContent(/aujourd’hui/)
+    expect(head).toHaveTextContent(/Aujourd’hui/)
     expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
     for (const term of [
       'Plus-value latente',
@@ -169,7 +180,7 @@ describe('the two periods of the total', () => {
       'Dividendes reçus',
       'Frais de versement',
     ]) {
-      expect(figure(term)).not.toHaveTextContent(/aujourd’hui|janvier/)
+      expect(figure(term)).not.toHaveTextContent(/Aujourd’hui|janvier/)
     }
   })
 
@@ -188,7 +199,7 @@ describe('the two periods of the total', () => {
     renderApp()
 
     const head = await screen.findByRole('group', { name: 'Gain total' })
-    await waitFor(() => expect(head).toHaveTextContent(/\+30,00\D?€ aujourd’hui/))
+    await waitFor(() => expect(head).toHaveTextContent(/Aujourd’hui : \+30,00\D?€/))
   })
 
   it('says nothing about today while the series has not reached today', async () => {
@@ -206,7 +217,7 @@ describe('the two periods of the total', () => {
 
     const head = await screen.findByRole('group', { name: 'Gain total' })
     expect(head).toHaveTextContent(/370,00/)
-    await waitFor(() => expect(screen.queryByText(/aujourd’hui/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/Aujourd’hui/)).not.toBeInTheDocument())
     expect(head).toHaveTextContent(/depuis le 1ᵉʳ janvier/)
   })
 })
@@ -217,20 +228,24 @@ describe('the accounts card, where the comparison moved (ADR-0028)', () => {
     return within(screen.getByRole('list', { name: 'Vos comptes, comparés' }))
   }
 
-  it('offers the four presets and never `MAX`', async () => {
+  it('reads the page’s own four presets, and never an unbounded window', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    const range = await screen.findByRole('radiogroup', { name: 'Plage comparée' })
+    const range = await screen.findByRole('radiogroup', { name: 'Plage' })
     expect(within(range).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
       '1M',
       'Depuis le 1ᵉʳ janvier',
       '1A',
-      'Depuis l’ouverture',
+      'MAX',
     ])
-    // A time-weighted index has no bounded amplitude, so one account's ancient
-    // volatility would set the scale for every other (ADR-0019, ADR-0028).
-    expect(within(range).queryByRole('radio', { name: 'MAX' })).not.toBeInTheDocument()
+    // The card had four presets of its own until #838, the last of them named
+    // *Depuis l'ouverture*. What ADR-0028 refuses is the **window**, not the
+    // word: a time-weighted index has no bounded amplitude, so one account's
+    // ancient volatility would set the scale for every other. The page's `MAX`
+    // therefore reaches this card as `SINCE_OPENING` — the accounts' common
+    // origin — and `lib/dashboard.test.ts` holds that mapping.
+    expect(ACCOUNT_RANGE.MAX).toBe('SINCE_OPENING')
   })
 
   it('draws every figure on the card over the one range the reader chose', async () => {
@@ -249,7 +264,7 @@ describe('the accounts card, where the comparison moved (ADR-0028)', () => {
     // One month, and **both** figures follow: the curve and the percentage are
     // read off one rebasing, so a thirty-day sparkline can never sit beside a
     // one-year percentage.
-    const range = within(screen.getByRole('radiogroup', { name: 'Plage comparée' }))
+    const range = within(screen.getByRole('radiogroup', { name: 'Plage' }))
     await user.click(range.getByRole('radio', { name: '1M' }))
     await waitFor(() => expect(comparison().getByText('Alpha').closest('li')).toHaveTextContent(/\+3,94/))
     expect(comparison().getByText('Beta').closest('li')).toHaveTextContent(/\+2,68/)
@@ -271,9 +286,13 @@ describe('the accounts card, where the comparison moved (ADR-0028)', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     // The head's own figures already are that account's, with a border round
-    // them — *a block with nothing in it does not exist*.
-    await waitFor(() => expect(screen.getByText('1 compte')).toBeInTheDocument())
-    expect(screen.queryByText('Vos comptes, comparés')).not.toBeInTheDocument()
+    // them — *a block with nothing in it does not exist*. And the perimeter
+    // goes with the card since #838: it was this card's heading that stated it,
+    // so at one account nothing states it at all.
+    await waitFor(() =>
+      expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText('1 compte')).not.toBeInTheDocument()
     expect(asked).toBe(0)
   })
 
@@ -467,7 +486,7 @@ describe('a read that fails is named, where its content would have been', () => 
 
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
-    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pour voir votre valeur totale/)).not.toBeInTheDocument()
   })
 
   it('says it once when the app answers nothing at all', async () => {
@@ -540,9 +559,11 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
-    // The chart itself is gone rather than empty: its range control is the
-    // surest proof, and the frame that would carry it is not drawn.
-    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+    // The chart itself is gone rather than empty: its **reading** selector is
+    // the surest proof, and the frame that would carry it is not drawn. The
+    // range control is no longer that proof — it is the page's since #838, and
+    // it still governs the movements and the comparison beside it.
+    expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
   })
 
   it('names a failed valuation series, which only an install with no cash ledger reads', async () => {
@@ -564,7 +585,7 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
-    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Montants' })).not.toBeInTheDocument()
   })
 
   it('names a failed accounts read, and keeps the figures whose perimeter it states', async () => {
@@ -575,8 +596,10 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
     await theHeadStandsWhole()
     // The perimeter is *unknown*, which is not written down (ADR-0026) — and
-    // the comparison has no list of accounts to be a comparison of.
-    expect(screen.queryByText(/compte/)).not.toBeInTheDocument()
+    // the comparison has no list of accounts to be a comparison of. Scoped to
+    // the page's own column: the header's search field names what it searches,
+    // and *un compte* is one of the two things it does.
+    expect(screen.queryByRole('link', { name: /compte/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Vos comptes, comparés' })).not.toBeInTheDocument()
   })
 
@@ -616,7 +639,9 @@ describe('a secondary read that fails is named, and the head keeps its figures',
     await screen.findByRole('list', { name: 'Vos comptes, comparés' })
     expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
     expect(document.querySelector('[data-empty]')).toBeNull()
-    expect(screen.queryByRole('radiogroup', { name: 'Plage' })).not.toBeInTheDocument()
+    // The chart's frame is not drawn: its reading selector is what would carry
+    // it, the range control being the page's since #838.
+    expect(screen.queryByRole('group', { name: 'Lecture' })).not.toBeInTheDocument()
   })
 
   it('gives each empty slot its own reason when two reads fail at once', async () => {
@@ -655,7 +680,7 @@ describe('the statistics shrink instead of filling with dashes', () => {
       expect(screen.queryByRole('group', { name: absent })).not.toBeInTheDocument()
     }
     expect(
-      screen.getByText(/Un grand livre d’événements datés ajouterait/),
+      screen.getByText(/pour voir votre valeur totale/),
     ).toBeInTheDocument()
   })
 
@@ -679,7 +704,7 @@ describe('the statistics shrink instead of filling with dashes', () => {
     await screen.findByRole('group', { name: 'Gain total' })
     expect(screen.getByText(/attendent une devise de base/)).toBeInTheDocument()
     expect(
-      screen.queryByText(/Un grand livre d’événements datés ajouterait/),
+      screen.queryByText(/pour voir votre valeur totale/),
     ).not.toBeInTheDocument()
   })
 
@@ -702,7 +727,7 @@ describe('the consolidated figures name their perimeter', () => {
     await screen.findByRole('group', { name: 'Gain total' })
 
     const scope = await screen.findByRole('link', { name: '3 comptes' })
-    expect(scope).toHaveAttribute('href', '/comptes')
+    expect(scope).toHaveAttribute('href', '/accounts')
   })
 
   it('drops the link of itself at one account', async () => {
@@ -712,8 +737,12 @@ describe('the consolidated figures name their perimeter', () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    await waitFor(() => expect(screen.getByText('1 compte')).toBeInTheDocument())
-    expect(screen.queryByRole('link', { name: /compte/ })).not.toBeInTheDocument()
+    // The perimeter is the comparison's heading (#838), and at one account
+    // there is no comparison — so the count is not written down anywhere.
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: /compte/ })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText('1 compte')).not.toBeInTheDocument()
   })
 
   it('never claims a perimeter of zero accounts, which cannot exist', async () => {
@@ -752,7 +781,7 @@ describe('the convention bubble', () => {
 
     await user.click(trigger)
     const bubble = await screen.findByRole('dialog')
-    expect(bubble).toHaveTextContent(/somme de quatre termes/)
+    expect(bubble).toHaveTextContent(/Les quatre font ce total/)
     // One text, not two levels — and a link the reader can walk to, which is
     // the other half of why it opens on click.
     const link = within(bubble).getByRole('link', { name: 'Lire la règle complète' })
@@ -878,12 +907,12 @@ describe('a read that has not landed is not a fact', () => {
 
     // Nothing is claimed while it is in flight — not the three-term headline,
     // and above all not the sentence that denies the ledger.
-    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pour voir votre valeur totale/)).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
 
     // And once it lands, the four-term figure, in one go.
     expect(await screen.findByRole('group', { name: 'Gain total' })).toHaveTextContent(/370,00/)
-    expect(screen.queryByText(/Un grand livre d’événements datés ajouterait/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pour voir votre valeur totale/)).not.toBeInTheDocument()
   })
 })
 
@@ -1051,18 +1080,22 @@ describe('the allocation is not on this page', () => {
 })
 
 describe('the movers', () => {
-  it('shows two columns and counts what it does not show', async () => {
+  it('shows one list, best first, and counts what it does not show', async () => {
     renderApp()
     await screen.findByRole('group', { name: 'Gain total' })
 
-    expect(await screen.findByText('Hausses')).toBeInTheDocument()
-    expect(screen.getByText('Baisses')).toBeInTheDocument()
-    expect(screen.getByText(/Rien n’a baissé/)).toBeInTheDocument()
+    // **One list and no headings** (#838): the day's best at the top and its
+    // worst at the bottom, which is what a five-row list says without a column
+    // called *Hausses* and a *Rien n'a baissé* under an empty one.
+    const list = within(await screen.findByRole('list', { name: 'Mouvements' }))
+    expect(screen.queryByText('Hausses')).not.toBeInTheDocument()
+    expect(screen.queryByText('Baisses')).not.toBeInTheDocument()
 
-    // The **ticker** beside the name (#790): it is the identity the rest of the
-    // product addresses a security by, and a rail of names alone cannot be
-    // matched to the allocation's legend or to a broker's own screen.
-    expect(screen.getByText('ZZA').closest('li')).toHaveTextContent('Zeta Alpha')
+    // The **ticker** on every line (#790, #838): it is the identity the rest of
+    // the product addresses a security by, and a rail of names alone cannot be
+    // matched to the allocation's legend or to a broker's own screen. It is a
+    // badge and `aria-hidden`, so the symbol is said beside the name.
+    expect(list.getByText('Zeta Alpha').closest('li')).toHaveTextContent('ZZA')
 
     // Three lines held, one of them shown: `ZZB` moved by exactly 0,00 % and is
     // in neither column, `ZZC` has never been quoted and has nothing to compare
@@ -1225,7 +1258,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
 
     expect(
       await screen.findByRole('button', {
-        name: /L’historique est en cours de reconstruction/,
+        name: /Votre historique est en cours de reconstruction/,
       }),
     ).toBeInTheDocument()
     // And the band is gone with it (#829, ADR-0037): a condition that ends by
@@ -1255,7 +1288,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
         ),
       ),
     )
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
 
     expect(
       await screen.findByText(/Alpha est le compte le plus en retard/),
@@ -1271,7 +1304,7 @@ describe('the reconstruction, on the bell and in the block it leads to', () => {
     // A block with nothing in it does not exist. The workloads card names the
     // backfill whatever it is doing, which is why the absence is asked of *this*
     // card's own name rather than of the word `reconstruction` on the page.
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
     await screen.findByRole('heading', { name: 'Le magasin' })
 
     expect(screen.queryByText('Reconstruction en cours')).not.toBeInTheDocument()

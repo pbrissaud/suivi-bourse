@@ -81,6 +81,7 @@ import {
 } from 'recharts'
 
 import { ChartTooltip } from '@/components/ChartTooltip'
+import { Segmented } from '@/components/Segmented'
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent } from '@/components/ui/card'
@@ -89,8 +90,6 @@ import {
   amountsFromTotals,
   amountsFromValuation,
   amountsValues,
-  DASHBOARD_RANGES,
-  DEFAULT_DASHBOARD_RANGE,
   performanceRows,
   READINGS,
   windowFloor,
@@ -103,7 +102,6 @@ import {
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
-import { cn } from '@/lib/utils'
 
 export interface PortfolioChartProps {
   /**
@@ -111,6 +109,12 @@ export interface PortfolioChartProps {
    * of the reading and of the series that is read (`hasCashLedger`).
    */
   ledger: boolean
+  /**
+   * The page's period. There is **one** range control on the dashboard and it
+   * is not this card's (#838): the drawing sets it above the chart, where it
+   * governs the movements and the comparison beside them too.
+   */
+  range: DashboardRange
   currency: string | null
   /**
    * The two series, exactly one of which is read. `null` is *the read has not
@@ -131,6 +135,7 @@ export interface PortfolioChartProps {
 
 export function PortfolioChart({
   ledger,
+  range,
   currency,
   performance,
   valuation,
@@ -139,7 +144,6 @@ export function PortfolioChart({
   const { t } = useI18n()
   const f = useFormatters()
   const [chosen, setChosen] = useState<Reading>('amounts')
-  const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
 
   // **Nothing at all, title included** (ADR-0026): the block's one series is
   // in flight, and a frame carrying two reading buttons and a range control
@@ -170,65 +174,39 @@ export function PortfolioChart({
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
-              this selector segmented exactly as it draws the range beside it,
+              this selector segmented exactly as it draws the range one row up,
               and nothing here is a place to go: pressing one swaps what the
               slot below draws, which is what `aria-pressed` says and what a tab
-              would misname. Radios are refused for the older reason — two
-              sibling radio groups read as two settings of the same thing, and
-              the range is the page's one range control. At one reading there is
-              nothing to choose, so there is no control at all. */}
+              would misname. At one reading there is nothing to choose, so there
+              is no control at all — and the range is nowhere near this card
+              since #838: the page has **one**, and it drives this chart, the
+              movements and the comparison alike. */}
           {ledger ? (
-            <div
-              role="group"
-              aria-label={t('dashboard.chart.reading')}
-              className="flex gap-1"
-            >
-              {READINGS.map((candidate) => (
-                <button
-                  key={candidate}
-                  type="button"
-                  aria-pressed={candidate === reading}
-                  onClick={() => setChosen(candidate)}
-                  className={cn(
-                    'rounded px-2 py-1 text-xs',
-                    candidate === reading ? 'bg-secondary font-medium' : 'text-muted-foreground',
-                  )}
-                >
-                  {t(candidate === 'amounts' ? 'dashboard.chart.amounts' : 'dashboard.chart.performance')}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              mode="pressed"
+              label={t('dashboard.chart.reading')}
+              value={reading}
+              onChange={setChosen}
+              options={READINGS.map((candidate) => ({
+                value: candidate,
+                label: t(
+                  candidate === 'amounts'
+                    ? 'dashboard.chart.amounts'
+                    : 'dashboard.chart.performance',
+                ),
+              }))}
+            />
           ) : (
-            <h2 className="text-sm font-medium">{t('dashboard.chart.amounts')}</h2>
+            <h2 className="eyebrow">{t('dashboard.chart.amounts')}</h2>
           )}
-
-          {/* **The** range control of the page. */}
-          <div role="radiogroup" aria-label={t('dashboard.chart.range')} className="flex gap-1">
-            {DASHBOARD_RANGES.map((candidate) => (
-              <button
-                key={candidate}
-                type="button"
-                role="radio"
-                aria-checked={candidate === range}
-                onClick={() => setRange(candidate)}
-                className={cn(
-                  'rounded px-2 py-1 text-xs',
-                  candidate === range ? 'bg-secondary font-medium' : 'text-muted-foreground',
-                )}
-              >
-                {t('dashboard.chart.rangeName', { range: candidate })}
-              </button>
-            ))}
-          </div>
         </div>
-
         {drawn.length === 0 ? (
           // A **fact**: the series answered and says nothing over this window.
           // *Not answered* never reaches here — the guard above returned.
           <EmptyState title={t('dashboard.chart.empty')} />
         ) : (
           <>
-            <div className="h-72">
+            <div className="h-75">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={drawn}>
                   {/* The grid the maquette **does** draw: horizontal only, and
@@ -375,11 +353,11 @@ export function PortfolioChart({
                 is drawn is said by the two names below, `Valorisation` /
                 `Prix de revient` against `Valeur totale` / `Versé net`. */}
             {reading === 'amounts' ? (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                 <span className="flex items-center gap-2">
                   <span
                     aria-hidden
-                    className="inline-block size-2.5 rounded-full"
+                    className="inline-block h-0.75 w-3.5 rounded-xs"
                     style={{ backgroundColor: 'var(--color-price)' }}
                   />
                   <span className="text-muted-foreground">

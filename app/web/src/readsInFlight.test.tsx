@@ -148,7 +148,7 @@ interface Surface {
  *
  * **It was nine until #830**, the ledger page's installation tab having been a
  * second address onto the settings page's reads. ADR-0038 took the tab bar
- * away, so the surface that survives is `/reglages` — which is the one this
+ * away, so the surface that survives is `/settings` — which is the one this
  * list already carried, the net being driven by the **surface** and not by the
  * block.
  */
@@ -177,7 +177,7 @@ const SURFACES: readonly Surface[] = [
   },
   {
     name: 'les titres, une fiche ouverte',
-    url: '/titres',
+    url: '/shares',
     heading: 'Titres',
     open: async ({ user }) => {
       const title = await screen.findByRole('button', { name: 'Zeta Alpha' })
@@ -188,8 +188,8 @@ const SURFACES: readonly Surface[] = [
   // Since ADR-0028 the account's detail is the page rather than a panel a
   // gesture away, so the six reads it makes are on the mount: there is nothing
   // left to open.
-  { name: 'les comptes', url: '/comptes', heading: 'Comptes' },
-  { name: 'le grand livre', url: '/donnees', heading: 'Grand livre' },
+  { name: 'les comptes', url: '/accounts', heading: 'Comptes' },
+  { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
   {
     // The notifications panel, which is mounted in the **shell** and therefore
     // read from every route (#829). It is opened here rather than left closed
@@ -223,7 +223,7 @@ const SURFACES: readonly Surface[] = [
       return field
     },
   },
-  { name: 'les réglages', url: '/reglages', heading: 'Réglages' },
+  { name: 'les réglages', url: '/settings', heading: 'Réglages' },
 ]
 
 // ------------------------------------------------------------------------- //

@@ -34,7 +34,10 @@ export function ContentHeader() {
   const { title, subtitle } = usePageHeadingValue()
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+    // 56 px tall and padded like the page under it — the drawing gives the bar
+    // and the content column one gutter, 14 px on a phone, 20 from `md` and 28
+    // from `lg`, so nothing in the header hangs off what is below it.
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3.5 md:px-5 lg:px-7">
       {/* No `aria-label` here: the trigger names itself from `header.toggleSidebar`
           — the vendored English was fixed in the component rather than covered
           over at this one call site, which left the rail and the drawer speaking
@@ -58,13 +61,20 @@ export function ContentHeader() {
           what is left. */}
       <div className="flex min-w-0 items-baseline gap-3">
         {title === '' ? null : (
-          <h1 className="shrink-0 text-sm font-semibold tracking-tight">{title}</h1>
+          <h1 className="shrink-0 text-base font-semibold tracking-tight">{title}</h1>
         )}
+        {/* **Hidden under `md`, and it is the drawing that decides** (#838):
+            the redesign's header carries the page's name and nothing else, and
+            #787's clause — *narrow degrades the sentence, it does not remove
+            it* — was written against a bar that then had the room. At 390 px,
+            beside a title that takes what it needs, what is left of the
+            sentence is `C.` — removed by attrition rather than by decision.
+            From `md` it stands in full. */}
         {subtitle === null ? null : (
-          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+          <p className="hidden truncate text-xs text-muted-foreground md:block">{subtitle}</p>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-1.5">
         {/* The visible half of the ⌘K palette (#797): a shortcut is not an
             interface on a phone, and this bar is where a control that belongs to
             no page lives. */}

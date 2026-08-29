@@ -63,13 +63,13 @@ export type Said =
  *
  * It is a shape rather than a URL string because the router builds the address:
  * a hand-written query string here would be a second spelling of the reductions
- * `?compte=`, `?titre=` and the ledger's own already carry.
+ * `?account=`, `?symbol=` and the ledger's own already carry.
  */
 export type Destination =
-  | { to: '/reglages' }
-  | { to: '/comptes'; search: { compte: string } }
-  | { to: '/titres'; search: { titre: string } }
-  | { to: '/donnees'; search: { symbol: string[] } }
+  | { to: '/settings' }
+  | { to: '/accounts'; search: { account: string } }
+  | { to: '/shares'; search: { symbol: string } }
+  | { to: '/ledger'; search: { symbol: string[] } }
 
 /** Which gesture the card offers, and against which resource. */
 export interface Acknowledgement {
@@ -121,7 +121,7 @@ function factLink(fact: InstallationFact): Entry['link'] {
     // enumerates every security, so the reduction it leads to must too.
     return {
       label: 'notification.link.events',
-      to: { to: '/donnees', search: { symbol: gesture.symbols } },
+      to: { to: '/ledger', search: { symbol: gesture.symbols } },
     }
   }
   // The reconstruction is watched from the settings page, where the rebuild
@@ -129,7 +129,7 @@ function factLink(fact: InstallationFact): Entry['link'] {
   // says what to do out there, so inventing a button would be inventing a
   // power the app does not have.
   if (fact.key === 'reconstruction_running') {
-    return { label: 'notification.link.settings', to: { to: '/reglages' } }
+    return { label: 'notification.link.settings', to: { to: '/settings' } }
   }
   return null
 }
@@ -169,7 +169,7 @@ function advisoryEntry(advisory: Advisory): Entry {
     body: known ? { key: 'notification.advisory.cash_share.body' } : { text: '' },
     at: advisory.observed_at,
     link: known
-      ? { label: 'notification.link.account', to: { to: '/comptes', search: { compte: account } } }
+      ? { label: 'notification.link.account', to: { to: '/accounts', search: { account } } }
       : null,
     acknowledge: { register: 'advisory', key: advisory.key },
   }
@@ -227,7 +227,7 @@ export function notifications(input: NotificationsInput): Entry[] {
       at: null,
       // Health is **repaired, never dismissed** — so it offers a link and no
       // acknowledgement, and the link goes where the jobs and the store are.
-      link: { label: 'notification.link.settings', to: { to: '/reglages' } },
+      link: { label: 'notification.link.settings', to: { to: '/settings' } },
       acknowledge: null,
     })
   }
@@ -244,7 +244,7 @@ export function notifications(input: NotificationsInput): Entry[] {
       title: { key: 'notification.currency.title' },
       body: { key: 'notification.currency.body' },
       at: null,
-      link: { label: 'notification.link.currency', to: { to: '/reglages' } },
+      link: { label: 'notification.link.currency', to: { to: '/settings' } },
       acknowledge: null,
     })
   }

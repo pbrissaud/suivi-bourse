@@ -60,14 +60,15 @@
  * column or the v4 file for whoever reads a log or a `curl`; the front says, in
  * the reader's own language, that the file was refused and nothing was written.
  */
-import { useId, useRef, useState } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { XIcon } from 'lucide-react'
+import { Upload, XIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { api, type ImportReceipt } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 import { NO_CORRESPONDENCE, type Correspondence } from '@/lib/imports'
 import { receiptMessage } from '@/lib/receipts'
 
@@ -348,12 +349,19 @@ export interface UploadZoneProps {
    * a border around a border and two instructions for one gesture.
    */
   compact?: boolean
+  /**
+   * What rides at the right of the band beside the picker — the export menu.
+   * A prop rather than a sibling: the drawing puts the way in and the way out
+   * on one row, and a second flex container beside this one would break at
+   * every width the row wraps at.
+   */
+  trailing?: ReactNode
 }
 
 /** The two formats, stated to the picker and to the reader alike. */
 const ACCEPTED = '.csv,.xlsx'
 
-export function UploadZone({ upload, compact = false }: UploadZoneProps) {
+export function UploadZone({ upload, compact = false, trailing = null }: UploadZoneProps) {
   const { t } = useI18n()
   const input = useRef<HTMLInputElement>(null)
   // The two mounts of this component are **not** mutually exclusive across a
@@ -363,64 +371,74 @@ export function UploadZone({ upload, compact = false }: UploadZoneProps) {
   const [over, setOver] = useState(false)
   const hand = upload.hand
 
-  return (
-    <div className="space-y-3">
-      <div
-        // The drop half. It is an alternative to the control below and never
-        // the only way in — which is why it carries no role of its own: what a
-        // reader without a pointer operates is the labelled input.
-        onDragOver={(event) => {
-          event.preventDefault()
-          setOver(true)
+  const picker = (
+    <>
+      <input
+        ref={input}
+        id={field}
+        type="file"
+        accept={ACCEPTED}
+        className="sr-only"
+        disabled={upload.pending}
+        onChange={(event) => {
+          hand(event.target.files?.[0])
+          event.target.value = ''
         }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(event) => {
-          event.preventDefault()
-          setOver(false)
-          hand(event.dataTransfer.files?.[0])
-        }}
-        className={
-          compact
-            ? 'space-y-3'
-            : `space-y-3 rounded-lg border border-dashed p-6 transition-colors ${
-                over ? 'border-primary bg-primary/5' : ''
-              }`
-        }
+      />
+      <Button
+        type="button"
+        variant="outline"
+        className="h-8.5 rounded-lg bg-transparent dark:bg-transparent"
+        disabled={upload.pending}
+        onClick={() => input.current?.click()}
       >
-        {compact ? null : (
-          <div>
-            <p className="font-medium">{t('data.drop.title')}</p>
-            <p className="max-w-prose text-sm text-muted-foreground">{t('data.drop.body')}</p>
-          </div>
-        )}
-        <input
-          ref={input}
-          id={field}
-          type="file"
-          accept={ACCEPTED}
-          className="sr-only"
-          disabled={upload.pending}
-          onChange={(event) => {
-            hand(event.target.files?.[0])
-            // The same file chosen twice has to be uploaded twice: without
-            // this the input's value has not moved and `change` never fires.
-            event.target.value = ''
-          }}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          disabled={upload.pending}
-          onClick={() => input.current?.click()}
-        >
-          {t('data.drop.choose')}
-        </Button>
-        {/* The label the input is reached by. It is visually hidden and not
-            absent: the button above is what a pointer presses, and this is what
-            a screen reader and a test address the file field by. */}
-        <label htmlFor={field} className="sr-only">
-          {t('data.drop.choose')}
-        </label>
+        {t('data.drop.choose')}
+      </Button>
+      {/* The label the input is reached by. It is visually hidden and not
+          absent: the button above is what a pointer presses, and this is what a
+          screen reader and a test address the file field by. */}
+      <label htmlFor={field} className="sr-only">
+        {t('data.drop.choose')}
+      </label>
+    </>
+  )
+
+  if (compact) return <div className="space-y-3">{picker}</div>
+
+  return (
+    // **A band and not a rectangle** (#838). The drawing gives the import one
+    // row across the top of the ledger: the gesture's own icon, what the
+    // gesture does in one sentence with its qualification under it, and the two
+    // controls at the right — the picker, and the way back out, which is the
+    // export menu handed in as `trailing`. It was a 120 px dashed box with a
+    // paragraph in it, which is the shape of an empty state and not of a bar.
+    // The dashed edge stays: it is what says *you may drop something here*.
+    <div
+      // The drop half. It is an alternative to the control below and never the
+      // only way in — which is why it carries no role of its own.
+      onDragOver={(event) => {
+        event.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        event.preventDefault()
+        setOver(false)
+        hand(event.dataTransfer.files?.[0])
+      }}
+      className={cn(
+        'flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border-[1.5px] border-dashed border-primary/25 bg-primary/4 px-5.5 py-4.5 transition-colors',
+        over && 'border-primary bg-primary/8',
+      )}
+    >
+      <Upload aria-hidden className="size-5.5 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1 basis-55">
+        <p className="text-md font-medium">{t('data.drop.title')}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t('data.drop.body')}</p>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2.5">
+        {picker}
+        {trailing}
       </div>
     </div>
   )

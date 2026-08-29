@@ -94,16 +94,35 @@ export function Allocation({ rows, currency }: AllocationProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const { slices, total, unplaced } = allocation(rows)
+  // The lines the last slice folds together, which is what the note counts.
+  const folded = slices.reduce((count, slice) => (slice.symbol === null ? slice.count : count), 0)
 
   const name = (slice: AllocationSlice) =>
     slice.symbol === null ? t('shares.allocation.others', { count: slice.count }) : slice.label
 
   return (
     <Card className="gap-4">
-      <CardHeader>
+      <CardHeader className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {/* A real heading, and not the primitive's `<div>`: the block is a
-            section of the page and a reader jumping by heading must find it. */}
-        <h2 className="text-sm font-medium">{t('shares.allocation.title')}</h2>
+            section of the page and a reader jumping by heading must find it.
+            Set as the eyebrow every card is headed with (#838). */}
+        <h2 className="eyebrow">
+          {t('shares.allocation.title')}
+        </h2>
+        {/* What the ring divides and what it folds — the drawing states it
+            beside the heading, because a ring of twelve over a portfolio of
+            twenty is a reading and not a truncation. Said only where there is
+            something folded: at twelve lines or fewer the sentence would count
+            nothing. */}
+        {folded === 0 ? null : (
+          <span className="text-2xs text-muted-foreground">
+            {t('shares.allocation.scope', {
+              lines: rows.length,
+              top: slices.length - 1,
+              folded,
+            })}
+          </span>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -186,7 +205,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span
                         aria-hidden
-                        className="inline-block size-2.5 shrink-0 rounded-full"
+                        className="inline-block size-2.25 shrink-0 rounded-xs"
                         style={{ backgroundColor: stop(rank) }}
                       />
                       <span className="truncate">{name(slice)}</span>
@@ -194,7 +213,7 @@ export function Allocation({ rows, currency }: AllocationProps) {
                     {/* A share of a whole, never a change: `formatPercent` signs
                         what it renders (`+56,52 %`), which is right for a
                         movement and reads as one here. */}
-                    <span className="tabular shrink-0 text-muted-foreground">
+                    <span className="tabular shrink-0 font-mono text-xs text-muted-foreground">
                       {f.percentPoints(slice.share * 100)}
                     </span>
                   </span>

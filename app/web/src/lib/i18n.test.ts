@@ -36,9 +36,9 @@ describe('ICU is the format, and it is needed', () => {
     // The status dot is the first real `select` in the product: three states,
     // one key, and a fourth branch so an unknown state is a sentence rather
     // than a crash.
-    expect(formatMessage('fr', 'status.dot', { state: 'ok' })).toBe('L’installation va bien')
+    expect(formatMessage('fr', 'status.dot', { state: 'ok' })).toBe('Tout fonctionne')
     expect(formatMessage('en', 'status.dot', { state: 'unreachable' })).toBe(
-      'The app is not answering',
+      'The app is not responding',
     )
     expect(formatMessage('fr', 'status.dot', { state: 'martian' })).toContain('inconnu')
   })

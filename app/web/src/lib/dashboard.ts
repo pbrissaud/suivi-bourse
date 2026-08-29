@@ -46,7 +46,7 @@ import type {
   PositionsResponse,
   ValuationPoint,
 } from '@/lib/api'
-import { shifted } from '@/lib/accounts'
+import { shifted, type Range as AccountRange } from '@/lib/accounts'
 import { isClosed, type ShareRow } from '@/lib/shares'
 
 // ------------------------------------------------------------------------- //
@@ -106,6 +106,24 @@ export type DashboardRange = (typeof DASHBOARD_RANGES)[number]
 export const DEFAULT_DASHBOARD_RANGE: DashboardRange = '1Y'
 
 /** The two readings of the one slot. A **reading**, never a range. */
+/**
+ * **The page's period, said in the two vocabularies it drives** (#838).
+ *
+ * The chart's window and the accounts comparison's are the same four choices,
+ * and the comparison names its last one after what it actually is: the oldest
+ * *opening* among the accounts rather than the oldest day of one series. What
+ * ADR-0028 refuses is that unbounded window, not the word on the button — a
+ * time-weighted index has no bounded amplitude, so one account's ancient
+ * volatility would set the scale for every other. One control, so the mapping
+ * is stated once here rather than a second control being drawn.
+ */
+export const ACCOUNT_RANGE: Record<DashboardRange, AccountRange> = {
+  '1M': '1M',
+  YTD: 'YTD',
+  '1Y': '1Y',
+  MAX: 'SINCE_OPENING',
+}
+
 export const READINGS = ['amounts', 'performance'] as const
 
 export type Reading = (typeof READINGS)[number]
@@ -264,97 +282,41 @@ export function amountsValues(rows: readonly AmountsRow[]): (number | null)[] {
 /** Five each way. Ten lines is a block; twenty is the table one page down. */
 export const MOVERS_ROWS = 5
 
-export interface MoversSplit {
-  /** Biggest riser first. */
-  risers: Mover[]
-  /** Biggest faller first. */
-  fallers: Mover[]
-  /** Held lines shown in neither column — the sentence's own figure. */
+/**
+ * **One list, ordered by what moved most** (#838).
+ *
+ * The block was two columns — *Hausses* over *Baisses* — and the drawing has
+ * one: five lines, the day's best at the top and its worst at the bottom, which
+ * is the order the eye reads a movement in and the one that puts the two ends
+ * of the day on one screen. The split cost a heading and a *nothing went down*
+ * per column to say what the list says by being short.
+ *
+ * The three members still describe **one set**: the payload is reduced to the
+ * lines actually held (`isClosed`, the shares page's own predicate), so a
+ * position sold this morning is neither in the list nor in the sentence under
+ * it.
+ */
+export interface MoversReading {
+  rows: Mover[]
   others: number
-  /** How many of those moved by exactly nothing, which is why they are counted. */
   unchanged: number
 }
 
-/**
- * The two columns, and **what is left over**.
- *
- * The rows are the portfolio's, not the payload's, and that is an argument
- * rather than a derivation: a share with no baseline at all — its first day — is
- * not in the collection the server serves, so a count taken from `movers` alone
- * would leave it out of the sentence too, which is the same disappearance one
- * step further along.
- *
- * **And the payload is reduced to the held lines first**, with the allocation's
- * own predicate — `isClosed`, `lib/shares.ts`'s, which the two blocks share
- * rather than spell twice even now that they are on two pages.
- * `/api/positions` serves a sold line deliberately (ADR-0017),
- * `buildShareRows` folds it with its last frozen quote, and `build_movers`
- * compares that quote against a baseline equal to it — so a position closed
- * years ago is served as `change_pct: 0`. Counted, it landed in `unchanged`
- * while `others` was taken over the held lines alone: two members of one
- * sentence describing two different sets, the smaller one qualified by a figure
- * drawn from the larger, which can exceed it. It is also what would put a line
- * the owner no longer holds in a column of the portfolio's movers, with
- * `0,00 €` of contribution beside it.
- */
-export function moversSplit(movers: readonly Mover[], rows: readonly ShareRow[]): MoversSplit {
+export function moversList(movers: readonly Mover[], rows: readonly ShareRow[]): MoversReading {
   const held = rows.filter((row) => !isClosed(row))
   const holds = new Set(held.map((row) => row.symbol))
   const shown = movers.filter((mover) => holds.has(mover.symbol))
-
-  const moved = (mover: Mover) => mover.change_pct ?? 0
-  const risers = shown
-    .filter((mover) => mover.change_pct !== null && mover.change_pct > 0)
-    .sort((left, right) => moved(right) - moved(left))
+  const moved = shown
+    .filter((mover) => mover.change_pct !== null && mover.change_pct !== 0)
+    .sort((left, right) => (right.change_pct ?? 0) - (left.change_pct ?? 0))
     .slice(0, MOVERS_ROWS)
-  const fallers = shown
-    .filter((mover) => mover.change_pct !== null && mover.change_pct < 0)
-    .sort((left, right) => moved(left) - moved(right))
-    .slice(0, MOVERS_ROWS)
-
   return {
-    risers,
-    fallers,
-    others: Math.max(held.length - risers.length - fallers.length, 0),
+    rows: moved,
+    others: Math.max(held.length - moved.length, 0),
     unchanged: shown.filter((mover) => mover.change_pct === 0).length,
   }
 }
 
-// ------------------------------------------------------------------------- //
-// The day's move — the second period of the total (#790, ADR-0018)
-// ------------------------------------------------------------------------- //
-
-/**
- * What the **total** did today, and it is the year-to-date figure's own
- * definition over a one-day window.
- *
- * That identity is the whole of why it is spelled on the perf series rather
- * than on the movers, which is where it was first written. `portfolio_view._ytd`
- * counts the movement of `gain_absolu`, and `gain_absolu = total_value −
- * net_contributed` — so the difference of two of the series' days is
- * deposit-neutral by construction, and it carries **everything** the total
- * carries: a sale booked today, a dividend encashed today, the fee a transfer
- * cost today. Summed off `/api/portfolio/movers` instead, the figure was
- * `change × quantity` over the lines still **held**, which is the price move of
- * the holdings and not the movement of the gain: sell a line at a profit this
- * morning and the pill said `+10,00 €` under a headline that had just gained
- * `+180,00 €`. Two figures side by side, one of them named after the other's
- * window.
- *
- * **The last point must be today**, or the pill is not about today. The series
- * is dense over calendar days (`perf_series`), so the point before it is
- * yesterday and no gap has to be looked for — but a series that has not reached
- * today is a rebuild in progress, and *today* is then a claim nothing supports.
- * That is also what retires the reference instant the movers block names: this
- * figure counts calendar days on the product's own clock, so a Monday morning
- * reads against Sunday — which, the series being dense, is Friday's close
- * carried forward — instead of naming a session that has not happened.
- *
- * `null` on an install with **no cash ledger**: `total_value` and
- * `net_contributed` are both `NULL` there (#708's per-field rule), and the read
- * this reduces is not even armed. The year-to-date pill survives on its own,
- * `gain_absolu` being written always — an absent pill is not a false one.
- */
 export function dayMove(points: readonly PerfPoint[] | null, now: Date): number | null {
   // A read in flight is not an absence, and it reaches here as `null` rather
   // than as an empty array (ADR-0026). One point is not a difference.

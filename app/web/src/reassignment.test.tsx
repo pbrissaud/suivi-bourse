@@ -10,7 +10,7 @@
  * `account` column meant `default` at the instant those rows were imported
  * (#698), and the seeded row then carries a history its owner never created.
  *
- * Both renderings live on `/comptes` since ADR-0028: the box rides inside the
+ * Both renderings live on `/accounts` since ADR-0028: the box rides inside the
  * first declaration, and the standing offer sits in the **seeded account's own
  * detail**, whose events it is about.
  */
@@ -42,7 +42,7 @@ function declaredBesideTheSeed(...ids: string[]): AccountsResponse {
 function renderAccounts(
   accounts: AccountsResponse,
   events: LedgerEvent[] = unassignedLedger(),
-  url = '/comptes',
+  url = '/accounts',
 ) {
   server.use(
     http.get(ROUTES.accounts, () => HttpResponse.json(accounts)),
@@ -232,7 +232,7 @@ describe('the link from the unassigned line lands on the gesture', () => {
     await rail()
 
     const link = screen.getByRole('link', { name: REASSIGN })
-    expect(link).toHaveAttribute('href', '/comptes?compte=default')
+    expect(link).toHaveAttribute('href', '/accounts?account=default')
     await user.click(link)
 
     const seed = await screen.findByRole('region', { name: 'Non affecté' })

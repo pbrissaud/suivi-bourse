@@ -123,7 +123,7 @@ afterEach(() => server.events.removeAllListeners())
 
 describe('the modal opens on a predicate, never on a moment', () => {
   it('opens wherever the reader landed, because first run is not a place', async () => {
-    await firstRun({ url: '/titres' })
+    await firstRun({ url: '/shares' })
 
     expect(within(modal()).getByRole('heading', { name: /une question/ })).toBeInTheDocument()
     // The page the reader asked for is behind it — no route of its own, and no
@@ -155,7 +155,7 @@ describe('what it says, and what it refuses to say', () => {
     await firstRun()
 
     const described = within(modal())
-    expect(described.getByText(/grand livre d’événements datés/)).toBeInTheDocument()
+    expect(described.getByText(/ce que vous avez acheté, quand, et à quel prix/)).toBeInTheDocument()
     expect(described.getByText(/va chercher les cours toute seule/)).toBeInTheDocument()
     expect(described.getByText(/une seule devise/)).toBeInTheDocument()
     // ADR-0016 gives a rule its own surface, beside the figure it governs.
@@ -206,7 +206,7 @@ describe('closing it', () => {
   })
 
   it('closes on the cross and leaves an app that works', async () => {
-    const { user } = await firstRun({ url: '/donnees' })
+    const { user } = await firstRun({ url: '/ledger' })
 
     await user.click(within(modal()).getByRole('button', { name: 'Fermer' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -260,14 +260,14 @@ describe('the currency itself', () => {
     const field = within(modal()).getByLabelText('Devise de base') as HTMLSelectElement
     expect(field.value).toBe('CHF')
     // A suggestion poses nothing: the reservation is on screen where it applies.
-    expect(within(modal()).getByText(/il nomme un pays, pas un portefeuille/)).toBeInTheDocument()
+    expect(within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/)).toBeInTheDocument()
   })
 
   it('drops the pre-filled note the moment the reader overrides the suggestion', async () => {
     const { user } = await firstRun({ browserLanguages: ['fr-FR'] })
 
     const field = within(modal()).getByLabelText('Devise de base')
-    expect(within(modal()).getByText(/il nomme un pays, pas un portefeuille/)).toBeInTheDocument()
+    expect(within(modal()).getByText(/Vérifiez qu’elle correspond bien à votre portefeuille/)).toBeInTheDocument()
 
     await user.selectOptions(field, 'CHF')
     // The reservation is about a value the browser named. Left standing over a
@@ -313,7 +313,7 @@ describe('the currency itself', () => {
     await firstRun()
 
     await waitFor(() =>
-      expect(within(modal()).getByText(/Elle est fixée dès que vous y répondez/)).toBeInTheDocument(),
+      expect(within(modal()).getByText(/Une fois choisie, elle est fixée/)).toBeInTheDocument(),
     )
     expect(within(modal()).queryByText(/^Fixée /)).not.toBeInTheDocument()
   })
@@ -336,9 +336,9 @@ describe('the currency itself', () => {
     // Greyed out, a field invites the click and reads as a form that refused;
     // open, it lets a reader choose a code the write will not take. What is
     // left is the answer and the sentence that says it cannot be taken back.
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
 
-    expect(await screen.findByText(/Fixée : vos montants y sont enregistrés/)).toBeInTheDocument()
+    expect(await screen.findByText(/elle ne peut plus changer/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Devise de base')).not.toBeInTheDocument()
     expect(screen.getByText('Devise de base')).toBeInTheDocument()
   })
@@ -360,7 +360,7 @@ describe('the currency itself', () => {
         }),
       ),
     )
-    renderApp({ url: '/reglages' })
+    renderApp({ url: '/settings' })
 
     expect(await screen.findByText(/AED — enregistrée hors de cette liste/)).toBeInTheDocument()
   })
@@ -443,7 +443,7 @@ describe('the band is gone and its sentence descends (#829, ADR-0037)', () => {
 
 describe('the ceiling loses nothing: the field is where the dial is', () => {
   it('keeps the currency answerable on the settings page, and posts no notice about it', async () => {
-    const { user } = await firstRun({ url: '/reglages' })
+    const { user } = await firstRun({ url: '/settings' })
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
@@ -466,7 +466,7 @@ describe('the ceiling loses nothing: the field is where the dial is', () => {
 describe('the bell is a state and a link, and the link arrives', () => {
   it('opens the settings from any page, which is a trial user’s only hold', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
-    const { user } = renderApp({ url: '/titres' })
+    const { user } = renderApp({ url: '/shares' })
 
     await user.click(await screen.findByRole('button', { name: /^Notifications/ }))
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
@@ -591,9 +591,9 @@ describe('the third passage is the ledger’s own pair of entrances', () => {
     await user.click(await within(modal()).findByRole('link', { name: 'Remettre un fichier' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    // Not merely `/donnees`: the target the file is actually handed to, which is
+    // Not merely `/ledger`: the target the file is actually handed to, which is
     // reached by its own label rather than by a rectangle a pointer must find.
-    expect(await screen.findByLabelText('Choisir un fichier')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Parcourir…')).toBeInTheDocument()
     // The walk is over however it ended, and the browser holds that.
     expect(window.localStorage.getItem(FIRST_RUN_STORAGE_KEY)).toBe('dismissed')
   })
@@ -664,7 +664,7 @@ describe('mandatory means traversed, never answered', () => {
     // about to collect. Nothing here reads the ledger, so emptying one — which
     // the bulk delete makes an ordinary gesture — changes nothing.
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload([]))))
-    renderApp({ url: '/donnees' })
+    renderApp({ url: '/ledger' })
 
     await screen.findByRole('heading', { name: 'Grand livre', level: 1 })
     await waitFor(() =>

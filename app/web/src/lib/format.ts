@@ -186,6 +186,38 @@ export function formatDate(
 }
 
 /**
+ * **The extent a range covers, said once** (#838).
+ *
+ * The drawing puts the period the page is reading beside the control that sets
+ * it — `1ᵉʳ janv. → 20 août 2026` — and it is one figure, not two dates: the
+ * year is written where it is needed and dropped where the other end already
+ * says it. That is the whole reason this is a formatter and not two calls to
+ * `formatDate` with an arrow between them; written at a call site, the year
+ * would either be repeated or dropped on both ends.
+ */
+export function formatDaySpan(
+  locale: string,
+  from: string | number | Date | null | undefined,
+  to: string | number | Date | null | undefined,
+): string {
+  if (from === null || from === undefined || to === null || to === undefined) return ABSENT
+  const parse = (value: string | number | Date) => {
+    const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
+    return day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value)
+  }
+  const start = parse(from)
+  const end = parse(to)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return ABSENT
+  const sameYear = start.getFullYear() === end.getFullYear()
+  const left = new Intl.DateTimeFormat(
+    locale,
+    sameYear ? { day: 'numeric', month: 'short' } : { dateStyle: 'medium' },
+  ).format(start)
+  const right = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(end)
+  return `${left} → ${right}`
+}
+
+/**
  * A month, named short — `janv.`, `Jan` (#834).
  *
  * The tenth `Intl` site, and the first that names a *part* of a date rather
@@ -245,6 +277,10 @@ export function useFormatters() {
       bytes: (value: number | null | undefined) => formatBytes(locale, value),
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
+      daySpan: (
+        from: string | number | Date | null | undefined,
+        to: string | number | Date | null | undefined,
+      ) => formatDaySpan(locale, from, to),
       month: (year: string, month: number) => formatMonth(locale, year, month),
       list: (items: readonly string[]) => formatList(locale, items),
     }),

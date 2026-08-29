@@ -58,11 +58,12 @@
  *    in full, so neither adds an announcement to the other.
  */
 import { Link } from '@tanstack/react-router'
+import { Plus } from 'lucide-react'
 
-import { ShareBar } from '@/components/ShareBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import {
+  accountColour as segmentColour,
   accountWeights,
   accountWorth,
   declaredLabel,
@@ -89,24 +90,6 @@ const REASON_LABELS: Record<DegradedReason, MessageKey> = {
   empty: 'accounts.reason.empty',
 }
 
-/**
- * The stops the bar's segments are drawn in. The twelve allocation stops are
- * deliberately not reused: those encode **rank** on a sorted, legended figure,
- * and this bar is in declaration order — a segment's colour here says *which
- * account*, which is what a hue does and a lightness does not.
- *
- * **The wheel starts on the accent's own hue** (#787), `165`, and turns by sixty
- * degrees from there. An identity palette cannot be one colour — that is the
- * whole of what it is for — but it can start somewhere rather than nowhere: at
- * `264` the first account, which on most installs is the only one anybody looks
- * at, was drawn in a blue the product uses nowhere. It is now the mint, and the
- * five after it are that mint's own wheel.
- */
-const SEGMENT_HUES = [165, 225, 285, 345, 45, 105] as const
-
-function segmentColour(index: number): string {
-  return `oklch(0.62 0.15 ${SEGMENT_HUES[index % SEGMENT_HUES.length]})`
-}
 
 /**
  * The advisory a rail entry wears, **as a chip and never as a gesture** (#829,
@@ -189,22 +172,25 @@ export function AccountsRail({
     // with links in it, where what it is is a stack of accounts with a bar above
     // them — and an account with room for its own figure stops being a row in
     // somebody else's table.
-    <div className="space-y-3 lg:sticky lg:top-6">
+    <div className="space-y-3 wide:sticky wide:top-7">
       <Card className="gap-3 py-4">
         <CardHeader className="px-4">
-          <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {t('accounts.rail.title')}
-          </h2>
+          <h2 className="eyebrow">{t('accounts.rail.title')}</h2>
         </CardHeader>
         <CardContent className="space-y-3 px-4">
           {drawable.length === 0 ? null : (
-            <span aria-hidden className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full">
+            <span
+              aria-hidden
+              data-weights-bar
+              className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full"
+            >
               {rows.map((row, index) => {
                 const share = weights.get(row.id) ?? null
                 if (share === null) return null
                 return (
                   <span
                     key={row.id}
+                    data-account={row.id}
                     className="block"
                     style={{ width: `${share * 100}%`, backgroundColor: segmentColour(index) }}
                   />
@@ -219,7 +205,11 @@ export function AccountsRail({
             {rows.map((row, index) => {
               const share = weights.get(row.id) ?? null
               return (
-                <li key={row.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                <li
+                  key={row.id}
+                  data-account={row.id}
+                  className="flex flex-col text-xs text-muted-foreground"
+                >
                   <span className="flex items-baseline justify-between gap-3">
                     <span className="flex min-w-0 items-center gap-2">
                       <span
@@ -231,17 +221,10 @@ export function AccountsRail({
                         {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
                       </span>
                     </span>
-                    <span className="tabular shrink-0">
+                    <span className="tabular shrink-0 font-mono">
                       {share === null ? ABSENT : f.percentPoints(share * 100)}
                     </span>
                   </span>
-                  {/* And nothing at all where there is no share: an account
-                      nothing has been written about keeps its place and its em
-                      dash, and a bar at zero beside that dash would be the
-                      fifth rendering of absence ADR-0021 refuses. `ShareBar`
-                      answers `null` with no bar, which is why the condition is
-                      not spelled again here. */}
-                  <ShareBar share={share} fill={segmentColour(index)} />
                 </li>
               )
             })}
@@ -251,8 +234,16 @@ export function AccountsRail({
 
       {/* One card per account, and the list is **bounded**: a rail is a rail and
           not a page, so past a dozen accounts it scrolls inside itself rather
-          than pushing the declaration off the bottom of the screen. */}
-      <ul aria-label={t('accounts.rail.label')} className="max-h-[26rem] space-y-2 overflow-y-auto">
+          than pushing the declaration off the bottom of the screen.
+
+          **Drawn only from 976 px** (#838): under that width the same choice is
+          the sticky row of chips above, and the two together would be the list
+          of accounts twice on one screen — once as a bar the reader keeps and
+          once as a stack they scroll past. */}
+      <ul
+        aria-label={t('accounts.rail.label')}
+        className="hidden max-h-105 space-y-2 overflow-y-auto wide:block"
+      >
         {rows.map((row, index) => {
           const reason = degradedReason(row, rebuilding)
           const cash = cashShare(advisories, row.id)
@@ -265,8 +256,8 @@ export function AccountsRail({
           return (
             <li key={row.id}>
               <Link
-                to="/comptes"
-                search={{ compte: row.id }}
+                to="/accounts"
+                search={{ account: row.id }}
                 aria-current={row.id === selected ? 'true' : undefined}
                 className={cn(
                   'block rounded-xl border bg-card px-4 py-3 hover:border-primary/40',
@@ -281,8 +272,19 @@ export function AccountsRail({
                       style={{ backgroundColor: segmentColour(index) }}
                     />
                     <span className="truncate">{name}</span>
+                    {/* The advisory, **read beside its figure and offering
+                        nothing** (ADR-0037). It says what the panel's card
+                        says in one line; what it does not carry is the
+                        acknowledgement. Beside the name since #838, which is
+                        where the drawing puts it — under the card it read as a
+                        second row of the card rather than as a mark on it. */}
+                    {cash === null ? null : (
+                      <span className="shrink-0 rounded-md bg-attention/14 px-1.5 py-0.5 text-2xs font-medium text-attention">
+                        {t('accounts.advisory.cash', { share: cash })}
+                      </span>
+                    )}
                   </span>
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{type}</span>
+                  <span className="shrink-0 font-mono text-2xs text-muted-foreground">{type}</span>
                 </span>
 
                 {/* **What the account is worth, and what it has done with it.**
@@ -293,7 +295,7 @@ export function AccountsRail({
                     could never have stated a period for. The value is the
                     absolute the share above is a share *of*. */}
                 <span className="mt-1 flex items-baseline justify-between gap-3">
-                  <span className="tabular text-lg font-semibold tracking-tight">
+                  <span className="tabular text-xl font-heavy tracking-tight">
                     {f.currency(accountWorth(row), currency)}
                   </span>
                   {/* The name is announced and not drawn: the card already
@@ -303,7 +305,7 @@ export function AccountsRail({
                       per surface, and this page's is on the detail's own head. */}
                   <span
                     className={cn(
-                      'tabular shrink-0 text-sm font-medium',
+                      'tabular shrink-0 font-mono text-xs',
                       signClass(performance),
                     )}
                   >
@@ -314,31 +316,12 @@ export function AccountsRail({
                   </span>
                 </span>
 
-                {/* The id, on a line of its own: it is what every event names and
-                    what a file's `account` column has to spell, and a card is
-                    where there is finally room for it. *Already said* is
-                    **either line above it** — an account whose id is `CTO` and
-                    whose type is `CTO` printed the same word twice. */}
-                {name === row.id || type === row.id ? null : (
-                  <span className="mt-2 block border-t pt-2 font-mono text-xs text-muted-foreground">
-                    {row.id}
-                  </span>
-                )}
-
                 {reason === null ? null : (
                   <span className="mt-1 block text-xs text-attention">
                     {t(REASON_LABELS[reason])}
                   </span>
                 )}
 
-                {/* The advisory, **read beside its figure and offering nothing**
-                    (ADR-0037). It says what the panel's card says in one line;
-                    what it does not carry is the acknowledgement. */}
-                {cash === null ? null : (
-                  <span className="mt-2 inline-flex rounded-full bg-attention/10 px-2 py-0.5 text-[11px] font-medium text-attention">
-                    {t('accounts.advisory.cash', { share: cash })}
-                  </span>
-                )}
               </Link>
             </li>
           )
@@ -351,8 +334,8 @@ export function AccountsRail({
           and not the page (#725). */}
       {offer.kind === 'none' ? null : offer.kind === 'standing' ? (
         <Link
-          to="/comptes"
-          search={{ compte: DEFAULT_ACCOUNT_ID }}
+          to="/accounts"
+          search={{ account: DEFAULT_ACCOUNT_ID }}
           className="block px-1 text-left text-xs underline underline-offset-4"
         >
           {t('accounts.default.reassign')}
@@ -371,9 +354,102 @@ export function AccountsRail({
         </button>
       )}
 
-      <Button type="button" variant="outline" className="w-full" onClick={onDeclare}>
+      {/* **A dashed outline and a plus** (#838): the drawing marks the one
+          gesture that *adds a card to this rail* as an outline of the card it
+          would add, which is what a dashed edge says and a filled button does
+          not. */}
+      <Button
+        type="button"
+        variant="outline"
+        className="h-9.5 w-full gap-2 rounded-xl border-dashed bg-transparent text-muted-foreground hover:border-primary hover:text-primary dark:bg-transparent"
+        onClick={onDeclare}
+      >
+        <Plus aria-hidden />
         {t('accounts.new')}
       </Button>
+    </div>
+  )
+}
+
+/**
+ * **Under 976 px the rail is a bar of chips at the top of the screen** (#838,
+ * the drawing read at its stacked width).
+ *
+ * The column of cards is a *rail* only where there is a column beside it to be
+ * a rail of: laid out above the detail it becomes a stack the reader scrolls
+ * past to reach the account they opened, and the way back to the others goes
+ * off the top of the screen with it. The drawing answers that with one sticky
+ * row that scrolls sideways — every account on one line, the one in force
+ * raised — so the choice stays reachable however far down the detail the reader
+ * has gone.
+ *
+ * **It is mounted beside the grid and not inside the rail**, and that is the
+ * whole of why it is its own component: a sticky element sticks *within its
+ * containing block*, and the rail's column ends where the detail begins — put
+ * there, the bar came unstuck a third of the way down the page. Its containing
+ * block has to be the page's own column.
+ *
+ * It is `sticky` while being its own horizontal scroller, which is the
+ * drawing's arrangement and works because the two axes are independent: the row
+ * scrolls its chips sideways and stays put vertically. The page's ground and a
+ * shadow are what say the detail passes **under** it.
+ */
+export function AccountsChips({
+  rows,
+  selected,
+  currency,
+}: {
+  rows: readonly AccountRow[]
+  selected: string
+  currency: string | null
+}) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  return (
+    <div
+      role="group"
+      aria-label={t('accounts.rail.label')}
+      className="sticky top-0 z-10 -mt-1.5 flex gap-2 overflow-x-auto overflow-y-hidden bg-background py-2.5 shadow-md wide:hidden"
+    >
+      {rows.map((row, index) => {
+        const performance = onContributed(row.gain_absolu, row.net_contributed)
+        return (
+          <Link
+            key={row.id}
+            to="/accounts"
+            search={{ account: row.id }}
+            aria-current={row.id === selected ? 'true' : undefined}
+            className={cn(
+              'flex shrink-0 items-center gap-2.5 rounded-xl border bg-card px-3.5 py-2.25',
+              row.id === selected && 'border-primary/50 bg-muted',
+            )}
+          >
+            <span
+              aria-hidden
+              className="inline-block size-2.25 shrink-0 rounded-xs"
+              style={{ backgroundColor: segmentColour(index) }}
+            />
+            <span className="text-sm font-semibold whitespace-nowrap">
+              {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+            </span>
+            <span className="tabular font-mono text-sm whitespace-nowrap">
+              {f.currency(accountWorth(row), currency)}
+            </span>
+            {/* The name is announced and not drawn: a bare percentage read
+                out after a label and a value says nothing about which figure
+                it is. */}
+            <span
+              className={cn(
+                'tabular font-mono text-xs whitespace-nowrap',
+                signClass(performance),
+              )}
+            >
+              <span className="sr-only">{t('accounts.figure.totalPerformance')} </span>
+              {performance === null ? ABSENT : f.percent(performance)}
+            </span>
+          </Link>
+        )
+      })}
     </div>
   )
 }

@@ -67,7 +67,7 @@ export function ShareEvents({
 
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-medium">{t('shares.events.title')}</h3>
+      <h3 className="eyebrow">{t('shares.events.title')}</h3>
       {events.length === 0 ? (
         <EmptyState title={t('shares.events.empty')} />
       ) : (

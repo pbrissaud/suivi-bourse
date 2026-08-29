@@ -75,6 +75,19 @@ const JOB_TONE: Record<HealthStatus, string> = {
   unknown: 'text-muted-foreground',
 }
 
+/**
+ * The same three states as a **mark** rather than as a colour on a word — the
+ * dot the drawing puts beside this card's heading (#838). It is not the status
+ * dot ADR-0037 removed: that one was a global indicator in the chrome, read on
+ * every page and standing for the whole installation. This one names the card
+ * it is in, on the page the bell's own link lands on.
+ */
+const JOB_DOT: Record<HealthStatus, string> = {
+  ok: 'bg-gain',
+  attention: 'bg-attention',
+  unknown: 'bg-muted-foreground',
+}
+
 /** The three, in the order the app runs them: read, reconstruct, compute. */
 const JOB_KEYS = ['scrape', 'backfill', 'performance'] as const
 
@@ -112,7 +125,7 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
     return (
       <Card role="region" aria-labelledby={JOBS_HEADING}>
         <CardHeader>
-          <h2 id={JOBS_HEADING} className="text-lg font-semibold tracking-tight">
+          <h2 id={JOBS_HEADING} className="eyebrow">
             {t('settings.jobs')}
           </h2>
         </CardHeader>
@@ -135,43 +148,59 @@ export function JobsBlock({ health, failure = null }: JobsBlockProps) {
 
   return (
     <Card role="region" aria-labelledby={JOBS_HEADING}>
-      <CardHeader>
-        <h2 id={JOBS_HEADING} className="text-lg font-semibold tracking-tight">
+      <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        {/* **The dot is the card's**, and it is the only one left in the
+            product: it says which of the three words below applies before the
+            word is read, and it is the bell's own colour on the surface the
+            bell links to. */}
+        <h2 id={JOBS_HEADING} className="eyebrow flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className={cn('inline-block size-2 rounded-full', JOB_DOT[health.status])}
+          />
           {t('settings.jobs')}
         </h2>
         {/* The whole, in the word the bell wears its colour from. */}
-        <p className={cn('text-sm font-medium', JOB_TONE[health.status])}>
+        <p className="text-xs text-muted-foreground">
           {t('settings.jobs.state', { state: health.status })}
         </p>
-        {/* The cause, above the three symptoms it would produce. */}
-        {health.scheduler_running ? null : (
-          <p className="max-w-prose text-sm text-attention">{t('settings.jobs.scheduler')}</p>
-        )}
       </CardHeader>
       <CardContent>
+        {/* The cause, above the three symptoms it would produce. */}
+        {health.scheduler_running ? null : (
+          <p className="mb-3 max-w-prose text-sm text-attention">{t('settings.jobs.scheduler')}</p>
+        )}
         {rows === null ? (
-          // The server could not fold its own three records — which is a defect
-          // in the shaping and not a reason to restart anything, so it answers
-          // `200` and says so. There is nothing to tabulate, and the sentence is
-          // the server's claim rather than this page's.
           <p className="max-w-prose text-sm text-muted-foreground">{t('settings.jobs.unfolded')}</p>
         ) : (
-          <dl className="divide-y rounded-lg border text-sm">
+          // **Three columns, and a header row over them** (#838). The drawing
+          // reads this block down a column — *what ran*, *when*, *what came of
+          // it* — where the block laid each verdict under its own name, which
+          // is a list of three paragraphs and not a plan of charge.
+          <dl className="text-sm">
+            <div
+              aria-hidden
+              className="hidden gap-4 border-b pb-2 sm:grid sm:grid-cols-[minmax(0,1fr)_10.5rem_minmax(0,14rem)]"
+            >
+              <span className="eyebrow">{t('settings.jobs.column.name')}</span>
+              <span className="eyebrow">{t('settings.jobs.column.at')}</span>
+              <span className="eyebrow">{t('settings.jobs.column.verdict')}</span>
+            </div>
             {JOB_KEYS.map((key) => (
               <div
                 key={key}
-                className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline"
+                className="grid grid-cols-1 gap-1 border-b py-3 last:border-0 sm:grid-cols-[minmax(0,1fr)_10.5rem_minmax(0,14rem)] sm:items-baseline sm:gap-4"
               >
-                <dt className="font-medium">{t(JOB_NAMES[key])}</dt>
-                <dd className="space-y-1">
-                  <p className={cn('text-sm', JOB_TONE[rows[key].status])}>
-                    {t(...verdictOf(key, rows))}
-                  </p>
-                  <p className="tabular text-xs text-muted-foreground">
-                    {rows[key].at === null
-                      ? t('settings.jobs.never')
-                      : t('settings.jobs.last', { at: format.dateTime(rows[key].at) })}
-                  </p>
+                <dt>{t(JOB_NAMES[key])}</dt>
+                <dd className="tabular font-mono text-xs text-muted-foreground">
+                  {/* The instant alone: the column over it is what names it,
+                      so *Dernier passage 26 août* would say it twice (#838). */}
+                  {rows[key].at === null
+                    ? t('settings.jobs.never')
+                    : format.dateTime(rows[key].at)}
+                </dd>
+                <dd className={cn('text-sm', JOB_TONE[rows[key].status])}>
+                  {t(...verdictOf(key, rows))}
                 </dd>
               </div>
             ))}

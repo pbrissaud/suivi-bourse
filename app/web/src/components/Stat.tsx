@@ -47,10 +47,29 @@ export interface StatProps {
   align?: 'start' | 'center'
 }
 
+/**
+ * The three distances, on the drawing's own ladder (#838): 52 px for the one
+ * figure a page leads with, 19 px for a statistic, 16 px for a term inside a
+ * total. The head is set a notch heavier than semibold because the drawing sets
+ * it there — at that size 600 reads thin against everything around it.
+ */
 const SIZES: Record<NonNullable<StatProps['size']>, string> = {
-  head: 'text-4xl',
+  head: 'text-hero font-heavy',
   stat: 'text-xl',
-  term: 'text-base',
+  term: 'text-lg',
+}
+
+/**
+ * **The head's label is an eyebrow, and the others' is a label.** The drawing
+ * distinguishes them: what a page leads with is announced in small caps above
+ * the figure, and everything subordinate to it is named in ordinary type. It
+ * follows the size because it *is* the size's business — a second prop would
+ * let the two disagree.
+ */
+const LABELS: Record<NonNullable<StatProps['size']>, string> = {
+  head: 'text-2xs font-semibold tracking-caps uppercase',
+  stat: 'text-xs',
+  term: 'text-xs',
 }
 
 export function Stat({
@@ -69,7 +88,7 @@ export function Stat({
       className={cn('min-w-0 space-y-1', align === 'center' && 'text-center')}
     >
       <div className={cn('flex items-center gap-1.5', align === 'center' && 'justify-center')}>
-        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className={cn(LABELS[size], 'text-muted-foreground')}>{label}</span>
         {explain}
       </div>
       <div className={cn('tabular font-semibold tracking-tight', SIZES[size], valueClassName)}>

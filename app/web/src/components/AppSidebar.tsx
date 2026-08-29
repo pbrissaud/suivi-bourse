@@ -50,7 +50,7 @@ import {
 import { useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
-  to: '/' | '/titres' | '/comptes' | '/donnees' | '/reglages'
+  to: '/' | '/shares' | '/accounts' | '/ledger' | '/settings'
   label: MessageKey
   icon: LucideIcon
 }
@@ -58,8 +58,8 @@ interface Entry {
 /** What the owner looks at. */
 const PORTFOLIO: Entry[] = [
   { to: '/', label: 'nav.dashboard', icon: LayoutDashboard },
-  { to: '/titres', label: 'nav.shares', icon: CircleDollarSign },
-  { to: '/comptes', label: 'nav.accounts', icon: Wallet },
+  { to: '/shares', label: 'nav.shares', icon: CircleDollarSign },
+  { to: '/accounts', label: 'nav.accounts', icon: Wallet },
 ]
 
 /**
@@ -69,8 +69,8 @@ const PORTFOLIO: Entry[] = [
  * source string is `Ledger`, English being decided first (ADR-0024).
  */
 const WORKINGS: Entry[] = [
-  { to: '/donnees', label: 'nav.ledger', icon: Database },
-  { to: '/reglages', label: 'nav.settings', icon: Settings },
+  { to: '/ledger', label: 'nav.ledger', icon: Database },
+  { to: '/settings', label: 'nav.settings', icon: Settings },
 ]
 
 export function AppSidebar() {
@@ -88,15 +88,30 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="h-12 justify-center px-4 group-data-[collapsible=icon]:px-2">
-        <span className="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-          {t('app.name')}
-        </span>
+      {/* The drawing's own measurements: the column is padded 20 px down and
+          12 px in, the wordmark row sits 8 px further in again, and 24 px
+          separate it from the first route. Folded to the rail the two
+          paddings meet in the middle, the badge being the only thing left. */}
+      <SidebarHeader className="h-auto gap-0 px-5 pt-5 pb-6 group-data-[collapsible=icon]:px-3">
+        <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
+          {/* The mark, which the app had nowhere: a mint tile carrying the
+              product's initial, and the one place the brand is stated rather
+              than spelled. It survives the fold where the wordmark cannot. */}
+          <span
+            aria-hidden
+            className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary text-lg font-bold text-sidebar-primary-foreground"
+          >
+            {t('app.name').slice(0, 1)}
+          </span>
+          <span className="truncate text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            {t('app.name')}
+          </span>
+        </div>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="gap-0">
         {/* `flex-1`, so the group is as tall as the scroll area and the foot
             of the list is the foot of the column. */}
-        <SidebarGroup className="flex-1">
+        <SidebarGroup className="flex-1 px-3 py-0 group-data-[collapsible=icon]:px-2">
           {/* The component ships divs; the landmark is the product's job, and
               it is what a screen reader — and a test — takes hold of. **One
               landmark over the two groups** and not one each: they are a
@@ -114,7 +129,7 @@ export function AppSidebar() {
                 without a second menu having to know how tall the first one is.
                 There is nothing under them any more — the status card left with
                 #829. */}
-            <SidebarMenu className="mt-auto">
+            <SidebarMenu className="mt-auto pb-2.5">
               {WORKINGS.map((entry) => (
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}

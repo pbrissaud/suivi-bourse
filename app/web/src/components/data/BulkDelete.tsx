@@ -132,9 +132,16 @@ export function BulkDelete({ selection, selected, events }: BulkDeleteProps) {
 
   return (
     <>
+      {/* **The colour of what it does** (#838): the drawing gives this control
+          a loss-coloured outline where every other button on the row is
+          neutral or mint — it is the one gesture on the bar that removes
+          something, and the box behind it is what asks. The theme's red says
+          *this failed*, so the tone here is `--loss`, which is the product's
+          *money going away* rather than its error. */}
       <Button
         type="button"
         variant="outline"
+        className="h-8 rounded-lg border-loss/45 bg-transparent px-3 text-xs text-loss hover:bg-loss/10 hover:text-loss dark:bg-transparent dark:hover:bg-loss/10"
         onClick={() => {
           // The refusal is forgotten with the box that carried it: a mutation
           // error outlives its gesture, so reopening on another reduction would

@@ -183,10 +183,10 @@ describe('the sentence a notice is read in', () => {
     // The reconstruction counts its own noun, and French agrees the verb where
     // English does not.
     expect(say('fr', fact({ key: 'reconstruction_running', detail: { complete: 1, total: 19 } })))
-      .toContain('1 série a atteint sa première acquisition')
+      .toContain('1 série remonte au premier achat')
     expect(
       say('fr', fact({ key: 'reconstruction_running', detail: DETAILS.reconstruction_running })),
-    ).toContain('7 séries ont atteint leur première acquisition')
+    ).toContain('7 séries remontent au premier achat')
   })
 
   it('enumerates the way the language does, never with a « , » that crosses the wire', () => {

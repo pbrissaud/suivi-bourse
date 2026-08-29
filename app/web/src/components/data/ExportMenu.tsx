@@ -62,6 +62,8 @@
  */
 import { toast } from 'sonner'
 
+import { ChevronDown, Download } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -110,8 +112,18 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline">
+        {/* The drawing's own control: the gesture's icon, the word, then a
+            hairline and a chevron — one button that says both *this exports*
+            and *there is a choice under it*. */}
+        <Button
+          type="button"
+          variant="outline"
+          className="h-8.5 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 dark:bg-transparent"
+        >
+          <Download aria-hidden className="size-3.5" />
           {t('data.export.title')}
+          <span aria-hidden className="h-4.5 w-px bg-input" />
+          <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">

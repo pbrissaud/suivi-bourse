@@ -1,38 +1,36 @@
 /**
- * What moved since the last session close (#727).
+ * What moved since the last session close (#727), **as one list** (#838).
  *
- * Two columns of five, and **a sentence for the rest**. That sentence is the
- * ticket: measured on the real portfolio, `500.PA` — the second line of it, at
- * 16,6 % — moved by `0,00 %`, so it entered neither column and disappeared from
- * both. Silence about the second line of a portfolio reads as *nothing to say
- * about it*, and counting it costs one sentence.
+ * The block was two columns of five — *Hausses* over *Baisses* — and the
+ * drawing has one list of five, ordered from the day's best to its worst. The
+ * order is the reading: the two ends of the day sit at the two ends of a short
+ * list, and the two headings and their two *nothing went down* lines paid for
+ * nothing the shortness does not say.
+ *
+ * **A sentence for the rest**, and that sentence is the ticket it was written
+ * for: measured on the real portfolio, `500.PA` — the second line of it, at
+ * 16,6 % — moved by `0,00 %`, so it entered no column and disappeared. Silence
+ * about the second line of a portfolio reads as *nothing to say about it*, and
+ * counting it costs one sentence.
  *
  * What the sentence counts is **held lines**, not rows of the payload: a share
  * with no baseline at all — its first day — is not in the collection the server
  * serves, and taking the count from what came back would leave it out of the
  * sentence too, which is the same disappearance one step further along. The
  * payload is reduced to those same held lines before anything is counted off it
- * (`moversSplit`), so the two halves of the sentence describe one set.
+ * (`moversList`), so the two halves of the sentence describe one set.
  *
- * **The right rail, and the ticker on every line** (#790). The block sits in
- * the narrow column of the plateau, so the two columns of five stack there and
- * spread again the moment the card has the width; and each line carries its
- * **symbol** beside the name, which is the identity the rest of the product
- * addresses a security by — `lib/api.ts`'s own rule, `symbol` being the
- * identity and `name` display only. A rail of names alone cannot be matched to
- * the allocation's legend, to the shares table, or to a broker's own screen.
- *
- * The reference close is named here and nowhere else. It is the **second** of
- * the page's two permanent time announcers — the first is the page's own price
- * mention — and it is a different instant from it: the block compares against
- * the previous session, the page states the last observation. Naming the *cut*
- * instead of the close it found announced a session that had not happened yet.
+ * **The ticker is a badge on every line** (#838): the drawing sets the identity
+ * as a mark rather than as a word, and it is what pairs a line here to the same
+ * line in the table one page over — the name alone is a rail nothing else on
+ * the page can be matched against. It is `aria-hidden`, the symbol being said
+ * to a screen reader beside the name it belongs to.
  */
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { Mover } from '@/lib/api'
-import { moversSplit } from '@/lib/dashboard'
+import { moversList } from '@/lib/dashboard'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ShareRow } from '@/lib/shares'
@@ -40,142 +38,83 @@ import { signClass } from '@/lib/sign'
 import type { ReadFailure } from '@/lib/status'
 
 export interface MoversProps {
-  /**
-   * What the server compared, or **`null` while `/api/portfolio/movers` is in
-   * flight** (ADR-0026).
-   *
-   * The request is armed only once the page has reached its `portfolio` state,
-   * so there is a real window between the table appearing and this answering —
-   * and over it `?? []` put the `EmptyState` *« Rien à comparer »* **and** the
-   * sentence *« N autres lignes n'apparaissent pas ici, dont aucune n'a bougé de
-   * rien »* on screen together, two statements about a portfolio whose
-   * movements had not been read. Its sibling block of the same ticket does the
-   * opposite and does it on purpose.
-   */
   movers: readonly Mover[] | null
-  /** The instant the comparison is made against. `null` — nothing to compare. */
   reference: string | null
-  /** The portfolio's lines, closed ones included — the block reduces them itself. */
   rows: readonly ShareRow[]
   currency: string | null
-  /**
-   * The block's own read, refused — `null` when it did answer or is still in
-   * flight. In flight there is nothing to say yet; refused, the slot says so
-   * rather than disappearing without a word (#829, ADR-0037).
-   */
   failure?: ReadFailure | null
 }
 
 export function Movers({ movers, reference, rows, currency, failure = null }: MoversProps) {
   const { t } = useI18n()
   const f = useFormatters()
-
-  // **Nothing at all, title included** (ADR-0026): a frame with an empty body
-  // is a hand-written skeleton, and this product has none. The block appears by
-  // a jolt rather than fading in, and that cost is accepted.
-  //
-  // Unless the read was **refused**, which is not the same silence: the slot
-  // then says the comparison could not be read, in the place it would have
-  // been (#829, ADR-0037).
   if (movers === null) return failure === null ? null : <Unreadable failure={failure} />
-
-  const { risers, fallers, others, unchanged } = moversSplit(movers, rows)
-
+  const { rows: moved, others, unchanged } = moversList(movers, rows)
   return (
-    <Card className="gap-4">
+    <Card>
       <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-medium">{t('dashboard.movers.title')}</h2>
+        <h2 className="eyebrow">
+          {t('dashboard.movers.title')}
+        </h2>
+        {/* The instant the comparison is against, and it is this block's own
+            subject rather than the page's period: a movement is read against a
+            close, and the close is a fact about the quotes rather than about
+            the window the reader chose. */}
         {reference === null ? null : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             {t('dashboard.movers.since', { date: f.dateTime(reference) })}
           </p>
         )}
       </CardHeader>
-
-      <CardContent className="space-y-3">
-        {risers.length === 0 && fallers.length === 0 ? (
+      <CardContent>
+        {moved.length === 0 ? (
           <EmptyState
             title={t('dashboard.movers.empty')}
             description={t('dashboard.movers.empty.body')}
           />
         ) : (
-          // Two columns where there is room, stacked in the rail — the rail
-          // being where this block lives on the plateau.
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-1">
-            <Column
-              title={t('dashboard.movers.risers')}
-              rows={risers}
-              currency={currency}
-              empty={t('dashboard.movers.noRiser')}
-            />
-            <Column
-              title={t('dashboard.movers.fallers')}
-              rows={fallers}
-              currency={currency}
-              empty={t('dashboard.movers.noFaller')}
-            />
-          </div>
+          <ul aria-label={t('dashboard.movers.title')}>
+            {moved.map((mover) => (
+              <li
+                key={mover.symbol}
+                className="flex items-center gap-3 border-b py-2.25"
+              >
+                {/* The identity, set as a mark rather than as a word: a ticker
+                    is read as a badge and it is what pairs a line here to the
+                    same line in the table one page over. */}
+                <span
+                  aria-hidden
+                  className="flex size-7.5 shrink-0 items-center justify-center rounded-lg bg-accent font-mono text-2xs font-semibold text-muted-foreground"
+                >
+                  {mover.symbol.slice(0, 4)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {mover.name ?? mover.symbol}
+                  {/* The symbol still names the line for a screen reader,
+                      where the badge above is decoration. */}
+                  {mover.name === null ? null : <span className="sr-only"> ({mover.symbol})</span>}
+                </span>
+                {/* The percentage over what it did in money: a 12 % jump on a
+                    token holding and a 0,4 % drift on the biggest line are not
+                    the same news, and a percentage alone cannot say which. */}
+                <span className="flex shrink-0 flex-col items-end">
+                  <span className={`tabular text-sm font-semibold ${signClass(mover.change_pct)}`}>
+                    {f.percent(mover.change_pct)}
+                  </span>
+                  <span className="tabular text-2xs text-muted-foreground">
+                    {f.signedCurrency(mover.contribution, currency)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
-
         {others === 0 ? null : (
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-3 text-xs text-muted-foreground">
             {t('dashboard.movers.others', { count: others, unchanged })}
           </p>
         )}
       </CardContent>
     </Card>
-  )
-}
-
-function Column({
-  title,
-  rows,
-  currency,
-  empty,
-}: {
-  title: string
-  rows: readonly Mover[]
-  currency: string | null
-  empty: string
-}) {
-  const f = useFormatters()
-
-  return (
-    <div className="space-y-2">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {rows.map((mover) => (
-            <li key={mover.symbol} className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="flex min-w-0 items-baseline gap-2">
-                {/* The identity, then what it is called: a rail of names alone
-                    cannot be matched to anything else on the page. */}
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                  {mover.symbol}
-                </span>
-                {/* And the name only where there is one: `name` is display
-                    only, and a symbol printed twice names nothing twice. */}
-                {mover.name === null ? null : (
-                  <span className="min-w-0 truncate">{mover.name}</span>
-                )}
-              </span>
-              <span className="flex shrink-0 items-baseline gap-3">
-                {/* The percentage and what it did in money: a 12 % jump on a
-                    token holding and a 0,4 % drift on the biggest line are not
-                    the same news, and a percentage alone cannot say which. */}
-                <span className={`tabular ${signClass(mover.change_pct)}`}>
-                  {f.percent(mover.change_pct)}
-                </span>
-                <span className={`tabular ${signClass(mover.contribution)}`}>
-                  {f.signedCurrency(mover.contribution, currency)}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   )
 }

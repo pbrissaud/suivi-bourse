@@ -1,5 +1,99 @@
 # app/web/ — the front
 
+> **The drawing was read again, point by point** (#838). The five pages were put
+> beside `docs/design-revamp-v2-dark.html` **rendered** and brought onto it, and
+> what came out of that pass is a *system* rather than a list of nudges — most of
+> it lives in `index.css` and in three shared components, and the pages spend it.
+>
+> - **The type scale is the drawing's, and it is stated once.** `--text-*` is
+>   redeclared over the whole ladder — 11 · 12 · 13 · 14 · 15 · 16 · 19 · 20 ·
+>   26 · 28 · 34 · 42 · 52 — so a block goes on writing `text-sm` and lands on
+>   13 px. Two rungs the framework has no name for are added (`text-2xs`,
+>   `text-md`) and one is **fluid**: `--text-hero`, a `clamp` fitted to the
+>   drawing's own four sizes for the one figure a page leads with. `--radius`
+>   moves to `0.625rem`, which makes `rounded-lg` the drawing's 10 px control and
+>   `rounded-xl` its 14 px card; `--font-weight-heavy` is the one weight above
+>   semibold, and `--tracking-caps` the eyebrow's letter-spacing. `--gain` and
+>   `--loss` take the drawing's own two values on the dark ground.
+> - **`cn` had to be taught the ladder** (`lib/utils.ts`). `twMerge` reads an
+>   unknown `text-…` as a **colour**, so `cn('text-hero', 'text-gain')` dropped
+>   the size in silence and the dashboard's 52 px figure came out at 15. The
+>   three added rungs and the added weight are declared there. A rung added to
+>   `index.css` and not named there works until the day it meets a colour.
+> - **One utility is composed** — `eyebrow` — because every card in the drawing
+>   is headed the same way and six classes repeated two dozen times drift. It
+>   declares no token, so ADR-0023's three blocks are untouched.
+> - **`Segmented` is the segmented control, once** (`components/Segmented.tsx`):
+>   the dashboard's period, the chart's two readings, the share sheet's window.
+>   Two semantics, one look, and the caller says which — a period is a
+>   `radiogroup`, a reading is `aria-pressed`.
+> - **A figure inside a table is set in the mono face**, by one rule scoped to
+>   the cell in `index.css`; a figure outside one — a statistic, a page's head —
+>   stays in the sans. `.tabular` is unchanged and is still what every call site
+>   writes.
+> - **The 976 px reflow target is a breakpoint**, `wide:`. The accounts page
+>   switches to master-detail exactly there, where `lg:` landed 48 px late.
+> - **The navigation folds itself where nothing was chosen.** `Shell` reads the
+>   `sidebar_state` cookie as three states now: folded, unfolded, and *never
+>   answered* — and the last one is decided by the width, open from 1 024 px and
+>   the rail below it, which is what the drawing does.
+>
+> And six things of shape, each of which cost a decision:
+>
+> - **The dashboard is a column, not a plateau** (see below), with **one** range
+>   control on a row of its own between the head and the chart — it drives the
+>   chart and the comparison, and the two controls that offered the same four
+>   options one row apart are one.
+> - **The movements are one list of five**, best first, each line carrying its
+>   ticker as a badge: the two columns and their two *nothing went down* lines
+>   paid for what a short list says by being short.
+> - **The shares page leads with the ring and frames its table**, whose header is
+>   a strip of four totals — `Valorisation · Latente · Réalisée · Dividendes`,
+>   the sums of four of its own columns. The 52 px `Gain total` that stood
+>   between the two is not in the drawing: the ring already states the whole in
+>   its hole.
+> - **An account is one head card with its curve inside it**, and the editor is a
+>   pencil beside the name rather than the name itself. Under 976 px the rail
+>   becomes a **sticky bar of chips** at the top of the screen — the drawing's
+>   own answer to a column of cards that, stacked above the detail, takes the
+>   way back to the other accounts off the screen with it. It is mounted beside
+>   the grid rather than inside the rail: a sticky element sticks within its
+>   *containing block*, and the rail's column ends where the detail begins.
+> - **The ledger's band is a band** — icon, sentence, picker and export menu on
+>   one row — and the table is framed like the shares table.
+> - **The settings read down a column**: every card headed by the eyebrow, a
+>   quantity in a field the width of a quantity with its unit beside it, and the
+>   workloads as three columns rather than three paragraphs.
+>
+> **And the addresses are English** (#838, second pass). `/titres`, `/comptes`,
+> `/donnees` and `/reglages` are `/shares`, `/accounts`, `/ledger` and
+> `/settings`; the search parameters that were French went with them —
+> `?compte=` is `?account=`, `?titre=` is `?symbol=`, and the two *gestures* an
+> address can carry, `?ouvrir=evenement` and `?ouvrir=compte`, are `?open=event`
+> and `?open=account`. It leaves the product with **one** language in its URLs
+> and the same one its source is written in (ADR-0024: English is decided
+> first), where a reader was reaching a French path to open a page whose every
+> identifier is English. The reduction's other four parameters were already
+> English — `q`, `type`, `since`, `until` — so `/ledger?type=BUY&account=pea` is
+> now one sentence rather than two. Nothing redirects from the old paths: they
+> have never been released, `preview/v5` being what they have only ever run on.
+>
+> **And the copy was read again** (#838, third pass). The catalogues had drifted
+> into the register of the records that produced them — a hint that explained
+> the *mechanism* rather than the setting (*How long a stored price may stay
+> frozen while the market moves before it is reported*), a bubble that argued
+> for the app's own arithmetic (*the app adds the four up rather than computing
+> a total separately and trusting that they agree*), a refusal that recited the
+> rule it enforced. Some ninety strings were rewritten on one rule: **say what
+> the reader is looking at or about to do, and stop**. What a figure *is* stays;
+> why the product computes it that way goes to the docs the bubble already links
+> to. `en.json` is still the source and `fr.json` is still kept in step by hand,
+> so every rewrite landed in both.
+>
+> The one difference from the drawing that is **kept on purpose** is the fold of
+> the navigation: the drawing puts its toggle at the foot of the sidebar, and the
+> product keeps it in the content header, where it survives the drawer.
+
 > **The ledger has its facets, and its two removals** (#834, ADR-0031,
 > ADR-0032). The reduction is laid out in **three** places and they are three
 > questions: `LedgerFacets.tsx` on the left, where an axis is *chosen* — type,
@@ -42,7 +136,7 @@
 > untouched. The grouping is offered only above one account,
 > `accountBreakdown`'s own argument one surface over. Both are page **state**
 > and not an address: nothing outside the page leads to *this table sorted by
-> PRU*, where ⌘K does lead to `?titre=`.
+> PRU*, where ⌘K does lead to `?symbol=`.
 >
 > **`Poids` is not a column, and the weight is answered by the `Répartition`**
 > (#831). It was one at #791, taken out on sight, back as a bar at #832 — and
@@ -50,7 +144,7 @@
 > its rendering. Rendered, the drawing's table has nine headers and no tenth,
 > and the word `Poids` never appears on that page at all: its three occurrences
 > are the account's (*Poids des comptes*, and #833's sortable column). What the
-> maquette answers *the weight of a line* with on `/titres` is the **ring above
+> maquette answers *the weight of a line* with on `/shares` is the **ring above
 > the table** — a figure of the whole rather than a tenth cell on every row —
 > and that block is mounted there since #831. `weight` left `SortColumn` with
 > the column: a sort key nobody can reach is a control that does not exist.
@@ -58,7 +152,7 @@
 > **And the content column may now be narrower than what is in it** (#832).
 > `SidebarInset` is a flex item, so its `min-width` was `auto` — *never narrower
 > than my content* — and a table wider than the column pushed the **whole page**
-> sideways instead of scrolling inside itself: measured on `/titres` against a
+> sideways instead of scrolling inside itself: measured on `/shares` against a
 > real API, the page overflowed by 256 px at 768 and by 238 px at 976, and the
 > `overflow-x-auto` `components/ui/table.tsx` puts around every table was inert,
 > its parent having grown to fit. `min-w-0` on the shell's column is the whole
@@ -242,7 +336,7 @@
 > chip reads `GET /api/advisories?asleep=include` (`advisories.standing`) while
 > the panel reads the route bare (`advisories.listing`).
 > **The shell opens to five** (#828, ADR-0038): the settings have an address of
-> their own, `/reglages`, and the data page is called the **ledger** — `Grand
+> their own, `/settings`, and the data page is called the **ledger** — `Grand
 > livre` in French, the word `CONTEXT.md` and every French record already use,
 > never a third one. The navigation groups **three and two**: the top is the
 > portfolio, what the owner *looks at*; the foot is what they *act on*, and the
@@ -256,7 +350,7 @@
 >
 > **And the tab bar is gone** (#830, ADR-0038): `components/settings/` is where
 > the surface lives now, `DataPage` renders the table and nothing else, and
-> `/reglages` is five cards rather than one block — *what you can change*, **the
+> `/settings` is five cards rather than one block — *what you can change*, **the
 > workloads**, the orphaned securities, the store, *what the container imposes*.
 > The block used to be headed *Réglages* under a page whose `<h1>` read
 > *Réglages*, which names the page twice and the card not at all; each card is
@@ -620,12 +714,18 @@ src/
 
 ## The five pages, one line each
 
-- **Dashboard** (`/`) — a **plateau of two tracks** from `lg`, split *drawn*
-  against *read down*: the head (which computes `Gain total` from its four terms
-  and never reads `gain_absolu`) and the chart slot with two readings
-  (*Amounts* / *Performance*, a group of buttons since #831 and never tabs) on
-  the wide one; the movers and the **accounts card** in the rail. The
-  allocation was the wide track's third block until #831 sent it to `/titres`. That card is where accounts are compared
+- **Dashboard** (`/`) — **one column** since #838, which is the drawing's own
+  shape: the head (which computes `Gain total` from its four terms and never
+  reads `gain_absolu`), then the page's **one** range control on a row of its
+  own, then the chart with its two readings (*Amounts* / *Performance*, a group
+  of buttons since #831 and never tabs), then the movements and the **accounts
+  card** side by side from `md`. It was a plateau of two tracks from #790 to
+  #838 — the rail carried the two blocks that are *read down* — and what
+  replaced it is not a preference: the drawing lays the head and the chart
+  across the full width and puts the two lists under them, and the range the
+  rail's card carried was the second of two controls offering the same four
+  options one row apart. The
+  allocation was the wide track's third block until #831 sent it to `/shares`. That card is where accounts are compared
   since ADR-0028, and it therefore holds ADR-0019's rule: one range for every
   figure on it, sparkline included. The head's two period figures sit with the
   total, never among its four terms. It is the dashboard **unconditionally**,
@@ -633,10 +733,14 @@ src/
   (#831): the bubbles sit on `Gain total`, `Versé net`, `TRI` and `TWR`, and the
   three sentences that stated a rule under the chart are gone — an absence still
   says why it is absent, which is not the same thing.
-- **Shares** (`/titres`) — the **`Répartition`** since #831 — twelve slices, its
+- **Shares** (`/shares`) — the **`Répartition`** since #831 — twelve slices, its
   total in the ring's hole, dividing exactly the lines the header under it sums —
-  then nine columns, the header summing its
-  lines, so the closed positions **fold** rather than being filtered (the fold is
+  then the table, framed, whose **header is a strip of four totals** since #838
+  — `Valorisation · Latente · Réalisée · Dividendes`, the sums of four of its own
+  nine columns, closed lines counted in. The page's own 52 px `Gain total` went
+  with the strip: the drawing has no such figure here, the ring already stating
+  the whole in its hole one block up. The closed positions **fold** rather than
+  being filtered (the fold is
   not a filter, and the header does not move when the section opens). **Every
   column sorts** since #791 — the control is the label, the state is `aria-sort`
   on the cell, and an absence never rises whichever way the column is pointed,
@@ -648,12 +752,19 @@ src/
   click **anywhere on the row** (the name stays a button, which is the
   keyboard's way in), where a
   selection links the chart to the event list — and **which sheet is open is a
-  URL** (`?titre=`) since #797, the same clause as the `?compte=` reduction beside
+  URL** (`?symbol=`) since #797, the same clause as the `?account=` reduction beside
   it, because ⌘K reaches a held title from any of the four routes.
-- **Accounts** (`/comptes`) — master-detail (ADR-0028): a sticky rail of weights
-  and names, one account's detail beside it — the gain over its four terms, the
-  composition, the annualised rate, the dividends, the lines and the last events.
-  Which account is open is a **URL** (`?compte=`), and an id naming nothing falls
+- **Accounts** (`/accounts`) — master-detail from **976 px** (ADR-0028, the
+  `wide:` breakpoint since #838): a sticky rail of weights and names, one
+  account's detail beside it — one **head card** carrying what the account is
+  worth, the contribution and the gain it is the difference of, the fees, the
+  cumulative ratio and the curve *inside the same frame*; then the composition,
+  the annualised rate with the time-weighted one under it, the dividends, the
+  lines and the last events. The four-term list the head used to nest went with
+  #838: the drawing states the dividends on a card of their own, the fees on the
+  line under the gain, and the latent gain as a column of the lines table — so
+  ADR-0018's identity is unchanged and the page no longer says it twice.
+  Which account is open is a **URL** (`?account=`), and an id naming nothing falls
   back to the first declared one. **No range control at all** since #833: the
   head figure is `Performance totale`, `gain ÷ versé net`, a cumulative ratio
   whose extent is the account's own life — so no window is implied and none has to
@@ -682,10 +793,10 @@ src/
   declared yet (#725, offered and never required), and stands on its own in the
   **seeded account's own detail** once something is: its subject is that
   account's events.
-- **Ledger** (`/donnees`) — **no tab bar at all** since #830, and the page is
+- **Ledger** (`/ledger`) — **no tab bar at all** since #830, and the page is
   **named** for the one thing it holds (ADR-0038): the notices left with the
   banner and the status dot, into the panel behind the header's bell, the
-  installation left for `/reglages`, and a bar holding a choice of one is not a
+  installation left for `/settings`, and a bar holding a choice of one is not a
   bar. The `#installation` hash went with it — it was an address on a tab, and
   the surface it named has a path now. What is left is a **panel of facets and
   the table** — bounded, sticky-headed and revealed forty rows at a time since
@@ -727,7 +838,7 @@ src/
   the first two share a label. And **no third thing in the band** since #816:
   nothing persists that could be listed or revoked, so the band is the zone and
   the menu.
-- **Settings** (`/reglages`) — the fifth page (ADR-0038), and the only route of
+- **Settings** (`/settings`) — the fifth page (ADR-0038), and the only route of
   the five that reads nothing off its own address: a dial is not a reduction of
   anything, so there is nothing here for a search parameter to describe. **Five
   cards** since #830, in the mock-up's order and each named for what it holds:
