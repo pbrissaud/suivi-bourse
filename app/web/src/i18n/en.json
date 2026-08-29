@@ -317,7 +317,7 @@
   "accounts.detail.payers": "Distributing securities",
   "accounts.detail.payers.period": "Since this account opened",
   "accounts.detail.events": "Latest events",
-  "accounts.detail.events.link": "See the whole ledger",
+  "accounts.detail.events.link": "See this account’s events in the ledger",
 
   "accounts.new": "Declare an account",
   "accounts.remove": "Remove",

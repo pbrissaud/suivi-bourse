@@ -800,7 +800,16 @@ export function AccountDetail({
                   </li>
                 ))}
               </ul>
-              <Link to="/ledger" className="text-sm font-medium underline underline-offset-4">
+              {/* Reduced onto this account, exactly as the lines block above
+                  reduces onto it: a detail owes its reader *more of what this
+                  block is showing*, and the whole ledger is a different page
+                  about a different subject. The reduction is a URL, so it
+                  survives a reload and can be handed to somebody else. */}
+              <Link
+                to="/ledger"
+                search={{ account: row.id }}
+                className="text-sm font-medium underline underline-offset-4"
+              >
                 {t('accounts.detail.events.link')}
               </Link>
             </CardContent>

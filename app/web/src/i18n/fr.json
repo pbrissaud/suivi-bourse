@@ -317,7 +317,7 @@
   "accounts.detail.payers": "Titres distributeurs",
   "accounts.detail.payers.period": "Depuis l’ouverture de ce compte",
   "accounts.detail.events": "Derniers événements",
-  "accounts.detail.events.link": "Voir tout le grand livre",
+  "accounts.detail.events.link": "Voir les événements de ce compte dans le grand livre",
 
   "accounts.new": "Déclarer un compte",
   "accounts.remove": "Supprimer",

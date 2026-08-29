@@ -318,9 +318,14 @@ describe('the five blocks', () => {
     // Newest first, and the four the fixture's ledger names `alpha` with.
     expect(within(events).getAllByRole('listitem')).toHaveLength(4)
     expect(within(events).getAllByRole('listitem')[0]).toHaveTextContent('10 févr. 2026')
+    // Reduced onto this account, like the lines link one card up: the block is
+    // *this account's* events, and the link owes its reader more of them rather
+    // than a page about every account at once.
     expect(
-      within(detail).getByRole('link', { name: 'Voir tout le grand livre' }),
-    ).toHaveAttribute('href', '/ledger')
+      within(detail).getByRole('link', {
+        name: 'Voir les événements de ce compte dans le grand livre',
+      }),
+    ).toHaveAttribute('href', '/ledger?account=alpha')
   })
 
   it('has no events block where no event names the account', async () => {
