@@ -30,7 +30,8 @@ import store as store_module
 import uploads
 from events import EventLoader
 from events.schemas import ACCOUNT_FILE_COLUMNS, DEFAULT_ACCOUNT, EventType
-from test_web_api import ACCOUNTS_FILE, build_client, build_client_and_store
+from test_web_api import (ACCOUNTS_EVENTS, ACCOUNTS_FILE, build_client,
+                          build_client_and_store)
 from web import problem
 
 
@@ -1011,6 +1012,77 @@ def test_a_preview_collecting_a_correspondence_reports_what_it_would_refuse(
     assert silent.status_code == 422
     assert "'TR' is not declared" in silent.get_json()['detail']
     assert opened.query('SELECT count(*) FROM event') == [(0,)]
+
+
+#: A file that **sells** a position the ledger holds under a declared account,
+#: while naming an account of its own. The rows replay only once the reader has
+#: said where ``PEA`` goes; until then the sale is against nothing.
+SELLS_UNDER_ANOTHER_LABEL = (
+    "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+    "2024-09-15,SELL,AAPL,Apple Inc,10,190.00,2.00,,PEA\n"
+).encode('utf-8')
+
+
+def test_a_preview_collecting_a_correspondence_does_not_replay_either(tmp_path):
+    """The leniency covers the **replay**, and not the validator alone (#835).
+
+    The account column is reported rather than judged while the modal is
+    collecting its answer — and the replay under it is a judgement about the
+    very same question, since a position is keyed by ``(account, symbol)``. Run
+    with the file's own labels it asks *does this sale replay in an account
+    nobody has been sent to yet*, and answers ``409`` on a ledger that holds the
+    shares perfectly well one account over.
+
+    That refusal lands on the **first** preview, the one whose whole job is to
+    produce ``file_accounts`` — so the modal never opens and the reader cannot
+    give the answer that would make the file land. It is #813's forecast
+    contradicting the reader on a fact of *their own* ledger, over the one
+    question this response exists to put.
+
+    The guarantee it gives up is given back one preview later: the correspondence
+    answered, both judgements run, and a file that genuinely oversells is refused
+    before the button as it always was.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    collecting = _upload(client, SELLS_UNDER_ANOTHER_LABEL,
+                         query=_query(dry_run=1, map='{}'))
+    answered = _upload(client, SELLS_UNDER_ANOTHER_LABEL,
+                       query=_query(dry_run=1, map='{"PEA": "pea"}'))
+
+    assert collecting.status_code == 200
+    assert [account['name']
+            for account in collecting.get_json()['file_accounts']] == ['PEA']
+    # And the preview that has its answer judges the replay in full: the sale
+    # lands in ``pea``, where the ten shares are.
+    assert answered.status_code == 200
+    assert answered.get_json()['written'] == 1
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_a_preview_with_its_answer_still_refuses_a_genuine_oversell(tmp_path):
+    """The half the repair above must not take with it.
+
+    A correspondence that is **complete** puts the rows where they are going, so
+    the replay is a statement about the ledger the write would leave — and a
+    file selling more than that ledger holds is refused at the forecast, before
+    the button, exactly as ``POST /api/events`` refuses one row.
+    """
+    client, opened = build_client_and_store(
+        tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+
+    oversells = (
+        "date,event_type,symbol,name,quantity,unit_price,fee,amount,account\n"
+        "2024-09-15,SELL,AAPL,Apple Inc,40,190.00,2.00,,PEA\n"
+    ).encode('utf-8')
+
+    response = _upload(client, oversells, query=_query(dry_run=1,
+                                                       map='{"PEA": "pea"}'))
+
+    assert response.status_code == 409
+    assert response.get_json()['symbol'] == 'AAPL'
+    assert opened.query('SELECT count(*) FROM event') == [(1,)]
 
 
 def test_the_write_judges_the_account_column_whatever_was_offered(tmp_path):

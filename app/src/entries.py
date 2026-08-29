@@ -517,6 +517,21 @@ def judge(store, drafts: Sequence[Event], *,
     refused exactly as before — the symmetry the preview gives up here is the
     symmetry the modal restores by blocking its button.
 
+    **And it withholds the replay for exactly as long, which is the same
+    sentence and not a second one.** A position is keyed by ``(account,
+    symbol)``, so a replay run over rows still carrying the *file's* labels asks
+    *does this sale replay in an account nobody has been sent to yet* — and
+    answers ``409`` on a ledger holding the shares perfectly well one account
+    over. That refusal lands on the **first** preview, the one whose whole job is
+    to produce the census the modal is built from, so the modal never opens and
+    the reader cannot give the answer that would make the file land: a file is
+    checked for what it *says* while the question is open, and for what it
+    *means* once it is answered. The withholding is bounded by the validator's
+    own reading rather than by a second definition of *answered* — while a row
+    still names an account the strict validator would refuse, there is nothing
+    true to replay; the moment none does, the replay runs in full and a file that
+    genuinely oversells is refused at the forecast exactly as before.
+
     Raises:
         InvalidEntry, events.aggregator.AggregationError: as
             :func:`create_many`, and for the same reasons.
@@ -525,6 +540,15 @@ def judge(store, drafts: Sequence[Event], *,
     _refuse_all(store, settled, declaring=declaring,
                 accounts_pending=accounts_pending)
     if not settled:
+        return
+
+    if accounts_pending and _validator(store, declaring=declaring).issues(settled):
+        # The correspondence is still open and some row still names an account
+        # the strict validator would refuse. Every *other* issue was raised a
+        # line above — ``accounts_pending`` relaxes the account column and
+        # nothing else — so what is left here is that column and only it, which
+        # is why this reads the validator instead of re-deciding what *answered*
+        # means. Replaying now would judge a placement the reader has not made.
         return
 
     would_be = [replace(event, account=event.account or DEFAULT_ACCOUNT)
