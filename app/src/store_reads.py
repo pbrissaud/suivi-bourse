@@ -34,9 +34,10 @@ than moving it:
   :meth:`Store.arrow`. The narrow reads (one row, a handful of accounts) stay
   tuples, where the frontier is not the cost.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+import instants
 import retention
 import store
 
@@ -596,14 +597,18 @@ def _window(column: str, start: Optional[datetime],
 def _stamp(row: Dict[str, Any]) -> Dict[str, Any]:
     """Make one row safe to hand out. For a handful of rows.
 
-    Two guards, and the second is not about time: **JSON has no NaN**, so a
-    fundamental yfinance never had reaches ``jsonify`` as a bare ``NaN`` token —
+    Two guards. The first is time — :func:`instants.utc`, the tree's one repair
+    (#843): a naive instant reaching the wire is read by ``new Date()`` as
+    *local* time and shifts every timestamp on the page by the browser's offset,
+    a defect that is invisible on a machine in UTC and only in UTC. The second
+    is not about time: **JSON has no NaN**, so a fundamental yfinance never had
+    reaches ``jsonify`` as a bare ``NaN`` token —
     which Python's own parser accepts and a browser's ``JSON.parse`` refuses, so
     the page gets a ``200`` whose body it cannot read. :func:`store.finite` is
     the one rule, applied here as the last line of defence over rows that were
     stored before the writers had it.
     """
-    return {key: store.finite(_stamp_value(value))
+    return {key: store.finite(instants.utc(value))
             for key, value in row.items()}
 
 
@@ -620,23 +625,10 @@ def _stamped(values: List[Any]) -> List[Any]:
     if isinstance(sample, datetime):
         if sample.tzinfo is not None:
             return values
-        return [_stamp_value(value) for value in values]
+        return [instants.utc(value) for value in values]
     if isinstance(sample, float):
         return [store.finite(value) for value in values]
     return values
-
-
-def _stamp_value(value: Any) -> Any:
-    """Naive means UTC here. One rule, applied at the read layer's exit.
-
-    The store is pinned to UTC (:func:`store.prepare`) so an aware value is what
-    comes back, but a naive instant reaching the wire is read by ``new Date()``
-    as *local* time and shifts every timestamp on the page by the browser's
-    offset — a defect that is invisible on a machine in UTC and only in UTC.
-    """
-    if isinstance(value, datetime) and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 __all__ = [

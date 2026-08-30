@@ -20,9 +20,10 @@ once, and a single pill has to choose. That choice is stated in
 :func:`symbol_pill` and it is the module's only opinion.
 """
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import instants
 import mounts
 import runtime_state
 import scheduling
@@ -136,14 +137,14 @@ class BackfillProgress:
         return {
             'direction': self.direction,
             'state': self.state,
-            'at': _iso(self.at),
-            'target': _iso(self.target),
-            'ceiling': _iso(self.ceiling),
-            'anchor': _iso(self.anchor),
-            'oldest': _iso(self.oldest),
-            'newest': _iso(self.newest),
+            'at': instants.iso(self.at),
+            'target': instants.iso(self.target),
+            'ceiling': instants.iso(self.ceiling),
+            'anchor': instants.iso(self.anchor),
+            'oldest': instants.iso(self.oldest),
+            'newest': instants.iso(self.newest),
             'window': (
-                [_iso(self.window[0]), _iso(self.window[1])]
+                [instants.iso(self.window[0]), instants.iso(self.window[1])]
                 if self.window else None
             ),
             'written': self.written,
@@ -207,11 +208,11 @@ class SymbolRuntime:
             'pill': self.pill,
             'market_state': self.market_state,
             'closed': self.closed,
-            'last_pass': _iso(self.last_pass),
+            'last_pass': instants.iso(self.last_pass),
             'verdict': self.verdict,
             'failure_count': self.failure_count,
             'next_delay': self.next_delay,
-            'next_run': _iso(self.next_run),
+            'next_run': instants.iso(self.next_run),
             'next_run_state': self.next_run_state,
             'held': self.held,
             'frozen': self.frozen,
@@ -365,10 +366,10 @@ def _ratio(record: runtime_state.BackfillRecord,
     """
     if record.terminal == runtime_state.TERMINAL_COMPLETE:
         return 1.0
-    # Every side through `_utc`: `target` comes from an event date and `oldest`
+    # Every side through `instants.utc`: `target` comes from an event date and `oldest`
     # from the store, and subtracting a naive instant from an aware one raises.
-    # See :func:`_utc`.
-    target = _utc(record.target)
+    # See :func:`instants.utc`.
+    target = instants.utc(record.target)
     # The **anchor**, not the oldest stored point: #703 parted the two, and the
     # anchor is the one that moves. On a symbol Yahoo answers nothing about for
     # its early windows — a partial delisting, a history that simply starts
@@ -376,10 +377,10 @@ def _ratio(record: runtime_state.BackfillRecord,
     # chunk a cycle, so a bar drawn from ``oldest`` freezes and then jumps to
     # 1,0 at the terminal: it reports a stall through the whole of the work.
     # ``oldest`` is the fallback for a record written before the field existed.
-    reached = _utc(record.anchor) or _utc(record.oldest)
+    reached = instants.utc(record.anchor) or instants.utc(record.oldest)
     if target is None or reached is None:
         return None
-    ceiling = _utc(record.ceiling) if record.ceiling is not None else _utc(now)
+    ceiling = instants.utc(record.ceiling) if record.ceiling is not None else instants.utc(now)
     total = (ceiling - target).total_seconds()
     if total <= 0:
         return 1.0
@@ -553,7 +554,7 @@ def build_ingestion(record: Optional[runtime_state.IngestRecord]) -> Optional[Di
     if record is None:
         return None
     return {
-        'at': _iso(record.at),
+        'at': instants.iso(record.at),
         'outcome': record.outcome,
         'kept_previous': record.outcome == runtime_state.INGEST_FAILED,
         'shares': record.shares,
@@ -580,7 +581,7 @@ def build_perf(record: Optional[runtime_state.PerfRecord]) -> Optional[Dict[str,
     if record is None:
         return None
     return {
-        'at': _iso(record.at),
+        'at': instants.iso(record.at),
         'verdict': record.verdict,
         'error': record.error,
     }
@@ -592,7 +593,12 @@ def build_accounts(
 
     The first day that account's figures were written from (issue #708) — a
     *calendar day*, rendered as one, where every other member of this payload is
-    an instant. It comes from process memory like everything else on this route,
+    an instant. That is what :func:`instants.iso` does with a `date` and the
+    reason the horizon goes through it rather than through a second serializer
+    of its own (#843): the two kinds of time do not mix (spec #695 § 3), and
+    stamping the day at midnight would let a browser shift it by its own offset
+    and read the day before. It comes from process memory like everything else
+    on this route,
     which matters here more than most: what it says is *"the page is filling in
     towards the left"* rather than *"the app has lost four years"*, and a
     resource that needed the store to say it would go quiet exactly when a
@@ -610,7 +616,7 @@ def build_accounts(
     """
     if record is None:
         return []
-    return [{'account': account, 'horizon': _day(horizon)}
+    return [{'account': account, 'horizon': instants.iso(horizon)}
             for account, horizon in sorted(record.horizons.items())]
 
 
@@ -634,7 +640,7 @@ def build_errors(
         if symbol.error:
             errors.append({
                 'source': 'scrape', 'key': symbol.symbol,
-                'at': _iso(symbol.last_pass), 'message': symbol.error})
+                'at': instants.iso(symbol.last_pass), 'message': symbol.error})
         # The lateral pass is in the list for its **failures** only: its
         # ``error`` is a fetch that did not complete, which is exactly what the
         # other two publish here. An ``unconvertible`` terminal carries no
@@ -646,17 +652,17 @@ def build_errors(
                 errors.append({
                     'source': f'backfill:{progress.direction}',
                     'key': symbol.symbol,
-                    'at': _iso(progress.at),
+                    'at': instants.iso(progress.at),
                     'message': progress.error})
 
     if ingest is not None and ingest.error:
         errors.append({
             'source': 'ingest', 'key': None,
-            'at': _iso(ingest.at), 'message': ingest.error})
+            'at': instants.iso(ingest.at), 'message': ingest.error})
     if perf is not None and perf.error:
         errors.append({
             'source': 'perf', 'key': None,
-            'at': _iso(perf.at), 'message': perf.error})
+            'at': instants.iso(perf.at), 'message': perf.error})
 
     # Newest first, and an error with no instant last: it cannot be placed, and
     # putting it at the top would make an undatable line outrank a fresh one.
@@ -734,7 +740,7 @@ def build_runtime(
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
     return {
-        'now': _iso(now),
+        'now': instants.iso(now),
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
         'store': {'persistence': persistence, 'path': store_path},
@@ -814,13 +820,13 @@ def health_scrape(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
     pills = {symbol.pill for symbol in held}
     verdict = next((pill for pill in _SCRAPE_RANK if pill in pills),
                    HEALTH_UNKNOWN)
-    # Through ``_utc`` on the way in: a record's instant is the job's, and
-    # ``max`` over a naive one beside an aware one raises. See :func:`_utc`.
+    # Through ``instants.utc`` on the way in: a record's instant is the job's, and
+    # ``max`` over a naive one beside an aware one raises. See :func:`instants.utc`.
     passes = [stamped for stamped in
-              (_utc(symbol.last_pass) for symbol in held) if stamped]
+              (instants.utc(symbol.last_pass) for symbol in held) if stamped]
     return {
         'status': _health_status(verdict, _SCRAPE_ATTENTION),
-        'at': _iso(max(passes)) if passes else None,
+        'at': instants.iso(max(passes)) if passes else None,
         'verdict': verdict,
         'held': len(held),
         # Who the verdict is about, named. A count alone would leave the one
@@ -855,7 +861,7 @@ def health_backfill(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
         if own & set(_BACKFILL_ATTENTION):
             attention.append(symbol.symbol)
         for progress in passes_of:
-            stamped = _utc(progress.at) if progress is not None else None
+            stamped = instants.utc(progress.at) if progress is not None else None
             if stamped is not None:
                 passes.append(stamped)
 
@@ -875,7 +881,7 @@ def health_backfill(symbols: Sequence[SymbolRuntime]) -> Dict[str, Any]:
 
     return {
         'status': _health_status(verdict, _BACKFILL_ATTENTION),
-        'at': _iso(max(passes)) if passes else None,
+        'at': instants.iso(max(passes)) if passes else None,
         'verdict': verdict,
         'complete': summary['complete'],
         'in_scope': summary['in_scope'],
@@ -897,7 +903,7 @@ def health_performance(
     failed = record.verdict == runtime_state.PERF_FAILED
     return {
         'status': HEALTH_ATTENTION if failed else HEALTH_OK,
-        'at': _iso(record.at),
+        'at': instants.iso(record.at),
         'verdict': record.verdict,
         'error': record.error,
     }
@@ -970,58 +976,10 @@ def build_health(
         status = HEALTH_OK
     return {
         'status': status,
-        'now': _iso(now),
+        'now': instants.iso(now),
         'scheduler_running': scheduler_running,
         'jobs': jobs,
     }
-
-
-def _utc(value: Optional[datetime]) -> Optional[datetime]:
-    """Stamp a naive datetime as UTC. One rule, applied at every exit.
-
-    Found by looking, and it is the sharper half of a defect the terminal states
-    were hiding. The backfill's anchor used to come back through pandas as a
-    **tz-naive** instant, so a record whose ``oldest`` came from storage carried
-    a naive datetime beside a ``target`` built from an event date, which is
-    aware. The store stamps both sides now (:func:`quotes._utc`), and the guard
-    stays because the two consequences are what a regression here looks like,
-    and the first is not cosmetic:
-
-    * ``(now - oldest)`` raises ``TypeError: can't subtract offset-naive and
-      offset-aware datetimes``, and this blueprint's catch-all renders any
-      exception as **503 Portfolio storage unavailable** — from the one route
-      that touches no storage, and precisely while a backward pass is *in
-      progress*, which is the only time the bar is worth drawing. A completed
-      pass short-circuits to ``1.0`` before the arithmetic, so the bug was
-      invisible on a stack whose history is already filled.
-    * a naive ISO string is read by ``new Date()`` as **local** time, quietly
-      shifting every instant on the page by the browser's offset.
-
-    Naive means UTC here: the app writes UTC everywhere, and the store's session
-    is pinned to it. Saying so explicitly is not a claim about the observation,
-    it is the observation written down completely.
-    """
-    if not isinstance(value, datetime):
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-
-
-def _iso(value: Optional[datetime]) -> Optional[str]:
-    """ISO-8601 UTC, the wire format #655 fixed for every timestamp."""
-    stamped = _utc(value)
-    return stamped.isoformat() if stamped is not None else None
-
-
-def _day(value: Optional[date]) -> Optional[str]:
-    """``YYYY-MM-DD`` for a **calendar day**, never an instant (issue #708).
-
-    The two kinds of time do not mix (spec #695 § 3), and this route is where the
-    distinction is easiest to lose: every other member of the payload is an
-    instant. A horizon is a day, so it is rendered as one — stamping it at
-    midnight would let a browser shift it by its own offset and read the day
-    before.
-    """
-    return value.isoformat() if value is not None else None
 
 
 __all__ = [

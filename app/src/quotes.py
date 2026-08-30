@@ -59,6 +59,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from logfmt_logger import getLogger
 
 import carrying
+import instants
 import retention
 from store import finite
 
@@ -598,7 +599,7 @@ def repair_conversions(store, symbol: str,
             ' WHERE symbol = ? AND ts = ? AND price_converted IS NOT NULL '
             ' ORDER BY rowid DESC LIMIT 1', [symbol, newest])
         if latest:
-            _advance_latest(store, symbol, _utc(newest), *latest[0])
+            _advance_latest(store, symbol, instants.utc(newest), *latest[0])
 
     logger.debug(f"Repaired {repaired} conversion(s) for {symbol}")
     return repaired
@@ -678,7 +679,7 @@ def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
         return set()
 
     oldest_stored = {
-        symbol: _utc(value)
+        symbol: instants.utc(value)
         for symbol, value in store.query(
             'SELECT symbol, min(ts) FROM price_point GROUP BY symbol')
         if value is not None
@@ -792,7 +793,7 @@ def oldest_ts(store, symbol: str) -> Optional[datetime]:
     """
     rows = store.query(
         'SELECT min(ts) FROM price_point WHERE symbol = ?', [symbol])
-    return _utc(rows[0][0]) if rows and rows[0][0] is not None else None
+    return instants.utc(rows[0][0]) if rows and rows[0][0] is not None else None
 
 
 def newest_ts(store, symbol: str) -> Optional[datetime]:
@@ -806,7 +807,7 @@ def newest_ts(store, symbol: str) -> Optional[datetime]:
     rows = store.query(
         'SELECT max(ts) FROM price_point '
         ' WHERE symbol = ? AND price_native IS NOT NULL', [symbol])
-    return _utc(rows[0][0]) if rows and rows[0][0] is not None else None
+    return instants.utc(rows[0][0]) if rows and rows[0][0] is not None else None
 
 
 def last_price(store, symbol: str) -> Optional[float]:
@@ -868,8 +869,8 @@ def read_quote(store, symbol: str) -> Optional[Dict]:
     if not rows:
         return None
     row = dict(zip(columns, rows[0]))
-    row['fetched_at'] = _utc(row['fetched_at'])
-    row['last_price_ts'] = _utc(row['last_price_ts'])
+    row['fetched_at'] = instants.utc(row['fetched_at'])
+    row['last_price_ts'] = instants.utc(row['last_price_ts'])
     return row
 
 
@@ -897,21 +898,6 @@ def forget_symbol(store, symbol: str) -> int:
     store.execute('DELETE FROM price_point WHERE symbol = ?', [symbol])
     store.execute('DELETE FROM symbol_quote WHERE symbol = ?', [symbol])
     return int(points)
-
-
-def _utc(value):
-    """Stamp what DuckDB hands back as UTC-aware. One rule, applied on exit.
-
-    ``TIMESTAMPTZ`` round-trips aware on a session pinned to UTC (see
-    :func:`store.prepare`), but the guard is cheap and the alternative is a
-    naive instant travelling into arithmetic that subtracts an aware one — a
-    ``TypeError`` raised from the one code path that only runs while a backward
-    pass is *in progress*.
-    """
-    if not isinstance(value, datetime):
-        return value
-    return value if value.tzinfo is not None else value.replace(
-        tzinfo=timezone.utc)
 
 
 __all__ = [

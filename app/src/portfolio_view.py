@@ -44,6 +44,7 @@ from typing import (
     Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Sequence,
 )
 
+import instants
 from carrying import carrying_price, is_quoted, was_quoted
 from events.schemas import unit_cost as _unit_cost
 
@@ -160,7 +161,7 @@ class SharePosition:
             'price': self.price,
             'price_native': self.price_native,
             'fx_rate': self.fx_rate,
-            'price_time': _iso(self.price_time),
+            'price_time': instants.iso(self.price_time),
             'quantity': self.quantity,
             'cost_basis': self.cost_basis,
             'unit_cost': self.unit_cost,
@@ -344,7 +345,7 @@ def _build_position(row: Dict[str, Any],
     """
     price_native = row.get('price_native')
     converted = row.get('price')
-    at = _iso(row.get('price_time'))
+    at = instants.iso(row.get('price_time'))
     return {
         'account': row.get('account'),
         'symbol': row.get('symbol'),
@@ -367,7 +368,7 @@ def _build_position(row: Dict[str, Any],
             'rate': row.get('fx_rate'),
             'rate_at': at,
         },
-        'closed_at': _iso(row.get('closed_at')),
+        'closed_at': instants.iso(row.get('closed_at')),
         'fundamentals': _build_fundamentals(row),
     }
 
@@ -441,7 +442,7 @@ def build_price_series(symbol: str, rows: Sequence[Dict[str, Any]],
         # instant ``t``, and a new resource that spells it a second way is one
         # vocabulary with two words for one thing, which is the thing #745's
         # naming rule exists to stop.
-        'points': [{'t': _iso(row.get('ts')), 'price': row.get('price')}
+        'points': [{'t': instants.iso(row.get('ts')), 'price': row.get('price')}
                    for row in rows],
     }
 
@@ -490,8 +491,8 @@ def build_portfolio_totals(
         return None
 
     payload = {name: latest.get(name) for name in _TOTALS_MEMBERS}
-    payload['day'] = _iso(latest.get('day'))
-    payload['twr_since'] = _iso(twr_since)
+    payload['day'] = instants.iso(latest.get('day'))
+    payload['twr_since'] = instants.iso(twr_since)
     payload['transfer_fees'] = transfer_fees
     payload['ytd'] = _ytd(latest, base)
     return payload
@@ -651,7 +652,7 @@ class AccountSummary:
             'id': self.id,
             'label': self.label,
             'type': self.type,
-            'as_of': _iso(self.as_of),
+            'as_of': instants.iso(self.as_of),
             'cash_balance': self.cash_balance,
             'holdings_value': self.holdings_value,
             'total_value': self.total_value,
@@ -775,7 +776,7 @@ def valuation_series(
         price.update(by_day.get(day, {}))
         held = positions_at(day)
         series.append({
-            't': _iso(day),
+            't': instants.iso(day),
             'value': _sum_values(
                 _product(position.get('quantity'),
                          _valued_at(position, price.get(position['symbol']),
@@ -1046,13 +1047,6 @@ def _first_value(rows: Sequence[Dict[str, Any]], field: str) -> Any:
         value = row.get(field)
         if value is not None:
             return value
-    return None
-
-
-def _iso(value) -> Optional[str]:
-    """ISO-8601 UTC, the wire format #655 fixed for every date and instant."""
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
     return None
 
 

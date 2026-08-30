@@ -34,11 +34,12 @@ and entire, and it is a fact about the tree now rather than a rule to defend.
 """
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
+import instants
 import quotes
 import settings_registry
 from events.schemas import DEFAULT_ACCOUNT, Event, EventType
@@ -186,7 +187,7 @@ def last_write(store) -> Optional[datetime]:
     if not stamped:
         return None
     try:
-        return _utc(datetime.fromisoformat(stamped))
+        return instants.utc(datetime.fromisoformat(stamped))
     except ValueError:
         # Nothing in this app writes that row in another shape; unreadable is
         # therefore *unknown*, and never an exception thrown at a page whose
@@ -333,14 +334,6 @@ def currency_to_adopt(store, declared: Optional[str]) -> Optional[str]:
             f"in it; importing it would reinterpret every amount already "
             f"stored rather than convert it. Remove those events first.")
     return value
-
-
-def _utc(value):
-    """Stamp what DuckDB hands back as UTC-aware. One rule, applied on exit."""
-    if not isinstance(value, datetime):
-        return value
-    return value if value.tzinfo is not None else value.replace(
-        tzinfo=timezone.utc)
 
 
 __all__ = [

@@ -775,6 +775,23 @@ def test_the_perf_verdict_publishes_no_reasons():
     assert not hasattr(runtime_state, 'PERF_SKIPPED')
 
 
+def test_an_instant_in_another_zone_is_published_in_utc():
+    """The behaviour this module did **not** have before #843.
+
+    Its own ``_utc`` stamped a naive instant and let an aware one through as it
+    stood, so a record carrying ``+02:00`` published ``+02:00`` while the module
+    next door published the same instant as ``+00:00``. One payload, two
+    offsets, and a reader comparing two of its fields by eye compared two
+    different things. The repair is one module now, and it converts.
+    """
+    elsewhere = datetime(2026, 8, 5, 17, 0, tzinfo=timezone(timedelta(hours=2)))
+
+    payload = runtime_view.build_perf(runtime_state.PerfRecord(
+        at=elsewhere, verdict=runtime_state.PERF_RAN))
+
+    assert payload['at'] == '2026-08-05T15:00:00+00:00'
+
+
 def test_the_perf_record_publishes_the_horizon_of_each_account():
     """``/api/runtime`` carries the horizon per account, from process memory.
 

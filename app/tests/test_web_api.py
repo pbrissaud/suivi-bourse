@@ -416,6 +416,35 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
                                 'rate_at': '2024-06-01T12:00:00+00:00'}
 
 
+def test_the_two_kinds_of_time_reach_the_wire_each_in_its_own_shape(tmp_path):
+    """An instant carries its offset, a calendar day carries none (#843).
+
+    Asserted on the **payload** rather than on a call, because that is where the
+    consequence is: the front reads these strings with ``new Date()``, which
+    takes a naive ISO for *local* time and moves every instant on the page by
+    the browser's offset — while a day stamped at midnight is rendered as the
+    day before by anything west of Greenwich.
+
+    A non-regression, and deliberately so: the read layer already stamps what it
+    hands out, so this was true before :mod:`instants` gathered the eight copies
+    and it has to stay true after. The two shapes are read off **one install**,
+    which is the half a per-module unit test cannot state: they travel together,
+    through the same serializer, and they still come out different.
+    """
+    def seed(opened):
+        seed_position(opened)
+        seed_quote(opened, at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc))
+        seed_totals(opened, day=date(2026, 8, 5))
+
+    client = build_client(tmp_path, seed=seed)
+
+    instant = client.get('/api/positions').get_json()['positions'][0]
+    assert instant['price']['at'] == '2024-06-01T12:00:00+00:00'
+
+    day = client.get('/api/portfolio-totals').get_json()['totals']['day']
+    assert day == '2026-08-05'
+
+
 def test_the_instrument_rides_on_the_holding_and_is_absent_unfetched(tmp_path):
     """The share sheet's fundamentals block, and its two absences (issue #720).
 

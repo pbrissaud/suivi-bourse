@@ -18,7 +18,7 @@ fingerprints it — the two things every page and every job go through.
 """
 import io
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import openpyxl
@@ -140,6 +140,28 @@ def test_the_last_write_is_recorded_by_the_writer(store, tmp_path):
     ((key,),) = store.query('SELECT id FROM event')
     entries.remove(store, key)
     assert ledger.last_write(store) >= after_import
+
+
+def test_the_last_write_is_read_back_in_utc_whatever_offset_it_was_stored_in(
+        store):
+    """The other half of #843, on the module that used to let an offset through.
+
+    ``ledger_last_write`` is a **string** in ``setting`` — the writer stamps it,
+    this reads it back — so it is the one instant in the tree that can carry any
+    offset at all: nothing in the row's type pins it to UTC the way a
+    ``TIMESTAMPTZ`` column does. The old ``_utc`` here repaired a naive stamp and
+    left an aware one as it stood, so the store block of the settings page could
+    show an hour that never matched the instants beside it. One repair now, and
+    it converts.
+    """
+    store.execute("INSERT INTO setting (key, value) VALUES (?, ?) "
+                  "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                  [ledger.LAST_WRITE_KEY, '2026-08-05T17:00:00+02:00'])
+
+    read = ledger.last_write(store)
+
+    assert read.utcoffset() == timedelta(0)
+    assert read == datetime(2026, 8, 5, 15, 0, tzinfo=timezone.utc)
 
 
 # --------------------------------------------------------------------------- #
