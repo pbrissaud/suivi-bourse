@@ -2698,9 +2698,10 @@ class SuiviBourseMetrics:
 
         # ``None`` is the request that did not complete, and it is the one
         # answer this method may not confuse with a reply — :mod:`market` keeps
-        # the two apart for exactly this call site. The sentinel that must not
-        # reach the currency column has been removed at the translation, which
-        # since #846 is the one place it is named.
+        # the two apart for exactly this call site. What a payload naming no
+        # currency answers is ``None`` too, and it always did: the translation
+        # used to remove a sentinel here, and since #845 there is none to
+        # remove — the fetch does not make one.
         info = market.symbol_attributes(symbol)
         if info is None:
             return None, True
@@ -2837,6 +2838,18 @@ class SuiviBourseMetrics:
         span = quotes.unconverted_span(store_open, symbol)
         currency = quotes.quote_currency(store_open, symbol)
 
+        # **A unit that cannot name a pair is not a unit** (issue #845). The
+        # column is text and a store written before that ticket can hold the
+        # word the fetch used to fabricate — a *truthy* string, so
+        # every gate below read it as a currency and the line stayed *waiting
+        # for a rate* for the life of the install, with nothing left to ask.
+        # Widening the predicate rather than migrating the column is the repair
+        # (ADR-0007's rule met from the other side: the DDL carries no migration
+        # machinery): the pass goes and **learns the real unit**, writes it, and
+        # the condition empties itself as the rows go through it.
+        if fx.normalise(currency)[0] is None:
+            currency = None
+
         # **The gate is double, and issue #825 is the second half of it.** It
         # read *"are there points without a conversion"* alone, which was a
         # symptom standing in for the subject: the pass repairs what is
@@ -2945,8 +2958,11 @@ class SuiviBourseMetrics:
             # A reply, not a failure: the counter is reset rather than raised,
             # and no retry is scheduled because there is nothing to retry.
             self._lateral_retry_at.pop(symbol, None)
+            # Normalised, and with no fallback to the raw column: ``observe``
+            # answers ``UNRESOLVED`` only once both codes are ones, so there is
+            # a code here by construction (#845).
             pair = fx.pair_symbol(
-                fx.normalise(currency)[0] or currency, self.base_currency)
+                fx.normalise(currency)[0], self.base_currency)
             app_logger.warning(
                 f"{symbol} cannot be converted: no {pair} rate exists "
                 f"({pending} price(s) will stay unconverted)")

@@ -48,7 +48,11 @@
  *    rows, where nothing renders them.
  *  - **A held position with no price** (`ZZC`). None of the twelve held
  *    positions lacks one. The case becomes ordinary at the first boot of v5,
- *    during the rebuild, and never again.
+ *    during the rebuild, and never again. It is **terminal** here, which is the
+ *    other half of the pair since #845: priceless with nothing left to fetch is
+ *    carried at its cost, priceless while the backfill runs is `null`, and a
+ *    fixture that did not say which would be asserting one of the two by
+ *    accident.
  *  - **A held position quoted in no nameable unit** — `aPosition({ currency:
  *    null })`, #774. It is the fourth because it is the one the *type* hid: the
  *    payload has always been able to serve a `price` whose `currency` is `null`
@@ -242,6 +246,12 @@ export function aPosition(options: PositionOptions = {}): Position {
         ? null
         : { value: price * rate, currency: BASE_CURRENCY, rate, rate_at: NOW },
     closed_at: null,
+    // **Terminal by default**, which is the steady state and not the first
+    // hour: the backward pass has reached this symbol's first acquisition, so
+    // a line with no price is carried at its cost (ADR-0004). A test about the
+    // rebuild says `terminal: false` and gets the other verdict — `null`, and
+    // three named cells (#845).
+    terminal: true,
     // The symbol the fetch has never reached carries none at all, which is what
     // makes *a block with nothing in it does not exist* observable on the sheet
     // rather than only stated.

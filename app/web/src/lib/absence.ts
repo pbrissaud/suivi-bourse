@@ -13,21 +13,32 @@
  *   | No price observed, carried at cost   | `—`      | its cost    | `0,00`      |
  *   | Price known, rate missing            | native   | *waiting*   | *waiting*   |
  *   | Nothing to compute — position sold   | `—`      | `0,00`      | `—`         |
- *   | Asked N times, never answered        | *no price* × 3         |             |
+ *   | Asked N times, never answered        | *no price* | its cost  | `0,00`      |
+ *   | Still being rebuilt                  | *named* × 3            |             |
  *
- * There are **four**, and #774 added no fifth: a line quoted in a unit nothing
- * names joins the first row rather than getting one of its own (see `isQuoted`).
+ * There are **four**, and neither #774 nor #845 added a fifth: a line quoted in
+ * a unit nothing names joins the first row (see `isQuoted`), and a line whose
+ * history is still being rebuilt is named in all three cells the way the fourth
+ * already was — with one of two sentences, never with a convention of its own.
  *
- * The last two look alike and are not, and that is the whole point of splitting
- * them: a sold position has **no question to ask**, while a line entered under a
- * ticker the market does not know has a question that is legitimate and usually
- * repairable — a typo. Treating the second as *nothing to compute* condemns it
- * to silence for ever.
+ * The third and fourth look alike and are not, and that is the whole point of
+ * splitting them: a sold position has **no question to ask**, while a line
+ * entered under a ticker the market does not know has a question that is
+ * legitimate and usually repairable — a typo. Treating the second as *nothing
+ * to compute* condemns it to silence for ever.
  *
- * And the fourth case reports **its count, never a verdict**. The app knows that
- * N consecutive readings returned nothing; it does not know that nothing will
- * ever come. *« 3 relevés consécutifs, aucun cours »* is a fact the reader can
- * act on — *« jamais »* would be a guess, and it is not computable.
+ * **The arithmetic is decided by terminality, and by nothing else** (#845).
+ * `carrying.py` states the predicate as its own acceptance criterion — no quote
+ * observed **and** the symbol's backfill is terminal, *«sans quoi "pas encore"
+ * est rendu "jamais"»* — and this module used to hold the first term and
+ * substitute the failure counter for the second. That counter separates two
+ * *sentences* and never two sums: read as the second term it valued at its cost,
+ * during every rebuild, a line the dashboard's own curve still refused to value.
+ * So `terminal` decides, and the counter reports **its count, never a verdict**:
+ * the app knows that N consecutive readings returned nothing, it does not know
+ * that nothing will ever come. *« 3 relevés consécutifs, aucun cours »* is a
+ * fact the reader can act on — *« jamais »* would be a guess, and it is not
+ * computable.
  */
 import type { Converted, Quote } from '@/lib/api'
 import { ABSENT } from '@/lib/format'
@@ -39,8 +50,22 @@ export interface PositionAbsenceInput {
   price: Quote | null
   converted: Converted | null
   /**
-   * Consecutive fruitless readings for this symbol, from `/api/runtime` — the
-   * one number that separates *not asked yet* from *asked and got nothing*.
+   * Has the backward pass reached this symbol's first acquisition? — the
+   * **second** term of ADR-0004's predicate, off `/api/positions` (#845).
+   *
+   * A *fact*, not a verdict: it says the history is complete, not that the line
+   * may be carried. It rides on the positions and not on `/api/runtime`, where
+   * the counter below lives, because that read is **optional** (ADR-0026) — a
+   * terminality inherited from it would turn every line non-terminal the moment
+   * a diagnostic probe fell over, and the table's valuation would change because
+   * of a failure that has nothing to do with the portfolio.
+   */
+  terminal: boolean
+  /**
+   * Consecutive fruitless readings for this symbol, from `/api/runtime`.
+   *
+   * It writes a **sentence** and never a sum: *asked N times and never
+   * answered* and *not asked yet* read differently and are one arithmetic.
    */
   consecutiveFailures: number
 }
@@ -48,12 +73,20 @@ export interface PositionAbsenceInput {
 /**
  * The four absences, plus the state that is not one. `quoted` is here so a
  * caller switches over a closed set rather than falling through a default.
+ *
+ * `rebuilding` is the fifth **name** and not a fifth rendering (#845): it is
+ * the arithmetic ADR-0004 refuses to state — no quote, and the backfill has not
+ * finished — and it wears the cells `noQuote` already wears. A name it had to
+ * have, because the sum it produces is `null` where the other two priceless
+ * cases produce the cost, and a case a caller cannot switch on is a case a
+ * caller re-derives.
  */
 export type AbsenceCase =
   | 'carriedAtCost'
   | 'awaitingRate'
   | 'nothingToCompute'
   | 'noQuote'
+  | 'rebuilding'
   | 'quoted'
 
 /**
@@ -85,10 +118,15 @@ export function absenceCase(input: PositionAbsenceInput): AbsenceCase {
   // it. Ordering this test last is how *sold* and *broken ticker* collapse.
   if (input.quantity === 0) return 'nothingToCompute'
   if (isQuoted(input.price)) return input.converted === null ? 'awaitingRate' : 'quoted'
-  // Not quoted — no number at all, or a number in no nameable unit. The two are
-  // one arithmetic (the cost) and the counter decides how they *read*: a ticker
-  // the app has asked N times reports its count, and a line nothing was ever
-  // asked about is simply carried.
+  // Not quoted — no number at all, or a number in no nameable unit — and the
+  // **second** term decides what that is worth. Not terminal is *not yet*: the
+  // backward pass is still walking towards this symbol's first acquisition, so
+  // there is no figure to state and none to carry either.
+  if (!input.terminal) return 'rebuilding'
+  // Terminal: nothing is coming, so the line is carried at its cost (ADR-0004).
+  // The counter decides how that *reads* and not what it is worth — a ticker
+  // the app has asked N times reports its count in the price cell, a line
+  // nothing was ever asked about is simply carried.
   return input.consecutiveFailures > 0 ? 'noQuote' : 'carriedAtCost'
 }
 
@@ -120,6 +158,15 @@ export interface PositionRenderings {
 export const FIGURE: Rendering = { kind: 'figure' }
 export const DASH: Rendering = { kind: 'dash' }
 export const AWAITING_RATE: Rendering = { kind: 'named', message: 'absence.awaitingRate' }
+/**
+ * A figure a rebuild is still in the way of (#845) — a cell's, and a **total**'s.
+ *
+ * Exported for `AWAITING_RATE`'s own reason one line up: the valuation of a line
+ * that is not terminal has no figure, so neither has any sum that reads it, and
+ * a consumer holding only `number | null` writes an em dash — *there is nothing
+ * to compute* — about the most ordinary state of a fresh install.
+ */
+export const REBUILDING: Rendering = { kind: 'named', message: 'absence.rebuilding' }
 
 /** What a component needs of `useI18n`'s `t` to name an absence. */
 export type Translate = (key: MessageKey, values?: MessageValues) => string
@@ -172,12 +219,27 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       return { price: FIGURE, valuation: AWAITING_RATE, unrealised: AWAITING_RATE }
     case 'nothingToCompute':
       return { price: DASH, valuation: FIGURE, unrealised: DASH }
-    case 'noQuote': {
-      const named: Rendering = {
-        kind: 'named',
-        message: 'absence.noQuote',
-        values: { count: input.consecutiveFailures },
+    case 'noQuote':
+      // Terminal, and asked N times for nothing: the repair sentence goes in
+      // the **price** cell, where *no price* is what is true, and the two money
+      // cells state the convention — the cost, and a latent gain of exactly
+      // zero. Named in all three, the line said *no price* under a heading
+      // that reads *Valorisation* while contributing its cost to the total
+      // above it, which is the header disagreeing with its own column.
+      return {
+        price: { kind: 'named', message: 'absence.noQuote', values: { count: input.consecutiveFailures } },
+        valuation: FIGURE,
+        unrealised: FIGURE,
       }
+    case 'rebuilding': {
+      // Nothing is known yet, so nothing is stated: the three cells are named,
+      // and **which** sentence they carry is the counter's one remaining job.
+      // Asked and never answered is a fact worth reading during a rebuild too;
+      // asked nothing yet is the rebuild itself, and it says so.
+      const named: Rendering =
+        input.consecutiveFailures > 0
+          ? { kind: 'named', message: 'absence.noQuote', values: { count: input.consecutiveFailures } }
+          : REBUILDING
       return { price: named, valuation: named, unrealised: named }
     }
     case 'quoted':

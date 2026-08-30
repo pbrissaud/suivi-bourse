@@ -405,7 +405,7 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
                         'realised', 'dividends', 'price', 'converted',
-                        'closed_at', 'fundamentals'}
+                        'closed_at', 'terminal', 'fundamentals'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')
     assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
@@ -929,6 +929,123 @@ def test_positions_history_is_valuation_versus_investment(tmp_path):
     # No `mode`: what this resource answers does not depend on a configuration
     # the caller cannot see.
     assert 'mode' not in payload
+
+
+# --------------------------------------------------------------------- #
+# The second term of the carrying convention, on the wire (issue #845)
+# --------------------------------------------------------------------- #
+
+def test_positions_publishes_the_terminality_of_each_symbol(tmp_path):
+    """`terminal` per row, and it is the **fact** rather than the verdict.
+
+    ADR-0004's predicate has two terms — no quote observed **and** none is
+    coming — and only the first of them crossed the wire until #845: the front
+    held the quote and substituted the failure counter of `/api/runtime` for the
+    second, so it carried at its cost a line the curves still refuse to value.
+    The set is `quotes.terminal_symbols`, read once for the whole payload.
+
+    Two symbols, one install: `AAPL`'s backward pass has been tried back past
+    its acquisition, so there is nothing left to fetch for it; `MSFT` has been
+    bought on the same day and nothing has been tried at all, which is every
+    line of a fresh install for as long as the first rebuild runs.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+        "2024-01-15,BUY,MSFT,Microsoft,5,300.00,0\n"
+    )
+
+    def seed(opened):
+        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 10))
+
+    payload = build_client(tmp_path, events=events,
+                           seed=seed).get('/api/positions').get_json()
+    rows = {row['symbol']: row for row in payload['positions']}
+
+    assert rows['AAPL']['terminal'] is True
+    assert rows['MSFT']['terminal'] is False
+
+
+def test_the_table_and_the_curve_agree_on_a_line_being_rebuilt(tmp_path):
+    """The two ends, on one line of one install — the ticket's own criterion.
+
+    `carrying.py` states the predicate as an acceptance criterion: *no quote
+    observed and the symbol's backfill is terminal*, «sans quoi "pas encore" est
+    rendu "jamais"». The server has always held both terms on the curve
+    (`portfolio_view.valuation_series` values a priceless day only for a symbol
+    in the carried set), and the table's end held one — so during a rebuild the
+    shares page valued at its cost a line the dashboard's own chart left hollow,
+    which is the disagreement between two screens that module declares
+    unacceptable.
+
+    Here the two are read off the **same store**, in the same test, so nothing
+    can drift between them: the curve values the quoted line alone, and the
+    payload the table folds says `terminal: false` on the priceless one — which
+    is what makes `lib/absence.ts` answer `null` for it rather than its cost.
+    `MSFT` is the control: it is priceless too, and neither end has any business
+    valuing it while the rebuild runs.
+    """
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+        "2024-01-15,BUY,MSFT,Microsoft,5,300.00,0\n"
+    )
+
+    def seed(opened):
+        seed_quote(opened, symbol='AAPL', price=200.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+
+    client = build_client(tmp_path, events=events, seed=seed)
+
+    curve = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+    # AAPL's 2 000,00 and nothing of MSFT's 1 500,00 basis: the day is hollow
+    # for a symbol still being rebuilt. A **series** omits, because the day has
+    # to be drawn either way; a total refuses, and says why (`lib/gain.ts`).
+    assert curve['points'] == [{
+        't': '2024-06-01', 'value': 2000.0, 'invested': 3000.0}]
+
+    rows = {row['symbol']: row
+            for row in client.get('/api/positions').get_json()['positions']}
+    # The same verdict, on the same line, from the other end: no quote, and
+    # none is coming *yet*.
+    assert rows['MSFT']['price'] is None
+    assert rows['MSFT']['terminal'] is False
+
+
+def test_a_terminal_line_with_no_quote_is_carried_at_both_ends(tmp_path):
+    """The other half of the pair, and it is what keeps the fix from over-shooting.
+
+    Once the backward pass has reached the first acquisition there is nothing
+    left to come, so the priceless line is **carried at its cost** — the curve
+    values the day at the position's own basis, and the payload says `terminal`
+    so the table does the same. A repair that made every priceless line
+    unvaluable would have deleted ADR-0004 rather than completing it.
+    """
+    def seed(opened):
+        # A quote for the day the curve is drawn on, and the priceless line's
+        # own window tried back past its acquisition.
+        seed_quote(opened, symbol='MSFT', name='Microsoft', price=300.0,
+                   at=datetime(2024, 6, 1, 17, 0, tzinfo=timezone.utc))
+        quotes.record_window_tried(opened, 'AAPL', date(2024, 1, 10))
+
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,fee\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,0\n"
+        "2024-01-15,BUY,MSFT,Microsoft,5,300.00,0\n"
+    )
+    client = build_client(tmp_path, events=events, seed=seed)
+
+    curve = client.get(
+        '/api/positions/history?from=2024-01-01&to=2024-12-31').get_json()
+    # MSFT's 5 × 300,00 plus AAPL's basis, carried: 1 500,00 + 1 500,00.
+    assert curve['points'] == [{
+        't': '2024-06-01', 'value': 3000.0, 'invested': 3000.0}]
+
+    rows = {row['symbol']: row
+            for row in client.get('/api/positions').get_json()['positions']}
+    assert rows['AAPL']['price'] is None
+    assert rows['AAPL']['terminal'] is True
 
 
 def test_positions_history_answers_the_same_body_on_a_declared_install(tmp_path):

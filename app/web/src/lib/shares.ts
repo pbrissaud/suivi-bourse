@@ -20,10 +20,13 @@
  *    gain instead.
  *  - **The counter is a rendering concern and never an arithmetic one.** A
  *    symbol the app has asked for N times and got nothing from renders *N
- *    consecutive readings, no price* in three cells (`lib/absence.ts`), and is
- *    still **carried at its cost** in every sum (ADR-0004). Written the other
- *    way round, a failing ticker would subtract its whole basis from the
- *    portfolio's value the day its quote went missing.
+ *    consecutive readings, no price* in its price cell (`lib/absence.ts`), and
+ *    is still **carried at its cost** in every sum (ADR-0004) — as long as its
+ *    backfill is terminal, which is the term #845 brought over the wire.
+ *    Written the other way round, a failing ticker would subtract its whole
+ *    basis from the portfolio's value the day its quote went missing; written
+ *    with the counter standing in for terminality, a line still being rebuilt
+ *    was valued at its cost while the dashboard's curve left it hollow.
  *  - **The header's total is the same function the dashboard's is**
  *    (`lib/gain.ts`), minus its fourth term. The fees a broker takes out of a
  *    transfer belong to no security, so a table whose header sums its rows can
@@ -72,6 +75,13 @@ export interface ShareRow extends PositionAbsenceInput {
   accounts: string[]
   /** The day the last account sold out. `null` while it is held. */
   closedAt: string | null
+  /**
+   * The symbol's, off `/api/positions` and folded like `price` (#845): the fact
+   * describes the security, so the first row of the group that carries it is
+   * the group's — the rows of one symbol cannot disagree about how far its own
+   * backward pass has got.
+   */
+  terminal: boolean
   consecutiveFailures: number
   /**
    * The instrument's own attributes — read off the first row of the group that
@@ -93,6 +103,9 @@ export function isClosed(row: ShareRow): boolean {
  * the cost. Folding `noQuote` here rather than leaving it in every switch
  * downstream is what keeps the counter out of the arithmetic in **one** place,
  * and out of the return type: a caller cannot branch on a case it cannot get.
+ *
+ * `rebuilding` is **not** folded, and that is the whole of #845: it is a third
+ * priceless state and the only one whose sum is not the cost.
  */
 function arithmeticCase(row: ShareRow): Exclude<AbsenceCase, 'noQuote'> {
   const decided = absenceCase(row)
@@ -102,9 +115,16 @@ function arithmeticCase(row: ShareRow): Exclude<AbsenceCase, 'noQuote'> {
 /**
  * What the position is worth, in the reporting currency.
  *
- * `null` is *waiting for the rate* and nothing else: a position with no quote
- * at all is **carried at its cost** (ADR-0004) rather than valued at zero, and
- * a sold one is worth exactly zero, which is a figure.
+ * `null` has **two** causes and they are the two transitory absences: the rate
+ * has not resolved, or the symbol's history is still being rebuilt (#845). A
+ * position with no quote and nothing left to fetch is **carried at its cost**
+ * (ADR-0004) rather than valued at zero, and a sold one is worth exactly zero,
+ * which is a figure.
+ *
+ * The second cause is what this function used to answer *the cost* for, on the
+ * strength of a failure counter standing in for terminality — so a fresh
+ * install, where no symbol is terminal, showed every line valued at its PMP in
+ * a table whose own dashboard curve was still hollow.
  */
 export function marketValue(row: ShareRow): number | null {
   switch (arithmeticCase(row)) {
@@ -113,6 +133,7 @@ export function marketValue(row: ShareRow): number | null {
     case 'carriedAtCost':
       return row.cost_basis
     case 'awaitingRate':
+    case 'rebuilding':
       return null
     case 'quoted':
       return (row.converted?.value ?? 0) * row.quantity
@@ -150,6 +171,13 @@ export function unitCost(row: ShareRow): number | null {
  * A share the app cannot price and **the app is the answer**, never the market
  * (#684 D6). It is the one exception ADR-0016 allows to *icons never go on a
  * cell*: the text is a repair, not a convention.
+ *
+ * It is `noQuote` and therefore **terminal** since #845, which narrows the lens
+ * rather than widening it: a symbol whose backward pass is still running has
+ * been asked for nothing that has not still got time to arrive, and marking it
+ * *to repair* is exactly the *not yet* rendered *never* the whole ticket is
+ * about. The line is still named on screen — it carries its count in three
+ * cells — it is simply not offered as something the reader should act on.
  */
 export function isAnomalous(row: ShareRow): boolean {
   return absenceCase(row) === 'noQuote'
@@ -182,6 +210,7 @@ export function buildShareRows(
       converted: null,
       accounts: [],
       closedAt: null,
+      terminal: position.terminal,
       consecutiveFailures: failures.get(position.symbol) ?? 0,
       fundamentals: null,
     }
@@ -545,11 +574,15 @@ export function allocation(rows: readonly ShareRow[]): Allocation {
  * lines state each line's share of the account, and the surface decides its own
  * divisor.
  *
- * A held line whose rate has not resolved has no value in the reporting
+ * A held line whose valuation has no figure — its rate has not resolved, or its
+ * history is still being rebuilt (#845) — has no value in the reporting
  * currency. Counting it as nothing would make every other percentage silently
  * wrong; refusing the whole figure for it would put one line's absence on every
  * row, which is the noise ADR-0016 deletes markers for. So it is left out of
- * the whole and **named on its own row**, by the rendering below.
+ * the whole and **named on its own row**, by the rendering below. The omission
+ * covers **any** nullity, which is why the second cause changes nothing here
+ * while it changes the two totals: those state a sum of the lines, and this
+ * states a divisor.
  */
 export function placedValue(rows: readonly ShareRow[]): number {
   let total = 0
@@ -593,12 +626,25 @@ export function weightRendering(row: ShareRow, whole: number): Rendering {
  * for the reason written there: the nullity survives a return and the *case*
  * does not, so a caller holding only the null writes an em dash and says *there
  * is nothing to compute* about a rate the app fetches by itself.
+ *
+ * **And the reason is read off the line, never assumed** (#845). It was
+ * `awaitingRate` written in, which was true while a rate was the only thing
+ * that could empty a valuation; a line still being rebuilt empties it too, and
+ * on a **fresh install every line is one** — so the header of a portfolio in its
+ * first hour announced *en attente du taux de change* and sent its owner to
+ * check a currency dial they had already answered.
+ *
+ * It is **refused and never shortened**: a total that quietly drops a line is a
+ * wrong number where a refused one is an honest absence. A *series* omits
+ * instead, having to draw the day either way (`CONTEXT.md` § Absence).
  */
 export function valuationTotal(rows: readonly ShareRow[]): Sum {
   let total = 0
   for (const row of rows) {
     const value = marketValue(row)
-    if (value === null) return { known: false, because: 'awaitingRate' }
+    if (value === null) {
+      return { known: false, because: absenceCase(row) === 'rebuilding' ? 'rebuilding' : 'awaitingRate' }
+    }
     total += value
   }
   return { known: true, value: total }

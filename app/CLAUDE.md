@@ -157,6 +157,10 @@ There is **no `closed` flag**: the predicate is `quantity == 0` (ADR-0003).
 **A position with no price is carried at its cost** (`carrying.py`, ADR-0004), on
 two conditions: no quote was observed **and** the symbol's backfill is terminal. A
 quote is a number **and** a unit: with no nameable currency there is no quote.
+**Both terms cross the wire** since #845 — `/api/positions` publishes `terminal`
+per row — because the front is the judge of the pair, and it was substituting a
+failure counter read off `/api/runtime` for the second: during every rebuild the
+shares table carried at its cost a line the dashboard's own curve left hollow.
 
 ## The advisories
 
@@ -408,8 +412,8 @@ src/
 ├── carrying.py         # pure: the carrying price, the holding window, the backward anchor
 ├── retention.py        # pure: the three rungs, the two walls
 ├── fx.py               # pure: the reporting currency, GBp, one TTL cache per pair
-├── market_info.py      # pure: the vocabulary of a Yahoo payload — its keys and
-│                       #       its `'undefined'` sentinel, named here and nowhere else
+├── market_info.py      # pure: the vocabulary of a Yahoo payload — its keys,
+│                       #       read here and nowhere else, with no sentinel
 ├── market.py           # the one `import yfinance`: five gestures, three error policies
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune

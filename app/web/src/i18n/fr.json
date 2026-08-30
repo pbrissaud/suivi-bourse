@@ -98,6 +98,7 @@
 
   "absence.awaitingRate": "en attente du taux",
   "absence.noQuote": "{count, plural, one {# relevé consécutif, aucun cours} other {# relevés consécutifs, aucun cours}}",
+  "absence.rebuilding": "historique en cours de reconstitution",
 
   "gain.term.unrealised": "Plus-value latente",
   "gain.term.realised": "Plus-value réalisée",

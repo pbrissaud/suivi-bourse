@@ -854,6 +854,40 @@ describe('what is merely missing is named, never dashed', () => {
     expect(figure('Plus-value latente')).toHaveTextContent(/en attente du taux/)
   })
 
+  it('names the rebuild on a fresh install, and never the exchange rate', async () => {
+    // The install of the first hour: no symbol is terminal, so no line has a
+    // valuation and the total has no figure. The reason is the one the reader
+    // can act on — here, none: the app is reading, and the rate has nothing to
+    // do with it. Written in as `awaitingRate`, this headline sent every new
+    // owner to a currency dial they had already answered (#845).
+    server.use(
+      http.get(ROUTES.positions, () =>
+        HttpResponse.json(
+          aPositionsPayload(
+            defaultPositions().map((position) => ({
+              ...position,
+              terminal: false,
+              price: null,
+              converted: null,
+            })),
+          ),
+        ),
+      ),
+    )
+    renderApp()
+
+    const head = await screen.findByRole('group', { name: 'Gain total' })
+    expect(head).toHaveTextContent(/historique en cours de reconstitution/)
+    expect(head).not.toHaveTextContent(/en attente du taux/)
+    // Named and not dashed: the em dash says *there is nothing to compute*
+    // (ADR-0016), and a total refused in silence is a figure gone out with no
+    // explanation under it.
+    expect(head).not.toHaveTextContent(/^Gain total\s*—/)
+    expect(figure('Plus-value latente')).toHaveTextContent(
+      /historique en cours de reconstitution/,
+    )
+  })
+
   it('does not let a **sold** line with no rate blank the whole headline', async () => {
     // A position the owner closed years ago keeps a `symbol_quote` row, so it
     // still carries a last price; while the base currency is unanswered that

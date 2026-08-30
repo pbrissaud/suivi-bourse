@@ -15,6 +15,9 @@ function input(overrides: Partial<PositionAbsenceInput> = {}): PositionAbsenceIn
     quantity: 10,
     price: { value: 130, currency: 'EUR', at: NOW },
     converted: { value: 130, currency: 'EUR', rate: 1, rate_at: NOW },
+    // The steady state, so the cases below are read against a finished
+    // backfill; the rebuild is a case of its own further down (#845).
+    terminal: true,
     consecutiveFailures: 0,
     ...overrides,
   }
@@ -76,9 +79,15 @@ describe('the four absences', () => {
     const mute = input({ price: null, converted: null, consecutiveFailures: 3 })
     expect(absenceCase(mute)).toBe('noQuote')
     const rendered = positionRenderings(mute)
-    for (const cell of [rendered.price, rendered.valuation, rendered.unrealised]) {
-      expect(cell).toEqual({ kind: 'named', message: 'absence.noQuote', values: { count: 3 } })
-    }
+    // The sentence goes where *no price* is true — the price cell — while the
+    // two money cells state the convention the line is valued under (#845).
+    expect(rendered.price).toEqual({
+      kind: 'named',
+      message: 'absence.noQuote',
+      values: { count: 3 },
+    })
+    expect(rendered.valuation).toEqual({ kind: 'figure' })
+    expect(rendered.unrealised).toEqual({ kind: 'figure' })
     // The app knows N readings returned nothing. It does not know nothing will
     // ever come — that would be a guess, and it is not computable.
     expect(formatMessage('fr', 'absence.noQuote', { count: 3 })).not.toMatch(/jamais/)
@@ -93,6 +102,50 @@ describe('the four absences', () => {
     const mute = input({ price: null, converted: null, consecutiveFailures: 7 })
     expect(absenceCase(sold)).not.toBe(absenceCase(mute))
     expect(positionRenderings(sold).unrealised).not.toEqual(positionRenderings(mute).unrealised)
+  })
+
+  it('says nothing at all about a line whose history is still being rebuilt', () => {
+    // The second term of ADR-0004's predicate, and the whole of #845: the
+    // backward pass has not reached this symbol's first acquisition, so *no
+    // price* means *not yet* and carrying it at its cost would render *not yet*
+    // as *never* — which is the sentence `carrying.py` refuses.
+    const rebuilding = input({ price: null, converted: null, terminal: false })
+    expect(absenceCase(rebuilding)).toBe('rebuilding')
+    expect(positionRenderings(rebuilding)).toEqual({
+      price: { kind: 'named', message: 'absence.rebuilding' },
+      valuation: { kind: 'named', message: 'absence.rebuilding' },
+      unrealised: { kind: 'named', message: 'absence.rebuilding' },
+    })
+
+    // Two sentences, one arithmetic: the counter is what parts them, and it
+    // still says nothing about what the line is worth.
+    const asked = input({ price: null, converted: null, terminal: false, consecutiveFailures: 4 })
+    expect(absenceCase(asked)).toBe('rebuilding')
+    for (const cell of Object.values(positionRenderings(asked))) {
+      expect(cell).toEqual({ kind: 'named', message: 'absence.noQuote', values: { count: 4 } })
+    }
+
+    // And the catalogues say a rebuild rather than a failure: nothing here is
+    // the reader's to repair.
+    expect(formatMessage('fr', 'absence.rebuilding')).toMatch(/reconstitution/)
+    expect(formatMessage('en', 'absence.rebuilding')).toMatch(/rebuilt/)
+  })
+
+  it('lets terminality alone decide the arithmetic, the counter never', () => {
+    // The same counter on both, and two different verdicts; the same
+    // terminality with two counters, and one verdict. That pair is the
+    // substitution #845 removed: the counter separates *asked and got nothing*
+    // from *not asked yet*, which are two sentences and one sum.
+    const carried = input({ price: null, converted: null, consecutiveFailures: 3 })
+    const waiting = input({ price: null, converted: null, consecutiveFailures: 3, terminal: false })
+    expect(absenceCase(carried)).toBe('noQuote')
+    expect(absenceCase(waiting)).toBe('rebuilding')
+
+    const never = input({ price: null, converted: null, consecutiveFailures: 0 })
+    expect(absenceCase(never)).toBe('carriedAtCost')
+    // Both terminal, both priceless, and both valued the same way — only the
+    // sentence in the price cell differs.
+    expect(positionRenderings(never).valuation).toEqual(positionRenderings(carried).valuation)
   })
 
   it('calls a fully quoted position no absence at all', () => {

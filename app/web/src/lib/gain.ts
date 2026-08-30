@@ -22,7 +22,7 @@
  * not a dividend, and it belongs to no security — so the shares page, whose
  * header sums its rows, can never show it. With it the sum telescopes exactly.
  */
-import { AWAITING_RATE, DASH, FIGURE, absenceCase, type Rendering } from '@/lib/absence'
+import { AWAITING_RATE, DASH, FIGURE, REBUILDING, absenceCase, type Rendering } from '@/lib/absence'
 import type { Position } from '@/lib/api'
 
 export const GAIN_TERMS = ['unrealised', 'realised', 'dividends', 'transferFees'] as const
@@ -44,10 +44,18 @@ export type GainTermName = (typeof GAIN_TERMS)[number]
  * way is **named**, and a fourth term nothing can bound wears the em dash —
  * *there is nothing to compute* — which is one of ADR-0016's four and not a
  * fifth (ADR-0021).
+ *
+ * `rebuilding` is the third, and it is a **mechanical** consequence of #845
+ * rather than a new idea: a position's valuation gained a second cause of
+ * nullity, so every sum that reads one gained a second reason to have no
+ * figure. Left unnamed it would have fallen onto `awaitingRate`'s sentence,
+ * which is what the discriminant exists to prevent — and it would have said it
+ * on a **fresh install**, where no symbol is terminal, about a currency the
+ * owner has already answered for.
  */
 export type Sum =
   | { known: true; value: number }
-  | { known: false; because: 'awaitingRate' | 'unboundedFees' }
+  | { known: false; because: 'awaitingRate' | 'unboundedFees' | 'rebuilding' }
 
 export interface GainTerms {
   /**
@@ -153,17 +161,21 @@ export function positionTerms(positions: readonly Position[]): Omit<GainTerms, '
     // point of the four terms), so there is no per-symbol failure counter to
     // hand over. That splits *asked and got nothing* from *not asked yet* in a
     // **cell**, and the two are one arithmetic here: both are carried at cost.
+    // `terminal` is *not* in that class and comes off the payload: it decides an
+    // arithmetic (#845), which is exactly why it had to cross the wire.
     const which = absenceCase({
       quantity: position.quantity,
       price: position.price,
       converted: position.converted,
+      terminal: position.terminal,
       consecutiveFailures: 0,
     })
 
-    if (which === 'awaitingRate') {
-      // Quoted, and the rate is missing: this position's market value has no
-      // figure in the reporting currency, so neither has the sum.
-      unrealised = { known: false, because: 'awaitingRate' }
+    if (which === 'awaitingRate' || which === 'rebuilding') {
+      // No market value in the reporting currency, so no sum either — and the
+      // two reasons are kept apart all the way up, because they send the reader
+      // to two different places: a currency to answer, and a wait.
+      unrealised = { known: false, because: which }
       continue
     }
     // Sold, carried at cost, or never quoted: a contribution of exactly zero,
@@ -227,13 +239,21 @@ export function gainTotal(terms: GainTerms): Sum {
 /**
  * How a sum reads — `absence.ts`'s own constants, so the key lives in one file.
  *
- * Two reasons, two renderings, and **no fifth form of absence**: a rate on its
- * way is *named* (the app repairs it by itself, #704), while a term nothing can
- * bound takes the em dash of *there is nothing to compute*.
+ * Three reasons, two renderings, and **no fifth form of absence**: what the app
+ * repairs by itself is *named* — a rate on its way (#704), a history still being
+ * rebuilt (#845) — while a term nothing can bound takes the em dash of *there is
+ * nothing to compute*.
  */
 export function sumRendering(sum: Sum): Rendering {
   if (sum.known) return FIGURE
-  return sum.because === 'awaitingRate' ? AWAITING_RATE : DASH
+  if (sum.because === 'awaitingRate') return AWAITING_RATE
+  // Named too, and adding the case here is half of #845's repair rather than a
+  // detail of it: this function falls back on the em dash for anything it does
+  // not recognise, so a third reason added in silence would have been rendered
+  // *there is nothing to compute* about a portfolio that is simply not finished
+  // being read — invisible, and against ADR-0016.
+  if (sum.because === 'rebuilding') return REBUILDING
+  return DASH
 }
 
 /**
