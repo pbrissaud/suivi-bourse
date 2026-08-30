@@ -466,9 +466,14 @@ naive instant enters: `instants.utc` / `instants.iso`, held on the source by the
 same file (#843). It had been rewritten in eight modules, in three variants that
 had already drifted — some converting an aware instant, some letting it through,
 two not repairing at all — and no test could ever see the consequence, a page
-shifted by the browser's offset being invisible on a machine in UTC. The guard
-names the **definition** of a private `_utc`/`_iso`/`_stamp_value`, never the
-expression: the three repairs made **on the way in** (`scheduling` on an
-argument it is handed, `main` on a pandas `Timestamp` at the market's edge,
-`web.api` on an ISO string arriving from the front) stay spelled where they
-happen.
+shifted by the browser's offset being invisible on a machine in UTC.
+
+The guard names the **definition**, never the expression: the three repairs made
+**on the way in** (`scheduling` on an argument it is handed, `main` on a pandas
+`Timestamp` at the market's edge, `web.api` on an ISO string arriving from the
+front) stay spelled where they happen. It reads the definition two ways, because
+one of them was not enough: by **name** for the repair (`_utc`, `_stamp_value`,
+and `_iso` for a helper that merely delegates), and by **shape** for the
+serialization — a private function whose own answer is a value's `.isoformat()`
+is a second definition whatever it is called. The list of names alone let
+`runtime_view._day` stand as one; the shape is the rule.

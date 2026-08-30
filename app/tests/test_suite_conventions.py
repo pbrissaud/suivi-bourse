@@ -1,6 +1,7 @@
 """What `app/` holds as a whole — the subject here is the tree itself, never a
 module of it."""
 
+import ast
 import re
 from pathlib import Path
 
@@ -71,23 +72,69 @@ def test_the_tree_reads_one_clock_and_it_is_the_products():
     assert offenders == []
 
 
-#: The repair of a naive instant and the serialization of an instant, each
-#: written under a private name. `app/src/` held eight of them (#843), in three
-#: variants that had already drifted, and the ninth is the one this pattern
-#: exists to refuse. It names the **definition** and never the expression
-#: `replace(tzinfo=timezone.utc)`: three repairs are made **on the way in** and
-#: are legitimate exactly where they stand — `scheduling` repairs an argument it
-#: is handed (and is a *pure* module, so it could not import anything that is
-#: not), `main` repairs a pandas `Timestamp` at the market's edge, and
-#: `web.api._parse_instant` repairs an ISO string arriving from the front. A
-#: banner on the expression would bite all three; a banner on the definition
-#: bites the copies, which are the subject.
+#: The **repair** of a naive instant, written under a private name. `app/src/`
+#: held it in six modules (#843), in variants that had already drifted, and the
+#: seventh is what this pattern exists to refuse. It names the **definition**
+#: and never the expression `replace(tzinfo=timezone.utc)`: three repairs are
+#: made **on the way in** and are legitimate exactly where they stand —
+#: `scheduling` repairs an argument it is handed (and is a *pure* module, so it
+#: could not import anything that is not), `main` repairs a pandas `Timestamp`
+#: at the market's edge, and `web.api._parse_instant` repairs an ISO string
+#: arriving from the front. A banner on the expression would bite all three; a
+#: banner on the definition bites the copies, which are the subject.
+#:
+#: `_iso` is named here too, and it is not redundant with the rule below: a
+#: private helper that merely *delegates* — `def _iso(v): return instants.iso(v)`
+#: — is a second name for one definition, which is how a tree drifts back
+#: towards eight of them without ever spelling `isoformat` again.
 _PRIVATE_TIME_HELPER = re.compile(r'^def _(?:utc|iso|stamp_value)\s*\(',
                                   re.MULTILINE)
 
 #: Where the two of them live, and the only file exempted — by its name, which
 #: is the repository's precedent for an exclusion.
 _INSTANTS = 'src/instants.py'
+
+
+def _hands_back_an_iso_string(node) -> bool:
+    """Whether a returned expression *is* somebody's `.isoformat()`.
+
+    The **serialization** half of the rule, and it is stated by shape rather
+    than by name: a function whose own answer is a value's `.isoformat()` is a
+    definition of the ISO serialization whatever it is called, and `_day` —
+    which the first pass at #843 left standing because the pattern enumerated
+    `_utc|_iso|_stamp_value` instead of saying the rule — is the proof that a
+    list of names is not the rule.
+
+    The test is on the **top** of the returned expression, through the two
+    wrappers a `None` guard uses (`x.isoformat() if x else None`, and the
+    `and`/`or` spelling of the same). A payload builder that spells one field's
+    `.isoformat()` inside a dict it returns is untouched: it hands back a
+    payload, not a serialization, and folding those is another subject.
+    """
+    if isinstance(node, ast.IfExp):
+        return (_hands_back_an_iso_string(node.body)
+                or _hands_back_an_iso_string(node.orelse))
+    if isinstance(node, ast.BoolOp):
+        return any(_hands_back_an_iso_string(value) for value in node.values)
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'isoformat')
+
+
+def _private_iso_serializers(source: str):
+    """The private functions of one module that serialize ISO themselves."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith('_'):
+            continue
+        for statement in ast.walk(node):
+            if (isinstance(statement, ast.Return)
+                    and statement.value is not None
+                    and _hands_back_an_iso_string(statement.value)):
+                found.append(node.name)
+                break
+    return found
 
 
 def test_the_repair_of_an_instant_is_written_once_in_the_tree():
@@ -106,6 +153,15 @@ def test_the_repair_of_an_instant_is_written_once_in_the_tree():
     on. A rule on the source is the only shape this guard has, the same
     conclusion the deleted `_stamp_value` docstring had already written down.
 
+    The guard has two halves because the fault has two shapes. The **name** half
+    refuses `_utc`, `_iso` and `_stamp_value`, which is how the copies were
+    spelled and how a delegating alias would re-spell them. The **shape** half
+    refuses a private function that hands back a value's own `.isoformat()`
+    *whatever it is called*: enumerating names is not the rule, and the first
+    pass at #843 proved it — `runtime_view._day` was a second definition of the
+    serialization, identical to the `date` branch of `instants.iso`, and it went
+    through a pattern that listed three names.
+
     The exemption is `src/instants.py` and it is asserted to be **used** rather
     than merely allowed: a rule that goes green when the module it points at
     disappears is the failure a check on the source has (#778).
@@ -117,8 +173,11 @@ def test_the_repair_of_an_instant_is_written_once_in_the_tree():
         relative = path.relative_to(_APP).as_posix()
         if relative == _INSTANTS:
             continue
-        if _PRIVATE_TIME_HELPER.search(path.read_text()):
+        source = path.read_text()
+        if _PRIVATE_TIME_HELPER.search(source):
             offenders.append(relative)
+        offenders += [f'{relative}::{name}'
+                      for name in _private_iso_serializers(source)]
 
     assert offenders == []
 
@@ -129,6 +188,51 @@ def test_the_repair_of_an_instant_is_written_once_in_the_tree():
     importers = [path.relative_to(_APP).as_posix() for path in scanned
                  if 'import instants' in path.read_text()]
     assert len(importers) >= 8, importers
+
+
+def test_the_serialization_guard_reads_the_shape_and_not_the_name():
+    """#843, second pass: the guard above bites a copy called anything.
+
+    The first pass wrote the rule as the list `_utc|_iso|_stamp_value`, and a
+    list of names is not a rule: `runtime_view._day` was a second definition of
+    the ISO serialization, identical to the `date` branch of `instants.iso`,
+    and it walked straight through. Asserting that on the tree alone would go
+    green again the day somebody writes the ninth copy under a tenth name and
+    nobody notices — so the shape is exercised here on snippets, where a refusal
+    and an acquittal can both be shown.
+
+    What must be refused is *a private function whose own answer is a value's
+    `.isoformat()`*, under any name and through a `None` guard of either
+    spelling. What must be acquitted is everything the ticket left standing: a
+    payload builder that spells one field inline, a public route doing the same,
+    and the three repairs made **on the way in**, which the expression-level
+    banner would have bitten.
+    """
+    refused = [
+        "def _day(value):\n    return value.isoformat()\n",
+        "def _horizon(value):\n"
+        "    return value.isoformat() if value is not None else None\n",
+        "def _moment(value):\n    return value and value.isoformat()\n",
+    ]
+    for source in refused:
+        assert _private_iso_serializers(source) != [], source
+
+    acquitted = [
+        # A payload builder spelling one field inline: it hands back a payload.
+        "def _event_to_dict(event):\n"
+        "    return {'date': event.date.isoformat()}\n",
+        # A public route doing the same — the rule is about private copies.
+        "def get_history(start):\n    return {'from': start.isoformat()}\n",
+        # The three repairs on the way in, which stay where they stand.
+        "def _parse_instant(text):\n"
+        "    parsed = datetime.fromisoformat(text)\n"
+        "    return parsed if parsed.tzinfo else"
+        " parsed.replace(tzinfo=timezone.utc)\n",
+        "def _newest(newest):\n"
+        "    return newest.replace(tzinfo=timezone.utc)\n",
+    ]
+    for source in acquitted:
+        assert _private_iso_serializers(source) == [], source
 
 
 #: The modules the root `CLAUDE.md` lists under *the rules that are expensive to
