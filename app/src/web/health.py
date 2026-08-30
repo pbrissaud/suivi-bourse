@@ -75,7 +75,7 @@ def _jobs(runtime) -> dict:
 
     **Nothing raised here may reach the status code.** The code answers one
     question and this object is not part of it: a defect in the shaping is not a
-    reason to restart the container, and :func:`runtime_view._utc` records what
+    reason to restart the container, and :func:`instants.utc` records what
     that looks like when it happens — a ``TypeError`` deep in the arithmetic,
     surfacing one storey up as a wholly untrue verdict on the store. So the fold
     is guarded, and what it fails to say it says it could not say.

@@ -87,6 +87,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from logfmt_logger import getLogger
 
 import fx
+import instants
 
 logger = getLogger("installation_facts")
 
@@ -245,9 +246,9 @@ class InstallationFact:
         a client branches on the boolean and displays the instant."""
         return {
             'key': self.key,
-            'first_seen_at': _iso(self.first_seen_at),
+            'first_seen_at': instants.iso(self.first_seen_at),
             'acknowledged': self.acknowledged,
-            'acknowledged_at': _iso(self.acknowledged_at),
+            'acknowledged_at': instants.iso(self.acknowledged_at),
             'message': self.message,
             'detail': self.detail,
         }
@@ -441,7 +442,7 @@ class _Row:
 def _rows(opened) -> Dict[str, _Row]:
     """Every row the table holds, by key. It has three at the very most."""
     return {
-        key: _Row(key, _utc(first_seen_at), _utc(acknowledged_at))
+        key: _Row(key, instants.utc(first_seen_at), instants.utc(acknowledged_at))
         for key, first_seen_at, acknowledged_at in opened.query(
             'SELECT key, first_seen_at, acknowledged_at FROM installation_fact')
     }
@@ -619,7 +620,7 @@ def _arm(opened, spec: FactSpec, detail: Mapping[str, Any],
             [spec.key, now])
     logger.log(spec.level, spec.message(detail), extra={'context': {
         'installation_fact': spec.key,
-        'first_seen_at': _iso(now),
+        'first_seen_at': instants.iso(now),
     }})
     return _Row(spec.key, now, None)
 
@@ -640,20 +641,6 @@ def _fact(spec: FactSpec, row: _Row,
         message=spec.message(detail) if detail else spec.doc,
         detail=dict(detail) if detail else None,
     )
-
-
-def _utc(value: Optional[datetime]) -> Optional[datetime]:
-    """Stamp a naive instant as UTC — the store's session is pinned there."""
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _iso(value: Optional[datetime]) -> Optional[str]:
-    """ISO-8601, or ``None``. One spelling of an instant on the way out."""
-    return None if value is None else _utc(value).isoformat()
 
 
 __all__ = [

@@ -54,6 +54,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from logfmt_logger import getLogger
 
+import instants
+
 logger = getLogger("advisories")
 
 #: How long an acknowledgement puts an advisory to sleep. Thirty days, and the
@@ -120,7 +122,7 @@ class Advisory:
             'subject': self.subject,
             'detail': self.detail,
             'message': self.message,
-            'observed_at': _iso(self.observed_at),
+            'observed_at': instants.iso(self.observed_at),
         }
 
 
@@ -135,8 +137,8 @@ class Acknowledgement:
     def to_dict(self) -> Dict[str, Any]:
         return {
             'key': self.key,
-            'acknowledged_at': _iso(self.acknowledged_at),
-            'expires_at': _iso(self.expires_at),
+            'acknowledged_at': instants.iso(self.acknowledged_at),
+            'expires_at': instants.iso(self.expires_at),
         }
 
 
@@ -221,10 +223,10 @@ def acknowledgements(opened, now: Optional[datetime] = None
     """
     now = now or datetime.now(timezone.utc)
     return {
-        key: Acknowledgement(key, _utc(acknowledged_at), _utc(expires_at))
+        key: Acknowledgement(key, instants.utc(acknowledged_at), instants.utc(expires_at))
         for key, acknowledged_at, expires_at in opened.query(
             'SELECT key, acknowledged_at, expires_at FROM advisory_ack')
-        if _utc(expires_at) > now
+        if instants.utc(expires_at) > now
     }
 
 
@@ -334,25 +336,9 @@ def acknowledge(opened, key: str,
 
     logger.info(advisory.message, extra={'context': {
         'advisory': key,
-        'acknowledged_until': _iso(acknowledged.expires_at),
+        'acknowledged_until': instants.iso(acknowledged.expires_at),
     }})
     return advisory, acknowledged
-
-
-# --------------------------------------------------------------------------- #
-# Internals
-# --------------------------------------------------------------------------- #
-
-def _utc(value: datetime) -> datetime:
-    """Stamp a naive instant as UTC — the store's session is pinned there."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _iso(value: Optional[datetime]) -> Optional[str]:
-    """ISO-8601, or ``None``. One spelling of an instant on the way out."""
-    return None if value is None else _utc(value).isoformat()
 
 
 __all__ = [

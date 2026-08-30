@@ -32,6 +32,7 @@ import accounts as accounts_module
 import advisories
 import entries
 import installation_facts
+import instants
 import ledger
 import main
 import portfolio_view
@@ -259,7 +260,7 @@ def get_portfolio_movers():
     # as the rule it is.
     return jsonify({
         'since': since.isoformat(),
-        'reference': _iso(portfolio_view.baseline_reference(baseline)),
+        'reference': instants.iso(portfolio_view.baseline_reference(baseline)),
         'movers': [mover.to_dict() for mover in movers],
     })
 
@@ -380,7 +381,7 @@ def get_portfolio_totals_history():
         'to': stop.isoformat(),
         'points': [
             {
-                't': _iso(row.get('day')),
+                't': instants.iso(row.get('day')),
                 'cash_balance': row.get('cash_balance'),
                 'holdings_value': row.get('holdings_value'),
                 'total_value': row.get('total_value'),
@@ -639,7 +640,7 @@ def get_account_history(account_id: str):
         'to': stop.isoformat(),
         'points': [
             {
-                't': _iso(row.get('day')),
+                't': instants.iso(row.get('day')),
                 'cash_balance': row.get('cash_balance'),
                 'holdings_value': row.get('holdings_value'),
                 'total_value': row.get('total_value'),
@@ -1953,7 +1954,7 @@ def get_store():
     opened = _store()
     return jsonify({
         'size_bytes': store_module.file_size(opened.path),
-        'ledger_last_write': _iso(ledger.last_write(opened)),
+        'ledger_last_write': instants.iso(ledger.last_write(opened)),
         'orphans': [
             {'symbol': orphan.symbol, 'points': orphan.points}
             for orphan in ledger.orphan_symbols(opened)
@@ -2351,17 +2352,6 @@ def _parse_instant(value: Optional[str]) -> Optional[datetime]:
     except ValueError:
         raise ValueError(f"Not an ISO-8601 instant: {value!r}")
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _iso(value) -> Optional[str]:
-    """ISO-8601 for an instant **or** a calendar day.
-
-    Both shapes reach the wire since #700: an observed price carries a
-    ``TIMESTAMPTZ`` and a perf point carries a ``DATE``, which is the store's
-    two kinds of time arriving unchanged rather than one of them being stamped
-    into the other on the way out.
-    """
-    return value.isoformat() if isinstance(value, (datetime, date)) else None
 
 
 __all__ = ['api_bp']

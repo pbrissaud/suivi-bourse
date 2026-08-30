@@ -593,7 +593,7 @@ def test_a_body_that_cannot_be_built_does_not_fail_the_probe(open_store):
     The status code answers one question — *should this container be restarted*
     — and the body is not part of it. A defect in the shaping is not an answer
     to that question, and letting one through would restart a container for a
-    reason a restart reproduces exactly. ``runtime_view._utc`` writes down what
+    reason a restart reproduces exactly. ``instants.utc`` writes down what
     that failure looks like when it happens: an exception deep in the
     arithmetic, surfacing one storey up as a verdict on the store that is not
     true. So what the body cannot say, it says it could not say.
