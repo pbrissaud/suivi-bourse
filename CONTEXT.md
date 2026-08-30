@@ -286,6 +286,13 @@ which is not an absence at all: the price is an em dash while the value is real.
 A quote whose **unit** was never recorded is _carried at cost_ and never _waiting_ (#773,
 and on the page since #774): a number with no unit is not a price, and no rate is coming
 for a pair nobody can name.
+What separates _never fetched_ from _carried at cost_ is **terminality**, never a counter:
+a symbol whose backfill is still running has no price *yet*, and carrying it renders *not
+yet* as *never*. The counter says how many readings came back empty — a fact for the
+sentence, never the verdict.
+A sum that a non-terminal line empties is **refused and named**, never silently shortened:
+a total that quietly drops a position is a wrong number, where a refused one is an honest
+absence. A *series* omits instead, having to draw the day either way.
 A zero is none of these. It is a figure, and never wears absence's grey.
 _Avoid_: empty, missing, N/A, null (as an on-screen state)
 
