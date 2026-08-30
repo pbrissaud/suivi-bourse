@@ -24,6 +24,7 @@ import market
 import quotes
 import runtime_state
 import scheduling
+import scrape
 from events.schemas import Event, EventType
 
 
@@ -33,7 +34,7 @@ NOW = datetime(2026, 8, 5, 15, 0, tzinfo=UTC)
 
 @pytest.fixture(autouse=True)
 def _no_jitter(mocker):
-    mocker.patch("main.random.uniform", return_value=0.0)
+    mocker.patch("scrape.random.uniform", return_value=0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -136,7 +137,7 @@ def test_a_failed_fetch_records_no_market_state_rather_than_a_stale_one(
     record carries what this cycle read, which on a failure is nothing.
     """
     m = _metrics([_share()], store, mocker)
-    m._share_info_cache["AAPL"] = {"marketState": "REGULAR"}
+    m._share_info_cache.observed("AAPL", {"marketState": "REGULAR"})
     mocker.patch.object(m, "_fetch_ticker_data", return_value=(None, None))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -250,7 +251,7 @@ def test_a_departed_symbol_loses_its_records_with_its_counter(
     # The symbol leaves the portfolio; reconcile removes its job.
     m.config_manager._shares = []
     m.scheduler.get_jobs.return_value = [
-        SimpleNamespace(id=main._scrape_job_id("AAPL"))]
+        SimpleNamespace(id=scrape._scrape_job_id("AAPL"))]
     m._reconcile_jobs()
 
     assert m.recorder.scrape_of("AAPL") is None

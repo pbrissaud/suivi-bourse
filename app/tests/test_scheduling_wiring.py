@@ -33,9 +33,8 @@ import scheduling
 import settings
 import settings_registry
 from events.schemas import Event, EventType
-from main import (
-    SuiviBourseMetrics, _scrape_job_id,
-    register_interval_jobs, SCRAPE_JOB_PREFIX)
+from main import SuiviBourseMetrics, register_interval_jobs
+from scrape import _scrape_job_id, SCRAPE_JOB_PREFIX
 
 
 UTC = timezone.utc
@@ -49,9 +48,12 @@ def _no_jitter(mocker):
     Jitter is an orthogonal concern: these tests pin the exact base re-arm delay,
     so the random ``uniform(0, JITTER_SECONDS)`` offset ``_arm_symbol`` adds would
     make ``run_date`` non-deterministic. Zero it here; the dedicated jitter tests
-    below re-patch ``main.random.uniform`` to assert the spread.
+    below re-patch ``scrape.random.uniform`` to assert the spread.
+
+    The target followed the arming into :mod:`scrape` (issue #847), and only the
+    target: what is neutralised, and how much of it, has not moved.
     """
-    mocker.patch("main.random.uniform", return_value=0.0)
+    mocker.patch("scrape.random.uniform", return_value=0.0)
 
 
 def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
@@ -1073,7 +1075,7 @@ def test_arm_symbol_offsets_run_date_by_jitter(
     """Jitter is applied as a uniform(0, JITTER_SECONDS) offset on run_date."""
     m = _metrics([_share()], store, mocker)
     # Re-patch over the autouse zero-jitter with a fixed non-zero offset.
-    uniform = mocker.patch("main.random.uniform", return_value=7.5)
+    uniform = mocker.patch("scrape.random.uniform", return_value=7.5)
 
     m._arm_symbol("AAPL", 120, NOW)
 
@@ -1155,7 +1157,7 @@ def test_rearm_touches_only_the_symbols_whose_market_is_open(
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
     m.regular_interval = 600
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     reached, sleeping = m.rearm_regular_scrapes()
 
@@ -1169,7 +1171,7 @@ def test_rearm_starts_the_new_cadence_from_now(store, mocker):
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
     m.regular_interval = 600
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     m.rearm_regular_scrapes()
 
@@ -1193,7 +1195,7 @@ def test_rearm_rescales_a_failing_symbol_s_backoff_rather_than_flattening_it(
     _scraped(m, "AAPL", closed=False)
     m._failure_counts["AAPL"] = 6
     m.regular_interval = 600
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     m.rearm_regular_scrapes()
 
@@ -1212,7 +1214,7 @@ def test_rearm_leaves_a_symbol_being_scraped_to_re_arm_itself(
     m = _metrics([_share()], store, mocker)
     _with_jobs(m)  # the job is gone from the store: it is running
     _scraped(m, "AAPL", closed=False)
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     reached, sleeping = m.rearm_regular_scrapes()
 
@@ -1225,7 +1227,7 @@ def test_rearm_leaves_a_symbol_that_has_never_been_scraped_alone(
     """At boot every held symbol is armed to fire immediately — do not delay it."""
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")  # armed, never fired: no last-pass record
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     reached, sleeping = m.rearm_regular_scrapes()
 
@@ -1260,7 +1262,7 @@ def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(
     _with_jobs(m, "AAPL", "MC.PA")
     _scraped(m, "AAPL", closed=False)
     _scraped(m, "MC.PA", closed=True)
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("regular_interval", 120, 600),))
@@ -1281,7 +1283,7 @@ def test_apply_settings_leaves_an_untouched_job_s_timer_alone(
     m = _metrics([_share()], store, mocker)
     _with_jobs(m, "AAPL")
     _scraped(m, "AAPL", closed=False)
-    mocker.patch("main.datetime", **{"now.return_value": NOW})
+    mocker.patch("scrape.datetime", **{"now.return_value": NOW})
 
     report = main.apply_settings(
         _runtime(m), (settings.Change("backfill_delay", 10, 20),))
@@ -1360,7 +1362,7 @@ def test_read_exchange_of_ignores_the_cache_a_fresh_boot_has_not_filled(
     process that learnt it, and it is the one this reads.
     """
     m = _metrics([_share(symbol="AAPL")], store, mocker)
-    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
+    m._share_info_cache.observed("AAPL", {"exchange": "NMS"})
 
     assert m.read_exchange_of() == {"AAPL": None}
 

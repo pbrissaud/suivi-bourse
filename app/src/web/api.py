@@ -1914,7 +1914,7 @@ def _next_runs(scheduler) -> dict:
     The one pull kept from the scheduler's internals (#656 déc. 4): it is the
     truth of scheduling, the jobstore is natively locked, and a copied
     ``next_delay`` would be exactly the duplicate decision 2 forbids. It lives
-    in :func:`main.scrape_next_runs` because the settings write path reads the
+    in :func:`scrape.scrape_next_runs` because the settings write path reads the
     same times to decide which symbols a new cadence reaches (#701) — two loops
     over the jobstore would eventually classify a symbol two ways in one
     request.
@@ -1926,9 +1926,9 @@ def _next_runs(scheduler) -> dict:
     up to 8 s. The pure module renders that as one ambiguous value carrying both
     readings, never as either alone.
     """
-    import main
+    from scrape import scrape_next_runs
 
-    return main.scrape_next_runs(scheduler)
+    return scrape_next_runs(scheduler)
 
 
 # --------------------------------------------------------------------- #

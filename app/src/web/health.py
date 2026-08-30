@@ -25,8 +25,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint
 
-import main
 import runtime_view
+from scrape import scrape_next_runs
 from web import problem
 
 health_bp = Blueprint('health', __name__)
@@ -93,7 +93,7 @@ def _jobs(runtime) -> dict:
             # déc. 4). The body publishes no countdown, but the fold is the same
             # one ``/api/runtime`` performs and a second way of building it is a
             # second way of disagreeing with it.
-            next_runs=main.scrape_next_runs(runtime.scheduler),
+            next_runs=scrape_next_runs(runtime.scheduler),
             now=now,
             scheduler_running=scheduler_running)
         return runtime_view.build_health(

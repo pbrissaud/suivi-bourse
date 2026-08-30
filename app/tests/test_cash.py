@@ -515,7 +515,7 @@ def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
     m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
                  Portfolio([Account("PEA", "PEA", "Mon PEA")]))
     m.backfill_delay = 0
-    m._share_info_cache["NEW"] = {"currency": "EUR"}
+    m._share_info_cache.observed("NEW", {"currency": "EUR"})
 
     empty_cycles = 0
 

@@ -31,6 +31,7 @@ import quotes
 import runtime_state
 import runtime_view
 import scheduling
+import scrape
 import store_reads
 import settings as settings_module
 import settings_registry
@@ -584,7 +585,7 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     each row has to be the one that row's figure came from.
     """
     metrics = _metrics(store, base_currency='EUR')
-    metrics._share_info_cache['AAPL'] = {'currency': 'USD'}
+    metrics._share_info_cache.observed('AAPL', {'currency': 'USD'})
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -628,7 +629,8 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
     metrics = _metrics(store, base_currency='EUR')
     # What the translation now answers for a payload that carries no key at
     # all — the whole of the fix, read from the cache the backfill reads.
-    metrics._share_info_cache['AAPL'] = market_info.quote_attributes({})
+    metrics._share_info_cache.observed(
+        'AAPL', market_info.quote_attributes({}))
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
@@ -698,7 +700,7 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
 
     armed = {call.kwargs['id']
              for call in metrics.scheduler.add_job.call_args_list}
-    assert armed == {main._scrape_job_id('AAPL')}
+    assert armed == {scrape._scrape_job_id('AAPL')}
     assert metrics._held_symbols() == {'AAPL'}
     assert 'fx_rates' not in store.table_names()
     assert store.query(
@@ -1454,7 +1456,7 @@ def _met_with_its_market_shut(store, monkeypatch, info=None,
     monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
-    metrics._share_info_cache['AAPL'] = dict(_SHUT_MARKET_INFO)
+    metrics._share_info_cache.observed('AAPL', dict(_SHUT_MARKET_INFO))
     metrics._backfill_backward('AAPL', datetime(2024, 6, 1, tzinfo=UTC),
                                datetime(2024, 6, 4, tzinfo=UTC))
     return metrics, instrument
