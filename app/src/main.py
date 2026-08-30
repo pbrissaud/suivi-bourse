@@ -2,7 +2,6 @@
 SuiviBourse
 Paul Brissaud
 """
-import concurrent.futures
 import logging
 import os
 import random
@@ -161,15 +160,6 @@ def scrape_next_runs(scheduler) -> Dict[str, Optional[datetime]]:
             runs[job_id[len(SCRAPE_JOB_PREFIX):]] = getattr(
                 job, 'next_run_time', None)
     return runs
-
-
-# Pre-scheduler exchange capture for auto pool sizing (issue #619). At boot the
-# whole app blocks on this before the scheduler is even built, so the
-# fetch is fanned out over a small bounded pool and hard-capped by an overall
-# deadline — a slow / rate-limited yfinance session must not delay startup
-# indefinitely. Symbols unresolved within the deadline fall back to solo markets.
-_EXCHANGE_CAPTURE_WORKERS = 8
-_EXCHANGE_CAPTURE_TIMEOUT_SECONDS = 30
 
 
 # --------------------------------------------------------------------- #
@@ -1287,71 +1277,36 @@ class SuiviBourseMetrics:
         return {s['symbol'] for s in self.shares
                 if s.get('symbol') and s.get('quantity')}
 
-    def capture_exchange_of(self) -> Dict[str, Optional[str]]:
-        """Map each held symbol to its exchange for auto pool sizing (#619, #611).
+    def read_exchange_of(self) -> Dict[str, Optional[str]]:
+        """Map each held symbol to its venue for auto pool sizing (#851, #619).
 
-        Same-exchange cohorts drive ``scheduling.compute_pool_size``, but the
-        exchange lives only in the yfinance ``info`` — not the config — so we fetch
-        it once up front, before the scheduler's executor is fixed at construction
-        (the design's "pre-scheduler scrape"). Reuses the shared
-        ``_share_info_cache`` so a symbol already fetched isn't fetched twice.
+        Same-exchange cohorts drive ``scheduling.compute_pool_size``, and this is
+        the **read** that supplies them: one query on ``symbol_quote``, through
+        :func:`quotes.quote_exchanges`, and no network at all.
 
-        The whole app blocks here at boot, so the uncached symbols are fetched
-        concurrently over a bounded pool (``_EXCHANGE_CAPTURE_WORKERS``) and the
-        collection is hard-capped by ``_EXCHANGE_CAPTURE_TIMEOUT_SECONDS``: a slow
-        or rate-limited yfinance session can't delay scheduler startup
-        indefinitely. Any symbol that fails or doesn't resolve in time maps to
-        ``None`` — a solo market (see :func:`market_info.exchange_of`).
+        It was a *capture* until #851 — the design's "pre-scheduler scrape"
+        (#611), one yfinance fetch per uncached symbol behind a 30-second
+        deadline, run from :func:`start_runtime` and therefore **before the
+        socket is bound**, so every second of it was a second the container
+        answered neither the page nor ``/health``. What it bought was an integer
+        between 4 and 10, whose fallback on failure or timeout was already 4;
+        what it cost was paid at every boot since #701 deleted the flag that used
+        to gate it — and the very same fetches were re-emitted, non-blocking, a
+        few seconds later, ``ingest()`` arming each scrape job to fire at once.
 
-        **Every boot pays this since #701**, the opt-in flag that used to gate it
-        having been deleted along with the fixed pool it selected. That is what
-        makes the cap above load-bearing rather than defensive: it runs in
-        :func:`start_runtime`, before the socket is bound, so all of it is time a
-        container spends not answering. The cap is the only thing bounding that
-        wait — there used to be a second bound and it was a *deadline*, gunicorn
-        raising its ``timeout`` to 120 s so the arbiter would not SIGABRT a worker
-        still inside this call, and it went with the arbiter (ADR-0039).
+        The store already knew. It is the same move #773 made for the currency:
+        the venue is read from ``symbol_quote`` and not from
+        ``_share_info_cache``, which is empty for the whole first cycle after
+        every boot. The one gap that leaves is a symbol declared and not yet
+        scraped successfully — and it answers ``None``, a **solo market**, which
+        is precisely what the capture's own fallback made of it.
+
+        Nothing held means nothing to look up: the store is not even asked.
         """
-        exchange_of: Dict[str, Optional[str]] = {}
-        to_fetch = []
-        for symbol in sorted(self._held_symbols()):
-            info = self._share_info_cache.get(symbol)
-            if info is None:
-                to_fetch.append(symbol)
-                exchange_of[symbol] = None  # solo unless the fetch resolves below
-            else:
-                exchange_of[symbol] = market_info.exchange_of(info)
-
-        if not to_fetch:
-            return exchange_of
-
-        pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(_EXCHANGE_CAPTURE_WORKERS, len(to_fetch)))
-        futures = {pool.submit(self._fetch_ticker_data, s): s for s in to_fetch}
-        try:
-            for future in concurrent.futures.as_completed(
-                    futures, timeout=_EXCHANGE_CAPTURE_TIMEOUT_SECONDS):
-                symbol = futures[future]
-                try:
-                    _, info = future.result()
-                except Exception as e:
-                    app_logger.warning(
-                        f"Exchange capture failed for {symbol}, treating as a "
-                        f"solo market: {e}")
-                    continue
-                exchange_of[symbol] = market_info.exchange_of(info)
-        except concurrent.futures.TimeoutError:
-            unresolved = sorted(s for f, s in futures.items() if not f.done())
-            app_logger.warning(
-                f"Exchange capture timed out after "
-                f"{_EXCHANGE_CAPTURE_TIMEOUT_SECONDS}s; treating "
-                f"{len(unresolved)} symbol(s) as solo markets: "
-                f"{', '.join(unresolved)}")
-        finally:
-            # Don't block startup joining slow/hung in-flight fetches; cancel what
-            # hasn't started yet (cancel_futures: py3.9+).
-            pool.shutdown(wait=False, cancel_futures=True)
-        return exchange_of
+        held = self._held_symbols()
+        if not held:
+            return {}
+        return quotes.quote_exchanges(self.config_manager.store, held)
 
     def _scheduled_symbols(self) -> set:
         """Symbols that currently have a live per-symbol scrape job."""
@@ -2660,18 +2615,21 @@ class SuiviBourseMetrics:
         conversion** step contradicts ``_convert_history``'s own argument head on
         — a second ``.info`` per *chunk* doubles the rate-limit exposure of the
         job that already emits the most requests in the app — and the need is per
-        **symbol**, once. Widening ``capture_exchange_of`` to the replay's symbol
-        set is worse: that fetch is in :func:`start_runtime`, the whole boot blocks
-        on it, and its time cap is already load-bearing rather than defensive
-        (#701).
+        **symbol**, once. The third exit was worse still and has since ceased to
+        exist: widening the pool sizing's *pre-scheduler capture* to the replay's
+        symbol set would have put the fetch in :func:`start_runtime`, where the
+        whole boot blocked on it before the socket was bound — and #851 removed
+        that fetch altogether rather than hang anything else off it
+        (:meth:`read_exchange_of`).
 
         The defect it repairs is dated. ``_convert_history`` deferred to the
         lateral pass *naming exactly this case*, and the lateral pass named it and
         stood down — because :func:`quotes.quote_currency`'s ``None`` was written
         for a symbol Yahoo says nothing about. ADR-0009 made the backfill's set
-        the union over the **whole** timeline while the three paths that can learn
-        a currency (``_scrape_symbol``, ``capture_exchange_of`` and the cache both
-        fill) stayed bounded by the held lines, so a position sold before the
+        the union over the **whole** timeline while the paths that can learn a
+        currency (``_scrape_symbol``, and the ``_share_info_cache`` its fetch
+        fills — the pre-scheduler capture was a third until #851 removed it)
+        stayed bounded by the held lines, so a position sold before the
         install existed got years of reconstructed prices and no unit for any of
         them: `no_quote_currency` was the one lateral condition with **no exit**.
 
@@ -3738,11 +3696,14 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # is built once here and a ThreadPoolExecutor does not shrink hot, so it was
     # the one setting that would still have required recreating the container —
     # and it was a silent trap besides, a cohort of thirty symbols on a pool of
-    # ten serialising its own scrapes with nothing anywhere to say so. Grouping
-    # the held symbols into same-exchange cohorts costs a pre-scheduler exchange
-    # fetch, bounded by its own deadline.
+    # ten serialising its own scrapes with nothing anywhere to say so. The
+    # same-exchange cohorts are read off the store this step was handed — one
+    # query, no network (issue #851). They used to cost one yfinance fetch per
+    # held symbol, behind a 30-second deadline and ahead of the socket, so a
+    # boot spent up to half a minute answering nothing to buy an integer the
+    # store already knew.
     pool_size = scheduling.compute_pool_size(
-        sb_metrics.shares, sb_metrics.capture_exchange_of())
+        sb_metrics.shares, sb_metrics.read_exchange_of())
     # Wire the scheduler before bootstrapping so ingest() can arm the
     # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
     # bootstrap — no separate initial scrape. Background, not Blocking: uvicorn's

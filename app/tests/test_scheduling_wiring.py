@@ -1329,67 +1329,129 @@ def test_apply_settings_before_the_fork_changes_nothing_and_says_so(mocker):
 
 
 # ---------------------------------------------------------------------------
-# capture_exchange_of — pre-scheduler exchange snapshot (issue #619)
+# read_exchange_of — the venue, read from the store (issue #851)
 # ---------------------------------------------------------------------------
+#
+# Three tests stood here and their subject was a *capture*: one yfinance fetch
+# per uncached held symbol, fanned over a bounded pool, hard-capped by a
+# deadline of its own — and run from ``start_runtime``, ahead of the socket, so
+# every second of it was a second the container answered nothing. #851 deleted
+# the mechanism, the deadline included, so the test that pinned its expiry has
+# nothing left to pin. What replaces them is written against the read.
 
-def test_capture_exchange_of_reads_info_cache_and_fetches_missing(
+
+def test_read_exchange_of_reads_the_store_and_touches_no_edge(store, mocker):
+    """The venue comes off ``symbol_quote``, and nothing is fetched for it."""
+    m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")], store, mocker)
+    quotes.record_attributes(store, "AAPL", NOW, {"exchange": "NMS"})
+    quotes.record_attributes(store, "MSFT", NOW, {"exchange": "PAR"})
+    fetch = mocker.patch.object(m, "_fetch_ticker_data")
+
+    assert m.read_exchange_of() == {"AAPL": "NMS", "MSFT": "PAR"}
+    fetch.assert_not_called()
+
+
+def test_read_exchange_of_ignores_the_cache_a_fresh_boot_has_not_filled(
         store, mocker):
-    m = _metrics([_share(symbol="AAPL"), _share(symbol="MSFT")],
-                 store, mocker)
-    # AAPL already cached; MSFT must be fetched.
-    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
-    fetch = mocker.patch.object(
-        m, "_fetch_ticker_data", return_value=(1.0, {"exchange": "PAR"}))
+    """#773's argument for the currency, on the column beside it.
 
-    result = m.capture_exchange_of()
-
-    assert result == {"AAPL": "NMS", "MSFT": "PAR"}
-    fetch.assert_called_once_with("MSFT")   # cached AAPL not re-fetched
-
-
-def test_capture_exchange_of_maps_failed_and_unnamed_to_none(
-        store, mocker):
-    """The two absences of a venue, and since #845 they are the same shape.
-
-    A fetch that did not complete answers `(None, None)`; one that completed on
-    a payload carrying no `exchange` key answers a mapping whose venue is
-    `None`. It used to answer a **word** there — the app's own, set as a default
-    at the fetch and removed here — and the fixture that manufactured it left
-    with the default it exercised.
+    ``_share_info_cache`` dies with the process and is empty for the whole
+    first cycle after every boot — which is exactly when the pool is sized — so
+    a venue read from it is a venue nobody has. The store's answer outlives the
+    process that learnt it, and it is the one this reads.
     """
-    m = _metrics([_share(symbol="AAA"), _share(symbol="BBB")],
-                 store, mocker)
+    m = _metrics([_share(symbol="AAPL")], store, mocker)
+    m._share_info_cache["AAPL"] = {"exchange": "NMS"}
 
-    def _fetch(symbol):
-        return ((None, None) if symbol == "AAA"
-                else (1.0, market_info.live_attributes({}, None)))
-
-    mocker.patch.object(m, "_fetch_ticker_data", side_effect=_fetch)
-
-    result = m.capture_exchange_of()
-
-    # Both become a solo market rather than one giant cohort of unknowns.
-    assert result == {"AAA": None, "BBB": None}
+    assert m.read_exchange_of() == {"AAPL": None}
 
 
-def test_capture_exchange_of_times_out_to_solo_market(
+def test_read_exchange_of_asks_one_query_whatever_the_portfolio(store, mocker):
+    """One query for the whole cohort, never one per symbol.
+
+    A count, because the defect is the *shape* of the read and leaves no row to
+    look at: twelve symbols and twelve round trips would answer identically.
+    """
+    shares = [_share(symbol=f"SYM{i}") for i in range(12)]
+    m = _metrics(shares, store, mocker)
+    for share in shares:
+        quotes.record_attributes(store, share["symbol"], NOW,
+                                 {"exchange": "PAR"})
+    reads = mocker.spy(store, "query")
+
+    exchange_of = m.read_exchange_of()
+
+    assert exchange_of == {f"SYM{i}": "PAR" for i in range(12)}
+    assert reads.call_count == 1
+
+
+def test_a_symbol_the_scrape_never_reached_is_its_own_solo_market(
         store, mocker):
-    """A fetch that outlives the deadline maps to a solo market, not a hang."""
-    m = _metrics([_share(symbol="SLOW")], store, mocker)
-    mocker.patch("main._EXCHANGE_CAPTURE_TIMEOUT_SECONDS", 0.2)
-    release = threading.Event()
+    """Declared, never scraped — the one gap reading the store leaves.
 
-    def _slow(symbol):
-        release.wait(timeout=5)          # outlasts the 0.2s deadline
-        return (1.0, {"exchange": "NMS"})
+    It is the population the capture's timeout already produced ``None`` for.
+    Seven of them, because six or fewer share a pool size with one: grouped
+    into a single cohort of unknowns they would ask for a worker the formula
+    does not owe them, which is the failure ``market_info.exchange_of`` was
+    written against and which the store's ``NULL`` must not reintroduce.
+    """
+    shares = [_share(symbol=f"NEW{i}") for i in range(7)]
+    m = _metrics(shares, store, mocker)
 
-    mocker.patch.object(m, "_fetch_ticker_data", side_effect=_slow)
-    try:
-        result = m.capture_exchange_of()
-        # Startup didn't block on the slow fetch; the symbol fell back to solo.
-        assert result == {"SLOW": None}
-    finally:
-        release.set()                    # let the worker thread exit cleanly
+    exchange_of = m.read_exchange_of()
+
+    assert exchange_of == {f"NEW{i}": None for i in range(7)}
+    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+        scheduling.RESERVED + 1
+    # ... and one giant cohort is what it is *not*.
+    assert scheduling.compute_pool_size(
+        m.shares, {s["symbol"]: "UNKNOWN" for s in shares}) == \
+        scheduling.RESERVED + 2
+
+
+def test_the_pool_is_the_one_the_capture_produced_at_an_equivalent_store(
+        store, mocker):
+    """Two cohorts of different sizes, and the largest is what sizes the pool.
+
+    The equivalence #851 owes: the mapping the store answers is the mapping the
+    fetches answered, so the integer at the end of the formula does not move.
+    """
+    paris = [_share(symbol=f"PA{i}") for i in range(8)]
+    nasdaq = [_share(symbol=f"US{i}") for i in range(3)]
+    m = _metrics(paris + nasdaq, store, mocker)
+    for share in paris:
+        quotes.record_attributes(store, share["symbol"], NOW,
+                                 {"exchange": "PAR"})
+    for share in nasdaq:
+        quotes.record_attributes(store, share["symbol"], NOW,
+                                 {"exchange": "NMS"})
+
+    exchange_of = m.read_exchange_of()
+
+    assert exchange_of == {
+        **{s["symbol"]: "PAR" for s in paris},
+        **{s["symbol"]: "NMS" for s in nasdaq}}
+    # ceil(8 x FETCH_EST / JITTER) = 2 — the eight-strong cohort, not the three.
+    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+        scheduling.RESERVED + 2
+
+
+def test_an_empty_portfolio_reads_nothing_and_takes_the_reserved_pool(
+        store, mocker):
+    """Nothing held, nothing to look up — and the store is not even asked.
+
+    The boot's own first case, and the one the capture already answered without
+    a fetch: what it returns is the pool the non-scrape jobs reserve.
+    """
+    m = _metrics([], store, mocker)
+    reads = mocker.spy(store, "query")
+
+    exchange_of = m.read_exchange_of()
+
+    assert exchange_of == {}
+    assert reads.call_count == 0
+    assert scheduling.compute_pool_size(m.shares, exchange_of) == \
+        scheduling.RESERVED
 
 
 def test_scrape_symbol_rearms_after_an_unexpected_failure(
