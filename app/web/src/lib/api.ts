@@ -739,6 +739,22 @@ export interface Position {
    * it.
    */
   closed_at: string | null
+  /**
+   * Has the backward pass reached this symbol's first acquisition? (#845)
+   *
+   * The **second** term of the carrying convention (ADR-0004), and the one that
+   * did not cross the wire until this ticket: the front held *no quote
+   * observed* and put the failure counter of `/api/runtime` in the place of
+   * *and none is coming*, so during every rebuild the shares table valued at its
+   * cost a line the dashboard's own curve refused to value — the disagreement
+   * between two screens `carrying.py` declares unacceptable.
+   *
+   * It is a **fact and not a verdict**: the pass has reached its bound, nothing
+   * more. The verdict has two terms and `lib/absence.ts` is the judge. It rides
+   * on the row rather than in the head of the payload for the reason `price`
+   * does: it is the *symbol's*, and P1 is keyed by `(account, symbol)`.
+   */
+  terminal: boolean
   /** `null` — nothing has ever been observed about this symbol. */
   fundamentals: Fundamentals | null
 }

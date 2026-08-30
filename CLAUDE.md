@@ -137,8 +137,11 @@ advisories together. There is no banner and no status dot.
   yfinance, `now` injected.
 - **The market is reached through one door** (#846): `market.py` holds the only
   `import yfinance` in the tree, and `market_info.py` — pure — is the only
-  place a key of Yahoo's payload is read or the `'undefined'` sentinel is
-  named. Both are held on the source beside the purity guard.
+  place a key of Yahoo's payload is read. Both are held on the source beside the
+  purity guard, and a third rule joins them (#845): the app writes **no
+  sentinel** for a field the payload does not carry, so the word it used to
+  fabricate appears nowhere in `src/` nor in `tests/` — a fixture naming it
+  would re-teach the belief that produced the defect.
 - **There is one clock, and it is the product's**, and every read of it is
   UTC-qualified — `test_suite_conventions.py` holds that on the source. **And
   one repair of what comes back from the store**, in `instants.py` (stdlib only,

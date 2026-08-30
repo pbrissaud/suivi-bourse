@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { AWAITING_RATE, DASH, FIGURE } from '@/lib/absence'
+import { AWAITING_RATE, DASH, FIGURE, REBUILDING } from '@/lib/absence'
 import {
   gainTotal,
   portfolioTerms,
@@ -104,6 +104,47 @@ describe('the four terms and their sum', () => {
       because: 'awaitingRate',
     })
     expect(gainTotal(portfolioTerms([waiting], -5)).known).toBe(false)
+  })
+
+  it('refuses the total on a fresh install, and says a rebuild rather than a rate', () => {
+    // The install where **no** symbol is terminal, which is every install for
+    // the length of its first reconstruction. The latent term has no figure —
+    // a line whose history is still being read is worth nothing statable — and
+    // the reason it carries is the one the reader can act on, which here is
+    // *none*: the app is working, and there is nothing to answer.
+    const rebuilding = aPosition({
+      symbol: 'ZZC',
+      quantity: 6,
+      cost_basis: 600,
+      price: null,
+      terminal: false,
+    })
+
+    expect(positionTerms([rebuilding]).unrealised).toEqual({
+      known: false,
+      because: 'rebuilding',
+    })
+    const total = gainTotal(portfolioTerms([rebuilding], -5))
+    expect(total).toEqual({ known: false, because: 'rebuilding' })
+    // **Named on screen**, and that is half the repair: this function falls
+    // back on the em dash for a reason it does not know, so a third one added
+    // in silence would have gone out as *there is nothing to compute* about a
+    // portfolio that is simply not finished being read (ADR-0016).
+    expect(sumRendering(total)).toBe(REBUILDING)
+    expect(sumRendering(total)).not.toBe(DASH)
+    expect(sumRendering(total)).not.toBe(AWAITING_RATE)
+  })
+
+  it('carries a terminal line at its cost, which is what the counter never decided', () => {
+    // The other half of the pair: the backward pass has finished, so *no price*
+    // is permanent and the line contributes exactly zero to the latent gain
+    // rather than emptying it. The failure counter is not in this loop at all
+    // and never was — it separates two sentences, and #845 is what stopped it
+    // separating two sums everywhere else.
+    const carried = aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null })
+    expect(carried.terminal).toBe(true)
+    expect(positionTerms([carried]).unrealised).toEqual(known(0))
+    expect(gainTotal(portfolioTerms([carried], -5))).toEqual(known(-5))
   })
 
   it('does not let a **held** line with no nameable unit blank the headline', () => {

@@ -138,6 +138,61 @@ describe('a quoted position waiting for its rate', () => {
   })
 })
 
+describe('a position whose history is still being rebuilt', () => {
+  it('is worth nothing computable, and is not carried at its cost', () => {
+    // ADR-0004's domain is exactly *the symbol's backfill is terminal*, and
+    // this line is not: *no price* means *not yet*, so valuing it at its PMP
+    // renders *not yet* as *never* — and it did, on every line of every fresh
+    // install, while the dashboard's own curve left the same day hollow (#845).
+    const rows = rowsOf([
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
+    ])
+
+    expect(marketValue(rows[0])).toBeNull()
+    expect(unrealised(rows[0])).toBeNull()
+    // Not the reader's to repair: nothing has failed, the app is still reading.
+    expect(isAnomalous(rows[0])).toBe(false)
+  })
+
+  it('refuses the total and names the rebuild, never the exchange rate', () => {
+    // The mechanical consequence, and the one the ticket's own criteria had to
+    // add: a valuation gained a second cause of nullity, so the two totals that
+    // read it gained a second reason — and the first was written in. On a fresh
+    // install, where no symbol is terminal, the header announced *waiting for
+    // the exchange rate* and sent the owner to a dial they had answered.
+    const rebuilding = rowsOf([
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
+    ])
+    expect(valuationTotal(rebuilding)).toEqual({ known: false, because: 'rebuilding' })
+
+    // And the rate keeps its own sentence where it is the real reason.
+    const waiting = rowsOf([
+      aPosition({ symbol: 'ZZB', price: 125, currency: 'USD', rate: null }),
+    ])
+    expect(valuationTotal(waiting)).toEqual({ known: false, because: 'awaitingRate' })
+  })
+
+  it('is left out of the weights, which go on dividing what they can', () => {
+    // The asymmetry is deliberate: a **total** is refused because a sum that
+    // quietly drops a line is a wrong number, while the divisor of the weights
+    // omits — refusing it would put one line's absence on every other row,
+    // which is the noise ADR-0016 deletes markers for.
+    const rows = rowsOf([
+      aPosition({ symbol: 'ZZA', quantity: 10, cost_basis: 1000, price: 130 }),
+      aPosition({ symbol: 'ZZC', quantity: 6, cost_basis: 600, price: null, terminal: false }),
+    ])
+
+    expect(placedValue(rows)).toBe(1300)
+    expect(weightShare(rows[0], placedValue(rows))).toBe(1)
+    expect(weightShare(rows[1], placedValue(rows))).toBeNull()
+    // Named on its own row rather than counted as nothing.
+    expect(weightRendering(rows[1], placedValue(rows))).toEqual({
+      kind: 'named',
+      message: 'absence.rebuilding',
+    })
+  })
+})
+
 describe('the two orderings', () => {
   it('puts the heaviest line first, and a line with no value last', () => {
     const rows = rowsOf([

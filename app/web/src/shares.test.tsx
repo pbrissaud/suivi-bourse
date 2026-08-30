@@ -327,6 +327,94 @@ describe('the nine columns of the live table', () => {
     expect(head()).toHaveTextContent(/2\D?900,00/)
     expect(head()).not.toHaveTextContent(/en attente du taux/)
   })
+
+  it('says nothing at all about a line whose history is still being rebuilt', async () => {
+    // ADR-0004's **second** term, on the page (#845). The backward pass has not
+    // reached this symbol's first acquisition, so *no price* means *not yet*:
+    // the line has no valuation, and carrying it at its PMP is *not yet*
+    // rendered *never* — which is what the page did, while the dashboard's own
+    // curve left the same day hollow.
+    renderShares([
+      ...defaultPositions(),
+      aPosition({
+        symbol: 'ZZR',
+        name: 'Zeta Rho',
+        quantity: 6,
+        cost_basis: 600,
+        price: null,
+        terminal: false,
+      }),
+    ])
+
+    const row = (await screen.findByRole('button', { name: 'Zeta Rho' })).closest(
+      'tr',
+    ) as HTMLElement
+    expect(row).toHaveTextContent(/historique en cours de reconstitution/)
+    // Not its cost, and not a zero latent gain either: there is no figure.
+    expect(row).not.toHaveTextContent(/600,00/)
+    // And it is not offered as something to repair — nothing has failed.
+    expect(screen.queryByRole('button', { name: /titre(s)? en anomalie/ })).not.toBeInTheDocument()
+  })
+
+  it('refuses the header on a fresh install and names the rebuild, not the rate', async () => {
+    // The install where **every** line is still being rebuilt, which is every
+    // install for the length of its first reconstruction. The two totals that
+    // read a valuation had `awaitingRate` written in, so the strip announced
+    // *en attente du taux* over a portfolio whose currency was answered — and
+    // sent its owner to a dial that had nothing to do with it.
+    renderShares(
+      defaultPositions().map((position) => ({ ...position, terminal: false, price: null, converted: null })),
+    )
+
+    await waitFor(() =>
+      expect(head()).toHaveTextContent(/historique en cours de reconstitution/),
+    )
+    expect(head()).not.toHaveTextContent(/en attente du taux/)
+    // Named, never dashed: an em dash says *there is nothing to compute*
+    // (ADR-0016) about a portfolio that is simply not finished being read.
+    expect(head()).not.toHaveTextContent(/—/)
+    expect(figure('Latente')).toHaveTextContent(/historique en cours de reconstitution/)
+  })
+
+  it('gives the same verdict as the dashboard on the same line, during a rebuild', async () => {
+    // **The two screens, one line, one payload** — the disagreement the whole
+    // ticket is about. `carrying.py` makes the predicate its own acceptance
+    // criterion: no quote observed **and** the backfill is terminal, «sans quoi
+    // "pas encore" est rendu "jamais"». The server has held both terms since
+    // #706; this page held the first and put the failure counter of
+    // `/api/runtime` — another resource, and an optional read — in the place of
+    // the second, so during every reconstruction it valued at its PMP a line
+    // the dashboard was still refusing to value.
+    //
+    // The server's half of the crossing is asserted where both ends are one
+    // process: `tests/test_web_api.py`, on one store, the curve and the
+    // positions payload read together.
+    const rebuilding = defaultPositions().map((position) => ({
+      ...position,
+      terminal: false,
+      price: null,
+      converted: null,
+    }))
+    const { user } = renderShares(rebuilding)
+
+    const row = (await screen.findByRole('button', { name: 'Zeta Gamma' })).closest(
+      'tr',
+    ) as HTMLElement
+    expect(row).toHaveTextContent(/historique en cours de reconstitution/)
+    expect(row).not.toHaveTextContent(/600,00/)
+
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('link', {
+        name: 'Tableau de bord',
+      }),
+    )
+
+    // The same sentence, about the same portfolio, on the other screen — where
+    // it used to read a gain computed out of three lines valued at their cost.
+    const total = await screen.findByRole('group', { name: 'Gain total' })
+    expect(total).toHaveTextContent(/historique en cours de reconstitution/)
+    expect(total).not.toHaveTextContent(/2\D?000,00/)
+  })
 })
 
 describe('the exception marker and the date', () => {
