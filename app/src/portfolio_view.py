@@ -284,7 +284,7 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
 
 def build_positions(rows: Sequence[Dict[str, Any]],
                     base_currency: Optional[str],
-                    terminal: Collection[str] = ()) -> List[Dict[str, Any]]:
+                    terminal: Collection[str]) -> List[Dict[str, Any]]:
     """P1's rows as ``GET /api/positions`` publishes them (#745).
 
     **One row per ``(account, symbol)``, folded nowhere.** Its v4 predecessor
@@ -313,13 +313,17 @@ def build_positions(rows: Sequence[Dict[str, Any]],
     rebuild the shares table carried at cost the very line
     :func:`valuation_series` below still refuses to value. One set, read once
     for the whole payload, and the client is the judge of the pair.
+
+    It has **no default**, deliberately: an omitted set publishes ``false`` on
+    every row, which is *the whole portfolio is still being rebuilt* — a
+    statement, and one the front acts on. A caller has to say what it knows.
     """
     return [_build_position(row, base_currency, terminal) for row in rows]
 
 
 def _build_position(row: Dict[str, Any],
                     base_currency: Optional[str],
-                    terminal: Collection[str] = ()) -> Dict[str, Any]:
+                    terminal: Collection[str]) -> Dict[str, Any]:
     """One P1 row on the wire.
 
     ``realised`` / ``dividends`` are the client's names for the store's

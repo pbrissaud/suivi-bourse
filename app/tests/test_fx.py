@@ -1531,7 +1531,10 @@ def test_the_learnt_unit_makes_the_position_quoted_rather_than_carried(
 
     def published():
         rows = store_reads.PortfolioReader(store).positions()
-        return portfolio_view.build_positions(rows, 'EUR')[0]
+        # The carrying set is the route's own read and is not what this test is
+        # about; `{'AAPL'}` is the steady state, so the payload below is read
+        # under the same terminality before and after the repair.
+        return portfolio_view.build_positions(rows, 'EUR', {'AAPL'})[0]
 
     before = published()
     assert before['price']['value'] == 103.0
