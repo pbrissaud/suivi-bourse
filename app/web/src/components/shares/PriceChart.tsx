@@ -131,8 +131,42 @@ export function PriceChart({
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={series.data.points}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="t" tickFormatter={(value: string) => f.date(value)} minTickGap={32} />
+                {/* **The chrome comes from the tokens** (#841, ADR-0023).
+                    Left to itself Recharts paints a `#ccc` grid and `#666`
+                    gradations, and it paints the *same two greys on both
+                    grounds* — which is not a light-ground defect but a chart
+                    with no theme at all, and it is why the audit that closed
+                    #837 route by route walked past it: the sheet only exists
+                    once something is clicked. Measured on midnight the grid
+                    stood at 11,6:1 against its ground where the dashboard's is
+                    at 1,2:1 — ten times too loud, so the scale read as data
+                    over the one curve it serves — and the gradations at 3,24:1,
+                    under the 4,5:1 floor that being **text** imposes on them.
+
+                    The two are therefore coloured **apart**, and that is the
+                    one place the substitution is not mechanical: Recharts fills
+                    a tick label with the axis' own `stroke`, so a single token
+                    would either shout the grid or hide the figures.
+
+                     - the grid and the axis lines are **chrome**, so they carry
+                       `--border` — the dashboard's grid entire, its `2 4` hair
+                       included, a grid being no more legible for hanging in a
+                       sheet than on a card;
+                     - the gradations are **text**, so they carry
+                       `--muted-foreground`, which clears the floor on both
+                       grounds rather than being assumed to.
+
+                    `chartChrome.test.ts` measures both, and refuses any chart
+                    that goes back to mounting a grid or an axis with no colour
+                    of its own. */}
+                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+                <XAxis
+                  dataKey="t"
+                  tickFormatter={(value: string) => f.date(value)}
+                  minTickGap={32}
+                  stroke="var(--border)"
+                  tick={{ fill: 'var(--muted-foreground)' }}
+                />
                 <YAxis
                   // On the data, never on the window asked for — fixing the
                   // domain to the request repeats on one axis the mistake the
@@ -140,6 +174,8 @@ export function PriceChart({
                   domain={['dataMin', 'dataMax']}
                   tickFormatter={(value: number) => f.currency(value, currency, 0)}
                   width={72}
+                  stroke="var(--border)"
+                  tick={{ fill: 'var(--muted-foreground)' }}
                 />
                 <Line
                   type="monotone"
