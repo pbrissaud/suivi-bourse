@@ -39,6 +39,7 @@ import scheduling
 import settings as settings_module
 import settings_registry
 import store
+import store_reads
 from events import (
     EventValidator, EventAggregator,
     AccountMetricPoint, PortfolioTotalPoint,
@@ -3255,10 +3256,38 @@ class SuiviBourseMetrics:
             # positions: a line sold in 2022 has no position left and every day
             # it was held still needs its price.
             symbols = {e.symbol for e in events if e.symbol}
-            price_pairs = {
-                sym: sorted(quotes.price_series(store_handle, sym).items())
-                for sym in symbols
-            }
+            # **One scan of ``price_point`` for all of them** (issue #844), and
+            # not one per symbol. :func:`quotes.price_series` is a
+            # ``WHERE symbol = ?`` on a table that carries neither index nor key
+            # (ADR-0007) and is not clustered by symbol, so each call reads it
+            # whole: a forty-line portfolio paid forty full scans every 120 s
+            # *and* again after every ``/api`` write (``replay_after_write``),
+            # each of them holding the single connection's ``RLock`` and so the
+            # request threads with it. It is the argument ``collapse_to_ladder``
+            # already writes down — one statement partitioned by symbol pays for
+            # one scan where N calls pay for N — applied where it had not been.
+            #
+            # Nothing about the figures moves, because the aggregated read says
+            # the same thing word for word: same ``price_converted IS NOT NULL``
+            # filter, same column, same survivor of the day (the last point,
+            # ``ts DESC``), partitioned by ``(day, symbol)`` instead of by day
+            # alone. Only the return shape differs, and the grouping below is
+            # the whole of the change: ``ORDER BY day, symbol`` means each
+            # symbol's list is already ascending by day, which is what
+            # ``state_at`` reads.
+            #
+            # A symbol the ledger never names is **dropped** rather than kept:
+            # ``oldest_priced`` under the horizon is read off this very table,
+            # and a price observed for a line nobody ever held is not a day this
+            # replay may be blocked on. A ledger symbol with no converted price
+            # is **absent** from the table rather than present-and-empty —
+            # ``price_at`` tells the two apart, and absence is what means *no
+            # price*, never zero.
+            price_pairs: Dict[str, List[Tuple[date, float]]] = {}
+            for close in store_reads.PortfolioReader(store_handle).daily_closes():
+                if close['symbol'] in symbols:
+                    price_pairs.setdefault(close['symbol'], []).append(
+                        (close['day'], float(close['price'])))
 
             def price_at(symbol, day):
                 pairs = price_pairs.get(symbol)
