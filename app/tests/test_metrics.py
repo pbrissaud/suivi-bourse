@@ -30,7 +30,6 @@ import runtime_view
 from main import SuiviBourseMetrics
 from events.schemas import Event, EventType
 from events.validator import EventValidationError
-from yfinance.exceptions import YFRateLimitError
 from urllib3.exceptions import NewConnectionError
 
 
@@ -344,7 +343,7 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
 def test_fetch_ticker_data_retries_after_rate_limit(
         store, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    tickers = iter([_RaisingTicker(YFRateLimitError()), fake_ticker()])
+    tickers = iter([_RaisingTicker(market.YFRateLimitError()), fake_ticker()])
     monkeypatch.setattr(market.yf, "Ticker", lambda s: next(tickers))
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
@@ -356,7 +355,7 @@ def test_fetch_ticker_data_exhausts_retries_returns_none(
         store, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker",
-                        lambda s: _RaisingTicker(YFRateLimitError()))
+                        lambda s: _RaisingTicker(market.YFRateLimitError()))
 
     assert metrics._fetch_ticker_data("AAPL", max_retries=3) == (None, None)
 

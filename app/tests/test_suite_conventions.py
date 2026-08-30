@@ -296,8 +296,11 @@ _MARKET_INFO = 'src/market_info.py'
 _BINDS_YFINANCE = re.compile(r'^\s*import\s+yfinance\b', re.MULTILINE)
 
 #: Reaching into it for a name — its exception classes, in practice. Held over
-#: `src/` alone: a test raises `YFRateLimitError` to drive the retry paths, and
-#: an exception class is the library's vocabulary rather than its edge.
+#: `src/` alone, because an exception class is the library's vocabulary rather
+#: than its edge: a test that has to raise one is not opening a second door.
+#: No test does today — `market` re-exports `YFRateLimitError`, so the suite
+#: reaches it through the edge like everything else — and the day one needs the
+#: library's own name for something the edge does not carry, it may take it.
 _READS_FROM_YFINANCE = re.compile(r'^\s*from\s+yfinance\b', re.MULTILINE)
 
 #: The sentinel yfinance answers with for a field it holds no value for, as a
@@ -350,8 +353,10 @@ def test_the_sentinel_is_named_in_one_module():
     defect only visible when the four readings are read together, and they were
     four screens apart.
 
-    The product is policed and the suite is not: a test driving the sentinel
-    through the edge has to write it down, and a fixture stating what Yahoo
-    answers is not a second definition of what the app does with it.
+    The product is policed and the suite is not: a fixture stating what Yahoo
+    answers is not a second definition of what the app does with it, and the
+    English word runs loose in the suite's own prose. Where a test means the
+    sentinel it says `market_info.UNDEFINED` all the same, which is why this
+    guard has no counterpart over `tests/`: it would read those sentences.
     """
     assert _offenders(_APP / 'src', _NAMES_THE_SENTINEL) == [_MARKET_INFO]

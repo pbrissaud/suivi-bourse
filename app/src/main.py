@@ -79,6 +79,14 @@ MANAGED_LOGGERS = (
     # what it says of a rate limit or a refused ticker is what an owner reaches
     # for DEBUG to read — the fetch paths logged under `suivi_bourse` while
     # they were methods of the runtime, and the name follows the module.
+    #
+    # The rename has a consequence at boot, and it is the norm rather than a
+    # regression: `LOG_LEVEL` reaches only the three loggers built with it
+    # above, so `market` starts at `logfmt_logger`'s INFO like the eleven
+    # other module loggers. A rate-limit warning is emitted where
+    # `LOG_LEVEL=ERROR` used to swallow it, and `price_history`'s debug line
+    # is not where `LOG_LEVEL=DEBUG` used to raise it. Below is how they are
+    # turned, and it is the only way any module logger is.
     'market',
 )
 

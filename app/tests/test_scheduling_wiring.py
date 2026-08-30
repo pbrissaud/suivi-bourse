@@ -27,6 +27,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
 import market
+import market_info
 import quotes
 import runtime_state
 import scheduling
@@ -1352,7 +1353,8 @@ def test_capture_exchange_of_maps_failed_and_undefined_to_none(
                  store, mocker)
 
     def _fetch(symbol):
-        return (None, None) if symbol == "AAA" else (1.0, {"exchange": "undefined"})
+        return ((None, None) if symbol == "AAA"
+                else (1.0, {"exchange": market_info.UNDEFINED}))
 
     mocker.patch.object(m, "_fetch_ticker_data", side_effect=_fetch)
 
