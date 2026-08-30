@@ -24,12 +24,12 @@ import pandas as pd
 import pytest
 
 import main
+import market
 import quotes
 import runtime_view
 from main import SuiviBourseMetrics
 from events.schemas import Event, EventType
 from events.validator import EventValidationError
-from yfinance.exceptions import YFRateLimitError
 from urllib3.exceptions import NewConnectionError
 
 
@@ -242,7 +242,7 @@ def test_constructor_reads_the_published_shares_and_opens_nothing(store):
 def test_fetch_ticker_data_success_and_mapping(store,
                                                fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
 
@@ -261,7 +261,7 @@ def test_fetch_ticker_data_success_and_mapping(store,
 def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(store,
                                                           fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"trailingPE": None}))
 
     _, info = metrics._fetch_ticker_data("AAPL")
@@ -271,7 +271,7 @@ def test_fetch_ticker_data_pe_ratio_falls_back_to_forward(store,
 def test_fetch_ticker_data_none_dividend_yield_preserved(
         store, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
     _, info = metrics._fetch_ticker_data("AAPL")
@@ -282,7 +282,7 @@ def test_fetch_ticker_data_empty_history_returns_none(
         store, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
     empty = fake_ticker(history_df=pd.DataFrame())
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: empty)
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: empty)
 
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
 
@@ -307,7 +307,7 @@ def test_fetch_ticker_data_uses_last_non_nan_close(
         index=idx,
     )
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
 
@@ -334,7 +334,7 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
         index=idx,
     )
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(history_df=df))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(history_df=df))
 
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
     assert "AAPL" not in metrics._share_info_cache
@@ -343,8 +343,8 @@ def test_fetch_ticker_data_all_nan_close_returns_none(
 def test_fetch_ticker_data_retries_after_rate_limit(
         store, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    tickers = iter([_RaisingTicker(YFRateLimitError()), fake_ticker()])
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: next(tickers))
+    tickers = iter([_RaisingTicker(market.YFRateLimitError()), fake_ticker()])
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: next(tickers))
 
     last_quote, info = metrics._fetch_ticker_data("AAPL")
     assert last_quote == 185.0
@@ -354,8 +354,8 @@ def test_fetch_ticker_data_retries_after_rate_limit(
 def test_fetch_ticker_data_exhausts_retries_returns_none(
         store, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
-                        lambda s: _RaisingTicker(YFRateLimitError()))
+    monkeypatch.setattr(market.yf, "Ticker",
+                        lambda s: _RaisingTicker(market.YFRateLimitError()))
 
     assert metrics._fetch_ticker_data("AAPL", max_retries=3) == (None, None)
 
@@ -363,7 +363,7 @@ def test_fetch_ticker_data_exhausts_retries_returns_none(
 def test_fetch_ticker_data_runtime_error_returns_none(
         store, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: _RaisingTicker(RuntimeError("kaboom")))
 
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
@@ -372,7 +372,7 @@ def test_fetch_ticker_data_runtime_error_returns_none(
 def test_fetch_ticker_data_connection_error_returns_none(
         store, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: _RaisingTicker(NewConnectionError(None, "no route")))
 
     assert metrics._fetch_ticker_data("AAPL") == (None, None)
@@ -386,7 +386,7 @@ def test_a_scrape_writes_one_price_point_and_refreshes_the_quote_row(
         store, fake_ticker, monkeypatch):
     """The whole of the scrape's write, asserted on the two tables it owns."""
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
     metrics.expose_metrics()
 
@@ -421,7 +421,7 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
         "INSERT INTO position (account, symbol, name, quantity, cost_basis,"
         "                      realized_gain, received_dividend) "
         "VALUES ('pea', 'AAPL', 'Apple', 4, 600.0, 0, 0)")
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
     metrics.expose_metrics()
 
@@ -431,7 +431,7 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
 def test_a_missing_dividend_yield_is_stored_as_null_not_as_zero(
         store, fake_ticker, monkeypatch):
     metrics, _ = _build_metrics([_valid_shares()], store)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
     metrics.expose_metrics()
@@ -452,7 +452,7 @@ def test_a_write_error_on_one_symbol_does_not_abort_the_rest(
         store, fake_ticker, monkeypatch, mocker):
     shares = [_valid_shares("AAPL", "Apple"), _valid_shares("MSFT", "Microsoft")]
     metrics, _ = _build_metrics(shares, store)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
     # The first symbol's write raises; the second must still be attempted.
     real = quotes.record_quote
     calls = {"n": 0}

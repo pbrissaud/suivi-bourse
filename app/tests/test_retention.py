@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 import main
+import market
 import quotes
 import retention
 import settings_registry
@@ -612,7 +613,7 @@ def test_the_rebuild_asks_for_the_finest_bars_the_api_still_sells(store, mocker)
             asked.append(kwargs['interval'])
             return pd.DataFrame()
 
-    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    mocker.patch.object(market.yf, 'Ticker', lambda symbol: _Ticker())
     metrics = _metrics(store)
     # The one instant in this file that is not the literal ``NOW``: the ceiling
     # is measured against Yahoo's *today*, so the call site reads the product's
@@ -672,7 +673,7 @@ def test_a_rebuild_started_today_buys_the_one_to_two_year_band_by_the_hour(
             asked.append((kwargs['start'], kwargs['end'], kwargs['interval']))
             return pd.DataFrame()
 
-    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    mocker.patch.object(market.yf, 'Ticker', lambda symbol: _Ticker())
     # The ceiling is measured against Yahoo's *today*, so the whole fixture is
     # dated from the same clock the call site reads — UTC, stated, like every
     # other read in the tree (#781). The literal ``NOW`` would put the ledger a
@@ -717,7 +718,7 @@ def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
             asked.append((kwargs['start'], kwargs['end'], kwargs['interval']))
             return pd.DataFrame()
 
-    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    mocker.patch.object(market.yf, 'Ticker', lambda symbol: _Ticker())
     today = datetime.now(UTC)
     acquired = Event((today - timedelta(days=1800)).date(), EventType.BUY,
                      'AAPL', 'Apple Inc', quantity=10, unit_price=100.0)
@@ -773,7 +774,7 @@ def test_a_gap_wider_than_two_years_is_closed_on_both_sides_of_the_ceiling(
             return pd.DataFrame({'Close': [100.0]},
                                 index=pd.DatetimeIndex([last]))
 
-    mocker.patch.object(main.yf, 'Ticker', lambda symbol: _Ticker())
+    mocker.patch.object(market.yf, 'Ticker', lambda symbol: _Ticker())
     today = datetime.now(UTC)
     events = [
         Event((today - timedelta(days=1100)).date(), EventType.BUY, 'AAPL',

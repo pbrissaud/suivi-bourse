@@ -26,6 +26,8 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
+import market
+import market_info
 import quotes
 import runtime_state
 import scheduling
@@ -149,7 +151,7 @@ def _job(job_id):
 def test_scrape_symbol_regular_writes_and_rearms_at_base_interval(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -166,7 +168,7 @@ def test_scrape_symbol_coerces_unknown_state_to_regular_and_writes(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)
     # Default fake_ticker has no marketState -> coerced REGULAR (fail-open).
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker())
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -180,7 +182,7 @@ def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
     next_open_ts = (NOW + timedelta(hours=2)).timestamp()
     meta = {"currentTradingPeriod": {"regular": {"start": next_open_ts}}}
     monkeypatch.setattr(
-        main.yf, "Ticker",
+        market.yf, "Ticker",
         lambda s: fake_ticker(market_state="CLOSED", history_metadata=meta))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -213,7 +215,7 @@ def test_scrape_symbol_writes_one_point_however_many_accounts_hold_it(
     """
     shares = [_share(account="pea"), _share(account="cto")]
     m = _metrics(shares, store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -249,7 +251,7 @@ def test_scrape_symbol_success_resets_failure_count(
     """A successful write clears an accumulated backoff back to base_interval."""
     m = _metrics([_share("AAPL")], store, mocker)
     m._failure_counts["AAPL"] = 5
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -348,7 +350,7 @@ def test_the_scrape_carries_no_perf_state_at_all(
     that the replay following a write is a second caller.
     """
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -366,7 +368,7 @@ def test_scrape_symbol_failed_store_write_is_named_as_such(
     m = _metrics([_share()], store, mocker)
     mocker.patch.object(main.quotes, "record_quote",
                         side_effect=RuntimeError("the store refused the write"))
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -406,7 +408,7 @@ def test_the_backfill_signals_nothing_to_the_perf_job(
     m.config_manager._events = [
         Event(date(2020, 1, 15), EventType.BUY, "AAPL", "Apple",
               quantity=10, unit_price=150.0)]
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(rows=2))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(rows=2))
 
     m.backfill()
 
@@ -478,7 +480,7 @@ def test_a_closed_probe_fetches_successfully_and_writes_nothing(
     carries the two facts side by side and outlives the exporter (#806).
     """
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -551,7 +553,7 @@ def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
     m.staleness_horizon = 900
     # Live close is 185.0 (fake_ticker default); the stored value never advances.
     _freeze_the_writer(store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Cycle 1: baseline — no signal yet.
     m._scrape_symbol("AAPL", now=NOW)
@@ -585,7 +587,7 @@ def test_the_sonde_watches_the_native_price_and_never_a_converted_one(
     # A conversion lands on the same row without the native price moving.
     store.execute("UPDATE symbol_quote SET last_price_converted = 210.0, "
                   "last_fx_rate = 1.1 WHERE symbol = 'AAPL'")
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
     m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
@@ -601,7 +603,7 @@ def test_sonde_no_false_positive_first_tick_after_close(
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     _freeze_the_writer(store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     # Yesterday's last REGULAR cycle baselines the series.
     m._scrape_symbol("AAPL", now=NOW)
@@ -623,7 +625,7 @@ def test_sonde_no_false_positive_when_writer_advances_value(
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), 180.0)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
     m._scrape_symbol("AAPL", now=NOW + timedelta(seconds=900))
@@ -645,7 +647,7 @@ def test_sonde_does_not_run_on_closed_market(
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
     read = mocker.spy(main.quotes, "last_price")
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -661,7 +663,7 @@ def test_sonde_disabled_when_horizon_non_positive(
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 0
     read = mocker.spy(main.quotes, "last_price")
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -678,7 +680,7 @@ def test_sonde_read_error_never_disturbs_scrape(
     m.staleness_horizon = 900
     mocker.patch.object(main.quotes, "last_price",
                         side_effect=RuntimeError("db down"))
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -701,7 +703,7 @@ def test_the_sonde_asks_once_per_symbol_however_many_holdings(
     m = _metrics(shares, store, mocker)
     m.staleness_horizon = 900
     read = mocker.spy(main.quotes, "last_price")
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -767,7 +769,7 @@ def test_an_account_that_sold_out_stops_being_written(
     m = _metrics([_share("AAPL", account="pea"),
                   _share("AAPL", account="cto", quantity=0)],
                  store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -783,7 +785,7 @@ def test_the_synchronous_driver_skips_a_sold_position_too(
     def ticker(symbol):
         fetched.append(symbol)
         return fake_ticker()
-    monkeypatch.setattr(main.yf, "Ticker", ticker)
+    monkeypatch.setattr(market.yf, "Ticker", ticker)
 
     m.expose_metrics()
 
@@ -807,7 +809,7 @@ def test_selling_out_removes_the_scrape_job_and_forgets_its_last_pass(
     polled and goes on being reconstructed (#703).
     """
     m = _metrics([_share("AAPL"), _share("ALO", "Alstom")], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
     m._scrape_symbol("ALO", now=NOW)
     assert m.recorder.scrape_of("ALO") is not None
     m.scheduler.reset_mock()
@@ -888,7 +890,7 @@ def test_scrape_symbol_does_not_rearm_when_symbol_no_longer_held(
     """In-flight half of the race guard: a job removed mid-cycle must not
     re-add itself after reconcile's remove_job."""
     m = _metrics([_share("AAPL")], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
     # Symbol departs between fetch and re-arm.
     m.config_manager._shares = []
 
@@ -1112,7 +1114,7 @@ def test_scrape_symbol_rearm_carries_misfire_and_max_instances(
         store, fake_ticker, mocker, monkeypatch):
     """The self-reschedule (not just the bootstrap) keeps the misfire policy."""
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
+    monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
 
@@ -1351,7 +1353,8 @@ def test_capture_exchange_of_maps_failed_and_undefined_to_none(
                  store, mocker)
 
     def _fetch(symbol):
-        return (None, None) if symbol == "AAA" else (1.0, {"exchange": "undefined"})
+        return ((None, None) if symbol == "AAA"
+                else (1.0, {"exchange": market_info.UNDEFINED}))
 
     mocker.patch.object(m, "_fetch_ticker_data", side_effect=_fetch)
 

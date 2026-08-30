@@ -190,8 +190,8 @@ def fake_ticker():
 
     Call it to build a ticker-like object, then monkeypatch it in, e.g.::
 
-        import main
-        monkeypatch.setattr(main.yf, "Ticker", lambda symbol: fake_ticker())
+        import market
+        monkeypatch.setattr(market.yf, "Ticker", lambda symbol: fake_ticker())
 
     The returned object exposes:
       - ``.history(*args, **kwargs)`` -> pandas.DataFrame with a tz-aware

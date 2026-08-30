@@ -20,6 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import contextmanager
 
 import main
+import market
 import quotes
 import runtime_state
 import scheduling
@@ -108,7 +109,7 @@ def _metrics(shares, store, mocker, **manager):
 def test_a_regular_pass_records_the_state_it_acted_on_and_its_counter(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share(account="pea")], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -152,7 +153,7 @@ def test_an_unrecognised_state_records_the_coercion_beside_the_raw_value(
     stays whatever it was, so the record carries both and the pill reads the
     coercion — otherwise the row would claim a state the scheduler ignored."""
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="SOMETHING_NEW"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -175,7 +176,7 @@ def test_a_refused_write_is_recorded_although_617s_counter_stays_zero(
     say this.
     """
     m = _metrics([_share()], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
     mocker.patch.object(main.quotes, "record_quote",
                         side_effect=RuntimeError("connection refused"))
@@ -196,7 +197,7 @@ def test_a_closed_pass_is_recorded_without_touching_the_counter(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)
     m._failure_counts["AAPL"] = 2
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -218,7 +219,7 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
     warning already in the log.
     """
     m = _metrics([_share(account="pea")], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(close=185.0, market_state="REGULAR"))
     # The stored price is frozen while the live quote moved, and the sonde's
     # memory says it has been frozen for longer than the horizon. The writer is
@@ -241,7 +242,7 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
 def test_a_departed_symbol_loses_its_records_with_its_counter(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share("AAPL")], store, mocker)
-    monkeypatch.setattr(main.yf, "Ticker",
+    monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
     m._scrape_symbol("AAPL", now=NOW)
     assert m.recorder.scrape_of("AAPL") is not None

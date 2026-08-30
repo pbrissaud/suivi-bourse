@@ -408,6 +408,9 @@ src/
 ├── carrying.py         # pure: the carrying price, the holding window, the backward anchor
 ├── retention.py        # pure: the three rungs, the two walls
 ├── fx.py               # pure: the reporting currency, GBp, one TTL cache per pair
+├── market_info.py      # pure: the vocabulary of a Yahoo payload — its keys and
+│                       #       its `'undefined'` sentinel, named here and nowhere else
+├── market.py           # the one `import yfinance`: five gestures, three error policies
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state

@@ -239,7 +239,7 @@ def test_the_serialization_guard_reads_the_shape_and_not_the_name():
 #: break*: **no store, no yfinance, `now` injected**. What that costs is
 #: measurable at the import, which is the one form of it a test can hold.
 _PURE = ('scheduling', 'performance', 'carrying', 'retention', 'fx',
-         'boot_env', 'mounts')
+         'boot_env', 'mounts', 'market_info')
 
 #: The edges a pure module must not reach — the store, the market, and the two
 #: file readers. There was a fifth, and it is how the violation was found:
@@ -281,3 +281,82 @@ def test_the_pure_modules_are_pure_at_the_import():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == '', result.stdout
+
+
+#: The market edge, and the two halves #846 split it into. `market.py` is the
+#: impure one — `yf.Ticker`, the retries, the three error policies — and
+#: `market_info.py` the pure translation, which is why the second is in `_PURE`
+#: above and the first can never be.
+_MARKET = 'src/market.py'
+_MARKET_INFO = 'src/market_info.py'
+
+#: Binding the library, which is the door the suite fakes: this is the
+#: repository's own grep for the library's import, written as a rule instead —
+#: and spelled so this file is not itself an answer to that grep.
+_BINDS_YFINANCE = re.compile(r'^\s*import\s+yfinance\b', re.MULTILINE)
+
+#: Reaching into it for a name — its exception classes, in practice. Held over
+#: `src/` alone, because an exception class is the library's vocabulary rather
+#: than its edge: a test that has to raise one is not opening a second door.
+#: No test does today — `market` re-exports `YFRateLimitError`, so the suite
+#: reaches it through the edge like everything else — and the day one needs the
+#: library's own name for something the edge does not carry, it may take it.
+_READS_FROM_YFINANCE = re.compile(r'^\s*from\s+yfinance\b', re.MULTILINE)
+
+#: The sentinel yfinance answers with for a field it holds no value for, as a
+#: **string literal**: the English word appears in half a dozen docstrings
+#: talking about something else entirely — an annualized rate over a zero
+#: horizon, the unit price of a position nobody holds — and none of those is
+#: the subject.
+_NAMES_THE_SENTINEL = re.compile(r"""['"]undefined['"]""")
+
+
+def _offenders(root, pattern):
+    """The files of one root whose text matches, this one excepted."""
+    scanned = sorted(root.rglob('*.py'))
+    # Asserted per root, for the reason written on the clock guard above: a
+    # root that stopped resolving reads no file and reports clean for ever.
+    assert len(scanned) > 20, root
+    return sorted(path.relative_to(_APP).as_posix() for path in scanned
+                  if path.resolve() != _THIS and pattern.search(path.read_text()))
+
+
+def test_the_market_edge_is_imported_in_one_module():
+    """#846, checked on the source: one edge, one import.
+
+    The sibling of `test_the_pure_modules_are_pure_at_the_import`, and it holds
+    the other half of the same rule. Purity is measurable at the import because
+    a pure module imports **nothing** heavy; the market edge is measurable
+    there too, because it is the one module that may. Between the two,
+    `yfinance` has exactly one door in the tree — and it is the absence of that
+    door that made three divergent translations of one payload possible, every
+    path that wanted to speak to Yahoo having to be a method of the same class.
+
+    `app/tests/` is policed beside `app/src/`, because the suite's one faked
+    external edge is that same door (`monkeypatch.setattr(market.yf, "Ticker",
+    ...)`): a test binding the library itself would be a second one.
+    """
+    binders = (_offenders(_APP / 'src', _BINDS_YFINANCE)
+               + _offenders(_APP / 'tests', _BINDS_YFINANCE))
+    assert binders == [_MARKET]
+
+    # And in the product, the exception classes come in at the same door.
+    assert _offenders(_APP / 'src', _READS_FROM_YFINANCE) == [_MARKET]
+
+
+def test_the_sentinel_is_named_in_one_module():
+    """#846: `'undefined'` is Yahoo's word, and the translation is where it is said.
+
+    It used to be **set** as a default on three keys in one method, **removed**
+    in two others that did not remove it the same way, and **not removed** by
+    the translation towards the quotation columns — which is issue #845, a
+    defect only visible when the four readings are read together, and they were
+    four screens apart.
+
+    The product is policed and the suite is not: a fixture stating what Yahoo
+    answers is not a second definition of what the app does with it, and the
+    English word runs loose in the suite's own prose. Where a test means the
+    sentinel it says `market_info.UNDEFINED` all the same, which is why this
+    guard has no counterpart over `tests/`: it would read those sentences.
+    """
+    assert _offenders(_APP / 'src', _NAMES_THE_SENTINEL) == [_MARKET_INFO]
