@@ -360,11 +360,13 @@ def collapse_to_ladder(store, now: datetime) -> int:
 
     Keeping the last point flat would **delete the only usable value in the
     bucket**: measured on a store, a day carrying ``10:00 converted`` and
-    ``17:00 NULL`` disappears from :func:`price_series` entirely, so the perf
-    job carries the previous day's price onto it, and — since ``oldest_priced``
-    is derived from those same pairs — a symbol's earliest converted day moving
-    forward widens its block in :func:`performance.account_horizon`, moves the
-    account's bound and has the prune drop days. That is the #708/#765 crater
+    ``17:00 NULL`` disappears entirely from
+    :meth:`store_reads.PortfolioReader.daily_closes`, which the perf job reads,
+    so the job carries the previous day's price onto it, and — since
+    ``oldest_priced`` is derived from those same pairs — a symbol's earliest
+    converted day moving forward widens its block in
+    :func:`performance.account_horizon`, moves the account's bound and has the
+    prune drop days. That is the #708/#765 crater
     class, from a ``DELETE`` that cannot be undone: at best #704's lateral pass
     later refills the survivor at the *historical daily* rate, which is a
     different number from the spot rate that was stored.
@@ -830,11 +832,16 @@ def last_price(store, symbol: str) -> Optional[float]:
 def price_series(store, symbol: str) -> Dict[date, float]:
     """``{day: close}`` — one entry per calendar day that has a **converted** price.
 
-    The shared price source the performance module is fed through. The survivor
-    of a day is its **last** point, which is the rule every other daily read in
-    the product follows (and the one the retention ladder will inherit in #705):
-    a survivor chosen otherwise would make the value jump when a day is
-    collapsed.
+    **No production reader since #844**: the performance module takes its daily
+    closes from :meth:`store_reads.PortfolioReader.daily_closes`, which reads
+    every symbol in one scan of ``price_point`` where this one asks per symbol.
+    What is kept here is the reference implementation the perf price-source test
+    measures that scan against, day for day and price for price.
+
+    The survivor of a day is its **last** point, which is the rule every other
+    daily read in the product follows (and the one the retention ladder will
+    inherit in #705): a survivor chosen otherwise would make the value jump when
+    a day is collapsed.
 
     **Converted, and it has to be** (issue #702). Everything downstream of this
     is money in the reporting currency — ``holdings_value``, ``total_value``,
