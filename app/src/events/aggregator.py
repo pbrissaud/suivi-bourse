@@ -245,7 +245,7 @@ class EventAggregator:
         date-sorted, so a same-date event just supersedes the day's prior
         snapshot — the timeline keeps exactly one snapshot per change date.
         """
-        snap = copy.deepcopy(state)
+        snap = copy.copy(state)
         if snaps and snaps[-1][0] == on_date:
             snaps[-1] = (on_date, snap)
         else:

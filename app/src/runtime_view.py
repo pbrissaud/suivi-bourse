@@ -27,11 +27,7 @@ import mounts
 import runtime_state
 import scheduling
 
-#: Mirrors ``events.schemas.DEFAULT_ACCOUNT``. Duplicated for the same reason
-#: :mod:`portfolio_view` duplicates it: importing ``events.schemas`` pulls the
-#: package ``__init__`` and with it pandas and openpyxl, which a pure view module
-#: has no business dragging in.
-DEFAULT_ACCOUNT = 'default'
+from events.schemas import DEFAULT_ACCOUNT  # noqa: F401  (re-exported)
 
 # --------------------------------------------------------------------- #
 # The pills (#652 déc. 15)

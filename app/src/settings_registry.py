@@ -131,10 +131,6 @@ def _int(raw: str) -> int:
     return int(raw)
 
 
-def _str(raw: str) -> str:
-    return raw
-
-
 def _currency(raw: str) -> str:
     """An ISO-4217 code, upper-cased.
 

@@ -390,12 +390,12 @@ def forward_backfill_window(
     return newest, end
 
 
-# Price-freshness sonde default horizon (issue #628, design #626). The operator
-# dial is ``staleness_horizon``, in the **store** — it has had no environment
-# form since #701, and ``SB_STALENESS_HORIZON`` is named at boot and obeyed by
-# nothing (#740). The default is a few ``REGULAR`` poll cycles wide so an
-# ordinary tick never trips the sonde.
-STALENESS_HORIZON = 900  # s
+# The price-freshness sonde's horizon (issue #628, design #626) has no default
+# here. The dial is ``staleness_horizon``, it lives in the **store**, and
+# ``settings_registry`` declares the shipped value once — a second spelling in
+# this module was read by nothing and could only ever drift from the one the
+# app obeys. ``SB_STALENESS_HORIZON`` is named at boot and obeyed by nothing
+# (#701, #740).
 
 # Relative tolerance for "the stored price is unchanged". A live quote differing
 # by more than this fraction has *moved*; anything within it is treated as the

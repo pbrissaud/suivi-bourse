@@ -18,7 +18,7 @@ from scheduling import (
     decide, extract_market_context, compute_pool_size,
     forward_backfill_window, price_freshness_step, SondeState,
     clip_to_hourly_ceiling, history_interval,
-    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP, STALENESS_HORIZON,
+    SHORT_RETRY, MAX_SLEEP, FAILURE_GRACE, POOL_CAP,
     HOURLY, DAILY, HOURLY_CEILING_DAYS)
 
 
@@ -1127,5 +1127,9 @@ def test_at_exactly_horizon_counts_as_stale():
 
 def test_default_horizon_is_several_cycles_wide():
     # The shipped default is comfortably wider than a REGULAR poll interval so an
-    # ordinary tick can't trip the sonde.
-    assert STALENESS_HORIZON >= 5 * BASE
+    # ordinary tick can't trip the sonde. Read from the registry, which is where
+    # the dial's default is declared — asserting on a copy would attest a number
+    # the app does not obey.
+    import settings_registry
+
+    assert settings_registry.default_for('staleness_horizon') >= 5 * BASE

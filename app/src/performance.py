@@ -408,19 +408,29 @@ class Performance:
         return self.daily[-1].gain_absolu if self.daily else None
 
 
-def xirr(cashflows: List[Tuple[date, float]],
-         low: float = -0.9999, high: float = 1e9,
-         tol: float = 1e-8, max_iter: int = 200) -> Optional[float]:
+#: The bracket the bisection searches, and when it stops. Constants and not
+#: parameters: no caller has ever passed one, and a solver whose tolerance is a
+#: per-call argument invites two figures for one portfolio — the annualised rate
+#: is the product's, not the caller's.
+_XIRR_LOW = -0.9999
+_XIRR_HIGH = 1e9
+_XIRR_TOL = 1e-8
+_XIRR_MAX_ITER = 200
+
+
+def xirr(cashflows: List[Tuple[date, float]]) -> Optional[float]:
     """Annualized internal rate of return by bisection (no external dependency).
 
     ``cashflows`` are (date, amount) from the investor's perspective: money put
     in is negative, money/received value taken out is positive. Returns None when
     the flows span no time (nothing to annualize) or don't bracket a root within
-    ``[low, high]`` — including an ultra-short horizon whose annualized rate would
-    blow past the bracket (gain_absolu is the guard for that case).
+    ``[_XIRR_LOW, _XIRR_HIGH]`` — including an ultra-short horizon whose
+    annualized rate would blow past the bracket (gain_absolu guards that case).
     """
     if not cashflows:
         return None
+
+    low, high = _XIRR_LOW, _XIRR_HIGH
 
     dates = [d for d, _ in cashflows]
     t0 = min(dates)
@@ -437,10 +447,10 @@ def xirr(cashflows: List[Tuple[date, float]],
     if f_low * f_high > 0:
         return None  # not bracketed -> undefined
 
-    for _ in range(max_iter):
+    for _ in range(_XIRR_MAX_ITER):
         mid = (low + high) / 2.0
         f_mid = npv(mid)
-        if abs(f_mid) < tol or (high - low) < tol:
+        if abs(f_mid) < _XIRR_TOL or (high - low) < _XIRR_TOL:
             return mid
         if f_low * f_mid < 0:
             high, f_high = mid, f_mid

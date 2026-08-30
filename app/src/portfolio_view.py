@@ -45,6 +45,7 @@ from typing import (
 )
 
 from carrying import carrying_price, is_quoted, was_quoted
+from events.schemas import unit_cost as _unit_cost
 
 #: Fields summed straight across a share's accounts. All three are *amounts* or
 #: quantities of the same instrument, so adding them is meaningful — unlike the
@@ -57,22 +58,24 @@ _ADDITIVE = ('quantity', 'cost_basis', 'realized_gain', 'received_dividend')
 
 def unit_cost(quantity: Optional[float],
               cost_basis: Optional[float]) -> Optional[float]:
-    """The weighted-average unit price — the one division, re-exported.
+    """The weighted-average unit price — the one division, called not re-spelled.
 
-    A thin alias of :func:`events.schemas.unit_cost` so this module stays free
-    of the events package (importing it pulls pandas and openpyxl into a pure
-    view module). The rule it carries is the French tax one (CGI art. 150-0 D)
-    and it has no dial: ``cost_basis / quantity``, and ``None`` when nobody holds
-    any — a position with no quantity has no unit cost, it has a realized gain.
+    The rule is the French tax one (CGI art. 150-0 D) and it has no dial, so it
+    divides in exactly one place: :func:`events.schemas.unit_cost`. This wrapper
+    exists for the two ``None`` the store can hand a view and the domain helper
+    does not take — an absent basis reads as *nothing paid*, not as a crash.
+
+    Importing ``events.schemas`` is free since the package stopped loading its
+    machinery at module level (:pep:`562` in ``events/__init__.py``): the
+    vocabulary imports nothing but the standard library, and
+    ``test_the_pure_modules_are_pure_at_the_import`` holds that on the source.
 
     Summed across accounts this *is* the weighted mean: ``Σ cost_basis /
     Σ quantity``. A share bought 1 × 100 € and 9 × 200 € cost 190 € a share, not
     300 € and not 150 € — the two answers a plain sum and a plain mean give, both
     of which look like prices.
     """
-    if not quantity:
-        return None
-    return (cost_basis or 0.0) / quantity
+    return _unit_cost(quantity or 0.0, cost_basis or 0.0)
 
 
 @dataclass(frozen=True)

@@ -702,9 +702,7 @@ def _refuse(store, event: Event) -> None:
     *nothing is written* when there is one, and that is the transaction's doing,
     not this function's.
     """
-    issues = _validator(store).issues([event])
-    if issues:
-        raise InvalidEntry(issues[0].message, field=issues[0].field)
+    _refuse_all(store, [event])
 
 
 def _validator(store, *, declaring: Sequence[str] = (),

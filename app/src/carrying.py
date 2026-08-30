@@ -26,9 +26,10 @@ Three things about it are decisions rather than details:
   and the latent gain identically zero for as long as the fallback holds, which
   in turn is what makes the convention statable on screen in one sentence. The
   division is the same rule as :func:`events.schemas.unit_cost` (ADR-0003, CGI
-  art. 150-0 D); it is spelled again here rather than imported because this
-  module is read by :mod:`portfolio_view`, which stays free of the ``events``
-  package — importing it pulls pandas and openpyxl into a pure view module.
+  art. 150-0 D), and it is that function that is called: the ``events`` package
+  stopped loading its machinery at module level (:pep:`562` in
+  ``events/__init__.py``), so the vocabulary now imports nothing but the standard
+  library and this module stays pure while spelling the rule once.
 
 * **The predicate has two terms, not one.** *No price was observed* **and** *the
   symbol's backfill is terminal*. The first term lives in :func:`carrying_price`;
@@ -78,6 +79,8 @@ what it is worth.
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Tuple
 
+from events.schemas import unit_cost
+
 
 def carrying_price(observed: Optional[float],
                    quoted: bool,
@@ -120,9 +123,7 @@ def carrying_price(observed: Optional[float],
         # A quote exists and its conversion does not: *waiting for a rate*, which
         # is the absence the page already knows how to say. Not a carrying price.
         return None
-    if not quantity:
-        return None
-    return (cost_basis or 0.0) / quantity
+    return unit_cost(quantity or 0.0, cost_basis or 0.0)
 
 
 def was_quoted(first_quoted: Optional[date], day: date) -> bool:
