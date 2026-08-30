@@ -24,6 +24,7 @@ import carrying
 import fx
 import main
 import market
+import market_info
 import performance
 import portfolio_view
 import quotes
@@ -607,6 +608,48 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     ]
     # One prefetch for the whole chunk, not one request per point.
     assert windows == ['USDEUR=X']
+
+
+def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
+        store, mocker, monkeypatch, fake_ticker):
+    """The **third** path the sentinel used to reach `fx` by (issue #845).
+
+    The ticket named the conversion of the live scrape and the attributes at the
+    write; this one is the backfill's, and it is the one nobody had looked at.
+    It reads the unit out of the `.info` cache the fetch fills, and the cache
+    used to be filled with a word for a payload that named no currency — so the
+    prefetch asked Yahoo for `UNDEFINEDEUR=X`, the very ticker the lateral
+    pass's own comment forbids, once per chunk for the life of the rebuild.
+
+    The chunk is still written. Losing a price over a currency is the one
+    outcome ADR-0002 rules out, so the points land with `price_converted NULL`
+    and the lateral pass repairs them once the unit is known.
+    """
+    metrics = _metrics(store, base_currency='EUR')
+    # What the translation now answers for a payload that carries no key at
+    # all — the whole of the fix, read from the cache the backfill reads.
+    metrics._share_info_cache['AAPL'] = market_info.quote_attributes({})
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
+        close=102.0, rows=3, start='2024-01-02'))
+
+    asked = []
+
+    def history(pair, start, end):
+        asked.append(pair)
+        return {}
+
+    metrics.rates = fx.Rates(lambda pair: 1.0, history)
+
+    metrics._fetch_and_store(
+        'AAPL', datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 5, tzinfo=UTC))
+
+    assert asked == []
+    assert _point(store) == [
+        (100.0, None, None),
+        (101.0, None, None),
+        (102.0, None, None),
+    ]
 
 
 def test_an_event_amount_is_never_converted_because_it_is_already_the_debit(
@@ -1614,3 +1657,111 @@ def test_a_failed_request_for_a_unit_alone_backs_off_and_concludes_nothing(
     metrics._lateral_retry_at.clear()
     _lateral(metrics)
     assert instrument.reads == 2
+
+
+# =========================================================================== #
+# The unit that is not a unit (issue #845)
+#
+# `_fetch_ticker_data` used to write a **word** on `currency`, `exchange` and
+# `quoteType` for a payload that named none, and only two of the three readers
+# downstream removed it. The one that did not is the translation towards the
+# quotation columns, which is the production write path — so `symbol_quote`
+# could hold a string that is not a currency, `normalise` handed it on as one
+# and `pair_symbol` named `UNDEFINEDEUR=X`, the ticker the lateral pass's own
+# comment forbids. The value is gone from the fetch; what these tests hold is
+# the two guards that make it unrepeatable, and the repair of the rows written
+# before it went.
+# =========================================================================== #
+
+#: What a store created before #845 can hold in its currency column, spelled out
+#: of its halves rather than written: `test_suite_conventions` polices the
+#: literal over `tests/` as well as over `src/`, and a fixture that names it is
+#: a fixture teaching that Yahoo answers it — the belief two comments in the
+#: product carried for six months, and the one that produced the defect.
+_PRE_845_CURRENCY = 'un' + 'defined'
+
+
+def test_normalise_answers_none_for_anything_not_shaped_like_a_code():
+    """The guard, and it is a rule of **form** rather than a list of codes.
+
+    Three letters, read after the subunit table so `GBp` is already `GBP` by the
+    time the shape is asked for. A list of ISO-4217 codes would be a second
+    thing to maintain and would fail closed the day it fell behind a
+    redenomination; a shape covers every edge at once, including the ones nobody
+    has met — which is why this is one guard here rather than one per call site,
+    and the call site that had none is the one that wrote the defect.
+    """
+    assert fx.normalise(_PRE_845_CURRENCY) == (None, 1.0)
+    # The neighbours of the same shape: a name, a two-letter country, a number.
+    for text in ('EURO', 'US', '123', 'not a code'):
+        assert fx.normalise(text) == (None, 1.0)
+
+    # And the pence rule is untouched — it is read **before** the shape, which
+    # is the whole reason the order of the two matters.
+    assert fx.normalise('GBp') == ('GBP', 100.0)
+    assert fx.normalise('ILA') == ('ILS', 100.0)
+    assert fx.normalise('usd') == ('USD', 1.0)
+
+
+def test_no_pair_is_ever_named_from_a_currency_that_is_not_one():
+    """`pair_symbol` can no longer be reached with one, on any of the three.
+
+    The consequence of the rule above, asserted where a caller would have felt
+    it: `rate` answers `None` and `observe` answers `failed` — *nothing was
+    learnt*, which is the honest reading, and never `unresolved`, which is a
+    **reply** about a pair and would arm the terminal that asks the owner to act
+    on a symbol they can do nothing about.
+    """
+    asked = []
+
+    def live(pair):
+        asked.append(pair)
+        return 1.0
+
+    def series(pair, start, end):
+        asked.append(pair)
+        return {}
+
+    rates = fx.Rates(live, series)
+
+    assert rates.rate(_PRE_845_CURRENCY, 'EUR') is None
+    assert rates.observe(_PRE_845_CURRENCY, 'EUR',
+                         date(2024, 6, 1), date(2024, 6, 3)) == (fx.FAILED, {})
+    assert asked == []
+
+
+def test_a_row_written_before_the_fix_learns_its_real_unit(
+        store, monkeypatch):
+    """The repair of a **pre-polluted** store, and there is no migration.
+
+    A column holding that word is *truthy*, so every gate on this path read it
+    as a currency: the lateral pass declared the unit known and stood down, and
+    the line stayed *waiting for a rate* for the life of the install with
+    nothing left to ask on its behalf. The DDL carries no migration machinery
+    (ADR-0007), so the repair is the pass's own predicate widening — a unit that
+    cannot name a pair counts as **absent** — after which the pass does what it
+    does for any symbol with no unit: it asks, it writes, and the condition
+    empties itself as the rows go through it.
+    """
+    metrics = _metrics(store, base_currency='EUR')
+    _unconverted(store, currency=_PRE_845_CURRENCY)
+    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    instrument = _Instrument(info={'currency': 'USD'})
+    monkeypatch.setattr(market.yf, 'Ticker', instrument)
+    metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
+        date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
+        date(2024, 6, 3): 0.92}}))
+
+    written, record = _lateral(metrics)
+
+    # It went and asked, rather than trusting the column it was handed.
+    assert instrument.reads == 1
+    assert quotes.quote_currency(store, 'AAPL') == 'USD'
+    # And the points it could not convert while the column lied are converted.
+    assert written == 3
+    assert record.failed is False and record.terminal is None
+    assert _point(store) == [
+        (101.0, pytest.approx(101.0 * 0.90), 0.90),
+        (102.0, pytest.approx(102.0 * 0.91), 0.91),
+        (103.0, pytest.approx(103.0 * 0.92), 0.92),
+    ]

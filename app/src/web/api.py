@@ -115,6 +115,12 @@ def _carried():
     so the shares page pays one batched read and not one per row. An empty set is
     the honest answer on an install whose backfill is still running, and it is
     what leaves the priceless rows at an em dash until the rebuild concludes.
+
+    **The hot read pays for it too since #845**, and that is the cost of the
+    convention having two terms on both screens instead of one. It is the batch
+    the function was written for — its own docstring names *the shares page over
+    its whole table* as one of its two consumers — so the extra two queries are
+    for the whole payload and never two per row.
     """
     return quotes.terminal_symbols(
         _store(), _snapshot().backfill_windows(), datetime.now(timezone.utc))
@@ -290,6 +296,14 @@ def list_positions():
     answer *"you own nothing"* to somebody who has just declared everything they
     own.
 
+    ``terminal`` rides on each row, and it is the second term of the carrying
+    convention (#845, ADR-0004): the front cannot tell *no price yet* from *no
+    price ever* without it, and it was substituting the failure counter of
+    ``/api/runtime`` — an **optional** read (ADR-0026) — so a diagnostic probe
+    falling over changed what the shares table valued. It stays off that
+    resource for the same reason: that route touches no store by decision, since
+    it has to answer while the store cannot.
+
     ``base_currency`` is the head of the payload rather than a field of each row
     (ADR-0002): there is **one** reporting currency, and ``null`` is how the API
     states that nobody has answered the question yet — no route and no fourth
@@ -306,7 +320,7 @@ def list_positions():
     return jsonify({
         'base_currency': currency,
         'positions': portfolio_view.build_positions(
-            _reader().positions(), currency),
+            _reader().positions(), currency, _carried()),
     })
 
 

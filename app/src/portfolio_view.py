@@ -283,7 +283,8 @@ def _build_share(symbol: str, group: List[Dict[str, Any]],
 # --------------------------------------------------------------------- #
 
 def build_positions(rows: Sequence[Dict[str, Any]],
-                    base_currency: Optional[str]) -> List[Dict[str, Any]]:
+                    base_currency: Optional[str],
+                    terminal: Collection[str] = ()) -> List[Dict[str, Any]]:
     """P1's rows as ``GET /api/positions`` publishes them (#745).
 
     **One row per ``(account, symbol)``, folded nowhere.** Its v4 predecessor
@@ -303,12 +304,22 @@ def build_positions(rows: Sequence[Dict[str, Any]],
     null is *quoted, and the rate has not landed*, while ``price`` null is *never
     observed* — a position carried at its cost (ADR-0004). A single nullable
     number cannot tell the two apart, and they are not rendered alike.
+
+    ``terminal`` is the set of symbols whose backward pass has reached its bound
+    (:func:`quotes.terminal_symbols`), and it is here since #845 because the
+    carrying convention has **two** terms (ADR-0004) and only the first of them
+    crossed the wire: the front held *no quote observed* and replaced *and none
+    is coming* with a failure counter read off another resource, so during a
+    rebuild the shares table carried at cost the very line
+    :func:`valuation_series` below still refuses to value. One set, read once
+    for the whole payload, and the client is the judge of the pair.
     """
-    return [_build_position(row, base_currency) for row in rows]
+    return [_build_position(row, base_currency, terminal) for row in rows]
 
 
 def _build_position(row: Dict[str, Any],
-                    base_currency: Optional[str]) -> Dict[str, Any]:
+                    base_currency: Optional[str],
+                    terminal: Collection[str] = ()) -> Dict[str, Any]:
     """One P1 row on the wire.
 
     ``realised`` / ``dividends`` are the client's names for the store's
@@ -335,6 +346,15 @@ def _build_position(row: Dict[str, Any],
     available on the client either: a position carries a quantity, never the
     event that emptied it. The predicate lives in the SQL beside the sale it
     reads (:meth:`store_reads.PortfolioReader.positions`).
+
+    ``terminal`` is a **fact and not a verdict** (#845): *the backward pass has
+    reached this symbol's first acquisition*, nothing more. The verdict — carry
+    the line at its cost, or say nothing about it yet — has two terms and the
+    client holds the other one, which is why the payload does not name it
+    ``carried``. It rides on the holding's row like ``price`` and
+    ``fundamentals`` do, for the same reason: P1 is keyed by
+    ``(account, symbol)`` and the fact is the **symbol's**, so the front reads
+    it off whichever row of the group it folds first.
 
     ``fundamentals`` is the **instrument's** own attributes, and it rides on the
     holding's row for the reason ``price`` already does (#720): P1 hands them
@@ -369,6 +389,7 @@ def _build_position(row: Dict[str, Any],
             'rate_at': at,
         },
         'closed_at': instants.iso(row.get('closed_at')),
+        'terminal': row.get('symbol') in terminal,
         'fundamentals': _build_fundamentals(row),
     }
 

@@ -15,33 +15,20 @@ cache the backfill reads, the mapping the scrape hands to
 nowhere else in the tree — which is what the accessors at the bottom are for.
 A caller that wants the currency asks for the currency; it never spells a key.
 
-**The sentinel is named once**, and this module is the once. Yahoo answers
-:data:`UNDEFINED` for a field it holds no value for, and the tree used to *set*
-it as a default in one place and *remove* it in two others that did not agree —
-one of them removing it and one of them not, which is issue #845. This ticket
-moves the three readings without changing any of them: the sentinel still
-reaches exactly the columns it reaches today, it is simply said in one file.
+**And there is no sentinel any more** (issue #845). The string the tree used to
+put on ``currency``, ``exchange`` and ``quoteType`` when Yahoo held no value for
+them was **the app's own**, not yfinance's — the library does not contain it —
+and it was set in one place, removed in two that did not agree, and not removed
+by the translation towards the quotation columns, which is how it reached the
+currency column: read back out of it, it was named as one half of a pair
+(``UNDEFINEDEUR=X``), resolved to nothing, and armed ``unconvertible`` — the
+terminal that asks the owner to act, on a symbol they can do nothing about.
+``None`` says everything the word was trying to say and every reader downstream
+already knows how to read it, so the three defaults are simply gone and the two
+removals with them.
 """
 
 from typing import Mapping, Optional
-
-#: yfinance's own answer for a field it has no value for. It is a **string**
-#: that names an absence, so it must never be stored as if it were the value:
-#: read back out of the currency column it would be named as one half of a pair
-#: (``UNDEFINEDEUR=X``), resolve to nothing, and arm ``unconvertible`` — the
-#: terminal that asks the owner to act, on a symbol they can do nothing about.
-UNDEFINED = 'undefined'
-
-
-def real_value(value: Optional[str]) -> Optional[str]:
-    """``None`` for an absent value **or** for the sentinel, else the value.
-
-    The normalization the tree spelled by hand in two places and forgot in a
-    third. Empty counts as absent for the same reason blank counts as unset
-    everywhere else in the app: a field that says nothing is a field that has
-    nothing to say.
-    """
-    return value if value and value != UNDEFINED else None
 
 
 # --------------------------------------------------------------------------- #
@@ -49,15 +36,19 @@ def real_value(value: Optional[str]) -> Optional[str]:
 # --------------------------------------------------------------------------- #
 
 def quote_attributes(raw: Mapping) -> dict:
-    """The quotation attributes of a **live** fetch, from Yahoo's own mapping.
+    """The quotation attributes of a fetch, from Yahoo's own mapping.
 
-    The sentinel is *set* here, on the three text fields, exactly as the fetch
-    path has always set it — it is what a reader downstream then has to remove,
-    and the two that do it (:func:`exchange_of` and the currency the lateral
-    pass learns) now do it through :func:`real_value`. Preserving the defaults
-    rather than dropping them is deliberate: dropping them is #845, which is a
-    one-line change *in this file* once this ticket has landed, and doing it
-    here would make a move into a fix.
+    The three text fields are read **with no default** (#845): a key the payload
+    does not carry lands as ``None``, which is what the store writes as ``NULL``
+    and what every reader here already answers for a failed fetch. There was a
+    default, it was a word, and a word stored in the currency column is a
+    currency as far as the rest of the app is concerned.
+
+    It is the one translation of the attributes, for the live fetch and for the
+    single ``.info`` the lateral pass asks (:func:`market.symbol_attributes`).
+    Those were two functions until #845, and the difference between them was
+    exactly the sentinel — one removed it from the currency and one set it — so
+    with the sentinel gone there is one reading left and this is it.
 
     ``peRatio`` is the app's own word and has no Yahoo key: the trailing ratio
     when there is one, the forward ratio otherwise. The dividend yield is
@@ -66,9 +57,9 @@ def quote_attributes(raw: Mapping) -> dict:
     ``trailingAnnualDividendYield``. Scaling it here stored 532.
     """
     return {
-        'currency': raw.get('currency', UNDEFINED),
-        'exchange': raw.get('exchange', UNDEFINED),
-        'quoteType': raw.get('quoteType', UNDEFINED),
+        'currency': raw.get('currency'),
+        'exchange': raw.get('exchange'),
+        'quoteType': raw.get('quoteType'),
         'dividendYield': raw.get('dividendYield'),
         'peRatio': raw.get('trailingPE') or raw.get('forwardPE'),
         'marketCap': raw.get('marketCap'),
@@ -96,27 +87,6 @@ def live_attributes(raw: Mapping, history_meta: Optional[Mapping]) -> dict:
     return {**quote_attributes(raw), **market_context(raw, history_meta)}
 
 
-def learned_attributes(raw: Mapping) -> dict:
-    """The attributes of a symbol the lateral pass asked about, once (#773).
-
-    **Not** :func:`live_attributes`, and the two differences are the ones that
-    were there before this module existed. The sentinel is removed from the
-    currency, because this mapping's whole purpose is to answer *what unit is
-    this quoted in* and a sentinel stored there is the defect described on
-    :data:`UNDEFINED`. And no field is sentinel-defaulted, because this reading
-    writes ``symbol_quote`` for a symbol the scrape may never meet: a text
-    field Yahoo is silent about lands as ``NULL`` rather than as the word.
-    """
-    return {
-        'currency': real_value(raw.get('currency')),
-        'exchange': raw.get('exchange'),
-        'quoteType': raw.get('quoteType'),
-        'dividendYield': raw.get('dividendYield'),
-        'peRatio': raw.get('trailingPE') or raw.get('forwardPE'),
-        'marketCap': raw.get('marketCap'),
-    }
-
-
 # --------------------------------------------------------------------------- #
 # The app's vocabulary -> its readers
 # --------------------------------------------------------------------------- #
@@ -142,20 +112,23 @@ def quote_columns(info: Mapping) -> dict:
 def currency_of(info: Optional[Mapping]) -> Optional[str]:
     """The unit a translated mapping says the symbol is quoted in, or ``None``.
 
-    Read as it is stored, sentinel included: the conversion path has always
-    seen whatever the fetch put there, and a mapping learnt by the lateral pass
-    carries a currency :func:`real_value` has already been through.
+    Read as it is stored, and since #845 what is stored is what Yahoo said: a
+    payload naming no currency lands ``None`` here, so the conversion path, the
+    write path and the backfill's prefetch all see the absence rather than a
+    word that looks like a code.
     """
     return (info or {}).get('currency')
 
 
 def exchange_of(info: Optional[Mapping]) -> Optional[str]:
-    """The venue, or ``None`` for a failed fetch or the sentinel.
+    """The venue, or ``None`` for a failed fetch or a payload that names none.
 
     ``None`` so ``compute_pool_size`` treats the symbol as a solo market rather
-    than grouping every unknown venue into one giant cohort.
+    than grouping every unknown venue into one giant cohort — and the empty
+    string counts as absent for the same reason blank counts as unset everywhere
+    else in the app: a field that says nothing has nothing to say.
     """
-    return real_value((info or {}).get('exchange'))
+    return (info or {}).get('exchange') or None
 
 
 def market_state_of(info: Optional[Mapping]) -> Optional[str]:

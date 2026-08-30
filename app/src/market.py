@@ -241,10 +241,14 @@ def symbol_attributes(symbol: str) -> Optional[dict]:
     — the caller has to keep those two apart, since only the second is a reply
     it may remember. A completed request that names nothing answers a mapping
     whose currency is ``None``.
+
+    The translation is :func:`market_info.quote_attributes`, the same one the
+    live fetch goes through. It had one of its own until #845, and what made the
+    two differ was the sentinel this ticket deleted.
     """
     try:
         raw = yf.Ticker(symbol).info or {}
     except Exception as e:
         logger.warning(f"Could not fetch the attributes of {symbol}: {e}")
         return None
-    return market_info.learned_attributes(raw)
+    return market_info.quote_attributes(raw)

@@ -288,7 +288,6 @@ def test_the_pure_modules_are_pure_at_the_import():
 #: `market_info.py` the pure translation, which is why the second is in `_PURE`
 #: above and the first can never be.
 _MARKET = 'src/market.py'
-_MARKET_INFO = 'src/market_info.py'
 
 #: Binding the library, which is the door the suite fakes: this is the
 #: repository's own grep for the library's import, written as a rule instead —
@@ -303,7 +302,7 @@ _BINDS_YFINANCE = re.compile(r'^\s*import\s+yfinance\b', re.MULTILINE)
 #: library's own name for something the edge does not carry, it may take it.
 _READS_FROM_YFINANCE = re.compile(r'^\s*from\s+yfinance\b', re.MULTILINE)
 
-#: The sentinel yfinance answers with for a field it holds no value for, as a
+#: The word the app used to write for a field Yahoo holds no value for, as a
 #: **string literal**: the English word appears in half a dozen docstrings
 #: talking about something else entirely — an annualized rate over a zero
 #: horizon, the unit price of a position nobody holds — and none of those is
@@ -344,19 +343,22 @@ def test_the_market_edge_is_imported_in_one_module():
     assert _offenders(_APP / 'src', _READS_FROM_YFINANCE) == [_MARKET]
 
 
-def test_the_sentinel_is_named_in_one_module():
-    """#846: `'undefined'` is Yahoo's word, and the translation is where it is said.
+def test_the_sentinel_is_written_nowhere_at_all():
+    """#845: the word was never Yahoo's, and the app has stopped saying it.
 
-    It used to be **set** as a default on three keys in one method, **removed**
-    in two others that did not remove it the same way, and **not removed** by
-    the translation towards the quotation columns — which is issue #845, a
-    defect only visible when the four readings are read together, and they were
-    four screens apart.
+    It was **set** as a default on three keys in one method, **removed** in two
+    others that did not remove it the same way, and **not removed** by the
+    translation towards the quotation columns — so it reached
+    `symbol_quote.currency`, came back out as a currency, and was named as one
+    half of a pair that does not exist. #846 gathered the four readings into
+    `market_info`; this ticket deleted the value itself, which is what makes the
+    guard an emptiness rather than a location.
 
-    The product is policed and the suite is not: a fixture stating what Yahoo
-    answers is not a second definition of what the app does with it, and the
-    English word runs loose in the suite's own prose. Where a test means the
-    sentinel it says `market_info.UNDEFINED` all the same, which is why this
-    guard has no counterpart over `tests/`: it would read those sentences.
+    `yfinance==1.5.2` contains no occurrence of the string. Two comments in the
+    tree asserted the opposite for six months, which is the whole reason the
+    guard is written over the **suite** as well: a fixture stating that Yahoo
+    answers this word is a fixture that re-teaches the belief, and the next
+    reader would write the third divergent removal against it.
     """
-    assert _offenders(_APP / 'src', _NAMES_THE_SENTINEL) == [_MARKET_INFO]
+    assert _offenders(_APP / 'src', _NAMES_THE_SENTINEL) == []
+    assert _offenders(_APP / 'tests', _NAMES_THE_SENTINEL) == []

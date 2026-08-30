@@ -47,6 +47,7 @@ ever behind #617's back-off, the second is a **reply** and arms the
 for the pass whose whole subject is the difference.
 """
 import bisect
+import re
 from datetime import date, datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -100,16 +101,35 @@ UNRESOLVED = 'unresolved'
 FAILED = 'failed'
 
 
+#: What a currency code looks like: three letters, and nothing else. A **shape**
+#: and never a list — ISO-4217 has 180 entries, gains one when a country
+#: redenominates, and a table of them here would be a second thing to maintain
+#: that fails closed on the day it falls behind. Read after :data:`SUBUNITS`, so
+#: ``GBp`` is a code by the time it gets here.
+_CODE = re.compile(r'^[A-Za-z]{3}$')
+
+
 def normalise(currency: Optional[str]) -> Tuple[Optional[str], float]:
-    """``('GBp')`` → ``('GBP', 100.0)``; anything else → itself and ``1.0``.
+    """``('GBp')`` → ``('GBP', 100.0)``; a code → itself and ``1.0``; else ``None``.
 
     The pair-naming rule, on its own so that every caller goes through it: the
     first return value is the code a pair may be built from, the second is how
     many of the *quoted* unit make one of it.
 
-    ``None`` and the empty string pass through as ``None``: a quote with no
-    currency is not convertible, and inventing one here would produce a rate for
-    a pair nobody observed.
+    ``None`` and the empty string answer ``None``: a quote with no currency is
+    not convertible, and inventing one here would produce a rate for a pair
+    nobody observed.
+
+    **And so does anything that is not shaped like a code** (issue #845). This
+    is the guard :func:`pair_symbol`'s docstring already claims to be — *the one
+    place a ``GBp`` would otherwise leak into a ticker that does not exist* —
+    and it is written here rather than at each call site because there are three
+    of those and the one that had no guard is the one that wrote the defect: the
+    word the fetch used to write for a field Yahoo held no value for reached the
+    currency column, came back out of it, and was named as one half of
+    ``UNDEFINEDEUR=X``. One rule of *form* covers every
+    edge at once, including the ones nobody has met yet, which is strictly more
+    than a guard per site could do.
     """
     if not currency:
         return None, 1.0
@@ -119,6 +139,8 @@ def normalise(currency: Optional[str]) -> Tuple[Optional[str], float]:
     if text in SUBUNITS:
         main, per_unit = SUBUNITS[text]
         return main, per_unit
+    if not _CODE.match(text):
+        return None, 1.0
     return text.upper(), 1.0
 
 
@@ -127,7 +149,10 @@ def pair_symbol(from_ccy: str, to_ccy: str) -> str:
 
     Both codes are expected to be **normalised** already — that is the whole of
     :func:`normalise`'s reason for existing, and the one place a ``GBp`` would
-    otherwise leak into a ticker that does not exist.
+    otherwise leak into a ticker that does not exist. Since #845 that
+    expectation is enforceable rather than hoped for: ``normalise`` answers
+    ``None`` for anything that is not shaped like a code, and every caller here
+    stops on the ``None`` before there is a pair to name.
     """
     return f'{from_ccy}{to_ccy}=X'
 

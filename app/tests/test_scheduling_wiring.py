@@ -1347,20 +1347,28 @@ def test_capture_exchange_of_reads_info_cache_and_fetches_missing(
     fetch.assert_called_once_with("MSFT")   # cached AAPL not re-fetched
 
 
-def test_capture_exchange_of_maps_failed_and_undefined_to_none(
+def test_capture_exchange_of_maps_failed_and_unnamed_to_none(
         store, mocker):
+    """The two absences of a venue, and since #845 they are the same shape.
+
+    A fetch that did not complete answers `(None, None)`; one that completed on
+    a payload carrying no `exchange` key answers a mapping whose venue is
+    `None`. It used to answer a **word** there — the app's own, set as a default
+    at the fetch and removed here — and the fixture that manufactured it left
+    with the default it exercised.
+    """
     m = _metrics([_share(symbol="AAA"), _share(symbol="BBB")],
                  store, mocker)
 
     def _fetch(symbol):
         return ((None, None) if symbol == "AAA"
-                else (1.0, {"exchange": market_info.UNDEFINED}))
+                else (1.0, market_info.live_attributes({}, None)))
 
     mocker.patch.object(m, "_fetch_ticker_data", side_effect=_fetch)
 
     result = m.capture_exchange_of()
 
-    # Failed fetch and the 'undefined' sentinel both become solo (None).
+    # Both become a solo market rather than one giant cohort of unknowns.
     assert result == {"AAA": None, "BBB": None}
 
 

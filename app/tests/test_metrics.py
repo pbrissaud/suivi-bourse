@@ -439,6 +439,44 @@ def test_a_missing_dividend_yield_is_stored_as_null_not_as_zero(
     assert quotes.read_quote(store, "AAPL")["dividend_yield"] is None
 
 
+def test_a_payload_that_names_no_unit_writes_no_unit_at_all(
+        store, fake_ticker, monkeypatch):
+    """The scrape's write, on a payload carrying none of the three text keys.
+
+    Asserted on the **store** because that is where the defect lived (#845): the
+    fetch fabricated a word for each of the three, two readers removed it and
+    the translation towards these columns did not — so `symbol_quote.currency`
+    could hold a string that is not a currency, `fx.normalise` handed it on as
+    one, and the pair `UNDEFINEDEUR=X` was named. There is nothing to remove any
+    more because there is nothing to make: an absent key is `NULL`, which is
+    what a failed fetch has always written and what every reader downstream
+    already answers.
+
+    The price is written all the same. A quote is a number **and** a unit
+    (#774), and the row without the second is exactly the state the carrying
+    convention exists to render — a line the app cannot price, carried at its
+    cost once its backfill is terminal, never a quote silently dropped.
+    """
+    def _bare_ticker(symbol):
+        ticker = fake_ticker()
+        # Not an override of the three keys: the payload does not **carry**
+        # them, which is what the defaulting used to hide.
+        ticker.info = {"marketState": "REGULAR"}
+        return ticker
+
+    metrics, _ = _build_metrics([_valid_shares()], store)
+    monkeypatch.setattr(market.yf, "Ticker", _bare_ticker)
+
+    metrics.expose_metrics()
+
+    quote = quotes.read_quote(store, "AAPL")
+    assert quote["currency"] is None
+    assert quote["exchange"] is None
+    assert quote["quote_type"] is None
+    # The observation itself landed: the absent unit is not a lost price.
+    assert [price for _, price in _points(store)] == [185.0]
+
+
 def test_expose_metrics_skips_write_when_fetch_fails(store, mocker):
     metrics, _ = _build_metrics([_valid_shares()], store)
     mocker.patch.object(metrics, "_fetch_ticker_data", return_value=(None, None))
