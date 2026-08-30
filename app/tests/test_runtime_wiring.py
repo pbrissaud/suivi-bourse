@@ -180,7 +180,7 @@ def test_a_refused_write_is_recorded_although_617s_counter_stays_zero(
     m = _metrics([_share()], store, mocker)
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(market_state="REGULAR"))
-    mocker.patch.object(main.quotes, "record_quote",
+    mocker.patch.object(quotes, "record_quote",
                         side_effect=RuntimeError("connection refused"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -228,7 +228,7 @@ def test_the_628_sonde_rides_the_record_rather_than_being_recomputed(
     # stopped so the frozen value stays frozen — the sonde's exact subject is a
     # symbol that fetches fine and persists nothing.
     quotes.record_quote(store, "AAPL", NOW - timedelta(seconds=120), 100.0)
-    mocker.patch.object(main.quotes, "record_quote")
+    mocker.patch.object(quotes, "record_quote")
     m.staleness_horizon = 900
     m._sonde_state["AAPL"] = scheduling.SondeState(
         stored_price=100.0,

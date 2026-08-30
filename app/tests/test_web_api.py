@@ -1220,7 +1220,7 @@ def test_the_identity_holds_when_the_dividend_itself_carries_a_fee(tmp_path):
 
 
 def _fixed_today(mocker, y, mo, d):
-    """The perf job's clock, fixed — `main` reads UTC and so does this (#781).
+    """The perf job's clock, fixed — `perf_job` reads UTC and so does this (#781).
 
     The job's series runs to *today*, so a test asserting a year-to-date over it
     would otherwise change meaning on 1 January: the base day it counts from is
@@ -1236,7 +1236,7 @@ def _fixed_today(mocker, y, mo, d):
         @classmethod
         def now(cls, tz=None):
             return datetime(y, mo, d, 12, 0, tzinfo=tz)
-    mocker.patch("main.datetime", _FixedDatetime)
+    mocker.patch("perf_job.datetime", _FixedDatetime)
 
 
 def test_the_year_to_date_gain_is_a_figure_when_the_real_job_crosses_a_new_year(

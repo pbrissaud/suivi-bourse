@@ -354,7 +354,7 @@ class DailyPerf:
     everything contributed on or before this day. It is not optional and it
     carries no ``None``: it is one of :data:`ALWAYS_WRITTEN`, and what the
     per-field rule may withhold is withheld at the *write*, once, in
-    ``main._value_kwargs``.
+    ``perf_job.value_kwargs``.
     """
     date: date
     cash_balance: float

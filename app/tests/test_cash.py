@@ -323,7 +323,7 @@ def _fixed_today(mocker, y, mo, d):
         @classmethod
         def now(cls, tz=None):
             return datetime(y, mo, d, 12, 0, tzinfo=tz)
-    mocker.patch("main.datetime", _FixedDatetime)
+    mocker.patch("perf_job.datetime", _FixedDatetime)
 
 
 def test_the_seeded_default_account_gets_a_series_like_any_other(
@@ -1014,7 +1014,7 @@ def test_a_failed_write_leaves_the_previous_cache_whole(
     m.update_account_metrics()
     before = store.query("SELECT * FROM account_metrics ORDER BY day")
 
-    mocker.patch.object(main.perf_series, "prune_account_metrics",
+    mocker.patch.object(perf_series, "prune_account_metrics",
                         side_effect=RuntimeError("the store is unwritable"))
     with pytest.raises(RuntimeError):
         m.update_account_metrics()

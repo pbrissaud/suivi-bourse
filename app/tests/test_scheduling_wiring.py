@@ -367,7 +367,7 @@ def test_scrape_symbol_failed_store_write_is_named_as_such(
     successfully — so the record is the only thing that can (issue #668).
     """
     m = _metrics([_share()], store, mocker)
-    mocker.patch.object(main.quotes, "record_quote",
+    mocker.patch.object(quotes, "record_quote",
                         side_effect=RuntimeError("the store refused the write"))
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
@@ -536,7 +536,7 @@ def _freeze_the_writer(store, mocker, stored=180.0):
     writer that is doing its job.
     """
     quotes.record_quote(store, "AAPL", NOW - timedelta(hours=1), stored)
-    mocker.patch.object(main.quotes, "record_quote")
+    mocker.patch.object(quotes, "record_quote")
 
 
 def test_sonde_flags_writer_frozen_across_consecutive_regular_cycles(
@@ -647,7 +647,7 @@ def test_sonde_does_not_run_on_closed_market(
     """
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
-    read = mocker.spy(main.quotes, "last_price")
+    read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="CLOSED"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -663,7 +663,7 @@ def test_sonde_disabled_when_horizon_non_positive(
     intact. Same argument as above for the spy — an off sonde leaves no trace."""
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 0
-    read = mocker.spy(main.quotes, "last_price")
+    read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)
@@ -679,7 +679,7 @@ def test_sonde_read_error_never_disturbs_scrape(
     reset all proceed exactly as if the sonde were absent (diagnostic only)."""
     m = _metrics([_share()], store, mocker)
     m.staleness_horizon = 900
-    mocker.patch.object(main.quotes, "last_price",
+    mocker.patch.object(quotes, "last_price",
                         side_effect=RuntimeError("db down"))
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
@@ -703,7 +703,7 @@ def test_the_sonde_asks_once_per_symbol_however_many_holdings(
     shares = [_share(account="pea"), _share(account="cto")]
     m = _metrics(shares, store, mocker)
     m.staleness_horizon = 900
-    read = mocker.spy(main.quotes, "last_price")
+    read = mocker.spy(quotes, "last_price")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker(market_state="REGULAR"))
 
     m._scrape_symbol("AAPL", now=NOW)

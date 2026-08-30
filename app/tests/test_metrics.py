@@ -502,7 +502,7 @@ def test_a_write_error_on_one_symbol_does_not_abort_the_rest(
             raise RuntimeError("the store refused the write")
         return real(*args, **kwargs)
 
-    mocker.patch.object(main.quotes, "record_quote", side_effect=flaky)
+    mocker.patch.object(quotes, "record_quote", side_effect=flaky)
 
     metrics.expose_metrics()
 
@@ -751,7 +751,7 @@ def test_backfill_write_failure_does_not_abort_remaining_symbols(store, mocker):
             raise RuntimeError("the store refused the write")
         return real(opened, symbol, points)
 
-    mocker.patch.object(main.quotes, "record_history", side_effect=flaky)
+    mocker.patch.object(quotes, "record_history", side_effect=flaky)
 
     # Must not propagate the exception out of the per-symbol loop.
     metrics.backfill()

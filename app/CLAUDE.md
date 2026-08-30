@@ -423,6 +423,10 @@ src/
 │                       #   three named passes over one shared memory
 ├── share_info.py       # the per-symbol `info` cache: *observed* by the scrape's
 │                       #   live fetch, *learned* by the backfill, never overwritten
+├── perf_job.py         # the performance workload: the currency guard, the pass
+│                       #   lock *borrowed from the façade*, the replay, the pure
+│                       #   call and the one transaction handed to the writer —
+│                       #   it writes nothing itself
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
 ├── ledger.py           # the ledger's reads: read_events, the stamp, the last write, the orphans

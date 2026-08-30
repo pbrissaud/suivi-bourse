@@ -49,12 +49,12 @@ _OLD_DAY = '2022-06-03'
 
 
 def _fixed_today(mocker):
-    """``main``'s clock, pinned — and UTC-qualified, like every read of it."""
+    """The perf pass's clock, pinned — UTC-qualified, like every read of it."""
     class _FixedDatetime(datetime):
         @classmethod
         def now(cls, tz=None):
             return datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=tz)
-    mocker.patch("main.datetime", _FixedDatetime)
+    mocker.patch("perf_job.datetime", _FixedDatetime)
 
 
 def _deposit(**overrides) -> dict:
