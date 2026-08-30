@@ -136,7 +136,11 @@ advisories together. There is no banner and no status dot.
   `retention`, `fx`, `boot_env`, `mounts`): no store, no yfinance, `now`
   injected.
 - **There is one clock, and it is the product's**, and every read of it is
-  UTC-qualified — `test_suite_conventions.py` holds that on the source.
+  UTC-qualified — `test_suite_conventions.py` holds that on the source. **And
+  one repair of what comes back from the store**, in `instants.py` (stdlib only,
+  so a pure view module can import it): `utc` normalizes an instant, `iso`
+  serializes one and leaves a calendar day a day. The same file refuses a ninth
+  private copy of it (#843).
 - **One faked *external* edge in the whole Python suite, and it is yfinance**; one
   on the front, and it is HTTP (MSW). The store is real, in `tmp_path`. Assertions
   about **behaviour** go on the store's contents, on the API's JSON or on the

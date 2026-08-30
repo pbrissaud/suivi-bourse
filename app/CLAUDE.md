@@ -400,6 +400,8 @@ src/
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
+├── instants.py         # stdlib only: the one UTC repair and the one ISO,
+│                       #   an instant stamped, a calendar day left alone
 ├── scheduling.py       # pure: cadence, market context, back-off, pool sizing,
 │                       #       the fetch windows and Yahoo's hourly ceiling
 ├── performance.py      # pure: XIRR/TWR, the sliding horizon, the per-field rule
@@ -458,3 +460,15 @@ prove (ADR-0032). It is the only place in the v5 rewrite where that is true.
 And **there is one clock, and it is the product's**: every read of it
 is UTC-qualified, and `test_suite_conventions.py` holds that on the source over
 `src/` and `tests/` alike, because CI runs in UTC.
+
+**And one repair of what comes back from the store**, which is the other way a
+naive instant enters: `instants.utc` / `instants.iso`, held on the source by the
+same file (#843). It had been rewritten in eight modules, in three variants that
+had already drifted — some converting an aware instant, some letting it through,
+two not repairing at all — and no test could ever see the consequence, a page
+shifted by the browser's offset being invisible on a machine in UTC. The guard
+names the **definition** of a private `_utc`/`_iso`/`_stamp_value`, never the
+expression: the three repairs made **on the way in** (`scheduling` on an
+argument it is handed, `main` on a pandas `Timestamp` at the market's edge,
+`web.api` on an ISO string arriving from the front) stay spelled where they
+happen.
