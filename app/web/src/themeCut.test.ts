@@ -226,9 +226,12 @@ describe('what the theme must not bring with it', () => {
     // rule is the cut's own, one floor down — a value belongs to `index.css`,
     // so a component names a token and never a colour.
     //
-    // `lib/` is out, and by name rather than by oversight: `accountColour` and
-    // `allocationRamp` **compute** a colour from a rule (a hue wheel, a rank
-    // ramp), which is precisely what a token cannot say. `ui/` is out for
+    // The scan's subject is the **component**, so it reads `.tsx` and nothing
+    // else. That is what leaves `accountColour` (`lib/accounts.ts`) and
+    // `allocationRamp` (`lib/alloc.ts`) outside it, and they belong outside:
+    // both **compute** a colour from a rule (a hue wheel, a rank ramp), which
+    // is precisely what a token cannot say. `lib/`'s own `.tsx` are scanned
+    // like any other surface; only `ui/` is out by name, for
     // `gridColumns.test.ts`'s reason — it regenerates.
     //
     // What this does *not* catch is a colour nobody wrote: Recharts paints an

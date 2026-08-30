@@ -657,9 +657,11 @@ Five nets hold a rule nothing made true by construction:
   its value off `index.css`; and the grid stays under the 3:1 a mark that
   *carried* meaning would have to reach. `themeCut.test.ts` holds the other
   half from below — **no colour literal in a component at all**, which #837
-  verified by reading and nothing held. `lib/` is exempt by name: `accountColour`
-  and `allocationRamp` compute a colour from a rule, which is what no token can
-  say.
+  verified by reading and nothing held. Its subject is the component, so it
+  reads `.tsx` and nothing else: `accountColour` and `allocationRamp` fall
+  outside by living in `.ts` modules, and they belong outside — both compute a
+  colour from a rule, which is what no token can say. `ui/` alone is out by
+  name, because it regenerates.
 - **`en.json` is the source, and `fr.json` is kept in step by hand until
   Crowdin's first import.** `crowdin.yml` covers this catalogue alongside the
   site (ADR-0024) and declares `fr.json` to be Crowdin's output — but that
