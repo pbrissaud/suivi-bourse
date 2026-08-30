@@ -84,6 +84,7 @@
   "explain.link": "Read the whole rule",
   "absence.awaitingRate": "waiting for a rate",
   "absence.noQuote": "{count, plural, one {# consecutive reading, no price} other {# consecutive readings, no price}}",
+  "absence.rebuilding": "history still being rebuilt",
   "gain.term.unrealised": "Unrealised P&L",
   "gain.term.realised": "Realised P&L",
   "gain.term.dividends": "Dividends received",
