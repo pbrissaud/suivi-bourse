@@ -127,9 +127,19 @@ def normalise(currency: Optional[str]) -> Tuple[Optional[str], float]:
     of those and the one that had no guard is the one that wrote the defect: the
     word the fetch used to write for a field Yahoo held no value for reached the
     currency column, came back out of it, and was named as one half of
-    ``UNDEFINEDEUR=X``. One rule of *form* covers every
-    edge at once, including the ones nobody has met yet, which is strictly more
-    than a guard per site could do.
+    ``UNDEFINEDEUR=X``. One rule of *form* covers every edge at once, including
+    the ones nobody has met yet, which is strictly more than a guard per site
+    could do.
+
+    What the shape does **not** do, said plainly so nobody reads more into it
+    than it holds: it is not an ISO-4217 membership test. ``ZZZ`` and ``ABC``
+    are three letters, so they cross this function and name ``ZZZEUR=X`` — a
+    ticker Yahoo answers nothing for, which resolves as :data:`UNRESOLVED` and
+    is handled like any other pair that does not exist. That residue is the
+    price of not keeping a table of 180 codes here, and it is cheap: nothing
+    upstream *invents* three letters, so the population it lets through is
+    empty, while the population the shape stops — a word, a name, a number,
+    anything longer or shorter — is the one the defect came from.
     """
     if not currency:
         return None, 1.0

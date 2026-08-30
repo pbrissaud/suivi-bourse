@@ -1699,6 +1699,14 @@ def test_normalise_answers_none_for_anything_not_shaped_like_a_code():
     for text in ('EURO', 'US', '123', 'not a code'):
         assert fx.normalise(text) == (None, 1.0)
 
+    # And what the shape deliberately does *not* stop, pinned so the boundary
+    # is read from the suite rather than guessed: three letters that are no
+    # ISO-4217 code cross it and name a pair. `ZZZEUR=X` is a ticker Yahoo
+    # answers nothing for, which is `unresolved` — a pair that does not exist,
+    # handled like every other. Nothing upstream invents three letters, so the
+    # population this lets through is empty; the one it stops is the defect's.
+    assert fx.normalise('ZZZ') == ('ZZZ', 1.0)
+
     # And the pence rule is untouched — it is read **before** the shape, which
     # is the whole reason the order of the two matters.
     assert fx.normalise('GBp') == ('GBP', 100.0)
