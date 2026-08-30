@@ -632,12 +632,34 @@ Five nets hold a rule nothing made true by construction:
   reached**: the five routes as they first render, on both grounds — no text
   under 4,5:1 there, and nothing overflowing sideways at 390, 768, 976, 1280 or
   1536. It did **not** open what a click opens, and the share sheet is where
-  that shows: `PriceChart` mounts recharts' `CartesianGrid`, `XAxis` and `YAxis`
-  with no colour of its own, so the library paints them from its own defaults —
-  a `#666` tick text that measures 3,24:1 against `--card` on the dark ground.
-  That one is **open**, and it is a colour recharts chose rather than a token,
-  so an audit that ends at the routes will keep missing it. The defect the pass
-  itself found is the bullet three below — the controls the agent paints itself.
+  that shows: `PriceChart` mounted recharts' `CartesianGrid`, `XAxis` and
+  `YAxis` with no colour of its own, so the library painted them from its own
+  defaults — a `#666` tick text at 3,24:1 against `--card` on the dark ground,
+  and an `#ccc` grid at 11,6:1 where the dashboard's is at 1,2:1. That one is
+  **closed** by #841, and the bullet under this one is what closed it. The
+  defect the pass itself found is the bullet four below — the controls the agent
+  paints itself.
+- **A chart's chrome is the theme's too** (#841, ADR-0023). The two greys above
+  were the *same on both grounds*, which is what makes them not a light-ground
+  defect at all but a chart with no ground: recharts has a theme of its own and
+  it is not ours. The repair is not the dashboard's line pasted over, because
+  recharts fills a tick label with the **axis' own `stroke`** — one token would
+  either shout the grid or hide the figures. So the two are coloured apart on
+  what they *are*: the grid and the axis lines are chrome and carry `--border`,
+  the dashboard's `2 4` hair included (a grid is no more legible for hanging in
+  a sheet than on a card); the gradations are **text** and carry
+  `--muted-foreground`, which clears 4,5:1 against `--background` **and**
+  `--card`, on both grounds. `src/chartChrome.test.ts` is the net, and it is
+  three claims rather than one repair: no grid, axis or tooltip cursor anywhere
+  in the front is mounted without a token or hidden — *one chart was fixed*
+  becoming *no chart escapes*, which #837 could not have established by hand;
+  the gradations' floor is **measured**, the token read off the component and
+  its value off `index.css`; and the grid stays under the 3:1 a mark that
+  *carried* meaning would have to reach. `themeCut.test.ts` holds the other
+  half from below — **no colour literal in a component at all**, which #837
+  verified by reading and nothing held. `lib/` is exempt by name: `accountColour`
+  and `allocationRamp` compute a colour from a rule, which is what no token can
+  say.
 - **`en.json` is the source, and `fr.json` is kept in step by hand until
   Crowdin's first import.** `crowdin.yml` covers this catalogue alongside the
   site (ADR-0024) and declares `fr.json` to be Crowdin's output — but that
