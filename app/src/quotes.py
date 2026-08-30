@@ -812,8 +812,8 @@ def quote_exchanges(store, symbols: Iterable[str]) -> Dict[str, Optional[str]]:
     ``exchange`` is ``NULL`` or empty: the two are the same absence to the only
     reader there is, which groups every unknown venue as a **solo market**
     rather than into one giant cohort. The empty string counts as absent here
-    exactly as it does in :func:`quote_currency` and
-    :func:`market_info.exchange_of`, so the three stay one reading. There is no
+    exactly as it does in :func:`quote_currency`, so the two stay one
+    reading. There is no
     sentinel left to filter out (#845): a payload naming no venue writes
     ``NULL``, and the word the app used to fabricate is gone from the column.
     """

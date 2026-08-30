@@ -27,7 +27,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import main
 import market
-import market_info
 import quotes
 import runtime_state
 import scheduling
@@ -1392,7 +1391,7 @@ def test_a_symbol_the_scrape_never_reached_is_its_own_solo_market(
     It is the population the capture's timeout already produced ``None`` for.
     Seven of them, because six or fewer share a pool size with one: grouped
     into a single cohort of unknowns they would ask for a worker the formula
-    does not owe them, which is the failure ``market_info.exchange_of`` was
+    does not owe them, which is the failure the capture's own ``None`` was
     written against and which the store's ``NULL`` must not reintroduce.
     """
     shares = [_share(symbol=f"NEW{i}") for i in range(7)]
