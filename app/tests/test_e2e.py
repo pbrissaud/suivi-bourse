@@ -24,6 +24,7 @@ import pytest
 
 import entries
 import ledger
+import backfill
 import main
 import market
 import portfolio_view
@@ -90,7 +91,7 @@ def _patch_ticker(monkeypatch, fake_ticker):
 
 def _no_sleep(monkeypatch):
     """Make every ``time.sleep`` in main a no-op (deterministic + fast)."""
-    monkeypatch.setattr(main.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, "sleep", lambda *a, **k: None)
 
 
 def _config_with_a_ledger(tmp_path, csv_text=EVENTS_CSV, imported=True):

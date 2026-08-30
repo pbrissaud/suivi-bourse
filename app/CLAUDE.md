@@ -418,6 +418,9 @@ src/
 ├── quotes.py           # symbol_quote + price_point, the `latest` rule, the lateral repair
 ├── scrape.py           # the scrape workload: the per-symbol pass, its arming,
 │                       #   the reconcile, the cadence re-arm, the freshness sonde
+├── backfill.py         # the backfill workload: the cycle and the ladder's
+│                       #   application, then backward / forward / lateral —
+│                       #   three named passes over one shared memory
 ├── share_info.py       # the per-symbol `info` cache: *observed* by the scrape's
 │                       #   live fetch, *learned* by the backfill, never overwritten
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune

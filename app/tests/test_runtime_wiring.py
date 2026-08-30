@@ -19,6 +19,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from contextlib import contextmanager
 
+import backfill
 import main
 import market
 import quotes
@@ -40,7 +41,7 @@ def _no_jitter(mocker):
 @pytest.fixture(autouse=True)
 def _no_sleep(mocker):
     """The backfill's rate limit is a courtesy to Yahoo, not a unit under test."""
-    mocker.patch.object(main.time, "sleep", lambda *a, **k: None)
+    mocker.patch.object(backfill.time, "sleep", lambda *a, **k: None)
 
 
 def _share(symbol="AAPL", name="Apple", account="default", quantity=10):
@@ -371,7 +372,7 @@ def test_an_empty_window_is_recorded_without_raising_the_counter(
     quotes.record_history(store, "AAPL", [
         {"timestamp": datetime(2024, 1, 10, tzinfo=UTC), "price": 100.0}])
     mocker.patch.object(m, "_fetch_historical_data", return_value=[])
-    mocker.patch("main.time.sleep")
+    mocker.patch("backfill.time.sleep")
 
     m.backfill()
     record = m.recorder.backfill_of("AAPL", runtime_state.BACKWARD)
@@ -394,7 +395,7 @@ def test_the_forward_pass_tells_an_unseeded_series_from_the_live_no_op(
     # Nothing stored at all: the backward pass owns seeding the series, and the
     # forward one has no anchor to measure from.
     mocker.patch.object(m, "_fetch_historical_data", return_value=[])
-    mocker.patch("main.time.sleep")
+    mocker.patch("backfill.time.sleep")
 
     m.backfill()
     assert m.recorder.backfill_of(

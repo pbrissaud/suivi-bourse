@@ -22,6 +22,7 @@ import pytest
 
 import carrying
 import fx
+import backfill
 import main
 import market
 import market_info
@@ -493,7 +494,7 @@ def test_a_london_position_is_converted_from_pence_and_says_so(
     metrics = _metrics(store, shares=[_share('VOD.L')],
                        base_currency='EUR')
     _fixed_rate(metrics, {'GBPEUR=X': 1.20})
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=250.0, market_state='REGULAR', info={'currency': 'GBp'}))
 
@@ -514,7 +515,7 @@ def test_a_missing_rate_writes_the_point_with_no_converted_price(
     viable at all."""
     metrics = _metrics(store, base_currency='EUR')
     _fixed_rate(metrics, {})          # the pair resolves to nothing
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
@@ -534,7 +535,7 @@ def test_no_reporting_currency_scrapes_natively_and_converts_nothing(
     metrics = _metrics(store, base_currency=None)
     fetched = []
     metrics.rates = fx.Rates(lambda pair: fetched.append(pair))
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
@@ -555,7 +556,7 @@ def test_answering_the_currency_converts_from_the_next_cycle_on(
     write carries all three columns. Nothing had to be replayed for that.
     """
     metrics = _metrics(store, base_currency=None)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
@@ -586,7 +587,7 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     """
     metrics = _metrics(store, base_currency='EUR')
     metrics._share_info_cache.observed('AAPL', {'currency': 'USD'})
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
 
@@ -631,7 +632,7 @@ def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
     # all — the whole of the fix, read from the cache the backfill reads.
     metrics._share_info_cache.observed(
         'AAPL', market_info.quote_attributes({}))
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=102.0, rows=3, start='2024-01-02'))
 
@@ -667,7 +668,7 @@ def test_an_event_amount_is_never_converted_because_it_is_already_the_debit(
     metrics = _metrics(store, shares=[_share('VOD.L')],
                        base_currency='EUR')
     _fixed_rate(metrics, {'GBPEUR=X': 1.20})
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=250.0, market_state='REGULAR', info={'currency': 'GBp'}))
 
@@ -691,7 +692,7 @@ def test_the_rate_costs_no_job_no_table_and_no_symbol_in_the_scheduler(
     metrics = _metrics(store, base_currency='EUR')
     metrics.scheduler = mocker.MagicMock()
     _fixed_rate(metrics, {'USDEUR=X': 0.92})
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=185.0, market_state='REGULAR', info={'currency': 'USD'}))
 
@@ -858,7 +859,7 @@ def test_the_lateral_pass_repairs_by_update_and_never_by_insert(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90,
         date(2024, 6, 2): 0.91,
@@ -890,7 +891,7 @@ def test_an_unanswered_reporting_currency_never_arms_unconvertible(
     """
     metrics = _metrics(store, base_currency=None)
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch()
     metrics.rates = fx.Rates(lambda pair: None, fetch)
 
@@ -917,7 +918,7 @@ def test_a_pair_that_does_not_resolve_arms_unconvertible_and_names_itself(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency='XYZ')
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
 
     written, record = _lateral(metrics)
@@ -941,7 +942,7 @@ def test_a_failed_rate_fetch_backs_off_like_617_and_retries_indefinitely(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(
         lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
 
@@ -976,7 +977,7 @@ def test_a_symbol_inside_its_back_off_is_stepped_over_rather_than_re_counted(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     fetch = _SeriesFetch(raises=RuntimeError('yahoo is down'))
     metrics.rates = fx.Rates(lambda pair: None, fetch)
 
@@ -995,7 +996,7 @@ def test_the_first_conversion_that_lands_resets_the_back_off(
     """The reset #617 states, on the pass's own terms."""
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(
         lambda pair: None, _SeriesFetch(raises=RuntimeError('yahoo is down')))
     _lateral(metrics)
@@ -1026,7 +1027,7 @@ def test_a_symbol_yahoo_names_no_currency_for_says_so_instead_of_failing_at_it(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     fetch = _SeriesFetch()
@@ -1060,7 +1061,7 @@ def test_the_pass_walks_one_chunk_a_cycle_from_the_oldest_missing_day(
         {'timestamp': datetime(2024, 6, 1, 17, 0, tzinfo=UTC), 'price': 200.0},
     ])
     store.execute("UPDATE symbol_quote SET currency = 'USD'")
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.backfill_chunk_days = 365
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2022, 6, 1): 0.90, date(2024, 6, 1): 0.92}}))
@@ -1085,7 +1086,7 @@ def test_answering_the_reporting_currency_starts_the_repair_of_the_whole_stock(
     """
     metrics = _metrics(store, base_currency=None)
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     scheduler = mocker.MagicMock()
     metrics.scheduler = scheduler
     runtime = mocker.MagicMock(metrics=metrics, scheduler=scheduler)
@@ -1138,7 +1139,7 @@ def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):
     metrics = _metrics(store, shares=[_share(quantity=0)],
                        base_currency='EUR')
     _unconverted(store)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90}}))
 
@@ -1193,7 +1194,7 @@ def _sold_before_the_install(store, mocker, monkeypatch, closes, info=None):
         frame=frame)
     metrics = _metrics(store, shares=[_share(quantity=0)],
                        base_currency='EUR')
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
         date(2024, 6, 1): 0.90, date(2024, 6, 2): 0.91,
@@ -1249,7 +1250,7 @@ def test_the_learnt_currency_is_written_once_and_never_asked_for_again(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.backfill_chunk_days = 1          # so several cycles have work left
@@ -1279,7 +1280,7 @@ def test_a_failed_attribute_fetch_backs_off_rather_than_concluding_anything(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(raises=RuntimeError('yahoo is down'))
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     fetch = _SeriesFetch()
@@ -1453,7 +1454,7 @@ def _met_with_its_market_shut(store, monkeypatch, info=None,
     instrument = _Instrument(
         info=dict(_SHUT_MARKET_INFO) if info is None else info, frame=frame)
     metrics = _metrics(store, base_currency=base_currency)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch())
     metrics._share_info_cache.observed('AAPL', dict(_SHUT_MARKET_INFO))
@@ -1569,7 +1570,7 @@ def test_the_foreign_currency_twin_goes_on_being_repaired_exactly_as_before(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=None)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {
@@ -1758,7 +1759,7 @@ def test_a_row_written_before_the_fix_learns_its_real_unit(
     """
     metrics = _metrics(store, base_currency='EUR')
     _unconverted(store, currency=_PRE_845_CURRENCY)
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     instrument = _Instrument(info={'currency': 'USD'})
     monkeypatch.setattr(market.yf, 'Ticker', instrument)
     metrics.rates = fx.Rates(lambda pair: None, _SeriesFetch({'USDEUR=X': {

@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
+import backfill
 import main
 import market
 import quotes
@@ -214,7 +215,7 @@ def _seed_up_to_now(store, symbol, oldest, price=100.0):
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     """Make every time.sleep in main a no-op so tests are fast/deterministic."""
-    monkeypatch.setattr(main.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, "sleep", lambda *a, **k: None)
 
 
 # ---------------------------------------------------------------------------

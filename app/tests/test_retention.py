@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
+import backfill
 import main
 import market
 import quotes
@@ -37,7 +38,7 @@ NOW = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     """The backfill's courtesy to Yahoo is not a unit under test here."""
-    monkeypatch.setattr(main.time, 'sleep', lambda *a, **k: None)
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
 
 
 def _at(days, hour=10, minute=0):
