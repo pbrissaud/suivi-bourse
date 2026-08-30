@@ -20,7 +20,7 @@ once, and a single pill has to choose. That choice is stated in
 :func:`symbol_pill` and it is the module's only opinion.
 """
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import instants
@@ -593,7 +593,12 @@ def build_accounts(
 
     The first day that account's figures were written from (issue #708) — a
     *calendar day*, rendered as one, where every other member of this payload is
-    an instant. It comes from process memory like everything else on this route,
+    an instant. That is what :func:`instants.iso` does with a `date` and the
+    reason the horizon goes through it rather than through a second serializer
+    of its own (#843): the two kinds of time do not mix (spec #695 § 3), and
+    stamping the day at midnight would let a browser shift it by its own offset
+    and read the day before. It comes from process memory like everything else
+    on this route,
     which matters here more than most: what it says is *"the page is filling in
     towards the left"* rather than *"the app has lost four years"*, and a
     resource that needed the store to say it would go quiet exactly when a
@@ -611,7 +616,7 @@ def build_accounts(
     """
     if record is None:
         return []
-    return [{'account': account, 'horizon': _day(horizon)}
+    return [{'account': account, 'horizon': instants.iso(horizon)}
             for account, horizon in sorted(record.horizons.items())]
 
 
@@ -975,18 +980,6 @@ def build_health(
         'scheduler_running': scheduler_running,
         'jobs': jobs,
     }
-
-
-def _day(value: Optional[date]) -> Optional[str]:
-    """``YYYY-MM-DD`` for a **calendar day**, never an instant (issue #708).
-
-    The two kinds of time do not mix (spec #695 § 3), and this route is where the
-    distinction is easiest to lose: every other member of the payload is an
-    instant. A horizon is a day, so it is rendered as one — stamping it at
-    midnight would let a browser shift it by its own offset and read the day
-    before.
-    """
-    return value.isoformat() if value is not None else None
 
 
 __all__ = [

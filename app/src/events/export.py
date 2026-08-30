@@ -76,6 +76,8 @@ from typing import (
     Any, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple,
 )
 
+import instants
+
 from .loader import BASE_CURRENCY_COLUMN
 from .schemas import DEFAULT_ACCOUNT, Event, unit_cost
 
@@ -165,11 +167,17 @@ def _cell(value: Any) -> str:
     reads back as ``None``. A ``float`` goes out through ``repr``, which since
     Python 3.1 is the shortest string that reads back as the same double, so a
     broker's ``0.34898399999999996`` survives the round trip bit for bit.
+
+    A ``date`` goes out through :func:`instants.iso`, which is where the tree
+    writes ISO once (#843). An event's date is a **calendar day** and leaves as
+    one; the delegation is what keeps the rule from being re-spelled here, and
+    it is why the empty-cell test comes first — ``iso(None)`` answers ``None``,
+    and a file wants a blank.
     """
     if value is None:
         return ''
     if isinstance(value, date):
-        return value.isoformat()
+        return instants.iso(value)
     return str(value)
 
 
