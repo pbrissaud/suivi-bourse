@@ -307,10 +307,10 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
               <TriangleAlert className="size-4" aria-hidden />
               {/* **The repair, and not the count again** (ADR-0016: the one
                   icon allowed on a cell is one whose text *is* a repair). The
-                  count is already written in the three cells this row's
-                  absence governs; a fourth copy of it would be the marker
-                  saying nothing new, where what the reader is missing is that
-                  the line is theirs to mend. */}
+                  count is already written in the price cell, where *no price*
+                  is what is true (#845); a second copy of it would be the
+                  marker saying nothing new, where what the reader is missing
+                  is that the line is theirs to mend. */}
               <span className="sr-only">{t('shares.anomaly.repair')}</span>
             </span>
           ) : null}
