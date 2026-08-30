@@ -3321,7 +3321,7 @@ class SuiviBourseMetrics:
 
             # --- the sliding horizon and its cap (issues #708, #765) ---------
             # The oldest **usable** price of each symbol, which is the oldest day
-            # ``price_at`` can answer for: ``price_series`` is converted-only, so
+            # ``price_at`` can answer for: ``daily_closes`` is converted-only, so
             # a symbol quoted in a currency whose conversion has not landed is
             # absent here while being perfectly well quoted. It therefore blocks,
             # and that is the honest reading — the absence is transitory, lifted
