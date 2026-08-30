@@ -41,7 +41,7 @@
 import { Unreadable } from '@/components/Unreadable'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { RuntimeStore, StoreState } from '@/lib/api'
-import { useFormatters } from '@/lib/format'
+import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
 
@@ -121,7 +121,7 @@ export function StoreBlock({ runtimeStore, store, failure = null }: StoreBlockPr
                 *there is nothing to compute*. The `??` the row was gated out of
                 was carrying two states at once — that one and a read that had
                 said nothing yet — and only the second is #777's. */}
-            <dd className="font-mono text-xs break-all">{runtimeStore.path ?? '—'}</dd>
+            <dd className="font-mono text-xs break-all">{runtimeStore.path ?? ABSENT}</dd>
             <p className="text-xs text-muted-foreground">
               {t('installation.store.persistence', { state: runtimeStore.persistence })}
             </p>

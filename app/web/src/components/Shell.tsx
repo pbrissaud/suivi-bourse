@@ -40,7 +40,7 @@ import { Outlet } from '@tanstack/react-router'
 import { AppSidebar } from '@/components/AppSidebar'
 import { ContentHeader } from '@/components/ContentHeader'
 import { FirstRun } from '@/components/FirstRun'
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { SIDEBAR_COOKIE_NAME, SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 
 /**
  * **Reading back what the registry component already writes.**
@@ -64,9 +64,9 @@ function navigationWasFolded(): boolean | null {
   try {
     const stored = document.cookie
       .split('; ')
-      .find((entry) => entry.startsWith('sidebar_state='))
+      .find((entry) => entry.startsWith(`${SIDEBAR_COOKIE_NAME}=`))
     if (stored === undefined) return null
-    return stored === 'sidebar_state=false'
+    return stored === `${SIDEBAR_COOKIE_NAME}=false`
   } catch {
     // A document that refuses cookies is not a reason to refuse a navigation.
     return null

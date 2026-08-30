@@ -104,9 +104,25 @@ export function fold(value: string): string {
     .toLowerCase()
 }
 
-/** What the search reads — everything the identity and the account column show. */
+/**
+ * What the search reads — everything the identity and the account column show.
+ *
+ * Folded **once per row**, behind a `WeakMap` on the event itself. The facet
+ * counts are the reason: each option of each axis re-runs `filterEvents` over
+ * the whole ledger, so a single keystroke asks this question some thirty times
+ * per row, and `fold` is an `NFD` normalisation plus a Unicode-property regex.
+ * The rows are the objects the query cache hands down and they are replaced
+ * wholesale on a refetch, so keying on identity needs no invalidation — the
+ * entries simply become unreachable with the array that held them.
+ */
+const folded = new WeakMap<LedgerEvent, string>()
+
 function haystack(event: LedgerEvent): string {
-  return fold([event.symbol, event.notes, accountOf(event)].filter(Boolean).join(' '))
+  const known = folded.get(event)
+  if (known !== undefined) return known
+  const value = fold([event.symbol, event.notes, accountOf(event)].filter(Boolean).join(' '))
+  folded.set(event, value)
+  return value
 }
 
 export interface LedgerFilters {

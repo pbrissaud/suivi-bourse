@@ -15,14 +15,8 @@
  * the declaration has no file, so *is there an accounts file worth offering*
  * has stopped being a question at all.
  */
+import { DEFAULT_ACCOUNT_ID } from '@/lib/accounts'
 import type { FileAccount, LedgerEvent } from '@/lib/api'
-
-/**
- * The seeded account, which every install owns and nothing branches on
- * (ADR-0013). It is where the rows naming no account land while nothing else is
- * declared, so it is the blank line's own target in that state.
- */
-export const SEEDED_ACCOUNT = 'default'
 
 /**
  * **Where one account of the file is to go** (#835).
@@ -87,7 +81,7 @@ export function accountLines(
   return census.map((account) => {
     const settled = account.name === '' ? !anyDeclared : declared.has(account.name)
     const own: AccountTarget = settled
-      ? { kind: 'account', id: account.name === '' ? SEEDED_ACCOUNT : account.name }
+      ? { kind: 'account', id: account.name === '' ? DEFAULT_ACCOUNT_ID : account.name }
       : { kind: 'unanswered' }
     return {
       name: account.name,

@@ -108,10 +108,6 @@ export interface DashboardHeadProps {
    */
   positions: PositionsResponse | null
   totals: PortfolioTotalsResponse | null
-  /**
-   * The perimeter the consolidated figures name. `null` is *unknown*, and an
-   * unknown perimeter is not written down at all (ADR-0026).
-   */
   /** Whether the reconstruction is running. `null` — nothing says yet. */
   rebuilding: boolean | null
   /**

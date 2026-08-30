@@ -909,16 +909,6 @@ function Reassignment({ offer }: { offer: Extract<ReassignmentOffer, { kind: 'st
 }
 
 /**
- * The split between securities and cash, drawn once and written twice under it.
- *
- * It was the product's second hand-written share bar and it is `ShareBar` now
- * (#800): the same track, the same fill, the same `aria-hidden` — both figures
- * are read out in full one line down — and the same *nothing at all* where the
- * total is not a figure, a bar over an unknown whole being a drawing of
- * nothing. That condition is now a `null` share rather than an early return,
- * which is the primitive's own rule and no longer this file's.
- */
-/**
  * The split of what an account holds — **the account's own hue against the
  * cash's** (#838). The drawing draws the two halves rather than one fill on a
  * neutral track: the securities in the colour the rail gave this account, the

@@ -363,12 +363,6 @@ function ShareLine({ row, currency, onSelect }: ShareLineProps) {
 }
 
 /**
- * One account is **plain text, never a list of one** (#684 D11). The model stays
- * multi-account — the same ETF on a PEA and on a CTO is the most ordinary case
- * of the domain, and that none of the nineteen real symbols shows it is
- * contingent — so it is the rendering that bends, not the shape.
- */
-/**
  * The account a line sits in, **as a chip** (#838). The drawing sets an account
  * id in a filled mark rather than as running text: it is an identifier and not
  * a word, it is the same id the ledger's own rows carry, and one folded line

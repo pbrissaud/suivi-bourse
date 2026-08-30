@@ -18,6 +18,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // Vitest's default is 5 s per test, and it is a *default*, not a budget the
+    // suite was measured against. The heaviest cases here paginate a ledger by
+    // packets behind `findBy*`, and under the full run's parallel load they sat
+    // just the wrong side of five seconds — passing alone, failing in the
+    // suite. A timeout that fires on machine load rather than on a hung
+    // assertion reports nothing; 20 s is still far below any real hang.
+    testTimeout: 20_000,
   },
   build: {
     // Straight into the Python source tree. One path serves both worlds: Flask

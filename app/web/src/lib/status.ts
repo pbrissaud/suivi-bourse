@@ -30,16 +30,19 @@ import { problemMessageKey } from '@/lib/problem'
 export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 'unreachable'
 
 /**
- * A health payload, or `null` for *the route answered and said nothing this
- * function can read* (#819).
+ * The health payload, or `null` when what came back is not one (#819).
  *
- * The narrowing exists because the dot's whole job is to stay true when the
- * detail disappears, and the detail can disappear in more ways than a failed
- * request: a proxy answering `200` with its own JSON, an image whose body has
+ * **Exported since #830, because the bell is no longer its only reader.** The
+ * settings page tabulates the three workloads out of this object, and
+ * `api.health` is a bare `get<HealthState>` — the cast is the caller's promise,
+ * not the wire's. A `200` carrying something else is a real state, named in
+ * ADR-0036: a proxy answering with its own JSON, a stale image whose body has
  * moved on, a route the SPA catch-all served. `get` throws on anything that is
  * not JSON at all, so what is left for this to catch is JSON that is not *this*
  * object — read at the wire and not at the compiler, which is the only place
- * the question is actually asked.
+ * the question is actually asked. Every reader has to refuse the same payloads
+ * or two surfaces disagree about one installation, which is the one thing the
+ * bell exists to prevent.
  *
  * A **word this front does not know** is refused here too, and deliberately:
  * `unknown` means *nothing has been observed yet*, so borrowing it for *the
@@ -51,18 +54,6 @@ export type InstallationState = 'unknown' | 'ok' | 'attention' | 'rebuilding' | 
  * one colour that must never be borrowed. `jobs` is the one that may be `null`,
  * which is the server's own way of saying the fold failed, and `error` is
  * optional because it rides with it.
- */
-/**
- * The health payload, or `null` when what came back is not one.
- *
- * **Exported since #830, because the bell is no longer its only reader.** The
- * settings page tabulates the three workloads out of this object, and
- * `api.health` is a bare `get<HealthState>` — the cast is the caller's promise,
- * not the wire's. A `200` carrying something else is a real state, named in
- * ADR-0036: a proxy answering with its own JSON, a stale image whose body has
- * moved on, a route the SPA catch-all served. Every reader has to refuse the
- * same payloads or two surfaces disagree about one installation, which is the
- * one thing the bell exists to prevent.
  */
 export function readHealth(payload: unknown): HealthState | null {
   if (typeof payload !== 'object' || payload === null) return null
