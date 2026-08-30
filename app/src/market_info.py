@@ -120,17 +120,6 @@ def currency_of(info: Optional[Mapping]) -> Optional[str]:
     return (info or {}).get('currency')
 
 
-def exchange_of(info: Optional[Mapping]) -> Optional[str]:
-    """The venue, or ``None`` for a failed fetch or a payload that names none.
-
-    ``None`` so ``compute_pool_size`` treats the symbol as a solo market rather
-    than grouping every unknown venue into one giant cohort — and the empty
-    string counts as absent for the same reason blank counts as unset everywhere
-    else in the app: a field that says nothing has nothing to say.
-    """
-    return (info or {}).get('exchange') or None
-
-
 def market_state_of(info: Optional[Mapping]) -> Optional[str]:
     """Yahoo's ``marketState``, untouched — ``decide`` fail-opens the unknown."""
     return (info or {}).get('marketState')

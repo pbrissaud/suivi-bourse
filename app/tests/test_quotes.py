@@ -589,6 +589,50 @@ def test_an_empty_currency_is_read_as_no_unit_by_both_readings(declared):
     assert quotes.first_quoted_days(declared) == {}
 
 
+def test_the_venue_of_every_symbol_comes_back_in_one_query(declared, mocker):
+    """The read that replaced the boot's exchange capture — issue #851.
+
+    One query for the whole portfolio, and a key for **every** symbol asked:
+    the sizing that consumes it groups the venues it is given, so a symbol
+    silently dropped for want of a row would be indistinguishable from one that
+    trades nowhere. The count is asserted because the defect being avoided is a
+    query per symbol, which no row can show (#844 is the same defect, next door).
+    """
+    quotes.record_quote(declared, 'AAPL', NOW, 100.0, ATTRIBUTES)
+    quotes.record_attributes(declared, 'MSFT', NOW, {'exchange': 'PAR'})
+    reads = mocker.spy(declared, 'query')
+
+    assert quotes.quote_exchanges(declared, ['AAPL', 'MSFT']) == {
+        'AAPL': 'NMS', 'MSFT': 'PAR'}
+    assert reads.call_count == 1
+
+
+def test_a_symbol_with_no_quotation_row_has_no_venue_and_is_not_dropped(
+        declared):
+    """Declared, never scraped — the one gap reading the store leaves.
+
+    It answers ``None``, which is what the capture's own timeout answered for
+    the same symbol, and what ``compute_pool_size`` reads as a solo market. The
+    empty string is the same absence, exactly as it is for the currency.
+    """
+    quotes.record_attributes(declared, 'AAPL', NOW, {'exchange': ''})
+
+    assert quotes.quote_exchanges(declared, ['AAPL', 'MSFT']) == {
+        'AAPL': None, 'MSFT': None}
+
+
+def test_no_symbol_asked_means_no_query_at_all(declared, mocker):
+    """A portfolio holding nothing has no venue to look up.
+
+    The first thing the boot does with this read, on a store that carries no
+    position, is nothing — and there is no ``IN ()`` to write either.
+    """
+    reads = mocker.spy(declared, 'query')
+
+    assert quotes.quote_exchanges(declared, []) == {}
+    assert reads.call_count == 0
+
+
 # --------------------------------------------------------------------------- #
 # The anchors the scheduler reads
 # --------------------------------------------------------------------------- #

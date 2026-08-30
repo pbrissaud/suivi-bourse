@@ -27,6 +27,8 @@ defended against, and the bind is one argument of :func:`boot.serve`.
 import asyncio
 import logging
 import threading
+import time
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -34,9 +36,12 @@ import pytest
 import boot
 import boot_conditions
 import boot_env
+import entries
 import main
+import market
 import store
 import web
+from events.schemas import Event, EventType
 from events.validator import EventValidationError
 
 
@@ -789,6 +794,126 @@ def test_nothing_is_torn_down_when_there_was_nothing_to_build(steps, mocker):
 
     assert boot.run({}) == 1
     assert steps.order == ["read_environment", "build_runtime"]
+
+
+# ---------------------------------------------------------------------------
+# Nothing on the network precedes the socket (issue #851)
+# ---------------------------------------------------------------------------
+#
+# The two tests below are the only ones in this file that run the **whole**
+# sequence over a real store and a real scheduler, because that is the only way
+# the claim can be made: the fifth step happening before any fetch is not an
+# order between doubles, it is an order between a socket and a network.
+#
+# The pool sizing used to fetch one ``info`` per held symbol from
+# ``start_runtime`` — step four — behind a 30-second cap that was the *only*
+# bound on it. So a Yahoo that answered slowly, or not at all, was up to half a
+# minute during which the container answered neither the page nor ``/health``,
+# at every boot since #701 deleted the flag that gated it. The venue is read
+# from ``symbol_quote`` now, so there is nothing left between the ledger and the
+# socket that can wait on anybody.
+
+
+def _a_ledger_holding(tmp_path, *symbols):
+    """Seed the store the boot is about to open with one ``BUY`` per symbol.
+
+    Held symbols are what make the claim non-trivial: an empty portfolio never
+    fetched anything even before #851, the ``if not to_fetch: return`` being the
+    capture's own first line.
+    """
+    seeded = store.open_store(tmp_path / "store" / store.STORE_FILENAME)
+    try:
+        entries.create_many(seeded, [
+            Event(date(2024, 1, 15), EventType.BUY, symbol, symbol,
+                  quantity=10, unit_price=100.0, fee=1.0)
+            for symbol in symbols])
+    finally:
+        seeded.close()
+
+
+@pytest.fixture
+def a_market_that_never_answers(monkeypatch):
+    """The edge the boot used to wait on: every gesture blocks, then fails.
+
+    Released on the way out so the scrape threads the boot armed — which is
+    where a fetch belongs, after the socket — leave cleanly rather than being
+    joined at interpreter exit.
+    """
+    release = threading.Event()
+
+    class _NeverAnswers:
+        def __init__(self, symbol):
+            self.symbol = symbol
+            self.history_metadata = None
+
+        def _wait(self):
+            release.wait(timeout=30)
+            raise RuntimeError(f"Yahoo never answered for {self.symbol}")
+
+        @property
+        def info(self):
+            return self._wait()
+
+        def history(self, *args, **kwargs):
+            return self._wait()
+
+    monkeypatch.setattr(market.yf, "Ticker", _NeverAnswers)
+    try:
+        yield
+    finally:
+        release.set()
+
+
+def test_the_boot_serves_although_the_market_edge_raises(
+        tmp_path, monkeypatch):
+    """A Yahoo that refuses every call is not a boot that refuses to serve.
+
+    The socket is the fifth step and it is reached, with two symbols held: the
+    scrape jobs armed at step four fail in their own threads, on their own
+    back-off, and the page is up.
+    """
+    _a_ledger_holding(tmp_path, "AAPL", "MSFT")
+
+    def _refuses(symbol):
+        raise RuntimeError("the network is not there")
+
+    monkeypatch.setattr(market.yf, "Ticker", _refuses)
+    answered = {}
+
+    def _serve(app, environment, on_shutdown):
+        answered["status"] = app.test_client().get("/health").status_code
+
+    monkeypatch.setattr(boot, "serve", _serve)
+
+    boot.sequence({})
+
+    assert answered["status"] == 200
+
+
+def test_the_health_probe_answers_within_a_second_of_a_hung_market(
+        tmp_path, monkeypatch, a_market_that_never_answers):
+    """The thirty seconds, measured — and they are not spent any more.
+
+    The clock starts at the first line of the sequence and stops when the probe
+    has answered, so what it bounds is the whole boot and not merely the
+    request. Before #851 this could not have passed: ``start_runtime`` would
+    still be inside the capture's deadline, with no socket bound and nothing to
+    ask.
+    """
+    _a_ledger_holding(tmp_path, "AAPL", "MSFT", "ALO.PA")
+    answered = {}
+
+    def _serve(app, environment, on_shutdown):
+        answered["status"] = app.test_client().get("/health").status_code
+        answered["elapsed"] = time.monotonic() - started
+
+    monkeypatch.setattr(boot, "serve", _serve)
+
+    started = time.monotonic()
+    boot.sequence({})
+
+    assert answered["status"] == 200
+    assert answered["elapsed"] < 1.0
 
 
 # ---------------------------------------------------------------------------

@@ -54,7 +54,8 @@ may legitimately call the same line differently, and renaming a share no longer
 cuts its history in two (spec #695 § 3).
 """
 from datetime import date, datetime, timezone
-from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
+                    Tuple)
 
 from logfmt_logger import getLogger
 
@@ -784,6 +785,45 @@ def quote_currency(store, symbol: str) -> Optional[str]:
     rows = store.query(
         'SELECT currency FROM symbol_quote WHERE symbol = ?', [symbol])
     return rows[0][0] if rows and rows[0][0] else None
+
+
+def quote_exchanges(store, symbols: Iterable[str]) -> Dict[str, Optional[str]]:
+    """``{symbol: venue | None}`` for the symbols asked — **one query** (#851).
+
+    The venue's own reading of :func:`quote_currency`, and it is here for the
+    same reason and by the same argument: the place a symbol trades on lives in
+    ``symbol_quote`` and is read from there rather than from the scheduler's
+    ``_share_info_cache``, which *is empty for the whole first cycle after every
+    boot*. Its one consumer is the executor pool's sizing
+    (:func:`scheduling.compute_pool_size`), and that sizing happens in
+    :func:`main.start_runtime` — before the socket is bound. It used to be a
+    *pre-scheduler exchange capture*, one yfinance fetch per held symbol behind a
+    30-second deadline, and what those seconds bought was an integer between 4
+    and 10 that the app then re-derived from the same fetches, non-blocking, a
+    few seconds later. The store already knew.
+
+    **One query for the whole portfolio**, never one per symbol: the caller asks
+    about every held symbol at once and there is nothing to stagger. An empty
+    set is answered without touching the store at all — a portfolio holding
+    nothing has no venue to look up, and no ``IN ()`` to write.
+
+    A symbol the store has no quotation row for — declared, never scraped, or
+    scraped and never answered — maps to ``None``, and so does one whose
+    ``exchange`` is ``NULL`` or empty: the two are the same absence to the only
+    reader there is, which groups every unknown venue as a **solo market**
+    rather than into one giant cohort. The empty string counts as absent here
+    exactly as it does in :func:`quote_currency`, so the two stay one
+    reading. There is no
+    sentinel left to filter out (#845): a payload naming no venue writes
+    ``NULL``, and the word the app used to fabricate is gone from the column.
+    """
+    wanted = sorted(set(symbols))
+    if not wanted:
+        return {}
+    stored = dict(store.query(
+        'SELECT symbol, exchange FROM symbol_quote '
+        ' WHERE symbol IN (%s)' % ', '.join('?' * len(wanted)), wanted))
+    return {symbol: (stored.get(symbol) or None) for symbol in wanted}
 
 
 def oldest_ts(store, symbol: str) -> Optional[datetime]:

@@ -446,15 +446,15 @@ replaced by a double for the sake of being replaced.
 
 **Internal spies exist, and their subject is the negative.** What the app decided
 *not* to do writes no row and returns no payload, so there is nothing else to
-assert on: 62 call-shaped assertions live in eight files, and they are overwhelmingly
+assert on: 66 call-shaped assertions live in eight files, and they are overwhelmingly
 `assert_not_called` and `call_count`. Where they are:
 
 | File | What is doubled, and what it proves |
 |---|---|
-| `test_scheduling_wiring.py` (35) | `MagicMock(spec=BackgroundScheduler)` — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
+| `test_scheduling_wiring.py` (37) | `MagicMock(spec=BackgroundScheduler)` — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
 | `test_metrics.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
 | `test_web_boot.py` (4) | the runtime classes — **not constructed** before the fork, shut down once after it |
-| `test_quotes.py` (4), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
+| `test_quotes.py` (6), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
 
 The rule is therefore *"a spy is the last resort, and it is for an absence"*, not
 *"there are no spies"*. If a row or a payload can answer the question, it answers it.
