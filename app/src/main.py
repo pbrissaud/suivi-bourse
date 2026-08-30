@@ -16,13 +16,9 @@ from datetime import date, datetime, timezone, timedelta, time as time_of_day
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Set, Tuple
 
-import pandas as pd
-import yfinance as yf
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from logfmt_logger import getLogger
-from urllib3 import exceptions as u_exceptions
-from yfinance.exceptions import YFRateLimitError
 
 import accounts as accounts_module
 import boot_conditions
@@ -31,6 +27,8 @@ import carrying
 import fx
 import installation_facts
 import ledger
+import market
+import market_info
 import mounts
 import perf_series
 import performance
@@ -77,6 +75,11 @@ MANAGED_LOGGERS = (
     # stored nowhere, so the acknowledgement's line is the only trace there is
     # of one having ever been raised.
     'advisories',
+    # The market edge's own (#846). It is the app's one line to the outside, so
+    # what it says of a rate limit or a refused ticker is what an owner reaches
+    # for DEBUG to read — the fetch paths logged under `suivi_bourse` while
+    # they were methods of the runtime, and the name follows the module.
+    'market',
 )
 
 
@@ -1102,155 +1105,33 @@ class SuiviBourseMetrics:
     # since #658 — and the schema it called no longer exists.
 
     def _fetch_ticker_data(self, symbol: str, max_retries: int = 3):
-        """
-        Fetch ticker data from yfinance with retry logic for rate limiting.
+        """One symbol's newest close and its attributes, and the cache's fill.
 
-        Args:
-            symbol: The stock symbol to fetch
-            max_retries: Maximum number of retry attempts
+        The fetch itself is :func:`market.latest_quote` — the retries, the
+        back-off and the translation of Yahoo's mapping all live at the edge
+        since #846. What is left here is the **cache**: the attributes of the
+        symbols this install holds, kept per symbol for the backfill to read,
+        which is a memory of the portfolio and not a fact about the market.
+        Whose it is, is #847's question.
 
-        Returns:
-            Tuple of (last_quote, info_dict) or (None, None) if fetch fails
+        Returns ``(last_quote, info)``, or ``(None, None)`` if the fetch fails.
         """
-        for attempt in range(max_retries):
-            try:
-                ticker = yf.Ticker(symbol)
-                ticker_history = ticker.history()
-                if ticker_history.empty:
-                    app_logger.warning(f"No price history returned for {symbol}")
-                    return None, None
-                # Use the last row that actually has a close. Yahoo returns the
-                # most recent daily bar with a NaN close for a while after a
-                # session ends (the daily aggregate lags the intraday data), so a
-                # blind tail(1) would reject a perfectly good series outside
-                # market hours, defeating the missed-session gap-fill (#627).
-                # Mirror the per-row NaN skip _fetch_historical_data does.
-                valid_close = ticker_history['Close'].dropna()
-                if valid_close.empty:
-                    app_logger.warning(f"No non-NaN close price for {symbol}, skipping")
-                    return None, None
-                last_quote = valid_close.iloc[-1]
-                ticker_info = ticker.info
-                info = {
-                    'currency': ticker_info.get('currency', 'undefined'),
-                    'exchange': ticker_info.get('exchange', 'undefined'),
-                    'quoteType': ticker_info.get('quoteType', 'undefined'),
-                    'dividendYield': ticker_info.get('dividendYield'),
-                    'peRatio': ticker_info.get('trailingPE') or ticker_info.get('forwardPE'),
-                    'marketCap': ticker_info.get('marketCap'),
-                    # Market-context fields feed the per-symbol scheduler
-                    # (scheduling.extract_market_context). They ride on `info`
-                    # so _fetch_ticker_data keeps its (last_quote, info) shape;
-                    # _history_meta carries currentTradingPeriod for the exact
-                    # next-open. Extra keys are ignored by the write path.
-                    'marketState': ticker_info.get('marketState'),
-                    'exchangeTimezoneName': ticker_info.get('exchangeTimezoneName'),
-                    '_history_meta': getattr(ticker, 'history_metadata', None),
-                }
-                # Cache the info for backfill use
-                self._share_info_cache[symbol] = info
-                return last_quote, info
-            except YFRateLimitError:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** (attempt + 1)
-                    app_logger.warning(
-                        f"Rate limited for {symbol}, retrying in {wait_time}s "
-                        f"(attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    app_logger.error(
-                        f"Rate limited for {symbol}, max retries exceeded")
-                    return None, None
-            except (u_exceptions.NewConnectionError, RuntimeError):
-                app_logger.error(
-                    "Error while retrieving data from Yfinance API",
-                    exc_info=True)
-                return None, None
-        return None, None
+        last_quote, info = market.latest_quote(symbol, max_retries)
+        if info is not None:
+            self._share_info_cache[symbol] = info
+        return last_quote, info
 
     def _fetch_historical_data(self, symbol: str, start: datetime, end: datetime,
                                max_retries: int = 3) -> Optional[List[Dict]]:
+        """One symbol's closes over ``[start, end]``, or ``None`` on failure.
+
+        :func:`market.price_history` with this job's politeness delay, which is
+        the unit its rate-limit back-off doubles. ``[]`` is an answer and
+        ``None`` is the absence of one — the distinction the backfill's
+        back-off reads.
         """
-        Fetch historical price data from yfinance.
-
-        Args:
-            symbol: Stock symbol
-            start: Start date
-            end: End date
-            max_retries: Maximum retry attempts
-
-        Returns:
-            List of dicts with 'timestamp' and 'price' keys, or None on failure
-        """
-        for attempt in range(max_retries):
-            try:
-                ticker = yf.Ticker(symbol)
-                # **An API ceiling, not an arbitration** (issue #705, ADR-0010).
-                # Yahoo sells nothing below the hour past
-                # ``scheduling.HOURLY_CEILING_DAYS``, so the rebuild asks for the
-                # finest bars that still exist rather than for the finest the
-                # ladder would allow — which is why that number is not a dial and
-                # not derived from :mod:`retention`'s walls either. The two sit a
-                # day apart (the hourly rung runs to 730) and that is the whole
-                # point: the ladder was drawn *from* this ceiling, so a
-                # reconstructed past and an ageing present implement one function
-                # of age instead of two policies meeting at the present. It is
-                # also the sentence behind *fine resolution is only ever obtained
-                # by having been there*: past this line there is nowhere to buy
-                # it back.
-                #
-                # The choice is made **once for the whole window**, off its
-                # oldest day, because that is what Yahoo refuses a request on —
-                # which is why the backward pass cuts a chunk that straddles the
-                # ceiling rather than letting one interval answer for both sides
-                # of it (issue #783).
-                interval = scheduling.history_interval(
-                    start, datetime.now(timezone.utc))
-                history = ticker.history(start=start, end=end, interval=interval)
-
-                if history.empty:
-                    app_logger.debug(f"No historical data for {symbol} from {start} to {end}")
-                    return []
-
-                prices = []
-                for idx, row in history.iterrows():
-                    # Skip rows without a valid close price (holidays / partial
-                    # bars come back as NaN) so no NaN price reaches the store.
-                    close = row['Close']
-                    if pd.isna(close):
-                        continue
-                    # idx is a pandas Timestamp
-                    ts = idx.to_pydatetime()
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=timezone.utc)
-                    # The close, and only the close (issue #700). OHLC and
-                    # volume are not dropped for economy: the *live* writer set
-                    # open = high = low = close on every point it ever wrote, so
-                    # the four columns disagreed about what they meant depending
-                    # on which pass had filled them, and a candlestick drawn from
-                    # them showed a flat doji through every session the app was
-                    # up for. A column that lies is worse than one that is
-                    # missing.
-                    prices.append({'timestamp': ts, 'price': float(close)})
-
-                return prices
-
-            except YFRateLimitError:
-                if attempt < max_retries - 1:
-                    wait_time = self.backfill_delay * (2 ** attempt)
-                    app_logger.warning(
-                        f"Rate limited fetching history for {symbol}, "
-                        f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    app_logger.error(
-                        f"Rate limited fetching history for {symbol}, max retries exceeded")
-                    return None
-            except Exception as e:
-                app_logger.error(f"Error fetching history for {symbol}: {e}")
-                return None
-
-        return None
+        return market.price_history(symbol, start, end, self.backfill_delay,
+                                    max_retries)
 
     # ------------------------------------------------------------------ #
     # The exchange rate (issue #702, ADR-0002)
@@ -1269,15 +1150,7 @@ class SuiviBourseMetrics:
         an ordinary state (spec #695 § 7), it writes a ``NULL`` converted price
         and never a lost quote.
         """
-        try:
-            history = yf.Ticker(pair).history()
-        except Exception as e:
-            app_logger.warning(f"Could not fetch the {pair} rate: {e}")
-            return None
-        if history is None or history.empty or 'Close' not in history.columns:
-            return None
-        closes = history['Close'].dropna()
-        return float(closes.iloc[-1]) if not closes.empty else None
+        return market.pair_rate(pair)
 
     def _fetch_fx_series(self, pair: str, start: date,
                          end: date) -> Dict[date, float]:
@@ -1300,22 +1173,7 @@ class SuiviBourseMetrics:
         what changes is that the difference survives as far as the caller that
         needs it.
         """
-        history = yf.Ticker(pair).history(start=start, end=end, interval='1d')
-        if history is None or history.empty:
-            return {}
-
-        series: Dict[date, float] = {}
-        for index, row in history.iterrows():
-            close = row['Close']
-            if pd.isna(close):
-                continue
-            moment = index.to_pydatetime()
-            day = moment.date() if moment.tzinfo is None else moment.astimezone(
-                timezone.utc).date()
-            # The **last** close of a day wins, the survivor rule the rest of
-            # the store follows.
-            series[day] = float(close)
-        return series
+        return market.pair_series(pair, start, end)
 
     def _convert(self, price, currency: Optional[str],
                  at: Optional[date] = None) -> Tuple[Optional[float], Optional[float]]:
@@ -1327,27 +1185,6 @@ class SuiviBourseMetrics:
         caller writes the point anyway.
         """
         return fx.convert(price, currency, self.base_currency, self.rates, at)
-
-    @staticmethod
-    def _quote_attributes(info: Dict) -> Dict:
-        """The ``symbol_quote`` columns a fetched ``info`` supplies.
-
-        The fundamentals are stored in **current value only** (spec #695 § 3):
-        yfinance gives them on the live quote alone, so v4's attempt at a history
-        of them was a comb of ``NULL`` down the price series that nothing ever
-        read as one.
-        """
-        return {
-            'currency': info.get('currency'),
-            'exchange': info.get('exchange'),
-            'quote_type': info.get('quoteType'),
-            # Stored as the percentage yfinance hands over — `dividendYield` is
-            # already 5.32 for a 5,32 % yield, the ratio being spelled
-            # `trailingAnnualDividendYield`. Scaling it here stored 532.
-            'dividend_yield': info.get('dividendYield'),
-            'pe_ratio': info.get('peRatio'),
-            'market_cap': info.get('marketCap'),
-        }
 
     def _write_quote(self, symbol: str, last_quote, info, now: datetime,
                      converted=None, fx_rate=None) -> bool:
@@ -1379,7 +1216,7 @@ class SuiviBourseMetrics:
         try:
             with self.config_manager.writing() as opened:
                 quotes.record_quote(opened, symbol, now, last_quote,
-                                    self._quote_attributes(info),
+                                    market_info.quote_columns(info),
                                     converted, fx_rate)
             return True
         except Exception as e:
@@ -1411,7 +1248,7 @@ class SuiviBourseMetrics:
         for symbol in held:
             last_quote, info = self._fetch_ticker_data(symbol)
             converted, rate = self._convert(
-                last_quote, (info or {}).get('currency'))
+                last_quote, market_info.currency_of(info))
 
             if last_quote is None or info is None:
                 app_logger.warning(
@@ -1441,18 +1278,6 @@ class SuiviBourseMetrics:
         return {s['symbol'] for s in self.shares
                 if s.get('symbol') and s.get('quantity')}
 
-    @staticmethod
-    def _exchange_from_info(info: Optional[dict]) -> Optional[str]:
-        """The exchange from a ticker ``info`` dict, or ``None``.
-
-        ``None`` for a failed fetch or the ``'undefined'`` sentinel (yfinance's
-        default for a missing exchange), so ``compute_pool_size`` treats the
-        symbol as a solo market rather than grouping every unknown into one giant
-        cohort.
-        """
-        exchange = (info or {}).get('exchange')
-        return exchange if exchange and exchange != 'undefined' else None
-
     def capture_exchange_of(self) -> Dict[str, Optional[str]]:
         """Map each held symbol to its exchange for auto pool sizing (#619, #611).
 
@@ -1467,7 +1292,7 @@ class SuiviBourseMetrics:
         collection is hard-capped by ``_EXCHANGE_CAPTURE_TIMEOUT_SECONDS``: a slow
         or rate-limited yfinance session can't delay scheduler startup
         indefinitely. Any symbol that fails or doesn't resolve in time maps to
-        ``None`` — a solo market (see ``_exchange_from_info``).
+        ``None`` — a solo market (see :func:`market_info.exchange_of`).
 
         **Every boot pays this since #701**, the opt-in flag that used to gate it
         having been deleted along with the fixed pool it selected. That is what
@@ -1486,7 +1311,7 @@ class SuiviBourseMetrics:
                 to_fetch.append(symbol)
                 exchange_of[symbol] = None  # solo unless the fetch resolves below
             else:
-                exchange_of[symbol] = self._exchange_from_info(info)
+                exchange_of[symbol] = market_info.exchange_of(info)
 
         if not to_fetch:
             return exchange_of
@@ -1505,7 +1330,7 @@ class SuiviBourseMetrics:
                         f"Exchange capture failed for {symbol}, treating as a "
                         f"solo market: {e}")
                     continue
-                exchange_of[symbol] = self._exchange_from_info(info)
+                exchange_of[symbol] = market_info.exchange_of(info)
         except concurrent.futures.TimeoutError:
             unresolved = sorted(s for f, s in futures.items() if not f.done())
             app_logger.warning(
@@ -1833,7 +1658,8 @@ class SuiviBourseMetrics:
             # calls would be two rates for one observation the moment a TTL
             # expired between them, and the row would then say a price was
             # produced by a rate it was not.
-            converted, rate = self._convert(last_quote, (info or {}).get('currency'))
+            converted, rate = self._convert(last_quote,
+                                            market_info.currency_of(info))
 
             # The holdings this symbol has, which since #700 decide **whether** to
             # write and no longer **how many times**: the price series carries no
@@ -1846,7 +1672,7 @@ class SuiviBourseMetrics:
 
             if info is not None:
                 state, next_open = scheduling.extract_market_context(
-                    info, info.get('_history_meta'), now)
+                    info, market_info.history_metadata_of(info), now)
             else:
                 # Fetch failed outright: no state to read, fail-open as REGULAR so a
                 # transient failure keeps the job polling rather than sleeping it.
@@ -2550,7 +2376,7 @@ class SuiviBourseMetrics:
         """
         if not prices or not self.base_currency:
             return
-        currency = (self._share_info_cache.get(symbol) or {}).get('currency')
+        currency = market_info.currency_of(self._share_info_cache.get(symbol))
         if not currency:
             return
 
@@ -2862,28 +2688,16 @@ class SuiviBourseMetrics:
         if symbol in self._quote_currency_unknown:
             return None, False
 
-        try:
-            raw = yf.Ticker(symbol).info or {}
-        except Exception as e:
-            app_logger.warning(
-                f"Could not fetch the attributes of {symbol}: {e}")
+        # ``None`` is the request that did not complete, and it is the one
+        # answer this method may not confuse with a reply — :mod:`market` keeps
+        # the two apart for exactly this call site. The sentinel that must not
+        # reach the currency column has been removed at the translation, which
+        # since #846 is the one place it is named.
+        info = market.symbol_attributes(symbol)
+        if info is None:
             return None, True
 
-        currency = raw.get('currency')
-        # ``undefined`` is yfinance's own sentinel for a field it has no value
-        # for, and it must not reach the column: stored, it would be read back as
-        # a currency and named as one half of a pair (``UNDEFINEDEUR=X``), which
-        # resolves to nothing and would arm ``unconvertible`` — the terminal that
-        # asks the owner to act, on a symbol they can do nothing about.
-        currency = currency if currency and currency != 'undefined' else None
-        info = {
-            'currency': currency,
-            'exchange': raw.get('exchange'),
-            'quoteType': raw.get('quoteType'),
-            'dividendYield': raw.get('dividendYield'),
-            'peRatio': raw.get('trailingPE') or raw.get('forwardPE'),
-            'marketCap': raw.get('marketCap'),
-        }
+        currency = market_info.currency_of(info)
         time.sleep(self.backfill_delay)
 
         if not currency:
@@ -2897,7 +2711,7 @@ class SuiviBourseMetrics:
             with self.config_manager.writing() as opened:
                 quotes.record_attributes(
                     opened, symbol, datetime.now(timezone.utc),
-                    self._quote_attributes(info))
+                    market_info.quote_columns(info))
         except Exception as e:
             app_logger.error(
                 f"Failed to record the attributes of {symbol}: {e}")

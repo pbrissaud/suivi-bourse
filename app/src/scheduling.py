@@ -16,6 +16,12 @@ from datetime import datetime, timedelta, timezone
 from math import ceil, isclose
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
+# The vocabulary of the payload this module is handed. It is read through
+# :mod:`market_info` and never by key (#846): what a Yahoo mapping is called is
+# the market edge's business, and this module's is what the cadence makes of
+# it. Pure, so importing it costs this module nothing.
+import market_info
+
 try:  # zoneinfo is stdlib on 3.9+; no new dependency (design #602/#603).
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:  # pragma: no cover - defensive, py<3.9 unsupported anyway
@@ -625,7 +631,7 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
     written where the constant is.
     """
     info = info or {}
-    state = info.get('marketState')
+    state = market_info.market_state_of(info)
 
     # ``currentTradingPeriod`` describes the **current** period and never the
     # next one, so after the close ``regular.start`` is the open of that same
@@ -753,22 +759,16 @@ def extract_market_context(info: Optional[dict], history_meta: Optional[dict],
 def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
     """The **current** trading period's regular open, or None.
 
-    Reads ``currentTradingPeriod.regular.start`` (a Unix timestamp) defensively
-    — any missing/garbage layer yields None so the caller falls back. The name
-    says what the field holds and not what a scheduler would like it to hold:
+    The timestamp is read by :func:`market_info.regular_period_start`, which
+    is where the payload's shape is known and where a missing or garbage layer
+    becomes a None the caller falls back on; what is decided here is what a
+    scheduler makes of it. The name says what the field holds and not what a
+    scheduler would like it to hold:
     before the open it *is* the next open, after the close it is this morning's
     (issue #769). Deciding what to do with a past one belongs to the caller,
     which is where the invariant is stated.
     """
-    if not isinstance(history_meta, dict):
-        return None
-    ctp = history_meta.get('currentTradingPeriod')
-    if not isinstance(ctp, dict):
-        return None
-    regular = ctp.get('regular')
-    if not isinstance(regular, dict):
-        return None
-    start = regular.get('start')
+    start = market_info.regular_period_start(history_meta)
     if start is None:
         return None
     try:
@@ -779,7 +779,7 @@ def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
 
 def _exchange_tz(info: dict):
     """The venue's ``ZoneInfo``, or None — the one place that parses the name."""
-    tz_name = info.get('exchangeTimezoneName')
+    tz_name = market_info.exchange_timezone_name_of(info)
     if not tz_name or ZoneInfo is None:
         return None
     try:

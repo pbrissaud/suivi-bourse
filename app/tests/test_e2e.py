@@ -3,7 +3,7 @@ True end-to-end wiring tests for SuiviBourse.
 
 These exercise the *whole* application with **one** external boundary faked:
 
-  * yfinance  -> monkeypatched ``main.yf.Ticker`` returning canned frames/info
+  * yfinance  -> monkeypatched ``market.yf.Ticker`` returning canned frames/info
   * time.sleep-> no-op (so rate-limit pauses never actually sleep)
 
 A real ``ConfigurationManager`` reads a real CSV written into ``tmp_path``, a
@@ -25,6 +25,7 @@ import pytest
 import entries
 import ledger
 import main
+import market
 import portfolio_view
 import quotes
 import store_reads
@@ -81,10 +82,10 @@ def _make_fake_ticker(fake_ticker, close):
 
 
 def _patch_ticker(monkeypatch, fake_ticker):
-    """Route ``main.yf.Ticker(symbol)`` to a per-symbol fake ticker."""
+    """Route ``market.yf.Ticker(symbol)`` to a per-symbol fake ticker."""
     def factory(symbol):
         return _make_fake_ticker(fake_ticker, TICKER_CLOSE.get(symbol, 100.0))
-    monkeypatch.setattr(main.yf, "Ticker", factory)
+    monkeypatch.setattr(market.yf, "Ticker", factory)
 
 
 def _no_sleep(monkeypatch):
