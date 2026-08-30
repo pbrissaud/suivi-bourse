@@ -71,6 +71,66 @@ def test_the_tree_reads_one_clock_and_it_is_the_products():
     assert offenders == []
 
 
+#: The repair of a naive instant and the serialization of an instant, each
+#: written under a private name. `app/src/` held eight of them (#843), in three
+#: variants that had already drifted, and the ninth is the one this pattern
+#: exists to refuse. It names the **definition** and never the expression
+#: `replace(tzinfo=timezone.utc)`: three repairs are made **on the way in** and
+#: are legitimate exactly where they stand — `scheduling` repairs an argument it
+#: is handed (and is a *pure* module, so it could not import anything that is
+#: not), `main` repairs a pandas `Timestamp` at the market's edge, and
+#: `web.api._parse_instant` repairs an ISO string arriving from the front. A
+#: banner on the expression would bite all three; a banner on the definition
+#: bites the copies, which are the subject.
+_PRIVATE_TIME_HELPER = re.compile(r'^def _(?:utc|iso|stamp_value)\s*\(',
+                                  re.MULTILINE)
+
+#: Where the two of them live, and the only file exempted — by its name, which
+#: is the repository's precedent for an exclusion.
+_INSTANTS = 'src/instants.py'
+
+
+def test_the_repair_of_an_instant_is_written_once_in_the_tree():
+    """#843, checked on the source: one `utc`, one `iso`, and no ninth copy.
+
+    The root `CLAUDE.md` states that every read of the clock is UTC-qualified
+    and the test above holds it — but a **read** is not the only way a naive
+    instant enters. What comes back from the store is the other way, and the
+    repair of it was rewritten in eight modules that had already drifted apart:
+    some converted an aware instant to UTC, some let it through, and the two
+    modules feeding most of the page's fields did not repair at all.
+
+    Nothing behavioural can hold this. A naive ISO string is read by
+    `new Date()` as *local* time, so the defect is a shift by the browser's
+    offset — and it is invisible on a machine in UTC, which is what the CI runs
+    on. A rule on the source is the only shape this guard has, the same
+    conclusion the deleted `_stamp_value` docstring had already written down.
+
+    The exemption is `src/instants.py` and it is asserted to be **used** rather
+    than merely allowed: a rule that goes green when the module it points at
+    disappears is the failure a check on the source has (#778).
+    """
+    offenders = []
+    scanned = sorted((_APP / 'src').rglob('*.py'))
+    assert len(scanned) > 20
+    for path in scanned:
+        relative = path.relative_to(_APP).as_posix()
+        if relative == _INSTANTS:
+            continue
+        if _PRIVATE_TIME_HELPER.search(path.read_text()):
+            offenders.append(relative)
+
+    assert offenders == []
+
+    # The other half: the home exists, it is where the tree imports from, and
+    # it answers under the two public names the copies were folded into.
+    home = (_APP / _INSTANTS).read_text()
+    assert 'def utc(' in home and 'def iso(' in home
+    importers = [path.relative_to(_APP).as_posix() for path in scanned
+                 if 'import instants' in path.read_text()]
+    assert len(importers) >= 8, importers
+
+
 #: The modules the root `CLAUDE.md` lists under *the rules that are expensive to
 #: break*: **no store, no yfinance, `now` injected**. What that costs is
 #: measurable at the import, which is the one form of it a test can hold.
