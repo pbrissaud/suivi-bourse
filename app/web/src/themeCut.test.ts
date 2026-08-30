@@ -27,9 +27,9 @@
  *    states is a preset that only half exists (ADR-0024 gives the theme three
  *    states, so both grounds are real).
  *
- * Two more are about what must be **absent**, and absence is exactly what no
- * screen can show: no theme JSON anywhere in the repository, and no third-party
- * preview script in the build's one entry.
+ * Three more are about what must be **absent**, and absence is exactly what no
+ * screen can show: no theme JSON anywhere in the repository, no colour literal
+ * in a component, and no third-party preview script in the build's one entry.
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -219,6 +219,39 @@ describe('what the theme must not bring with it', () => {
     expect(vendored.map((file) => path.relative(REPO_ROOT, file))).toEqual([])
   })
 
+  it('leaves no colour literal in a component', () => {
+    // #837 verified this by reading, and #841 is why it is held instead: the
+    // guarantee is what makes the theme reach every surface, and a guarantee
+    // nothing measures is one somebody re-establishes by hand every time. The
+    // rule is the cut's own, one floor down — a value belongs to `index.css`,
+    // so a component names a token and never a colour.
+    //
+    // The scan's subject is the **component**, so it reads `.tsx` and nothing
+    // else. That is what leaves `accountColour` (`lib/accounts.ts`) and
+    // `allocationRamp` (`lib/alloc.ts`) outside it, and they belong outside:
+    // both **compute** a colour from a rule (a hue wheel, a rank ramp), which
+    // is precisely what a token cannot say. `lib/`'s own `.tsx` are scanned
+    // like any other surface; only `ui/` is out by name, for
+    // `gridColumns.test.ts`'s reason — it regenerates.
+    //
+    // What this does *not* catch is a colour nobody wrote: Recharts paints an
+    // uncoloured grid `#ccc` from inside its own bundle, and no scan of ours
+    // will ever see it. That half is `chartChrome.test.ts`'s.
+    const offenders = componentSources().flatMap((file) => {
+      const source = fs
+        .readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
+      // The issue references this repository is written in — `#841` — are three
+      // hexadecimal digits and would read as a colour, which is the whole
+      // reason the comments go first.
+      return [...source.matchAll(/#[0-9a-fA-F]{3,8}\b|\boklch\(|\bhsla?\(|\brgba?\(/g)].map(
+        (hit) => `${path.relative(WEB_ROOT, file)} — ${hit[0]}`,
+      )
+    })
+    expect(offenders).toEqual([])
+  })
+
   it('leaves no third-party script in the build’s one entry', () => {
     // tweakcn's live preview is a script loaded at runtime, and `index.html` is
     // the single entry built into the statics Flask serves. A preview that
@@ -250,6 +283,23 @@ function versionedJson(): string[] {
     .split('\0')
     .filter(Boolean)
     .map((relative) => path.join(REPO_ROOT, relative))
+}
+
+/**
+ * Every `.tsx` the product writes by hand — the surfaces, and nothing else.
+ *
+ * `ui/` regenerates from the registry and `test/` is not judged, which is the
+ * same perimeter `gridColumns.test.ts` and `chartChrome.test.ts` scan.
+ */
+function componentSources(directory: string = path.join(WEB_ROOT, 'src')): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      return entry.name === 'ui' || entry.name === 'test' ? [] : componentSources(full)
+    }
+    if (!/\.tsx$/.test(entry.name) || /\.test\.tsx$/.test(entry.name)) return []
+    return [full]
+  })
 }
 
 /** A shadcn registry item, which is the shape a pasted tweakcn theme wears. */
