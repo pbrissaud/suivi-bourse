@@ -9,6 +9,36 @@ from typing import List, Optional
 
 from .schemas import Event, EventType
 
+#: The order the natures of **one calendar day** replay in — the entries before
+#: the exits, and the one tie-break the sort has.
+#:
+#: The ledger is dated to the day (ADR-0001), so where two rows fall on the same
+#: date the sequence between them is **not a fact the model carries**: two files
+#: holding the same dated facts have to replay identically, whatever order the
+#: broker printed them in. Left to the file, a very ordinary export written
+#: newest-first sold shares its own first line had not bought yet, and the
+#: replay refused the whole import for an oversell of a security the file
+#: visibly acquires.
+#:
+#: The rank is what the aggregator's arithmetic needs, in its order: money in,
+#: then shares in (BUY and GRANT are one rank — both add quantity and basis, and
+#: neither can refuse the other), then the dividend, then shares out, then money
+#: out. It is a **replay order and not a chronology**: the two cash natures are
+#: additive and would land anywhere without changing a figure, and they are
+#: placed all the same so *entries before exits* is one sentence rather than a
+#: rule about shares with an exception beside it.
+#:
+#: Total over :class:`EventType` on purpose — a nature with no rank would raise
+#: rather than sort by nothing — and ``tests/test_loader.py`` holds that.
+REPLAY_ORDER = {
+    EventType.DEPOSIT: 0,
+    EventType.BUY: 1,
+    EventType.GRANT: 1,
+    EventType.DIVIDEND: 2,
+    EventType.SELL: 3,
+    EventType.WITHDRAWAL: 4,
+}
+
 #: The one column of an event file that is a fact about the **file** rather than
 #: about a row (issue #710): the reporting currency its amounts are recorded in.
 #: It is written by the export and read here, which is what makes a round trip
@@ -56,7 +86,10 @@ class EventLoader:
         Load all events from the source path.
 
         Returns:
-            List of Event objects sorted by date.
+            List of Event objects sorted by date, and — within one date — by
+            nature (:data:`REPLAY_ORDER`), the entries before the exits. The
+            sort is stable, so two rows of one day and one nature keep the
+            order the file gave them.
 
         Raises:
             EventLoaderError: If loading fails, or if the source declares two
@@ -73,8 +106,10 @@ class EventLoader:
         elif self.source_path.is_dir():
             events = self._load_directory(self.source_path)
 
-        # Sort events by date
-        events.sort(key=lambda e: e.date)
+        # Sort events by date, then by nature within the date: a file is a set
+        # of dated facts and never a sequence, so the line order cannot be
+        # allowed to decide whether the ledger replays (see REPLAY_ORDER).
+        events.sort(key=lambda e: (e.date, REPLAY_ORDER[e.event_type]))
         return events
 
     def _load_directory(self, directory: Path) -> List[Event]:
@@ -102,6 +137,19 @@ class EventLoader:
         else:
             raise EventLoaderError(f"Unsupported file format: {suffix}")
 
+    @staticmethod
+    def _normalize_header(value) -> str:
+        """One header cell, as the column name the rest of this module reads.
+
+        Lower-cased and trimmed, and **one definition for both routes**: a
+        header is a header whether it arrived through :mod:`csv` or through
+        :mod:`openpyxl`, and two spellings of this rule are how the same file
+        came to load as ``.xlsx`` and be refused as ``.csv``. Coerced with
+        ``str`` for the workbook's sake, where a header cell can come back as a
+        number; a blank cell names no column and is ``''``.
+        """
+        return str(value).strip().lower() if value else ''
+
     def _load_csv(self, file_path: Path) -> List[Event]:
         """Load events from a CSV file.
 
@@ -110,6 +158,15 @@ class EventLoader:
         turns ``date`` into ``﻿date`` and gets the file refused for a
         missing required column it visibly has. A file without a mark reads
         identically, so the codec costs nothing.
+
+        **The header is normalised exactly as the XLSX route normalises its
+        own.** Excel writes ``Date,Event_Type,…`` by default, and the two
+        routes used to give that one header two answers: the workbook loaded
+        and the sheet saved out of it as CSV was refused for *missing required
+        columns* it visibly carries. The quieter half was worse — a capitalised
+        **optional** column passed the header check and was then read as blank,
+        so the row was refused a layer down for a ``symbol`` the reader can see
+        filled in, and ``Base_Currency`` was dropped without a word.
         """
         events = []
 
@@ -119,14 +176,22 @@ class EventLoader:
             if not reader.fieldnames:
                 raise EventLoaderError(f"Empty CSV file: {file_path}")
 
+            fields = list(reader.fieldnames)
+            headers = [self._normalize_header(field) for field in fields]
+
             # Validate columns
-            columns = set(reader.fieldnames)
+            columns = set(headers)
             missing = self.REQUIRED_COLUMNS - columns
             if missing:
                 raise EventLoaderError(
                     f"Missing required columns in {file_path}: {missing}")
 
-            for row_num, row in enumerate(reader, start=2):
+            for row_num, raw in enumerate(reader, start=2):
+                # Re-keyed on the normalised header, which is also what drops
+                # the ``restkey`` of a row longer than its header: a cell under
+                # no column is a cell nothing can name.
+                row = {header: raw.get(field)
+                       for header, field in zip(headers, fields)}
                 try:
                     # start=2: row 1 is the header, so the number carried onto
                     # the event is the one the user's editor shows them. It is
@@ -157,7 +222,7 @@ class EventLoader:
                 continue
 
             # First row is headers
-            headers = [str(h).lower().strip() if h else '' for h in rows[0]]
+            headers = [self._normalize_header(h) for h in rows[0]]
             columns = set(headers)
 
             missing = self.REQUIRED_COLUMNS - columns
@@ -215,7 +280,7 @@ class EventLoader:
             raise ValueError(f"Invalid date type: {type(date_value)}")
 
         # Parse event type
-        event_type_str = row.get('event_type', '').strip().upper() if row.get('event_type') else ''
+        event_type_str = (self._parse_text(row.get('event_type')) or '').upper()
         if not event_type_str:
             raise ValueError("event_type is required")
 
@@ -228,8 +293,8 @@ class EventLoader:
 
         # Parse symbol / name — optional at the parse level (cash events carry
         # none). Per-type requirements are enforced by the validator.
-        symbol = row.get('symbol', '').strip() if row.get('symbol') else None
-        name = row.get('name', '').strip() if row.get('name') else None
+        symbol = self._parse_text(row.get('symbol'))
+        name = self._parse_text(row.get('name'))
 
         # Parse optional numeric fields
         quantity = self._parse_float(row.get('quantity'), 'quantity')
@@ -238,14 +303,11 @@ class EventLoader:
         amount = self._parse_float(row.get('amount'), 'amount')
 
         # Parse notes
-        notes = row.get('notes', '').strip() if row.get('notes') else None
+        notes = self._parse_text(row.get('notes'))
 
         # Parse account (optional column; validation of whether it is required
         # happens in EventValidator once declared accounts are known)
-        account_value = row.get('account')
-        if account_value is not None and not isinstance(account_value, str):
-            account_value = str(account_value)
-        account = account_value.strip() if account_value else None
+        account = self._parse_text(row.get('account'))
 
         return Event(
             date=event_date,
@@ -286,6 +348,28 @@ class EventLoader:
                 f"{self.declared_currency!r} then {code!r}; "
                 f"{BASE_CURRENCY_COLUMN} is one fact about the whole file")
         self.declared_currency = code
+
+    @staticmethod
+    def _parse_text(value) -> Optional[str]:
+        """One textual cell, trimmed — ``None`` when it says nothing.
+
+        **A spreadsheet cell is not a string**, and the four textual columns are
+        read the same way for it: ``openpyxl`` hands back what the cell holds,
+        so a Tokyo ticker written without its suffix arrives as the integer
+        ``7203`` and a note that is only digits arrives as a number. ``.strip()``
+        raised ``AttributeError`` on it — not a ``ValueError``, so it escaped
+        :meth:`_load_xlsx`'s wrapping unnamed, and :mod:`uploads`' broad
+        fallback turned it into *this is not a ledger this app parses*, losing
+        the row and the column that every other refusal states.
+
+        ``account`` was coerced alone, which is the shape of a defect found once
+        and repaired in the one place it was seen. There is one rule and it is
+        here.
+        """
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     def _parse_float(self, value, field_name: str) -> Optional[float]:
         """Parse a value as float, returning None for empty values."""

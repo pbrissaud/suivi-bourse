@@ -18,7 +18,8 @@ import openpyxl
 import pytest
 
 from application.events import EventLoader
-from application.events.loader import EventLoaderError
+from application.events.aggregator import EventAggregator
+from application.events.loader import REPLAY_ORDER, EventLoaderError
 from application.events.schemas import EventType
 
 
@@ -75,6 +76,98 @@ def test_csv_rows_returned_sorted_by_date(tmp_path):
         date(2024, 6, 15),
         date(2024, 12, 1),
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Same-day ordering: the entries replay before the exits                      #
+# --------------------------------------------------------------------------- #
+
+def test_same_day_sale_listed_above_its_purchase_still_replays(tmp_path):
+    """A broker export written newest-first must not refuse its own ledger.
+
+    The ledger is dated to the day, so the intra-day sequence is not a fact the
+    model carries: two files holding the same dated facts have to replay
+    identically. Listing the SELL above the BUY of the same day used to survive
+    the (stable) date sort in file order and made the replay refuse the whole
+    import — ``Cannot sell 10.0 shares of AAPL (only 0.0 owned)`` about a file
+    that visibly holds the purchase.
+    """
+    csv_path = _write_csv(
+        tmp_path / "newest-first.csv",
+        [
+            "2024-03-01,SELL,AAPL,Apple Inc,10,180.00,1.00,,sale",
+            "2024-03-01,BUY,AAPL,Apple Inc,10,150.00,1.00,,purchase",
+        ],
+    )
+
+    events = EventLoader(str(csv_path)).load()
+
+    assert [e.event_type for e in events] == [EventType.BUY, EventType.SELL]
+    (position,) = EventAggregator().aggregate(events)
+    assert position['quantity'] == 0.0
+    assert position['realized_gain'] == pytest.approx(298.0)
+
+
+def test_the_two_orders_of_one_day_load_the_same_way(tmp_path):
+    """The same dated facts, written either way round, are one ledger."""
+    rows = [
+        "2024-03-01,BUY,AAPL,Apple Inc,10,150.00,1.00,,purchase",
+        "2024-03-01,SELL,AAPL,Apple Inc,10,180.00,1.00,,sale",
+    ]
+    ascending = EventLoader(str(_write_csv(tmp_path / "asc.csv", rows))).load()
+    descending = EventLoader(
+        str(_write_csv(tmp_path / "desc.csv", list(reversed(rows))))).load()
+
+    assert [e.notes for e in ascending] == [e.notes for e in descending]
+    assert (EventAggregator().aggregate(ascending)
+            == EventAggregator().aggregate(descending))
+
+
+def test_same_day_cash_and_grant_order_entries_before_exits(tmp_path):
+    """Within one day: money in, shares in, dividend, shares out, money out."""
+    path = tmp_path / "day.csv"
+    path.write_text(
+        "date,event_type,symbol,name,quantity,unit_price,amount\n"
+        "2024-03-01,WITHDRAWAL,,,,,100\n"
+        "2024-03-01,SELL,AAPL,Apple Inc,1,180.00,\n"
+        "2024-03-01,DIVIDEND,AAPL,Apple Inc,,,2.40\n"
+        "2024-03-01,GRANT,AAPL,Apple Inc,1,150.00,\n"
+        "2024-03-01,BUY,AAPL,Apple Inc,10,150.00,\n"
+        "2024-03-01,DEPOSIT,,,,,1000\n", encoding="utf-8")
+
+    events = EventLoader(str(path)).load()
+
+    # BUY and GRANT share one rank — both add quantity and basis, and neither
+    # can refuse the other — so between those two the file still decides, and
+    # the file lists the GRANT first.
+    assert [e.event_type for e in events] == [
+        EventType.DEPOSIT,
+        EventType.GRANT,
+        EventType.BUY,
+        EventType.DIVIDEND,
+        EventType.SELL,
+        EventType.WITHDRAWAL,
+    ]
+
+
+def test_two_rows_of_one_day_and_one_nature_keep_their_file_order(tmp_path):
+    """The tie-break is the nature and nothing else: the sort stays stable."""
+    csv_path = _write_csv(
+        tmp_path / "twobuys.csv",
+        [
+            "2024-03-01,BUY,AAPL,Apple Inc,10,150.00,1.00,,second fill",
+            "2024-03-01,BUY,AAPL,Apple Inc,5,151.00,1.00,,first fill",
+        ],
+    )
+
+    events = EventLoader(str(csv_path)).load()
+
+    assert [e.notes for e in events] == ["second fill", "first fill"]
+
+
+def test_every_event_type_has_a_replay_rank():
+    """A nature with no rank would sort by nothing — the map has to be total."""
+    assert set(REPLAY_ORDER) == set(EventType)
 
 
 def test_empty_numeric_cells_parse_to_none(tmp_path):
@@ -201,6 +294,73 @@ def test_an_excel_utf8_export_loads_despite_its_byte_order_mark(tmp_path):
     assert event.symbol == "AAPL"
 
 
+def test_a_csv_headed_in_title_case_loads_like_its_xlsx_twin(tmp_path):
+    """Excel capitalises a header by default, and the two routes must agree.
+
+    ``Date,Event_Type,…`` loaded as ``.xlsx`` and was refused as ``.csv`` for
+    *Missing required columns: {event_type, date}* — the same file, the same
+    header, two answers.
+    """
+    path = tmp_path / "excel.csv"
+    path.write_text(
+        "Date,Event_Type,Symbol,Name,Quantity,Unit_Price\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00\n", encoding="utf-8")
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.date == date(2024, 1, 15)
+    assert event.event_type is EventType.BUY
+    assert event.symbol == "AAPL"
+    assert event.quantity == 10.0
+    assert event.unit_price == 150.0
+
+
+def test_a_capitalised_optional_column_is_read_and_not_silently_dropped(tmp_path):
+    """The quieter half: the required columns pass, the optional one vanishes.
+
+    ``Symbol`` in title case used to leave the header check happy and the cell
+    unread, so the row was refused one layer down for a *symbol is required*
+    about a cell the reader can see filled in.
+    """
+    path = tmp_path / "mixed.csv"
+    path.write_text(
+        "date,event_type,Symbol,Name,Quantity,Unit_Price,Account,Notes\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,PEA,bought\n", encoding="utf-8")
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.symbol == "AAPL"
+    assert event.name == "Apple Inc"
+    assert event.account == "PEA"
+    assert event.notes == "bought"
+
+
+def test_a_capitalised_base_currency_column_is_read_on_the_csv_route(tmp_path):
+    """``Base_Currency`` is a fact about the file, whatever its case."""
+    path = tmp_path / "currency.csv"
+    path.write_text(
+        "Date,Event_Type,Symbol,Quantity,Unit_Price,Base_Currency\n"
+        "2024-01-15,BUY,AAPL,10,150.00,EUR\n", encoding="utf-8")
+
+    loader = EventLoader(str(path))
+    loader.load()
+
+    assert loader.declared_currency == "EUR"
+
+
+def test_a_csv_header_with_stray_whitespace_loads(tmp_path):
+    """Whitespace around a header is trimmed, exactly as the XLSX route does."""
+    path = tmp_path / "spaced.csv"
+    path.write_text(
+        " date , event_type , symbol , quantity , unit_price \n"
+        "2024-01-15,BUY,AAPL,10,150.00\n", encoding="utf-8")
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.symbol == "AAPL"
+    assert event.quantity == 10.0
+
+
 def test_unsupported_extension_through_load_file_raises(tmp_path):
     path = tmp_path / "data.txt"
     path.write_text("whatever", encoding="utf-8")
@@ -314,6 +474,52 @@ def test_xlsx_missing_required_column_raises(tmp_path):
     with pytest.raises(EventLoaderError) as exc:
         EventLoader(str(path)).load()
     assert "event_type" in str(exc.value)
+
+
+def test_xlsx_numeric_ticker_is_read_as_text(tmp_path):
+    """A Tokyo ticker without its suffix arrives as a number, not as a string.
+
+    ``7203`` used to reach ``.strip()`` and raise ``AttributeError`` — which is
+    not a ``ValueError``, so the loader let it out unwrapped and the upload's
+    broad fallback turned it into *this is not a ledger this app parses*,
+    losing the row and the column every other refusal names.
+    """
+    header = ["date", "event_type", "symbol", "name", "quantity", "unit_price"]
+    rows = [["2024-01-15", "BUY", 7203, "Toyota", 10, 2500.0]]
+    path = _write_xlsx(tmp_path / "tokyo.xlsx", header, rows)
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.symbol == "7203"
+    assert event.name == "Toyota"
+    assert event.quantity == 10.0
+
+
+def test_xlsx_numeric_name_and_notes_are_read_as_text(tmp_path):
+    """The same coercion on every textual column, not on ``account`` alone."""
+    header = ["date", "event_type", "symbol", "name", "quantity",
+              "unit_price", "notes", "account"]
+    rows = [["2024-01-15", "BUY", "AAPL", 2024, 10, 150.0, 42, 1]]
+    path = _write_xlsx(tmp_path / "numbers.xlsx", header, rows)
+
+    (event,) = EventLoader(str(path)).load()
+
+    assert event.name == "2024"
+    assert event.notes == "42"
+    assert event.account == "1"
+
+
+def test_xlsx_numeric_event_type_is_refused_by_name(tmp_path):
+    """A number where a nature belongs is a refusal that names the row."""
+    header = ["date", "event_type", "symbol", "quantity", "unit_price"]
+    rows = [["2024-01-15", 42, "AAPL", 10, 150.0]]
+    path = _write_xlsx(tmp_path / "numtype.xlsx", header, rows)
+
+    with pytest.raises(EventLoaderError) as exc:
+        EventLoader(str(path)).load()
+    msg = str(exc.value)
+    assert "row 2" in msg
+    assert "42" in msg
 
 
 def test_symbol_and_name_columns_are_optional(tmp_path):
