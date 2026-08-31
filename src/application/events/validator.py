@@ -17,10 +17,18 @@ refusal of the boundary and *"a BUY needs a quantity"* is a refusal of this
 module. Two questions, two owners, and the split is the loader's, not a new one.
 """
 
+import math
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
 from .schemas import CASH_EVENT_TYPES, Event, EventType
+
+
+#: Every cell of an event that holds a number, named once. What makes it a list
+#: rather than four checks spread over the per-type methods is that the rule
+#: below is about the *value* and never about the event it sits on: a ``nan``
+#: is as unusable in a ``DEPOSIT``'s amount as in a ``GRANT``'s unit price.
+NUMERIC_FIELDS = ('quantity', 'unit_price', 'fee', 'amount')
 
 
 class EventValidationError(Exception):
@@ -125,6 +133,7 @@ class EventValidator:
         prefix = f"Event #{event_num} ({event.date}, {event.event_type.value}, {context})"
 
         errors.extend(self._validate_account(event, prefix))
+        errors.extend(self._validate_numbers(event, prefix))
 
         if event.event_type in CASH_EVENT_TYPES:
             errors.extend(self._validate_cash(event, prefix))
@@ -145,6 +154,36 @@ class EventValidator:
             elif event.event_type == EventType.DIVIDEND:
                 errors.extend(self._validate_dividend(event, prefix))
 
+        return errors
+
+    def _validate_numbers(self, event: Event, prefix: str) -> List[ValidationIssue]:
+        """Refuse a cell holding a number JSON cannot spell — on any event.
+
+        The rule :func:`store.finite` states at the store's boundary, stated
+        here at the ledger's: **NaN and infinity are not values a portfolio can
+        hold**. Every other guard in this file is a comparison — ``<= 0``,
+        ``< 0`` — and a comparison is exactly what these two evade: ``nan``
+        answers false to all of them, ``+inf`` to the two that are asked. So a
+        ``1e400`` in a CSV cell and a bare ``NaN`` token in a JSON body were
+        both accepted, stored, and replayed into a position of ``inf`` shares at
+        a cost basis of ``inf``; ``GET /api/events`` then answered a ``200``
+        whose body a browser's ``JSON.parse`` refuses whole, so the page that
+        would have let the owner delete the row went blank instead.
+
+        It runs before the per-type methods and independently of them, because
+        the four fields are refused for the same reason wherever they appear —
+        the ``GRANT`` unit price included, which #699 leaves unjudged. That
+        exemption is about a price that *is* a number and cannot be one (zero,
+        negative), normalised to dilution where it is read; nothing normalises a
+        ``nan``, which :func:`~events.schemas.declared_value` multiplies straight
+        into the cost basis.
+        """
+        errors = []
+        for name in NUMERIC_FIELDS:
+            value = getattr(event, name)
+            if isinstance(value, float) and not math.isfinite(value):
+                errors.append(_issue(
+                    name, prefix, f"{name} must be a finite number"))
         return errors
 
     def _validate_cash(self, event: Event, prefix: str) -> List[ValidationIssue]:
@@ -274,6 +313,9 @@ class EventValidator:
         elif event.quantity <= 0:
             errors.append(_issue('quantity', prefix, "quantity must be positive for GRANT"))
 
+        if event.fee is not None and event.fee < 0:
+            errors.append(_issue('fee', prefix, "fee cannot be negative"))
+
         return errors
 
     def _validate_dividend(self, event: Event, prefix: str) -> List[ValidationIssue]:
@@ -284,6 +326,9 @@ class EventValidator:
             errors.append(_issue('amount', prefix, "amount is required for DIVIDEND"))
         elif event.amount <= 0:
             errors.append(_issue('amount', prefix, "amount must be positive for DIVIDEND"))
+
+        if event.fee is not None and event.fee < 0:
+            errors.append(_issue('fee', prefix, "fee cannot be negative"))
 
         return errors
 

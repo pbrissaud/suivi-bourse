@@ -297,6 +297,40 @@ def test_sell_more_than_owned_raises_aggregation_error(aggregator):
         aggregator.aggregate(events)
 
 
+def test_an_oversell_is_refused_even_when_the_position_is_not_a_number(aggregator):
+    """The threshold is a comparison, and a comparison against ``nan`` is false.
+
+    A ledger carrying a non-finite quantity — one the validator now refuses, and
+    one a store written before it may still hold — left the position at ``nan``,
+    and ``quantity > state.quantity + DUST_FRACTION * acquired`` is false against
+    it. A sale of a billion shares of a security nobody owns was replayed
+    without a word, and every figure downstream became ``nan``.
+    """
+    events = [
+        Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+              quantity=float('nan'), unit_price=150.0),
+        Event(date(2024, 9, 15), EventType.SELL, "AAPL", "Apple Inc",
+              quantity=1e9, unit_price=190.0),
+    ]
+
+    with pytest.raises(AggregationError):
+        aggregator.aggregate(events)
+
+
+def test_a_sale_of_a_quantity_that_is_not_a_number_is_refused(aggregator):
+    """The other half of the same false comparison: ``nan`` and ``inf`` sold."""
+    for quantity in (float('nan'), float('inf')):
+        events = [
+            Event(date(2024, 1, 15), EventType.BUY, "AAPL", "Apple Inc",
+                  quantity=2, unit_price=150.0),
+            Event(date(2024, 9, 15), EventType.SELL, "AAPL", "Apple Inc",
+                  quantity=quantity, unit_price=190.0),
+        ]
+
+        with pytest.raises(AggregationError):
+            aggregator.aggregate(events)
+
+
 def test_selling_everything_leaves_zero_invested_by_construction(aggregator):
     """The phantom −932 €: a sold line reporting its whole cost as a loss."""
     events = [

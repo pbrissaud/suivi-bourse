@@ -232,13 +232,29 @@ def test_grant_negative_quantity(validator):
     assert "quantity must be positive for GRANT" in errors[0]
 
 
-def test_grant_ignores_fee(validator):
-    # A GRANT is cash-neutral, so its fee column is not a figure anyone reads.
+def test_grant_accepts_a_fee_that_is_not_negative(validator):
+    for fee in (None, 0.0, 7.50):
+        ev = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+                   quantity=1, fee=fee)
+        assert validator.validate([ev]) == (True, [])
+
+
+def test_grant_negative_fee(validator):
+    """A GRANT's fee is read, so it is judged — like a BUY's and a SELL's.
+
+    It used to be waved through on the premise that a cash-neutral event has no
+    fee anyone reads. The replay reads it: ``aggregator._apply_share_cash``
+    debits it and ``_process_grant`` absorbs it into the basis, so ``-1000``
+    bought a negative cost basis — a negative PMP — and conjured a thousand of
+    cash out of nothing. ``test_aggregator`` pins that reading; this pins the
+    refusal that keeps it fed a number.
+    """
     ev = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
                quantity=1, fee=-999.0)
     is_valid, errors = validator.validate([ev])
-    assert is_valid is True
-    assert errors == []
+    assert is_valid is False
+    assert len(errors) == 1
+    assert "fee cannot be negative" in errors[0]
 
 
 def test_grant_accepts_an_optional_unit_price(validator):
@@ -298,6 +314,110 @@ def test_dividend_negative_amount(validator):
     assert is_valid is False
     assert len(errors) == 1
     assert "amount must be positive for DIVIDEND" in errors[0]
+
+
+def test_dividend_accepts_a_fee_that_is_not_negative(validator):
+    for fee in (None, 0.0, 3.0):
+        ev = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
+                   amount=2.40, fee=fee)
+        assert validator.validate([ev]) == (True, [])
+
+
+def test_dividend_negative_fee(validator):
+    """The withholding is a subtraction, and a subtraction of a negative is not.
+
+    ``_process_dividend`` books ``amount - fee``, so ``-1000`` on a dividend of
+    ten made ``received_dividend`` 1010 — one of ADR-0018's four named terms,
+    inflated by a figure the owner never received.
+    """
+    ev = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL", "Apple Inc",
+               amount=10.0, fee=-1000.0)
+    is_valid, errors = validator.validate([ev])
+    assert is_valid is False
+    assert len(errors) == 1
+    assert "fee cannot be negative" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# A number JSON cannot spell is not a number
+# ---------------------------------------------------------------------------
+
+#: NaN compares false against every bound, ``+inf`` against the two that matter
+#: here (``<= 0`` and ``< 0``), so every guard below was written as a comparison
+#: and every one of them let these through.
+NOT_A_NUMBER = (float('nan'), float('inf'), float('-inf'))
+
+
+def _refused(validator, event, field):
+    """The messages one field of one event earned."""
+    return [issue.message for issue in validator.issues([event])
+            if issue.field == field]
+
+
+def test_no_number_of_a_buy_may_be_nan_or_infinite(validator):
+    for value in NOT_A_NUMBER:
+        assert _refused(validator, _buy(quantity=value), 'quantity')
+        assert _refused(validator, _buy(unit_price=value), 'unit_price')
+        assert _refused(validator, _buy(fee=value), 'fee')
+
+
+def test_no_number_of_a_sell_may_be_nan_or_infinite(validator):
+    for value in NOT_A_NUMBER:
+        assert _refused(validator, _sell(quantity=value), 'quantity')
+        assert _refused(validator, _sell(unit_price=value), 'unit_price')
+        assert _refused(validator, _sell(fee=value), 'fee')
+
+
+def test_no_number_of_a_grant_may_be_nan_or_infinite(validator):
+    """``unit_price`` included, and it is not the refusal #699 declined.
+
+    That one is about a price that *is* a number and cannot be one — zero,
+    negative — which the replay normalises to dilution. ``nan`` is not
+    normalised anywhere: ``declared_value`` multiplies by it and the position's
+    whole cost basis becomes ``nan``.
+    """
+    for value in NOT_A_NUMBER:
+        assert _refused(validator, _grant(quantity=value), 'quantity')
+        priced = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+                       quantity=1, unit_price=value)
+        assert _refused(validator, priced, 'unit_price')
+        charged = Event(date(2024, 6, 1), EventType.GRANT, "AAPL", "Apple Inc",
+                        quantity=1, fee=value)
+        assert _refused(validator, charged, 'fee')
+
+
+def test_no_number_of_a_dividend_may_be_nan_or_infinite(validator):
+    for value in NOT_A_NUMBER:
+        assert _refused(validator, _dividend(amount=value), 'amount')
+        charged = Event(date(2024, 3, 1), EventType.DIVIDEND, "AAPL",
+                        "Apple Inc", amount=2.40, fee=value)
+        assert _refused(validator, charged, 'fee')
+
+
+def test_no_number_of_a_cash_event_may_be_nan_or_infinite(validator):
+    for value in NOT_A_NUMBER:
+        for event_type in (EventType.DEPOSIT, EventType.WITHDRAWAL):
+            assert _refused(
+                validator, Event(date(2024, 2, 1), event_type, amount=value),
+                'amount')
+            assert _refused(
+                validator,
+                Event(date(2024, 2, 1), event_type, amount=500.0, fee=value),
+                'fee')
+
+
+def test_a_non_finite_number_names_the_field_and_is_not_positive_or_negative(validator):
+    """The refusal is about the *value*, not about its sign.
+
+    ``inf`` is greater than zero and ``nan`` is neither, so the neighbouring
+    *must be positive* would have been a sentence about an ordering that does
+    not hold. The message says what is wrong with the cell.
+    """
+    (issue,) = validator.issues([_buy(quantity=float('inf'))])
+
+    assert issue.field == 'quantity'
+    assert "quantity must be a finite number" in issue.message
+    assert "Event #1 (2024-01-15, BUY, AAPL)" in issue.message
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ Event aggregator for computing portfolio state from events.
 """
 
 import copy
+import math
 from datetime import date
 from typing import Dict, List, Optional, Tuple
 
@@ -297,7 +298,14 @@ class EventAggregator:
         # unreachable and unfixable from an app that is down. A tolerance on one
         # side and none on the other is not caution, it is a coin toss on the
         # last bit of a float.
-        if quantity > state.quantity + DUST_FRACTION * acquired:
+        # The guard is a comparison, and ``nan`` answers false to every one of
+        # them — so a position left at ``nan`` by a ledger written before the
+        # validator refused one (``events.validator._validate_numbers``) let a
+        # sale of a billion shares through in silence, and ``+inf`` on either
+        # side did the same. A tolerance that cannot be evaluated is not a
+        # tolerance: the refusal is the answer, exactly as it is above the bound.
+        held = state.quantity + DUST_FRACTION * acquired
+        if not (math.isfinite(quantity) and math.isfinite(held)) or quantity > held:
             # The message is **word for word** what it has always been: it goes
             # into the logs and into the problem's ``detail``, and changing it
             # would break the sentence a `curl` reads. The five members beside
