@@ -2,7 +2,7 @@
 #
 # The image's contract, asserted from outside (issue #744, spec #730 § 7).
 #
-# Nine assertions. The first one — `docker build ./app` succeeds — is the step
+# Nine assertions. The first one — `docker build .` succeeds — is the step
 # that produced $IMAGE and cannot be made after the fact, so it lives in the
 # workflow; the eight that follow live here. What they all have in common is
 # that they attest **observable behaviour** and never the shape of a line of
@@ -17,7 +17,7 @@
 #
 # Run it by hand exactly as the CI does:
 #
-#     docker build -t suivi-bourse:pr ./app
+#     docker build -t suivi-bourse:pr .
 #     IMAGE=suivi-bourse:pr .github/scripts/container-contract.sh
 #
 set -Eeuo pipefail

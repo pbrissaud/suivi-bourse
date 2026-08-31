@@ -17,8 +17,10 @@ embedded DuckDB store** (ADR-0001).
 
 | Path | What it is |
 |---|---|
-| `app/` | The Python application (Flask + APScheduler + DuckDB) — `app/CLAUDE.md` |
-| `app/web/` | The v5 front (Vite + React 19 + TS) — `app/web/CLAUDE.md` |
+| `src/application/` | The Python application (APScheduler + DuckDB) — `src/application/CLAUDE.md` |
+| `src/api/` | Flask: `create_app`, the `/api` blueprint, `/health`, RFC 9457 |
+| `src/web/` | The v5 front (Vite + React 19 + TS) — `src/web/CLAUDE.md` |
+| `tests/` | The Python suite — unit and E2E, all network-mocked |
 | `website/` | The versioned Docusaurus site, bilingual by construction — `website/CLAUDE.md` |
 | `CONTEXT.md` | The domain glossary: the v5 vocabulary |
 | `docs/adr/` | The 39 structural decisions |
@@ -30,15 +32,22 @@ embedded DuckDB store** (ADR-0001).
 ### The application
 
 ```bash
-cd app && uv sync                          # runtime + dev deps into .venv
-uv run flake8 src/ --ignore=E501           # lint
-uv run pytest tests/                       # unit + E2E, all network-mocked
-uv run python src/boot.py                  # run it
+uv sync                                     # runtime + dev deps into .venv
+uv run flake8 src/application src/api \
+       --ignore=E501                        # lint — the two packages, never `src/`
+uv run pytest tests/                        # unit + E2E, all network-mocked
+uv run python -m application.boot           # run it
 ```
 
-`src/boot.py` is the only boot path: the web API and the scheduler share one
-process, and that file holds the sequence — the environment, the store, the app,
-the jobs, the socket, in one linear read. `main.py` has no `__main__` block.
+`src/` is the import root — `pythonpath = ["src"]` in a checkout, `PYTHONPATH` in
+the image — and it holds two Python packages, `application` and `api`, beside the
+front's own `web/`. The lint names the two rather than `src/`, which would walk
+the front's `node_modules`.
+
+`src/application/boot.py` is the only boot path: the web API and the scheduler
+share one process, and that file holds the sequence — the environment, the store,
+the app, the jobs, the socket, in one linear read. `main.py` has no `__main__`
+block.
 
 **It runs on macOS**, and that is new (ADR-0039). gunicorn always forked, and the
 worker segfaulted the moment a scrape job ran — libcurl's `Curl_macos_init`,
@@ -50,10 +59,10 @@ container to build in order to see the app work.
 ### The front
 
 ```bash
-cd app/web && pnpm install
+cd src/web && pnpm install
 pnpm lint    # tsc -b --noEmit
 pnpm test    # vitest, no network and no configuration
-pnpm build   # → app/src/static/, served by Flask (git-ignored)
+pnpm build   # → src/static/, served by Flask (git-ignored)
 pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080
 ```
 
@@ -77,7 +86,7 @@ then `/fr/` serves the English source. Nothing under `i18n/fr/` is ever written 
 There is **no compose stack** — `docker run` is the canonical form.
 
 ```bash
-docker build -t suivi-bourse:dev ./app
+docker build -t suivi-bourse:dev .
 docker run -d --name suivi-bourse --restart unless-stopped -p 8080:8080 \
   -v suivi-bourse:/data suivi-bourse:dev
 
@@ -167,8 +176,8 @@ advisories together. There is no banner and no status dot.
 |---|---|
 | What is this thing called? | `CONTEXT.md` |
 | Why is it done this way? | `docs/adr/`, then `docs/v5-decisions.md` |
-| How does the backend work? | `app/CLAUDE.md` |
-| How does the front work? | `app/web/CLAUDE.md` |
+| How does the backend work? | `src/application/CLAUDE.md` |
+| How does the front work? | `src/web/CLAUDE.md` |
 | How does the site work? | `website/CLAUDE.md` |
 | What is left to do? | GitHub Issues (`gh`), v5 map #669 |
 

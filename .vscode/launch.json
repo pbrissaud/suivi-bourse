@@ -8,7 +8,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "justMyCode": true,
-      "envFile": "${workspaceFolder}/app/.env.dev"
+      "envFile": "${workspaceFolder}/.env.dev"
     }
   ]
 }

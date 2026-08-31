@@ -116,7 +116,7 @@ const config = {
           // `plugins` below, so a historical link still lands somewhere.
           //
           // THE LINK CONTRACT, for whoever wires the in-app convention bubble
-          // (ADR-0016, issue #712 — today `app/web/src` holds zero `href="http`):
+          // (ADR-0016, issue #712 — today `src/web/src` holds zero `href="http`):
           //
           //     https://pbrissaud.github.io/suivi-bourse/{locale}/docs/v5/<page>#<anchor>
           //

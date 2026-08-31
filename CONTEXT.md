@@ -71,7 +71,7 @@ computed. Immutable once **set**: the answer can be given late, it just cannot b
 taken back.
 _Avoid_: reporting currency (as an on-screen label), account currency, home currency —
 *reporting currency* is the source's own name for the same thing, in twenty modules under
-`app/src/`, and nothing here asks for that to be renamed.
+`src/application/`, and nothing here asks for that to be renamed.
 
 **Quote currency**:
 The currency a security is priced in by the market. Converted to the base currency

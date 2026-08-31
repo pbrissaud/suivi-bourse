@@ -52,7 +52,7 @@ preserve_hierarchy: true
 # write-translations`, and regenerating them before an upload is what keeps the
 # navbar and this pipeline in step. Nothing under `i18n/fr/` is written by hand:
 # it is Crowdin's output, landing here through an import. The front's catalogue
-# is the opposite — `app/web/src/i18n/en.json` is written by hand, English being
+# is the opposite — `src/web/src/i18n/en.json` is written by hand, English being
 # the source (ADR-0024), and `fr.json` is Crowdin's output.
 #
 # **One extension per entry, never a brace list.** Crowdin's globs are not a
@@ -78,8 +78,8 @@ files:
   - source: '/website/i18n/en/docusaurus-plugin-content-docs/current.json'
     translation: '/website/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current.json'
 
-  # ---- The interface's catalogue (app/web/) ----
+  # ---- The interface's catalogue (src/web/) ----
   # One file per language, ICU, semantic keys, English the source (ADR-0024,
   # issue #713). It is the other half of the vocabulary the docs explain.
-  - source: '/app/web/src/i18n/en.json'
-    translation: '/app/web/src/i18n/%two_letters_code%.json'
+  - source: '/src/web/src/i18n/en.json'
+    translation: '/src/web/src/i18n/%two_letters_code%.json'

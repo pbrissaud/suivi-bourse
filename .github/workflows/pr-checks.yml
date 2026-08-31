@@ -19,7 +19,7 @@ jobs:
 
       - uses: ricardochaves/python-lint@v1.4.0
         with:
-          python-root-list: "app/src/"
+          python-root-list: "src/application/ src/api/"
           use-pycodestyle: false
           use-pylint: false
           use-black: false
@@ -40,7 +40,7 @@ jobs:
         with:
           enable-cache: true
 
-      - run: cd app && uv run pytest tests/
+      - run: uv run pytest tests/
 
   web:
     name: "Front"
@@ -54,7 +54,7 @@ jobs:
         uses: tj-actions/changed-files@v47
         with:
           files: |
-            app/web/**
+            src/web/**
       - name: Install pnpm
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         uses: pnpm/action-setup@v6
@@ -67,13 +67,13 @@ jobs:
           # pnpm 11.9 requires node:sqlite (Node >= 22.5)
           node-version: 24
           cache: pnpm
-          cache-dependency-path: app/web/pnpm-lock.yaml
+          cache-dependency-path: src/web/pnpm-lock.yaml
       # Three gates, and the order is the cost: types, then the suite, then the
       # bundle. `pnpm test` needs neither network nor configuration — the seam
       # fakes HTTP and errors on any request no handler names.
       - name: Check the front if it changed
         if: steps.changed-files-specific.outputs.any_changed == 'true'
-        working-directory: app/web
+        working-directory: src/web
         run: |
           pnpm install --frozen-lockfile
           pnpm lint
@@ -81,7 +81,7 @@ jobs:
           pnpm build
 
   # The smoke seam on the container (issue #744, spec #730 § 7). It is the heir
-  # of the `Image` job, which built `./app` and stopped there: building is the
+  # of the `Image` job, which built the context and stopped there: building is the
   # first of nine assertions, so a second job doing only that would pay for the
   # same build twice and attest strictly less.
   #
@@ -101,12 +101,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Get changed files in the app folder
+      - name: Get changed files the image is built from
         id: changed-files-specific
         uses: tj-actions/changed-files@v47
         with:
           files: |
-            app/**
+            src/**
+            tests/**
+            Dockerfile
+            .dockerignore
+            pyproject.toml
+            uv.lock
             .github/scripts/container-contract.sh
             .github/workflows/pr-checks.yml
       # Assertion 1. The jobs above run each half where every file of its
@@ -115,9 +120,8 @@ jobs:
       # breaks the build with all the other gates green — which is how #713
       # shipped a broken image. Until this job existed the image was built only
       # by the release workflow, i.e. after the merge.
-      - name: "1. docker build ./app succeeds"
+      - name: "1. docker build . succeeds"
         if: steps.changed-files-specific.outputs.any_changed == 'true'
-        working-directory: app
         run: docker build --platform linux/amd64 -t suivi-bourse:pr .
       # Assertions 2 to 9, each failing for its own reason. The script owns the
       # containers and the volume it creates and removes them from an EXIT trap,

@@ -230,11 +230,11 @@ Refais tourner tout ce qui concerne les fichiers touchés, **y compris ce que le
 d'origine ne couvraient pas** — c'est par là que le défaut bloquant est passé la première fois :
 
 - \`website/\` → \`cd website && pnpm install --frozen-lockfile && pnpm build\`
-- \`app/src/\`, \`app/tests/\` → \`cd app && uv sync && uv run flake8 src/ --ignore=E501 && uv run pytest tests/\`
-- \`app/web/\` → \`cd app/web && pnpm install && pnpm lint && pnpm build\`, et \`pnpm test\` s'il existe
-- **si le diff touche \`app/Dockerfile\`, \`app/web/package.json\`, un lockfile ou un
+- \`src/application/\`, \`src/api/\`, \`tests/\` → \`uv sync && uv run flake8 src/application src/api --ignore=E501 && uv run pytest tests/\`
+- \`src/web/\` → \`cd src/web && pnpm install && pnpm lint && pnpm build\`, et \`pnpm test\` s'il existe
+- **si le diff touche \`Dockerfile\`, \`src/web/package.json\`, un lockfile ou un
   \`pnpm-workspace.yaml\`** → construis réellement l'image :
-  \`cd app && docker build -t sb-repair-check .\` (ou, si docker est indisponible, reproduis à
+  \`docker build -t sb-repair-check .\` (ou, si docker est indisponible, reproduis à
   l'identique la couche d'installation et dis-le)
 
 Tu ne maquilles jamais un portail.

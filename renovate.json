@@ -8,6 +8,10 @@
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
+    },
+    {
+      "matchFileNames": ["pyproject.toml"],
+      "semanticCommitScope": "app"
     }
   ],
   "assignees": ["pbrissaud"],

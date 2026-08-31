@@ -103,9 +103,9 @@ git diff ${BASE}...${it.branch}
    que tu as exécutée et ce qu'elle a rendu. Un critère que tu ne peux pas établir se déclare
    \`unverifiable\` — ne le devine pas.
 4. **Fais tourner les portails toi-même**, et n'en crois aucun sur parole :
-   - \`cd app && uv sync && uv run flake8 src/ --ignore=E501 && uv run pytest tests/\`
-   - si le diff touche \`app/Dockerfile\`, un lockfile ou \`pnpm-workspace.yaml\` :
-     \`cd app && docker build -t sb-verify-${it.issue} .\`
+   - \`uv sync && uv run flake8 src/application src/api --ignore=E501 && uv run pytest tests/\`
+   - si le diff touche \`Dockerfile\`, un lockfile ou \`pnpm-workspace.yaml\` :
+     \`docker build -t sb-verify-${it.issue} .\`
    - si le diff touche \`website/\` : \`cd website && pnpm install --frozen-lockfile && pnpm build\`
    - **et le portail que personne n'a pensé à écrire** : pour chaque fichier de configuration
      que ce diff touche, demande-toi *quel outil le consomme réellement*, et fais tourner

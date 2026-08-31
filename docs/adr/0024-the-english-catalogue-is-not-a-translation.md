@@ -109,7 +109,7 @@ showed does not survive the drawer.
   interface, never suggests itself in the page that explains it — this ADR's own defect,
   two languages in one box, one storey up as two vocabularies for one product. One
   project, one `crowdin.yml` at the repository root, covering `website/` and
-  `app/web/src/i18n/`.
+  `src/web/src/i18n/`.
 
 [Full argument: #692](https://github.com/pbrissaud/suivi-bourse/issues/692) ·
 [the labels it re-examined: #683](https://github.com/pbrissaud/suivi-bourse/issues/683),

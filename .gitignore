@@ -141,3 +141,19 @@ dmypy.json
 # sont en clair dans le bundle. Sans cette ligne, un `git add -A` les publierait
 # dans un dépôt public. La référence de forme se lit en local, jamais versionnée.
 docs/design-revamp-*.html
+
+# --- The application (`src/`) -----------------------------------------------
+# Vite's build output, served by Flask. `src/api/_static_dir()` resolves it as
+# `<parent of the api package>/static`, which is this path in a checkout and
+# `/home/appuser/src/static` in the image.
+src/static/
+
+# The front's workspace.
+src/web/node_modules/
+src/web/dist/
+src/web/.vite/
+
+# `lib/` above is a Python packaging artefact, and it swallows the front's own
+# `lib/` — the module directory that holds half the front's code — unless it is
+# taken back by name.
+!src/web/src/lib/

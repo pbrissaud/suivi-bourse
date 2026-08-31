@@ -1,0 +1,36 @@
+# The build context is the repository root (.github/workflows/releasing.yml, and
+# a plain `docker build .`) since `app/` was dissolved into `src/`. Two things
+# follow from that.
+#
+# One: the context now contains the documentation site and the docs, which the
+# image has no use for. They are excluded here rather than tolerated, because
+# every byte of context is uploaded to the daemon before the first instruction
+# runs.
+website/
+docs/
+.github/
+.claude/
+.vscode/
+
+# Two: `src/web` holds a front-end workspace. Without these lines the daemon
+# uploads ~230 MB of node_modules — and, worse, `COPY src/web ./web` in the node
+# stage would overwrite the image's freshly installed dependencies with the
+# host's, which are built for the host's platform.
+src/web/node_modules/
+src/web/dist/
+src/web/.vite/
+
+# Built by the node stage inside the image; a stale local copy must never win.
+src/static/
+
+# The suite runs in CI and in a checkout, never in the image.
+tests/
+
+# Python local state
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/

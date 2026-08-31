@@ -6,7 +6,7 @@
 > most contrasted on each ground, chroma falling with rank. Their **values** below are
 > history, along with the *Vercel* preset and the command naming it: running that
 > command today would revert the theme without touching a line of code, and the live
-> URL is the one in `app/web/src/index.css`.
+> URL is the one in `src/web/src/index.css`.
 
 The theme was never decided. `components.json` **carried** `"style": "radix-nova"` from the
 prototype until #713 set it to `"new-york"`, with a long hand-written layer piled on top of it

@@ -85,7 +85,7 @@ Each one is here because a wave went wrong without it.
   tickets about different *pages* are not disjoint work if they are about the
   same *word*: #721 (the accounts page) and #729 (the accounts declaration on
   the data page) were put in one wave as "three disjoint trees", and each created
-  `app/web/src/lib/accounts.ts` and redefined `anAccount` / `defaultAccounts()`
+  `src/web/src/lib/accounts.ts` and redefined `anAccount` / `defaultAccounts()`
   in `test/factories.ts`, the fixtures 245 tests read. Five files conflicted, two
   of them test files, and the substance was worse than the mechanics: the two
   modules held **two spellings of one constant** — `DEFAULT_ACCOUNT_ID` and
@@ -105,8 +105,8 @@ Each one is here because a wave went wrong without it.
   is quietly wrong about a fixture.
 - **Gates are run, never dressed up.** No disabled test, no `--no-verify`, no link
   turned into text to quiet a build. Whatever the diff touches gets its gate:
-  `pnpm build` for `website/`, `flake8` + `pytest` for `app/src/`, `pnpm lint` +
-  `build` + `test` for `app/web/` — and a real `docker build` when the diff touches
+  `pnpm build` for `website/`, `flake8` + `pytest` for `src/application/`, `pnpm lint` +
+  `build` + `test` for `src/web/` — and a real `docker build` when the diff touches
   the `Dockerfile`, a lockfile or `pnpm-workspace.yaml`. That last one exists
   because a walking-skeleton branch broke the image while all four of its declared
   gates stayed green.

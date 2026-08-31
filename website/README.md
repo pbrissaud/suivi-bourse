@@ -81,7 +81,7 @@ integration can read the same one:
 ```
 $ pnpm write-translations --override    # from website/, refresh the English sources
 $ cd .. && crowdin upload sources       # English → Crowdin
-$ crowdin download                      # French → website/i18n/fr/ and app/web/src/i18n/fr.json
+$ crowdin download                      # French → website/i18n/fr/ and src/web/src/i18n/fr.json
 ```
 
 ### `crowdin.yml` is checked by Crowdin, never by a YAML parser

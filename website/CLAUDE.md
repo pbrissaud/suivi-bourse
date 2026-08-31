@@ -41,7 +41,7 @@ The anchors in `docs/read-your-figures.mdx` are **a contract with the front**: e
 anchors hand-written on every heading, because a *derived* anchor moves with a
 reworded title — the front sees nothing, the site still builds, and every bubble
 lands at the top of the page. The authoritative list is `DOCS_ANCHORS` in
-`app/web/src/lib/docs.ts`; the count is descriptive and grows with the figures that
+`src/web/src/lib/docs.ts`; the count is descriptive and grows with the figures that
 earn a bubble — `net-contributed` is the one that arrived that way.
 
 ## Bilingual through Crowdin (ADR-0024)
@@ -54,7 +54,7 @@ green. Nothing under `i18n/fr/` is written by hand — it is Crowdin's output, l
 here through an import.
 
 `crowdin.yml` sits at the **repository root** and covers the whole product in
-**one project**: the site *and* `app/web/src/i18n/en.json`. A translation memory
+**one project**: the site *and* `src/web/src/i18n/en.json`. A translation memory
 is per-project — *plus-value latente* translated in the interface would never
 suggest itself in the page that explains it. Its sources are `website/docs/`, the
 theme catalogues under `website/i18n/en/` (generated, committed) and the front's
