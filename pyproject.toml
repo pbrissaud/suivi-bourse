@@ -6,7 +6,7 @@ name = "suivi-bourse"
 # builder stage alone, and what the process says about itself is the
 # build stamp `build_info` reads. It is here so the file declares the
 # release it belongs to rather than a placeholder.
-version = "4.2.2"
+version = "5.0.0"
 description = "Monitors stock shares with yfinance and stores everything in one embedded DuckDB store, with historical backfill."
 readme = "README.md"
 requires-python = ">=3.14"

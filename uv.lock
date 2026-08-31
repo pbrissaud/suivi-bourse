@@ -706,7 +706,7 @@ wheels = [
 
 [[package]]
 name = "suivi-bourse"
-version = "4.2.2"
+version = "5.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "a2wsgi" },
