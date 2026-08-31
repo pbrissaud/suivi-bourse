@@ -613,6 +613,50 @@ def test_a_rebuilt_chunk_is_converted_at_the_rate_of_each_point_s_own_day(
     assert windows == ['USDEUR=X']
 
 
+def test_a_paris_bar_is_converted_at_the_rate_of_the_day_it_is_filed_under(
+        store, mocker, monkeypatch, fake_ticker):
+    """The rate's day and the row's day are one day, and it is the **store's**.
+
+    yfinance localises a daily bar to the *exchange's* timezone, so Euronext
+    Paris' session of the 15th arrives as `2024-01-15 00:00+01:00` — which is
+    `2024-01-14 23:00` in UTC, and UTC is what `quotes.truncate` stores and what
+    every `CAST(ts AS DATE)` in the store reads back. Keying the conversion on
+    the bar's *local* calendar day therefore fetched the rate of a day the row
+    is not filed under: one day out for every market east of Greenwich, which is
+    this product's nominal case.
+
+    It is also what put the two writers of `fx_rate` in disagreement — the
+    lateral pass repairs by `CAST(ts AS DATE)` (issue #704) — so the same point
+    was worth two different rates depending on which pass got to it.
+    """
+    metrics = _metrics(store, shares=[_share('AI.PA')], base_currency='USD')
+    metrics._share_info_cache.observed('AI.PA', {'currency': 'EUR'})
+    monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
+    # The bar as yfinance hands it over: tz-aware, on the exchange's clock.
+    paris = pd.DataFrame(
+        {'Close': [100.0]},
+        index=pd.DatetimeIndex([pd.Timestamp('2024-01-15 00:00',
+                                             tz='Europe/Paris')]))
+    monkeypatch.setattr(market.yf, 'Ticker',
+                        lambda s: fake_ticker(history_df=paris))
+
+    def history(pair, start, end):
+        return {date(2024, 1, 14): 1.10, date(2024, 1, 15): 1.20}
+
+    metrics.rates = fx.Rates(lambda pair: 1.0, history)
+
+    metrics._fetch_and_store(
+        'AI.PA', datetime(2024, 1, 10, tzinfo=UTC),
+        datetime(2024, 1, 16, tzinfo=UTC))
+
+    # The row is filed under the 14th, so the rate on it is the 14th's.
+    assert store.query(
+        'SELECT CAST(ts AS DATE), price_native, price_converted, fx_rate '
+        '  FROM price_point WHERE symbol = ?', ['AI.PA']) == [
+            (date(2024, 1, 14), 100.0, pytest.approx(110.0),
+             pytest.approx(1.10))]
+
+
 def test_a_chunk_whose_symbol_names_no_unit_asks_for_no_pair_at_all(
         store, mocker, monkeypatch, fake_ticker):
     """The **third** path the sentinel used to reach `fx` by (issue #845).

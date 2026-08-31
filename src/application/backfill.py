@@ -454,7 +454,8 @@ class BackfillWorkload:
         One prefetch of the pair over the chunk's own span — :meth:`fx.Rates.series`
         caches it, so the per-point :meth:`fx.Rates.rate` calls that follow are
         dictionary lookups — then one conversion per point at the rate of **its**
-        day.
+        day, that day being the one the store will file the row under and never
+        the one the exchange's clock spells.
 
         The symbol's currency is read from ``info_cache`` rather than
         fetched **here**, and the argument is per chunk: a second ``.info`` call
@@ -478,7 +479,19 @@ class BackfillWorkload:
         if not currency:
             return
 
-        days = [point['timestamp'].date() for point in prices]
+        # The rate's day is the row's day, and the row's day is **UTC**: yfinance
+        # localises a daily bar to the exchange's own timezone and
+        # :func:`market.price_history` stamps only what came back naive, so the
+        # instant reaching here is on Euronext's clock, not on the product's.
+        # :func:`quotes.truncate` is what converts it on the way in, and every
+        # day derived in the store is a ``CAST(ts AS DATE)`` over that. Reading
+        # ``.date()`` off the local instant asked for the *exchange's* calendar
+        # day — one day out for every market east of Greenwich, Paris being the
+        # nominal case — and it also put the two writers of ``fx_rate`` in
+        # disagreement, the lateral pass repairing by ``CAST(ts AS DATE)``
+        # (issue #704). So the key is derived through the writer's own stamp
+        # rather than re-spelled beside it: the two cannot then drift.
+        days = [quotes.truncate(point['timestamp']).date() for point in prices]
         try:
             self.facade.rates.series(currency, self.facade.base_currency,
                                      min(days), max(days))
