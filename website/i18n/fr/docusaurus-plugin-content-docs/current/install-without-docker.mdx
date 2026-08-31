@@ -15,7 +15,7 @@ container runtime, no daemon, one Python process.
 ## What you need
 
 * **Python 3.14 or later.** The same floor the published image ships, and the
-  same one `app/pyproject.toml` declares — there is one answer to this question,
+  same one `pyproject.toml` declares — there is one answer to this question,
   not a lenient one for the source and a strict one for the image.
 * **[uv](https://docs.astral.sh/uv/)**, which creates the virtual environment
   from the lockfile.
@@ -28,10 +28,9 @@ provision and no token to mint.
 
 Download the source of the
 [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest),
-extract it, and install the dependencies from the `app` folder:
+extract it, and install the dependencies from its root:
 
 ```bash
-cd app
 uv sync
 ```
 
@@ -62,11 +61,11 @@ that is not in that list lives in the store and is set in the app.
 
 ## Run it
 
-From the `app` folder:
+From the root of the extracted source:
 
 ```bash
 SB_STORE_DIR=/var/lib/suivi-bourse \
-uv run python src/boot.py
+uv run python -m application.boot
 ```
 
 `boot.py` is not a server launcher, it is the boot sequence: it reads the
@@ -92,8 +91,8 @@ After=network-online.target
 [Service]
 Type=simple
 Restart=always
-WorkingDirectory=<installation_path>/app
-ExecStart=/usr/local/bin/uv run python src/boot.py
+WorkingDirectory=<installation_path>
+ExecStart=/usr/local/bin/uv run python -m application.boot
 User=<user>
 Group=<group>
 Environment=PYTHONUNBUFFERED=1
