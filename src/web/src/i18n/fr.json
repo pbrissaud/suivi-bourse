@@ -1,20 +1,17 @@
 {
   "app.name": "SuiviBourse",
-
   "nav.label": "Sections",
   "nav.dashboard": "Tableau de bord",
   "nav.shares": "Titres",
   "nav.accounts": "Comptes",
   "nav.ledger": "Grand livre",
   "nav.settings": "Réglages",
-
   "header.toggleSidebar": "Afficher ou masquer la navigation",
   "header.language": "Langue",
   "header.theme": "Thème",
   "header.density": "Densité des tableaux",
   "density.comfortable": "Confortable",
   "density.compact": "Compact",
-
   "palette.open": "Rechercher un titre, un compte…",
   "palette.shortcut": "⌘K",
   "palette.title": "Rechercher dans votre portefeuille",
@@ -30,23 +27,18 @@
   "palette.action.account": "Déclarer un compte",
   "palette.action.account.keywords": "déclarer compte courtier pea cto",
   "palette.empty": "Aucun résultat pour « {query} » dans votre portefeuille.",
-
   "sidebar.rail": "Replier ou déplier la navigation",
   "sidebar.drawer.title": "Navigation",
   "sidebar.drawer.description": "Les sections de l’application, dans un tiroir.",
   "sheet.close": "Fermer",
   "dialog.close": "Fermer",
-
   "lang.auto": "Automatique",
   "lang.fr": "Français",
   "lang.en": "English",
-
   "theme.auto": "Automatique",
   "theme.light": "Clair",
   "theme.dark": "Sombre",
-
   "status.dot": "{state, select, ok {Tout fonctionne} attention {Quelque chose demande votre attention} rebuilding {Votre historique est en cours de reconstruction} unreachable {L’application ne répond pas} other {L’état de cette installation est inconnu}}",
-
   "notification.title": "Notifications",
   "notification.open": "Notifications",
   "notification.count": "{count, plural, one {# entrée ouverte} other {# entrées ouvertes}}",
@@ -75,36 +67,28 @@
   "notification.fact.assumed_base_currency": "Montants lus dans votre devise de base",
   "notification.advisory.cash_share": "{label} · {share, number, percent} de liquidités non investies",
   "notification.advisory.cash_share.body": "Une part de ce compte dort en cash au lieu d’être investie. Rien d’anormal si c’est voulu.",
-
   "empty.noCurrency.title": "Aucune devise de base",
   "empty.noCurrency.body": "Rien n’est valorisé et aucun gain n’est calculé tant que vous n’avez pas choisi de devise de base. Vos événements sont enregistrés malgré tout, et le grand livre reste lisible.",
   "empty.noCurrency.link": "Répondre dans Réglages",
   "empty.unread.title": "Lecture impossible",
-
   "accounts.advisory.cash": "{share, number, percent} de cash",
-
   "page.dashboard": "Tableau de bord",
   "page.shares": "Titres",
   "page.accounts": "Comptes",
   "page.ledger": "Grand livre",
   "page.settings": "Réglages",
-
   "notFound.title": "Page introuvable",
   "notFound.body": "Cette adresse ne correspond à aucune page.",
   "notFound.link": "Revenir au tableau de bord",
-
   "explain.open": "Ce que veut dire {figure}",
   "explain.link": "Lire la règle complète",
-
   "absence.awaitingRate": "en attente du taux",
   "absence.noQuote": "{count, plural, one {# relevé consécutif, aucun cours} other {# relevés consécutifs, aucun cours}}",
   "absence.rebuilding": "historique en cours de reconstitution",
-
   "gain.term.unrealised": "Plus-value latente",
   "gain.term.realised": "Plus-value réalisée",
   "gain.term.dividends": "Dividendes reçus",
   "gain.term.transferFees": "Frais de versement",
-
   "dashboard.gainTotal": "Gain total",
   "dashboard.gainTotal.explain": "Tout ce que votre portefeuille a rapporté : plus-value latente, plus-value réalisée, dividendes reçus, et les frais que votre courtier prélève sur les virements. Les quatre font ce total.",
   "dashboard.ytd.gain": "{amount} depuis le 1ᵉʳ janvier",
@@ -129,7 +113,6 @@
   "dashboard.empty.link": "Aller au grand livre",
   "dashboard.holdings": "Titres",
   "dashboard.pricedAt": "Cours au {date}",
-
   "dashboard.chart.amounts": "Montants",
   "dashboard.chart.performance": "Performance",
   "dashboard.chart.reading": "Lecture",
@@ -141,31 +124,26 @@
   "dashboard.chart.cost": "Prix de revient",
   "dashboard.chart.area": "Entre les deux courbes",
   "dashboard.chart.empty": "Rien à tracer sur cette plage pour l’instant.",
-
   "dashboard.movers.title": "Mouvements",
   "dashboard.movers.since": "Depuis la clôture du {date}",
   "dashboard.movers.others": "{count, plural, one {# autre ligne n’apparaît pas ici} other {# autres lignes n’apparaissent pas ici}}, {unchanged, plural, =0 {dont aucune n’a bougé de rien} one {dont # n’a pas bougé} other {dont # n’ont pas bougé}}.",
   "dashboard.movers.empty": "Rien à comparer",
   "dashboard.movers.empty.body": "Une ligne apparaît ici dès qu’elle a un cours sur deux séances.",
-
   "dashboard.accounts.title": "Vos comptes, comparés",
   "dashboard.accounts.perf": "perf",
   "dashboard.accounts.xirr": "TRI",
   "dashboard.accounts.empty": "Rien à comparer sur cette plage pour l’instant.",
-
   "installation.rebuild.title": "Reconstruction en cours",
   "installation.rebuild.body": "Votre historique est en cours de reconstruction. Les cours continuent d’être relevés ; ce sont les chiffres consolidés qui rattrapent.",
   "installation.rebuild.body.account": "Votre historique est en cours de reconstruction. {account} est le compte le plus en retard, et les chiffres consolidés l’attendent.",
   "installation.rebuild.progress": "{percent, number, percent} de la période couverte",
   "installation.rebuild.link": "Voir le tableau de bord",
-
   "currency.unanswered": "Pas encore choisie",
   "currency.offList": "{code} — enregistrée hors de cette liste",
   "currency.suggested": "Proposée d’après votre navigateur. Vérifiez qu’elle correspond bien à votre portefeuille.",
   "currency.untilAnswered": "Une fois choisie, elle est fixée : tous vos montants sont enregistrés dans cette devise à partir de là, et en changer plus tard les réinterpréterait au lieu de les convertir. Vous pouvez répondre quand vous voulez — mais une seule fois.",
   "currency.fixed": "Fixée : vos montants sont enregistrés dans cette devise et elle ne peut plus changer.",
   "currency.fixed.mark": "Figée",
-
   "firstRun.title": "Bienvenue dans SuiviBourse",
   "firstRun.what.ledger": "Vous saisissez vos achats et vos ventes : le titre, la date, le prix.",
   "firstRun.what.quotes": "SuiviBourse relève les cours tout seul et calcule le reste.",
@@ -192,7 +170,6 @@
   "firstRun.pass.events.title": "Vos premiers événements",
   "firstRun.pass.events.body": "Deux façons de commencer : importer un fichier, ou saisir un événement à la main. Vous pouvez aussi démarrer à vide et y revenir quand vous voulez.",
   "firstRun.pass.events.file": "Choisir un fichier…",
-
   "receipt.currency.saved": "Devise de base enregistrée : {currency}.",
   "receipt.export.running": "{file, select, events {Préparation de vos événements…} workbook {Préparation de votre classeur…} selection {Préparation de votre sélection…} portfolio {Préparation de vos comptes et positions…} other {Préparation de votre fichier…}}",
   "receipt.export.saved": "{file, select, events {Vos événements sont sur votre disque.} workbook {Votre classeur est sur votre disque.} selection {Votre sélection est sur votre disque.} portfolio {Vos comptes et positions sont sur votre disque.} other {Votre fichier est sur votre disque.}}",
@@ -205,16 +182,14 @@
   "receipt.import.known.forecast": "{count, plural, one {# ligne de ce fichier est déjà dans votre grand livre et sera ignorée} other {# lignes de ce fichier sont déjà dans votre grand livre et seront ignorées}}.",
   "receipt.import.known.kept": "{count, plural, one {Cette ligne sera écrite en double.} other {Ces # lignes seront écrites en double.}}",
   "receipt.events.removed": "{count, plural, one {# événement supprimé} other {# événements supprimés}}.",
-
   "shares.allocation.title": "Répartition",
   "shares.allocation.others": "{count, plural, one {# autre ligne} other {# autres lignes}}",
   "shares.allocation.scope": "{lines} lignes · top {top} détaillé, {folded} regroupées",
   "shares.allocation.scope.all": "{lines, plural, one {# ligne en portefeuille} other {# lignes en portefeuille}}",
   "shares.allocation.total": "Titres",
-  "shares.allocation.unplaced": "{count, plural, one {# ligne n’est pas} other {# lignes ne sont pas}} dans cette répartition, cotée{count, plural, one {} other {s}} sans taux résolu : {symbols}. Les y compter rendrait tous les autres pourcentages faux.",
+  "shares.allocation.unplaced": "{count, plural, one {# holding is} other {# holdings are}} not in this allocation, quoted with no rate yet: {symbols}. Including it would make every other percentage wrong.",
   "shares.allocation.empty": "Aucune position détenue",
   "shares.allocation.empty.body": "Vous n’avez aucune position ouverte : il n’y a rien à répartir.",
-
   "shares.gainTotal": "Gain total",
   "shares.head.title": "Lignes ouvertes · totaux",
   "shares.unrealised.explain": "Ce que vaut une position aujourd’hui moins ce qu’elle vous a coûté. Elle bouge avec le marché et ce n’est pas encore de l’argent en poche. Une position sans cours est comptée à son coût : elle affiche zéro.",
@@ -269,12 +244,9 @@
   "shares.fundamentals.dividendYield": "Rendement du dividende",
   "shares.fundamentals.peRatio": "PER",
   "shares.fundamentals.marketCap": "Capitalisation",
-
   "accounts.chart.rangeName": "{range, select, 1M {1M} YTD {Depuis le 1ᵉʳ janvier} 1Y {1A} SINCE_OPENING {Depuis l’ouverture} other {}}",
-
   "accounts.rail.title": "Poids de vos comptes",
   "accounts.rail.label": "Vos comptes",
-
   "accounts.figure.totalValue": "Valeur totale",
   "accounts.figure.holdings": "Titres",
   "accounts.figure.cash": "Liquidités",
@@ -288,15 +260,12 @@
   "accounts.figure.feesOnContributed": "{percent} du versé",
   "accounts.xirr.explain": "Ce que vos versements sur ce compte ont rapporté, en taux annuel. Il tient compte de la date de chaque versement et de chaque retrait.",
   "accounts.totalPerformance.explain": "Tout le gain de ce compte divisé par ce que vous y avez versé — ce qu’est devenu un euro laissé ici depuis le début. Elle couvre toute la vie du compte : ce n’est pas un taux annuel.",
-
   "accounts.reason.withoutCashLedger": "aucun mouvement d’espèces enregistré sur ce compte",
   "accounts.reason.rebuilding": "historique encore en reconstruction",
   "accounts.reason.empty": "rien d’enregistré sur ce compte",
-
   "accounts.default.label": "Non affecté",
   "accounts.default.type": "Autre",
   "accounts.default.reassign": "Affecter ces événements à un compte",
-
   "accounts.detail.gainTotal.explain": "Ce que vaut ce compte moins ce que vous y avez versé. Il compte les positions soldées de ce compte, et seulement les frais prélevés sur ses propres virements.",
   "accounts.detail.curve.title": "Valeur face à ce que vous avez versé",
   "accounts.detail.curve.value": "Valeur totale",
@@ -315,7 +284,6 @@
   "accounts.detail.payers.period": "Depuis l’ouverture de ce compte",
   "accounts.detail.events": "Derniers événements",
   "accounts.detail.events.link": "Voir les événements de ce compte dans le grand livre",
-
   "accounts.new": "Déclarer un compte",
   "accounts.remove": "Supprimer",
   "accounts.remove.title": "Supprimer ce compte",
@@ -342,17 +310,14 @@
   "accounts.form.submit": "Déclarer ce compte",
   "accounts.form.save": "Enregistrer ce compte",
   "accounts.form.cancel": "Annuler",
-
   "accounts.empty.title": "Aucun compte déclaré",
   "accounts.empty.body": "Toute installation possède un compte : cet écran signifie donc que la déclaration n’a pas pu être lue, et non que vous n’en avez aucun. Déclarez-en un ici, c’est le seul endroit où un compte se crée.",
-
   "event.type.BUY": "Achat",
   "event.type.SELL": "Vente",
   "event.type.GRANT": "Attribution",
   "event.type.DIVIDEND": "Dividende",
   "event.type.DEPOSIT": "Versement",
   "event.type.WITHDRAWAL": "Retrait",
-
   "data.ledger.label": "Vos événements",
   "data.ledger.shown": "{shown} sur {total} affichés",
   "data.ledger.more": "Afficher la suite",
@@ -396,7 +361,6 @@
   "data.row.delete.title": "Supprimer cet événement ?",
   "data.row.delete.body": "{type} · {what} · {date}. Il part du grand livre, et tout ce qui s’en déduit — positions, PRU, gains, taux — est recalculé sans lui.",
   "data.row.delete.cancel": "Le garder",
-
   "data.form.create.title": "Un nouvel événement",
   "data.form.edit.title": "Cet événement",
   "data.form.description": "Dites ce qui s’est passé, quand, et pour combien.",
@@ -421,13 +385,10 @@
   "data.form.number.invalid": "Ce n’est pas un nombre.",
   "data.form.submit": "Enregistrer cet événement",
   "data.form.cancel": "Annuler",
-
-
   "data.empty.file.title": "Importer un fichier",
   "data.empty.file.body": "Remettez à l’application un .csv ou un .xlsx de vos événements. Elle le lit une fois, quel que soit son nom — un fichier qui ne couvre qu’une année est un bon début.",
   "data.empty.manual.title": "Saisir un premier événement",
   "data.empty.manual.body": "Une position se saisit comme les événements qui l’ont construite — un achat, sa date, son prix. Si vous n’avez plus la date, saisissez votre meilleure estimation.",
-
   "data.imports.title": "Import et export",
   "data.drop.title": "Déposez un fichier .csv ou .xlsx : vous verrez ce qu’il ferait avant qu’il n’écrive",
   "data.drop.body": "L’application le lit d’elle-même, quel que soit son nom, et vous montre l’import avant de l’inscrire.",
@@ -472,7 +433,6 @@
   "data.export.selection.note": "{count, plural, one {# ligne retenue} other {# lignes retenues}}",
   "data.export.portfolio": "Comptes et positions",
   "data.export.portfolio.note": "Soldes, PRU et valorisations",
-
   "data.bulk.title": "{reduced, select, yes {{count, plural, one {Supprimer l’événement} other {Supprimer les # événements}}} other {Supprimer la réduction}}",
   "data.bulk.confirm.title": "{count, plural, one {Supprimer l’événement {clauses} ?} other {Supprimer les # événements {clauses} ?}}",
   "data.bulk.confirm.body": "Tous les événements affichés quittent le grand livre, y compris ceux venus d’un fichier.",
@@ -490,7 +450,6 @@
   "data.wipe.body": "Tous vos événements partent. Les comptes déclarés et vos réglages restent. Rien ne se recalcule ensuite : il n’y a plus rien à calculer.",
   "data.wipe.submit": "Vider le grand livre",
   "data.wipe.cancel": "Annuler",
-
   "installation.fact.unread_environment": "{count, plural, one {# variable d’environnement est définie mais n’est lue par rien} other {# variables d’environnement sont définies mais ne sont lues par rien}} : {variables}. Depuis la v5, les réglages vivent dans l’application — renseignez-les sur cette page. Retirez ces variables, ou acquittez ce constat.",
   "installation.fact.unread_environment.unobserved": "Des variables d’environnement sont définies et cette version n’en lit aucune.",
   "installation.fact.reconstruction_running": "L’historique est en cours de reconstruction : {complete, plural, one {# série remonte} other {# séries remontent}} au premier achat, sur {total, number}. Vos chiffres de performance bougeront jusqu’à la fin.",
@@ -522,7 +481,6 @@
   "settings.base_currency.hint": "Tous les chiffres de l’application sont affichés dans cette devise.",
   "settings.cadence.reach": "S’applique maintenant à {now, plural, one {# titre} other {# titres}}{later, plural, =0 {} one {, et à # autre à l’ouverture de son marché} other {, et à # autres à l’ouverture de leur marché}}.",
   "settings.backoff.retroactive": "Un titre qui n’a pas pu être valorisé attend un multiple de ce délai avant le prochain essai. Le changer s’applique aussi aux titres déjà en échec.",
-
   "settings.jobs": "Les plans de charge",
   "settings.jobs.column.name": "Plan de charge",
   "settings.jobs.column.at": "Dernier passage",
@@ -534,15 +492,13 @@
   "settings.jobs.scrape": "Relevé des cours",
   "settings.jobs.scrape.verdict": "{verdict, select, open {{held, plural, one {# titre relevé} other {# titres relevés}}, marchés ouverts.} closed {{held, plural, one {# titre détenu} other {# titres détenus}}. Marchés fermés, prochain passage à la prochaine ouverture.} frozen {Cours figés alors que leur marché bouge : {symbols}.} failing {Aucun cours n’a pu être lu pour {symbols}.} backoff {{symbols} échouent encore et sont réessayés de moins en moins souvent.} write_failed {Un cours a été lu mais n’a pas pu être enregistré : {symbols}.} other {{held, plural, one {# titre détenu} other {# titres détenus}}.}}",
   "settings.jobs.backfill": "Reconstruction de l’historique",
-  "settings.jobs.backfill.verdict": "{verdict, select, complete {{scope, plural, one {# série remonte} other {Les # séries remontent}} au premier achat.} running {{complete, number} série(s) complète(s) sur {scope, number}.} failing {La reconstruction est bloquée sur {symbols}.} unconvertible {{symbols} ne peuvent pas être convertis dans votre devise de base : leur historique s’arrête là.} other {Pas encore passé.}}",
+  "settings.jobs.backfill.verdict": "{verdict, select, complete {{scope, plural, one {# series goes} other {All # series go}} back to the first purchase.} running {{complete, number} of {scope, plural, one {# series} other {# series}} complete.} failing {The rebuild is stuck on {symbols}.} unconvertible {{symbols} cannot be converted to your base currency, so their history stops there.} other {Not run yet.}}",
   "settings.jobs.performance": "Calcul de la performance",
   "settings.jobs.performance.verdict": "{verdict, select, ran {Séries de rendement réécrites.} failed {Le dernier passage a échoué et n’a rien écrit : vous lisez les chiffres précédents.} other {Pas encore passé.}}",
-
   "installation.build": "La version",
   "installation.build.version": "Version",
   "installation.build.revision": "Révision",
   "installation.build.source": "{source, select, release {Image publiée sous ce numéro de version.} commit {Cette image a été construite depuis un commit, pas depuis une version publiée : il n’y a donc pas de numéro.} checkout {L’application tourne depuis un dépôt local. La révision dit d’où vient le code, pas ce qui a été modifié depuis.} other {Rien n’a estampillé cette construction : l’application ne peut pas dire quelle version elle exécute.}}",
-
   "installation.store": "Le magasin",
   "installation.store.path": "Où il se trouve",
   "installation.store.persistence": "{state, select, persistent {Ce chemin est sur un volume qui survit au conteneur.} ephemeral {Ce chemin est dans le conteneur : il disparaît dès qu’il est recréé.} other {L’application ne peut pas dire si ce chemin survit au conteneur.}}",
@@ -557,7 +513,6 @@
   "installation.store.orphans.body": "Leurs cours ont été gardés quand leurs événements ont été supprimés : un événement se ressaisit, un historique reconstruit non. Les positions que vous avez soldées ne sont pas concernées.",
   "installation.store.orphans.points": "{count, plural, one {# cours} other {# cours}}",
   "installation.store.purge": "Purger ces historiques",
-
   "problem.storageUnavailable": "Vos données sont illisibles pour l’instant. L’application tourne, mais son magasin ne répond pas.",
   "problem.notFound": "L’application répond que cela n’existe pas.",
   "problem.badRequest": "L’application a refusé la requête faite par cette page.",
