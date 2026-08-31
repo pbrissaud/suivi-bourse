@@ -1,0 +1,352 @@
+---
+title: Read your figures
+description: One convention per figure — the rules the app links to from the figure itself
+---
+
+{/*
+  THE ANCHORS ON THIS PAGE ARE A CONTRACT WITH THE APPLICATION.
+
+  Every figure in SuiviBourse carries an information icon whose link points at
+  one of the anchors below, version included (ADR-0016, ADR-0025). The twelve
+  anchors are fixed — they are `DOCS_ANCHORS` in `src/web/src/lib/docs.ts`, and
+  the two lists are the same list:
+
+    #avg-cost  #total-gain  #latent-gain  #realized-gain  #dividends
+    #net-contributed  #deposit-fees  #total-performance  #twr  #xirr
+    #carrying-price  #absence
+
+  They are written by hand, on every heading, and NEVER left to be derived from
+  the heading text. Reword a title and a derived anchor changes with it: the
+  front sees nothing, the site still builds, and every bubble in the app lands
+  the reader at the top of this page instead of at the rule they clicked for —
+  which is the one failure mode a broken-link check cannot catch.
+
+  So: reword the headings freely, but do not rename, merge or drop an anchor
+  without changing the front in the same breath.
+  */}
+
+This page holds the **conventions** the app's figures rest on — one rule per
+figure, each at a stable address. Beside every figure in the application there
+is an information icon; it opens a short text and a link back to the section
+here that carries the whole rule.
+
+Nothing below describes a screen. These are the rules that decide what your
+numbers *are*.
+
+## The cost of what you own {#avg-cost}
+
+Your cost is matched by **weighted average cost** — the figure your broker
+calls the *PRU*.
+
+A position is one stock of two things: a quantity, and the money that quantity
+cost you. Every purchase adds to both, and the unit cost is simply the money
+divided by the quantity. A sale subtracts a proportional slice of both. Nothing
+ever decides *which* shares left, because under this convention the question has
+no meaning.
+
+**Acquisition fees are absorbed into the cost.** A purchase costs you the price
+of the shares plus the broker's fee, so that is what the position records.
+Disposal fees are taken out of the proceeds on the way back. Neither is a
+separate line you have to add up yourself.
+
+**There is no FIFO, and no setting to choose one.** Weighted average is the
+French tax rule (CGI art. 150-0 D) for the accounts this app is written for, and
+carrying two conventions at once would give every figure downstream — your
+[latent gain](#latent-gain), your [realized gain](#realized-gain), both
+[returns](#twr) — two possible values, with nothing on the page able to say
+which one you are looking at. There is one convention, and it is the one your
+tax return uses.
+
+One consequence is worth stating, because it looks like a special case and is
+not: a position you have sold out entirely reports zero invested **by
+construction** — quantity zero, cost zero. There is no *closed* flag anywhere in
+the app. "Closed" and "flat for now" differ only by an event that has not
+happened yet, so nothing separates them that the app could compute.
+
+## Your total gain, and its four terms {#total-gain}
+
+Your total gain is the sum of four terms, and that sum **is** its definition —
+the app adds the four up rather than computing the total separately and trusting
+that they agree.
+
+```
+total gain  =  latent gain  +  realized gain  +  dividends received
+                            −  fees taken from your transfers
+```
+
+Each term is a section of this page. Three of them belong to your positions; the
+fourth belongs to none of them, which is exactly why it had to be named.
+
+**The total counts everything, including what you no longer hold.** A position
+you have sold out still contributed a realized gain and dividends, and dropping
+it would make the total quietly disagree with your account balance. It stays in
+the sum; only the *table* it lives in folds it away.
+
+That is also why two totals in the app can legitimately differ. A figure sitting
+above a table of positions states the sum of *those positions* — and the fourth
+term below belongs to no position, so it cannot appear there. A portfolio-level
+total carries all four. The gap between them is precisely the fees taken from
+your transfers, and it is zero for anyone whose broker moves money for free.
+
+**A total for one account is the same four terms, about that account.** Its
+positions, closed ones included, and the fees taken from *its* transfers — never
+another account's. So the four terms of your accounts add up to the four terms of
+your portfolio, and each account's total is the sum of its own.
+
+### Latent gain {#latent-gain}
+
+What your positions are worth today, minus what they cost you.
+
+It covers the shares you still hold, and only those: the market value of the
+quantity you own, less the cost of that same quantity (weighted
+average). It moves with every price, in both directions.
+
+It is not money you have. It becomes money only when you sell, at which point it
+stops being latent and becomes [realized](#realized-gain) — the two never count
+the same shares at the same time.
+
+A position whose price the app could never fetch is carried at its
+cost, and its latent gain is then exactly zero rather than a
+loss.
+
+### Realized gain {#realized-gain}
+
+What a sale returned above the cost it consumed.
+
+Selling consumes a slice of the position's cost basis, in proportion to the
+quantity sold. The realized gain is the proceeds — net of the disposal fee —
+less that slice. It is settled once, on the day of the sale, and never moves
+again.
+
+**It is not a term you add to what you own.** The money from the sale is already
+sitting in your cash balance; counting the gain again on top of it would count
+the same euros twice. It appears in your total gain as a *breakdown* of that
+total, never as something stacked onto it. This is the rule that reads wrong the
+first time — a sale that went well does not make your portfolio larger than the
+cash it produced — and it is the one this app is most careful about.
+
+Realized gain is not a figure that only sold-out positions carry: sell half a
+position and it starts carrying one while you still hold the rest.
+
+### Dividends received {#dividends}
+
+What was paid to you, kept apart from everything else.
+
+A dividend does not lower the cost of your position and does not inflate its
+latent gain. It is its own term of the total, and the cash it brought is in your
+account balance. Keeping it separate is deliberate: folded into a single
+composite figure, income and price movement become indistinguishable, and a year
+of good dividends reads exactly like a year of price recovery.
+
+This term is never negative. A dividend you received cannot be taken back by a
+price.
+
+### Fees taken from your transfers {#deposit-fees}
+
+Money your broker took out of a deposit or a withdrawal — the fourth term, and
+the one that belongs to no position.
+
+It is not an acquisition cost (those are absorbed into the cost of your
+shares), not a disposal cost (absorbed into the proceeds of a sale),
+not a dividend, and it is attached to no security. There is no position that
+could carry it, which is why it has to be a term of its own: without it, your
+total gain and the sum of the three position terms disagree by the amount of
+those fees, and nothing on the page would say why.
+
+**It is shown only when it is not zero.** If your broker moves your money for
+free, this term never appears and you never have to know it exists.
+
+Absorbing the fee into your net contributions instead was the alternative, and
+it was refused: that would make the money disappear from the product entirely.
+It left your pocket, so it is counted.
+
+## What you have paid in {#net-contributed}
+
+**Net contributed: your deposits less your withdrawals, fees excluded.**
+
+It is the only figure on the page that owes nothing to a market. Prices move it
+by nothing; it changes when, and only when, you move money in or out. That is
+what makes it the silent denominator of both returns — [time-weighted](#twr) and
+[money-weighted](#xirr) alike are asking *what did this become, given what went
+in* — and it is why an account with no deposit recorded has no money-weighted
+return at all rather than a return of zero.
+
+**Fees are excluded, and that is the whole reason your total gain has a fourth
+term.** A fee taken out of a transfer leaves your cash without lowering what
+this figure records, so the money is gone from one side of the subtraction and
+not the other. The gap has to land somewhere, and it lands in fees taken from
+your transfers — a term of its own rather than a silent
+adjustment here.
+
+## Total performance {#total-performance}
+
+**Total performance: this account's whole gain divided by what you have paid
+into it.**
+
+It is what a euro left in the account since the beginning has become, and it is
+a **cumulative ratio rather than a rate**. Three things follow from that, and
+each is a question it does not answer.
+
+It covers the account's **entire life** and no shorter period. That is why it
+carries no range beside it: there is no window to choose, so there is nothing
+for a control to say and nothing for a legend to state. A
+[time-weighted return](#twr) without its period is a figure you cannot read;
+this one has only one period it could ever mean.
+
+It is **not annualised**. Two accounts showing the same total performance may
+have taken two years and twenty to get there, so it ranks nothing across
+accounts of different ages — that is the [money-weighted return](#xirr)'s job,
+and it is the figure directly under this one for that reason.
+
+And it says nothing about **when** the money went in. Every euro counts the
+same whether it arrived before a rise or after it. Paying more in lowers the
+ratio until that money earns something, which is exactly what makes it legible:
+it is a gain read against its own base, not a measure of the holdings on their
+own.
+
+## Time-weighted return {#twr}
+
+**Time-weighted return: how the positions themselves performed, independent of
+your deposits.**
+
+It is an index on base 100 over the period shown: 100 at the start, and what a
+single unit of money left alone would have become by the end. Paying more money
+in — or taking it out — moves the index by nothing at all. That is the whole
+point of it: it measures what you hold, not when you happened to have cash.
+
+**It depends on the window, and a ranking can reverse inside it.** Two accounts
+compared over one week and over two years can trade places, with every figure
+along the way correct. A time-weighted return therefore never travels without
+the period it covers, and comparing two of them means rebasing both to 100 at
+the start of the *same* visible window — otherwise you are comparing a figure
+counted from 2019 with one counted from 2024, which is two numbers sharing a
+unit rather than a comparison. For the same reason a comparison never runs
+further back than the youngest of the things being compared.
+
+**While history is being rebuilt, the base date moves and the index is re-based
+every cycle.** The series starts at the earliest day on which everything you held
+has a price, and that day walks backwards as the rebuild advances — so this
+percentage, alone among the figures on the page, can change without a price
+having changed. The base date is shown beside it for exactly as long as it is
+still moving. See
+[the base of the time-weighted return](./rebuild-and-resolution.mdx#the-base-of-the-time-weighted-return-moves-while-the-rebuild-runs).
+
+**Returns are computed from the dates of your events.** Nothing else dates
+them: no event, no date, no return.
+
+## Money-weighted return {#xirr}
+
+**Money-weighted return: what your deposits actually earned.**
+
+It is the single annual rate that reconciles everything that entered and left —
+each deposit and each withdrawal on its own date — with what the account is
+worth today. Unlike the time-weighted return, it counts *when* you paid in:
+money added before a rise weighs more than money added after it.
+
+It needs at least one movement of money in or out to mean anything. With nothing
+ever paid in there is no schedule to solve, and the app leaves the figure
+[absent](#absence) rather than inventing one.
+
+**Returns are computed from the dates of your events.** The sentence is the same
+one as under the time-weighted return, deliberately: both rates are read off the
+dates you recorded, and the two are far more often misread together than apart.
+
+## A position with no price {#carrying-price}
+
+A position whose price the app could never obtain is **valued at its own cost** —
+not at the price of your last transaction, and not at zero.
+
+The rule is keyed to the absence of a price and never to a calendar. A market
+calendar would explain a hole without filling it, and the app follows listings
+whose exchange it does not always know.
+
+Valuing at cost rather than at the last traded price is a choice, and it is the
+one that keeps the convention statable in a sentence: a purchase day comes out
+exactly neutral, and the [latent gain](#latent-gain) is identically zero for as
+long as the rule applies. A gain of zero is a truthful statement here; a loss
+would not be.
+
+**It is a convention, never a silent fallback.** It applies only where the app
+has finished looking — no price, *and* no price coming. While history is still
+being rebuilt behind a symbol, nothing is carried at cost: the figure says it is
+waiting instead (see [below](#absence)). Confusing the two would turn "not yet"
+into "never", permanently.
+
+**"No price" means no quote at all.** A security the app has quoted but cannot
+convert into your base currency — because you have not chosen one yet, or because
+that currency pair does not resolve — is not in this case. It has a price; what
+it is missing is a rate. Those lines show their native price and say they are
+[waiting for a rate](#absence), and the value comes back on its own once the rate
+does.
+
+**One case looks like that one and is not**: a security the market answers prices
+for without ever saying which currency they are in. There is no pair to fetch a
+rate for, so nothing is on its way — a number with no unit is not a price — and
+the app carries such a line at its cost like any other it cannot value. It is
+rare, and it is the one shape where a line quoted every day is still valued at
+what you paid for it.
+
+On screen that line reads exactly like the first row of the table
+below: an em dash where its price would be, its cost as its value,
+and a latent gain of zero. The dash is a statement rather than a gap — the app
+has a number and cannot say what it is a number *of*, and printing it under your
+base currency's symbol would claim the one thing nothing said. The curves, the
+account comparison and your total gain read that same value, so no screen
+disagrees with another about what the line is worth.
+
+A position valued this way carries no badge of its own. The em dash where its
+price would be is already the whole signal, and after a rebuild the case is
+common enough that a marker on every such line would be noise across the page
+rather than information.
+
+**Where the rule visibly parts company with a market valuation.** Carrying at
+cost values the whole position at one price, and a position built from a
+purchase *and* a free grant did not cost one price. Buy ten shares at 100 and
+receive ten more by dilution, both in the days before the app has any quote for
+that security, and you hold twenty shares that cost 1 000 — so they are carried
+at 50 each, half of what the ten you paid for were worth. It takes both events
+inside the window with no price, which is a handful of days at the start of a
+line's life; from the first quote onwards the market answers and the question
+disappears. And the figure is still the honest one: the app knows exactly what
+the position cost you and does not know what it is worth.
+
+## When a figure is absent {#absence}
+
+One rule covers every empty cell in the app:
+
+> **The em dash means *there is nothing to compute*. Anything that is merely
+> missing is named instead.**
+
+An em dash is never used for something the app could have fetched and failed to
+fetch. That distinction is what makes an empty cell actionable: one of these
+states is repairable by you, and it says so.
+
+| What is going on                                      | Price            | Value                | Latent gain          |
+| ----------------------------------------------------- | ---------------- | -------------------- | -------------------- |
+| No price observed, [carried at cost](#carrying-price) | —                | its cost             | `0.00`               |
+| Price known, conversion rate missing                  | its native price | *waiting for a rate* | *waiting for a rate* |
+| Nothing to compute — position sold out                | —                | `0.00`               | —                    |
+| Asked N times, never answered                         | *no price*       | *no price*           | *no price*           |
+
+The last two look alike and are not. A position you sold has no question to ask:
+its latent gain has no subject. A line entered under a ticker the market does
+not know has a question that is both legitimate and repairable — usually a typo
+— and treating it as "nothing to compute" would condemn it to silence forever.
+
+That last case reports **its count**, never a verdict. The app knows that N
+consecutive attempts returned nothing; it does not know that nothing will ever
+come. "Asked seventeen times, no price" is a fact you can act on. "Never" would
+be a guess.
+
+**Zero is not absence.** A figure that genuinely equals zero is written `0.00`,
+in the colour of ordinary text — never greyed like something that is missing. On
+a sold-out position the two sit side by side, and they mean different things.
+
+## Where these figures come from {#sources}
+
+* Your events are the only input: [Import your events](./import-your-events.mdx).
+* Prices, and their conversion into your base currency:
+  [How prices are collected](./how-prices-are-collected.mdx).
+* The history behind your first purchase, and how far back it stays precise:
+  [Rebuild and resolution](./rebuild-and-resolution.mdx).
+* The base currency every figure above is reported in: [Settings](./settings.mdx).
