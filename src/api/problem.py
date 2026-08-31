@@ -58,6 +58,15 @@ TYPE_TOO_LARGE = '/problems/payload-too-large'
 #: Same ``409`` — the request is well formed and the store's state refuses it —
 #: and a different sentence.
 TYPE_UNREPLAYABLE = '/problems/unreplayable-ledger'
+#: A write that arrived from a page this app does not serve. Its **own**
+#: identifier, and this one is the exception that proves #763's rule rather
+#: than a break with it: the front cannot meet it. ``/api`` is the front's
+#: interface and the front is served by this same Flask on this same socket
+#: (ADR-0033), so a legitimate write is same-origin by construction — the only
+#: request this type ever describes is one nobody in this app made. It exists so
+#: the refusal reads as itself in a log and in a ``curl``, which is the whole
+#: audience it has.
+TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 
 # #662's write-path vocabulary — a stale fingerprint, a read-only source, an
 # unwritable directory, a wrong mode — left with the apparatus that raised it
@@ -284,6 +293,26 @@ def too_large(detail: str, limit: int):
     return problem(413, 'File too large', detail, TYPE_TOO_LARGE, limit=limit)
 
 
+def foreign_origin(detail: str):
+    """403 — a write arrived from a page this app does not serve.
+
+    Not ``400``: the request is perfectly well formed, and the client is told
+    to fix nothing. Not ``409`` either — the store's state has no opinion about
+    it. ``403`` is the one that says *understood, and refused*, which is the
+    whole of what happened.
+
+    The sentence is for a log and a ``curl``, because no page of this app can
+    ever read it: the front is served by this same Flask on this same socket
+    (ADR-0033), so its own writes carry this app's origin and pass. What this
+    refuses is a page on another site posting a ``multipart/form-data`` body
+    into ``POST /api/events/import`` — a CORS-simple content type, so no
+    preflight is asked for and the response being opaque costs the attacker
+    nothing: the row is written and the reporting currency adopted before it is
+    thrown away.
+    """
+    return problem(403, 'Foreign origin', detail, TYPE_FOREIGN_ORIGIN)
+
+
 def internal_error(detail: str):
     """500 — the last resort, for what no route anticipated."""
     return problem(500, 'Internal error', detail, TYPE_INTERNAL)
@@ -292,6 +321,7 @@ def internal_error(detail: str):
 __all__ = [
     'problem', 'storage_unavailable', 'not_found', 'bad_request', 'conflict',
     'unreplayable', 'unprocessable', 'unprocessable_parameter',
-    'unprocessable_entry', 'unprocessable_file', 'too_large', 'internal_error',
+    'unprocessable_entry', 'unprocessable_file', 'too_large', 'foreign_origin',
+    'internal_error',
     'CONTENT_TYPE', 'GESTURE_WRITE', 'GESTURE_REMOVE',
 ]

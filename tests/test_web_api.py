@@ -11,6 +11,7 @@ three states are structural: a declared table nobody wrote answers ``200`` +
 Plus the one rule of the SPA catch-all that is load-bearing: it must not swallow
 an ``/api`` 404.
 """
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import csv
@@ -2024,6 +2025,60 @@ def test_events_can_be_narrowed_to_one_symbol_for_the_chart_markers(tmp_path):
     payload = client.get('/api/events?symbol=AAPL').get_json()
 
     assert [row['symbol'] for row in payload] == ['AAPL']
+
+
+def test_a_ledger_already_holding_an_unspellable_number_stays_deletable(tmp_path):
+    """The last line of defence, and the criterion is *the page comes back*.
+
+    ``store.finite`` is stated at the store's boundary and the ledger states it
+    at its own, so nothing writes such a row today. What neither of them repairs
+    is the row that is **already there** — written by a version that had no such
+    rule — and this route was the one JSON output in the tree with no guard on
+    it: ``jsonify`` emits a bare ``Infinity`` token, ``JSON.parse`` refuses the
+    **whole** body, and the ledger page renders nothing at all. The row that
+    blanks the page is the row the reader would have deleted, so the app locks
+    them out of its own repair.
+
+    The fixture is that publication and not a fabricated one: the numbers come
+    off the store, read by :func:`ledger.read_events`, and only the *publishing*
+    is done here — :meth:`ConfigurationManager.reload` validates, which is
+    exactly why an older process is the only thing that can have left this
+    snapshot standing.
+
+    ``parse_constant`` armed, for :func:`test_a_fundamental_json_cannot_spell...`'s
+    reason: Python's parser accepts ``Infinity`` happily, so only a strict
+    reader — which every browser is — sees the trap.
+    """
+    def refuse(token):
+        raise AssertionError(f'JSON cannot spell {token!r}')
+
+    client, opened = build_client_and_store(tmp_path, events=(
+        "date,event_type,symbol,name,quantity,unit_price,amount\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,\n"
+        "2024-02-01,BUY,MSFT,Microsoft,5,380.00,\n"
+    ))
+    opened.execute("UPDATE event SET unit_price = 'Infinity'::DOUBLE, "
+                   "fee = 'NaN'::DOUBLE WHERE symbol = 'AAPL'")
+    manager = api_module.current_runtime().config_manager
+    manager._config = replace(manager.current(),
+                              events=ledger.read_events(opened))
+
+    response = client.get('/api/events')
+
+    assert response.status_code == 200
+    payload = json.loads(response.get_data(as_text=True), parse_constant=refuse)
+    (polluted,) = [row for row in payload if row['symbol'] == 'AAPL']
+    assert polluted['unit_price'] is None
+    assert polluted['fee'] is None
+    # The row is still the row: an unspellable figure is an absent member, and
+    # never an absent event or an absent key.
+    assert polluted['quantity'] == 10.0
+    assert polluted['id'] is not None
+
+    # And the repair the reader came for goes through, from the page's own key.
+    removed = client.delete(f"/api/events/{polluted['id']}")
+    assert removed.status_code == 200
+    assert opened.query('SELECT symbol FROM event') == [('MSFT',)]
 
 
 # --------------------------------------------------------------------- #
@@ -4661,3 +4716,140 @@ def test_the_row_gestures_and_the_bulk_one_are_the_whole_map(tmp_path):
     assert ('/api/events/<event_id>', 'DELETE') in rules
     # And nothing writes a *file* — #711's demolition, still standing.
     assert not [rule for rule, _ in rules if rule.startswith('/api/events/files')]
+
+
+# --------------------------------------------------------------------- #
+# The origin guard — one interface, one socket, and one page (ADR-0033)
+#
+# `/api` is the front's interface and the front is served by this same Flask on
+# this same socket, so a legitimate write is **same-origin** by construction.
+# What that leaves is the browser's own rule: `multipart/form-data` is a
+# CORS-simple content type, so a page on any other site can `fetch` this app's
+# upload route with a `FormData` and no preflight is ever asked for. The
+# response is opaque to that page, which is not the point — the row is written
+# and the reporting currency is adopted before it is discarded.
+#
+# The guard is stated **once**, on the blueprint, for every method that changes
+# something. The JSON routes were never the vector (`get_json` without `force`
+# refuses `text/plain` with a `400`), and that is exactly why the rule does not
+# belong on the upload alone: it would be a property of one route's body parser
+# rather than a property of the interface.
+# --------------------------------------------------------------------- #
+
+#: A page the owner is visiting, which is not this app.
+FOREIGN = 'https://evil.example.com'
+
+#: What a browser puts on a same-origin write from the served bundle. The test
+#: client's own host, because that is the host the request is addressed to.
+OWN = 'http://localhost'
+
+_CURRENCY_DECLARING_FILE = (
+    "date,event_type,symbol,name,quantity,unit_price,base_currency\n"
+    "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,JPY\n"
+).encode('utf-8')
+
+
+def _import(client, headers=None, body=_CURRENCY_DECLARING_FILE):
+    """The one vector: a multipart upload, as a cross-origin `fetch` sends it."""
+    return client.post(
+        '/api/events/import',
+        data={'file': (io.BytesIO(body), '2024.csv')},
+        content_type='multipart/form-data',
+        headers=headers or {})
+
+
+def test_a_page_this_app_does_not_serve_cannot_import_a_file(tmp_path):
+    """The defect, whole: the row **and** the reporting currency.
+
+    A `fetch(..., {mode: 'no-cors'})` carrying a `FormData` leaves any site the
+    owner visits with no preflight to ask for and no header to forge. What came
+    back was a `201`, a line in the ledger, and — the file declaring one —
+    `base_currency` answered for an install that had never answered it. Both
+    halves are asserted on the store, because a refusal that still wrote would
+    be a refusal in the response only.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _import(client, headers={'Origin': FOREIGN})
+
+    assert response.status_code == 403
+    assert response.get_json()['type'] == '/problems/foreign-origin'
+    assert opened.query('SELECT id FROM event') == []
+    assert opened.setting('base_currency') is None
+
+
+def test_a_request_with_no_origin_is_the_curl_one_and_is_not_refused(tmp_path):
+    """`curl -F` carries no `Origin`, and the documented gesture keeps working.
+
+    The rule is *refuse a foreign origin*, never *require a friendly one*: an
+    absent header is not a browser at all, and a browser is the only thing the
+    guard is about. Making it a requirement would break the one non-browser
+    usage `CLAUDE.md` names — a `.csv` handed to the app *from the page or by
+    `curl`* — and would buy nothing, since anything that can omit a header can
+    send one.
+    """
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _import(client)
+
+    assert response.status_code == 201
+    assert opened.query('SELECT symbol FROM event') == [('AAPL',)]
+    assert opened.setting('base_currency') == 'JPY'
+
+
+def test_the_served_page_writes_because_it_is_the_same_origin(tmp_path):
+    """The front is served by this Flask on this socket, so its writes pass."""
+    client, opened = build_client_and_store(tmp_path)
+
+    response = _import(client, headers={'Origin': OWN})
+
+    assert response.status_code == 201
+    assert opened.query('SELECT symbol FROM event') == [('AAPL',)]
+
+
+def test_the_guard_is_the_blueprint_s_and_not_the_upload_s(tmp_path):
+    """Every gesture that changes something, and the rule said in one place.
+
+    Route by route it would be five lines that have to be remembered by the
+    sixth write ever added; on the blueprint it is a property of the interface.
+    The list below is the whole of what `/api` mutates, so a new write is
+    covered on the day it is written.
+    """
+    client, opened = build_client_and_store(tmp_path, events=_ONE_BUY)
+    (row,) = client.get('/api/events').get_json()
+    key = row['id']
+    foreign = {'Origin': FOREIGN}
+
+    gestures = [
+        client.post('/api/events', json=_draft(), headers=foreign),
+        client.patch(f'/api/events/{key}', json=_draft(), headers=foreign),
+        client.delete(f'/api/events/{key}', headers=foreign),
+        client.delete('/api/events', headers=foreign),
+        client.post('/api/accounts', json={'id': 'pea', 'type': 'PEA'},
+                    headers=foreign),
+        client.put('/api/settings', json={'base_currency': 'USD'},
+                   headers=foreign),
+        client.put('/api/config/log-level', json={'level': 'DEBUG'},
+                   headers=foreign),
+    ]
+    assert all(response.status_code == 403 for response in gestures), [
+        response.status_code for response in gestures]
+
+    # And nothing moved: the ledger it was handed still holds its one line.
+    assert opened.query('SELECT symbol FROM event') == [('AAPL',)]
+    assert opened.setting('base_currency') is None
+
+
+def test_a_foreign_origin_may_still_read(tmp_path):
+    """The guard is about writing, and reading is not a write.
+
+    A cross-origin `GET` hands the calling page an opaque response it cannot
+    read — there is no CORS header on this app and there never was (ADR-0033) —
+    so refusing it would protect nothing and would turn every misconfigured
+    proxy into a blank page.
+    """
+    response = build_client(tmp_path, events=_ONE_BUY).get(
+        '/api/events', headers={'Origin': FOREIGN})
+
+    assert response.status_code == 200
+    assert [row['symbol'] for row in response.get_json()] == ['AAPL']

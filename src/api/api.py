@@ -23,6 +23,7 @@ import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 import duckdb
 from flask import Blueprint, Response, jsonify, request
@@ -53,6 +54,7 @@ from api.problem import (
     GESTURE_WRITE,
     bad_request,
     conflict,
+    foreign_origin,
     internal_error,
     not_found,
     storage_unavailable,
@@ -79,6 +81,12 @@ DEFAULT_WINDOW = timedelta(days=30)
 #: trap — the short presets that are natural on the shares page are degenerate
 #: here, and the window this endpoint defaults to has to reflect that.
 DEFAULT_HISTORY_WINDOW = timedelta(days=365)
+
+#: The methods that change nothing, and therefore need no origin. Everything
+#: else on this blueprint writes, and :func:`_refuse_a_foreign_origin` reads
+#: this set rather than a list of routes — a write added tomorrow is guarded on
+#: the day it is written.
+SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 
 #: The one spelling of a calendar day this API takes on the way in (issue #764).
 #: ``date.fromisoformat`` accepts several others since Python 3.11 — a bare
@@ -181,6 +189,56 @@ def _unreplayable(exc: AggregationError, gesture: str):
         symbol=exc.symbol, wanted=exc.wanted, owned=exc.owned,
         day=exc.day.isoformat() if exc.day is not None else None,
         account=exc.account)
+
+
+@api_bp.before_request
+def _refuse_a_foreign_origin():
+    """No page but this app's own writes through ``/api``.
+
+    **The one rule that could not be a route's.** ``/api`` is the front's
+    interface and the front is a packaged SPA served by this same Flask on this
+    same socket (ADR-0033), so a legitimate write is *same-origin* by
+    construction — which is a property of the interface and not of any endpoint,
+    and stating it endpoint by endpoint would make it something the fifteenth
+    write has to remember.
+
+    The vector it closes is ``POST /api/events/import``, and it was the only
+    one: ``multipart/form-data`` is one of the three content types a browser
+    sends cross-origin **without a preflight**, so any page the owner visits
+    could ``fetch`` this app with a ``FormData`` and no permission asked. The
+    response is opaque to that page, which costs the attacker nothing — the
+    events are written and, the file declaring one, the reporting currency is
+    adopted, before the response is discarded. The JSON routes were never
+    reachable that way (``get_json`` without ``force`` refuses ``text/plain``
+    with a ``400``), and that is precisely why the guard does not belong on the
+    upload alone: it would be a property of one route's body parser, which the
+    next route may not share. Since ADR-0039 the same reasoning covers the
+    LAN — the app binds ``0.0.0.0`` and is now normal to run straight on a Mac.
+
+    **An absent ``Origin`` is not refused, and that is the rule's shape**:
+    *refuse a foreign origin*, never *require a friendly one*. ``curl -F`` sends
+    no such header and is the documented second way to hand a file over
+    (ADR-0033: "``curl -F`` will work"); requiring the header would break it and
+    buy nothing, since anything that can omit a header can forge one. What
+    cannot forge one is a browser, which is the only thing this is about.
+
+    The comparison is on the **host**, port included, and not on the scheme: a
+    reverse proxy terminating TLS forwards ``Host: example.com`` under an
+    ``Origin: https://example.com``, and an origin of ``null`` — an opaque one,
+    from a sandboxed iframe or a redirect — matches nothing and is refused,
+    which is the answer it deserves.
+    """
+    if request.method in SAFE_METHODS:
+        return None
+    origin = request.headers.get('Origin')
+    if not origin:
+        return None
+    if urlsplit(origin).netloc.lower() == request.host.lower():
+        return None
+    return foreign_origin(
+        f"this write came from {origin}, which is not the page this app "
+        f"serves; /api is the front's interface and the front is served from "
+        f"the same address")
 
 
 @api_bp.errorhandler(Exception)
@@ -914,8 +972,19 @@ def _event_to_dict(event) -> dict:
     it and uses it as a render key — so publishing it as text is publishing what
     it is. ``null`` on an event that has no row of its own, which nothing
     produces today and which the type has to allow all the same.
+
+    **And the four numbers go out through :func:`store.finite`**, which is
+    :func:`store_reads._stamp`'s idiom applied to the one JSON output in the
+    tree that had no guard on it. JSON has neither NaN nor infinity: ``jsonify``
+    emits a bare token, Python's own parser reads it back happily and a
+    browser's ``JSON.parse`` refuses the **whole** body — so a single such value
+    anywhere in the ledger answers a ``200`` the page cannot read, renders the
+    ledger blank, and locks the reader out of deleting the very row that did it.
+    The ledger refuses the value on the way in; this is the last line of defence
+    for a row already in the store, written before it did, which no boundary
+    upstream can repair.
     """
-    return {
+    return {key: store_module.finite(value) for key, value in {
         'id': str(event.id) if event.id is not None else None,
         'date': event.date.isoformat() if event.date else None,
         'event_type': event.event_type.value,
@@ -927,7 +996,7 @@ def _event_to_dict(event) -> dict:
         'amount': event.amount,
         'notes': event.notes,
         'account': event.account,
-    }
+    }.items()}
 
 
 @api_bp.post('/events')
