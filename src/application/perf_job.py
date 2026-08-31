@@ -463,13 +463,16 @@ class PerfJob:
             # written with the position counted at nothing.
             oldest_priced = {symbol: pairs[0][0]
                              for symbol, pairs in price_pairs.items() if pairs}
-            # **Settled is terminal *and* valuable**, which is one condition
-            # and used to be written as two halves that between them let the
-            # opposite through. A symbol settles a day only if that day can
-            # actually carry a figure: either its conversion has landed (it is
-            # in ``oldest_priced``), or no quote of it was ever observed in a
-            # nameable unit — in which case ADR-0004 carries it at its own cost
-            # and the figure is real.
+            # **Settled is terminal *and* carried**, and it is one question
+            # asked on one grain. ``settled`` is read by
+            # :func:`performance.account_horizon` as *this symbol does not
+            # contribute at all* — it is a statement about **every day the
+            # symbol was held**, not about the symbol's most recent one — so the
+            # only population that may enter it is the one whose priceless days
+            # are all fillable: **terminal and never quoted in a nameable
+            # unit**, which is exactly ``carrying_price``'s domain (ADR-0004,
+            # #773). Those days carry the position at its own cost, and the
+            # figure is real on the first of them as on the last.
             #
             # What is excluded is the third shape: **quoted, in a unit, and
             # never converted**. ``carrying_price`` refuses it on purpose (#706
@@ -483,8 +486,21 @@ class PerfJob:
             # cannot state its performance, and ``unconvertible`` is the notice
             # that asks the owner to act. The block lifts by itself the moment
             # #704's lateral pass lands a rate.
+            #
+            # And ``symbol in oldest_priced`` is **not** a second way in, which
+            # is the repair: that membership says one day of the symbol converts,
+            # never that the days it was held do. A line held since 2019 whose
+            # ``price_converted`` starts this January answered *yes* to it and
+            # was skipped whole — where the horizon, handed the same symbol as a
+            # blocker, builds ``[acquired, oldest − 1 day]`` and finds the block
+            # *empty* when the conversion really does reach the acquisition. The
+            # same answer where the symbol is priced throughout, and the honest
+            # one where it is not: without it the years before the conversion
+            # were written with the position at nothing, the purchase read as a
+            # loss of its own price, and the TWR chained on that step never came
+            # back.
             settled = {symbol for symbol in carried
-                       if symbol in oldest_priced or symbol not in first_quoted}
+                       if symbol not in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
                     account_holding_windows(timeline, account.id, symbols, today),
