@@ -403,6 +403,8 @@ src/application/
 ├── store.py            # the connection, the DDL of the twelve tables, the seed
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
+├── build_info.py       # pure: RELEASE_VERSION + SOURCE_COMMIT → which SuiviBourse
+│                       #   this is; no SB_ prefix, on purpose
 ├── boot_conditions.py  # pure: the three start-up lines, said once each
 ├── instants.py         # stdlib only: the one UTC repair and the one ISO,
 │                       #   an instant stamped, a calendar day left alone

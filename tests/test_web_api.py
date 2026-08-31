@@ -23,6 +23,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from application import accounts as accounts_module
 from application import advisories
+from application import build_info
 from application import entries
 from application import installation_facts
 from application import ledger
@@ -3486,6 +3487,41 @@ def test_the_runtime_publishes_the_mount_observation_to_the_front(tmp_path):
     runtime.store_persistence = 'persistent'
     assert client.get('/api/runtime').get_json()['store'] == {
         'persistence': 'persistent', 'path': path}
+
+
+def test_the_runtime_names_which_suivibourse_is_answering(tmp_path):
+    """The stamp the build left, published on the one route that opens nothing.
+
+    A test runtime was stamped by nobody, and the payload says exactly that —
+    two nulls and one word — rather than a version invented for the hole.
+    """
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE,
+                          events=ACCOUNTS_EVENTS)
+    runtime = api_module.current_runtime()
+
+    assert client.get('/api/runtime').get_json()['build'] == {
+        'version': None, 'revision': None, 'source': 'unknown'}
+
+    runtime.build = build_info.describe({'RELEASE_VERSION': '5.0.0',
+                                         'SOURCE_COMMIT': 'deadbeef'})
+    assert client.get('/api/runtime').get_json()['build'] == {
+        'version': '5.0.0', 'revision': 'deadbeef', 'source': 'release'}
+
+
+def test_the_version_survives_an_unreadable_store(tmp_path):
+    """The reason it rides on this route: *which SuiviBourse is this* is asked
+    when something is broken, and every resource that reads the store answers
+    ``503`` in exactly that state. Observed once at boot and answered from
+    memory, so nothing about it goes through the store it has to outlive."""
+    client = build_client(
+        tmp_path, break_store=True,
+        accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
+    api_module.current_runtime().build = build_info.describe(
+        {'SOURCE_COMMIT': 'deadbeef'})
+
+    assert client.get('/api/positions').status_code == 503
+    assert client.get('/api/runtime').get_json()['build'] == {
+        'version': None, 'revision': 'deadbeef', 'source': 'commit'}
 
 
 def test_the_mount_observation_survives_an_unreadable_store(tmp_path):

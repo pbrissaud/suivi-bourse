@@ -916,10 +916,44 @@ export interface RuntimeStore {
   path: string | null
 }
 
+/**
+ * Where this build came from, derived by the server from the two facts below
+ * rather than stamped a third time (`application/build_info.py`).
+ *
+ * `release` — an image the release workflow published, so it carries the tag
+ * somebody would `docker pull`. `commit` — an image built from a branch, which
+ * is what a PaaS rebuilding on every push produces: there is a revision and no
+ * version, and that is a **complete** state. `checkout` — not an image at all,
+ * and the word is separate from `commit` on purpose: a working tree may differ
+ * from the commit it names. `unknown` — nobody stamped this build.
+ */
+export type BuildSource = 'release' | 'commit' | 'checkout' | 'unknown'
+
+/**
+ * Which SuiviBourse is answering — the one line a bug report has to carry.
+ *
+ * It rides on this resource, which opens nothing, for the reason the store's
+ * two facts do: it is settled at `execve` and answered from process memory, so
+ * it stays legible on a store nobody can open — the exact state in which the
+ * question gets asked.
+ *
+ * **Both halves are nullable and neither is ever invented.** An unstamped build
+ * answers two `null`s, not `"dev"` and not `"0.0.0"`: a word fabricated for a
+ * fact nobody carries is a word something eventually branches on.
+ */
+export interface RuntimeBuild {
+  /** The published release, or `null`. */
+  version: string | null
+  /** The full commit, or `null` — abbreviating is the reader's business. */
+  revision: string | null
+  source: BuildSource
+}
+
 export interface RuntimeState {
   now: string
   scheduler_running: boolean
   store: RuntimeStore
+  build: RuntimeBuild
   /**
    * The backfill still has windows to cover. It is here rather than beside the
    * figures because it is a fact about *this process*, and rule four of the map

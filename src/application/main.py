@@ -21,6 +21,7 @@ from logfmt_logger import getLogger
 from application import accounts as accounts_module
 from application import boot_conditions
 from application import boot_env
+from application import build_info
 from application import carrying
 from application import installation_facts
 from application import ledger
@@ -826,7 +827,8 @@ class Runtime:
     def __init__(self, config_manager: ConfigurationManager,
                  store_path: Optional[Path] = None,
                  store_persistence: str = mounts.UNKNOWN,
-                 opened_store: Optional['store.Store'] = None):
+                 opened_store: Optional['store.Store'] = None,
+                 build: build_info.Build = build_info.UNSTAMPED):
         self.config_manager = config_manager
         self.workloads: Optional[workloads.Workloads] = None
         self.scheduler: Optional[BackgroundScheduler] = None
@@ -849,6 +851,14 @@ class Runtime:
         # :data:`mounts.UNKNOWN`, which is the honest reading of a runtime
         # nobody observed — a test's, or the one a Docker-less checkout builds.
         self.store_persistence: str = store_persistence
+
+        # Which SuiviBourse this is. Carried here for the reason the two lines
+        # above are: it is settled at ``execve`` — the image's ``ENV``, or the
+        # checkout the process was started from — so re-reading it per request
+        # would be a subprocess spawned to answer a question that cannot change.
+        # It defaults to :data:`build_info.UNSTAMPED`, which is what a test's
+        # runtime and a hand-built image honestly are.
+        self.build: build_info.Build = build
 
         # The scheduler's last-pass records (issue #668). Built here, with the
         # object itself, rather than in ``start_runtime``: ``GET /api/runtime``
@@ -890,7 +900,18 @@ def build_runtime() -> Runtime:
     A failure at any line of it raises, and ``boot.run`` turns that into one
     non-zero exit.
     """
-    app_logger.info('SuiviBourse is running !')
+    # Which SuiviBourse this is, read **once** and said on the first line the
+    # process writes. ``docker logs`` is where *which version is this* is asked
+    # most often, and the answer costs one mapping read plus — in a checkout
+    # only, never in the image — one ``git rev-parse``.
+    build = build_info.describe(os.environ, build_info.checkout_revision())
+    # Only what is known reaches the logfmt keys: a ``version=`` rendered empty
+    # beside a revision reads as a release whose number went missing, which is
+    # the one thing the payload's own ``None`` is careful not to say.
+    app_logger.info(
+        f'SuiviBourse {build_info.said(build)} is running !',
+        extra={'context': {key: value for key, value in build.to_dict().items()
+                           if value is not None}})
 
     # The environment, read **once** and as a whole (issue #740). Four values and
     # the list of names that are set and no longer obeyed come out of the same
@@ -971,7 +992,8 @@ def build_runtime() -> Runtime:
     # member, and said again by the boot lines above — so it changed instrument
     # rather than status.
     return Runtime(config_manager, store_path=store_path,
-                   store_persistence=persistence, opened_store=opened)
+                   store_persistence=persistence, opened_store=opened,
+                   build=build)
 
 
 def start_runtime(runtime: Runtime) -> Runtime:

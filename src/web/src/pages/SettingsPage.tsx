@@ -55,6 +55,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { Unreadable } from '@/components/Unreadable'
+import { BuildBlock } from '@/components/settings/BuildBlock'
 import { DialsBlock } from '@/components/settings/DialsBlock'
 import { EnvironmentBlock } from '@/components/settings/EnvironmentBlock'
 import { JobsBlock } from '@/components/settings/JobsBlock'
@@ -172,9 +173,14 @@ export default function SettingsPage() {
         failure={storeFailure}
       />
 
-      {/* Last, because it is the only block on the page nothing can be done
-          about from here. It rides on the same read as the dials. */}
+      {/* Nothing can be done about either of the last two from here, which is
+          why they are last. This one rides on the same read as the dials. */}
       {config.data ? <EnvironmentBlock config={config.data} /> : null}
+
+      {/* And the very last line, where a version lives: it is what a bug report
+          is copied out of, and it rides on `/api/runtime`, so it is still on
+          screen on the failure that empties everything above it. */}
+      <BuildBlock build={runtime.data?.build ?? null} />
     </div>
   )
 }

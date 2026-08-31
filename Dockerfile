@@ -175,6 +175,33 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % ((os.environ.get('SB_WEB_PORT') or '').strip() or '8080'), timeout=4).read()"]
 
+# Which SuiviBourse this is, stamped by whoever builds the image, and **the
+# last thing in the file** — that placement is the whole of the cost control.
+# `SOURCE_COMMIT` changes on every commit and an `ARG` invalidates every layer
+# that *follows* it; here it follows nothing, so the front-end build, the
+# dependency layers and the source copies are all cached above it and only this
+# trivial layer is rebuilt. Coolify's own documentation names that trade-off and
+# defaults its compose build pack to leaving the commit out for it; put last,
+# there is nothing left to trade.
+#
+# `SOURCE_COMMIT` is **Coolify's name**, not one this project chose: it is the
+# predefined build argument the Dockerfile build pack injects on its own, so a
+# deployment from git identifies itself with nothing configured anywhere.
+# `RELEASE_VERSION` is passed by `releasing.yml`, which knows the tag the two
+# registries publish under.
+#
+# Both default to the empty string so that a plain `docker build` still works,
+# and the app reads them through `boot_env.text`, where **blank counts as
+# unset** — the whole reason the empty default is not a stamp saying "".
+# `build_info` reads them under those exact names; neither carries the `SB_`
+# prefix, because that prefix is what `boot_env.unread` filters on, and a
+# variable the app has just read must never be reported as one it no longer
+# obeys.
+ARG SOURCE_COMMIT=""
+ARG RELEASE_VERSION=""
+ENV SOURCE_COMMIT=${SOURCE_COMMIT} \
+    RELEASE_VERSION=${RELEASE_VERSION}
+
 # `python -m application.boot`, and **no server command line** (ADR-0039). The
 # module form rather than a path because `boot.py` sits inside a package now: `-m`
 # puts `PYTHONPATH` in charge of resolution instead of the working directory,

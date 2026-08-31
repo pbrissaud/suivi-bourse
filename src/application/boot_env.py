@@ -74,11 +74,20 @@ DEFAULT_STORE_DIR = '/data'
 DEFAULT_WEB_PORT = 8080
 DEFAULT_LOG_LEVEL = 'INFO'
 
-#: Every variable this application reads, with the value it takes when nothing
-#: says otherwise — the list ``/api/config`` publishes. It is three long and
-#: there is no fourth: what is not here lives in the store, the two names the
-#: exporter answered for left with it (ADR-0033), and the drop folder's own left
-#: with the mount (ADR-0032).
+#: Every variable that **configures** this application, with the value it takes
+#: when nothing says otherwise — the list ``/api/config`` publishes. It is three
+#: long and there is no fourth: what is not here lives in the store, the two
+#: names the exporter answered for left with it (ADR-0033), and the drop
+#: folder's own left with the mount (ADR-0032).
+#:
+#: *Configures* is doing work in that sentence, and it is the amendment
+#: :mod:`build_info` made necessary. Two more names are read off the same
+#: environment — ``RELEASE_VERSION`` and ``SOURCE_COMMIT``, the stamp the build
+#: leaves on the image — and they are deliberately **not** here: nothing can be
+#: done about them from anywhere, so publishing them as *what this container was
+#: started with* would put one fact in two registers. They carry no ``SB_``
+#: prefix either, which is what keeps them out of :func:`unread` by
+#: construction rather than by an entry in a list — see that module.
 #:
 #: **No entry carries a secret flag any more** (#740). ``INFLUXDB_TOKEN`` was
 #: the environment's only credential and it left with the database (#700), so

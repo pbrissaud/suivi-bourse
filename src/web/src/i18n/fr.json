@@ -538,6 +538,11 @@
   "settings.jobs.performance": "Calcul de la performance",
   "settings.jobs.performance.verdict": "{verdict, select, ran {Séries de rendement réécrites.} failed {Le dernier passage a échoué et n’a rien écrit : vous lisez les chiffres précédents.} other {Pas encore passé.}}",
 
+  "installation.build": "La version",
+  "installation.build.version": "Version",
+  "installation.build.revision": "Révision",
+  "installation.build.source": "{source, select, release {Image publiée sous ce numéro de version.} commit {Cette image a été construite depuis un commit, pas depuis une version publiée : il n’y a donc pas de numéro.} checkout {L’application tourne depuis un dépôt local. La révision dit d’où vient le code, pas ce qui a été modifié depuis.} other {Rien n’a estampillé cette construction : l’application ne peut pas dire quelle version elle exécute.}}",
+
   "installation.store": "Le magasin",
   "installation.store.path": "Où il se trouve",
   "installation.store.persistence": "{state, select, persistent {Ce chemin est sur un volume qui survit au conteneur.} ephemeral {Ce chemin est dans le conteneur : il disparaît dès qu’il est recréé.} other {L’application ne peut pas dire si ce chemin survit au conteneur.}}",

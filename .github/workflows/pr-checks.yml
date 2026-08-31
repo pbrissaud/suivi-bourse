@@ -120,13 +120,22 @@ jobs:
       # breaks the build with all the other gates green — which is how #713
       # shipped a broken image. Until this job existed the image was built only
       # by the release workflow, i.e. after the merge.
+      #
+      # The build argument is passed here because assertion 10 is about the
+      # chain it starts: `ARG` → `ENV` → `build_info` → `/api/runtime`. It is
+      # the same argument `releasing.yml` passes, so the path the published
+      # image takes is the path a pull request exercises — and it is declared
+      # last in the Dockerfile, so it invalidates no cached layer above it.
       - name: "1. docker build . succeeds"
         if: steps.changed-files-specific.outputs.any_changed == 'true'
-        run: docker build --platform linux/amd64 -t suivi-bourse:pr .
-      # Assertions 2 to 9, each failing for its own reason. The script owns the
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg SOURCE_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}" \
+            -t suivi-bourse:pr .
+      # Assertions 2 to 10, each failing for its own reason. The script owns the
       # containers and the volume it creates and removes them from an EXIT trap,
       # so a failed assertion leaves nothing behind either.
-      - name: "2-9. The image honours its contract"
+      - name: "2-10. The image honours its contract"
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         env:
           IMAGE: suivi-bourse:pr

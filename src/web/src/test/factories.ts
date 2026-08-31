@@ -957,6 +957,10 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
     store: { persistence: 'persistent', path: '/data/suivi-bourse.duckdb' },
+    // The ordinary installation is a published image (#741's taste applied to
+    // the stamp): the default is what an owner who pulled a tag runs, and the
+    // three other states are what a test asks for by name.
+    build: { version: '5.0.0', revision: '8f0a02e1c0ffee00', source: 'release' },
     symbols: defaultPositions().map((position, index) => ({
       symbol: position.symbol,
       next_run: NOW,

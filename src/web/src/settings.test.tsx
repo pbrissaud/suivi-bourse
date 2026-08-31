@@ -86,6 +86,7 @@ describe('the page, and the cards it is made of', () => {
         'Les titres orphelins',
         'Le magasin',
         'Ce que le conteneur impose',
+        'La version',
       ]),
     )
   })
@@ -365,6 +366,92 @@ describe('the store', () => {
     expect(store).not.toHaveTextContent('Rien n’a encore été importé')
     expect(store).not.toHaveTextContent('Dernière écriture du grand livre')
     expect(store).not.toHaveTextContent('Taille sur le disque')
+  })
+})
+
+describe('the version', () => {
+  it('names the release an image was published under', async () => {
+    await openSettings()
+    await screen.findByRole('heading', { name: 'La version' })
+
+    const version = block('La version')
+    expect(version).toHaveTextContent('5.0.0')
+    // The commit, shortened here and nowhere upstream: a truncated hash cannot
+    // be lengthened again, so the payload keeps the whole of it.
+    expect(version).toHaveTextContent('8f0a02e1c0ff')
+    expect(version).toHaveTextContent(/Image publiée sous ce numéro de version/)
+  })
+
+  it('states a build from a branch as complete rather than as a release with a hole', async () => {
+    // What a PaaS rebuilding on every push produces. There is no version, and
+    // the row is **absent** rather than an em dash: an em dash beside *Version*
+    // reads as a release whose number went missing.
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ build: { version: null, revision: '8f0a02e1c0ffee00', source: 'commit' } }),
+        ),
+      ),
+    )
+    await openSettings()
+    await screen.findByRole('heading', { name: 'La version' })
+
+    const version = block('La version')
+    expect(within(version).queryByText('Version')).not.toBeInTheDocument()
+    expect(version).toHaveTextContent('8f0a02e1c0ff')
+    expect(version).toHaveTextContent(/construite depuis un commit/)
+  })
+
+  it('says a checkout is a checkout, not the commit it names', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(
+          aRuntime({ build: { version: null, revision: '8f0a02e1c0ffee00', source: 'checkout' } }),
+        ),
+      ),
+    )
+    await openSettings()
+    await screen.findByRole('heading', { name: 'La version' })
+
+    // The fourth word earns its place on screen: a working tree may differ from
+    // the commit it names, and the sentence refuses to let the hash be read as
+    // proof of what is running.
+    expect(block('La version')).toHaveTextContent(/pas ce qui a été modifié depuis/)
+  })
+
+  it('keeps the card when nothing stamped the build', async () => {
+    server.use(
+      http.get(ROUTES.runtime, () =>
+        HttpResponse.json(aRuntime({ build: { version: null, revision: null, source: 'unknown' } })),
+      ),
+    )
+    await openSettings()
+    await screen.findByRole('heading', { name: 'La version' })
+
+    // A card that vanished here would send somebody who built the image by hand
+    // hunting for a version the page had decided not to mention — and no
+    // fabricated one takes its place.
+    const version = block('La version')
+    expect(version).toHaveTextContent(/Rien n’a estampillé cette construction/)
+    expect(version).not.toHaveTextContent('0.0.0')
+  })
+
+  it('is still readable when the store is not', async () => {
+    // The reason it rides on `/api/runtime`: this is the screen the question is
+    // asked on, and every card fed by a read of the store is a hole on it.
+    const unavailable = {
+      status: 503,
+      type: PROBLEM_TYPES.storageUnavailable,
+      title: 'storage unavailable',
+    }
+    server.use(
+      problemHandler(ROUTES.config, unavailable),
+      problemHandler(ROUTES.store, unavailable),
+    )
+    await openSettings()
+    await screen.findByRole('heading', { name: 'La version' })
+
+    expect(block('La version')).toHaveTextContent('5.0.0')
   })
 })
 

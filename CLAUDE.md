@@ -142,8 +142,8 @@ advisories together. There is no banner and no status dot.
   machinery.** A new column would exist on no store created before it — so derive
   at read time rather than adding one.
 - **The pure modules stay pure** (`scheduling`, `performance`, `carrying`,
-  `retention`, `fx`, `boot_env`, `mounts`, `market_info`): no store, no
-  yfinance, `now` injected.
+  `retention`, `fx`, `boot_env`, `mounts`, `market_info`, `build_info`): no
+  store, no yfinance, `now` injected.
 - **The market is reached through one door** (#846): `market.py` holds the only
   `import yfinance` in the tree, and `market_info.py` — pure — is the only
   place a key of Yahoo's payload is read. Both are held on the source beside the

@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from application import build_info
 from application import instants
 from application import mounts
 from application import runtime_state
@@ -713,6 +714,7 @@ def build_runtime(
     reconstruction: Optional[Tuple[int, int]] = None,
     persistence: str = mounts.UNKNOWN,
     store_path: Optional[str] = None,
+    build: build_info.Build = build_info.UNSTAMPED,
 ) -> Dict[str, Any]:
     """The whole ``GET /api/runtime`` payload.
 
@@ -736,6 +738,13 @@ def build_runtime(
     survives"* (#724). It is boot knowledge — the master resolved it before it
     opened anything — so it costs no query either, and it is the half a reader
     needs precisely when the store block's own resource cannot answer.
+
+    ``build`` is here on the same three-part argument, and it is the member this
+    route's rule was written for: it is a fact about *this process*, settled at
+    ``execve`` and answered from memory with no query — so *which SuiviBourse is
+    this* stays readable on a store nobody can open, which is exactly the state
+    in which the question is asked. It publishes the two facts and the word
+    derived from them, never a fabricated version (:mod:`build_info`).
     """
     symbols = build_symbols(
         shares, scrape, backfill, next_runs, now, scheduler_running)
@@ -744,6 +753,7 @@ def build_runtime(
         'scheduler_running': scheduler_running,
         'rebuilding': is_rebuilding(reconstruction),
         'store': {'persistence': persistence, 'path': store_path},
+        'build': build.to_dict(),
         'symbols': [symbol.to_dict() for symbol in symbols],
         # The perf horizon per account (issue #708). A top-level row set beside
         # ``symbols`` rather than a member of ``perf``, because that is the shape

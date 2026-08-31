@@ -174,6 +174,15 @@ which port to bind, how loudly to log. The only thing the environment still says
 setting, and never editable from the app. Its defaults describe a container; anything
 else overrides them.
 
+**Build**:
+Which SuiviBourse a process *is* — a published **version** when the image came from a
+release, a **revision** when it came from a commit, and both are absent when nobody
+stamped it. Not a boot variable and not a setting: nothing can be done about it from
+anywhere, it is settled the moment the process starts, and the app never invents one
+for the hole. It is the line a bug report carries, so it is published on the resource
+that opens nothing and stays legible when the store does not answer.
+_Avoid_: release (for a build from a commit), tag, deployment
+
 **Import**:
 A gesture, never a source. A file the owner hands to the app, read once, whose rows
 become ordinary events the moment they land — indistinguishable from typed ones, and

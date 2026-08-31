@@ -26,6 +26,7 @@ defended against, and the bind is one argument of :func:`boot.serve`.
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from datetime import date
@@ -366,6 +367,45 @@ def test_the_boot_carries_the_persistence_in_both_directions(
     runtime = main.build_runtime()
 
     assert runtime.store_persistence == state
+
+
+def test_the_boot_stamps_the_runtime_with_what_the_image_says_it_is(
+        fake_config, monkeypatch, caplog):
+    """Read **once**, from the environment, and carried on the runtime.
+
+    The two names have no ``SB_`` prefix, and that is the property this test
+    exists beside: they are read here and they must never reach the *set and no
+    longer obeyed* notice, which filters on the prefix alone.
+    """
+    monkeypatch.setenv('RELEASE_VERSION', '5.0.0')
+    monkeypatch.setenv('SOURCE_COMMIT', '8f0a02e1c0ffee00')
+    caplog.set_level(logging.INFO)
+
+    runtime = main.build_runtime()
+
+    assert runtime.build.version == '5.0.0'
+    assert runtime.build.source == main.build_info.RELEASE
+    # The first line of ``docker logs``, which is where the question is asked.
+    assert 'SuiviBourse 5.0.0 (8f0a02e1c0ff) is running !' in caplog.text
+    # And neither name is reported as one the app has stopped obeying.
+    assert boot_env.unread(dict(os.environ)) == ()
+
+
+def test_an_unstamped_boot_reads_the_checkout_it_runs_from(
+        fake_config, monkeypatch):
+    """A Docker-less install: nothing stamped the process, and the tree it was
+    started from answers. The word is ``checkout`` rather than ``commit``,
+    because a working tree may differ from the commit it names."""
+    monkeypatch.delenv('RELEASE_VERSION', raising=False)
+    monkeypatch.delenv('SOURCE_COMMIT', raising=False)
+    monkeypatch.setattr(main.build_info, 'checkout_revision',
+                        lambda *_a, **_kw: '8f0a02e1c0ffee00')
+
+    runtime = main.build_runtime()
+
+    assert runtime.build.version is None
+    assert runtime.build.revision == '8f0a02e1c0ffee00'
+    assert runtime.build.source == main.build_info.CHECKOUT
 
 
 def test_the_observation_interrogates_the_store_directory_it_was_given(

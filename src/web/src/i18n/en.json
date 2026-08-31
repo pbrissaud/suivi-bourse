@@ -538,6 +538,11 @@
   "settings.jobs.performance": "Performance computation",
   "settings.jobs.performance.verdict": "{verdict, select, ran {Return series rewritten.} failed {The last pass failed and wrote nothing: you are reading the previous figures.} other {Not run yet.}}",
 
+  "installation.build": "The version",
+  "installation.build.version": "Version",
+  "installation.build.revision": "Revision",
+  "installation.build.source": "{source, select, release {Image published under this version number.} commit {This image was built from a commit rather than from a published release, so it carries no version number.} checkout {The app is running from a local checkout. The revision says where the code came from, not what has been changed since.} other {Nothing stamped this build, so the app cannot tell which version it is running.}}",
+
   "installation.store": "The store",
   "installation.store.path": "Where it is",
   "installation.store.persistence": "{state, select, persistent {This path is on a volume that outlives the container.} ephemeral {This path is inside the container and is lost when it is recreated.} other {The app cannot tell whether this path outlives the container.}}",

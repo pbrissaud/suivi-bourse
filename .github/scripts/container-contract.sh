@@ -2,9 +2,9 @@
 #
 # The image's contract, asserted from outside (issue #744, spec #730 § 7).
 #
-# Nine assertions. The first one — `docker build .` succeeds — is the step
+# Ten assertions. The first one — `docker build .` succeeds — is the step
 # that produced $IMAGE and cannot be made after the fact, so it lives in the
-# workflow; the eight that follow live here. What they all have in common is
+# workflow; the nine that follow live here. What they all have in common is
 # that they attest **observable behaviour** and never the shape of a line of
 # `Dockerfile`: a test that greps the file for `HEALTHCHECK` breaks at the first
 # refactor *and passes on a broken probe*, while one that asks `docker inspect`
@@ -15,9 +15,10 @@
 # a bare container that no longer starts and a healthcheck that never turns
 # green are two different pieces of news.
 #
-# Run it by hand exactly as the CI does:
+# Run it by hand exactly as the CI does — the build argument included, since
+# assertion 10 is about the stamp it carries into the image:
 #
-#     docker build -t suivi-bourse:pr .
+#     docker build --build-arg SOURCE_COMMIT="$(git rev-parse HEAD)" -t suivi-bourse:pr .
 #     IMAGE=suivi-bourse:pr .github/scripts/container-contract.sh
 #
 set -Eeuo pipefail
@@ -165,6 +166,21 @@ persistence_of() {
     curl -s --max-time 10 "$1/api/runtime" \
         | tr ',{}' '\n\n\n' \
         | sed -n 's/^[[:space:]]*"persistence"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p'
+}
+
+# The revision the image carries in its own environment — what `docker run`
+# hands the process — and the one it publishes once running. Assertion 10 puts
+# the two side by side, which is what makes it an assertion about the chain
+# (`ARG` → `ENV` → `build_info` → `/api/runtime`) rather than about either end.
+image_stamp() {
+    docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" \
+        | sed -n 's/^SOURCE_COMMIT=\(.*\)$/\1/p'
+}
+
+published_revision() {
+    curl -s --max-time 10 "$1/api/runtime" \
+        | tr ',{}' '\n\n\n' \
+        | sed -n 's/^[[:space:]]*"revision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p'
 }
 
 # --------------------------------------------------------------------------- #
@@ -333,5 +349,29 @@ if [ "$(condition_keys "$LEGACY")" != "$(condition_keys "$BARE")" ]; then
     fail 'assertion 9: SB_INGESTION_INTERVAL changed which start-up conditions stand'
 fi
 ok 'named, never obeyed'
+
+assertion '10 — the image says which SuiviBourse it is, and says it nowhere else'
+# The chain, end to end: the build argument became an `ENV`, the process read it
+# under that name, and the one resource that opens nothing publishes it. Asked
+# of the bare container, because *which version is this* is the question a
+# broken install asks and the bare one has no volume to lose.
+stamp="$(image_stamp)"
+[ -n "$stamp" ] \
+    || fail "assertion 10: the image carries no SOURCE_COMMIT — build it with --build-arg SOURCE_COMMIT=\$(git rev-parse HEAD), as the release workflow and the CI both do"
+published="$(published_revision "http://127.0.0.1:$BARE_WEB")"
+[ "$published" = "$stamp" ] \
+    || { dump "$BARE"; fail "assertion 10: the image is stamped '$stamp' and /api/runtime published '${published:-nothing}'"; }
+# **And the two names are never in the grouped notice.** They are read by the
+# app, so a variable it has just obeyed must not be reported as one it no longer
+# does — which is the whole reason neither carries the `SB_` prefix
+# `report_unread_environment` filters on. Asserted on the bare container, whose
+# environment carries both, and anchored on the emitting function like assertion
+# 9's.
+for name in SOURCE_COMMIT RELEASE_VERSION; do
+    said="$(docker logs "$BARE" 2>&1 | grep -c "report_unread_environment.*$name" || true)"
+    [ "$said" -eq 0 ] \
+        || { dump "$BARE"; fail "assertion 10: the grouped notice named $name — a variable the app reads is being reported as one it ignores"; }
+done
+ok 'the build stamps itself, and the notice keeps quiet about it'
 
 printf '\nThe image honours its contract.\n'

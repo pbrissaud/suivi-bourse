@@ -1901,6 +1901,13 @@ def get_runtime():
         # route's rule kept: no query, and readable on a store nobody can open,
         # which is exactly when *"where did my data go"* is asked.
         persistence=runtime.store_persistence,
+        # And which SuiviBourse is answering, for the same reason and at the
+        # same cost: the stamp the build left in the image's environment, read
+        # once at boot. It rides here rather than on ``/api/config`` because it
+        # is not configuration — nothing can be done about it from anywhere —
+        # and because a version legible only while the store answers is a
+        # version missing from every bug report worth having.
+        build=runtime.build,
         # Beside it, and read as one line with it (#724): *the path, and whether
         # it survives*. Boot knowledge, so this route's rule holds.
         store_path=(str(runtime.store_path)
