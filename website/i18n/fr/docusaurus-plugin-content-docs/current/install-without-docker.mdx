@@ -1,0 +1,121 @@
+---
+title: Install without Docker
+description: uv sync and a directory — the simplest form of the product, not the most advanced
+---
+
+This is the **simplest** form of the product, not the most advanced one. There
+is no stack to assemble either way: the app is one process, and what it keeps it
+keeps in one file it names itself. Without Docker, that means `uv sync`, a
+directory, and — if you want it to come back after a reboot — a service unit.
+
+It is the whole product either way. A machine that does not run Docker serves
+the same five pages, the same API and the same `/health` as the image does: no
+container runtime, no daemon, one Python process.
+
+## What you need
+
+* **Python 3.14 or later.** The same floor the published image ships, and the
+  same one `pyproject.toml` declares — there is one answer to this question,
+  not a lenient one for the source and a strict one for the image.
+* **[uv](https://docs.astral.sh/uv/)**, which creates the virtual environment
+  from the lockfile.
+* **A directory to keep the store in.** Anything you back up and do not delete.
+
+That is the whole list. There is no database to reach, no dashboard tool to
+provision and no token to mint.
+
+## Install
+
+Download the source of the
+[latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest),
+extract it, and install the dependencies from its root:
+
+```bash
+uv sync
+```
+
+`uv sync` reads the lockfile, so the versions you get are the versions the
+release was built and tested against.
+
+## The one directory
+
+The app reads one path from the environment, and it is **a directory, never a
+file** — the app names the store file and its write-ahead log itself. Pointing at
+a directory is what removes the whole class of mistake where the path exists but
+its parent does not.
+
+| Variable       | Container default | What it holds                         |
+| -------------- | ----------------- | ------------------------------------- |
+| `SB_STORE_DIR` | `/data`           | the store — everything the app writes |
+
+**The default describes the container**, which is the deployment that has no
+choice; a Docker-less install is the one that overrides it. Give `SB_STORE_DIR` a
+directory of your own.
+
+There is nowhere to put a file for the app to find: you hand it one from the
+app, and it reads it once. See [Import your events](./import-your-events.mdx).
+
+The other boot variables — the web port and the log level — are the same here as
+anywhere, and they are listed once, on [Settings](./settings.mdx). Everything
+that is not in that list lives in the store and is set in the app.
+
+## Run it
+
+From the root of the extracted source:
+
+```bash
+SB_STORE_DIR=/var/lib/suivi-bourse \
+uv run python -m application.boot
+```
+
+`boot.py` is not a server launcher, it is the boot sequence: it reads the
+environment, opens the store, builds the application, arms the scheduled jobs and
+binds the one socket the app has — in that order, in one process. There is no
+worker count to set anywhere, and that is deliberate: the scheduler lives in this
+process and all of its state is in memory, so a second one would scrape every
+symbol twice. Concurrency comes from a thread pool inside the process.
+
+Then open the app and answer the one question it asks: that half is
+[Get started](./get-started.mdx), and it is the same on every install.
+
+## Keeping it running
+
+Any supervisor will do; the app is a single foreground process that exits on
+`SIGTERM`. A systemd unit is the shortest one:
+
+```ini title="/etc/systemd/system/suivi-bourse.service"
+[Unit]
+Description=SuiviBourse
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+WorkingDirectory=<installation_path>
+ExecStart=/usr/local/bin/uv run python -m application.boot
+User=<user>
+Group=<group>
+Environment=PYTHONUNBUFFERED=1
+Environment=SB_STORE_DIR=/var/lib/suivi-bourse
+SyslogIdentifier=suivi-bourse
+
+[Install]
+WantedBy=default.target
+```
+
+`ExecStart` needs an absolute path to `uv` — `which uv` gives you yours. Then
+`systemctl daemon-reload`, `systemctl enable --now suivi-bourse`, and
+`journalctl -u suivi-bourse` for the logs.
+
+The user you run it as must own `SB_STORE_DIR`. That is the entire permission
+story here, and it is the reason this page has no section about uids: the
+container has one because a volume and a human used to share a directory, and
+this deployment never did.
+
+## Supported architectures
+
+The published image is built for `linux/amd64` and `linux/arm64`. Installed this
+way there is no image, so the answer is Python's: anything your platform has a
+Python 3.14+ and a DuckDB wheel for. If you need an architecture the image does
+not cover,
+[open an issue](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
