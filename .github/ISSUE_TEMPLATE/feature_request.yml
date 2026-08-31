@@ -1,0 +1,57 @@
+name: Feature request
+description: Something SuiviBourse should do and does not
+labels: ["feat", "needs-triage"]
+assignees: [pbrissaud]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SuiviBourse tracks one person's portfolio and stays small on purpose. The
+        surest way to get a feature in is to describe the moment you wanted it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you were trying to do
+      description: The situation, not the solution — what you were looking at, and what you could not find out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you would like instead
+      description: A figure, a page, a column, a setting — say where it would live.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried, or considered
+      description: |
+        An export and a spreadsheet, another tool, a different way of recording
+        the events. What it did not give you is the useful part.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where it belongs
+      options:
+        - Dashboard
+        - Shares
+        - Accounts
+        - Ledger
+        - Settings
+        - Importing or exporting
+        - The API
+        - The documentation
+        - Somewhere else, or nowhere yet
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: A mock-up, a screenshot of another tool doing it, an example of the figures involved.

@@ -8,6 +8,14 @@
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
+    },
+    {
+      "matchFileNames": ["pyproject.toml", "Dockerfile"],
+      "semanticCommitScope": "app"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "semanticCommitScope": "repo"
     }
   ],
   "assignees": ["pbrissaud"],

@@ -1,0 +1,358 @@
+---
+title: Import your events
+description: Handing a file to the app, the format, the six kinds of event, correcting a line, undoing an import, and exporting it all back out
+---
+
+This page is for people who already have files — a broker export, the event
+files of a version 4 install, a spreadsheet you keep yourself. **It is not a
+step of the installation.** A new install needs no file at all: you record your
+first position in the app, and the form that records it is the onboarding.
+[Get started](./get-started.mdx) never shows a file, and that is deliberate.
+
+## The gesture
+
+**You hand the app a file; it reads it once and never looks at it again.** There
+is no folder to mount and nothing to watch. On the **Ledger** page there is
+a rectangle above the table: drop a `.csv` or an `.xlsx` on it, or click it and
+pick one.
+
+Three steps, and the middle one is the point:
+
+1. **You hand over the file.** The app parses it whole — a file is imported
+   entirely or not at all.
+2. **You read the receipt, before anything is written.** How many rows the file
+   holds, how many of them your ledger already has, the period they cover, the
+   accounts and the securities they touch. Nothing has been written at this
+   point: this is what the file *would* do.
+3. **You confirm, or you put the file down.** Confirming writes it and answers
+   the same receipt in the past tense — same figures, same order — so what you
+   read afterwards is what you agreed to. Refusing writes nothing at all.
+
+Confirming sends the file a second time. That is deliberate: **the app keeps no
+memory of an import**, not even a pending one, so there is no half-written state
+to sweep up if you close the tab. The price is a few hundred kilobytes on a
+local connection.
+
+The same gesture is one request away, which is what makes it work on an install
+with no browser open:
+
+```bash
+# The receipt, and nothing written.
+curl -F 'file=@2024.csv' 'http://localhost:8080/api/events/import?dry_run=1'
+
+# The import.
+curl -F 'file=@2024.csv' http://localhost:8080/api/events/import
+```
+
+### Rows your ledger already has
+
+A row you are re-importing is recognised **by its content** — its date, type,
+account, security, quantity, unit price, fee and amount. Its label and its notes
+are deliberately not part of that comparison: annotating a line would otherwise
+make it importable a second time.
+
+Those rows are **counted in the receipt and skipped by default**, so re-handing
+the app the same export is the quiet case it ought to be. If you really did pass
+two identical orders on one day, tick *import them anyway* — you are the only
+one who knows, and the app never decides it for you. Typing two identical events
+by hand is not refused either, for the same reason.
+
+### When a file is refused
+
+Every refusal names its subject, and **none of them writes a single row**:
+
+- a header the app does not recognise — the message names the column that is
+  missing;
+- an account no declaration names — the message names the account;
+- a version 4 `config.yaml` or `settings.yaml`, refused by name, with a pointer
+  to [Coming from v4](./coming-from-v4.mdx);
+- a declaration of accounts: an account is declared in the app, not imported;
+- a file this app does not read at all;
+- a `base_currency` this install can no longer take (see
+  [below](#the-reporting-currency));
+- a file that would leave the ledger unable to replay — an export starting
+  mid-history sells shares no earlier row bought.
+
+## The format
+
+An event file is a `.csv` or an `.xlsx` with one header row and one event per
+row. Every sheet of a workbook is read, and the rows are **sorted by date**, so
+the order inside a file is yours to choose. Organise by year, by broker, by
+account, or not at all — and hand the app as many files as you like, one after
+another.
+
+| Column | Required | What it holds |
+|---|---|---|
+| `date` | yes | ISO format, `YYYY-MM-DD` |
+| `event_type` | yes | one of the six below |
+| `account` | see [accounts](#declaring-your-accounts) | the id of a declared account |
+| `symbol` | share events | the Yahoo! Finance ticker, e.g. `AAPL`, `AI.PA` |
+| `name` | share events | the display name, e.g. `Apple Inc.` |
+| `quantity` | `BUY`, `SELL`, `GRANT` | number of shares; fractions are allowed |
+| `unit_price` | `BUY`, `SELL` | price per share, **in your base currency** |
+| `fee` | no | transaction fee; never negative |
+| `amount` | `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` | the sum received or moved |
+| `notes` | no | free text, kept and shown, never interpreted |
+
+**Amounts are in your base currency, as you paid them.** An event records the
+debit — what actually left your account — rather than a foreign amount to be
+re-converted later at a rate nobody kept. That is what makes a cost basis exact
+instead of reconstructed, and it is why only *prices* are ever converted. If
+you have not answered [the base currency question](./settings.mdx#the-base-currency)
+yet, the amounts are still recorded; nothing is interpreted until you do.
+
+**A direction is carried by the event type, never by a sign.** Every amount and
+every quantity is positive: `WITHDRAWAL` is what makes money leave, not a
+negative `DEPOSIT`.
+
+```csv
+date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes
+2024-01-02,DEPOSIT,pea,,,,,,2000.00,January transfer
+2024-01-15,BUY,pea,AI.PA,Air Liquide,10,168.40,2.50,,
+2024-03-01,DIVIDEND,pea,AI.PA,Air Liquide,,,,32.00,2023 dividend
+2024-05-20,GRANT,pea,AI.PA,Air Liquide,1,,,,Bonus share
+2024-09-15,SELL,pea,AI.PA,Air Liquide,4,181.20,2.50,,
+```
+
+## The six kinds of event
+
+**`BUY`** — needs `quantity` and `unit_price`. It adds to the position and adds
+`quantity × unit_price + fee` to its cost basis: **acquisition fees are absorbed
+into the basis** rather than kept as a fourth figure. The same amount leaves the
+account's cash balance.
+
+**`SELL`** — needs `quantity` and `unit_price`. It removes shares, removes the
+matching share of the cost basis at the weighted average, books the difference
+as **realized gain**, and credits `quantity × unit_price − fee` to cash —
+disposal fees are absorbed into the proceeds, symmetrically. Selling more than
+you hold is refused. A position sold down to zero is not deleted and is not
+flagged: it simply has a quantity of zero, and keeps its realized gain and its
+dividends.
+
+**`GRANT`** — needs `quantity`; `unit_price` is optional and it is the whole
+distinction. With a price, the shares are treated as received *and* paid for:
+the contribution and the cost basis move together, which is what a taxed award
+is. Without one, it is **dilution** — the quantity rises and the basis does not,
+which is what a bonus share or a stock split is.
+
+**`DIVIDEND`** — needs `amount`. It credits `amount − fee` to cash and counts in
+the *dividends* term of your gain. It never enters the profit and loss of the
+position: a dividend is not a price movement, and mixing the two produces a
+figure whose terms have different definitions.
+
+**`DEPOSIT`** — needs `account` and `amount`; carries no share. It is money
+arriving from outside the portfolio: cash rises by `amount − fee`, and the
+**net contribution** rises by `amount` — the gross sum, the fee excluded. That
+distinction is the one performance rests on: an external flow is something you
+put in, never something the portfolio earned.
+
+**`WITHDRAWAL`** — needs `account` and `amount`; carries no share. The mirror
+image, and it is symmetrical down to the fee: cash falls by `amount + fee`, and
+the net contribution falls by `amount`.
+
+**A transfer fee is never absorbed into the net contribution**, and that is a
+decision rather than an oversight. Absorbing it would make the books close on
+three terms, at the price of making the money disappear from the product: it
+left your pocket, and it belongs to no position — it is neither an acquisition
+cost, nor a disposal cost, nor a dividend. So your gain carries it as a term of
+its own, and an install whose broker moves money for free never meets that term.
+
+`DEPOSIT` and `WITHDRAWAL` are **cash events and carry no share at all**:
+`symbol`, `name`, `quantity` and `unit_price` are refused on them rather than
+ignored, because a deposit that names a ticker means something was misfiled.
+
+## Declaring your accounts
+
+An account is user data — not a setting, and not something a file brings with
+it. **It is declared in the app**, on the accounts page, and nowhere else. It
+has three fields, and they are the three columns your events name it by.
+
+| Field | What it holds |
+|---|---|
+| `id` | the id your events name in their `account` column, e.g. `pea` |
+| `type` | `PEA`, `CTO`, … — free text, used for grouping and display |
+| `label` | the name shown on screen, e.g. `PEA Boursorama` |
+
+Declaring an account before importing the file that names it is the whole of
+what you have to remember. A few rules follow, and each of them exists to keep a
+mistake a refusal:
+
+- **An event file naming an undeclared account is not imported at all** — not
+  partially — and the message names the account you have to declare.
+- **An empty `account` column means `default`** for as long as no *real*
+  account exists — real meaning any account that is not the seeded `default`
+  (ADR-0008, ADR-0013). From the moment one does, an empty column is an
+  **error**: at that point a blank cell is far more likely to be an omission
+  than a choice, and guessing would silently pile a second account's events onto
+  the first.
+- **There is always at least one account.** When you have declared none, it is
+  called `default`. Nothing in the app branches on whether accounts exist.
+- **An account cannot be removed while an event names it.** Nothing is left
+  behind as a residue you can neither read nor delete.
+- **The one exception is the account column, at the moment you declare your
+  first account.** Events recorded before that point carry `default`, and they
+  were right to: the column meant `default` under the rule then in force, and it
+  is the app that changed the rule underneath them. So declaring your first
+  account offers, in the same gesture, to move those events onto it — ticked by
+  default, and never a condition of the declaration. The same offer stands on
+  the seeded account's own page for as long as any event still carries
+  `default`. Afterwards an event names its account for good. Your files are not
+  rewritten; nothing is asked of them.
+
+Version 4's `settings.yaml` is **named and never read**. Its `accounts:` block
+mixed deployment settings with user data, which is exactly the seam v5 separates;
+redeclaring two or three accounts in the app costs less than keeping a version 4
+format alive forever. See [Coming from v4](./coming-from-v4.mdx).
+
+## Correcting a line, and undoing an import
+
+**A row that came out of a file is a row.** There is one kind of line in your
+ledger, whether you typed it or handed the app a file that held it, and the same
+three gestures reach all of them.
+
+- **Correct one line.** Click its name in the ledger table, change what is
+  wrong, save. A typo on line 14 of a two-hundred-line export costs a
+  correction — and nothing else.
+- **Remove one line.** The same panel removes it. One line, on its own, with the
+  199 around it untouched.
+- **Undo a whole import.** Reduce the ledger to what the import laid down — by
+  period, by account, by type, by security, or by searching the label — and
+  delete the reduction in one gesture. The confirmation names every dimension of
+  the reduction in force and counts the rows it holds, so you can see exactly
+  what is about to go.
+
+That last gesture is the general one, which is why it replaced the *forget this
+import* button of earlier versions: it also repairs the dozen rows you mistyped,
+and it does not need a batch to have been recorded anywhere. Reducing on nothing
+at all is refused — emptying the whole ledger stays possible, by reducing on
+something that covers it, so a truncated request cannot destroy a history.
+
+There is **no undo and no bin**: your backup is the export.
+
+:::note Coming from a single-account version 4
+Your event files import **without a single edit**. That is the one continuity
+that survives between the two versions, and it survives because "an empty
+account column means `default`" is version 4's rule minus its opt-in.
+[Coming from v4](./coming-from-v4.mdx) has the rest.
+:::
+
+## Export it all back out
+
+Your portfolio can leave the way it came in. **The export format is the import
+format**, so the round trip is round by construction: what comes out is a file
+this same app reads, with no conversion and no special path.
+
+In the app, the export menu is beside the upload zone, and it offers four
+files: every event, the same events as a **workbook with one sheet per year**,
+the **selection your filters hold** at the moment you click, and your
+**accounts with their positions** — the one that is a report rather than a
+backup, described below. Away from the page, they are requests:
+
+```bash
+curl -O http://localhost:8080/api/export/events.csv
+curl -O http://localhost:8080/api/export/events.xlsx
+
+# The accounts and what is held in them. It takes no filter: the parameters
+# below are the ledger's, and a position has none of them.
+curl -O http://localhost:8080/api/export/portfolio.csv
+
+# The selection, by the same names the filters on the page carry.
+# `symbol` may be repeated; anything left out is simply not narrowed.
+# `-OJ` rather than `-O`: the name is the server's, and it is not the one in the URL.
+curl -OJ 'http://localhost:8080/api/export/events.csv?type=BUY&account=pea&q=liquide&symbol=AI.PA'
+
+# One year, which is `since` and `until` — both days included, and either one
+# on its own opens the interval on the other side.
+curl -OJ 'http://localhost:8080/api/export/events.csv?since=2024-01-01&until=2024-12-31'
+```
+
+`since` and `until` rather than `from` and `to`: the filters on the page and the
+parameters here are one vocabulary, and `from` is a word the app cannot spell on
+its own side. A bound that is not a calendar day — `?since=yesterday`, or a 31st
+of February — is refused rather than ignored: a backup that comes back quietly
+short is worse than one that fails.
+
+A selection is saved as `suivi-bourse-selection.csv` and never under the whole
+ledger's name: **a partial file must not replace a complete one** in your
+downloads folder. The whole file is what a backup is; the selection is for
+sending a year to your accountant.
+
+The workbook is importable too — the app reads every sheet of it. The plain
+`.csv` remains the one to keep as a backup, because a spreadsheet carries one
+significant digit fewer than a text file does: a broker's `0.34898399999999996`
+comes back exactly from a CSV and as `0.348984` from a workbook.
+
+They are HTTP routes rather than buttons only, for the reason every write path
+in this app is: the page is one client of the API and never a privileged one.
+One `curl` is a complete backup.
+
+### Your accounts and their positions
+
+The fourth file is the odd one out, and it helps to know why before you save it.
+The three above are **backups**: they hold what you recorded, and this app reads
+them back. `portfolio.csv` holds what the app *worked out* from what you
+recorded — the cash standing in each account, each holding's quantity and
+average unit cost, and what it is worth at the last price observed. It is for
+reading, for a spreadsheet, for your accountant. **Nothing reads it back in**,
+and the app will tell you so in one sentence if you try to hand it over: it has
+no `date` and no `event_type` columns, so it is not an events file and is
+refused as one.
+
+That refusal is the point. **Your accounts' declaration does not leave in a
+file, and that is deliberate**: accounts are declared in the app and nowhere
+else, so a file that restored them does not exist — and a file nothing restores
+from is worse than no file at all when it sits in your backup looking like half
+a round trip. Redeclare your accounts in the app on the far side, with the same
+ids the `account` column names; the events file carries those ids on every row.
+
+Two things about the shape are worth knowing before you open it in a
+spreadsheet:
+
+- **Each account gets a row of its own, followed by the rows of what it holds.**
+  A figure appears once — the balance is on the account's row, the valuation on
+  the position's — so every money column sums to something true. What repeats is
+  the account's name and type, which sum to nothing and let you filter.
+- **A position the app has never seen a price for has no valuation**, and the
+  cell is empty rather than zero or a cost standing in for a price. On the page
+  that same position is drawn at its cost, under a convention that needs to know
+  the app has finished looking for a price; a file states what was observed.
+
+An account nobody has ever moved money in has **empty** cash cells too, and not
+zeros: never having had a cash movement and having a balance of nothing are two
+different things.
+
+### The reporting currency
+
+**The exported file states its reporting currency**, in a `base_currency` column
+repeated on every row. It has to: event amounts are the debit *in your base
+currency* and nothing else in the file says which one, so a round trip through
+an install that answered differently would silently re-read every amount as
+another unit. The column is named `base_currency` and not `currency` because a
+broker export routinely carries a `currency` column meaning the *security's*
+quote currency, and there are exactly two currency levels here — reading one for
+the other is precisely the mistake the name prevents.
+
+What that column does on the way back in, and the rule is the base currency's
+own:
+
+- an install that has **never answered** the question takes the file's answer —
+  it *reads* a declaration rather than asserting one, which is what makes a
+  restore work with no settings call at all;
+- an install that answered **the same thing** does nothing;
+- an install that answered **something else** refuses the file whole, and says
+  so — unless its ledger is still empty, in which case nothing has been
+  interpreted yet and the file's answer is taken. That is the same rule the
+  [settings page](./settings.mdx#the-base-currency) applies to the field.
+
+An install that never answered exports a **blank** column, which is the honest
+answer: it has interpreted nothing, so its file states nothing — and a file that
+states nothing imports everywhere.
+
+One thing the export deliberately does not carry: **prices**. They are re-fetched
+and rebuilt, never part of your ledger. Only what you recorded leaves.
+
+:::tip Your backup does not have to be a binary
+The store is one DuckDB file, so copying it is a complete backup — but it is a
+binary you cannot read, diff or repair. The export is the other form: text,
+version-controllable, and it re-imports cleanly.
+:::

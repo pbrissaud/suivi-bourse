@@ -1,0 +1,1106 @@
+"""
+Unit tests for cash events and the per-account cash ledger (issue #576).
+
+Covers:
+  * validator — DEPOSIT/WITHDRAWAL required/forbidden fields
+  * replay ledger — the six cash rules, net_contributed, SELL crediting cash,
+    per-account siloing, CashFlow emission
+  * Timeline.cash_at forward-fill
+  * InfluxDBWriter.get_price_series / write_account_metrics SQL & tags
+  * Workloads.update_account_metrics wiring (gate, midnight stamp,
+    holdings valuation, negative-balance warning)
+
+No network, no real InfluxDB.
+"""
+
+from contextlib import contextmanager
+from dataclasses import replace
+from datetime import date, datetime, time, timedelta, timezone
+
+import pytest
+
+from application import perf_series
+from application import quotes
+from application import workloads
+from application.events import (
+    EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
+    AccountMetricPoint, PortfolioTotalPoint,
+)
+
+
+def _seed_price(store, symbol, day, price):
+    """One closing price on a calendar day, through the real writer.
+
+    Written **converted as well as native** (#702). The perf job reads the
+    converted column, because every figure it computes is money in the reporting
+    currency; a point carrying only a native price is one whose conversion has
+    not landed yet, and it is deliberately invisible to that read. Here the
+    security is quoted in the reporting currency, so the rate is 1.
+    """
+    store.execute("INSERT INTO symbol (symbol) VALUES (?) "
+                  "ON CONFLICT (symbol) DO NOTHING", [symbol])
+    quotes.record_history(store, symbol, [{
+        "timestamp": datetime.combine(day, time(16, 0), tzinfo=timezone.utc),
+        "price": price, "converted": price, "rate": 1.0}])
+
+
+# --------------------------------------------------------------------------- #
+# Validator: DEPOSIT / WITHDRAWAL
+# --------------------------------------------------------------------------- #
+def _deposit(**kw):
+    base = dict(amount=1000.0, account="PEA")
+    base.update(kw)
+    return Event(date(2024, 1, 15), EventType.DEPOSIT, **base)
+
+
+def test_cash_event_valid():
+    ok, errors = EventValidator().validate([_deposit()])
+    assert ok, errors
+
+
+def test_cash_event_requires_positive_amount():
+    ok, errors = EventValidator().validate([_deposit(amount=None)])
+    assert not ok and any("amount is required" in e for e in errors)
+    ok, errors = EventValidator().validate([_deposit(amount=0)])
+    assert not ok and any("amount must be positive" in e for e in errors)
+
+
+def test_a_cash_event_without_an_account_falls_into_default(tmp_path):
+    """v4 demanded an account here even with none declared. #698 does not.
+
+    Under the new rule a blank ``account`` column *means* ``default`` until
+    something is declared, so keeping the per-type requirement would have forced
+    a single-account v4 user to write ``default`` into a cell whose only legal
+    value is the one it already implies — and their files are supposed to import
+    without a single edit.
+    """
+    ok, errors = EventValidator().validate([_deposit(account=None)])
+    assert ok, errors
+
+
+def test_a_cash_event_without_an_account_is_refused_once_accounts_exist():
+    """The other half of the same rule: after a declaration, blank is an error."""
+    validator = EventValidator(account_ids={"default", "PEA"},
+                               accounts_declared=True)
+    ok, errors = validator.validate([_deposit(account=None)])
+    assert not ok and any("account is required" in e for e in errors)
+
+
+def test_cash_event_forbids_share_fields():
+    ok, errors = EventValidator().validate([_deposit(symbol="AAPL", quantity=1)])
+    assert not ok
+    assert any("not allowed" in e and "symbol" in e and "quantity" in e for e in errors)
+
+
+def test_cash_event_negative_fee_rejected():
+    ok, errors = EventValidator().validate([_deposit(fee=-1)])
+    assert not ok and any("fee cannot be negative" in e for e in errors)
+
+
+def test_withdrawal_valid():
+    ev = Event(date(2024, 2, 1), EventType.WITHDRAWAL, amount=500.0, account="PEA")
+    ok, errors = EventValidator().validate([ev])
+    assert ok, errors
+
+
+def test_share_event_still_requires_symbol_and_name():
+    # The loader no longer enforces symbol/name; the validator must.
+    ev = Event(date(2024, 1, 1), EventType.BUY, quantity=1, unit_price=10.0)
+    ok, errors = EventValidator().validate([ev])
+    assert not ok
+    assert any("symbol is required" in e for e in errors)
+    assert any("name is required" in e for e in errors)
+
+
+# --------------------------------------------------------------------------- #
+# Ledger rules (replay)
+# --------------------------------------------------------------------------- #
+def _cash(tl, account, on):
+    state = tl.cash_at(account, on)
+    return state.cash_balance if state else 0.0
+
+
+def test_ledger_applies_the_six_rules():
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, fee=1.0, account="A"),
+        Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, fee=2.0, account="A"),
+        Event(date(2024, 1, 3), EventType.DIVIDEND, "AAPL", "Apple", amount=5.0,
+              fee=0.5, account="A"),
+        Event(date(2024, 1, 4), EventType.SELL, "AAPL", "Apple", quantity=1,
+              unit_price=120.0, fee=1.5, account="A"),
+        Event(date(2024, 1, 5), EventType.GRANT, "AAPL", "Apple", quantity=1, account="A"),
+        Event(date(2024, 1, 6), EventType.WITHDRAWAL, amount=100.0, fee=2.0, account="A"),
+    ]
+    tl = EventAggregator().replay(events)
+
+    # DEPOSIT +999; BUY -202; DIVIDEND +4.5; SELL +118.5; GRANT 0; WITHDRAWAL -102
+    assert _cash(tl, "A", date(2024, 1, 1)) == pytest.approx(999.0)
+    assert _cash(tl, "A", date(2024, 1, 2)) == pytest.approx(797.0)
+    assert _cash(tl, "A", date(2024, 1, 3)) == pytest.approx(801.5)
+    assert _cash(tl, "A", date(2024, 1, 4)) == pytest.approx(920.0)
+    assert _cash(tl, "A", date(2024, 1, 5)) == pytest.approx(920.0)  # GRANT cash-neutral
+    assert _cash(tl, "A", date(2024, 1, 6)) == pytest.approx(818.0)
+
+
+def test_net_contributed_excludes_fees():
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, fee=5.0, account="A"),
+        Event(date(2024, 1, 2), EventType.WITHDRAWAL, amount=300.0, fee=2.0, account="A"),
+    ]
+    tl = EventAggregator().replay(events)
+    state = tl.cash_at("A", date(2024, 1, 2))
+    # net_contributed = 1000 - 300 (fees excluded); cash = 995 - 302 = 693
+    assert state.net_contributed == pytest.approx(700.0)
+    assert state.cash_balance == pytest.approx(693.0)
+
+
+def test_cash_is_siloed_per_account():
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 2), EventType.DEPOSIT, amount=500.0, account="CTO"),
+    ]
+    tl = EventAggregator().replay(events)
+    assert _cash(tl, "PEA", date(2024, 1, 2)) == pytest.approx(1000.0)
+    assert _cash(tl, "CTO", date(2024, 1, 2)) == pytest.approx(500.0)
+
+
+def test_cash_at_none_before_first_event():
+    events = [Event(date(2024, 6, 1), EventType.DEPOSIT, amount=100.0, account="A")]
+    tl = EventAggregator().replay(events)
+    assert tl.cash_at("A", date(2024, 1, 1)) is None
+    assert tl.cash_at("A", date(2024, 6, 1)).cash_balance == pytest.approx(100.0)
+
+
+def test_negative_balance_allowed():
+    # BUY without a prior DEPOSIT drives cash negative — permitted, no error.
+    events = [
+        Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=1,
+              unit_price=100.0, account="A"),
+    ]
+    tl = EventAggregator().replay(events)
+    assert _cash(tl, "A", date(2024, 1, 2)) == pytest.approx(-100.0)
+
+
+def test_replay_emits_signed_cashflows():
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="A"),
+        Event(date(2024, 1, 2), EventType.WITHDRAWAL, amount=300.0, account="A"),
+    ]
+    flows = [f for f in EventAggregator().replay(events).flows
+             if isinstance(f, CashFlow)]
+    assert [(f.account, f.amount) for f in flows] == [("A", 1000.0), ("A", -300.0)]
+
+
+# --------------------------------------------------------------------------- #
+# The store's own two halves: the price series the perf job reads, and the
+# series it writes. Both were InfluxDB client assertions until #700; both are
+# asserted on the rows now.
+# --------------------------------------------------------------------------- #
+def test_the_price_series_is_read_by_symbol_alone(store):
+    """A market price belongs to no account, and since #700 that is not a rule
+    to remember — there is no account column on the series to forget."""
+    store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
+    quotes.record_history(store, "AAPL", [
+        {"timestamp": datetime(2024, 1, 2, 16, 0, tzinfo=timezone.utc),
+         "price": 100.0, "converted": 100.0, "rate": 1.0},
+        {"timestamp": datetime(2024, 1, 3, 16, 0, tzinfo=timezone.utc),
+         "price": 110.0, "converted": 110.0, "rate": 1.0},
+    ])
+
+    assert quotes.price_series(store, "AAPL") == {
+        date(2024, 1, 2): 100.0, date(2024, 1, 3): 110.0}
+
+
+def test_the_price_series_keeps_the_last_point_of_each_day(store):
+    """The survivor rule every daily read in the product follows — and the one
+    #705's ladder will inherit. A survivor chosen otherwise makes the value jump
+    when a day is collapsed."""
+    store.execute("INSERT INTO symbol (symbol) VALUES ('AAPL')")
+    quotes.record_history(store, "AAPL", [
+        {"timestamp": datetime(2024, 1, 2, 9, 0, tzinfo=timezone.utc),
+         "price": 100.0, "converted": 100.0, "rate": 1.0},
+        {"timestamp": datetime(2024, 1, 2, 17, 30, tzinfo=timezone.utc),
+         "price": 104.0, "converted": 104.0, "rate": 1.0},
+    ])
+
+    assert quotes.price_series(store, "AAPL") == {date(2024, 1, 2): 104.0}
+
+
+def test_account_metrics_are_upserted_on_the_day_they_describe(store):
+    """The write is an ``UPSERT`` on the primary key (ADR-0011): a second cycle
+    rewrites the row rather than appending one. Measured on a thousand cycles, a
+    ``DELETE``+``INSERT`` replacement takes the file to 44,8 MB for a 1,6 MB
+    table."""
+    store.execute("INSERT INTO account (id, type, label) VALUES "
+                  "('PEA', 'PEA', 'Mon PEA')")
+    point = AccountMetricPoint(
+        account="PEA", account_type="PEA",
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0)
+
+    assert perf_series.write_account_metrics(store, [point]) == 1
+    perf_series.write_account_metrics(
+        store, [replace(point, holdings_value=950.0, total_value=1050.0)])
+
+    rows = store.query(
+        "SELECT day, cash_balance, holdings_value, total_value, "
+        "       net_contributed, xirr FROM account_metrics")
+    assert rows == [(date(2024, 1, 15), 100.0, 950.0, 1050.0, 800.0, None)]
+
+
+def test_a_field_that_was_never_computable_is_null_not_missing(store):
+    """ADR-0001, and the death of ``_ABSENT_SCHEMA`` with it.
+
+    In InfluxDB a field never written was a *column that did not exist*, so
+    naming ``xirr`` in a SELECT turned "this account has no deposits" into a
+    query error — and, after #696, into a 503 that took the whole table with it.
+    Here the column is declared at creation and reads ``NULL``.
+    """
+    store.execute("INSERT INTO account (id, type, label) VALUES "
+                  "('PEA', 'PEA', 'Mon PEA')")
+    perf_series.write_account_metrics(store, [AccountMetricPoint(
+        account="PEA", account_type="PEA",
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0)])
+
+    rows = store.query("SELECT xirr, gain_absolu, twr_index FROM account_metrics")
+    assert rows == [(None, None, None)]
+
+
+def test_portfolio_totals_is_keyed_by_the_day_alone(store):
+    """A table of its own rather than a synthetic ``account`` row: the InfluxDB
+    constraint that made it untagged is gone, but its columns will diverge the
+    day the global level carries something the per-account one does not."""
+    assert perf_series.write_portfolio_totals(store, [PortfolioTotalPoint(
+        day=date(2024, 1, 15), cash_balance=100.0, holdings_value=900.0,
+        total_value=1000.0, net_contributed=800.0, xirr=0.12,
+        gain_absolu=200.0, twr_index=120.0)]) == 1
+
+    rows = store.query(
+        "SELECT day, total_value, xirr, twr_index FROM portfolio_totals")
+    assert rows == [(date(2024, 1, 15), 1000.0, 0.12, 120.0)]
+
+
+# --------------------------------------------------------------------------- #
+# Workloads.update_account_metrics wiring
+#
+# The job's **only inputs are the store and the clock** (issue #707), so every
+# test below lays its ledger into the store and reads the answer back out of it.
+# The configuration manager is down to what the job actually asks it for: the
+# open store, and the writers' mutex.
+# --------------------------------------------------------------------------- #
+class _CashConfigManager:
+    """The two members the perf job uses: the read handle and the write mutex."""
+
+    def __init__(self, opened_store):
+        self._store = opened_store
+
+    @property
+    def store(self):
+        return self._store
+
+    @contextmanager
+    def writing(self):
+        yield self._store
+
+
+def _metrics(store, declare_ledger, events, accounts):
+    declare_ledger(store, events, accounts.accounts if accounts else None)
+    metrics = workloads.Workloads(_CashConfigManager(store))
+    # The one question the app asks (#702, ADR-0021). Without an answer the perf
+    # job writes **nothing at all** — not zeros, not NULLs — because every figure
+    # it computes is money and an amount with no settled unit is not a figure.
+    # ``test_no_base_currency_writes_no_performance_at_all`` is where that is
+    # asserted; everything else here is about the arithmetic behind it.
+    metrics.base_currency = 'EUR'
+    return metrics
+
+
+def _fixed_today(mocker, y, mo, d):
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(y, mo, d, 12, 0, tzinfo=tz)
+    mocker.patch("application.perf_job.datetime", _FixedDatetime)
+
+
+def test_the_seeded_default_account_gets_a_series_like_any_other(
+        store, declare_ledger):
+    """**The opt-in guard is gone** (issue #708), and this is what it hid.
+
+    It read ``declared_portfolio``, whose ``None`` means *"nothing beyond the
+    seed"* — and ADR-0013 seeds a ``default`` row at the creation of the schema
+    and never removes it, so the condition had lost its subject. What it produced
+    meanwhile was not an opt-in: a single-account install, the ordinary shape of
+    a v4 coming over, had **no performance series at all**, with nothing on
+    screen and nothing in the log to say why.
+    """
+    m = _metrics(store, declare_ledger, events=[
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=100.0)],
+        accounts=None)
+    m.update_account_metrics()
+    (day, cash, total) = store.query(
+        "SELECT day, cash_balance, total_value FROM account_metrics "
+        " WHERE account = 'default' ORDER BY day LIMIT 1")[0]
+    assert day == date(2024, 1, 1)
+    assert cash == pytest.approx(100.0)
+    assert total == pytest.approx(100.0)
+
+
+def test_an_account_with_no_cash_event_writes_holdings_and_gain_and_nothing_else(
+        store, declare_ledger, mocker):
+    """The per-field rule, through the writer (issue #708, ADR-0018).
+
+    A ledger of purchases alone: the replay debits the cash on every buy without
+    touching the contributions, so ``cash_balance = −invested`` and
+    ``net_contributed = 0`` — and ``total_value`` would then publish the **latent
+    gain under the label "total value"**. Those four are ``NULL`` and the two
+    that stay exact are written: ``holdings_value``, and ``gain_absolu``, which
+    with no contribution at all is ``holdings − invested`` — 220 − 200 here.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)
+
+    m.update_account_metrics()
+
+    (cash, holdings, total, net, xirr, gain, twr) = store.query(
+        "SELECT cash_balance, holdings_value, total_value, net_contributed, "
+        "       xirr, gain_absolu, twr_index FROM account_metrics "
+        " WHERE account = 'PEA'")[0]
+    assert holdings == pytest.approx(220.0)
+    assert gain == pytest.approx(20.0)
+    assert (cash, total, net, xirr, twr) == (None, None, None, None, None)
+
+
+def test_an_account_with_a_deposit_keeps_every_field(
+        store, declare_ledger, mocker):
+    """The other side of the same rule: nothing is withheld from an account whose
+    ledger says where the money came from."""
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 1), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)
+
+    m.update_account_metrics()
+
+    (cash, holdings, total, net, gain, twr) = store.query(
+        "SELECT cash_balance, holdings_value, total_value, net_contributed, "
+        "       gain_absolu, twr_index FROM account_metrics "
+        " WHERE account = 'PEA'")[0]
+    assert cash == pytest.approx(800.0)
+    assert holdings == pytest.approx(220.0)
+    assert total == pytest.approx(1020.0)
+    assert net == pytest.approx(1000.0)
+    assert gain == pytest.approx(20.0)
+    assert twr == pytest.approx(100.0)
+
+
+def test_the_global_is_written_from_the_max_of_the_horizons(
+        store, declare_ledger, mocker):
+    """Criterion 4, through the writer: ``portfolio_totals`` starts where the
+    **last** account starts, never where the first one does.
+
+    PEA holds a share priced only from 01-03; CTO holds cash alone and is
+    writable from its first day. Summing what is available on 01-02 would draw a
+    step nothing caused — the portfolio apparently gaining PEA's whole value
+    overnight — so the global waits for both.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA"),
+                           Account("CTO", "CTO", "My CTO")])
+    _seed_price(store, "AAPL", date(2024, 1, 3), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    horizons = m.update_account_metrics()
+
+    # No `default`: the seeded row is a row nothing names here, and
+    # `/api/accounts` drops it on exactly that test. The two resources answer
+    # *which accounts are there* out of one rule now.
+    assert horizons == {'PEA': date(2024, 1, 3), 'CTO': None}
+    # PEA's series starts at its horizon, CTO's at its first day…
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'PEA'"
+    ) == [(date(2024, 1, 3),)]
+    assert store.query(
+        "SELECT min(day) FROM account_metrics WHERE account = 'CTO'"
+    ) == [(date(2024, 1, 1),)]
+    # …and the global waits for the later of the two.
+    assert store.query("SELECT day FROM portfolio_totals ORDER BY day") == [
+        (date(2024, 1, 3),)]
+
+
+# --------------------------------------------------------------------------- #
+# The horizon caps the block where it is (issue #765)
+#
+# #708's horizon is a **left** bound, and it happens to bound a block that sits
+# on the right — the ordinary gesture of buying a line of a security the
+# portfolio did not hold yet. Everything to the left of that block, i.e. the
+# whole history, was then dropped by a prune doing exactly what it is written
+# for. These four pin the repair on the real store.
+# --------------------------------------------------------------------------- #
+
+#: Two days before the fixed today of this section. A line acquired **today** is
+#: terminal from its first cycle (``carrying.is_terminal``: the backward anchor
+#: is already at the target), so it is settled and blocks nothing; an
+#: acquisition dated earlier with no price yet is what empties the table — which
+#: is every file import, and every purchase seen the morning after.
+_BOUGHT = date(2024, 1, 8)
+
+
+def _a_portfolio_that_buys_a_new_line():
+    """Four years of history on a priced line, plus a line bought two days ago."""
+    return [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(_BOUGHT, EventType.BUY, "NEW", "New", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ]
+
+
+def _pea_days(store):
+    """``(first, last)`` day of PEA's cached series, or ``None`` when empty."""
+    rows = store.query("SELECT min(day), max(day) FROM account_metrics "
+                       " WHERE account = 'PEA'")
+    return None if rows[0][0] is None else rows[0]
+
+
+def test_a_new_line_leaves_no_perf_cycle_writing_an_empty_table(
+        store, declare_ledger, mocker):
+    """Criterion 1 of #765: the window is **measured** before it is treated.
+
+    The cycles are run for real — a perf recompute on the store as the purchase
+    lands, the backward pass' first chunk with the suite's one faked edge, then
+    the next perf recompute — and the empty ones are **counted**.
+
+    Measured on ``preview/v5`` before the repair: **1** cycle out of the 2 wrote
+    an empty table, and it emptied it for *every* account, four years of history
+    included. On the default dials that is one ``PERF_TICK`` (120 s) after the
+    ingestion that imported the line, ended by one backfill cycle (60 s) plus the
+    perf cycle that follows it — two to three minutes, and for as long as Yahoo
+    keeps failing or the ticker is mistyped, until the backward pass concludes
+    and ``quotes.terminal_symbols`` settles it. After the repair: **0**.
+
+    A few minutes of blank page is not what the number licenses, which is why it
+    is measured rather than estimated: the page does not *degrade* over that
+    window, it is entirely empty, and no band names it — nothing failed, the
+    computation concluded there was nothing to write (#718 mounted ``Band`` in
+    the content column precisely so that state stops being a white screen).
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+    m.backfill_delay = 0
+    m._share_info_cache.observed("NEW", {"currency": "EUR"})
+
+    empty_cycles = 0
+
+    m.update_account_metrics()
+    empty_cycles += _pea_days(store) is None
+
+    # The backward pass, with yfinance faked and everything else real: it is what
+    # ends the window, and it needs no market to be open — the backfill is an
+    # interval job driven by the replay, not by ``marketState``.
+    mocker.patch.object(m, "_fetch_historical_data", return_value=[
+        {"timestamp": datetime(2024, 1, 8, 16, 0, tzinfo=timezone.utc),
+         "price": 50.0},
+        {"timestamp": datetime(2024, 1, 9, 16, 0, tzinfo=timezone.utc),
+         "price": 52.0},
+    ])
+    m._backfill_backward("NEW",
+                         datetime(2024, 1, 8, tzinfo=timezone.utc),
+                         datetime(2024, 1, 10, 12, 0, tzinfo=timezone.utc))
+
+    m.update_account_metrics()
+    empty_cycles += _pea_days(store) is None
+
+    assert empty_cycles == 0
+    # And the second cycle is whole again: the cap is gone with the block.
+    assert _pea_days(store) == (date(2020, 1, 1), date(2024, 1, 10))
+
+
+def test_buying_a_never_quoted_line_does_not_delete_four_years_of_history(
+        store, declare_ledger, mocker):
+    """Criterion 3 of #765, on a series of several years.
+
+    The whole defect in one assertion: 1 468 days of cached figures, and a
+    purchase of something the portfolio did not hold yet used to take the lot.
+    They are still there, and the series stops the day before the block instead
+    of starting the day after it — its last point is two days old here, and the
+    cycle that follows the first chunk catches it up.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    m = _metrics(store, declare_ledger, _a_portfolio_that_buys_a_new_line(),
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert _pea_days(store) == (date(2020, 1, 1), _BOUGHT - timedelta(days=1))
+    # Nothing bounds the account on the **left** — which is what the payload has
+    # always meant by ``null`` — and the cap stays where it belongs, in the rows.
+    assert horizons["PEA"] is None
+    # The global is capped by the same day: a sum whose accounts stop on
+    # different days would draw the step the max of the horizons exists against,
+    # downwards this time.
+    assert store.query(
+        "SELECT min(day), max(day) FROM portfolio_totals"
+    ) == [(date(2020, 1, 1), _BOUGHT - timedelta(days=1))]
+    # And no crater on the last day written: the value is the priced line alone,
+    # the new one having been bought after it. It is also where criterion 6 is
+    # checked — ``carrying_price`` keeps its domain, *terminal symbol, any day*,
+    # and is **not** extended to a transitory absence by the cap: carried at its
+    # cost, ``NEW`` would put 250 € here, on a day it was not even held.
+    (holdings,) = store.query(
+        "SELECT holdings_value FROM account_metrics "
+        " WHERE account = 'PEA' AND day = ?", [_BOUGHT - timedelta(days=1)])[0]
+    assert holdings == pytest.approx(1000.0)
+
+
+def test_a_first_purchase_with_no_price_still_writes_nothing_at_all(
+        store, declare_ledger, mocker):
+    """The other end of the same rule, and #708's crater kept impossible.
+
+    Nothing precedes the purchase here, so there is no run of days to keep: the
+    cap would fall before the ledger's own first day. The series is empty either
+    way — a hollow ``holdings_value`` beside a cash ledger that has already paid
+    is what dug ``twr_index`` 0,057 — and the horizon says so on the left,
+    naming the first day the account could resume rather than claiming nothing
+    constrains it.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    m = _metrics(store, declare_ledger, [
+        Event(_BOUGHT, EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(_BOUGHT, EventType.BUY, "NEW", "New", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ], Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert _pea_days(store) is None
+    assert horizons["PEA"] > _BOUGHT
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
+
+
+def test_update_account_metrics_writes_series_with_midnight_stamp(
+        store, declare_ledger, mocker):
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    # Price series: AAPL at 110 from 2024-01-02.
+    _seed_price(store, "AAPL", date(2024, 1, 2), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+
+    rows = {row[0]: row for row in store.query(
+        "SELECT day, cash_balance, holdings_value, total_value, "
+        "       net_contributed FROM account_metrics")}
+    # Two calendar days: 01-01 (cash only) and 01-02 (cash + holdings). The
+    # column is a DATE and not a midnight instant: the store has two kinds of
+    # time and never mixes them (#700).
+    assert set(rows) == {date(2024, 1, 1), date(2024, 1, 2)}
+    assert rows[date(2024, 1, 1)][1] == pytest.approx(1000.0)
+    assert rows[date(2024, 1, 1)][2] == pytest.approx(0.0)
+    d2 = rows[date(2024, 1, 2)]
+    assert d2[1] == pytest.approx(800.0)    # 1000 - 2*100
+    assert d2[2] == pytest.approx(220.0)    # 2 * 110
+    assert d2[3] == pytest.approx(1020.0)
+    assert d2[4] == pytest.approx(1000.0)
+
+
+def test_update_account_metrics_is_idempotent(store, declare_ledger, mocker):
+    """Two cycles with no new event produce the identical point set."""
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)
+
+    m.update_account_metrics()
+    first = store.query("SELECT * FROM account_metrics ORDER BY day")
+    m.update_account_metrics()
+    second = store.query("SELECT * FROM account_metrics ORDER BY day")
+
+    # The upsert overwrites its own key rather than appending a second row.
+    assert first == second
+
+
+def test_update_account_metrics_writes_portfolio_totals_single_currency(
+        store, declare_ledger, mocker):
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(2,)]
+
+
+def test_two_accounts_are_pooled_because_they_cannot_disagree_on_a_currency(
+        store, declare_ledger, mocker):
+    """The mixed-currency refusal is **gone** with `Account.currency` (#702).
+
+    It used to withhold `portfolio_totals` whenever two declared accounts named
+    different currencies. An account names none: there is one reporting currency
+    for the install, every stored figure is already in it, and the pooling has
+    nothing left to refuse. What can still make the global series unwritable is
+    that currency being unanswered — and that gate is above, on the whole
+    recompute, because it is true of every figure at once.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+    ]
+    portfolio = Portfolio([
+        Account("PEA", "PEA", "Mon PEA"),
+        Account("CTO", "CTO", "My CTO"),
+    ])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+
+    assert store.query(
+        "SELECT total_value FROM portfolio_totals ORDER BY day DESC LIMIT 1") \
+        == [(1500.0,)]
+    assert store.query("SELECT count(*) FROM account_metrics")[0][0] > 0
+
+
+def test_no_base_currency_writes_no_performance_at_all(
+        store, declare_ledger, mocker):
+    """Not zeros, not `NULL`s, not a partial series — **nothing** (#702, ADR-0002).
+
+    Prices go on being collected natively the whole time, so answering late
+    costs nothing; writing a total with no unit would cost a chart that means
+    nothing, drawn before anyone could say so.
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0,
+                    account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    m.base_currency = None
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+
+    assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
+
+    # ...and answering it is all it takes: the next cycle writes the series it
+    # was withholding, with nothing to replay and nothing to repair.
+    m.base_currency = 'EUR'
+    m.update_account_metrics()
+
+    assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] > 0
+
+
+def test_the_gain_is_written_on_every_day_and_the_rate_only_on_the_last(
+        store, declare_ledger, mocker):
+    """Which of the seven are a series and which are one figure (issue #782).
+
+    ``gain_absolu`` **was** on the latest point alone, like ``xirr``, and that
+    is what made the year-to-date gain structurally ``null``: it is read as the
+    movement of this column between the base day and the latest, and the base
+    day is by construction never the latest. It has none of ``xirr``'s excuse —
+    it is ``total_value − contributions``, both known on every day the series
+    carries — so it is written on every day, and only ``xirr`` still lands on
+    one.
+
+    Here: 1 000,00 deposited and ten shares bought at 100,00 the same day, so
+    the first day has gained nothing at all — a **zero**, which is a figure, and
+    not the ``NULL`` the old writer laid down.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 1), 100.0)
+    _seed_price(store, "AAPL", date(2025, 1, 1), 110.0)
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    # A year, so the annualised rate has a horizon to be defined over: on one
+    # day it comes back ``None`` for its own reason and the row below would then
+    # attest nothing.
+    _fixed_today(mocker, 2025, 1, 1)
+
+    m.update_account_metrics()
+
+    rows = store.query(
+        "SELECT day, twr_index, gain_absolu, xirr FROM account_metrics "
+        "ORDER BY day")
+    assert all(row[1] is not None for row in rows)
+    assert rows[0][2] == pytest.approx(0.0)      # 10*100 - 1000
+    assert rows[-1][2] == pytest.approx(100.0)   # 10*110 - 1000
+    assert rows[-1][1] == pytest.approx(110.0)
+    # The one figure that is genuinely not a series: annualised over the whole
+    # history against a single terminal value.
+    assert rows[0][3] is None
+    assert rows[-1][3] is not None
+
+
+# --------------------------------------------------------------------------- #
+# The series is a cache: integral recompute, block upsert, bounded prune
+# (issue #707, ADR-0011). The incremental write window #597 introduced is gone,
+# and so is the gate that decided whether to run at all — what replaces both is
+# a cycle that costs 0,4 % of its own tick and can always be thrown away.
+# --------------------------------------------------------------------------- #
+
+#: A value no computation produces, used to mark the rows a cycle leaves alone.
+_MARKER = -12345.0
+
+
+def _mark_all(store):
+    store.execute("UPDATE account_metrics SET cash_balance = ?", [_MARKER])
+    store.execute("UPDATE portfolio_totals SET cash_balance = ?", [_MARKER])
+
+
+def _acc_days(store):
+    """The days the last cycle actually wrote.
+
+    Asserted on the store rather than on a call, which means asserting on what a
+    cycle *changed*: :func:`_mark_all` stamps every row with a value no
+    computation produces, and the days that no longer carry it are the ones the
+    cycle rewrote.
+    """
+    return {row[0] for row in store.query(
+        "SELECT day FROM account_metrics WHERE cash_balance IS DISTINCT FROM ?",
+        [_MARKER])}
+
+
+def _totals_days(store):
+    return {row[0] for row in store.query(
+        "SELECT day FROM portfolio_totals WHERE cash_balance IS DISTINCT FROM ?",
+        [_MARKER])}
+
+
+def test_every_cycle_rewrites_the_whole_series(store, declare_ledger, mocker):
+    """A steady second cycle rewrites **every** day, not just today's point.
+
+    The incremental window's replacement is nothing at all: the recompute is
+    integral and unconditional, and an upsert on a primary key is what makes
+    that affordable (ADR-0011).
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    whole = {date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)}
+    m.update_account_metrics()
+    assert _acc_days(store) == whole
+
+    _mark_all(store)
+    m.update_account_metrics()
+    assert _acc_days(store) == whole
+    assert _totals_days(store) == whole
+
+
+def test_the_series_is_dense_over_calendar_days(store, declare_ledger, mocker):
+    """Weekends and holidays carry a point, prices carried forward.
+
+    "No point on a non-trading day" is a property of *observed* prices and never
+    of a derived daily series: TWR chains over consecutive days, and a weekend
+    deposit needs somewhere to land. 2024-01-06/07 is a Saturday and a Sunday,
+    and the price series only ever saw the Friday.
+    """
+    events = [
+        Event(date(2024, 1, 5), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 5), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+        Event(date(2024, 1, 6), EventType.DEPOSIT, amount=500.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2024, 1, 5), 110.0)   # Friday, and only it
+
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 8)
+    m.update_account_metrics()
+
+    rows = {row[0]: row for row in store.query(
+        "SELECT day, cash_balance, holdings_value, twr_index "
+        "  FROM account_metrics ORDER BY day")}
+    assert set(rows) == {date(2024, 1, d) for d in (5, 6, 7, 8)}
+    # The Saturday deposit landed on the Saturday.
+    assert rows[date(2024, 1, 6)][1] == pytest.approx(1300.0)
+    # The Friday close is carried across the weekend rather than left absent.
+    for day in (6, 7, 8):
+        assert rows[date(2024, 1, day)][2] == pytest.approx(220.0)
+        assert rows[date(2024, 1, day)][3] is not None
+
+
+def test_deleting_the_rows_is_enough_to_rebuild(store, declare_ledger, mocker):
+    """A rebuild needs no gesture: drop the rows, the next cycle rewrites them.
+
+    This is what "it is a cache" buys, and it is why the page that would have
+    designed a *rebuild* button has nothing left to design.
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()
+    before = store.query("SELECT * FROM account_metrics ORDER BY account, day")
+    totals_before = store.query("SELECT * FROM portfolio_totals ORDER BY day")
+    assert before and totals_before
+
+    store.execute("DELETE FROM account_metrics")
+    store.execute("DELETE FROM portfolio_totals")
+
+    m.update_account_metrics()
+    assert store.query(
+        "SELECT * FROM account_metrics ORDER BY account, day") == before
+    assert store.query("SELECT * FROM portfolio_totals ORDER BY day") == totals_before
+
+
+def test_the_file_does_not_drift_over_many_cycles(store, declare_ledger, mocker):
+    """N cycles must not grow the file: the write is an upsert, not a replace.
+
+    ADR-0011 measured a ``DELETE``+``INSERT`` replacement at **44,8 MB for a
+    1,6 MB table** over a thousand cycles (~11 GB a year, which a checkpoint does
+    not give back). This is that measurement in miniature — a real store on a
+    real file, which is the whole reason the fixture refuses ``:memory:``.
+    """
+    events = [
+        Event(date(2023, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2023, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=2,
+              unit_price=100.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    _seed_price(store, "AAPL", date(2023, 1, 2), 110.0)
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 1)          # a year of daily points
+
+    def _bytes():
+        store.execute("CHECKPOINT")
+        return sum(p.stat().st_size for p in
+                   [store.path, store.path.with_suffix(".duckdb.wal")]
+                   if p.exists())
+
+    m.update_account_metrics()
+    settled = _bytes()
+    for _ in range(20):
+        m.update_account_metrics()
+    assert _bytes() == settled
+
+
+def test_a_day_that_left_the_series_is_pruned(store, declare_ledger, mocker):
+    """The prune is bounded by what the cycle wrote, and catches the orphan.
+
+    An event withdrawn moves the account's first day forward; without the prune
+    the days before it would stand for ever, describing a portfolio nobody
+    declares — the same defect ``positions.write_state`` avoids by replacing.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 3), EventType.DEPOSIT, amount=10.0, account="PEA"),
+    ]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 4)
+
+    m.update_account_metrics()
+    assert _acc_days(store) == {date(2024, 1, d) for d in (1, 2, 3, 4)}
+
+    # The first deposit is forgotten: the series now starts on the 3rd.
+    store.execute("DELETE FROM event WHERE date = ?", [date(2024, 1, 1)])
+    m.update_account_metrics()
+    assert _acc_days(store) == {date(2024, 1, 3), date(2024, 1, 4)}
+    assert _totals_days(store) == {date(2024, 1, 3), date(2024, 1, 4)}
+
+
+def test_an_account_that_stops_being_written_is_pruned(
+        store, declare_ledger, mocker):
+    """An account the ledger no longer produces loses its cached days.
+
+    Its **declaration stands** — that is the whole case: the account row is
+    undeletable while the perf job has written for it (the foreign key), and the
+    real deletion path drops the cache first (``perf_series.forget_account``).
+    What is left here is the account that is still declared and computes to
+    nothing, whose days no reader could otherwise tell from current ones. It has
+    no span, so it is entirely outside the written set — the same predicate as
+    the orphaned day, in the same statement.
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=500.0, account="CTO"),
+    ]
+    portfolio = Portfolio([
+        Account("PEA", "PEA", "Mon PEA"),
+        Account("CTO", "CTO", "My CTO"),
+    ])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+    assert {row[0] for row in store.query(
+        "SELECT DISTINCT account FROM account_metrics")} == {"PEA", "CTO"}
+
+    store.execute("DELETE FROM event WHERE account = ?", ["CTO"])
+    m.update_account_metrics()
+    assert {row[0] for row in store.query(
+        "SELECT DISTINCT account FROM account_metrics")} == {"PEA"}
+
+
+def test_an_emptied_ledger_empties_both_tables(store, declare_ledger, mocker):
+    """Forgetting the last import takes the cache with it, global series included.
+
+    An empty ``spans`` is not a guard to add but the honest reading of an
+    integral recompute: producing no point for anybody means the ledger produces
+    no series. A table left standing would go on describing a portfolio nobody
+    declares — the rule ``positions.write_state`` already follows.
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 2)
+
+    m.update_account_metrics()
+    assert store.query("SELECT count(*) FROM portfolio_totals")[0][0] == 2
+
+    store.execute("DELETE FROM event")
+    m.update_account_metrics()
+    assert store.query("SELECT count(*) FROM account_metrics") == [(0,)]
+    assert store.query("SELECT count(*) FROM portfolio_totals") == [(0,)]
+
+
+def test_a_failed_write_leaves_the_previous_cache_whole(
+        store, declare_ledger, mocker):
+    """One transaction for the upsert and the prune, so a failure rolls both back.
+
+    There is nothing to re-arm afterwards — the two ``except`` blocks that put a
+    watermark back went with the watermark (issue #707). The previous cache is a
+    *complete* one, and the next tick rebuilds it whatever happened here.
+    """
+    events = [Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA")]
+    portfolio = Portfolio([Account("PEA", "PEA", "Mon PEA")])
+    m = _metrics(store, declare_ledger, events, portfolio)
+    _fixed_today(mocker, 2024, 1, 3)
+
+    m.update_account_metrics()
+    before = store.query("SELECT * FROM account_metrics ORDER BY day")
+
+    mocker.patch.object(perf_series, "prune_account_metrics",
+                        side_effect=RuntimeError("the store is unwritable"))
+    with pytest.raises(RuntimeError):
+        m.update_account_metrics()
+
+    assert store.query("SELECT * FROM account_metrics ORDER BY day") == before
+
+
+# --------------------------------------------------------------------------- #
+# A date that has not arrived (issue #766)
+# --------------------------------------------------------------------------- #
+
+def test_an_event_dated_in_the_future_does_not_bound_the_series(
+        store, declare_ledger, mocker):
+    """The trouvaille #766 was asked to settle, on the real store.
+
+    Nothing refuses an event dated next year, and #766 declines to add the
+    refusal: ``events/validator.py`` judges the whole *stored* ledger on every
+    build, boot included, so the rule would be retroactive and would
+    stop the boot of every install already carrying such a row — in an app its
+    owner then cannot reach to repair it (#699's argument for the ``GRANT``
+    unit_price). What is settled instead is the window:
+    :meth:`events.schemas.Timeline.holding_window` answers ``None`` for a
+    position that has held nothing yet, so the future row constrains no day
+    rather than producing a last day before its first for
+    :func:`performance.account_horizon` to recognise downstream.
+
+    Four years of figures on a priced line, plus a purchase dated three years
+    out. The series is whole, and it stops at today rather than at the day the
+    event names — **as it already did**, and saying so is the point: the guard
+    in ``account_horizon`` caught the degenerate window, so the horizon answered
+    this correctly before the settlement and answers it correctly after. That is
+    what keeps #708's crater and #765's repair out of reach of this change. The
+    case where the store-level figures do move is the buy-back below.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    events = [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2027, 5, 3), EventType.BUY, "LATER", "Later", quantity=5,
+              unit_price=50.0, account="PEA"),
+    ]
+    m = _metrics(store, declare_ledger, events,
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    horizons = m.update_account_metrics()
+
+    assert horizons["PEA"] is None
+    assert _pea_days(store) == (date(2020, 1, 1), date(2024, 1, 10))
+
+
+def test_a_future_buy_back_no_longer_holds_a_sold_line_at_today(
+        store, declare_ledger, mocker):
+    """The half of #766's trouvaille that was costing days, on the real store.
+
+    ``SOLD`` was bought in 2020, sold in 2021 and is bought again on a date three
+    years out; it is quoted nowhere, which is every symbol's state for the first
+    minutes of a reconstruction. Before the settlement the window ran to *today*
+    — the scan read the future acquisition as a position standing — so the block
+    reached the ceiling, the cap (#765) walked the right edge back past it, and
+    the account was left with **one day** of figures out of four years, on days
+    it held no share of that line at all.
+
+    Settled at the window, the block is where it belongs: wholly in the past,
+    bounding on its left edge, and the series runs from the day after the exit
+    through today. The residue #766 decides to keep is those pre-2020 days, and
+    here the ledger opens on the purchase so there are none to lose.
+    """
+    _fixed_today(mocker, 2024, 1, 10)
+    _seed_price(store, "OLD", date(2020, 1, 2), 100.0)
+    events = [
+        Event(date(2020, 1, 1), EventType.DEPOSIT, amount=10_000.0,
+              account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "OLD", "Old", quantity=10,
+              unit_price=100.0, account="PEA"),
+        Event(date(2020, 1, 2), EventType.BUY, "SOLD", "Sold", quantity=5,
+              unit_price=50.0, account="PEA"),
+        Event(date(2021, 6, 1), EventType.SELL, "SOLD", "Sold", quantity=5,
+              unit_price=60.0, account="PEA"),
+        Event(date(2027, 9, 9), EventType.BUY, "SOLD", "Sold", quantity=4,
+              unit_price=70.0, account="PEA"),
+    ]
+    m = _metrics(store, declare_ledger, events,
+                 Portfolio([Account("PEA", "PEA", "Mon PEA")]))
+
+    m.update_account_metrics()
+
+    assert _pea_days(store) == (date(2021, 6, 2), date(2024, 1, 10))

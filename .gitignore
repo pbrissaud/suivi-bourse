@@ -99,9 +99,12 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
-# Compose deployment: the user's own config directory and env file. The
-# templates (data.example/, .env.example) are the versioned ones.
-docker-compose/data/
+# The store (issue #696). The app creates one wherever SB_STORE_DIR points, and
+# a run outside the container puts it in the working copy. It is state, never a
+# template — and the templates that used to live beside it left with the compose
+# stack (#743).
+*.duckdb
+*.duckdb.wal
 
 # Environments
 .env
@@ -127,3 +130,30 @@ venv.bak/
 .dmypy.json
 dmypy.json
 .vercel
+
+# Worktrees jetables créés par l'orchestration de vagues (.claude/workflows/v5-wave.js).
+# Ils contiennent une copie complète du dépôt : sans cette ligne, un `git add -A`
+# lancé par un agent les emporterait.
+.claude/worktrees/
+
+# Les maquettes de la refonte (#787), exportées de Claude.design. Elles ne sont
+# pas suivies **et elles embarquent le vrai portefeuille** — les symboles réels
+# sont en clair dans le bundle. Sans cette ligne, un `git add -A` les publierait
+# dans un dépôt public. La référence de forme se lit en local, jamais versionnée.
+docs/design-revamp-*.html
+
+# --- The application (`src/`) -----------------------------------------------
+# Vite's build output, served by Flask. `src/api/_static_dir()` resolves it as
+# `<parent of the api package>/static`, which is this path in a checkout and
+# `/home/appuser/src/static` in the image.
+src/static/
+
+# The front's workspace.
+src/web/node_modules/
+src/web/dist/
+src/web/.vite/
+
+# `lib/` above is a Python packaging artefact, and it swallows the front's own
+# `lib/` — the module directory that holds half the front's code — unless it is
+# taken back by name.
+!src/web/src/lib/

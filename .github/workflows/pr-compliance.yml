@@ -22,4 +22,8 @@ jobs:
       - name: PR Conventional Commit Validation
         uses: ytanikin/PRConventionalCommits@1.3.0
         with:
-          task_types: '["feat","fix", "feat!", "fix!", "refactor!", "deps", "chore", "docs"]'
+          # The six types CONTRIBUTING.md names, and the breaking form of the
+          # three that can carry one. `refactor!` was allowed while plain
+          # `refactor` was not, which failed the gate on a title the repository's
+          # own vocabulary calls correct.
+          task_types: '["feat", "fix", "refactor", "deps", "chore", "docs", "feat!", "fix!", "refactor!"]'

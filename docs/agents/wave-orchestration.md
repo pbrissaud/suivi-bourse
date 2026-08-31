@@ -1,0 +1,154 @@
+# Wave orchestration
+
+The v5 map (#669) hands off ~45 implementation tickets whose blockers are already
+machine-readable — native GitHub dependencies on the back-end and packaging trees,
+a `## Blocked by` section in every ticket body. That graph is nine levels deep,
+which is what makes running it as **waves** worth the machinery: everything at one
+level is independent, and nothing below it can start early.
+
+`.claude/workflows/` holds the three scripts that do it. They run under the
+`Workflow` tool and are versioned here because they are the only written trace of
+the rules that stopped three bad merges out of three.
+
+| Script | Job |
+| ------ | --- |
+| `v5-wave.js` | implement a wave — one agent per ticket, verify, repair minors, merge |
+| `v5-repair.js` | take the branches a wave held, repair them against the findings, re-verify, merge |
+| `v5-verify.js` | read a branch adversarially with **no implementer's declaration** to contradict — recovered work, a hand-written branch, an outside PR. It establishes each criterion from the diff itself and never writes |
+
+The third is the harder read, and that is its point: `v5-wave.js`'s verifier is
+handed a claim per criterion and set to refute it, which is a sharper instrument
+*and* a narrower one — it looks where the claim points. With no declaration there
+is no checklist to steer by, so the reviewer has to find the criteria, and what
+the branch quietly decided, on their own.
+
+```
+Workflow({scriptPath: '.claude/workflows/v5-wave.js',
+          args: {wave: [696], base: 'preview/v5'}})
+
+# A held item is handed to the repair pass as the wave produced it — the two
+# scripts agree on `findings`, and `defects`/`overstated` are read as well.
+Workflow({scriptPath: '.claude/workflows/v5-repair.js',
+          args: {base: 'preview/v5', items: [<the wave's `held` entries>]}})
+```
+
+**Always `scriptPath`, never `name`.** `Workflow({name: 'v5-wave'})` resolves a
+copy of the script captured when the session started, so an edit made — and
+committed — during that session has **no effect** on any run launched by name.
+That is not a subtlety to remember for style: this session fixed the findings
+hand-off in `v5-wave.js`, launched the next wave by name, and got the identical
+broken hand-off, with the committed fix sitting on disk untouched. The symptom
+is silence — the run succeeds, on the old code. Launched by path, the two files
+above are the ones that run.
+
+Every branch leaves from and lands on `preview/v5`. Nothing is pushed and nothing
+is written to the tracker by an agent.
+
+## The frontier
+
+A ticket is ready when every blocker is closed and nobody is assigned:
+
+```bash
+gh api repos/pbrissaud/suivi-bourse/issues/<n> --jq .issue_dependencies_summary.blocked_by
+```
+
+`blocked_by` counts **open** blockers only, so closing a blocker unblocks its
+children with no further bookkeeping. A decision ticket — one that fixes names
+rather than writing code, like #745 — is published and closed in the same gesture:
+it had to *exist* before its children, not stay open.
+
+## The rules the scripts encode
+
+Each one is here because a wave went wrong without it.
+
+- **The base is the first gesture, and it is verified.** The harness may place a
+  worktree on a `master` head where `docs/adr/` does not exist. An agent that
+  cannot branch from the base stops and produces nothing, rather than implementing
+  a v5 ticket blind.
+- **`major` holds as hard as `blocking`.** A `major` is *an acceptance criterion
+  that is not met* — the apparent size of the offending line does not enter into
+  it. One scaffold line slipped through as `minor` on the pilot.
+- **A `major` routed to another ticket holds too**, until a human writes it there.
+  Otherwise "routed" quietly means "forgotten": that is how #713 merged with its
+  ICU criterion unmet. Re-run with `acknowledgedRouting: [<n>]` once written.
+- **An unmet criterion holds, even an honestly declared one.** A `partial` is
+  neither a defect nor an overstatement, so it passed both thresholds untouched —
+  #696 merged with its ninth criterion unpaid, and only the agent's candour
+  surfaced it. `partial` and `not_met` now hold; `impossible` passes **only when
+  it names what a human must do** (`needs_human`), because that is the flag
+  mechanism working rather than drift. Re-run with `acknowledgedUnmet: [<n>]`
+  once the criterion is decided and written on the ticket that will carry it.
+- **Scope is not widened silently.** A defect belonging to another ticket is
+  reported with its owner, never repaired in place — repairing another ticket's
+  file here dissolves the decomposition the map is made of.
+- **A wave is composed on the files it will touch, never on its subjects.** Two
+  tickets about different *pages* are not disjoint work if they are about the
+  same *word*: #721 (the accounts page) and #729 (the accounts declaration on
+  the data page) were put in one wave as "three disjoint trees", and each created
+  `src/web/src/lib/accounts.ts` and redefined `anAccount` / `defaultAccounts()`
+  in `test/factories.ts`, the fixtures 245 tests read. Five files conflicted, two
+  of them test files, and the substance was worse than the mechanics: the two
+  modules held **two spellings of one constant** — `DEFAULT_ACCOUNT_ID` and
+  `UNASSIGNED`, both `'default'` — which is the *written twice, the copy loses a
+  branch* defect both module headers invoke, each against the other without
+  knowing. Branches leave from the same base in parallel, so nothing warns: the
+  collision is only visible at the second merge. Before composing, name the
+  **module** each ticket will write and the **fixtures** it will touch, and put
+  two tickets naming the same one in two different waves.
+- **A merge conflict inside prose is resolved by an author, not by a union.**
+  The same wave's second merge could not be finished mechanically: the conflict
+  boundaries in `lib/api.ts` fell *inside* doc comments, so concatenating both
+  sides produced text that no longer parsed, and reconciling the fixtures meant
+  guessing which shape each of 245 tests wanted. What that costs is a re-run —
+  the held branch is rebuilt on the merged base, where its implementer
+  reconciles with the context — and what it saves is a merge that compiles and
+  is quietly wrong about a fixture.
+- **Gates are run, never dressed up.** No disabled test, no `--no-verify`, no link
+  turned into text to quiet a build. Whatever the diff touches gets its gate:
+  `pnpm build` for `website/`, `flake8` + `pytest` for `src/application/`, `pnpm lint` +
+  `build` + `test` for `src/web/` — and a real `docker build` when the diff touches
+  the `Dockerfile`, a lockfile or `pnpm-workspace.yaml`. That last one exists
+  because a walking-skeleton branch broke the image while all four of its declared
+  gates stayed green.
+- **Verification is adversarial and re-run from source.** The verifier reads the
+  criteria from `gh issue view`, not from the implementer's summary, and runs the
+  checkable ones itself.
+- **A repair pass with no readable findings refuses to start.** `v5-repair.js`
+  interpolated `${it.findings}` into a block announcing *read the whole file*, so
+  it expected a path, while `v5-wave.js` produced its held items with `defects`
+  and `overstated` — arrays of objects, which interpolate to
+  `[object Object],[object Object]`. The evidence was destroyed **before** the
+  agent saw it, and the pass went on believing it had read: on #708 it re-derived
+  a review of its own, repaired what it found, and returned a branch whose held
+  defect was still there — declared ready. The two names now agree, the four
+  shapes that actually arrive are all rendered to text (the wave's array, an
+  array of sentences, prose, a path), the `S1…`/`D1…` identifiers the output
+  schema demands are **assigned by the renderer** rather than assumed present,
+  and an item with nothing readable is refused loudly instead of repaired blind.
+  A branch that looks repaired and is not is worse than one that came back
+  empty.
+
+## Reading a ticket
+
+Every ticket opens on a `## Parent` line naming its spec (#695 store, #712 front,
+#730 packaging), the map, and its ADRs. All of them are required reading, and the
+arbitration rule is fixed: **`CLAUDE.md` describes v4 as it stands, the ADRs
+describe the destination — where they contradict, the ADR wins.**
+
+These tickets are dense because each criterion encodes an investigation already
+done; the body says *why* each one is what it is. A criterion applied without its
+why is a criterion missed.
+
+## Merging
+
+**A wave stops at "verified, ready" and a human merges.** Six subagent merges into
+`preview/v5` were stopped by the harness, and it was right to: writing to a shared,
+public integration branch is not the kind of thing an automated agent should do
+unattended. The scripts return a `ready` list and the `git merge` commands for it.
+
+Merge serially, and re-run each branch's gates **on the merged base** — a sibling
+from the same wave may have landed something incompatible. Pass `merge: true` to
+restore the automated merge in a repository where that raises no question.
+
+Worktrees live under `.claude/worktrees/`, git-ignored: they are full copies of the
+repository, and a `git add -A` would otherwise sweep them in.

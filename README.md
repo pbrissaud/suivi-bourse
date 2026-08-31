@@ -1,72 +1,85 @@
+# SuiviBourse
 
-# Stock Share Monitoring
+Track your portfolio: your events in, your figures out, in one container.
 
-Small app written in Python to monitor the stock shares you own. It uses Prometheus as TSDB and Yfinance to scrape the price in realtime.  
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-dashboard-dark.png">
+  <img alt="The SuiviBourse dashboard: the total gain, the value of the portfolio drawn against what was paid into it, the day's movers and the accounts" src="website/static/img/app-dashboard-light.png">
+</picture>
 
-![](website/static/img/screenshot.png)
+<sub>Every figure on this page comes from a portfolio that does not exist. The
+prices behind it are real.</sub>
 
-## Using SuiviBourse
-
-Please visit the [documentation's website](https://pbrissaud.github.io/suivi-bourse/docs) !
-
-## Getting Started
-
-There are mutiple ways to run the app but **Docker Compose** is the easiest way to begin !
-
-Note: Docker Compose launches a full environnement with a pre-configured Prometheus and Grafana 
-
-### 1. Install Requirements
-* Docker (>19.03.0)
-* Docker-Compose 
-
-### 2. Create your configuration
-In the `docker-compose` folder, create your `.env` and config directory from the
-shipped templates — these two are yours, no other file needs editing:
+## Run it
 
 ```bash
-make init
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -p 8080:8080 \
+  ghcr.io/pbrissaud/suivi-bourse:5
 ```
 
-It creates `.env` (with a freshly generated InfluxDB token) and `data/`, skipping
-whatever already exists — re-running it never overwrites your configuration.
+Then open [http://localhost:8080](http://localhost:8080). The app asks one
+question — the currency you want your figures in — and from there you either
+type your first event or hand it a `.csv`/`.xlsx` of your history.
 
-### 3. Modify config
-Edit `data/config.yaml` with the current state of your portfolio, or visit the
-[configuration documentation](https://pbrissaud.github.io/suivi-bourse/docs/configuration/overview)
-to know more about writing a config file.
+Your portfolio lives in the `suivi-bourse` volume — that is the one argument to
+keep if you adapt the command. There is no second mount: a file you import is
+read once and never kept.
 
-*Example Config:*
-```yaml
----
-shares:
-- name: Apple
-  symbol: AAPL
-  purchase:
-    quantity: 1
-    fee: 2
-    cost_price: 119.98
-  estate:
-    quantity: 2
-    received_dividend: 2.85
-```
+**Nothing is published.** SuiviBourse has no accounts and no login: whoever
+reaches the socket reaches the whole app. Keep it on a private network, or put
+your own reverse proxy or VPN in front of it — see [SECURITY.md](SECURITY.md).
 
-To track transactions instead, drop your broker exports (`.csv` / `.xlsx`) into
-`data/events/` — SuiviBourse detects them and switches to
-[events mode](https://pbrissaud.github.io/suivi-bourse/docs/configuration/events-mode)
-by itself.
+## What it does
 
-### 4. Run the stack
-Run the following command in the `docker-compose` folder :
+A portfolio is a dated ledger of what you bought, sold, received and paid in,
+and only that. Everything else — your positions, the prices, the return series —
+is derived from it and rebuilt whenever the ledger moves.
 
-```bash
-docker compose up -d
-```
+<details>
+<summary><b>The other three pages</b></summary>
 
-### 5. Visit Grafana
-Connect to Grafana (`http://localhost:3000`) with the following credentials:
-* login:  `admin`
-* password: `admin`
-    
-and go to dashboard **Stock share monitoring**
+**Shares** — every open line, what it cost, what it is worth, and how the whole
+is allocated.
 
-*NB:* please wait ~10m to see all the cells getting filled
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-shares-dark.png">
+  <img alt="The Shares page: the allocation ring over eight held lines, and the table of positions with their average cost, value, unrealised and realised gain and dividends" src="website/static/img/app-shares-light.png">
+</picture>
+
+**Accounts** — each account weighed against the others, with its own curve, its
+composition, its annualised return and the dividends it paid.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-accounts-dark.png">
+  <img alt="The Accounts page: the weight of the three accounts, and the selected one with its value curve, its composition, its annualised IRR and the dividends received" src="website/static/img/app-accounts-light.png">
+</picture>
+
+**Ledger** — the events themselves: filter them, correct one, delete a whole
+import, export what you are looking at.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-ledger-dark.png">
+  <img alt="The Ledger page: the import band, the filters by type, account and year, and the table of recorded events" src="website/static/img/app-ledger-light.png">
+</picture>
+
+</details>
+
+## Documentation
+
+Everything else — importing your events, reading your figures, the settings,
+running without Docker, coming from v4 — is on
+[the documentation website](https://pbrissaud.github.io/suivi-bourse/docs/v5/).
+
+## Contributing
+
+Bug reports and pull requests are welcome; please read
+[CONTRIBUTING.md](CONTRIBUTING.md) first. A vulnerability goes through
+[SECURITY.md](SECURITY.md) instead, privately.
+
+## Licence
+
+[MIT](LICENSE)

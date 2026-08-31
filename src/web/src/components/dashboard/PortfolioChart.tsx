@@ -1,0 +1,395 @@
+/**
+ * One chart slot, **two readings** (#727, ADR-0018).
+ *
+ * *Amounts* draws the portfolio's value against what was put into it, and the
+ * area between the two **is** the gain — the clearest answer the product can
+ * give to *did I gain because it went up, or because I put more in*, which a
+ * value curve alone cannot. *Performance* draws the time-weighted return, which
+ * answers the other question — *did my holdings do well* — and is the one figure
+ * a deposit does not move.
+ *
+ * Four things about it are decisions:
+ *
+ *  - **The reading selector is a reading selector, and it is not tabs** (#831).
+ *    It was `Tabs` for three tickets and the maquette never drew one: both
+ *    controls of this card are segmented **buttons** there (`readingTabs`, whose
+ *    name is the only tab left in the drawing). A tab is a *place* the reader
+ *    goes — the shell's own navigation is what the product has of those — and
+ *    what these two press is which curve the same slot draws. So they are
+ *    buttons that say whether they are in force (`aria-pressed`), grouped and
+ *    named, exactly the idiom the ledger's chips and the price chart's rail
+ *    already use. What survives the change is the reason they are not radios:
+ *    two sibling radio groups read as two settings of the same thing, and the
+ *    range beside them is the page's one range control.
+ *  - **`3M` is dead** and `1M / YTD / 1Y / MAX` is the whole list: from February
+ *    to December `YTD` covers or contains `3M`, and five buttons on one control
+ *    is one too many. The series is daily and dense over the calendar and it is
+ *    kept **whole** — there is no ladder here, so changing the range changes the
+ *    span and never the resolution, and no *aggregated by X* caption is owed.
+ *  - **The x domain is the data's**, never the window asked for. Recharts' own
+ *    category axis does that by construction and it is the reason nothing sets a
+ *    domain here: fixing the axis to the requested window would put ticks on
+ *    dates the series says nothing about, which is the mistake corrected on the
+ *    value axis one line below.
+ *  - **The value axis is floored at zero when nothing drawn is negative.** Left
+ *    to itself it fitted the data and graduated `−1 411 €` under a series that
+ *    has never been negative.
+ *  - **It answers the pointer** (#790), and the answer is the page's own
+ *    formatting: one day, and the curves' values on it, in the reader's
+ *    language and the reporting currency. The **area is not in it** — its
+ *    `dataKey` is a function returning the `[contributed, value]` pair the band
+ *    is drawn between, which is a drawing instruction and not a figure anybody
+ *    reads. Filtering on *the entry has a string key* is what keeps it out,
+ *    rather than a name test that would break the day a curve is renamed.
+ *
+ *  - **The two series are the page's read, not the block's** (#799), and they
+ *    cross as `readonly X[] | null`. `null` is *not answered* — in flight, or
+ *    failed — and the block renders **nothing at all, title included**: a frame
+ *    with an empty body is a hand-written skeleton (ADR-0026), and a plot drawn
+ *    on an empty array reads as *the portfolio is worth nothing*. The two are
+ *    told apart by the `failure` prop since #829 (ADR-0037): in flight the slot
+ *    is empty and claims nothing, refused it carries the reason. The head is
+ *    never emptied either way, which is what this block's `settled` used to cost
+ *    by making a failed series and an unanswered one the same silence.
+ *
+ *  - **It explains no rule of the product** (#831). The block used to close on a
+ *    caption per reading — what the gap between the curves is, what the
+ *    performance curve is based on — and both were conventions written **on the
+ *    page**, which is exactly what ADR-0016 replaced with an icon on the figure.
+ *    The head carries four of those bubbles three cards up, on the same page, and
+ *    ADR-0016 puts one icon per figure *and per surface*: so the sentences go and
+ *    no fifth bubble arrives to inherit them. What is left under the plot is a
+ *    legend, which names curves rather than stating rules.
+ *
+ * Without a cash ledger the perf series does not exist — `total_value`,
+ * `net_contributed` and `twr_index` are `NULL` by #708's per-field rule — so
+ * *Amounts* falls back to valuation against cost and is **the only reading**:
+ * the area is then the *latent* gain, which is a different figure and therefore
+ * a different pair of names in the legend, and *Performance* is not offered
+ * rather than offered empty.
+ */
+import { useState } from 'react'
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from 'recharts'
+
+import { ChartTooltip } from '@/components/ChartTooltip'
+import { Segmented } from '@/components/Segmented'
+import { EmptyState } from '@/components/EmptyState'
+import { Unreadable } from '@/components/Unreadable'
+import { Card, CardContent } from '@/components/ui/card'
+import type { PerfPoint, ValuationPoint } from '@/lib/api'
+import {
+  amountsFromTotals,
+  amountsFromValuation,
+  amountsValues,
+  performanceRows,
+  READINGS,
+  windowFloor,
+  yFloor,
+  type AmountsRow,
+  type DashboardRange,
+  type PerformanceRow,
+  type Reading,
+} from '@/lib/dashboard'
+import { useFormatters } from '@/lib/format'
+import { useI18n } from '@/lib/i18n'
+import type { ReadFailure } from '@/lib/status'
+
+export interface PortfolioChartProps {
+  /**
+   * Whether the install has a cash ledger — which is at once the discriminant
+   * of the reading and of the series that is read (`hasCashLedger`).
+   */
+  ledger: boolean
+  /**
+   * The page's period. There is **one** range control on the dashboard and it
+   * is not this card's (#838): the drawing sets it above the chart, where it
+   * governs the movements and the comparison beside them too.
+   */
+  range: DashboardRange
+  currency: string | null
+  /**
+   * The two series, exactly one of which is read. `null` is *the read has not
+   * answered* — in flight, or failed — and never an empty payload, which is a
+   * fact about the reader's own history (ADR-0026).
+   */
+  performance: readonly PerfPoint[] | null
+  valuation: readonly ValuationPoint[] | null
+  /**
+   * The block's own read, refused — `null` when it did answer or is still in
+   * flight. **The two are not the same news** and that is why it is a prop: an
+   * absent series in flight is nothing to say yet, and one that failed is the
+   * chart's whole slot standing empty for a reason the reader is owed (#829,
+   * ADR-0037, and #799's repair kept without the band).
+   */
+  failure?: ReadFailure | null
+}
+
+export function PortfolioChart({
+  ledger,
+  range,
+  currency,
+  performance,
+  valuation,
+  failure = null,
+}: PortfolioChartProps) {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const [chosen, setChosen] = useState<Reading>('amounts')
+
+  // **Nothing at all, title included** (ADR-0026): the block's one series is
+  // in flight, and a frame carrying two reading buttons and a range control
+  // over an empty plot is a skeleton written by hand.
+  //
+  // A series that **failed** is the other news, and it is said here rather than
+  // in a strip at the top of the page (#829, ADR-0037): the slot the chart would
+  // have filled says the read did not answer, so what is missing and why are in
+  // one place. #799's repair survives the band's removal — the head keeps its
+  // figures either way.
+  if ((ledger ? performance : valuation) === null) {
+    return failure === null ? null : <Unreadable failure={failure} />
+  }
+
+  const reading: Reading = ledger ? chosen : 'amounts'
+  const floor = windowFloor(range, new Date())
+  // The `?? []` below are `tsc`'s bookkeeping and not a flattening: the guard
+  // above has already returned from the branch each one fills, and the series
+  // the *other* reading would draw is not read on this install at all.
+  const rows = ledger
+    ? amountsFromTotals(performance ?? [], floor)
+    : amountsFromValuation(valuation ?? [], floor)
+  const performanceSeries = performanceRows(performance ?? [], floor)
+  const drawn: (AmountsRow | PerformanceRow)[] = reading === 'amounts' ? rows : performanceSeries
+
+  return (
+    <Card className="gap-4">
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
+              this selector segmented exactly as it draws the range one row up,
+              and nothing here is a place to go: pressing one swaps what the
+              slot below draws, which is what `aria-pressed` says and what a tab
+              would misname. At one reading there is nothing to choose, so there
+              is no control at all — and the range is nowhere near this card
+              since #838: the page has **one**, and it drives this chart, the
+              movements and the comparison alike. */}
+          {ledger ? (
+            <Segmented
+              mode="pressed"
+              label={t('dashboard.chart.reading')}
+              value={reading}
+              onChange={setChosen}
+              options={READINGS.map((candidate) => ({
+                value: candidate,
+                label: t(
+                  candidate === 'amounts'
+                    ? 'dashboard.chart.amounts'
+                    : 'dashboard.chart.performance',
+                ),
+              }))}
+            />
+          ) : (
+            <h2 className="eyebrow">{t('dashboard.chart.amounts')}</h2>
+          )}
+        </div>
+        {drawn.length === 0 ? (
+          // A **fact**: the series answered and says nothing over this window.
+          // *Not answered* never reaches here — the guard above returned.
+          <EmptyState title={t('dashboard.chart.empty')} />
+        ) : (
+          <>
+            <div className="h-75">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={drawn}>
+                  {/* The grid the maquette **does** draw: horizontal only, and
+                      a hair rather than a rule — `2 4` on the border colour,
+                      where Recharts' own default is a `3 3` in a grey it picked
+                      itself. It is a ground for the eye to rest a level on, not
+                      a scale: the scale left with the gradations. */}
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
+
+                  {/* **The axes are hidden, not removed.** What they drew — a
+                      grid and two rows of gradations — is what the redesign took
+                      off the chart, and it is said elsewhere: the window by the
+                      range control (a second announcer of it is what ADR-0019
+                      refuses), the magnitude by the head's own statistics, the
+                      exact figure by the pointer. What they *decide* stays, and
+                      is the whole reason they are still mounted: the value
+                      scale's floor (`yFloor`) is what keeps the curve off the
+                      bottom sixth of the plot, and the category axis is what
+                      keeps the days the series holds from being interpolated. */}
+                  <XAxis dataKey="t" hide />
+                  <YAxis
+                    domain={[
+                      reading === 'amounts'
+                        ? yFloor(amountsValues(rows))
+                        : yFloor(performanceSeries.map((row) => row.performance)),
+                      'auto',
+                    ]}
+                    hide
+                  />
+
+                  {/* What the pointer answers, and since #787 the **only**
+                      thing that does: the axes went with the grid, so the exact
+                      figure is a hover away and the magnitude at rest is the
+                      head's two statistics one card up. */}
+                  <ChartTooltip
+                    format={(value) =>
+                      reading === 'amounts' ? f.currency(value, currency) : f.percent(value)
+                    }
+                  />
+
+                  {reading === 'amounts' ? (
+                    <>
+                      {/* **The wash is under the value curve, not between the
+                          two** (#787) — the maquette's own arrangement, and it
+                          answers the objection that kept the band neutral for
+                          three tickets. A fill *between* the curves is a signed
+                          quantity: it is the gain, it crosses zero inside a
+                          window often enough that one colour would be wrong half
+                          the time, and it therefore had to stay grey — which
+                          made it invisible on midnight, under the caption the
+                          block still carried then and which promised a mark
+                          nobody could find. That caption went with #831.
+
+                          A fill under the **value** claims nothing about a sign:
+                          the value is what it is, the curve is already drawn in
+                          the mint, and the wash is that curve's own weight. The
+                          gap is still read between the two lines — it is the
+                          mint above the dashed one — and it is legible precisely
+                          because the region under it is no longer empty.
+
+                          The gradient is the maquette's to the stop: `0.22` of
+                          the mint at the curve, `0.02` at the floor. */}
+                      <defs>
+                        <linearGradient id="portfolio-value-wash" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--color-price)" stopOpacity={0.22} />
+                          <stop offset="100%" stopColor="var(--color-price)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <Area
+                        // A **function** key, so the tooltip drops it: the wash
+                        // repeats the value line's own figure, and answering the
+                        // pointer twice with one number is two announcers of it
+                        // (`ChartTooltip`).
+                        dataKey={(row: { value: number | null }) => row.value}
+                        name={t('dashboard.chart.area')}
+                        baseValue="dataMin"
+                        stroke="none"
+                        fill="url(#portfolio-value-wash)"
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        name={t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
+                        stroke="var(--color-price)"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="contributed"
+                        name={t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
+                        stroke="var(--muted-foreground)"
+                        strokeWidth={1.25}
+                        strokeDasharray="4 4"
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <ReferenceLine y={0} stroke="var(--border)" />
+                      <Line
+                        type="monotone"
+                        dataKey="performance"
+                        name={t('dashboard.chart.performance')}
+                        // **Not `--color-price`**, which is the mint: this curve
+                        // crosses the zero line, and a portfolio down 8 % would
+                        // draw its whole descent in the colour the app uses for a
+                        // gain. It is the reason the Area above stays neutral,
+                        // one line further down. The foreground says nothing
+                        // about sign, and this is the only curve on the plot.
+                        stroke="var(--foreground)"
+                        strokeWidth={1.75}
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                    </>
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* The legend is written here rather than left to the library: it
+                is what pairs a curve to its **name**, and since #831 that is all
+                it does. It used to carry a sentence too — *the gap between the
+                two curves is your total gain*, and its latent variant — and that
+                sentence was the page explaining itself: the gain's identity is a
+                convention of the product, so it belongs on the bubble the head
+                already carries three cards up (ADR-0016, `CONTEXT.md` §
+                *Convention note*), not in a paragraph under a plot. The maquette
+                draws the two swatches and nothing else, which is the same
+                arrangement arrived at from the other end.
+
+                Nothing is lost by the removal that the page does not go on
+                saying: the fallback's own reason — *this portfolio records no
+                cash movement* — is the head's `dashboard.withoutLedger`, said
+                once, where the figures it removes are; and which pair of curves
+                is drawn is said by the two names below, `Valorisation` /
+                `Prix de revient` against `Valeur totale` / `Versé net`. */}
+            {reading === 'amounts' ? (
+              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block h-0.75 w-3.5 rounded-xs"
+                    style={{ backgroundColor: 'var(--color-price)' }}
+                  />
+                  <span className="text-muted-foreground">
+                    {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block h-0.5 w-4"
+                    style={{ backgroundColor: 'var(--muted-foreground)' }}
+                  />
+                  <span className="text-muted-foreground">
+                    {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
+                  </span>
+                </span>
+              </div>
+            ) : // Nothing under the performance reading, and no base **date**
+            // either. The date was already refused here — the curve is rebased
+            // on the first day of the visible window, so it does not move as the
+            // reconstruction reaches further back, and only the head's scalar
+            // carries a date, while it is still moving. What leaves with #831 is
+            // the other half, *base 0 % on the first day of the range shown*: a
+            // rebasing is a convention, and a convention stated in prose on the
+            // page is the thing ADR-0016 built the bubble to replace. The two
+            // marks that state it without a sentence stay — the zero reference
+            // line the curve crosses, and the range control that names the
+            // window it is rebased on.
+            null}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}

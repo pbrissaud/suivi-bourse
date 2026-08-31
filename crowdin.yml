@@ -1,0 +1,85 @@
+# Crowdin configuration for the whole product — the documentation **and** the
+# interface, in **one** project (ADR-0024).
+#
+# It was two, and the stated reason does not survive reading this file: "the
+# front and the docs have different formats (ICU JSON against Markdown)". The
+# sources below are already both, and mixing formats in one project is what
+# Crowdin does for a living. The rhythms do differ — a release's for the corpus,
+# a component's for the interface — but that decides *when* one translates, not
+# where the files live; a project organises by path and a translator filters.
+#
+# What decided it is the vocabulary. ADR-0016 has the figure in the app and the
+# page that explains it saying the same convention in the same words — *plus-
+# value latente*, *PRU*, *TWR*. A translation memory carries `defaultProjectIds`
+# in Crowdin's API, so isolation is the default and sharing is an explicit step:
+# two projects means a term translated in the interface never suggests itself in
+# the documentation, and the two drift. That is ADR-0024's own defect — two
+# languages in one box — one storey up: two vocabularies for one product.
+#
+# The file lives at the **repository root** because that is the only place that
+# can name both halves, and because a VCS integration reads it from the
+# repository. One file serves the integration and the CLI: the integration omits
+# the credentials, which is why they are read from the environment here and
+# never written down.
+project_id_env: CROWDIN_PROJECT_ID
+api_token_env: CROWDIN_PERSONAL_TOKEN
+
+base_path: '.'
+preserve_hierarchy: true
+
+# What is translated is the **current** corpus and nothing else (ADR-0024,
+# ADR-0025). The frozen snapshots — `version-3.x/` and `version-4.x/`, under
+# the site's versioned tree — appear in no source below, and that exclusion has
+# two distinct reasons:
+#
+#  - `version-3.x/` is 1 792 frozen words of a product two majors old;
+#  - `version-4.x/` is a corpus the v5 rewrite killed — 4 pages and 3 860 words
+#    with no successor, nine more surviving only as subjects.
+#
+# Paying a translator, or a reviewer's attention, for either is paying for text
+# whose only readers arrive from a search engine onto a page already banded
+# *unmaintained*.
+#
+# The same rule reaches the theme JSON: `code.json` and the navbar and footer
+# files are here, `docusaurus-plugin-content-docs/current.json` is here (it
+# holds one string, the `v5` version label), and `version-3.x.json` /
+# `version-4.x.json` are **not** — they carry the frozen versions' sidebar
+# categories, i.e. the dead taxonomy. They are not committed either (see
+# `website/.gitignore`), so the exclusion is stated twice and cannot be
+# re-introduced by a glob.
+#
+# The `website/i18n/en/**` sources are *generated*, by `pnpm
+# write-translations`, and regenerating them before an upload is what keeps the
+# navbar and this pipeline in step. Nothing under `i18n/fr/` is written by hand:
+# it is Crowdin's output, landing here through an import. The front's catalogue
+# is the opposite — `src/web/src/i18n/en.json` is written by hand, English being
+# the source (ADR-0024), and `fr.json` is Crowdin's output.
+#
+# **One extension per entry, never a brace list.** Crowdin's globs are not a
+# shell's: the CLI compiles a source pattern into a regex, and `*.{md,mdx}`
+# becomes `.+\.{md,mdx}`, where `{` opens a repetition quantifier and the whole
+# file is refused — `❌ Illegal repetition near index 5`. The failure is *at
+# the tool*, not in the YAML, which is why the CI lints this file with the real
+# CLI: a YAML parser reads it happily and Crowdin then uploads nothing.
+files:
+  # ---- The documentation corpus (website/) ----
+  - source: '/website/docs/**/*.md'
+    translation: '/website/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current/**/%original_file_name%'
+
+  - source: '/website/docs/**/*.mdx'
+    translation: '/website/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current/**/%original_file_name%'
+
+  - source: '/website/i18n/en/code.json'
+    translation: '/website/i18n/%two_letters_code%/code.json'
+
+  - source: '/website/i18n/en/docusaurus-theme-classic/**/*.json'
+    translation: '/website/i18n/%two_letters_code%/docusaurus-theme-classic/**/%original_file_name%'
+
+  - source: '/website/i18n/en/docusaurus-plugin-content-docs/current.json'
+    translation: '/website/i18n/%two_letters_code%/docusaurus-plugin-content-docs/current.json'
+
+  # ---- The interface's catalogue (src/web/) ----
+  # One file per language, ICU, semantic keys, English the source (ADR-0024,
+  # issue #713). It is the other half of the vocabulary the docs explain.
+  - source: '/src/web/src/i18n/en.json'
+    translation: '/src/web/src/i18n/%two_letters_code%.json'

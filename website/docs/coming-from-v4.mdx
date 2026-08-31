@@ -1,0 +1,231 @@
+---
+title: Coming from v4
+description: Everything is redone, accounts are redeclared, which figures are meant to differ — and how to go back
+---
+
+A version 5 install is a **new install whose import folder happens to be full**
+(ADR-0008). There is no upgrade path, no migration command and no version
+detection: you start a new container beside the old one, hand it the event files
+version 4 was already reading, and let it rebuild the history from scratch.
+
+The two versions never meet, and that is what makes the move cheap. Your version
+4 stack keeps running, untouched, for as long as you want to read both — and the
+one rule to hold on to is its mirror image: **never point the two versions at one
+directory, and never at one volume.**
+
+## Nothing arrives here by accident
+
+The image is not the one you are running. Version 4 is
+`ghcr.io/pbrissaud/suivi-bourse-app`; version 5 is
+`ghcr.io/pbrissaud/suivi-bourse`, without the suffix. A `docker compose pull` on
+your existing stack therefore pulls version 4 for ever, and no tag on either
+name crosses over. You get here by typing the new name, once, on purpose.
+
+## The move, end to end
+
+Count on **half an hour**, nearly all of it spent waiting rather than typing.
+
+1. **Leave version 4 running.** Nothing below reads its files in place, and the
+   comparison at the end needs it alive.
+2. **Start version 5 on a volume of its own** — one `docker run`, one `-v`, and
+   it is [Get started](./get-started.mdx). A fresh named volume, never the
+   directory version 4 reads.
+3. **Answer the base currency.** It is the one question the app asks, and the
+   one to answer before importing anything: your amounts are recorded as you
+   paid them, and this is what says in which unit. See
+   [Settings](./settings.mdx#the-base-currency).
+4. **Declare your accounts**, if version 4 had more than one — before the
+   import, with the same ids. [Below](#your-accounts).
+5. **Hand over your event files**, one after another, from the *Ledger* page or
+   with one `curl`. [Import your events](./import-your-events.mdx) has the whole
+   gesture; [below](#your-event-files) has what is specific to files version 4
+   wrote.
+6. **Wait for the rebuild.** About **25 minutes for 30 symbols over five years**,
+   and the pages fill in from the right while it runs. Nothing is gated on it
+   finishing — see [Rebuild and resolution](./rebuild-and-resolution.mdx).
+7. **Reconcile**, with [the table below](#the-reconciliation) in hand: three
+   figures must agree, and the rest is meant not to.
+8. **Then, and only then, take version 4 down** and deal with
+   [its volumes](#the-influxdb-and-grafana-volumes).
+
+## Your event files {#your-event-files}
+
+**They import without a single edit.** The columns version 4 read are the columns
+version 5 reads — `date`, `event_type`, `symbol`, `name`, `quantity`,
+`unit_price`, `fee`, `amount`, `notes`, `account` — the six event types are the
+same six, and a column neither version knows is ignored rather than refused. Both
+`.csv` and `.xlsx` are read, every sheet of a workbook included, so the files
+sitting in your version 4 `events/` directory go over as they are.
+
+That continuity is deliberate and it is the only one there is (ADR-0008). Its
+load-bearing half is the rule about the account column: **an empty `account`
+means `default`** for as long as no real account has been declared, which is
+version 4's own rule minus its opt-in.
+
+What changes is not the file, it is what has to exist before you hand it over.
+
+## Your accounts {#your-accounts}
+
+An account is user data, declared **in the app** and nowhere else (ADR-0034).
+There is no file that carries a declaration, in either direction.
+
+**If version 4 had no `accounts:` block**, there is nothing to do. Your install
+already owns one account, called `default`, your rows carry an empty `account`
+column, and the two meet. Rename it on the *Accounts* page whenever you like.
+
+**If version 4 had one**, declare each account before importing, on the
+*Accounts* page, with **the same `id`** your rows already name — that id is the
+whole of the continuity. `type` and `label` carry over as they were; `currency`
+has nowhere to go, because version 5 has one reporting currency for the whole
+install and none on an account at all (ADR-0002). A file naming an account you
+have not declared is **not imported at all** — not partially — and the message
+names the account. See
+[Declaring your accounts](./import-your-events.mdx#declaring-your-accounts).
+
+**`settings.yaml` is named and never read.** Its `accounts:` block mixed
+deployment settings with user data, which is exactly the seam version 5
+separates; redeclaring two or three accounts costs less than keeping a version 4
+format alive for ever. Hand it to the import zone and it is refused **by name**,
+with a pointer back to this page, and nothing is written.
+
+## Your old configuration directory
+
+`~/.config/SuiviBourse` — whatever `SB_CONFIG_DIR` pointed at — has **no reader
+in version 5**. Not a deprecated one, not a fallback one: the app opens no
+configuration directory at all, and a file reaches it only by being handed over
+(ADR-0032).
+
+**Copy that directory somewhere before you start**, and keep it. It is where
+your event files live, and it is what version 4 will want back if you go back.
+Copy it — never share it between the two versions, and never mount it into
+version 5.
+
+Two consequences are worth stating flatly, because neither of them announces
+itself:
+
+- **A version 4 mount carried over is ignored in silence.** If you reuse your old
+  `docker run` and keep `-v <config_path>:/home/appuser/.config/SuiviBourse`, the
+  directory is mounted and read by nothing, and **no notice anywhere says so**.
+  Earlier versions of version 5 did `stat` those two files and raise a notice;
+  that went with the mount, because a sentence said later, on another screen, to
+  a reader no longer holding the file is worse than the same sentence said at the
+  gesture. The canonical `docker run` has **one** `-v`, and it is `/data`.
+- **`SB_CONFIG_DIR` is not in the start-up notice either.** It carries the `SB_`
+  prefix but was never read by the application — it belonged to the Compose file,
+  and naming it would suggest the app once obeyed it. Every *other* `SB_*` or
+  `INFLUXDB_*` variable you still have set **is** named at start-up, in one
+  grouped line, and obeyed by nothing:
+  [what version 4 said, and is no longer read](./settings.mdx#what-version-4-said-and-is-no-longer-read).
+
+The two file names are said in exactly one place in the whole product: the
+refusal of an upload that carries one.
+
+## The reconciliation {#the-reconciliation}
+
+**Three figures must coincide**, per account and for the portfolio:
+
+| Figure | Why it has to agree |
+|---|---|
+| **Quantity held** | it is a sum of your own rows, and nothing else |
+| **Cash balance** | the same running ledger, moved by the same six event types |
+| **Net contributed** | deposits less withdrawals, fees excluded, in both versions |
+
+If one of those three disagrees, the import is what to look at — an account that
+took rows it should not have, or a file you handed over twice. Everything below
+is meant to disagree.
+
+**What is deliberately corrected**, and the record that decides it:
+
+| Figure | Version 4 | Version 5 | Decided by |
+|---|---|---|---|
+| Cost of a position | weighted average, with the transaction fee counted in a separate total beside it | weighted average with the **acquisition fee absorbed into the cost**, and the disposal fee taken out of the proceeds | ADR-0003 |
+| A free share (`GRANT`) | always free, valued at **the market price on the day it landed**, and counted as an in-kind contribution | valued at **the price its own row declares**, or at nothing at all — with a price it is a taxed award, without one it is dilution | ADR-0003 |
+| Your gain | one composite figure, `total value − contributions`, grants included in the contributions | **four named terms whose sum is its definition**: latent, realized, dividends, minus fees taken from your transfers | ADR-0018 |
+| A position with no price | counted as **zero**, which understates the account | **carried at its own cost**, so its latent gain is exactly zero rather than a loss | ADR-0004 |
+| The reporting currency | one per account, and portfolio totals only when every account shared one | **one for the whole install**, on every figure, with only prices ever converted | ADR-0002 |
+| Money-weighted return | XIRR over your cash flows **and** grants valued at market | the same rate, over cash flows and grants at their declared price | ADR-0003 |
+| Time-weighted return | base-100 index, re-anchored as the backfill filled earlier history | the same index, **re-based on every cycle** while the rebuild runs, with its base date shown beside it until it settles | ADR-0009 |
+| Price history | whatever your InfluxDB accumulated, at the fineness it was written | **refetched from scratch** and aged by the resolution ladder — hourly past a year, daily past two | ADR-0001, ADR-0010 |
+
+Two of those are worth a sentence more, because they are the two that move a
+headline figure by a visible amount.
+
+**The grants.** Version 4 booked a free share as a contribution at its market
+value on the grant day, which is why its gain read lower than
+`value − net contributed` by the market value of every free share you ever
+received. Version 5 reads the price your row declares and nothing else: no price
+means no contribution and no cost, so the quantity rises and the basis does not.
+A portfolio with grants will not have the same gain in the two versions, and the
+version 5 figure is the one whose terms you can add up yourself.
+
+**The prices.** Nothing about the price history crosses over — it is not yours,
+it is fetched. So the two installs disagree about the past for as long as the
+rebuild is walking backwards, and they go on disagreeing about *fineness*
+afterwards: what version 4 wrote minute by minute five years ago, version 5 can
+only buy daily. That is not recoverable and it is not a defect of the move; it is
+[the one thing no backup taken late ever returns](./rebuild-and-resolution.mdx#fine-resolution-cannot-be-caught-up).
+
+Reconcile on the three figures at the top, read the rest as two conventions
+rather than as a discrepancy, and keep version 4 running until you have.
+
+## The InfluxDB and Grafana volumes
+
+Version 5 has no database beside it and no dashboard tool to provision: one
+image, one store, one process. Your version 4 stack's two named volumes —
+InfluxDB's data and Grafana's — are therefore **left exactly where they are**.
+
+**The app never touches them.** It does not look for them, it will not migrate
+them, and nothing in version 5 has a reason to name a volume it did not create.
+Removing them is a **gesture you make**, once, when you are ready:
+
+```bash
+# What version 4 left behind. Compose prefixes both with COMPOSE_PROJECT_NAME,
+# which is `suivi-bourse` unless you changed it.
+docker volume ls | grep sb_
+
+# Take the stack down first; a volume in use is not removed.
+docker compose down
+
+# Then, and only when the reconciliation above is done:
+docker volume rm suivi-bourse_sb_influxdb_data suivi-bourse_sb_grafana_data
+```
+
+There is nothing to salvage from them for version 5's sake — the prices are
+refetched and the derived series are recomputed from your events — so the only
+reason to keep them is the one that matters: **going back**.
+
+## Going back
+
+**[Export your events](./import-your-events.mdx#export-it-all-back-out), then
+point a version 4 install at a folder holding the exported `events.csv`.**
+
+That sentence is the whole procedure, and the export is what makes it true: your
+original files are never touched, so going back at the moment you switch costs
+nothing — but everything you record in version 5 afterwards lives only in its
+store, and the export is how it leaves. The exported file is an ordinary event
+file; version 4 reads it and ignores the one column it does not know, the
+`base_currency` version 5 writes on every row.
+
+**Your accounts are redeclared by hand**, in version 4's `settings.yaml`, with
+the same ids the `account` column names. There is nothing to copy across: an
+account is declared in version 5's own pages and nowhere else, so the export
+writes the events and no second file.
+
+**Version 4 asks each account for a `currency`, and the exported file cannot
+carry one**: version 5 has one reporting currency for the whole install and no
+currency on an account at all, so there is nothing in the export to copy across.
+Write your reporting currency on every account — the one all your amounts were
+already recorded in — and the declaration stands. This is not a degraded page if
+you forget: version 4 validates `settings.yaml` before anything else runs and
+refuses to start, so an account short of a `currency` is a boot that stops, not
+a figure that goes missing.
+
+And the figures you land back on are version 4's, computed by version 4's
+conventions: only quantity, cash balance and net contribution are expected to
+coincide with what you were reading.
+
+:::note This page is frozen at 5.0
+It is the only page whose expiry does not follow the release cycle: it describes
+one crossing, made once, from one version to another, and it is written against
+5.0 for ever. The [release notes](./release-notes.mdx) accrue above it.
+:::

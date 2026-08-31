@@ -19,7 +19,7 @@ jobs:
 
       - uses: ricardochaves/python-lint@v1.4.0
         with:
-          python-root-list: "app/src/"
+          python-root-list: "src/application/ src/api/"
           use-pycodestyle: false
           use-pylint: false
           use-black: false
@@ -40,7 +40,116 @@ jobs:
         with:
           enable-cache: true
 
-      - run: cd app && uv run pytest tests/
+      - run: uv run pytest tests/
+
+  web:
+    name: "Front"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Get changed files in the front folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v47
+        with:
+          files: |
+            src/web/**
+      - name: Install pnpm
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+      - name: Set up Node.js
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          # pnpm 11.9 requires node:sqlite (Node >= 22.5)
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: src/web/pnpm-lock.yaml
+      # Three gates, and the order is the cost: types, then the suite, then the
+      # bundle. `pnpm test` needs neither network nor configuration — the seam
+      # fakes HTTP and errors on any request no handler names.
+      - name: Check the front if it changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: src/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm test
+          pnpm build
+
+  # The smoke seam on the container (issue #744, spec #730 § 7). It is the heir
+  # of the `Image` job, which built the context and stopped there: building is the
+  # first of nine assertions, so a second job doing only that would pay for the
+  # same build twice and attest strictly less.
+  #
+  # It is in CI rather than in `pytest` because its subject **is** the image: a
+  # Python test that simulates a container attests the simulation. And every
+  # assertion is on behaviour observable from outside — never on the shape of a
+  # line of `Dockerfile`, which breaks at the first refactor and passes on a
+  # broken probe.
+  #
+  # It reads the checkout and nothing else: no registry credentials, no login,
+  # no push, and `linux/amd64` alone — multi-arch is the release's business and
+  # QEMU would multiply a pull request's check by five.
+  container:
+    name: "Container"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Get changed files the image is built from
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v47
+        with:
+          files: |
+            src/**
+            tests/**
+            Dockerfile
+            .dockerignore
+            pyproject.toml
+            uv.lock
+            .github/scripts/container-contract.sh
+            .github/workflows/pr-checks.yml
+      # Assertion 1. The jobs above run each half where every file of its
+      # directory is present. The image's install layer sees only what the
+      # Dockerfile copies into it, so a workspace file left out of that COPY
+      # breaks the build with all the other gates green — which is how #713
+      # shipped a broken image. Until this job existed the image was built only
+      # by the release workflow, i.e. after the merge.
+      #
+      # The build argument is passed here because assertion 10 is about the
+      # chain it starts: `ARG` → `ENV` → `build_info` → `/api/runtime`. It is
+      # the same argument `releasing.yml` passes, so the path the published
+      # image takes is the path a pull request exercises — and it is declared
+      # last in the Dockerfile, so it invalidates no cached layer above it.
+      - name: "1. docker build . succeeds"
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg SOURCE_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}" \
+            -t suivi-bourse:pr .
+      # Assertions 2 to 10, each failing for its own reason. The script owns the
+      # containers and the volume it creates and removes them from an EXIT trap,
+      # so a failed assertion leaves nothing behind either.
+      - name: "2-10. The image honours its contract"
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        env:
+          IMAGE: suivi-bourse:pr
+        run: .github/scripts/container-contract.sh
+      # Belt and braces, on the same label the script cleans by: a runner killed
+      # between two `docker run`s never reaches the trap.
+      - name: Remove anything the contract run left behind
+        if: always()
+        run: |
+          docker ps -aq --filter label=suivi-bourse-contract=744 \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter label=suivi-bourse-contract=744 \
+            | xargs -r docker volume rm -f || true
+          exit 0
 
   build-docs:
     name: "Building doc"
@@ -74,3 +183,33 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
+
+      # `pnpm build` never opens crowdin.yml, and a YAML parser is not a
+      # substitute: the Crowdin CLI compiles each source pattern into a regex,
+      # so `*.{md,mdx}` — valid YAML, valid shell — is refused at upload time
+      # with `Illegal repetition`, and the whole corpus silently never reaches
+      # the project. This is the only gate that runs the tool that consumes the
+      # file. It reads the file alone, over no network, so the placeholder
+      # credentials set here are the honest shape — no secret is needed and a
+      # fork's pull request is checked like any other. It runs from the
+      # repository root because `crowdin.yml` covers both halves of the product,
+      # the site and the interface, in one project (ADR-0024).
+      - name: Lint the Crowdin configuration if the site changed
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        env:
+          CROWDIN_PROJECT_ID: '0'
+          CROWDIN_PERSONAL_TOKEN: config-lint-only
+        run: npx --yes @crowdin/cli@4.15.0 config lint
+
+      # The English catalogues under i18n/en are generated *and* committed, and
+      # at build time they win over docusaurus.config.js — for English too. So a
+      # string edited in the config and not regenerated here is simply ignored,
+      # with every other gate green. `--override` is required: plain
+      # write-translations only adds missing keys and never refreshes one that
+      # already exists, which is exactly how the divergence stays invisible.
+      - name: Check i18n/en is what write-translations generates
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: website
+        run: |
+          pnpm write-translations --override
+          git diff --exit-code -- i18n/en

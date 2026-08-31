@@ -1,0 +1,480 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+ * 1. The primitives — our `Suivi Bourse` preset. **Never hand-edited.**
+ *
+ * Regenerate with, and only with:
+ *
+ *     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmt32e2t8000304i51to693cn
+ *
+ * The cut between this block and the next *is* the decision (ADR-0023): the
+ * preset owns the chrome and regenerates; the domain layer owns the meaning and
+ * does not. Editing a value here is how the two halves stopped being tellable
+ * apart in the prototype — a `radix-nova` style nobody chose, with a
+ * hand-written layer piled on top and nothing saying which won.
+ *
+ * ADR-0029 changed **which** preset arrives and nothing about how. The registry
+ * held forty-two and none of them said this — so this one is ours, published at
+ * the URL above, which is the order that ADR wrote: look first, publish only if
+ * nothing approaches. A theme pasted in as JSON would be the same values and a
+ * dead file: it stops regenerating, and the three blocks collapse into two.
+ *
+ * What it keeps from `Vercel`, which it replaces, is not a hue but a property:
+ * **the primitives leave the colour to the domain**. Only `--primary`/`--ring`
+ * carry the mint, and only `--chart-1` and `--chart-2` carry a mark's hue — the
+ * three remaining chart slots are grey, exactly as before. That is ADR-0016's
+ * posture, and it is what makes the block below able to stay short.
+ *
+ * Two things about it are load-bearing and easy to undo by accident:
+ *
+ *  - **`--accent` is a surface, not the brand.** shadcn spends it on the hover
+ *    and the selected row (`button`, `dropdown-menu`, `sidebar`), so an accent
+ *    set to the mint paints every hovered menu entry green and drops that text
+ *    to 2,4:1. It is a muted raise of the ground here, and the mint lives in
+ *    `--primary`.
+ *  - **The fonts name the variable families.** `@fontsource-variable/geist`
+ *    registers `Geist Variable`, not `Geist`; the preset says both, so the
+ *    bridge below has nothing to catch up. It used to say them itself, and
+ *    every regeneration overwrote it.
+ * ========================================================================== */
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.9695 0.0045 258.3246);
+  --foreground: oklch(0.1993 0.0154 261.5830);
+  --card: oklch(0.9906 0.0017 247.8388);
+  --card-foreground: oklch(0.1993 0.0154 261.5830);
+  --popover: oklch(0.9906 0.0017 247.8388);
+  --popover-foreground: oklch(0.1993 0.0154 261.5830);
+  --primary: oklch(0.5200 0.1082 164.9273);
+  --primary-foreground: oklch(0.9906 0.0017 247.8388);
+  --secondary: oklch(0.9394 0.0046 258.3251);
+  --secondary-foreground: oklch(0.1993 0.0154 261.5830);
+  --muted: oklch(0.9394 0.0046 258.3251);
+  --muted-foreground: oklch(0.4991 0.0102 264.4757);
+  --accent: oklch(0.9298 0.0063 255.4766);
+  --accent-foreground: oklch(0.1993 0.0154 261.5830);
+  --destructive: oklch(0.5498 0.2096 25.1372);
+  --border: oklch(0.8898 0.0081 253.8584);
+  --input: oklch(0.8202 0.0097 242.8655);
+  --ring: oklch(0.5200 0.1082 164.9273);
+  --chart-1: oklch(0.4991 0.1609 284.9747);
+  --chart-2: oklch(0.5001 0.0851 210.0599);
+  --chart-3: oklch(0.5993 0.0098 264.4937);
+  --chart-4: oklch(0.4801 0.0095 253.9192);
+  --chart-5: oklch(0.3598 0.0127 267.1788);
+  --sidebar: oklch(0.9906 0.0017 247.8388);
+  --sidebar-foreground: oklch(0.1993 0.0154 261.5830);
+  --sidebar-primary: oklch(0.5200 0.1082 164.9273);
+  --sidebar-primary-foreground: oklch(0.9906 0.0017 247.8388);
+  --sidebar-accent: oklch(0.9298 0.0063 255.4766);
+  --sidebar-accent-foreground: oklch(0.1993 0.0154 261.5830);
+  --sidebar-border: oklch(0.9298 0.0063 255.4766);
+  --sidebar-ring: oklch(0.5200 0.1082 164.9273);
+  --destructive-foreground: oklch(0.9906 0.0017 247.8388);
+  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --shadow-color: #000000;
+  --shadow-opacity: 0.18;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --letter-spacing: 0em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --tracking-normal: 0em;
+}
+
+.dark {
+  --background: oklch(0.1547 0.0159 266.3824);
+  --foreground: oklch(0.9495 0.0055 274.9641);
+  --card: oklch(0.1855 0.0182 259.6896);
+  --card-foreground: oklch(0.9495 0.0055 274.9641);
+  --popover: oklch(0.1640 0.0156 266.6179);
+  --popover-foreground: oklch(0.9495 0.0055 274.9641);
+  --primary: oklch(0.8189 0.1395 164.9312);
+  --primary-foreground: oklch(0.1547 0.0159 266.3824);
+  --secondary: oklch(0.2088 0.0214 263.9436);
+  --secondary-foreground: oklch(0.9495 0.0055 274.9641);
+  --muted: oklch(0.2299 0.0191 262.1114);
+  --muted-foreground: oklch(0.6194 0.0208 265.8957);
+  --accent: oklch(0.2389 0.0207 264.0671);
+  --accent-foreground: oklch(0.9495 0.0055 274.9641);
+  --destructive: oklch(0.7008 0.1902 25.1101);
+  --border: oklch(0.2598 0.0202 264.1313);
+  --input: oklch(0.3395 0.0210 262.5785);
+  --ring: oklch(0.8189 0.1395 164.9312);
+  --chart-1: oklch(0.7197 0.1209 285.1072);
+  --chart-2: oklch(0.7200 0.1100 200.3052);
+  --chart-3: oklch(0.5606 0.0204 261.3044);
+  --chart-4: oklch(0.7005 0.0148 258.3557);
+  --chart-5: oklch(0.8408 0.0094 258.3392);
+  --sidebar: oklch(0.1290 0.0150 266.3779);
+  --sidebar-foreground: oklch(0.9495 0.0055 274.9641);
+  --sidebar-primary: oklch(0.8189 0.1395 164.9312);
+  --sidebar-primary-foreground: oklch(0.1290 0.0150 266.3779);
+  --sidebar-accent: oklch(0.2088 0.0214 263.9436);
+  --sidebar-accent-foreground: oklch(0.9495 0.0055 274.9641);
+  --sidebar-border: oklch(0.2389 0.0207 264.0671);
+  --sidebar-ring: oklch(0.8189 0.1395 164.9312);
+  --destructive-foreground: oklch(0.1547 0.0159 266.3824);
+  --radius: 0.625rem;
+  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --shadow-color: #000000;
+  --shadow-opacity: 0.18;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --letter-spacing: 0em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+}
+
+/* ==========================================================================
+ * 2. The domain — what the preset cannot say, and nothing else.
+ *
+ * The sizing rule is the block's whole defence (ADR-0023): a token enters only
+ * when no preset token already says it. Under ADR-0029 that rule bites harder
+ * than it used to — **the three marks are now aliases and nothing else**.
+ * `--price` takes `--primary` because the redesign draws every curve in the
+ * mint, `--grant` takes `--chart-1` and `--dividend` takes `--chart-2`, and the
+ * hand-picked teal that used to sit here is gone. Without that rule the layer
+ * grows with every page and becomes the hand-written half we just deleted.
+ *
+ * What remains is what a preset genuinely cannot say: whether a figure is money
+ * gained or money lost, and whether something is worth a look. Three tokens.
+ *
+ * The eight `--alloc-*` are **absent on purpose**: they are the one ramp whose
+ * *direction* depends on the ground rather than merely adapting to it, so they
+ * are generated in `lib/alloc.ts` and written onto the root element by
+ * `ThemeProvider` when it resolves the ground. One source, eight stops, no
+ * palette to maintain — and `@theme inline` below still exposes them as
+ * `bg-alloc-3`, so a call site cannot tell where they came from.
+ * ========================================================================== */
+
+:root {
+  /* The two colours this app reasons in. `--loss` is deliberately **not**
+     `--destructive`, and now shares its hue exactly — so the whole distinction
+     rests on chroma, which is the point: the theme's red says *this failed*,
+     and an unrealised loss is not an error. A portfolio is made of small moves,
+     and a screen of vivid red reads as an alarm rather than as −0,4 %.
+     `themeCut.test.ts` holds the inequality, on both grounds. */
+  --gain: oklch(0.5000 0.1100 160);
+  --loss: oklch(0.5200 0.1500 25);
+
+  /* The chart's marks, all three taken from the preset **verbatim**. The curve
+     is the mint because that is what the redesign draws it in; the attribution
+     and the dividend are the two chart slots the preset gives a hue to, and the
+     three that stay grey stay unclaimed. Nothing is picked here any more.
+
+     `--price` and `--gain` therefore sit two degrees of hue apart, and that is
+     the one place this file lets a **mark** and a **state** share a colour. It
+     holds because `--price` only ever strokes an *unsigned* curve — a value, a
+     quotation — while `--gain` only ever colours a figure through
+     `lib/sign.ts`. The moment a curve carries a sign the rule bites: the
+     dashboard's performance reading crosses zero, so it is drawn in
+     `--foreground` and not in the mint. */
+  --price: var(--primary);
+  --grant: var(--chart-1);
+  --dividend: var(--chart-2);
+
+  /* The bell's icon and the ephemeral-store notice have no colour in the preset:
+     `--gain` / `--loss` are semantic for *money*, `--destructive` says *error*,
+     and neither says *worth a look*. Checked token by token against the preset
+     before adding this one. Kept off `--grant`'s hue, and dark enough on white
+     to clear 4,5:1 — it is read as **text**, in a form's error line and in two
+     table labels, not only as a dot. */
+  --attention: oklch(0.5400 0.1300 55);
+}
+
+.dark {
+  /* Lifted in lightness for the darker ground, which is the legibility
+     correction the redesign makes — and **not** in chroma towards the theme's
+     red, which is the correction ADR-0029 refuses. */
+  --gain: oklch(0.8500 0.1400 163);
+  --loss: oklch(0.7200 0.1500 25);
+  --price: var(--primary);
+  --grant: var(--chart-1);
+  --dividend: var(--chart-2);
+  --attention: oklch(0.7500 0.1500 55);
+}
+
+/* ==========================================================================
+ * 3. The bridge — both halves through the same pipe, so `text-gain` is written
+ * like `bg-card` and a call site never has to know which block a token is from.
+ * ========================================================================== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-shadow-color: var(--shadow-color);
+
+  /* The domain half, same pipe. */
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
+  --color-price: var(--price);
+  --color-grant: var(--grant);
+  --color-dividend: var(--dividend);
+  --color-attention: var(--attention);
+  --color-alloc-1: var(--alloc-1);
+  --color-alloc-2: var(--alloc-2);
+  --color-alloc-3: var(--alloc-3);
+  --color-alloc-4: var(--alloc-4);
+  --color-alloc-5: var(--alloc-5);
+  --color-alloc-6: var(--alloc-6);
+  --color-alloc-7: var(--alloc-7);
+  --color-alloc-8: var(--alloc-8);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* `Geist` is what the preset names; `Geist Variable` is what
+     `@fontsource-variable/geist` actually registers. The preset's intention
+     only loads if both are named, and naming them is the bridge's job — the
+     primitives block above stays exactly as the registry writes it. */
+  --font-sans: 'Geist Variable', Geist, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', monospace;
+  --font-serif: Georgia, serif;
+  --font-heading: var(--font-sans);
+
+  /* **The type scale is the maquette's, and it is stated once** (#838). The
+     drawing works on a 15 px body and a ladder that is not Tailwind's — 11 px
+     for an uppercase eyebrow, 12 px for a figure's label, 13 px for everything
+     read inside a card, 19 px for a statistic, 52 px for the one figure a page
+     leads with. Redeclaring the `--text-*` scale is what puts that ladder
+     behind the class names already written: a block goes on saying `text-sm`
+     and lands on the drawing's 13 px, and no component carries a pixel of its
+     own. `--text-2xs` is the one rung Tailwind has no name for, and it is the
+     eyebrow's. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-xs: 0.75rem;
+  --text-xs--line-height: calc(1.125 / 0.75);
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: calc(1.25 / 0.8125);
+  --text-md: 0.875rem;
+  --text-md--line-height: calc(1.375 / 0.875);
+  --text-base: 0.9375rem;
+  --text-base--line-height: calc(1.4375 / 0.9375);
+  --text-lg: 1rem;
+  --text-lg--line-height: calc(1.5 / 1);
+  --text-xl: 1.1875rem;
+  --text-xl--line-height: calc(1.5 / 1.1875);
+  --text-2xl: 1.25rem;
+  --text-2xl--line-height: calc(1.625 / 1.25);
+  --text-3xl: 1.625rem;
+  --text-3xl--line-height: 1.15;
+  --text-4xl: 1.75rem;
+  --text-4xl--line-height: 1.1;
+  --text-5xl: 2.125rem;
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 2.625rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 3.25rem;
+  --text-7xl--line-height: 1;
+
+  /* **The one figure a page leads with, and it is the only fluid rung.** The
+     drawing gives it four sizes — 30 px on a phone, 36, 42, and 52 from
+     1 024 px — which is a ramp and not four decisions: written as four
+     breakpoints it would be four classes every page-leading figure has to
+     repeat and keep in step. The `clamp` is that ramp, fitted to the drawing's
+     own two anchors (42 px at 768, 52 px at 1 024) and floored and ceilinged
+     where the drawing stops. */
+  --text-hero: clamp(1.875rem, 0.75rem + 3.906vw, 3.25rem);
+  --text-hero--line-height: 1;
+
+  /* The one weight above `font-semibold` the drawing asks for, and it asks for
+     it once: the figure a page leads with, at 52 px, where 600 reads thin. */
+  --font-weight-heavy: 650;
+
+  /* **The 976 px reflow target, as a breakpoint of its own.** It is the width
+     the redesign was measured at — the worst realistic case, a narrow laptop
+     beside a browser panel — and the drawing switches the accounts page from
+     stacked to master-detail exactly there, between the framework's `md` and
+     its `lg`. Written as `lg:` it lands 48 px late, which is one whole reflow
+     off on the one width somebody chose to measure. */
+  --breakpoint-wide: 61rem;
+
+  /* The eyebrow's tracking, which is a letter-spacing the preset has no rung
+     for: `tracking-widest` stops at +0.1em and the drawing sets 0.12em. */
+  --tracking-caps: calc(var(--tracking-normal) + 0.12em);
+
+  --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
+  --tracking-tight: calc(var(--tracking-normal) - 0.025em);
+  --tracking-wide: calc(var(--tracking-normal) + 0.025em);
+  --tracking-wider: calc(var(--tracking-normal) + 0.05em);
+  --tracking-widest: calc(var(--tracking-normal) + 0.1em);
+  --tracking-normal: var(--tracking-normal);
+  --shadow-2xl: var(--shadow-2xl);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-md: var(--shadow-md);
+  --shadow: var(--shadow);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-2xs: var(--shadow-2xs);
+  --spacing: var(--spacing);
+  --letter-spacing: var(--letter-spacing);
+  --shadow-offset-y: var(--shadow-offset-y);
+  --shadow-offset-x: var(--shadow-offset-x);
+  --shadow-spread: var(--shadow-spread);
+  --shadow-blur: var(--shadow-blur);
+  --shadow-opacity: var(--shadow-opacity);
+  --radius: 0.625rem;
+}
+
+/**
+ * **The one composed utility, and it is a shape rather than a token.**
+ *
+ * Every heading of a card in the redesign is the same object: 11 px, semibold,
+ * uppercase, widely tracked, in the muted colour. Written out at each of its
+ * two dozen call sites it is six classes to keep in step, and the first one to
+ * drift takes a card out of the system without anything failing.
+ *
+ * It is **not a fourth block** (ADR-0023): it declares no token and it composes
+ * only what the three above already say, so the cut the file is held to — the
+ * preset owns the chrome, the domain owns the meaning, the bridge joins them —
+ * is untouched. A block is a place values are *decided*; this is a name for
+ * six of them used together.
+ */
+@utility eyebrow {
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    /* `text-base` is the drawing's 15 px since the scale above says so — the
+       size is read off the ladder here like it is everywhere else. */
+    @apply bg-background text-base text-foreground;
+    letter-spacing: var(--tracking-normal);
+  }
+  /* Numbers in a portfolio are read *down a column*, so their glyphs have to
+     line up. Tabular figures are the difference between a table you can scan
+     and one you have to read. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* **And in a table it is set in the mono face** (#838). The drawing puts
+     every figure inside a table in `Geist Mono` and every figure outside one —
+     a statistic, the one figure a page leads with — in the sans: a column of
+     amounts is read as a column, where a headline figure is read as a word. It
+     is one rule scoped to the cell rather than a second class every numeric
+     cell in five tables has to remember, which is what `.tabular` itself is
+     for. */
+  :is(td, th) :is(.tabular), :is(td, th).tabular {
+    font-family: var(--font-mono);
+  }
+  html {
+    @apply font-sans;
+    /* **The native controls stop being the operating system's** (#837). A
+       checkbox and a `<progress>` are painted by the user agent, and the
+       initial `accent-color: auto` means *the reader's desktop accent* — so the
+       one figure the settings page draws as a bar wore whatever colour the
+       machine was set to, and the mint only by coincidence. `color-scheme`,
+       which `ThemeProvider` already writes beside the `.dark` class, decides
+       whether the agent paints its light or its dark furniture; it does not
+       make either of them ours. Stating the accent does, in one place, for
+       every control the agent draws. */
+    accent-color: var(--primary);
+  }
+  /* The one `<progress>` in the product — the rebuild's bar (#830) — measured on
+     the light ground: the agent painted its track a mid grey that reads as a
+     rule drawn across a white card, because a track is the half `accent-color`
+     does not reach. So it is drawn from the tokens, and the token is `--input`
+     rather than `--muted`: the bar sits on a `--card`, and `--muted` *is* the
+     card to within 1,16:1 on the light ground and 1,10:1 on the dark. A track
+     nobody can see is not a repair — it leaves a mint stroke floating with no
+     extent to read the fraction against, and the proportion survives in the
+     `aria-label` alone. `--input` is the preset's *empty half of a control*,
+     and it is the neutral that separates most from the card on both grounds;
+     `themeCut.test.ts` holds that separation rather than the two names. The
+     element stays native: the figure is *announced*, and this is its
+     rendering. */
+  progress {
+    appearance: none;
+    border: 0;
+    border-radius: calc(var(--radius) / 2);
+    overflow: hidden;
+    background-color: var(--input);
+  }
+  /* Two agents, two names for the same two halves, and **never one selector
+     list**: a list containing a pseudo-element the agent does not know is a
+     list the agent drops whole, which would take the half it *does* know with
+     it. */
+  progress::-webkit-progress-bar {
+    background-color: var(--input);
+  }
+  progress::-webkit-progress-value {
+    background-color: var(--primary);
+  }
+  progress::-moz-progress-bar {
+    background-color: var(--primary);
+  }
+}

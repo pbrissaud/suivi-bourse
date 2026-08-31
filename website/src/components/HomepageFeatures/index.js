@@ -2,31 +2,38 @@ import React from 'react';
 import clsx from 'clsx';
 import styles from './styles.module.css';
 
+// Three sentences about the product, and not one about an assembly: v5 is one
+// container with one embedded store, so "two ways to configure", "a ready-made
+// Grafana dashboard" and "a full Docker Compose stack" all lost their subject
+// (ADR-0012, ADR-0014, ADR-0015).
 const FeatureList = [
   {
-    title: 'Two ways to configure',
+    title: 'Your events are the truth',
     description: (
       <>
-        Describe your portfolio in a simple YAML file, or import your broker
-        transactions from CSV/XLSX files and let Suivi Bourse aggregate them.
+        Record what you bought, sold, received and paid in — in the app, or from
+        the files your broker exports. Everything else is derived from them, and
+        can be recomputed at any time.
       </>
     ),
   },
   {
-    title: 'Live prices & full history',
+    title: 'Prices, and the past behind them',
     description: (
       <>
-        Fetch live quotes from Yahoo! Finance and backfill historical prices into
-        InfluxDB 3, then visualize everything in a ready-made Grafana dashboard.
+        Live quotes on a cadence that follows each market, history rebuilt back
+        to your first purchase, and every figure reported in one currency you
+        choose once.
       </>
     ),
   },
   {
-    title: 'Deploy everywhere',
+    title: 'One container, or none at all',
     description: (
       <>
-        Run it as a system service, a Docker container or a full Docker Compose
-        stack on Linux, macOS and Windows.
+        A single image with its own store and its own interface — four pages,
+        one port, nothing to compose. Or the same app installed with uv, on a
+        machine that runs no container at all.
       </>
     ),
   },
