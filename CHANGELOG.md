@@ -12,30 +12,42 @@
 * **app:** SuiviBourse 5.0 — one embedded store, one interface, one container ([#866](https://github.com/pbrissaud/suivi-bourse/issues/866)) ([0a677ef](https://github.com/pbrissaud/suivi-bourse/commit/0a677ef22a2bb21fdf8b73581f26031823eb6bd1))
 
 
-### Bug Fixes
+### What this release actually is
 
-* **compose:** declare the config mount with the long volume syntax ([#647](https://github.com/pbrissaud/suivi-bourse/issues/647)) ([bdd5c7c](https://github.com/pbrissaud/suivi-bourse/commit/bdd5c7cad84c7f54af6530841f76d17de4990185)), closes [#646](https://github.com/pbrissaud/suivi-bourse/issues/646)
+Version 5 is a rewrite and it arrived as one squashed commit, so the line above
+is the whole of what this file can generate about it. **The hand-written account
+is the one to read**:
+[Release notes](https://pbrissaud.github.io/suivi-bourse/docs/v5/release-notes)
+for what changed and what to watch out for, and
+[Coming from version 4](https://pbrissaud.github.io/suivi-bourse/docs/v5/coming-from-v4)
+for the crossing itself. The 614 commits of the rewrite are on the `preview/v5`
+branch and in [#866](https://github.com/pbrissaud/suivi-bourse/pull/866).
 
 
 ### Dependencies
 
-* **app:** update dependency yfinance to v1.6.0 ([#770](https://github.com/pbrissaud/suivi-bourse/issues/770)) ([2a6c9ee](https://github.com/pbrissaud/suivi-bourse/commit/2a6c9eec7efa0dfa870f59d81ce21bc033ba96b5))
-* **app:** update dependency yfinance to v1.7.0 ([#839](https://github.com/pbrissaud/suivi-bourse/issues/839)) ([b631cfd](https://github.com/pbrissaud/suivi-bourse/commit/b631cfdaa656f216334d1a07c4818d3c825bb00a))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.2 ([#682](https://github.com/pbrissaud/suivi-bourse/issues/682)) ([6639be2](https://github.com/pbrissaud/suivi-bourse/commit/6639be2f588380e1b388e129e3b89ae9bd4d6e77))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.3 ([#693](https://github.com/pbrissaud/suivi-bourse/issues/693)) ([809e2ea](https://github.com/pbrissaud/suivi-bourse/commit/809e2ea796b7f5ba83d1a90d730219aad1712128))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.4 ([#772](https://github.com/pbrissaud/suivi-bourse/issues/772)) ([90e2749](https://github.com/pbrissaud/suivi-bourse/commit/90e27495e93a5f4aaeda9f6b93b188c0c5dc6646))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.5 ([#776](https://github.com/pbrissaud/suivi-bourse/issues/776)) ([5523e1a](https://github.com/pbrissaud/suivi-bourse/commit/5523e1aa17d76688c077f06860e54e8989669ee0))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.6 ([#826](https://github.com/pbrissaud/suivi-bourse/issues/826)) ([e532099](https://github.com/pbrissaud/suivi-bourse/commit/e532099c71cf8aa44a862614bc77794fba7d051d))
-* **app:** update ghcr.io/astral-sh/uv docker tag to v0.12.7 ([#840](https://github.com/pbrissaud/suivi-bourse/issues/840)) ([e2790ca](https://github.com/pbrissaud/suivi-bourse/commit/e2790cac4bc2a37fef7c6d44796536b1a9820322))
-* **docker-compose:** update grafana/grafana docker tag to v13.1.3 ([#689](https://github.com/pbrissaud/suivi-bourse/issues/689)) ([2a1d719](https://github.com/pbrissaud/suivi-bourse/commit/2a1d7191c593dfb5e5cc44d715373c9eaa9258c7))
-* **docker-compose:** update grafana/grafana docker tag to v13.2.0 ([#780](https://github.com/pbrissaud/suivi-bourse/issues/780)) ([3568f92](https://github.com/pbrissaud/suivi-bourse/commit/3568f92ddea75707bd5e160d419ab1670f6219ce))
-* **website:** update pnpm to v11.21.0 ([#747](https://github.com/pbrissaud/suivi-bourse/issues/747)) ([da64aa5](https://github.com/pbrissaud/suivi-bourse/commit/da64aa5e49b05b9e26283d9f4ee44ed3649f3036))
-* **website:** update pnpm to v11.22.0 ([#779](https://github.com/pbrissaud/suivi-bourse/issues/779)) ([65a95c7](https://github.com/pbrissaud/suivi-bourse/commit/65a95c72ab31b1120e333352e3272a3bf061878f))
-* **website:** update pnpm to v11.23.0 ([#805](https://github.com/pbrissaud/suivi-bourse/issues/805)) ([aead228](https://github.com/pbrissaud/suivi-bourse/commit/aead228d2865cc028cb2174ab9dbc80159d3b0a8))
-* **website:** update pnpm to v11.24.0 ([#827](https://github.com/pbrissaud/suivi-bourse/issues/827)) ([df3ce2b](https://github.com/pbrissaud/suivi-bourse/commit/df3ce2b9e9407ef73826f813ae9cd279b26e7142))
-* **web:** update dependency @tanstack/react-router to v1.170.32 ([#867](https://github.com/pbrissaud/suivi-bourse/issues/867)) ([2ae5c2b](https://github.com/pbrissaud/suivi-bourse/commit/2ae5c2b56bd67f4000b921489dc0a1397d48fa30))
-* **web:** update dependency @types/react-dom to v19.2.5 ([#868](https://github.com/pbrissaud/suivi-bourse/issues/868)) ([155a3ad](https://github.com/pbrissaud/suivi-bourse/commit/155a3ad6a27fa8e9d640cb83af39deefd15baf54))
-* **workflows:** update astral-sh/setup-uv action to v10 ([#767](https://github.com/pbrissaud/suivi-bourse/issues/767)) ([9c059ec](https://github.com/pbrissaud/suivi-bourse/commit/9c059ec4b8cbbe214489c8a452ece0492b6c4d37))
+Renovate kept bumping version 4's files while the rewrite was in flight, and
+version 5 deletes those files — so a generated list here would mostly describe a
+tree this release removes. What 5.0.0 **ships**:
+
+* `yfinance==1.5.2`, pinned exactly. Deliberately not the 1.7.0 that version 4's
+  `app/pyproject.toml` reached: it is the product's single door to the market and
+  the test suite fakes it, so that bump is its own change with its own check.
+* `ghcr.io/astral-sh/uv:0.12.7` in the image
+  ([#682](https://github.com/pbrissaud/suivi-bourse/issues/682) …
+  [#840](https://github.com/pbrissaud/suivi-bourse/issues/840), carried over to
+  the rewrite's own `Dockerfile`).
+* `pnpm@11.24.0`
+  ([#747](https://github.com/pbrissaud/suivi-bourse/issues/747),
+  [#779](https://github.com/pbrissaud/suivi-bourse/issues/779),
+  [#805](https://github.com/pbrissaud/suivi-bourse/issues/805),
+  [#827](https://github.com/pbrissaud/suivi-bourse/issues/827)) and
+  `astral-sh/setup-uv@v10.0.1`
+  ([#767](https://github.com/pbrissaud/suivi-bourse/issues/767)).
+
+Grafana and InfluxDB carry no version here any more: version 5 does not ship
+them.
+
 
 ## [4.2.2](https://github.com/pbrissaud/suivi-bourse/compare/v4.2.1...v4.2.2) (2026-08-04)
 
