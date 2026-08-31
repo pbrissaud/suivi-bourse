@@ -26,6 +26,7 @@ import quotes
 import retention
 import settings_registry
 import store_reads
+import workloads
 from events.schemas import Event, EventType
 
 UTC = timezone.utc
@@ -488,7 +489,7 @@ _HELD = {'symbol': 'AAPL', 'name': 'Apple Inc', 'quantity': 10,
 
 
 def _metrics(opened, **kwargs):
-    return main.SuiviBourseMetrics(_Manager(opened, **kwargs))
+    return workloads.Workloads(_Manager(opened, **kwargs))
 
 
 def test_the_ladder_runs_as_a_step_of_the_backfill(store):

@@ -26,6 +26,7 @@ import main
 import performance
 import portfolio_view
 import quotes
+import workloads
 from carrying import carrying_price
 from events import EventAggregator
 from events.schemas import Account, Event, EventType
@@ -40,7 +41,7 @@ PEA = Account("PEA", "PEA", "Mon PEA")
 # --------------------------------------------------------------------------- #
 
 class _FakeConfigManager:
-    """The surface ``SuiviBourseMetrics`` needs from the manager, over a real store."""
+    """The surface ``Workloads`` needs from the manager, over a real store."""
 
     def __init__(self, opened_store):
         self._store = opened_store
@@ -59,7 +60,7 @@ class _FakeConfigManager:
 
 
 def _metrics(store):
-    m = main.SuiviBourseMetrics(_FakeConfigManager(store))
+    m = workloads.Workloads(_FakeConfigManager(store))
     m.backfill_delay = 0
     m.backfill_chunk_days = 365
     return m

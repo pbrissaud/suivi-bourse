@@ -34,6 +34,7 @@ import runtime_state
 import settings_registry
 import store
 import web as web_module
+import workloads
 from events import EventLoader
 from events import export as events_export
 from events.schemas import AccountMetricPoint, PortfolioTotalPoint
@@ -41,7 +42,7 @@ from web import create_app, problem
 
 
 class FakeMetrics:
-    """Stands in for SuiviBourseMetrics: the replay, and the dials.
+    """Stands in for ``Workloads``: the replay, and the dials.
 
     ``ingest`` is real rather than a spy (issue #697). It is the seam
     *"the replay follows the write"* lands on, so a route that forgets an
@@ -56,7 +57,7 @@ class FakeMetrics:
     #: The real one, borrowed rather than re-implemented: it is a loop over the
     #: registry and a ``setattr``, so a copy here would be the second list
     #: ADR-0014 forbids — and the one that stops matching first.
-    apply_dials = main.SuiviBourseMetrics.apply_dials
+    apply_dials = workloads.Workloads.apply_dials
 
     def __init__(self, config_manager=None):
         self._config_manager = config_manager
@@ -73,7 +74,7 @@ class FakeMetrics:
         # answer, since a process holding a metrics object is a process that can
         # see the memory. ``(0, 0)`` is what these tests' empty ledgers hold —
         # nothing to reconstruct. *Unobservable* is a runtime with no metrics at
-        # all (``runtime.metrics is None``), which is what ``with_scheduler``
+        # all (``runtime.workloads is None``), which is what ``with_scheduler``
         # below builds.
         self.reconstruction = (0, 0)
         # What answering the reporting currency triggers (issue #704): the
@@ -106,7 +107,7 @@ class FakeMetrics:
         """The other half of the replay that follows the write (issue #812).
 
         A no-op, deliberately. The real one is the whole
-        of :meth:`main.SuiviBourseMetrics.update_account_metrics` — a reporting
+        of :meth:`workloads.Workloads.update_account_metrics` — a reporting
         currency, a price series, a horizon per account — so a copy of it in
         this class would be a simulation of the product rather than the product.
         What #812 claims is claimed where it can be read off the store:
@@ -131,7 +132,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
                            break_store=False, with_scheduler=True):
     """As above, plus the open store so a test can read the rows back.
 
-    ``with_scheduler=False`` leaves ``runtime.metrics`` **unset**, which is the
+    ``with_scheduler=False`` leaves ``runtime.workloads`` **unset**, which is the
     shape of a worker whose ``start_runtime`` has not run: it is the one state in
     which the reconstruction is genuinely *unobservable* (issue #709), and it is
     a missing object rather than a metrics object answering ``None``.
@@ -192,7 +193,7 @@ def build_client_and_store(tmp_path, accounts=None, events=None, seed=None,
         opened.execute('DROP TABLE portfolio_totals')
         opened.execute('DROP TABLE price_point')
     if with_scheduler:
-        runtime.metrics = FakeMetrics(manager)
+        runtime.workloads = FakeMetrics(manager)
     return create_app(runtime).test_client(), opened
 
 
@@ -1140,7 +1141,7 @@ def test_the_four_terms_sum_to_the_absolute_gain_on_a_ledger_with_transfer_fees(
     # The perf cache written by the production path, not by `seed_totals`: what
     # is being checked is that the two *modules* agree, so a hand-written
     # `gain_absolu` would check nothing at all.
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
     assert opened.query('SELECT count(*) FROM portfolio_totals')[0][0] > 0
@@ -1199,7 +1200,7 @@ def test_the_identity_holds_when_the_dividend_itself_carries_a_fee(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=events, seed=seed)
 
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
 
@@ -1283,7 +1284,7 @@ def test_the_year_to_date_gain_is_a_figure_when_the_real_job_crosses_a_new_year(
                           seed=seed)
 
     _fixed_today(mocker, 2026, 3, 2)
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
 
@@ -1334,7 +1335,7 @@ def test_the_year_to_date_gain_crosses_the_year_without_a_cash_ledger_too(
                           seed=seed)
 
     _fixed_today(mocker, 2026, 3, 2)
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
 
@@ -1686,7 +1687,7 @@ def test_an_absent_field_reaches_the_wire_as_null_and_never_as_a_zero(
                           seed=seed)
 
     _fixed_today(mocker, 2024, 6, 3)
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
 
@@ -1741,7 +1742,7 @@ def test_accounts_carry_the_fourth_term_of_the_gain_per_account(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=accounts, events=events, seed=seed)
 
-    metrics = main.SuiviBourseMetrics(web_module.current_runtime().config_manager)
+    metrics = workloads.Workloads(web_module.current_runtime().config_manager)
     metrics.base_currency = 'EUR'
     metrics.update_account_metrics()
     assert opened.query('SELECT count(*) FROM account_metrics')[0][0] > 0
@@ -3434,13 +3435,13 @@ def test_the_runtime_says_whether_the_reconstruction_still_has_windows(tmp_path)
     runtime = web_module.current_runtime()
 
     # Nothing to reconstruct is an observation, and it is not a rebuild.
-    runtime.metrics.reconstruction = (0, 0)
+    runtime.workloads.reconstruction = (0, 0)
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
-    runtime.metrics.reconstruction = (1, 2)
+    runtime.workloads.reconstruction = (1, 2)
     assert client.get('/api/runtime').get_json()['rebuilding'] is True
 
-    runtime.metrics.reconstruction = (2, 2)
+    runtime.workloads.reconstruction = (2, 2)
     assert client.get('/api/runtime').get_json()['rebuilding'] is False
 
 
@@ -4159,7 +4160,7 @@ def test_saving_a_dial_takes_effect_with_no_restart(tmp_path):
 
     client.put('/api/settings', json={'backfill_chunk_days': 90})
 
-    assert web_module.current_runtime().metrics.backfill_chunk_days == 90
+    assert web_module.current_runtime().workloads.backfill_chunk_days == 90
 
 
 def test_the_answer_quantifies_what_the_change_reached(tmp_path):
@@ -4175,7 +4176,7 @@ def test_the_answer_quantifies_what_the_change_reached(tmp_path):
 
     assert body['effect']['symbols_rescheduled'] == 3
     assert body['effect']['symbols_at_market_open'] == 8
-    assert web_module.current_runtime().metrics.rearm_calls == 1
+    assert web_module.current_runtime().workloads.rearm_calls == 1
 
 
 def test_a_value_out_of_bounds_is_a_422_and_writes_nothing(tmp_path):
@@ -4231,7 +4232,7 @@ def test_reposting_the_same_value_re_arms_nothing(tmp_path):
 
     assert body['changed'] == []
     assert body['effect']['symbols_rescheduled'] == 0
-    assert web_module.current_runtime().metrics.rearm_calls == 0
+    assert web_module.current_runtime().workloads.rearm_calls == 0
 
 
 # --------------------------------------------------------------------- #
@@ -4265,8 +4266,7 @@ def test_an_installation_fact_is_listed_with_what_it_names(
         tmp_path, monkeypatch):
     monkeypatch.setenv('SB_EXECUTOR_POOL', '10')
     client, opened = build_client_and_store(tmp_path)
-    installation_facts.refresh(opened, main.installation_fact_context(
-        main.ConfigurationManager(config_dir=str(tmp_path))))
+    installation_facts.refresh(opened, installation_facts.observe())
 
     (fact,) = client.get('/api/installation-facts').get_json()
 
@@ -4427,11 +4427,11 @@ def test_a_reconstruction_withholds_the_accounts_it_cannot_speak_for(tmp_path):
 
     runtime = web_module.current_runtime()
 
-    runtime.metrics.reconstruction = (1, 2)
+    runtime.workloads.reconstruction = (1, 2)
     rebuilding = client.get('/api/advisories').get_json()
     asleep_too = client.get('/api/advisories?asleep=include').get_json()
 
-    runtime.metrics.reconstruction = (2, 2)
+    runtime.workloads.reconstruction = (2, 2)
     concluded = client.get('/api/advisories').get_json()
 
     assert rebuilding == []
@@ -4448,7 +4448,7 @@ def test_what_the_reconstruction_withholds_cannot_be_acknowledged(tmp_path):
     """
     client, opened = build_client_and_store(tmp_path)
     _cash_heavy_account(opened)
-    web_module.current_runtime().metrics.reconstruction = (1, 2)
+    web_module.current_runtime().workloads.reconstruction = (1, 2)
 
     response = client.post('/api/advisories/cash_share:cto/acknowledgement')
 

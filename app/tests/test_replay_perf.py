@@ -8,14 +8,14 @@ correcting a mistake made in 2019 left every curve exactly as it was, with
 
 The seam is the suite's usual one: a **real** DuckDB store in ``tmp_path``, a
 real :class:`main.ConfigurationManager` and a real
-:class:`main.SuiviBourseMetrics` behind a real Flask client. Nothing here
+:class:`workloads.Workloads` behind a real Flask client. Nothing here
 asserts that a method was called — every assertion is on ``account_metrics`` and
 ``portfolio_totals``, read back after a write and **before any tick has run**:
 there is no scheduler in this module at all, so a row that is up to date can
 only have been written by the replay.
 
 Prior art: ``tests/test_performance.py``, ``tests/test_positions.py``,
-``tests/test_metrics.py``.
+``tests/test_workloads.py``.
 """
 import io
 import threading
@@ -26,6 +26,7 @@ import pytest
 
 import entries
 import main
+import workloads
 import store as store_module
 import web as web_module
 from events import EventLoader
@@ -77,7 +78,7 @@ def _deposit(**overrides) -> dict:
 def _build(tmp_path, mocker):
     """A client over a real store, a real manager and a **real** metrics object.
 
-    ``runtime.metrics`` is the production class rather than a stand-in: the
+    ``runtime.workloads`` is the production class rather than a stand-in: the
     whole point is that the perf tables are written by the replay, and a fake
     would be the one thing incapable of showing it. No scheduler is wired —
     ``_reconcile_jobs`` no-ops without one — which is also what makes *"no tick
@@ -108,10 +109,10 @@ def _build(tmp_path, mocker):
     opened.execute("INSERT INTO setting (key, value) VALUES ('base_currency', 'EUR') "
                    "ON CONFLICT (key) DO UPDATE SET value = excluded.value")
 
-    metrics = main.SuiviBourseMetrics(manager)
+    metrics = workloads.Workloads(manager)
     metrics.base_currency = 'EUR'
-    runtime.metrics = metrics
-    runtime.metrics.recompute_perf()
+    runtime.workloads = metrics
+    runtime.workloads.recompute_perf()
 
     return create_app(runtime).test_client(), opened
 
@@ -306,8 +307,8 @@ def test_a_file_that_declares_the_currency_gets_a_series_from_that_write(
     runtime = main.Runtime(manager, None)
     runtime.store = opened
     manager.reload()
-    metrics = main.SuiviBourseMetrics(manager)
-    runtime.metrics = metrics
+    metrics = workloads.Workloads(manager)
+    runtime.workloads = metrics
     # Unanswered, as it is on a fresh install: the file is what answers it.
     assert metrics.base_currency is None
     client = create_app(runtime).test_client()
@@ -344,7 +345,7 @@ def test_two_recomputes_never_overlap(tmp_path, mocker):
     the suite reaches for an internal double (see ``app/CLAUDE.md``).
     """
     client, opened = _build(tmp_path, mocker)
-    metrics = main.SuiviBourseMetrics
+    metrics = workloads.Workloads
     live, overlapped = [], []
     guard = threading.Lock()
     real = metrics._rebuild_series
@@ -394,7 +395,7 @@ def test_the_record_of_a_pass_is_published_under_the_pass_lock(
     for an internal double (see ``app/CLAUDE.md``).
     """
     client, opened = _build(tmp_path, mocker)
-    metrics = web_module.current_runtime().metrics
+    metrics = web_module.current_runtime().workloads
     seen, record = [], main.runtime_state.PerfRecord
 
     def watched(**kwargs):

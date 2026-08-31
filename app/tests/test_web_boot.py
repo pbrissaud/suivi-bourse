@@ -167,7 +167,7 @@ def open_store(tmp_path):
 def test_build_runtime_validates_the_config_without_starting_anything(
         fake_config, mocker):
     """Its whole job: read the config, start nothing. The scheduler is step four."""
-    metrics_cls = mocker.patch.object(main, "SuiviBourseMetrics")
+    workloads_cls = mocker.patch.object(main.workloads, "Workloads")
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
     threads_before = threading.active_count()
 
@@ -179,9 +179,9 @@ def test_build_runtime_validates_the_config_without_starting_anything(
     assert fake_config.load_calls == 1
     assert fake_config.named_unread == 1
     # ... and nothing else is.
-    assert metrics_cls.call_count == 0
+    assert workloads_cls.call_count == 0
     assert scheduler_cls.call_count == 0
-    assert runtime.metrics is None
+    assert runtime.workloads is None
     assert runtime.scheduler is None
     assert threading.active_count() == threads_before
 
@@ -213,9 +213,9 @@ def test_the_boot_opens_the_store_exactly_once(fake_config, mocker):
     made unavoidable.
     """
     opens = mocker.spy(store, "open_store")
-    metrics = mocker.MagicMock()
-    metrics.shares = []
-    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    running = mocker.MagicMock()
+    running.shares = []
+    mocker.patch.object(main.workloads, "Workloads", return_value=running)
     mocker.patch.object(main, "BackgroundScheduler")
 
     main.start_runtime(main.build_runtime())
@@ -465,21 +465,21 @@ def test_start_runtime_builds_everything_the_fork_would_have_broken(mocker):
     cfg = _FakeConfigManager()
     runtime = main.Runtime(cfg)
 
-    metrics = mocker.MagicMock()
-    metrics.shares = []
-    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    running = mocker.MagicMock()
+    running.shares = []
+    mocker.patch.object(main.workloads, "Workloads", return_value=running)
     scheduler = mocker.MagicMock()
     mocker.patch.object(main, "BackgroundScheduler", return_value=scheduler)
 
     order = []
-    metrics.ingest.side_effect = lambda: order.append("ingest")
+    running.ingest.side_effect = lambda: order.append("ingest")
     scheduler.start.side_effect = lambda: order.append("start")
 
     main.start_runtime(runtime)
 
-    assert runtime.metrics is metrics
+    assert runtime.workloads is running
     assert runtime.scheduler is scheduler
-    assert metrics.scheduler is scheduler
+    assert running.scheduler is scheduler
     # ingest() arms the per-symbol scrape jobs (#616), so it must land before the
     # scheduler starts — the same order the blocking boot had.
     assert order == ["ingest", "start"]
@@ -500,9 +500,9 @@ def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
     ``build_runtime`` had proved openable was closed before the fork. There is
     one connection now and this step is handed it.
     """
-    metrics = mocker.MagicMock()
-    metrics.shares = []
-    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    running = mocker.MagicMock()
+    running.shares = []
+    mocker.patch.object(main.workloads, "Workloads", return_value=running)
     mocker.patch.object(main, "BackgroundScheduler")
     opened = store.open_store(tmp_path / "the-one.duckdb")
     opens = mocker.spy(store, "open_store")
@@ -522,9 +522,9 @@ def test_start_runtime_opens_no_store_and_serves_the_one_it_was_given(
 
 def test_start_runtime_uses_a_background_scheduler(mocker):
     """Blocking would never return, and uvicorn's event loop owns the foreground."""
-    metrics = mocker.MagicMock()
-    metrics.shares = []
-    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    running = mocker.MagicMock()
+    running.shares = []
+    mocker.patch.object(main.workloads, "Workloads", return_value=running)
     scheduler_cls = mocker.patch.object(main, "BackgroundScheduler")
 
     main.start_runtime(main.Runtime(_FakeConfigManager()))
@@ -533,18 +533,27 @@ def test_start_runtime_uses_a_background_scheduler(mocker):
     assert "executors" in scheduler_cls.call_args.kwargs
 
 
-def test_shutdown_runtime_stops_the_scheduler_and_the_metrics(mocker):
+def test_shutdown_runtime_stops_the_scheduler_and_gives_the_store_back(mocker):
+    """Two gestures, and there is no third (issue #850).
+
+    A ``close()`` on the workloads stood between them and released nothing: the
+    InfluxDB client left with the database, and the store's connection was never
+    that object's — it is the runtime's, and it is given back last, once nothing
+    is left running that could still write into it.
+    """
     cfg = _FakeConfigManager()
-    runtime = main.Runtime(cfg)
+    runtime = main.Runtime(cfg, opened_store=mocker.MagicMock())
+    opened = runtime.store
     runtime.scheduler = mocker.MagicMock(running=True)
-    runtime.metrics = mocker.MagicMock()
+    runtime.workloads = mocker.MagicMock()
 
     main.shutdown_runtime(runtime)
 
-    # wait=False: the worker is already leaving, and an in-flight scrape must not
-    # hold the shutdown open for a whole yfinance timeout.
+    # wait=False: the process is already leaving, and an in-flight scrape must
+    # not hold the shutdown open for a whole yfinance timeout.
     runtime.scheduler.shutdown.assert_called_once_with(wait=False)
-    runtime.metrics.close.assert_called_once()
+    opened.close.assert_called_once()
+    assert runtime.store is None
 
 
 def test_shutdown_runtime_tolerates_a_boot_that_never_got_that_far():
@@ -1047,9 +1056,9 @@ def test_the_teardown_survives_being_asked_twice(mocker, tmp_path):
     a socket — and a shutdown that could only be run once would make one of the
     two a defect.
     """
-    metrics = mocker.MagicMock()
-    metrics.shares = []
-    mocker.patch.object(main, "SuiviBourseMetrics", return_value=metrics)
+    running = mocker.MagicMock()
+    running.shares = []
+    mocker.patch.object(main.workloads, "Workloads", return_value=running)
     mocker.patch.object(main, "BackgroundScheduler")
     runtime = main.Runtime(
         _FakeConfigManager(),

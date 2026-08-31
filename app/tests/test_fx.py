@@ -36,6 +36,7 @@ import scrape
 import store_reads
 import settings as settings_module
 import settings_registry
+import workloads
 from events import EventAggregator
 from events.schemas import Event, EventType
 
@@ -468,7 +469,7 @@ def _metrics(store, shares=None, base_currency=None):
             [share['account'], share['account']])
         store.execute("INSERT INTO symbol (symbol) VALUES (?) "
                       "ON CONFLICT (symbol) DO NOTHING", [share['symbol']])
-    metrics = main.SuiviBourseMetrics(_FakeConfigManager(shares, store))
+    metrics = workloads.Workloads(_FakeConfigManager(shares, store))
     metrics.base_currency = base_currency
     return metrics
 
@@ -721,13 +722,21 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     makes the arithmetic assertable — so the wire between the module and
     yfinance needs one test of its own, or the whole feature is green against a
     fetch nobody ever calls.
+
+    The two are :mod:`market`'s own since #846, and the runtime class stopped
+    wrapping them under a second copy of their docstring with #850 — so what is
+    asserted here is the pair itself, plus the one thing the wrappers were
+    hiding: that :attr:`Workloads.rates` is built on *them*.
     """
     metrics = _metrics(store, base_currency='EUR')
+    assert metrics.rates._fetch_live is market.pair_rate
+    assert metrics.rates._fetch_series is market.pair_series
+
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(
         close=0.92, rows=3, start='2024-06-01'))
 
-    assert metrics._fetch_fx_rate('USDEUR=X') == pytest.approx(0.92)
-    assert metrics._fetch_fx_series(
+    assert market.pair_rate('USDEUR=X') == pytest.approx(0.92)
+    assert market.pair_series(
         'USDEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {
         date(2024, 6, 1): pytest.approx(-1.08),
         date(2024, 6, 2): pytest.approx(-0.08),
@@ -736,8 +745,8 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     # A pair yfinance answers *nothing* for is a missing rate on both halves —
     # never an exception, and the point is written with no converted price.
     monkeypatch.setattr(market.yf, 'Ticker', lambda s: fake_ticker(rows=0))
-    assert metrics._fetch_fx_rate('XYZEUR=X') is None
-    assert metrics._fetch_fx_series(
+    assert market.pair_rate('XYZEUR=X') is None
+    assert market.pair_series(
         'XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4)) == {}
 
     # A fetch that *raises* parts the two halves (issue #704). The live one goes
@@ -746,13 +755,13 @@ def test_the_injected_fetches_are_the_real_ones_and_read_yahoo_s_last_close(
     # *"nothing came back"* and *"the request did not complete"* are the two
     # stopping conditions the ticket forbids collapsing — one retries for ever,
     # the other says the pair will never resolve. `fx.Rates` catches it and logs
-    # exactly as this method used to, so the rebuild sees no change.
+    # exactly as the fetch used to, so the rebuild sees no change.
     monkeypatch.setattr(market.yf, 'Ticker',
                         lambda s: (_ for _ in ()).throw(RuntimeError('nope')))
-    assert metrics._fetch_fx_rate('XYZEUR=X') is None
+    assert market.pair_rate('XYZEUR=X') is None
     with pytest.raises(RuntimeError):
-        metrics._fetch_fx_series('XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4))
-    assert fx.Rates(lambda pair: None, metrics._fetch_fx_series).series(
+        market.pair_series('XYZEUR=X', date(2024, 6, 1), date(2024, 6, 4))
+    assert fx.Rates(lambda pair: None, market.pair_series).series(
         'XYZ', 'EUR', date(2024, 6, 1), date(2024, 6, 4)) == {}
 
 
@@ -1089,14 +1098,14 @@ def test_answering_the_reporting_currency_starts_the_repair_of_the_whole_stock(
     monkeypatch.setattr(backfill.time, 'sleep', lambda *a, **k: None)
     scheduler = mocker.MagicMock()
     metrics.scheduler = scheduler
-    runtime = mocker.MagicMock(metrics=metrics, scheduler=scheduler)
+    runtime = mocker.MagicMock(workloads=metrics, scheduler=scheduler)
 
     changes = settings_module.save(store, {'base_currency': 'EUR'})
     report = main.apply_settings(runtime, changes)
 
     assert metrics.base_currency == 'EUR'
-    assert report['jobs_rescheduled'] == [main.BACKFILL_JOB_ID]
-    assert scheduler.modify_job.call_args.args[0] == main.BACKFILL_JOB_ID
+    assert report['jobs_rescheduled'] == [scheduling.BACKFILL_JOB_ID]
+    assert scheduler.modify_job.call_args.args[0] == scheduling.BACKFILL_JOB_ID
     assert 'next_run_time' in scheduler.modify_job.call_args.kwargs
 
     # And the cycle it brings forward repairs what was already scraped.
@@ -1125,7 +1134,7 @@ def test_a_declared_currency_taken_from_an_import_triggers_it_too(
     metrics._adopt_declared_currency()
 
     assert metrics.base_currency == 'EUR'
-    assert scheduler.modify_job.call_args.args[0] == main.BACKFILL_JOB_ID
+    assert scheduler.modify_job.call_args.args[0] == scheduling.BACKFILL_JOB_ID
 
 
 def test_the_lateral_pass_runs_on_a_sold_line_too(store, mocker, monkeypatch):

@@ -16,21 +16,21 @@ equivalence against the per-symbol implementation, expressed through
 so it can stand as the reference.
 
 The seam is the suite's usual one: a real DuckDB store in ``tmp_path``, a real
-:class:`main.SuiviBourseMetrics`, and every assertion on the rows the pass
+:class:`workloads.Workloads`, and every assertion on the rows the pass
 wrote. The one double is the *old implementation*, injected at the reader so the
 two can be run over the same store — it stands for what the app used to do, not
 for what it was asked to do.
 
-Prior art: ``tests/test_metrics.py``, ``tests/test_fx.py``, ``tests/test_replay_perf.py``.
+Prior art: ``tests/test_workloads.py``, ``tests/test_fx.py``, ``tests/test_replay_perf.py``.
 """
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 
 import pytest
 
-import main
 import quotes
 import store_reads
+import workloads
 from events.schemas import Event, EventType
 
 UTC = timezone.utc
@@ -41,7 +41,7 @@ _TODAY = date(2024, 6, 20)
 
 
 class _ConfigManager:
-    """The surface :meth:`main.SuiviBourseMetrics._rebuild_series` needs.
+    """The surface :meth:`workloads.Workloads._rebuild_series` needs.
 
     It reads the **store** and the clock and nothing else since #707, so the
     manager is down to two gestures here: handing the open store out, and the
@@ -111,7 +111,7 @@ def _fixed_today(mocker):
 def _metrics(opened, mocker):
     """A real metrics object over a real store, its reporting currency answered."""
     _fixed_today(mocker)
-    metrics = main.SuiviBourseMetrics(_ConfigManager(opened))
+    metrics = workloads.Workloads(_ConfigManager(opened))
     metrics.base_currency = 'EUR'
     return metrics
 

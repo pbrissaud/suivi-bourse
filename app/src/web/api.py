@@ -151,15 +151,15 @@ def _rebuilding() -> bool:
 
     The same reading ``/api/runtime`` publishes, through the same pure function,
     so the two resources cannot disagree about whether this install is still
-    being rebuilt. A runtime with no metrics cannot see the scheduler at all and
-    answers ``False``, which is :func:`runtime_view.is_rebuilding`'s own rule
+    being rebuilt. A runtime with no workloads cannot see the scheduler at all
+    and answers ``False``, which is :func:`runtime_view.is_rebuilding`'s own rule
     and the safe one: what the flag enables here is *withholding* a judgement,
     and an observer that cannot see the scheduler has no ground to withhold.
     """
     runtime = current_runtime()
     return runtime_view.is_rebuilding(
-        runtime.metrics.reconstruction_state()
-        if runtime.metrics is not None else None)
+        runtime.workloads.reconstruction_state()
+        if runtime.workloads is not None else None)
 
 
 def _unreplayable(exc: AggregationError, gesture: str):
@@ -1890,12 +1890,12 @@ def get_runtime():
         now=datetime.now(timezone.utc),
         scheduler_running=runtime.scheduler is not None,
         # ``rebuilding`` (#745, #763), and it keeps this route's one rule: it
-        # comes from :meth:`SuiviBourseMetrics.reconstruction_state`, which is
+        # comes from :meth:`workloads.Workloads.reconstruction_state`, which is
         # the scheduler's own memory — the published windows and
-        # ``_backfill_complete`` — and issues no query. A runtime with no metrics
-        # cannot see the scheduler at all, and ``None`` is what says so.
-        reconstruction=(runtime.metrics.reconstruction_state()
-                        if runtime.metrics is not None else None),
+        # ``_backfill_complete`` — and issues no query. A runtime with no
+        # workloads cannot see the scheduler at all, and ``None`` says so.
+        reconstruction=(runtime.workloads.reconstruction_state()
+                        if runtime.workloads is not None else None),
         # The mount observation (#741, ADR-0015), made once in the master and
         # carried on the runtime — process memory again, and therefore this
         # route's rule kept: no query, and readable on a store nobody can open,
@@ -2031,8 +2031,7 @@ def list_installation_facts():
     return jsonify([
         fact.to_dict() for fact in installation_facts.listing(
             _store(),
-            main.installation_fact_context(
-                runtime.config_manager, runtime.metrics))
+            installation_facts.observe(runtime.workloads))
     ])
 
 
@@ -2058,8 +2057,7 @@ def acknowledge_installation_fact(key: str):
     and does not move the date.
     """
     runtime = current_runtime()
-    context = main.installation_fact_context(
-        runtime.config_manager, runtime.metrics)
+    context = installation_facts.observe(runtime.workloads)
     try:
         # The writers' mutex, like every other write in this blueprint: a Flask
         # handler and the scheduled jobs share one DuckDB connection.
@@ -2199,7 +2197,7 @@ def get_config():
         'log_level': main.current_log_level(),
         'settings': settings_module.describe(_store()),
         'environment': main.effective_environment(),
-        'unread_environment': main.unread_environment(),
+        'unread_environment': installation_facts.unread_environment(),
         'shares': _snapshot().shares,
     })
 

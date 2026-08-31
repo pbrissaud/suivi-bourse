@@ -1,5 +1,8 @@
 """
-Tests for main.SuiviBourseMetrics.
+Tests for :class:`workloads.Workloads` and the passes it carries.
+
+It was ``test_metrics.py`` until #850, named after a class that had stopped
+measuring anything when ADR-0033 took ``/metrics`` out of the product.
 
 Everything here is network-free, and since #700 there is **one** faked edge:
 yfinance. The store is real — a DuckDB file in ``tmp_path`` with the DDL
@@ -28,7 +31,7 @@ import main
 import market
 import quotes
 import runtime_view
-from main import SuiviBourseMetrics
+from workloads import Workloads
 from events.schemas import Event, EventType
 from events.validator import EventValidationError
 from urllib3.exceptions import NewConnectionError
@@ -53,7 +56,7 @@ def _valid_shares(symbol="AAPL", name="Apple", quantity=10):
 class FakeConfigManager:
     """In-memory stand-in for main.ConfigurationManager.
 
-    Exposes the surface SuiviBourseMetrics relies on since #658: ``current()``
+    Exposes the surface ``Workloads`` relies on since #658: ``current()``
     (the published snapshot — the read path), ``reload()`` (the publisher), plus
     ``get_mode()``. ``_acquisitions`` / ``_exits`` override what the snapshot
     would derive from ``events``, so tests can name a holding window without
@@ -182,7 +185,7 @@ def _build_metrics(shares, store, mode="manual",
     cfg = FakeConfigManager(shares, opened_store=store, mode=mode,
                             acquisitions=acquisitions, exits=exits,
                             events=events)
-    metrics = SuiviBourseMetrics(cfg)
+    metrics = Workloads(cfg)
     return metrics, cfg
 
 
@@ -380,7 +383,7 @@ def test_fetch_ticker_data_connection_error_returns_none(
 
 
 # ---------------------------------------------------------------------------
-# expose_metrics
+# scrape_held
 # ---------------------------------------------------------------------------
 
 def test_a_scrape_writes_one_price_point_and_refreshes_the_quote_row(
@@ -389,7 +392,7 @@ def test_a_scrape_writes_one_price_point_and_refreshes_the_quote_row(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     assert [price for _, price in _points(store)] == [185.0]
     quote = quotes.read_quote(store, "AAPL")
@@ -424,7 +427,7 @@ def test_a_symbol_held_in_two_accounts_is_written_once(
         "VALUES ('pea', 'AAPL', 'Apple', 4, 600.0, 0, 0)")
     monkeypatch.setattr(market.yf, "Ticker", lambda s: fake_ticker())
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     assert len(_points(store)) == 1
 
@@ -435,7 +438,7 @@ def test_a_missing_dividend_yield_is_stored_as_null_not_as_zero(
     monkeypatch.setattr(market.yf, "Ticker",
                         lambda s: fake_ticker(info={"dividendYield": None}))
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     assert quotes.read_quote(store, "AAPL")["dividend_yield"] is None
 
@@ -468,7 +471,7 @@ def test_a_payload_that_names_no_unit_writes_no_unit_at_all(
     metrics, _ = _build_metrics([_valid_shares()], store)
     monkeypatch.setattr(market.yf, "Ticker", _bare_ticker)
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     quote = quotes.read_quote(store, "AAPL")
     assert quote["currency"] is None
@@ -478,11 +481,11 @@ def test_a_payload_that_names_no_unit_writes_no_unit_at_all(
     assert [price for _, price in _points(store)] == [185.0]
 
 
-def test_expose_metrics_skips_write_when_fetch_fails(store, mocker):
+def test_scrape_held_skips_write_when_fetch_fails(store, mocker):
     metrics, _ = _build_metrics([_valid_shares()], store)
     mocker.patch.object(metrics, "_fetch_ticker_data", return_value=(None, None))
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     assert _points(store) == []
 
@@ -504,7 +507,7 @@ def test_a_write_error_on_one_symbol_does_not_abort_the_rest(
 
     mocker.patch.object(quotes, "record_quote", side_effect=flaky)
 
-    metrics.expose_metrics()
+    metrics.scrape_held()
 
     assert calls["n"] == 2
     assert [price for _, price in _points(store, "MSFT")] == [185.0]
@@ -615,7 +618,7 @@ def test_recompute_perf_reads_no_snapshot_at_all(
 def test_scrape_returns_when_no_shares(store, mocker):
     metrics, cfg = _build_metrics([_valid_shares()], store)
     cfg._shares = []
-    spy = mocker.spy(metrics, "expose_metrics")
+    spy = mocker.spy(metrics, "scrape_held")
 
     metrics.scrape()
 

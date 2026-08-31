@@ -672,7 +672,7 @@ def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
     **Two queries for the whole portfolio**, never two per symbol. Both consumers
     ask this about every symbol at once — the perf recompute over its whole
     replay, the shares page over its whole table — and the per-symbol reads
-    :meth:`main.SuiviBourseMetrics._backward_anchor` makes are affordable only
+    :meth:`backfill.BackfillWorkload.backward_anchor` makes are affordable only
     because the backfill visits one symbol at a time with a rate-limit sleep
     between them. The anchor itself is not re-derived here: it comes from
     :func:`carrying.backward_anchor`, the same function that per-symbol path

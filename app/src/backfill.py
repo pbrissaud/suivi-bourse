@@ -97,7 +97,7 @@ class BackfillWorkload:
     ``facade`` is the object that carries the workloads — the store manager, the
     dials, the recorder, the exchange rates — and every collaborator is reached
     through it (see this module's docstring). It is
-    :class:`main.SuiviBourseMetrics` today, and #850 owns what it is called.
+    :class:`workloads.Workloads`.
     ``info_cache`` is handed in and never built here: the scrape observes into
     the same one.
     """

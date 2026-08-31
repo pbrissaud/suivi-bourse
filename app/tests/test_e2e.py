@@ -7,7 +7,7 @@ These exercise the *whole* application with **one** external boundary faked:
   * time.sleep-> no-op (so rate-limit pauses never actually sleep)
 
 A real ``ConfigurationManager`` reads a real CSV written into ``tmp_path``, a
-real store holds what comes of it, and a real ``SuiviBourseMetrics`` drives the
+real store holds what comes of it, and a real ``Workloads`` drives the
 full pipeline loader -> validator -> aggregator -> scrape / backfill.
 
 This is the seam v5 descends from (spec #695), and #700 completes it: the mock
@@ -25,14 +25,14 @@ import pytest
 import entries
 import ledger
 import backfill
-import main
 import market
 import portfolio_view
 import quotes
 import store_reads
 from events import EventLoader
 from events.aggregator import AggregationError
-from main import ConfigurationManager, SuiviBourseMetrics
+from main import ConfigurationManager
+from workloads import Workloads
 
 from datetime import datetime, timezone
 
@@ -126,7 +126,7 @@ def test_the_full_chain_writes_the_position_and_the_quote(
 
     config_manager = _config_with_a_ledger(tmp_path)
 
-    sb = SuiviBourseMetrics(config_manager)
+    sb = Workloads(config_manager)
     # The one question the app asks (#702, ADR-0021). The fake quotes in USD and
     # this install reports in USD, so the conversion is the identity: the chain
     # is asserted end to end without a second faked fetch, and the point still
@@ -206,7 +206,7 @@ def test_backfill_writes_the_price_and_only_the_price(
     _patch_ticker(monkeypatch, fake_ticker)
 
     config_manager = _config_with_a_ledger(tmp_path)
-    sb = SuiviBourseMetrics(config_manager)
+    sb = Workloads(config_manager)
 
     intermediate = datetime(2024, 6, 20, 15, 0, tzinfo=timezone.utc)
 

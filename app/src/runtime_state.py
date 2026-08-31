@@ -10,7 +10,7 @@ the whole design:
   sites. One line per job.
 * **Publish only what has no home** (déc. 2). No copy of ``_failure_counts``, of
   ``_backfill_complete`` or of ``_share_info_cache`` lives here. A second copy is
-  the bug #658 removed when ``SuiviBourseMetrics.shares`` became a *property*,
+  the bug #658 removed when the runtime class' ``shares`` became a *property*,
   and it would be quieter here — a pill showing a backoff the scheduler no longer
   has signals nothing at all.
 * **The dated record is the unit of coherence** (déc. 4). A composed read takes

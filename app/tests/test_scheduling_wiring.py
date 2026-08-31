@@ -16,6 +16,7 @@ the one the runtime tab renders (#806, ADR-0033) — and the module they observe
 is gone.
 """
 
+import installation_facts
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -33,7 +34,8 @@ import scheduling
 import settings
 import settings_registry
 from events.schemas import Event, EventType
-from main import SuiviBourseMetrics, register_interval_jobs
+from main import register_interval_jobs
+from workloads import Workloads
 from scrape import _scrape_job_id, SCRAPE_JOB_PREFIX
 
 
@@ -128,7 +130,7 @@ def _metrics(shares, store, mocker):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store)
-    m = SuiviBourseMetrics(cfg)
+    m = Workloads(cfg)
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m
@@ -452,7 +454,7 @@ def test_register_interval_jobs_registers_perf_on_its_own_tick(
     # The perf tick is a constant, not a dial (#701/#707): the two tables are a
     # cache and a full recompute costs 0,4 % of the tick, so there is nothing
     # left for an operator to trade off.
-    assert perf.args[0].__func__ is SuiviBourseMetrics.recompute_perf
+    assert perf.args[0].__func__ is Workloads.recompute_perf
     assert perf.args[1] == "interval"
     assert perf.kwargs["seconds"] == scheduling.PERF_TICK
     # And it fires **at the boot**, not one tick later (#707): an interval
@@ -788,7 +790,7 @@ def test_the_synchronous_driver_skips_a_sold_position_too(
         return fake_ticker()
     monkeypatch.setattr(market.yf, "Ticker", ticker)
 
-    m.expose_metrics()
+    m.scrape_held()
 
     assert fetched == ["AAPL"]
     assert _prices(store) == [185.0]
@@ -914,7 +916,7 @@ def test_ingest_reconciles_against_scheduler(
 
 def test_reconcile_noop_without_scheduler():
     cfg = _FakeConfigManager([_share("AAPL")])
-    m = SuiviBourseMetrics(cfg)
+    m = Workloads(cfg)
     # scheduler is None -> reconcile is a safe no-op (unit tests that never wire
     # a scheduler still exercise ingest()).
     assert m.scheduler is None
@@ -962,13 +964,13 @@ def test_a_retired_environment_variable_is_named_and_not_obeyed(monkeypatch):
     """ADR-0014's gesture, and it is computed rather than written down."""
     monkeypatch.setenv("SB_REGULAR_INTERVAL", "600")
 
-    assert "SB_REGULAR_INTERVAL" in main.unread_environment()
+    assert "SB_REGULAR_INTERVAL" in installation_facts.unread_environment()
 
 
 def test_a_variable_the_app_still_reads_is_not_in_the_notice(monkeypatch):
     monkeypatch.setenv("SB_WEB_PORT", "9000")
 
-    assert "SB_WEB_PORT" not in main.unread_environment()
+    assert "SB_WEB_PORT" not in installation_facts.unread_environment()
 
 
 def test_a_compose_only_variable_is_not_in_the_notice(monkeypatch):
@@ -976,7 +978,7 @@ def test_a_compose_only_variable_is_not_in_the_notice(monkeypatch):
     monkeypatch.setenv("SB_VERSION", "5")
     monkeypatch.setenv("SB_UID", "501")
 
-    found = main.unread_environment()
+    found = installation_facts.unread_environment()
 
     assert "SB_VERSION" not in found and "SB_UID" not in found
 
@@ -985,7 +987,7 @@ def test_a_blank_retired_variable_is_not_reported(monkeypatch):
     """Compose renders an undefined substitution as an empty string."""
     monkeypatch.setenv("SB_PERF_INTERVAL", "")
 
-    assert "SB_PERF_INTERVAL" not in main.unread_environment()
+    assert "SB_PERF_INTERVAL" not in installation_facts.unread_environment()
 
 
 def test_the_notice_is_one_line_and_not_one_per_variable(monkeypatch, mocker):
@@ -1004,7 +1006,8 @@ def test_the_notice_is_one_line_and_not_one_per_variable(monkeypatch, mocker):
 def test_nothing_is_logged_when_there_is_nothing_to_say(mocker):
     """A clean environment gets no line at all — an install that set nothing
     must not read a warning about it (#740)."""
-    mocker.patch.object(main, "unread_environment", return_value=[])
+    mocker.patch.object(installation_facts, "unread_environment",
+                        return_value=[])
     warn = mocker.patch.object(main.app_logger, "warning")
 
     assert main.report_unread_environment() == []
@@ -1252,7 +1255,7 @@ def test_a_jobstore_error_never_turns_a_saved_dial_into_a_failure(
 
 
 def _runtime(m, scheduler=None):
-    return SimpleNamespace(metrics=m, scheduler=scheduler or m.scheduler)
+    return SimpleNamespace(workloads=m, scheduler=scheduler or m.scheduler)
 
 
 def test_apply_settings_re_arms_the_scrape_jobs_when_the_cadence_moved(

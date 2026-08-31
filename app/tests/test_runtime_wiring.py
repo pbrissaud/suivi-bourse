@@ -14,6 +14,7 @@ these tests are what keep it that way as the call sites move.
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import installation_facts
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -26,6 +27,7 @@ import quotes
 import runtime_state
 import scheduling
 import scrape
+import workloads
 from events.schemas import Event, EventType
 
 
@@ -98,7 +100,7 @@ def _metrics(shares, store, mocker, **manager):
             "INSERT INTO symbol (symbol) VALUES (?) "
             "ON CONFLICT (symbol) DO NOTHING", [share["symbol"]])
     cfg = _FakeConfigManager(shares, opened_store=store, **manager)
-    m = main.SuiviBourseMetrics(cfg)
+    m = workloads.Workloads(cfg)
     m.scheduler = mocker.MagicMock(spec=BackgroundScheduler)
     m.regular_interval = 120
     return m
@@ -468,8 +470,8 @@ def test_the_database_variables_are_gone_and_are_named_as_such(monkeypatch):
     assert names.isdisjoint(
         {"INFLUXDB_HOST", "INFLUXDB_TOKEN", "INFLUXDB_DATABASE"})
 
-    assert "INFLUXDB_TOKEN" in main.unread_environment()
-    assert "INFLUXDB_HOST" in main.unread_environment()
+    assert "INFLUXDB_TOKEN" in installation_facts.unread_environment()
+    assert "INFLUXDB_HOST" in installation_facts.unread_environment()
 
 
 def test_the_dials_are_not_in_the_environment_list_any_more():
@@ -537,7 +539,7 @@ def test_the_bundle_location_is_no_longer_an_environment_variable(monkeypatch):
 
     assert "SB_STATIC_DIR" not in {
         s["name"] for s in main.effective_environment()}
-    assert "SB_STATIC_DIR" in main.unread_environment()
+    assert "SB_STATIC_DIR" in installation_facts.unread_environment()
 
 
 def test_no_entry_claims_a_secret_could_be_redacted(monkeypatch):

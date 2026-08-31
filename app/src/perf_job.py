@@ -49,18 +49,20 @@ for the reason :mod:`scrape` and :mod:`backfill` give: the suite replaces
 methods *on the instance* — the rebuild above all — and a pass holding
 references captured at construction would step over the replacement.
 
-What it is **handed** is :func:`main.holding_windows`, the free function that
-answers *when did this position start*. It has two callers — this pass and the
-backfill window the snapshot publishes — and exactly one spelling: a second one
-would put the two a day apart, which is one chunk of disagreement about whether
-a symbol is terminal. It is passed in rather than imported because importing it
-means importing :mod:`main`, which imports this file.
+What answers *when did this position start* is :func:`carrying.holding_windows`,
+imported like any other pure function since #850. It has two callers — this pass
+and the backfill window the snapshot publishes — and exactly one spelling: a
+second one would put the two a day apart, which is one chunk of disagreement
+about whether a symbol is terminal. It used to be handed in at construction
+because it lived in :mod:`main`, which imports this file; it lives beside
+:func:`carrying.holding_bounds` now, which is the function that reads its answer.
 """
 import logging
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import accounts as accounts_module
+import carrying
 import ledger
 import perf_series
 import performance
@@ -154,18 +156,11 @@ class PerfJob:
     ``facade`` is the object that carries the workloads — the store manager, the
     dials, the recorder, the pass lock — and every collaborator is reached
     through it (see this module's docstring). It is
-    :class:`main.SuiviBourseMetrics` today, and #850 owns what it is called.
-    ``holding_windows`` is handed in and never re-spelled here: it is the one
-    answer to *when did this position start*, shared with the backfill's window.
-    It is the one collaborator bound at construction rather than reached through
-    the façade, and it may be: the façade rule exists because the suite replaces
-    *methods on the instance*, and this is a pure module-level function with no
-    instance to replace — both callers run the same code object either way.
+    :class:`workloads.Workloads`.
     """
 
-    def __init__(self, facade, holding_windows):
+    def __init__(self, facade):
         self.facade = facade
-        self.holding_windows = holding_windows
 
     def recompute(self) -> None:
         """Rebuild the perf cache, in full, every cycle (issue #707, ADR-0011).
@@ -443,7 +438,7 @@ class PerfJob:
                     for position in timeline.current()
                     if position.get('symbol') and position.get('quantity')}
             carried = quotes.terminal_symbols(
-                store_handle, self.holding_windows(events, held), now)
+                store_handle, carrying.holding_windows(events, held), now)
             # And its **first** term, which ``price_at`` cannot supply: that
             # callable reads ``price_converted``, so a symbol whose pair does not
             # resolve is priceless to it while its quote is known. Carrying those
@@ -492,7 +487,7 @@ class PerfJob:
                        if symbol in oldest_priced or symbol not in first_quoted}
             writable = {
                 account.id: performance.account_horizon(
-                    self.facade._holding_windows(timeline, account.id, symbols, today),
+                    account_holding_windows(timeline, account.id, symbols, today),
                     oldest_priced, settled, start=start, ceiling=today)
                 for account in declared
             }
@@ -560,7 +555,7 @@ class PerfJob:
                         account=account.id,
                         account_type=account.type,
                         day=dp.date,
-                        **self.facade._value_kwargs(dp, last, perf),
+                        **value_kwargs(dp, last, perf),
                     )
                     acc_points.append(pt)
                     if last:
@@ -574,7 +569,7 @@ class PerfJob:
                 total_points = [
                     PortfolioTotalPoint(
                         day=dp.date,
-                        **self.facade._value_kwargs(dp, i == len(total.daily) - 1, total),
+                        **value_kwargs(dp, i == len(total.daily) - 1, total),
                     )
                     for i, dp in enumerate(total.daily)
                 ]
@@ -583,8 +578,8 @@ class PerfJob:
         # the points themselves rather than off ``[start, today]``: accounts
         # begin on different days, and a global window would leave one account's
         # orphaned early days standing inside another's span.
-        acc_spans = self.facade._spans(acc_points, lambda pt: pt.account)
-        total_span = self.facade._spans(total_points, lambda _: None).get(None)
+        acc_spans = spans(acc_points, lambda pt: pt.account)
+        total_span = spans(total_points, lambda _: None).get(None)
 
         with self.facade.config_manager.writing() as opened:
             # **One** transaction for the four statements: they describe the

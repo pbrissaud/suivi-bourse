@@ -80,12 +80,14 @@ unreadable as notices. The table left with the mount (ADR-0032); the argument
 is kept because the next thing tempted to file itself here will be a trace too.
 """
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from logfmt_logger import getLogger
 
+import boot_env
 import fx
 import instants
 
@@ -131,9 +133,10 @@ class FactNotStanding(LookupError):
 class Context:
     """What the derivable observations read, gathered by the caller.
 
-    The predicates live here (:data:`SPECS`) and the *sources* live where they
-    belong — the environment inventory in :mod:`main`, the reconstruction's
-    progress in the scheduler's own memory. This dataclass is the seam between
+    The predicates live here (:data:`SPECS`) and so, since #850, does the
+    gatherer that reads them: :func:`observe` below. The one source that is not
+    this module's is the reconstruction's progress, which is the scheduler's own
+    memory. This dataclass is the seam between
     them, and it is a frozen bag of values rather than a set of callbacks so that
     a test can state a situation in one line.
 
@@ -143,7 +146,7 @@ class Context:
     """
 
     #: The ``SB_*`` / ``INFLUXDB_*`` variables that are set and read by nothing
-    #: (``main.unread_environment``). ``None`` when the caller did not look.
+    #: (:func:`unread_environment`). ``None`` when the caller did not look.
     unread_variables: Optional[Tuple[str, ...]] = None
 
     #: ``(series complete, series in the reconstruction)``, from the
@@ -170,6 +173,48 @@ class Context:
             return False
         complete, total = self.reconstruction
         return total > 0 and complete >= total
+
+
+def unread_environment() -> List[str]:
+    """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read.
+
+    **Computed, never hard-coded** — the difference between what is present and
+    what :data:`boot_env.INVENTORY` names, minus the four the app has never
+    read. A written list of retired names is a third writer of the same
+    inventory and the one nobody re-reads at release time; this one cannot
+    drift, because the day a variable is added to the inventory it leaves this
+    list by construction, and the day a dial is added to the registry it changes
+    clause by construction.
+
+    It lives here since #850, with the installation fact it feeds
+    (:data:`UNREAD_ENVIRONMENT`) and with the gatherer below: the observation
+    and its one source were a module apart, and the module that held the source
+    was ``main``, which the ingestion workload must not import.
+    """
+    return list(boot_env.unread(os.environ))
+
+
+def observe(workloads=None) -> 'Context':
+    """Gather what the derivable installation facts' predicates read (#709).
+
+    The seam between the predicates above — a reader is served the front's
+    catalogue since #768, so *the* text is no longer one text — and the two
+    places their sources actually live: the environment inventory just above,
+    and the reconstruction's progress in the scheduler's own memory.
+    **One builder**, so the observation a job makes and the one a request
+    renders cannot come from two different readings of the same two sources.
+
+    A caller with no ``workloads`` — the boot before
+    :func:`main.start_runtime`, a web request on a runtime whose scheduler
+    never started — reports it as **unobservable** rather than as finished.
+    That distinction is the whole of :data:`UNOBSERVED`: without it, a page
+    being opened would drop the row a running scheduler armed.
+    """
+    return Context(
+        unread_variables=tuple(unread_environment()),
+        reconstruction=(None if workloads is None
+                        else workloads.reconstruction_state()),
+    )
 
 
 @dataclass(frozen=True)
@@ -261,7 +306,7 @@ class InstallationFact:
 def _observe_unread_environment(opened, context: Context):
     """The ``SB_*`` / ``INFLUXDB_*`` variables that are set and obeyed by nothing.
 
-    The list is **computed** by :func:`main.unread_environment` — the
+    The list is **computed** by :func:`unread_environment` — the
     difference between what is present and what the inventory names — so this
     installation fact cannot drift the way a hand-written list of retired names
     would.
@@ -280,7 +325,7 @@ def _observe_reconstruction(opened, context: Context):
     before ``start_runtime``, a test holding a store alone), never that it has
     finished:
     see :data:`UNOBSERVED`. It is the **only** thing ``None`` says here, and
-    :meth:`main.SuiviBourseMetrics.reconstruction_state` never produces it — a
+    :meth:`ingestion.IngestionWorkload.reconstruction_state` never produces it — a
     process that *can* see the scheduler always answers a pair.
 
     Two pairs stand the installation fact down, and they are two situations

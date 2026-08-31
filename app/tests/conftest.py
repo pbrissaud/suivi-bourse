@@ -121,7 +121,7 @@ def store(tmp_path):
 def declare_positions():
     """Lay a share list into the store the way the replay would (issue #700).
 
-    The gesture every test that used to hand ``SuiviBourseMetrics`` a
+    The gesture every test that used to hand ``Workloads`` a
     ``MagicMock`` now performs on a real store instead: the accounts and symbols
     the positions reference, then :func:`positions.write_state`, which is the
     production writer and not a copy of it.

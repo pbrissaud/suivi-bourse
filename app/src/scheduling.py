@@ -126,6 +126,15 @@ OPENING_LAG = 15 * 60      # s: the ambiguous reading only — see above
 # not protect a cache from a faulty recompute; one rebuilds it.
 PERF_TICK = 120            # s
 
+#: The two fixed-cadence interval jobs' identifiers. Here, beside the cadence
+#: one of them runs at, rather than in ``main`` where they used to stand (#850):
+#: three modules name the backfill's — the registration, the dial effect that
+#: re-arms it, and the ingestion that brings it forward on a reporting currency
+#: being answered (#704) — and the one that held the constant was the one the
+#: other two must not import.
+BACKFILL_JOB_ID = 'backfill'
+PERF_JOB_ID = 'perf'
+
 # Dead-ticker guard (design #608, issue #617) — hardcoded, not operator dials.
 # A symbol whose non-closed fetches keep producing no writable price backs off
 # progressively instead of hammering yfinance every base_interval forever.

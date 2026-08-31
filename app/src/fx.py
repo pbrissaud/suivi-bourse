@@ -374,11 +374,12 @@ class Rates:
         walk the pair's whole history, every window confounded: when the window
         this day needs failed to fetch, the ``bisect`` happily answered with a
         rate from another year. That rate is then written down —
-        ``main._convert_history`` puts it on the point and ``quotes.record_history``
-        persists it — and nothing ever judges it again, since the lateral pass
-        only looks at ``price_converted IS NULL``. A 2026 quote converted at a
-        2020 rate is definitive and invisible. A missing conversion is
-        repairable; a wrong one is not, so past the bound the answer is ``None``.
+        ``backfill.BackfillWorkload.convert_history`` puts it on the point and
+        ``quotes.record_history`` persists it — and nothing ever judges it
+        again, since the lateral pass only looks at ``price_converted IS NULL``.
+        A 2026 quote converted at a 2020 rate is definitive and invisible. A
+        missing conversion is repairable; a wrong one is not, so past the bound
+        the answer is ``None``.
         """
         if not self._covers(pair, day):
             self._ensure_window(

@@ -399,7 +399,7 @@ puts a constraint where the error enters, which is at the import.
 ```
 src/
 ├── boot.py             # entrypoint AND boot sequence (ADR-0039)
-├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, SuiviBourseMetrics
+├── main.py             # Runtime, ConfigSnapshot, ConfigurationManager, the boot's three steps
 ├── store.py            # the connection, the DDL of the twelve tables, the seed
 ├── boot_env.py         # pure: the four boot variables, the computed list of the quiet ones
 ├── mounts.py           # pure: mountinfo + a path → persistent / ephemeral / unknown
@@ -427,6 +427,10 @@ src/
 │                       #   lock *borrowed from the façade*, the replay, the pure
 │                       #   call and the one transaction handed to the writer —
 │                       #   it writes nothing itself
+├── ingestion.py        # the ingestion workload: the replay that follows a write —
+│                       #   the snapshot, the adopted currency, the jobs, the facts
+├── workloads.py        # the four workloads and the state they share: the dials,
+│                       #   the rates, the scheduler, the recorder, the pass lock
 ├── perf_series.py      # account_metrics + portfolio_totals, block upsert + bounded prune
 ├── positions.py        # the replay's two tables — position/account_state
 ├── ledger.py           # the ledger's reads: read_events, the stamp, the last write, the orphans
@@ -463,7 +467,7 @@ assert on: 66 call-shaped assertions live in eight files, and they are overwhelm
 | File | What is doubled, and what it proves |
 |---|---|
 | `test_scheduling_wiring.py` (37) | `MagicMock(spec=BackgroundScheduler)` — a job armed, removed, **not re-armed**; the sonde skipped on a cycle that does not write |
-| `test_metrics.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
+| `test_workloads.py` (12) | the replay and the fetch — recomputed once, and **not** fetched when nothing is held or the anchor has reached the acquisition |
 | `test_web_boot.py` (4) | the runtime classes — **not constructed** before the fork, shut down once after it |
 | `test_quotes.py` (6), `test_configuration_manager.py` (2), `test_retention.py` (2), `test_web_api.py` (2), `test_carrying.py` (1) | `call_count` on a read, to prove a query was **avoided** |
 

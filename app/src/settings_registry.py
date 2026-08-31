@@ -103,7 +103,7 @@ class SettingSpec:
     an integer dial gets. They are not cosmetic: ``regular_interval`` at ``0``
     is a busy loop against Yahoo Finance, and the table would take it happily.
 
-    ``attribute`` names the ``SuiviBourseMetrics`` field the dial feeds when it
+    ``attribute`` names the :class:`workloads.Workloads` field the dial feeds when it
     has one, so applying a change is one loop over this list rather than five
     hand-written assignments that can fall out of step with it.
 

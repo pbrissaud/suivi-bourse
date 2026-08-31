@@ -26,6 +26,7 @@ import ledger
 import main
 import positions as positions_module
 import settings_registry
+import workloads
 import store as store_module
 from events import export as events_export
 from events.loader import BASE_CURRENCY_COLUMN, EventLoader, EventLoaderError
@@ -443,7 +444,7 @@ def test_the_running_process_takes_up_a_currency_an_import_declared(tmp_path):
     manager = main.ConfigurationManager(config_dir=str(root), opened_store=opened)
     manager.reload()
 
-    metrics = main.SuiviBourseMetrics(manager)
+    metrics = workloads.Workloads(manager)
     metrics.apply_dials(settings_registry.defaults())
     assert metrics.base_currency is None
 

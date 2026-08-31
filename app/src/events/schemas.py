@@ -367,7 +367,7 @@ class Timeline:
 
         Per ``(account, symbol)`` and deliberately so: it is what bounds the perf
         **horizon** (issue #708, :func:`performance.account_horizon`), which is
-        per account, whereas :func:`main.holding_windows` answers the same
+        per account, whereas :func:`carrying.holding_windows` answers the same
         question for the *backfill*, whose unit is the symbol — a price belongs to
         no account (#700). Two questions, two granularities, and collapsing them
         would hold one account at another's dates.
@@ -409,7 +409,7 @@ class Timeline:
         costs is visible and is written down rather than repaired:
         ``positions.write_state`` lays down a ``position`` row, so
         ``/api/positions`` serves the line and the dashboard sums its latent gain,
-        ``main._held_symbols`` arms a live scrape job — while
+        ``scrape.ScrapeWorkload.held_symbols`` arms a live scrape job — while
         ``account_metrics.holdings_value``, which reads
         ``position_at(day)``, excludes it. It is **not a regression**: that
         reading predates #766 and is untouched by it, and the horizon answered
@@ -430,7 +430,7 @@ class Timeline:
         Clamping to ``(acquired, acquired)`` is the third exit and is refused: it
         asserts a day of holding that has not happened.
 
-        The backfill's own window — :func:`main.holding_windows`, whose unit is
+        The backfill's own window — :func:`carrying.holding_windows`, whose unit is
         the symbol — needs no second rule and gets none: a target dated after the
         ceiling is a target the anchor has already passed, so the backward pass
         concludes without fetching and the symbol reads as terminal, i.e.
@@ -476,7 +476,7 @@ class Timeline:
         Deliberately unfiltered (#672 D5). A position whose quantity has fallen
         to zero must stay here: the replay has to write its realized gain, and
         the page has to show it. What departs on a sold position is its *scrape
-        job*, and the filtering line is :meth:`main.SuiviBourseMetrics._held_symbols`
+        job*, and the filtering line is :meth:`scrape.ScrapeWorkload.held_symbols`
         — never this method, which would take the row away from the two readers
         that need it most.
         """

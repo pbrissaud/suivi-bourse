@@ -110,7 +110,7 @@ class ScrapeWorkload:
     ``facade`` is the object that carries the workloads — the store manager, the
     dials, the recorder, the scheduler — and every collaborator is reached
     through it (see this module's docstring). It is
-    :class:`main.SuiviBourseMetrics` today, and #850 owns what it is called.
+    :class:`workloads.Workloads`.
     ``info_cache`` is handed in and never built here: the backfill reads the
     same one.
     """
@@ -203,13 +203,17 @@ class ScrapeWorkload:
     # The synchronous driver (the e2e harness')
     # ------------------------------------------------------------------ #
 
-    def expose_metrics(self):
+    def scrape_held(self):
         """
         Fetch and store every held symbol's quote, once.
 
         Synchronous whole-portfolio scrape, kept as a driver for the end-to-end
         harness; the scheduled runtime drives per-symbol jobs via
         ``_scrape_symbol``.
+
+        It was ``expose_metrics`` until #850 — Prometheus' last word in the
+        tree, on a method that has exposed nothing to anybody since ADR-0033
+        took ``/metrics`` and the exporter out of the product.
 
         Scoped to the **held** positions, like the scheduled path (issue #699):
         a position at zero quantity is one the app has stopped following, and
@@ -240,7 +244,7 @@ class ScrapeWorkload:
 
     def scrape(self):
         """
-        Scrape stock prices from Yahoo Finance and expose metrics.
+        Scrape stock prices from Yahoo Finance, refusing an empty portfolio.
 
         Synchronous whole-portfolio path kept for the e2e harness; the scheduled
         runtime drives per-symbol jobs + the perf job.
@@ -252,7 +256,7 @@ class ScrapeWorkload:
             app_logger.warning("No shares configured, skipping scrape")
             return
 
-        self.facade.expose_metrics()
+        self.facade.scrape_held()
 
     # ------------------------------------------------------------------ #
     # The population, and the venues (issue #616, #699, #851)
@@ -666,7 +670,7 @@ class ScrapeWorkload:
                 market_state=state,
                 closed=scheduling.is_closed(state),
                 price_present=price_present,
-                verdict=self.facade._scrape_verdict(
+                verdict=scrape_verdict(
                     should_write, state, wrote_live_data, bool(holdings)),
                 failure_count=new_failure_count,
                 next_delay=next_delay,

@@ -12,36 +12,31 @@ from dataclasses import dataclass
 # instants a last-pass record carries are spelled in :mod:`backfill` now.
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Tuple
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from logfmt_logger import getLogger
 
 import accounts as accounts_module
-import backfill
 import boot_conditions
 import boot_env
 import carrying
-import fx
 import installation_facts
 import ledger
-import market
 import mounts
-import perf_job
 import positions
 import runtime_state
 import scheduling
-import scrape
 import settings as settings_module
 import settings_registry
-import share_info
 import store
+import workloads
 from events import EventValidator, EventAggregator
 from events.loader import EventLoaderError
 from events.validator import EventValidationError
 from events.aggregator import AggregationError
-from events.schemas import EventType, Portfolio
+from events.schemas import Portfolio
 
 # Blank counts as unset throughout (``boot_env.text``): compose renders an
 # undefined substitution as an empty string rather than omitting the variable.
@@ -129,23 +124,13 @@ def current_log_level() -> str:
 # Every environment variable **this application reads**, with its own default,
 # is :data:`boot_env.INVENTORY` — four names, and there is no fifth. The whole
 # of the reasoning is in :mod:`boot_env`, which is also where the pure reading
-# of them lives (#740). This module used to re-export it under a second name,
-# "because the inventory is what the API resource is written against" — the API
-# resource calls the two functions below, and never touched the alias.
-
-
-def unread_environment() -> List[str]:
-    """The ``SB_*``/``INFLUXDB_*`` variables that are set and no longer read.
-
-    **Computed, never hard-coded** — the difference between what is present and
-    what :data:`boot_env.INVENTORY` names, minus the four the app has never
-    read. A written list of retired names is a third writer of the same
-    inventory and the one nobody re-reads at release time; this one cannot
-    drift, because the day a variable is added to the inventory it leaves this
-    list by construction, and the day a dial is added to the registry it changes
-    clause by construction.
-    """
-    return list(boot_env.unread(os.environ))
+# of them lives (#740).
+#
+# *Which* of them are set and no longer obeyed is
+# :func:`installation_facts.unread_environment` since #850 — it lives beside the
+# installation fact it feeds, and beside the one gatherer that reads it. What
+# stays here is the one thing that is neither pure nor derivable: **saying it**,
+# once, at start-up.
 
 
 def report_unread_environment() -> List[str]:
@@ -157,7 +142,7 @@ def report_unread_environment() -> List[str]:
     :func:`boot_env.notice`, which is pure; what belongs here is the one thing
     that is not — emitting it, once, at start-up.
     """
-    found = unread_environment()
+    found = installation_facts.unread_environment()
     message = boot_env.notice(tuple(found))
     if message is not None:
         app_logger.warning(message)
@@ -215,33 +200,7 @@ def effective_environment() -> List[Dict]:
     return boot_env.effective(os.environ, log_level=current_log_level())
 
 
-def installation_fact_context(config_manager,
-                              metrics=None) -> installation_facts.Context:
-    """Gather what the installation facts' predicates read (issue #709).
-
-    The seam between :mod:`installation_facts`, which holds the predicates and
-    the log's text — a reader is served the front's catalogue since #768, so
-    *the* text is no longer one text — and the two places their sources
-    actually live: the
-    environment inventory here, and the reconstruction's progress in the
-    scheduler's own memory. **One builder**, so the observation a job makes and
-    the one a request renders cannot come from two different readings of the same
-    two sources.
-
-    A caller with no ``metrics`` — the boot before :func:`start_runtime`, a web
-    request on a runtime whose scheduler never started — reports it as
-    **unobservable** rather than as finished. That distinction is the whole of
-    :data:`installation_facts.UNOBSERVED`: without it, a page being opened
-    would drop the row a running scheduler armed.
-    """
-    return installation_facts.Context(
-        unread_variables=tuple(unread_environment()),
-        reconstruction=(None if metrics is None
-                        else metrics.reconstruction_state()),
-    )
-
-
-def register_interval_jobs(scheduler, sb_metrics,
+def register_interval_jobs(scheduler, workloads_,
                            backfill_interval: int) -> None:
     """Register the two fixed-cadence interval jobs on ``scheduler``.
 
@@ -270,22 +229,16 @@ def register_interval_jobs(scheduler, sb_metrics,
     nothing to know about the past, so there is nothing to wait for.
     """
     scheduler.add_job(
-        sb_metrics.backfill, 'interval',
+        workloads_.backfill, 'interval',
         seconds=backfill_interval,
-        id='backfill',
+        id=scheduling.BACKFILL_JOB_ID,
         name='Historical backfill')
     scheduler.add_job(
-        sb_metrics.recompute_perf, 'interval',
+        workloads_.recompute_perf, 'interval',
         seconds=scheduling.PERF_TICK,
         next_run_time=datetime.now(timezone.utc),
-        id='perf',
+        id=scheduling.PERF_JOB_ID,
         name='Performance recompute')
-
-
-#: The interval job a dial's ``REARM_BACKFILL_JOB`` effect reschedules — and,
-#: since #704, the one a ``REPAIR_CONVERSIONS`` effect brings forward: the
-#: lateral pass rides on it rather than owning a job of its own.
-BACKFILL_JOB_ID = 'backfill'
 
 
 def apply_settings(runtime, changes) -> Dict:
@@ -305,32 +258,33 @@ def apply_settings(runtime, changes) -> Dict:
       portfolio-wide dial did not reach the whole portfolio this second.
 
     Returns the report the route publishes. Tolerant of a runtime with no
-    metrics or no scheduler (before the fork, and in a test) — the dial is
-    already in the store, and the boot reads it from there.
+    workloads and of one with no scheduler (the boot before ``start_runtime``,
+    a test) — the dial is already in the store, and the boot reads it from
+    there.
     """
     report = {
         'symbols_rescheduled': 0,
         'symbols_at_market_open': 0,
         'jobs_rescheduled': [],
     }
-    metrics = getattr(runtime, 'metrics', None)
-    if metrics is None:
+    running = getattr(runtime, 'workloads', None)
+    if running is None:
         return report
 
     # The live attributes first, in one loop over the registry — five hand
     # written assignments here would be the second list ADR-0014 forbids.
-    metrics.apply_dials({change.key: change.after for change in changes})
+    running.apply_dials({change.key: change.after for change in changes})
 
     for change in changes:
         effect = settings_registry.spec_for(change.key).effect
         if effect == settings_registry.REARM_SCRAPE:
-            reached, sleeping = metrics.rearm_regular_scrapes()
+            reached, sleeping = running.rearm_regular_scrapes()
             report['symbols_rescheduled'] += reached
             report['symbols_at_market_open'] += sleeping
         elif effect == settings_registry.REARM_BACKFILL_JOB:
             if _reschedule_interval_job(
-                    runtime.scheduler, BACKFILL_JOB_ID, change.after):
-                report['jobs_rescheduled'].append(BACKFILL_JOB_ID)
+                    runtime.scheduler, scheduling.BACKFILL_JOB_ID, change.after):
+                report['jobs_rescheduled'].append(scheduling.BACKFILL_JOB_ID)
         elif effect == settings_registry.REPAIR_CONVERSIONS:
             # Answering the reporting currency is the one dial change that is
             # **retroactive** (issue #704): every point written before it carries
@@ -338,9 +292,9 @@ def apply_settings(runtime, changes) -> Dict:
             # Reported as a rescheduled job because that is literally what it is
             # — the pass rides the backfill, so triggering it is advancing that
             # job's next run.
-            started = metrics.repair_conversions_now()
-            if started and BACKFILL_JOB_ID not in report['jobs_rescheduled']:
-                report['jobs_rescheduled'].append(BACKFILL_JOB_ID)
+            started = running.repair_conversions_now()
+            if started and scheduling.BACKFILL_JOB_ID not in report['jobs_rescheduled']:
+                report['jobs_rescheduled'].append(scheduling.BACKFILL_JOB_ID)
     return report
 
 
@@ -360,47 +314,6 @@ def _reschedule_interval_job(scheduler, job_id: str, seconds: int) -> bool:
     except Exception as e:
         app_logger.error(f"Failed to reschedule the {job_id} job: {e}")
         return False
-
-
-#: What starts a holding window (issue #703). A ``GRANT`` is an acquisition: the
-#: share is held from the day it lands, priced or not (``events.schemas.
-#: declared_value`` decides the second question and not this one). Reading only
-#: ``BUY`` left a portfolio held entirely by grant with no backfill target at
-#: all, which is the state the retired ``no_buy`` terminal was reporting.
-ACQUISITION_EVENT_TYPES = (EventType.BUY, EventType.GRANT)
-
-
-def holding_windows(events, held) -> Dict[str, Tuple[date, Optional[date]]]:
-    """``{symbol: (first acquisition, last exit or None)}`` out of a raw ledger.
-
-    Pure, and module-level rather than a method, because it has **two** callers
-    since #706 and they hold two different things.
-    :meth:`ConfigSnapshot.backfill_windows` reads the published snapshot; the
-    perf recompute reads the store directly (its only inputs are the store and
-    the clock, #707) and derives ``held`` from its own replay. Both have to reach
-    the same window, since one drives the backfill and the other asks whether
-    that backfill is finished — and a second spelling of *"when did this position
-    start"* would put them a day apart, which is one chunk of disagreement about
-    whether a symbol is terminal.
-    """
-    first: Dict[str, date] = {}
-    exits: Dict[str, date] = {}
-    for event in events:
-        if not event.symbol:
-            continue
-        if event.event_type in ACQUISITION_EVENT_TYPES:
-            known = first.get(event.symbol)
-            if known is None or event.date < known:
-                first[event.symbol] = event.date
-        elif event.event_type == EventType.SELL:
-            known = exits.get(event.symbol)
-            if known is None or event.date > known:
-                exits[event.symbol] = event.date
-
-    return {
-        symbol: (acquired, None if symbol in held else exits.get(symbol))
-        for symbol, acquired in first.items()
-    }
 
 
 # ``InvalidConfigFile`` and ``load_shares_schema`` left with ``schema.yaml``
@@ -473,7 +386,7 @@ class ConfigSnapshot:
         # share another account still holds, and the series they share is one.
         held = {share['symbol'] for share in self.shares
                 if share.get('symbol') and share.get('quantity')}
-        return holding_windows(self.events, held)
+        return carrying.holding_windows(self.events, held)
 
     def first_acquisition_date(self, symbol: str) -> Optional[date]:
         """Date of the earliest ``BUY`` **or ``GRANT``** for ``symbol``, or ``None``.
@@ -878,929 +791,6 @@ class ConfigurationManager:
         return snap.events if snap is not None else None
 
 
-class SuiviBourseMetrics:
-    """
-    Class for managing and exposing metrics related to stock shares.
-    """
-
-    def __init__(self, config_manager: ConfigurationManager,
-                 recorder: Optional[runtime_state.RuntimeRecorder] = None):
-        self.config_manager = config_manager
-
-        # The store, reached through the manager and never held as a second
-        # reference (issue #700). It is what the ``InfluxDBWriter`` argument used
-        # to be, minus the injection point: there is one store per process, the
-        # manager already owns the connection *and* the mutex that keeps a
-        # transaction whole, and a second handle here would be a second answer to
-        # "which generation of the ledger is this job looking at".
-
-        # The ``sb_*`` registry used to be handed in here (ADR-0012). It left
-        # with ``/metrics`` (ADR-0033), and every ``is not None`` guard this
-        # class carried around it left too: what a pass did is read off the rows
-        # it wrote and off the record it published, which are the two surfaces
-        # the interface renders.
-
-        # The dials (issue #701, ADR-0014). Constructed at the **code's** values
-        # and overwritten by the store in ``start_runtime``, which is the only
-        # order that keeps the registry the single list: an object that read the
-        # store here would need one, and a test that builds one directly would
-        # need a store to build it. Each is a plain mutable attribute every
-        # cycle re-reads, which is what makes a saved dial take effect with no
-        # restart — the write path assigns it and the next pass reads it.
-        #
-        #   backfill_delay / backfill_chunk_days — the backfill's politeness and
-        #     window.
-        #   staleness_horizon — the price-freshness liveness sonde (issue #628,
-        #     design #626): the signal fires only once the newest stored price
-        #     has gone unrefreshed for this many seconds while the live quote
-        #     moves, a few REGULAR cycles wide so an ordinary tick never trips
-        #     it. ``0`` disables the sonde — the pure decision returns False and
-        #     the check no-ops.
-        #   regular_interval — see below.
-        #   base_currency — the reporting currency (issue #702, ADR-0002). The
-        #     one dial with **no default**, so this attribute is legitimately
-        #     ``None`` and every write path reads it as *"nothing has a unit
-        #     yet"*: prices are still fetched and stored natively, nothing is
-        #     converted, and no performance figure is written at all.
-        #
-        # Assigned by one loop and not by five literals, deliberately: a default
-        # spelled here as well as in the registry is the second list ADR-0014
-        # exists to forbid, and it would be the copy nobody updates.
-        self.base_currency: Optional[str] = None
-        self.apply_dials(settings_registry.defaults())
-
-        # One perf recompute at a time (issue #812). See
-        # :meth:`update_account_metrics` for why this stopped being free the day
-        # the replay that follows the write started recomputing the series.
-        # **Reentrant**, so ``recompute_perf`` can hold it across the rebuild
-        # *and* the record it publishes about that rebuild, while the rebuild
-        # goes on taking it for a caller who reaches it directly.
-        #
-        # **It stays here rather than moving with the workload** (issue #849):
-        # there is one pass lock per runtime, the perf job below borrows this
-        # object, and a lock built inside that job would become a second one the
-        # day anything constructed a second job — two passes overlapping, and a
-        # prune bounded by its own pass's spans deleting the years the other had
-        # just written.
-        self._perf_lock = threading.RLock()
-
-        # The exchange rate (issue #702, ADR-0002). A TTL cache in front of two
-        # yfinance fetches, and the TTL is what makes a market-open wave share
-        # **one** rate per pair: converted at N slightly different rates, the
-        # positions of one wave would not add up to their own total. It is
-        # deliberately not a job and not a pseudo-symbol in the scheduler — a
-        # currency pair has no ``marketState`` that projects onto the equity
-        # cadence model — and there is no ``fx_rates`` table: the rate that was
-        # used is stored on the point it produced.
-        self.rates = fx.Rates(self._fetch_fx_rate, self._fetch_fx_series)
-
-        # Market-aware per-symbol scheduling (issue #616). Each held symbol runs
-        # as its own self-rescheduling APScheduler job; the scheduler is injected
-        # from __main__ (None until then, so unit tests that never wire it skip
-        # reconciliation). `regular_interval` is the REGULAR-state poll cadence
-        # (base_interval), and it is also the base of the #617 back-off — so
-        # changing it rescales, retroactively, the wait of a symbol that is
-        # already failing. It is set by `apply_dials` above and **not** repeated
-        # here: a literal at this line would win over the registry it just read,
-        # and would go on agreeing with it only until the registry's default
-        # changed.
-        self.scheduler: Optional[BackgroundScheduler] = None
-
-        # The per-symbol ``info`` cache, built **here** and handed to each
-        # workload that reads it — the scrape below (issue #847) and the
-        # backfill under it (issue #848), which is where the pair is finally
-        # symmetrical: one object, handed twice, and this class holds no third
-        # reference to it.
-        # One object because it is one memory: two caches would put the same
-        # question to Yahoo twice, and a read of the store cannot answer it at
-        # all, ``symbol_quote`` carrying neither the market state nor the
-        # trading period. Its two gestures are named apart in
-        # :mod:`share_info` — the live fetch's *observed*, the unit lookup's
-        # *learned* — because the asymmetry between them is load-bearing.
-        #
-        # A local and not an attribute: it is *handed over*, and what this class
-        # reads it back through is the property below. An attribute here would
-        # be the second reference, and a later assignment to it would split the
-        # memory in two — the scrape observing into one object while the
-        # backfill learns from another, which is the whole defect this ticket
-        # exists to close.
-        info_cache = share_info.ShareInfoCache()
-
-        # The scrape workload (issue #847, :mod:`scrape`). It holds *this*
-        # object rather than the collaborators it calls, so a method replaced on
-        # this instance is traversed by the pass rather than stepped over; the
-        # state that is the scrape's alone — the #617 counters, the #628 sonde
-        # and their locks — lives there, and the five properties below this
-        # constructor are the windows this class keeps open onto it.
-        self._scrape = scrape.ScrapeWorkload(self, info_cache)
-
-        # The backfill workload (issue #848, :mod:`backfill`). Built exactly as
-        # the scrape above and for the same reasons — it holds *this* object, so
-        # a method replaced on the instance is traversed rather than stepped
-        # over — and handed the **same** ``info_cache``: the unit its lateral
-        # pass learns is the unit the scrape's fetch observes into, and that is
-        # #847's other half, closed here.
-        #
-        # The memory the three passes share lives there: the symbols whose
-        # backward pass has reached its first acquisition, the lateral pass's
-        # back-off, and the symbols Yahoo named no currency for. Three
-        # properties below this constructor are the windows this class keeps
-        # open onto them, for the reason the scrape's five are.
-        self._backfill = backfill.BackfillWorkload(self, info_cache)
-
-        # The performance workload (issue #849, :mod:`perf_job`). The fourth and
-        # last of the four, and the one that writes nothing itself: the four
-        # statements of a cycle are :mod:`perf_series`', which is why the
-        # orchestration is its own module rather than the writer's tail.
-        #
-        # **Constructed once**, and that is the whole of what keeps the pass
-        # lock single: the job borrows :attr:`_perf_lock` above rather than
-        # building one, so a second job object would be a second lock, two
-        # passes could overlap, and the prune — bounded by its own pass's spans
-        # — would delete the years the other had just written.
-        #
-        # It is handed :func:`holding_windows` rather than importing it: that
-        # free function lives in this module, has two callers and exactly one
-        # spelling (#706), and a module-level ``import main`` from a file this
-        # one imports is not a road worth opening for a pure function.
-        #
-        # Not named ``_perf_job``, and that is deliberate rather than a slip:
-        # #707's rule is that the scrape signals nothing to the perf job, and
-        # the suite holds it by reading this instance for ``_perf*`` names —
-        # of which there is exactly one, the lock. A second would weaken a
-        # guard that is worth more than symmetry with the two names above.
-        self._recompute = perf_job.PerfJob(self, holding_windows)
-
-        # There is **no perf state here**, and its absence is the ticket (issue
-        # #707, ADR-0011). Four attributes stood at this line — a mutex, a
-        # backfill watermark, the identity of the last events list, and a
-        # live-write bool the scrape raised — and all four served one gate that
-        # decided whether recomputing was worth it. The two tables are a cache;
-        # the recompute is integral and unconditional every cycle, so nothing
-        # about the *past* is worth remembering, and the last coupling between
-        # the backfill and the perf goes with the memory of it.
-
-        # The last-pass records (issue #668, design #656). Injected from the
-        # Runtime so the web handlers reach the *same* recorder the jobs write
-        # to — it is built master-side, like the ConfigurationManager and for the same
-        # reason. Defaulted here so a unit test that builds this class directly
-        # still has somewhere to publish, and so no call site below has to check
-        # for None.
-        self.recorder = recorder or runtime_state.RuntimeRecorder()
-
-    # ------------------------------------------------------------------ #
-    # The scrape's own state, seen from here (issue #847)
-    # ------------------------------------------------------------------ #
-    #
-    # The five attributes that left with the workload. They are set and read on
-    # *this* object — by the suite — so the class keeps a window open onto each
-    # rather than a second copy: a copy would be a second answer to "how many
-    # times has this symbol failed", and the #617 back-off is the one guard that
-    # cannot afford two.
-    #
-    # The ``info`` cache is here for the same reason and one more: **two**
-    # workloads hold it since #848, so the setter assigns both. A setter that
-    # moved only the scrape's would be the split memory the constructor's
-    # comment refuses — the scrape observing into a new object while the
-    # backfill goes on learning into the old one — under the one name that
-    # looks like it cannot happen.
-
-    @property
-    def _share_info_cache(self) -> share_info.ShareInfoCache:
-        return self._scrape.info_cache
-
-    @_share_info_cache.setter
-    def _share_info_cache(self, cache: share_info.ShareInfoCache) -> None:
-        self._scrape.info_cache = cache
-        self._backfill.info_cache = cache
-
-    @property
-    def _failure_counts(self) -> Dict[str, int]:
-        return self._scrape.failure_counts
-
-    @_failure_counts.setter
-    def _failure_counts(self, counts: Dict[str, int]) -> None:
-        self._scrape.failure_counts = counts
-
-    @property
-    def _failure_counts_lock(self):
-        return self._scrape.failure_counts_lock
-
-    @property
-    def _sonde_state(self) -> Dict[str, scheduling.SondeState]:
-        return self._scrape.sonde_state
-
-    @_sonde_state.setter
-    def _sonde_state(self, state: Dict[str, scheduling.SondeState]) -> None:
-        self._scrape.sonde_state = state
-
-    @property
-    def _sonde_lock(self):
-        return self._scrape.sonde_lock
-
-    # ------------------------------------------------------------------ #
-    # The backfill's own state, seen from here (issue #848)
-    # ------------------------------------------------------------------ #
-    #
-    # The three memories the passes share, under the names the suite and the
-    # installation facts read them by. ``_backfill_complete`` above all: it is
-    # where *"this pass has reached its first acquisition"* lives and no row
-    # anywhere says it, so :meth:`reconstruction_state` reads it from here and a
-    # second copy would be a second reconstruction to report.
-
-    @property
-    def _backfill_complete(self) -> Dict[str, datetime]:
-        return self._backfill.complete
-
-    @_backfill_complete.setter
-    def _backfill_complete(self, complete: Dict[str, datetime]) -> None:
-        self._backfill.complete = complete
-
-    @property
-    def _lateral_retry_at(self) -> Dict[str, datetime]:
-        return self._backfill.lateral_retry_at
-
-    @_lateral_retry_at.setter
-    def _lateral_retry_at(self, retry_at: Dict[str, datetime]) -> None:
-        self._backfill.lateral_retry_at = retry_at
-
-    @property
-    def _quote_currency_unknown(self) -> Set[str]:
-        return self._backfill.quote_currency_unknown
-
-    @_quote_currency_unknown.setter
-    def _quote_currency_unknown(self, symbols: Set[str]) -> None:
-        self._backfill.quote_currency_unknown = symbols
-
-    @property
-    def shares(self) -> List[Dict]:
-        """The held positions, read from the published configuration snapshot.
-
-        A read, not a copy (issue #658). Holding a second copy here is what used
-        to let the app run on two configurations at once: scraping worked from
-        this attribute while backfill and the perf recompute read the manager's
-        cache, and the two could disagree for a whole cycle — including in the
-        one case that matters, a file the validator had just rejected.
-        """
-        return self.config_manager.current().shares
-
-    # ``validate()`` left with ``schema.yaml`` (issue #696). It could only ever
-    # answer True — a published snapshot has been validated by construction
-    # since #658 — and the schema it called no longer exists.
-
-    def _fetch_ticker_data(self, symbol: str, max_retries: int = 3):
-        """One symbol's newest close and its attributes, and the cache's fill.
-
-        :meth:`scrape.ScrapeWorkload.fetch_ticker_data` (issue #847). It stays
-        reachable under this name because it is where every live-quote path of
-        this class asks the market edge, and because it is the name the suite
-        replaces when it wants a fetch to fail.
-        """
-        return self._scrape.fetch_ticker_data(symbol, max_retries)
-
-    def _fetch_historical_data(self, symbol: str, start: datetime, end: datetime,
-                               max_retries: int = 3) -> Optional[List[Dict]]:
-        """One symbol's closes over ``[start, end]``, or ``None`` on failure.
-
-        :meth:`backfill.BackfillWorkload.fetch_historical_data` (issue #848).
-        It stays reachable under this name because it is where both filling
-        passes ask the market edge, and because it is the name the suite
-        replaces when it wants a history to fail or to come back canned.
-        """
-        return self._backfill.fetch_historical_data(symbol, start, end,
-                                                    max_retries)
-
-    # ------------------------------------------------------------------ #
-    # The exchange rate (issue #702, ADR-0002)
-    # ------------------------------------------------------------------ #
-
-    def _fetch_fx_rate(self, pair: str) -> Optional[float]:
-        """The newest close of one currency pair, or ``None``.
-
-        The live half of what :attr:`rates` caches. Deliberately **not**
-        ``_fetch_ticker_data``: that one fills ``_share_info_cache``, which the
-        backfill reads to learn a *symbol's* exchange, and a currency pair
-        landing in it would put an instrument that is not a holding into the
-        portfolio's own memory. What is wanted here is one number.
-
-        Errors are swallowed into ``None`` on purpose — an unresolvable pair is
-        an ordinary state (spec #695 § 7), it writes a ``NULL`` converted price
-        and never a lost quote.
-        """
-        return market.pair_rate(pair)
-
-    def _fetch_fx_series(self, pair: str, start: date,
-                         end: date) -> Dict[date, float]:
-        """The pair's **daily** closes over ``[start, end]``.
-
-        The rebuild's half: the pair's history is fetched beside the price
-        history it is converting, so a point placed five years ago is converted
-        at the rate of *its own day* rather than at today's — which is what makes
-        the stored rate a journal one can read back.
-
-        Daily whatever the window's age, unlike the price fetch: an hourly rate
-        would be a hundredfold more rows for a series whose consumer is a
-        calendar day, and Yahoo caps hourly at 730 days anyway.
-
-        **It raises rather than swallowing** (issue #704), and that is the whole
-        of how the lateral pass tells its two stopping conditions apart: a raise
-        is a fetch that did not complete, an empty answer is yfinance saying the
-        pair is not a ticker. :meth:`fx.Rates._ensure_window` catches it and
-        logs exactly as this used to, so the *rebuild's* behaviour is unchanged —
-        what changes is that the difference survives as far as the caller that
-        needs it.
-        """
-        return market.pair_series(pair, start, end)
-
-    def _convert(self, price, currency: Optional[str],
-                 at: Optional[date] = None) -> Tuple[Optional[float], Optional[float]]:
-        """``(converted, rate)`` for one observed price, in one call.
-
-        The single place a write path asks the currency question, so that no
-        writer has to remember the order of *"is there a reporting currency"*
-        and *"is there a rate"*. Both answers are ``None`` together, and the
-        caller writes the point anyway.
-        """
-        return fx.convert(price, currency, self.base_currency, self.rates, at)
-
-    def _write_quote(self, symbol: str, last_quote, info, now: datetime,
-                     converted=None, fx_rate=None) -> bool:
-        """Persist one live observation: ``symbol_quote`` + one ``price_point``.
-
-        :meth:`scrape.ScrapeWorkload.write_quote` (issue #847). The write
-        itself is still :mod:`quotes`', which is the single writer of the two
-        market tables (ADR-0006) — this ticket moved an orchestration and not
-        a write.
-        """
-        return self._scrape.write_quote(symbol, last_quote, info, now,
-                                        converted, fx_rate)
-
-    def expose_metrics(self):
-        """Fetch and store every held symbol's quote, once.
-
-        :meth:`scrape.ScrapeWorkload.expose_metrics` (issue #847) — the
-        synchronous whole-portfolio driver the end-to-end harness runs. The
-        name is Prometheus' last word in the tree and #850 owns its renaming;
-        this ticket moved the body and left the name where it stood.
-        """
-        return self._scrape.expose_metrics()
-
-    # ------------------------------------------------------------------ #
-    # Market-aware per-symbol scheduling (issue #616)
-    # ------------------------------------------------------------------ #
-
-    def _held_symbols(self) -> set:
-        """The symbols currently held across all accounts.
-
-        :meth:`scrape.ScrapeWorkload.held_symbols` (issue #847) — the scrape's
-        population, and the filter (a quantity) that keeps a line sold four
-        years ago out of it.
-        """
-        return self._scrape.held_symbols()
-
-    def read_exchange_of(self) -> Dict[str, Optional[str]]:
-        """Map each held symbol to its venue for auto pool sizing (#851, #619).
-
-        :meth:`scrape.ScrapeWorkload.read_exchange_of` (issue #847), read by
-        :func:`start_runtime`: one query on ``symbol_quote`` and no network.
-        """
-        return self._scrape.read_exchange_of()
-
-    def _scheduled_symbols(self) -> set:
-        """Symbols that currently have a live per-symbol scrape job.
-
-        :meth:`scrape.ScrapeWorkload.scheduled_symbols` (issue #847).
-        """
-        return self._scrape.scheduled_symbols()
-
-    def _arm_symbol(self, symbol: str, delay: float, now: datetime) -> None:
-        """(Re)schedule a symbol's scrape job to fire ``delay`` seconds from now.
-
-        :meth:`scrape.ScrapeWorkload.arm_symbol` (issue #847), jitter included.
-        """
-        return self._scrape.arm_symbol(symbol, delay, now)
-
-    def apply_dials(self, values: Dict[str, object]) -> None:
-        """Set the live attributes a mapping of dials names (issue #701).
-
-        One loop over :data:`settings_registry.SETTINGS`, so the attribute a dial
-        feeds is declared once — in the registry, next to its bounds and its
-        effect — instead of in a hand-written assignment here that can silently
-        fall out of step with it.
-
-        Keys the mapping does not carry are left alone (a ``PUT`` naming one
-        dial must not reset the other four), and so is a ``None`` value. The
-        only dial that can be ``None`` is the unanswered reporting currency, and
-        skipping it is what it needs rather than a gap: the attribute starts at
-        ``None``, the boot's read of an unanswered store hands back ``None``, and
-        the first ``PUT`` that answers hands back a code — so the write path
-        moves it exactly once, in the one direction it can move.
-        """
-        for spec in settings_registry.SETTINGS:
-            if spec.attribute is None:
-                continue
-            if values.get(spec.key) is not None:
-                setattr(self, spec.attribute, values[spec.key])
-
-    def rearm_regular_scrapes(self) -> Tuple[int, int]:
-        """Re-arm the symbols a new ``regular_interval`` reaches (issue #701).
-
-        :meth:`scrape.ScrapeWorkload.rearm_regular_scrapes` (issue #847). The
-        pair it answers is the settings write path's — ``(reached,
-        at_market_open)`` — and :func:`apply_settings` reports it as such.
-        """
-        return self._scrape.rearm_regular_scrapes()
-
-    def _last_pass_closed(self, symbol: str) -> Optional[bool]:
-        """Was this symbol's market shut on its last pass? ``None`` if it has none.
-
-        :meth:`scrape.ScrapeWorkload.last_pass_closed` (issue #847).
-        """
-        return self._scrape.last_pass_closed(symbol)
-
-    def _reconcile_jobs(self) -> None:
-        """Diff the held-symbol set against the scheduled jobs (design #604).
-
-        :meth:`scrape.ScrapeWorkload.reconcile_jobs` (issue #847), called by
-        :meth:`ingest` on every replay.
-        """
-        return self._scrape.reconcile_jobs()
-
-    def _check_price_freshness(self, symbol: str,
-                               live_price, now: datetime) -> bool:
-        """Price-freshness liveness sonde (issue #628, design #626).
-
-        :meth:`scrape.ScrapeWorkload.check_price_freshness` (issue #847).
-        """
-        return self._scrape.check_price_freshness(symbol, live_price, now)
-
-    @staticmethod
-    def _scrape_verdict(should_write: bool, state, wrote: bool,
-                        has_holdings: bool) -> str:
-        """Name what one scrape pass did, at the instant it did it (issue #668).
-
-        :func:`scrape.scrape_verdict` (issue #847).
-        """
-        return scrape.scrape_verdict(should_write, state, wrote, has_holdings)
-
-    def _scrape_symbol(self, symbol: str, now: Optional[datetime] = None) -> None:
-        """Scrape one symbol, gate the write, and re-arm the job (design #602).
-
-        :meth:`scrape.ScrapeWorkload.scrape_symbol` (issue #847) — the
-        workload's entry point, and the callable every per-symbol job is armed
-        on.
-        """
-        return self._scrape.scrape_symbol(symbol, now)
-
-    def recompute_perf(self) -> None:
-        """Rebuild the perf cache, in full, every cycle — guarded (ADR-0011).
-
-        :meth:`perf_job.PerfJob.recompute` (issue #849) — the callable the
-        ``perf`` interval job is armed on and the one
-        :func:`replay_after_write` calls, so a rebuild that fails is a
-        ``PERF_FAILED`` record and never a ``500`` on a write the store has
-        already accepted.
-        """
-        return self._recompute.recompute()
-
-    def ingest(self, force: bool = False):
-        """Replay the ledger and reconcile the scrape jobs.
-
-        **No longer a polled job** (issue #697). In v4 this ran every 300 s
-        because the files were the truth and nothing else could notice they had
-        changed. The ledger now changes only when a write changes it, so this is
-        the *replay that follows the write* — a quiet, synchronous, in-process
-        gesture with exactly two callers:
-
-        * the boot, in ``start_runtime``, where it is also what arms the
-          per-symbol scrape jobs for the first time. It publishes nothing new:
-          the master built the snapshot before the fork, so this is a cache hit
-          on :func:`ledger.stamp` that only arms the jobs;
-        * a write through the API, via :func:`replay_after_write`, which passes
-          ``force=True``.
-
-        **``force`` is not the flag that left** (ADR-0032). ``import_files``
-        said *scan the drop folder or do not*, and it went with the folder;
-        what is left is whether the fingerprint may be honoured, and the write
-        path says it need not be — it has just moved the ledger and has no
-        reason to ask.
-
-        ``SB_INGESTION_INTERVAL`` is gone with the polling it paced, and there
-        is no timer anywhere that re-reads a file on its own.
-
-        Errors are logged but not raised to avoid blocking the scraping job.
-        The previous valid configuration is kept until the error is fixed —
-        which since #658 is true by construction rather than by this method's
-        care: the manager publishes a snapshot only once it is complete *and*
-        valid, so a failure anywhere above leaves the previous one standing for
-        every reader, not just for this one.
-        """
-        now = datetime.now(timezone.utc)
-        try:
-            before = self.config_manager.current().shares
-            snapshot = (self.config_manager.replay() if force
-                        else self.config_manager.reload())
-            # **On every ingest, and that was a defect once** (issue #812). The
-            # condition here used to be ``if import_files``, which was right
-            # while the only file that could carry a reporting currency arrived
-            # through the drop folder. ``POST /api/events/import`` writes that
-            # setting too (:func:`entries.create_many`) and comes through the
-            # replay that follows the write — so the row landed in the store and
-            # the running process went on holding ``None``. Since the perf gate
-            # reads the *attribute*, every later tick was blind as well: an
-            # install whose first gesture is an import had no performance series
-            # at all until a restart.
-            self._adopt_declared_currency()
-            after = snapshot.shares
-            if after != before:
-                app_logger.info("Shares configuration updated from events")
-            else:
-                app_logger.debug("No changes in shares configuration")
-            self.recorder.record_ingest(runtime_state.IngestRecord(
-                at=now,
-                outcome=(runtime_state.INGEST_UPDATED if after != before
-                         else runtime_state.INGEST_UNCHANGED),
-                shares=len(after),
-                events=len(snapshot.events) if snapshot.events is not None else None,
-            ))
-            # The last-pass records of a symbol the ledger no longer names at
-            # all — a forgotten import (issue #703). The parallel of
-            # ``retain_positions`` just above, and the *only* thing that drops a
-            # backfill record: leaving the held set is not leaving the ledger,
-            # and a sold position's backward pass is still running.
-            self.recorder.retain({share['symbol'] for share in after
-                                  if share.get('symbol')})
-        except Exception as e:
-            app_logger.error(f"Error during ingestion (keeping previous config): {e}")
-            # The record #656 called out as the one gap worth closing on its
-            # own: since #658 a rejected configuration is never published, so
-            # the app goes on running — correctly — on its previous snapshot,
-            # and the only trace of that anywhere is the line just above.
-            self.recorder.record_ingest(runtime_state.IngestRecord(
-                at=now, outcome=runtime_state.INGEST_FAILED, error=str(e)))
-
-        # Reconcile the per-symbol scrape jobs against the (possibly unchanged)
-        # held-symbol set. Idempotent and always run — on the first ingest it
-        # arms every symbol, later it only touches the diff. No-op until the
-        # scheduler is wired in __main__.
-        self._reconcile_jobs()
-
-        # Re-observe the installation facts (issue #709). Here because this is
-        # the gesture that runs at the boot, on a file landing and after a
-        # write — the three moments an *installation fact* can change — and
-        # because it is the only one that runs on an install holding nothing at
-        # all, where the backfill returns before doing anything.
-        self.review_installation_facts()
-
-    # ------------------------------------------------------------------ #
-    # The installation facts (issue #709)
-    # ------------------------------------------------------------------ #
-
-    def reconstruction_state(self) -> Tuple[int, int]:
-        """``(series complete, series in the reconstruction)`` — process memory.
-
-        The source of the one installation fact that is neither a file nor an
-        environment variable, and it is memory rather than a query for the same
-        reason ``/api/runtime`` reads none: ``_backfill_complete`` is where
-        "this pass has reached its first acquisition" lives, and no row
-        anywhere says it — a symbol Yahoo answers nothing about has a completed
-        pass and an empty series.
-
-        **This method never answers ``None``**, and that is the whole of it:
-        across the seam ``None`` means :data:`installation_facts.UNOBSERVED` —
-        *this process cannot see the scheduler* — and it is
-        :func:`installation_fact_context` alone that says it, for a caller
-        holding no ``metrics`` at all. Nothing ever held is ``(0, 0)``: an
-        observation, made from here, saying there is no reconstruction to run.
-        A fresh install still announces no reprise d'historique —
-        ``_observe_reconstruction`` stands the installation fact down on
-        ``total <= 0`` exactly as it does on a finished one — but it *stands it
-        down* instead of leaving it untouched, which is what the criterion
-        demands: forgetting every import while the reconstruction was armed
-        used to leave its row standing for ever, on a portfolio that no longer
-        names a single symbol.
-        """
-        windows = self.config_manager.current().backfill_windows()
-        now = datetime.now(timezone.utc)
-        targets = {
-            symbol: carrying.holding_bounds(window[0], window[1], now)[0]
-            for symbol, window in windows.items()}
-        complete = sum(1 for symbol, target in targets.items()
-                       if self._backfill_complete.get(symbol) == target)
-        return complete, len(windows)
-
-    def review_installation_facts(self) -> None:
-        """Re-observe every installation fact, and record the one that is an
-        event.
-
-        The whole call-site pattern of the feature: the observation is made
-        where the sources are — the ingest and the backfill cycle — and **never
-        on a ``GET``**, an installation fact dated by the moment somebody
-        happened to open a page saying nothing about when the thing it names
-        started.
-
-        Both callers see all four sources, this object being where the
-        reconstruction's memory lives, so neither of them can drop a row the
-        other armed. What cannot see it is a runtime with no scheduler — a boot
-        that has not reached :func:`start_runtime`, a web request on one that
-        never did — and :func:`installation_fact_context` answers *unobservable*
-        for those rather than *finished*.
-
-        Guarded: a store that refuses this must not take a scheduled job with it.
-        A missed review costs one cycle, and the next one re-observes everything
-        from scratch, there being no state to catch up on.
-        """
-        try:
-            context = installation_fact_context(self.config_manager, self)
-            with self.config_manager.writing() as opened:
-                # Order matters, and only in one direction: the reconstruction
-                # concluding is what *produces* the assumed-currency
-                # installation fact, so it is recorded before the refresh that
-                # stands its sibling down.
-                if context.reconstruction_concluded:
-                    installation_facts.record(
-                        opened,
-                        installation_facts.ASSUMED_BASE_CURRENCY, context)
-                installation_facts.refresh(opened, context)
-        except Exception as e:
-            app_logger.error(f"Failed to review the installation facts: {e}")
-
-    def _adopt_declared_currency(self) -> None:
-        """Take up a reporting currency an import has just declared (issue #710).
-
-        A dial reaches this process from exactly two places: the boot reads them
-        all once into the attributes every cycle re-reads (``start_runtime``),
-        and ``PUT /api/settings`` assigns the same attributes after writing the
-        row. That pair is the whole of *"no dial requires a restart"*.
-
-        An **import** is the third writer of one of them, and of one only: an
-        exported file states its reporting currency, and a store that has none
-        takes it (``ledger.currency_to_adopt``, ADR-0021). Without this line the
-        row would be in the store and the running process would go on converting
-        nothing until the next restart — and that is the one dial where the
-        symptom is invisible, since a missing currency writes ``NULL``
-        conversions rather than failing anything.
-
-        Read after the replay and not before it: the value this looks for is
-        written *by* the import that replay follows. And it is read on **every**
-        ingest since #812 — a file uploaded to ``POST /api/events/import``
-        declares a currency exactly as one dropped in the folder does, and that
-        road comes through ``replay_after_write``, which scans no folder.
-        Idempotent by the condition below, so the boot's own ingest and every
-        write that changes nothing here cost one ``setting`` read.
-
-        And it triggers the lateral pass for the same reason ``PUT
-        /api/settings`` does (issue #704): this **is** the pose of the reporting
-        currency, on the road a headless install actually takes, and every point
-        already scraped is carrying a ``NULL`` conversion waiting for it.
-        """
-        stored = self.config_manager.store.setting('base_currency')
-        if stored and stored != self.base_currency:
-            app_logger.info(
-                f"Reporting currency taken from an imported file: {stored}")
-            self.base_currency = stored
-            self.repair_conversions_now()
-
-    def repair_conversions_now(self) -> bool:
-        """Put the lateral pass in front of the queue (issue #704). Did it move?
-
-        The effect of answering the reporting currency, and it is the *only*
-        dial with one of this shape, because it is the only one whose value is
-        **retroactive**: while it was unanswered every scrape and every rebuilt
-        chunk wrote its point with ``price_converted NULL``, and those rows are
-        not lost — the lateral pass gives them the column they are short of. The
-        whole stock is therefore repairable the instant the question is answered,
-        and what this does is make it start now rather than up to one
-        ``backfill_interval`` later, on the single gesture that unblocks every
-        money figure in the product.
-
-        Two things happen, and the first is what makes the second honest. The
-        back-off memory is **cleared**: a symbol backing off after a failed rate
-        fetch was failing at a question that has just changed, and making it wait
-        out a delay computed against the old world would be the interface
-        punishing the repair. Then the backfill job's next run is advanced —
-        the pass rides on it, so there is nothing else to start.
-
-        Returns whether the job was actually moved. ``False`` on a runtime with
-        no scheduler (the master, a test) is not a failure: the dial is in the
-        store, the attribute is set, and the next cycle reads both.
-        """
-        self._lateral_retry_at.clear()
-        if self.scheduler is None:
-            return False
-        try:
-            self.scheduler.modify_job(
-                BACKFILL_JOB_ID, next_run_time=datetime.now(timezone.utc))
-        except Exception as e:
-            app_logger.error(
-                f"Failed to bring the conversion repair forward: {e}")
-            return False
-        app_logger.info(
-            "Reporting currency answered: repairing the conversions of every "
-            "price already stored")
-        return True
-
-    # ------------------------------------------------------------------ #
-    # The backfill and its three passes (issue #848, :mod:`backfill`)
-    # ------------------------------------------------------------------ #
-    #
-    # A third of this class stood here: the cycle, the retention ladder's
-    # application, the three passes, the shared fetch-and-store, the conversion
-    # of a fetched chunk and the unit lookup the lateral pass learns from. Each
-    # name below stays reachable because the suite calls it — the passes are
-    # driven one at a time by tests that seed a store and read the rows back —
-    # and because the pass that runs calls its neighbours *through this object*,
-    # so a method replaced on the instance is traversed rather than stepped
-    # over.
-
-    def backfill(self, now: Optional[datetime] = None):
-        """Rebuild the past, one cycle: the ladder, then three passes a symbol.
-
-        :meth:`backfill.BackfillWorkload.run` (issue #848) — the callable the
-        ``backfill`` interval job is armed on, and the one clock the whole
-        cycle reads (issue #705).
-        """
-        return self._backfill.run(now)
-
-    def _backfill_symbol(self, symbol: str,
-                         window: Tuple[date, Optional[date]],
-                         held: bool, now: datetime) -> Tuple[int, int]:
-        """Run the three passes over one symbol's holding window.
-
-        :meth:`backfill.BackfillWorkload.backfill_symbol` (issue #848), and the
-        one place the three are gated apart. Returns ``(points written,
-        conversions repaired)``.
-        """
-        return self._backfill.backfill_symbol(symbol, window, held, now)
-
-    def _fetch_and_store(self, symbol, start_date, end_date):
-        """Fetch one ``[start, end]`` chunk and, if non-empty, write it.
-
-        :meth:`backfill.BackfillWorkload.fetch_and_store` (issue #848) — the
-        shared tail of the two filling passes, conversion and politeness delay
-        included. The write itself is still :mod:`quotes`', the single writer
-        of the market tables (ADR-0006).
-        """
-        return self._backfill.fetch_and_store(symbol, start_date, end_date)
-
-    def _backward_anchor(self, symbol: str, ceiling: datetime) -> datetime:
-        """Where the backward pass resumes from — the oldest window tried.
-
-        :meth:`backfill.BackfillWorkload.backward_anchor` (issue #848), whose
-        minimum-of-three is :func:`carrying.backward_anchor`'s since #706.
-        """
-        return self._backfill.backward_anchor(symbol, ceiling)
-
-    def _convert_history(self, symbol: str, prices: List[Dict]) -> None:
-        """Stamp a fetched chunk with its converted price and rate, in place.
-
-        :meth:`backfill.BackfillWorkload.convert_history` (issue #848).
-        """
-        return self._backfill.convert_history(symbol, prices)
-
-    def _backfill_backward(self, symbol: str, target: datetime,
-                           ceiling: datetime,
-                           now: Optional[datetime] = None) -> int:
-        """Backward pass: extend the series toward the first acquisition.
-
-        :meth:`backfill.BackfillWorkload.backward` (issue #848) — one of the
-        three named entry points, and the one that says when a symbol's history
-        is finished, through :func:`carrying.is_terminal` and nowhere else.
-        """
-        return self._backfill.backward(symbol, target, ceiling, now)
-
-    def _collapse_to_ladder(self, now: datetime) -> int:
-        """Age the stored series onto the ladder, guarded like every other write.
-
-        :meth:`backfill.BackfillWorkload.collapse_to_ladder` (issue #848). The
-        rungs and the walls stay :mod:`retention`'s, which is pure: what joined
-        the backfill is the *application* of the ladder and never the rule.
-        """
-        return self._backfill.collapse_to_ladder(now)
-
-    def _record_window_tried(self, symbol: str, oldest: date) -> None:
-        """Persist the backward pass's anchor, guarded like every other write.
-
-        :meth:`backfill.BackfillWorkload.record_window_tried` (issue #848).
-        """
-        return self._backfill.record_window_tried(symbol, oldest)
-
-    def _backfill_forward(self, symbol: str,
-                          now: Optional[datetime] = None) -> int:
-        """Forward pass: recover a session missed while the app was down.
-
-        :meth:`backfill.BackfillWorkload.forward` (issue #848).
-        """
-        return self._backfill.forward(symbol, now)
-
-    def _learn_quote_currency(self, symbol: str) -> Tuple[Optional[str], bool]:
-        """Ask Yahoo what unit a symbol is quoted in. ``(currency, failed)``.
-
-        :meth:`backfill.BackfillWorkload.learn_quote_currency` (issue #848) —
-        the lateral pass's exit for a symbol the live scrape never meets.
-        """
-        return self._backfill.learn_quote_currency(symbol)
-
-    def _backfill_lateral(self, symbol: str) -> int:
-        """Lateral pass: give the stored points the conversion they lack (#704).
-
-        :meth:`backfill.BackfillWorkload.lateral` (issue #848), whose two
-        stopping conditions stay told apart by the fact that a rate series
-        **raises** where an unresolvable pair answers empty.
-        """
-        return self._backfill.lateral(symbol)
-
-    def scrape(self):
-        """Scrape stock prices from Yahoo Finance and expose metrics.
-
-        :meth:`scrape.ScrapeWorkload.scrape` (issue #847) — the synchronous
-        whole-portfolio path kept for the e2e harness.
-        """
-        return self._scrape.scrape()
-
-    # ``_midnight`` left with the type it worked around (issue #700). A perf
-    # point was stamped at midnight UTC because InfluxDB had one kind of time
-    # and every reader then had to un-stamp it; the store has two and never
-    # mixes them, so the day is a ``DATE`` and there is nothing to convert.
-
-    @staticmethod
-    def _value_kwargs(dp, last: bool, perf) -> dict:
-        """Shared value + perf fields for a metric point built from a DailyPerf.
-
-        :func:`perf_job.value_kwargs` (issue #849), where the per-field rule of
-        #708 is applied once for the two tables.
-        """
-        return perf_job.value_kwargs(dp, last, perf)
-
-    # ``_mark_perf_dirty`` and ``_consume_perf_dirty_from`` stood here (issue
-    # #707). They were the backfill's and the perf job's two ends of one
-    # watermark, and they leave together with the incremental window they
-    # bounded: the whole series is recomputed and upserted every cycle, so there
-    # is no tail to remember and nothing to re-arm when a write fails.
-
-    @staticmethod
-    def _holding_windows(timeline, account_id: str, symbols,
-                         today: date) -> Dict[str, Tuple[date, date]]:
-        """``{symbol: (first, last) day this account held it}`` — the horizon's
-        bound (issue #708).
-
-        :func:`perf_job.account_holding_windows` (issue #849). Not to be
-        confused with the module-level :func:`holding_windows` above, which
-        answers the same question over the *whole* ledger rather than per
-        account.
-        """
-        return perf_job.account_holding_windows(timeline, account_id, symbols,
-                                                today)
-
-    @staticmethod
-    def _spans(points, key) -> Dict[Any, Tuple[date, date]]:
-        """``{key: (first_day, last_day)}`` over the points a cycle produced.
-
-        :func:`perf_job.spans` (issue #849) — what the prune is bounded by.
-        """
-        return perf_job.spans(points, key)
-
-    def update_account_metrics(self) -> Dict[str, Optional[date]]:
-        """Rebuild the perf cache — **one pass at a time** (issue #812).
-
-        :meth:`perf_job.PerfJob.update_account_metrics` (issue #849). The lock
-        it takes is :attr:`_perf_lock`, held on *this* object and borrowed by
-        the job: there is one pass lock per runtime, and two passes overlapping
-        would let the second to commit prune away the history the first had
-        just written.
-        """
-        return self._recompute.update_account_metrics()
-
-    def _rebuild_series(self) -> Dict[str, Optional[date]]:
-        """Rebuild the daily ``account_metrics`` + ``portfolio_totals`` cache.
-
-        :meth:`perf_job.PerfJob.rebuild_series` (issue #849) — the pass itself:
-        the reporting-currency guard, the replay, the sliding horizon, the call
-        to the pure and the single transaction handed to
-        :mod:`perf_series`, which stays the only writer of the two tables
-        (ADR-0006). It stays reachable under this name because it is the seam
-        the suite watches to assert that two passes never overlap.
-        """
-        return self._recompute.rebuild_series()
-
-    # ``reload()`` used to live here, assigning ``self.shares`` from a forced
-    # load and thereby bypassing validation entirely — the one path that could
-    # publish a rejected configuration outright. There is nothing left for it to
-    # do: ``ConfigurationManager.reload(force=True)`` is the publisher, and this
-    # class reads what it publishes.
-
-    def close(self):
-        """Release what this object owns — which since #700 is nothing.
-
-        The InfluxDB client left with the database, and the store's connection
-        was never this object's to close: it belongs to the ``Runtime`` and is
-        closed **last** by :func:`shutdown_runtime`, once nothing is left running
-        that could still write into it. The method survives because
-        :func:`shutdown_runtime` calls it, and a teardown that has to know which
-        objects have one is a teardown that will one day forget one.
-        """
-
-
 # ---------------------------------------------------------------------------
 # Boot — three steps of one sequence (issue #651, ADR-0039)
 # ---------------------------------------------------------------------------
@@ -1838,7 +828,7 @@ class Runtime:
                  store_persistence: str = mounts.UNKNOWN,
                  opened_store: Optional['store.Store'] = None):
         self.config_manager = config_manager
-        self.metrics: Optional['SuiviBourseMetrics'] = None
+        self.workloads: Optional[workloads.Workloads] = None
         self.scheduler: Optional[BackgroundScheduler] = None
 
         # The store (issue #696, ADR-0039). **One connection, for the life of
@@ -2005,14 +995,14 @@ def start_runtime(runtime: Runtime) -> Runtime:
         else settings_module.read_all(runtime.store)
     backfill_interval = dials['backfill_interval']
 
-    # Init SuiviBourseMetrics. The store is not passed at all — the manager owns
-    # it, and with it the mutex that keeps a write whole against a concurrent
-    # ingestion.
-    sb_metrics = SuiviBourseMetrics(
+    # The four workloads and the state they share (issue #850, :mod:`workloads`).
+    # The store is not passed at all — the manager owns it, and with it the
+    # mutex that keeps a write whole against a concurrent ingestion.
+    running = workloads.Workloads(
         runtime.config_manager,
         recorder=runtime.recorder)
-    sb_metrics.apply_dials(dials)
-    runtime.metrics = sb_metrics
+    running.apply_dials(dials)
+    runtime.workloads = running
 
     # Size the executor pool, always automatically (issue #701, formula #619).
     # The fixed dial was deleted rather than moved into the store: the executor
@@ -2026,27 +1016,27 @@ def start_runtime(runtime: Runtime) -> Runtime:
     # boot spent up to half a minute answering nothing to buy an integer the
     # store already knew.
     pool_size = scheduling.compute_pool_size(
-        sb_metrics.shares, sb_metrics.read_exchange_of())
+        running.shares, running.read_exchange_of())
     # Wire the scheduler before bootstrapping so ingest() can arm the
     # per-symbol scrape jobs (issue #616). Their immediate first fire IS the
     # bootstrap — no separate initial scrape. Background, not Blocking: uvicorn's
     # event loop owns the foreground.
     scheduler = BackgroundScheduler(
         executors={'default': ThreadPoolExecutor(pool_size)})
-    sb_metrics.scheduler = scheduler
+    running.scheduler = scheduler
     runtime.scheduler = scheduler
     # Bootstrap: load shares + arm one self-rescheduling scrape job per
     # symbol (each fires immediately, then re-arms on its market cadence).
-    sb_metrics.ingest()
+    running.ingest()
     # Register the two fixed-cadence interval jobs (backfill, perf recompute).
     # Per-symbol scrape jobs are armed by ingest() above and kept separate; the
     # perf recompute is its own job (issue #618) and rebuilds its cache in full
     # on every tick, starting with this boot's (issue #707).
-    register_interval_jobs(scheduler, sb_metrics, backfill_interval)
+    register_interval_jobs(scheduler, running, backfill_interval)
     scheduler.start()
     app_logger.info(
         f"Scheduler started: per-symbol scraping (REGULAR every "
-        f"{sb_metrics.regular_interval}s), ingestion on write (watched drop "
+        f"{running.regular_interval}s), ingestion on write (watched drop "
         f"folder), backfill every {backfill_interval}s, perf recomputed every "
         f"{scheduling.PERF_TICK}s, executor pool: {pool_size} workers")
     return runtime
@@ -2072,7 +1062,7 @@ def replay_after_write(runtime: Runtime) -> None:
     ``PERF_TICK``, so correcting a mistake made in 2019 left every curve exactly
     as it was for up to two minutes — during which *taken*, *taken wrong* and
     *not taken yet* were one screen. The recompute is
-    :meth:`SuiviBourseMetrics.recompute_perf` and not
+    :meth:`workloads.Workloads.recompute_perf` and not
     ``update_account_metrics``: it is the guarded shape, so a cache that fails to
     rebuild is a ``PERF_FAILED`` record rather than a ``500`` on a write that
     committed, and the pass is recorded exactly as a tick's is — because it is
@@ -2092,9 +1082,9 @@ def replay_after_write(runtime: Runtime) -> None:
     gone (ADR-0032), and with it the one path into this ledger that did not
     come through a write.
     """
-    if runtime.metrics is not None:
-        runtime.metrics.ingest(force=True)
-        runtime.metrics.recompute_perf()
+    if runtime.workloads is not None:
+        runtime.workloads.ingest(force=True)
+        runtime.workloads.recompute_perf()
     else:
         runtime.config_manager.replay()
 
@@ -2109,8 +1099,6 @@ def shutdown_runtime(runtime: Runtime) -> None:
     """
     if runtime.scheduler is not None and runtime.scheduler.running:
         runtime.scheduler.shutdown(wait=False)
-    if runtime.metrics is not None:
-        runtime.metrics.close()
     # The store last: it is the thing every job was writing into, so it closes
     # once nothing is left running to write.
     if runtime.store is not None:

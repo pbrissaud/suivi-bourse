@@ -7,7 +7,7 @@ Covers:
     per-account siloing, CashFlow emission
   * Timeline.cash_at forward-fill
   * InfluxDBWriter.get_price_series / write_account_metrics SQL & tags
-  * SuiviBourseMetrics.update_account_metrics wiring (gate, midnight stamp,
+  * Workloads.update_account_metrics wiring (gate, midnight stamp,
     holdings valuation, negative-balance warning)
 
 No network, no real InfluxDB.
@@ -19,9 +19,9 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
-import main
 import perf_series
 import quotes
+import workloads
 from events import (
     EventAggregator, EventValidator, Event, EventType, CashFlow, Account, Portfolio,
     AccountMetricPoint, PortfolioTotalPoint,
@@ -283,7 +283,7 @@ def test_portfolio_totals_is_keyed_by_the_day_alone(store):
 
 
 # --------------------------------------------------------------------------- #
-# SuiviBourseMetrics.update_account_metrics wiring
+# Workloads.update_account_metrics wiring
 #
 # The job's **only inputs are the store and the clock** (issue #707), so every
 # test below lays its ledger into the store and reads the answer back out of it.
@@ -306,9 +306,8 @@ class _CashConfigManager:
 
 
 def _metrics(store, declare_ledger, events, accounts):
-    import main
     declare_ledger(store, events, accounts.accounts if accounts else None)
-    metrics = main.SuiviBourseMetrics(_CashConfigManager(store))
+    metrics = workloads.Workloads(_CashConfigManager(store))
     # The one question the app asks (#702, ADR-0021). Without an answer the perf
     # job writes **nothing at all** — not zeros, not NULLs — because every figure
     # it computes is money and an amount with no settled unit is not a figure.

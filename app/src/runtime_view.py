@@ -675,7 +675,7 @@ def build_errors(
 def is_rebuilding(reconstruction: Optional[Tuple[int, int]]) -> bool:
     """*The reconstruction still has windows to cover* (contract #745, #763).
 
-    Reads :meth:`main.SuiviBourseMetrics.reconstruction_state` — process memory
+    Reads :meth:`workloads.Workloads.reconstruction_state` — process memory
     — and **no query at all**, which is why the member is on the app-state
     resource and not beside the figures: it is a fact about *this process*.
 

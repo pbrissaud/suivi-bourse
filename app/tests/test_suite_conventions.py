@@ -2,7 +2,9 @@
 module of it."""
 
 import ast
+import io
 import re
+import tokenize
 from pathlib import Path
 
 _APP = Path(__file__).resolve().parents[1]
@@ -362,3 +364,87 @@ def test_the_sentinel_is_written_nowhere_at_all():
     """
     assert _offenders(_APP / 'src', _NAMES_THE_SENTINEL) == []
     assert _offenders(_APP / 'tests', _NAMES_THE_SENTINEL) == []
+
+
+#: The ceiling one class may occupy, counted in **lines that do something**:
+#: every line of its extent that is neither blank, nor a comment, nor a
+#: docstring. #842 opened the runtime class at 2 737 lines of file — 788 of
+#: which did something — and 47 methods, and asked for ~500; #847 to #850 took
+#: the four workloads out and renamed what was left, and this is what holds the
+#: split.
+#:
+#: **Raw extent was measured and rejected**, and the number is why: the four
+#: classes the split produced span 1 018, 608, 484 and 253 lines of file, of
+#: which 324, 223, 146 and 73 do anything at all. Two thirds of this tree is
+#: the design record — the reason a pass is gated where it is, the defect a
+#: guard exists to refuse — and a ceiling on raw lines is a ceiling on writing
+#: that down. It would have been met, here and in the three tickets before this
+#: one, by deleting prose rather than by moving a concern, which is the
+#: opposite of what #842 asked for.
+#:
+#: 350 rather than 500 because the measure changed: it is set where it bites —
+#: `BackfillWorkload`, the largest of the four at 324, is twenty-six lines from
+#: it — so a fifth concern written back into any of them fails here rather than
+#: being noticed by a reader two years later. Raising it is a conversation, not
+#: a keystroke.
+_CLASS_CEILING = 350
+
+
+def _class_extents(path: Path) -> dict:
+    """``{class name: lines that do something}`` for one module.
+
+    `ast` and `tokenize` rather than a regex, so a decorator, a nested class or
+    a string containing `class ` cannot move the count — and so that a comment
+    is told from the code it sits above by the tokenizer rather than by a
+    guess at indentation.
+    """
+    source = path.read_text(encoding='utf-8')
+    tree = ast.parse(source)
+    lines = source.splitlines()
+
+    silent = set()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.COMMENT:
+            silent.add(token.start[0])
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef,
+                             ast.FunctionDef, ast.AsyncFunctionDef)):
+            if ast.get_docstring(node, clean=False) is not None:
+                first = node.body[0]
+                silent.update(range(first.lineno, first.end_lineno + 1))
+
+    extents = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        extents[node.name] = sum(
+            1 for n in range(node.lineno, node.end_lineno + 1)
+            if lines[n - 1].strip() and n not in silent)
+    return extents
+
+
+def test_no_class_in_the_product_outgrows_a_reading():
+    """#850, and the ceiling #842 asked for.
+
+    The runtime class carried four workloads under one lock and one cache
+    before #847 to #850 took them out one at a time — the scrape, the backfill,
+    the performance recompute, then the ingestion. Nothing about that split
+    *holds*, though: a fifth concern written back into one of the four, or a
+    writer growing a second one, would rebuild the same object under a
+    different name, and the only thing that noticed last time was a reader
+    opening the file two years later.
+
+    Held on the **product** alone. The suite's own files run long by nature —
+    one module's behaviour, stated case by case — and a class there is a
+    fixture rather than a thing anybody has to hold in their head.
+    """
+    oversized = {}
+    for path in sorted((_APP / 'src').rglob('*.py')):
+        for name, extent in _class_extents(path).items():
+            if extent > _CLASS_CEILING:
+                oversized[f'{path.name}:{name}'] = extent
+
+    assert oversized == {}, (
+        f"classes over {_CLASS_CEILING} lines of code: {oversized}. A class "
+        f"that has grown a second concern belongs in two modules, the way #847 "
+        f"to #850 took four workloads out of one.")

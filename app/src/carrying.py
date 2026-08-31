@@ -77,9 +77,9 @@ is still the honest one: the app knows what the position cost and does not know
 what it is worth.
 """
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
-from events.schemas import unit_cost
+from events.schemas import EventType, unit_cost
 
 
 def carrying_price(observed: Optional[float],
@@ -168,6 +168,52 @@ def is_quoted(price_native: Optional[float], currency: Optional[str]) -> bool:
     return price_native is not None and bool(currency)
 
 
+#: What starts a holding window (issue #703). A ``GRANT`` is an acquisition: the
+#: share is held from the day it lands, priced or not (``events.schemas.
+#: declared_value`` decides the second question and not this one). Reading only
+#: ``BUY`` left a portfolio held entirely by grant with no backfill target at
+#: all, which is the state the retired ``no_buy`` terminal was reporting.
+ACQUISITION_EVENT_TYPES = (EventType.BUY, EventType.GRANT)
+
+
+def holding_windows(events, held) -> Dict[str, Tuple[date, Optional[date]]]:
+    """``{symbol: (first acquisition, last exit or None)}`` out of a raw ledger.
+
+    Pure, and here rather than in ``main`` since #850, beside the
+    :func:`holding_bounds` that turns its answer into the two instants a
+    backward pass works between: the two halves of one window had a module
+    boundary between them, and the module that held the first was the one this
+    file's callers must not import.
+
+    It has **two** callers since #706 and they hold two different things.
+    :meth:`main.ConfigSnapshot.backfill_windows` reads the published snapshot;
+    the perf recompute reads the store directly (its only inputs are the store
+    and the clock, #707) and derives ``held`` from its own replay. Both have to
+    reach the same window, since one drives the backfill and the other asks
+    whether that backfill is finished — and a second spelling of *"when did this
+    position start"* would put them a day apart, which is one chunk of
+    disagreement about whether a symbol is terminal.
+    """
+    first: Dict[str, date] = {}
+    exits: Dict[str, date] = {}
+    for event in events:
+        if not event.symbol:
+            continue
+        if event.event_type in ACQUISITION_EVENT_TYPES:
+            known = first.get(event.symbol)
+            if known is None or event.date < known:
+                first[event.symbol] = event.date
+        elif event.event_type == EventType.SELL:
+            known = exits.get(event.symbol)
+            if known is None or event.date > known:
+                exits[event.symbol] = event.date
+
+    return {
+        symbol: (acquired, None if symbol in held else exits.get(symbol))
+        for symbol, acquired in first.items()
+    }
+
+
 def holding_bounds(acquired: date, exited: Optional[date],
                    now: datetime) -> Tuple[datetime, datetime]:
     """A holding window as the two instants the backward pass works between.
@@ -186,7 +232,7 @@ def holding_bounds(acquired: date, exited: Optional[date],
     The installation fact reads it too (issue #709), and there the stake is the
     ``_backfill_complete`` watermark: it is keyed by the **target**, so a second
     spelling of "the first acquisition as an instant" would make
-    :meth:`main.SuiviBourseMetrics.reconstruction_state` compare against a target
+    :meth:`ingestion.IngestionWorkload.reconstruction_state` compare against a target
     the backward pass never stored, and announce a reconstruction that never
     finishes on a portfolio that finished it minutes ago.
     """
@@ -202,7 +248,7 @@ def backward_anchor(ceiling: datetime, oldest_stored: Optional[datetime],
                     oldest_tried: Optional[date]) -> datetime:
     """Where the backward pass resumes from — the **minimum** of the three.
 
-    The pure half of :meth:`main.SuiviBourseMetrics._backward_anchor`, extracted
+    The pure half of :meth:`backfill.BackfillWorkload.backward_anchor`, extracted
     by #706 so the anchor has one definition and the terminality read below can
     ask the same question in one batched query instead of re-deriving it.
 
@@ -228,7 +274,7 @@ def is_terminal(anchor: datetime, target: datetime) -> bool:
     """Has the backward pass nothing left to fetch for this symbol?
 
     The second term of the carrying predicate, and the **same comparison**
-    :meth:`main.SuiviBourseMetrics._backfill_backward` makes to set its
+    :meth:`backfill.BackfillWorkload.backward` makes to set its
     completion watermark — at day granularity, so tiny windows are not chased.
 
     Derived from the store rather than read off the scheduler's in-memory
