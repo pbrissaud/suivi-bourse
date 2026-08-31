@@ -1,6 +1,12 @@
 [project]
 name = "suivi-bourse"
-version = "0.0.0"
+# Written by release-please, never by hand — the same bump that writes
+# `version.txt` and `.release-please-manifest.json` (extra-files, TOML
+# updater). Nothing reads it at runtime: `pyproject.toml` reaches the
+# builder stage alone, and what the process says about itself is the
+# build stamp `build_info` reads. It is here so the file declares the
+# release it belongs to rather than a placeholder.
+version = "4.2.2"
 description = "Monitors stock shares with yfinance and stores everything in one embedded DuckDB store, with historical backfill."
 readme = "README.md"
 requires-python = ">=3.14"

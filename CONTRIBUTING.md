@@ -117,8 +117,21 @@ pull request does not wait on a container build.
 ## Releasing
 
 Release Please cuts the releases from the conventional commits landed on
-`master`. `version.txt` and `.release-please-manifest.json` are its files: they
-are bumped by `release-type: simple`, never edited by hand.
+`master`. Four files carry the version and **none of them is edited by hand**:
+`version.txt` and `.release-please-manifest.json`, which `release-type: simple`
+bumps, and `pyproject.toml` and `uv.lock`, which the two `extra-files` entries
+of `release-please-config.json` bump with the TOML updater.
+
+`uv.lock` is in that list because of `Dockerfile`'s `uv sync --locked`: uv
+records the root project's own version in the lockfile, so a `pyproject.toml`
+bumped alone makes the lockfile stale and the release's image build fails. Its
+JSONPath reads `@.name.value` rather than `@.name` — release-please parses the
+TOML with a parser that tags every scalar with its byte offsets, so a package's
+`name` is an object and not a string. That is the community's workaround for a
+lockfile release-please does not know about yet
+([release-please#2561](https://github.com/googleapis/release-please/issues/2561));
+should it stop matching, the updater changes nothing and the release's image
+build is what says so.
 
 Two gestures happen at merge time rather than in a file, which is why they are
 written down here. They are **separate**: the merge carries no trailer, and the

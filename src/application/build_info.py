@@ -2,10 +2,11 @@
 
 An owner opening a ticket has to be able to say *which* SuiviBourse broke, and
 until now nothing in the product could answer: ``version.txt`` is written by
-release-please and copied into no image, ``pyproject.toml`` says ``0.0.0``, and
-the OCI labels the release workflow stamps are readable by ``docker inspect``
-and by nothing running inside the container. So the build is **stamped at build
-time and read at boot**, and this module is where the two ends meet.
+release-please and copied into no image, ``pyproject.toml`` is bumped by the
+same release and reaches the builder stage alone, and the OCI labels the release
+workflow stamps are readable by ``docker inspect`` and by nothing running inside
+the container. So the build is **stamped at build time and read at boot**, and
+this module is where the two ends meet.
 
 **Two facts and a derived word, and the split is the whole design.** A *release
 version* is what the registry published the image under; a *revision* is the

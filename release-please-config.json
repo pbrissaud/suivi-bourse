@@ -29,6 +29,19 @@
     }
   ],
   "packages": {
-    ".": {}
+    ".": {
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "pyproject.toml",
+          "jsonpath": "$.project.version"
+        },
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='suivi-bourse')].version"
+        }
+      ]
+    }
   }
 }
