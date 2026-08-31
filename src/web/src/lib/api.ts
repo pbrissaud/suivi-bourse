@@ -862,8 +862,22 @@ export interface PriceSeriesResponse {
 export interface RuntimeSymbol {
   symbol: string
   next_run: string | null
-  /** Consecutive fruitless readings. Never "never", which is not computable. */
-  consecutive_failures: number
+  /**
+   * Consecutive fruitless readings. Never "never", which is not computable.
+   *
+   * **The name is the server's** (`runtime_view.py`), and this is the one field
+   * on this interface that cannot be named from here. Spelled
+   * `consecutive_failures`, it read `undefined` out of every payload: the map
+   * `SharesPage` builds from it held nothing, `?? 0` made that a zero,
+   * `absenceCase` therefore never returned `noQuote`, and **no row of the
+   * product was ever anomalous** — a delisted ticker rendered as an ordinary
+   * line carried at its cost. Neither guard could see it: `tsc` was satisfied
+   * because the type declared the wrong key, and the MSW fixture agreed with
+   * the client rather than with the server. The domain keeps
+   * `consecutiveFailures` for what the number *means*; this is what the wire
+   * says it is called.
+   */
+  failure_count: number
   /**
    * Was this symbol's market shut on its **last completed pass**? `null` — it
    * has never completed one.

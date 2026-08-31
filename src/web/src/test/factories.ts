@@ -964,7 +964,7 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     symbols: defaultPositions().map((position, index) => ({
       symbol: position.symbol,
       next_run: NOW,
-      consecutive_failures: 0,
+      failure_count: 0,
       // Two markets open, one shut — the shape the cadence sentence exists for:
       // a portfolio-wide dial that reaches part of the portfolio has to say so,
       // or the reader concludes the rest is misconfigured.

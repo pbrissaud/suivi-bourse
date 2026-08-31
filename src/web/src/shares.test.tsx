@@ -425,7 +425,7 @@ describe('the exception marker and the date', () => {
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(
           aRuntime({
-            symbols: [{ symbol: 'ZZC', next_run: null, consecutive_failures: 3 }],
+            symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }],
           }),
         ),
       ),
@@ -1117,7 +1117,7 @@ describe('the absences of this page, one screen apart', () => {
     server.use(
       http.get(ROUTES.runtime, () =>
         HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, consecutive_failures: 3 }] }),
+          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
         ),
       ),
     )

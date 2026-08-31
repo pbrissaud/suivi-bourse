@@ -18,7 +18,7 @@ function runtimeWith(symbols: RuntimeState['symbols']): RuntimeState {
 }
 
 function symbol(overrides: Partial<RuntimeState['symbols'][number]> = {}) {
-  return { symbol: 'ZZA', next_run: null, consecutive_failures: 0, closed: false, held: true, ...overrides }
+  return { symbol: 'ZZA', next_run: null, failure_count: 0, closed: false, held: true, ...overrides }
 }
 
 describe('what a new cadence reaches', () => {

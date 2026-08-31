@@ -144,7 +144,7 @@ export default function SharesPage() {
   // withheld for it, `/api/runtime` being the read that answers when the store
   // does not.
   const failures = useMemo(
-    () => new Map((runtime.data?.symbols ?? []).map((s) => [s.symbol, s.consecutive_failures])),
+    () => new Map((runtime.data?.symbols ?? []).map((s) => [s.symbol, s.failure_count])),
     [runtime.data],
   )
 
