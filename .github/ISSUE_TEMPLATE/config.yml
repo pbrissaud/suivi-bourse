@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://pbrissaud.github.io/suivi-bourse/docs/v5/
+    about: Installing it, importing your events, reading your figures, the settings.
+  - name: A question, or an idea still taking shape
+    url: https://github.com/pbrissaud/suivi-bourse/discussions
+    about: Discussions are the place for it — an issue is for something to do.
+  - name: A security vulnerability
+    url: https://github.com/pbrissaud/suivi-bourse/security/advisories/new
+    about: Report it privately, so the fix ships before the disclosure.

@@ -36,7 +36,7 @@ uv sync                                     # runtime + dev deps into .venv
 uv run flake8 src/application src/api \
        --ignore=E501                        # lint — the two packages, never `src/`
 uv run pytest tests/                        # unit + E2E, all network-mocked
-uv run python -m application.boot           # run it
+PYTHONPATH=src uv run python -m application.boot   # run it
 ```
 
 `src/` is the import root — `pythonpath = ["src"]` in a checkout, `PYTHONPATH` in

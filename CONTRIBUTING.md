@@ -31,10 +31,86 @@ See `git help commit`:
 2. Remember to sign off your commits as described above
 3. Submit a pull request
 
+## Working on it
+
+The repository holds three trees and each has its own loop. `src/` is the import
+root: it holds two Python packages — `application` (the app) and `api` (Flask) —
+beside `src/web`, which is the front and is not Python. Nothing is installable
+(`package = false`), so the path is named rather than installed.
+
+### The application
+
+```bash
+uv sync                                             # runtime + dev tooling into .venv
+uv run flake8 src/application src/api --ignore=E501 # the two packages, never `src/`
+uv run pytest tests/                                # unit + end-to-end, all network-mocked
+PYTHONPATH=src uv run python -m application.boot    # run it, on http://localhost:8080
+```
+
+The lint names the two packages rather than `src/`, which would walk the front's
+`node_modules`. `src/application/boot.py` is the only boot path: the web API and
+the scheduler share one process and that file holds the whole sequence.
+
+**It runs on macOS**, and that is new (ADR-0039): the app no longer forks, so
+there is no longer a container to build in order to see it work.
+
+### The front
+
+```bash
+cd src/web && pnpm install
+pnpm lint    # tsc -b --noEmit
+pnpm test    # vitest — no network, no configuration
+pnpm build   # → src/static/, which Flask serves; git-ignored
+pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080
+```
+
+`pnpm dev` needs the API running. If it is not on 8080, name the other port:
+`SB_API_URL=http://localhost:9000 pnpm dev`.
+
+### The documentation site
+
+```bash
+cd website && pnpm install
+pnpm start   # dev server — beware, the /docs redirect only exists in the build
+pnpm build   # every locale, and it fails on a broken link
+```
+
+The site is bilingual through Crowdin, English being the source. **Nothing under
+`website/i18n/fr/` is written by hand** — a pull request on a French file is lost
+at the next import. Translate after the English text has settled.
+
+### The container
+
+There is no compose stack; `docker run` is the canonical form.
+
+```bash
+docker build -t suivi-bourse:dev .
+docker run -d --name suivi-bourse --restart unless-stopped -p 8080:8080 \
+  -v suivi-bourse:/data suivi-bourse:dev
+
+IMAGE=suivi-bourse:dev .github/scripts/container-contract.sh   # what CI asserts
+```
+
+## Commit messages
+
+Commits are [conventional](https://www.conventionalcommits.org/): `feat`, `fix`,
+`docs`, `deps`, `chore` and `refactor`, with the touched tree as the scope —
+`feat(app):`, `fix(web):`, `docs(website):`. This is not a style rule: Release
+Please reads those subjects to decide the next version and to write the
+changelog, and a subject it cannot parse is discarded whole.
+
 ### Technical Requirements
 
-* Must pass [DCO check](#sign-off-your-work)
-* Must pass CI jobs for linting, security analysis and unit testing 
+* Must pass the [DCO check](#sign-off-your-work) — every commit signed off
+* `flake8` over `src/application` and `src/api`
+* `uv run pytest tests/`
+* The front's `pnpm lint`, `pnpm test` and `pnpm build`, when `src/web` changed
+* The image builds and honours its contract, when what it is built from changed
+* The site builds, `crowdin.yml` lints and `i18n/en/` is what
+  `pnpm write-translations --override` generates, when `website/` changed
+
+Each of the last three runs only when its own tree changed, so a documentation
+pull request does not wait on a container build.
 
 **You don't need to bump any version number, this will be done automatically once PR merged**
 

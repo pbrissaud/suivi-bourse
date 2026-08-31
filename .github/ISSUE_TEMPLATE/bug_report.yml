@@ -1,0 +1,114 @@
+name: Bug report
+description: Something SuiviBourse does that it should not
+labels: ["fix", "needs-triage"]
+assignees: [pbrissaud]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. **A vulnerability does not go here** — open a
+        [draft advisory](https://github.com/pbrissaud/suivi-bourse/security/advisories/new)
+        instead, so the fix ships before the disclosure.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the app did back. A screenshot says a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: |
+        The shortest sequence that shows it. If a figure is wrong, the events
+        behind it are what settles the question — a couple of anonymised lines
+        of your ledger are worth more than a description of them.
+      placeholder: |
+        1. Record a BUY of 10 XXX at 100,00 on 2026-01-15
+        2. Open the Shares page
+        3. The valuation reads …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: |
+        The app says which one it is running: the settings page ends on a card
+        called *The version*. `curl -s localhost:8080/api/runtime` carries the
+        same under `build`.
+      placeholder: "5.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it runs
+      options:
+        - The container image (ghcr.io/pbrissaud/suivi-bourse)
+        - Without Docker, from a checkout
+        - An image built from this repository
+        - Something else (say which below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where it happens
+      options:
+        - Dashboard
+        - Shares
+        - Accounts
+        - Ledger
+        - Settings
+        - Importing a .csv / .xlsx
+        - The API
+        - Start-up, or the container itself
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        `docker logs suivi-bourse` around the moment it happened. `LOG_LEVEL=DEBUG`
+        says more if the lines are thin.
+      render: shell
+
+  - type: textarea
+    id: health
+    attributes:
+      label: What /health says
+      description: "`curl -s localhost:8080/health` — the body names each workload and its last pass."
+      render: json
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Reverse proxy, unusual volume layout, a browser worth naming.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send it
+      options:
+        - label: I looked for an issue that already says this
+          required: true
+        - label: Anything I pasted above is mine to share — no real account numbers, no credentials
+          required: true

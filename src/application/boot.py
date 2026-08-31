@@ -14,9 +14,12 @@ arbiter left to raise a worker count against, and the ``--workers`` door is shut
 by there being no command line in the image at all. The ``ENTRYPOINT`` is
 ``python boot.py``, and :func:`serve` calls ``uvicorn.run`` in process.
 
-Run it by hand, from ``app/``::
+Run it by hand, from the repository root::
 
-    uv run python src/boot.py
+    PYTHONPATH=src uv run python -m application.boot
+
+``pythonpath = ["src"]`` in ``pyproject.toml`` is pytest's alone, and the project
+is not installable (``package = false``), so the import root is named here.
 """
 import os
 import sys
