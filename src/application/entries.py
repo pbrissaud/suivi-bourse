@@ -100,6 +100,40 @@ logger = getLogger("entries")
 DUPLICATE_KEY_COLUMNS = ('date', 'event_type', 'account', 'symbol', 'quantity',
                          'unit_price', 'fee', 'amount')
 
+#: The precision at which two amounts are **the same declared fact**, and it is
+#: not a number this module chose: it is the one the app's own ``.xlsx`` is
+#: written at. ``openpyxl`` serializes a double as ``%.16g`` — sixteen
+#: significant digits, one short of the shortest string that reads back bit for
+#: bit — which ``events/export.py`` says in its own opening as the reason the
+#: **CSV** is the file that keeps the backup's name.
+#:
+#: Read exactly, that made the round trip through the workbook the app offers in
+#: its own export menu fail to recognise its own rows: a broker's
+#: ``0.34898399999999996`` leaves as ``0.348984`` and comes back a different
+#: double, so the four numeric members of the key missed, and the import
+#: answered *0 duplicates* and laid a second, subtly different copy of the
+#: ledger down. Nothing else guards against that — the key is declared in no
+#: constraint on purpose (ADR-0007, ADR-0032), so it is the whole of what stands
+#: between a double import and the one table everything else is derived from.
+#:
+#: **It is a canonicalisation and not a tolerance**, which is what lets the key
+#: stay a hashable tuple: :func:`split_duplicates` looks the file's rows up in a
+#: dict, and an approximate comparison has no equality to hash and would have to
+#: walk the whole ledger per line. So both sides are put through the format the
+#: file is written at, rather than being compared with a slack around them.
+#:
+#: And it is deliberately **not** :data:`events.aggregator.DUST_FRACTION`. That
+#: one is ``1e-9`` *of a position's total acquired quantity* — a per-position
+#: clamp on ``quantity``, applied where a sale's number lands and, in its own
+#: words, *not a general clamp*. It has no denominator here (the key sees one
+#: row, never a position) and nothing to say about ``unit_price``, ``fee`` or
+#: ``amount``; borrowing the figure without the quantity it is a fraction of
+#: would be inventing a rule under a name that already means something else.
+#: Sixteen digits is as tolerant as the round trip requires and not one digit
+#: more: two amounts that differ anywhere a double can express the difference
+#: still key apart.
+AMOUNT_PRECISION = '%.16g'
+
 
 class UnknownEntry(Exception):
     """No event has that id.
@@ -425,17 +459,44 @@ def content_key(event: Event) -> Tuple:
     The type travels as its ``value`` rather than as the enum: an event read
     back out of the store and one just parsed out of a file must key alike, and
     the string is what both of them agree on.
+
+    **And the four amounts travel at the precision the export writes them at**
+    (:data:`AMOUNT_PRECISION`), for the same reason as the two above and one
+    road over: a row that left in the app's own ``.xlsx`` comes back rounded to
+    sixteen significant digits, and a key that read the raw double would tell
+    the owner their own export is entirely new. The store's number and the
+    workbook's are put through the one format, so the key is **stable under the
+    round trip the app itself offers** — which is the property, the rest being
+    arithmetic.
     """
     return (
         event.date,
         event.event_type.value,
         (event.account or '').strip() or DEFAULT_ACCOUNT,
         event.symbol,
-        event.quantity,
-        event.unit_price,
-        event.fee,
-        event.amount,
+        _amount(event.quantity),
+        _amount(event.unit_price),
+        _amount(event.fee),
+        _amount(event.amount),
     )
+
+
+def _amount(value: Optional[float]) -> Optional[float]:
+    """One amount, at the precision a round trip through the export survives.
+
+    ``None`` stays ``None``: an absent amount and an amount of zero are two
+    different declarations (a `BUY` carries no ``amount``, a `DEPOSIT` of 0 does)
+    and the key has always separated them.
+
+    The re-read is what makes it a **canonical form** rather than a rendering:
+    the answer is a double again, so the key stays comparable and hashable, and
+    the operation is idempotent — putting an already-rounded number through it a
+    second time returns it unchanged, which is what lets the stored side and the
+    file side meet at the same value.
+    """
+    if value is None:
+        return None
+    return float(AMOUNT_PRECISION % value)
 
 
 def split_duplicates(store, drafts: Sequence[Event]) -> Tuple[List[Event],
@@ -755,7 +816,7 @@ def _replays(store) -> None:
 
 
 __all__ = [
-    'DUPLICATE_KEY_COLUMNS',
+    'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
     'create', 'create_many', 'update', 'remove', 'remove_selection',
     'content_key', 'split_duplicates', 'judge',

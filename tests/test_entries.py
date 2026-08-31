@@ -344,7 +344,7 @@ def test_this_module_is_the_writer_of_the_event_table(store, tmp_path):
 
     assert writers == ['application/entries.py', 'application/reassignment.py']
     assert set(entries.__all__) == {
-        'DUPLICATE_KEY_COLUMNS',
+        'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
         'UnknownEntry', 'InvalidEntry', 'Duplicate',
         'create', 'create_many', 'update', 'remove', 'remove_selection',
         'content_key', 'split_duplicates', 'judge'}
@@ -456,6 +456,60 @@ def test_the_split_reads_the_ledger_and_the_file_and_writes_nothing(store):
     assert len(fresh) == 1 and len(duplicates) == 2
     assert fresh[0].symbol == 'MSFT'
     assert store.query('SELECT count(*) FROM event') == [(1,)]
+
+
+def test_the_workbook_the_app_exports_re_imports_as_duplicates(store,
+                                                               tmp_path):
+    """The app's own ``.xlsx``, handed straight back, is recognised as itself.
+
+    The round trip through the real file: the ledger goes out through
+    :func:`events.export.render_events_workbook` — the bytes
+    ``GET /api/export/events.xlsx`` answers — and comes back through
+    :class:`events.loader.EventLoader`, the road ``POST /api/events/import``
+    takes. Nothing here is simulated; the workbook is written and parsed.
+
+    ``openpyxl`` serializes a double as ``%.16g``, so a broker's
+    ``0.34898399999999996`` leaves as ``0.348984``. Read exactly, the key missed
+    on all four of its numeric members and the import answered **0 duplicates**
+    over a file it had just written itself — then wrote a second, subtly
+    different copy of the whole ledger, into the one table the positions, the
+    prices and the curves are all derived from. The four members are covered on
+    purpose: ``quantity`` and ``unit_price`` on the purchase, ``amount`` and
+    ``fee`` on the dividend.
+    """
+    entries.create(store, _draft(
+        quantity=0.34898399999999996, unit_price=1234.5678901234567, fee=2.5))
+    entries.create(store, _draft(
+        date=date(2024, 6, 10), event_type=EventType.DIVIDEND, quantity=None,
+        unit_price=None, amount=8.499999999999998,
+        fee=0.30000000000000004))
+    held = ledger.read_events(store)
+
+    workbook = tmp_path / 'events.xlsx'
+    workbook.write_bytes(events_export.render_events_workbook(held, 'EUR'))
+    returned = EventLoader(str(workbook)).load()
+    fresh, duplicates = entries.split_duplicates(store, returned)
+
+    assert len(returned) == 2
+    assert [duplicate.held.id for duplicate in duplicates] == [1, 2]
+    assert fresh == []
+    entries.create_many(store, fresh)
+    assert store.query('SELECT count(*) FROM event') == [(2,)]
+
+
+def test_the_key_still_separates_two_amounts_a_double_can_tell_apart(store):
+    """The other half: canonical is not tolerant (:data:`AMOUNT_PRECISION`).
+
+    Sixteen significant digits is the export's precision and not a slack around
+    a number, so two amounts that differ anywhere the file can carry the
+    difference stay two facts — down to the last digit ``%.16g`` writes.
+    """
+    assert entries.content_key(_draft(unit_price=1234.567890123456)) != \
+        entries.content_key(_draft(unit_price=1234.567890123457))
+    assert entries.content_key(_draft(fee=0.348984)) != \
+        entries.content_key(_draft(fee=0.348985))
+    assert entries.content_key(_draft(quantity=None)) != \
+        entries.content_key(_draft(quantity=0.0))
 
 
 def test_two_strictly_identical_typed_events_both_land(store):
