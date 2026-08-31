@@ -24,9 +24,9 @@ returns — in one container, with nothing else to install.
 - **It reports in one currency.** Everything you own is converted into a single
   base currency, so a portfolio spread over several markets still adds up to one
   figure.
-- **It shows you four pages** — a dashboard, your shares, your accounts, and
-  the data you gave it — and each figure explains, on the figure itself, the
-  convention it rests on.
+- **It shows you five pages** — a dashboard, your shares, your accounts, the
+  ledger you gave it and what this installation is — and each figure explains, on
+  the figure itself, the convention it rests on.
 - **It has one interface, and it is that one.** Everything the app knows about
   itself it says on those pages; there is no second surface to scrape and no
   second port to publish.

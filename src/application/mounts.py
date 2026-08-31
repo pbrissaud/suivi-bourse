@@ -38,8 +38,8 @@ Four things about the shape are decisions rather than defaults:
   else outlives the process that mounted it.
 * **Off Linux the answer is *unknown*, and unknown prints nothing.** The
   observation is a property of the kernel; an absent ``/proc`` must not
-  manufacture a false *ephemeral* on a macOS developer's machine — the one
-  platform this application cannot run natively on at all (#657).
+  manufacture a false *ephemeral* on a macOS developer's machine, where the app
+  does run natively since ADR-0039 and where the answer is simply not knowable.
 
 Pure by construction, in the taste of :mod:`scheduling` and :mod:`boot_env`:
 ``resolve`` is injected the way ``now`` is there, so the symlink resolution the

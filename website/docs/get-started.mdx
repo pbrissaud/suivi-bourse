@@ -24,7 +24,7 @@ whether it comes back.
 
 The `-v` is the whole difference between a trial and an install. Without it the
 container still starts — it simply keeps nothing, and it says so on every start,
-in its first log lines and on the installation panel of the app. That is a fair
+in its first log lines and on the **Settings** page of the app. That is a fair
 way to try the app for an evening. It is not a way to keep a portfolio: the store
 lives in the container's writable layer, and the first `docker rm` takes it.
 
@@ -127,11 +127,13 @@ deliberately not `ok`. `attention` lists the securities the verdict is about, so
 you know which line to go and read; `verdict` is the job's own word for its last
 pass, and `at` is when that pass happened.
 
-**The dot at the top right of the app reads this same body**, so you do not have
-to `curl` anything to know: green is `ok`, amber is `attention` — or a rebuild
-still running — and red is the app not answering at all. It is a link, and it
-leads to the installation panel, where the jobs and the store are written out in
-full.
+**The bell at the top right of the app reads this same body**, so you do not
+have to `curl` anything to know. It carries two channels at once: its icon takes
+the colour — green is `ok`, amber is `attention` or a rebuild still running, red
+is the app not answering at all — and its badge counts everything still open. It
+opens onto a panel where the health, the facts about this installation and the
+advisories about your portfolio sit together, and from there onto the
+**Settings** page, where the jobs and the store are written out in full.
 
 :::note A scrape that has gone quiet is amber, and the code stays `200`
 Restarting the container repairs nothing that Yahoo or the market broke, and a

@@ -56,11 +56,12 @@ export const ROUTES = {
    * `HEALTHCHECK` long before a browser read it, and renaming it to please this
    * table would break the one reader the app is sure to have.
    *
-   * It is what the **status dot** reads. The trade is stated in ADR-0036: the
-   * dot used to read `/api/runtime`, which touches no store and therefore
-   * survives one that has failed, and health is now said in one place. The cost
-   * is that the body goes when the store goes — and what survives that is the
-   * half that matters then, a `503` the dot renders **red**.
+   * It is what the **bell** reads (ADR-0037, which inherited the dot's read
+   * whole). The trade is stated in ADR-0036: the dot used to read
+   * `/api/runtime`, which touches no store and therefore survives one that has
+   * failed, and health is now said in one place. The cost is that the body goes
+   * when the store goes — and what survives that is the half that matters then,
+   * a `503` the bell renders **red**.
    */
   health: '/health',
   /** The ledger itself — read, and written one row at a time (#723). */

@@ -90,8 +90,8 @@ def test_the_longest_mount_point_wins_over_the_ancestor():
 def test_an_absent_mountinfo_is_unknown_and_never_ephemeral():
     """Off Linux there is no such file. The observation is a property of the
     kernel, and a missing ``/proc`` must not manufacture a false *ephemeral* on
-    a macOS developer's machine — the one platform this app cannot run natively
-    on at all (#657)."""
+    a macOS developer's machine, where the app does run natively since ADR-0039
+    and where the answer is simply not knowable."""
     assert mounts.observe(None, '/data') == mounts.UNKNOWN
 
 

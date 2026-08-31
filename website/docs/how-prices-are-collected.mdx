@@ -133,7 +133,7 @@ fails, no counter rises, and the chart looks like a flat market.
 A freshness sonde rides the live write path for that case: when a stored price
 stays frozen across consecutive open-market cycles while the live quote moves, it
 logs a warning and marks that symbol's scrape as frozen where the app reports on
-its own jobs — on the installation panel, and in the body of `/health`, which is
+its own jobs — on the **Settings** page, and in the body of `/health`, which is
 where a `curl` finds it without opening the app at all
 ([Is it working?](./get-started.mdx#is-it-working)). It watches the **native**
 price, never a converted one — a conversion that is waiting on a rate must not

@@ -37,7 +37,7 @@ version frozen at the **major** (a 5.1 install still reads `/docs/v5`).
 > development concludes the opposite of the truth. Verify it on
 > `build/docs/index.html`.
 
-The anchors in `docs/read-your-figures.mdx` are **a contract with the front**: eleven
+The anchors in `docs/read-your-figures.mdx` are **a contract with the front**: twelve
 anchors hand-written on every heading, because a *derived* anchor moves with a
 reworded title — the front sees nothing, the site still builds, and every bubble
 lands at the top of the page. The authoritative list is `DOCS_ANCHORS` in

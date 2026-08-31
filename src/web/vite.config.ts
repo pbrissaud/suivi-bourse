@@ -50,9 +50,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       // The one route the front reads that carries no `/api` prefix (#819): the
-      // status dot reads the container's own probe. Without this entry the dev
-      // server answers it with `index.html`, and the dot goes **red** against a
-      // perfectly well app — the exact reading its red is reserved for.
+      // header's bell reads the container's own probe (ADR-0037). Without this
+      // entry the dev server answers it with `index.html`, and the bell goes
+      // **red** against a perfectly well app — the exact reading its red is
+      // reserved for.
       '/health': {
         target: process.env.SB_API_URL || 'http://localhost:8080',
         changeOrigin: true,

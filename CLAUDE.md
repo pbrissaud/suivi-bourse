@@ -66,8 +66,9 @@ pnpm build   # → src/static/, served by Flask (git-ignored)
 pnpm dev     # Vite on :5173, proxying /api and /health to localhost:8080
 ```
 
-`pnpm dev` needs the API running — which on a Mac means the container. If it is
-not on 8080: `SB_API_URL=http://localhost:9000 pnpm dev`.
+`pnpm dev` needs the API running — `PYTHONPATH=src uv run python -m application.boot`,
+on a Mac too since ADR-0039. If it is not on 8080:
+`SB_API_URL=http://localhost:9000 pnpm dev`.
 
 ### The site
 
