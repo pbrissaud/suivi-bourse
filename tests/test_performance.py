@@ -61,6 +61,39 @@ def test_xirr_none_on_zero_horizon():
     assert xirr([(date(2024, 1, 1), -1000.0), (date(2024, 1, 1), 1000.0)]) is None
 
 
+def test_a_lifetime_of_history_still_gets_a_rate():
+    """The bracket must survive a horizon a person can actually have.
+
+    ``_XIRR_HIGH`` was ``1e9``, and ``npv`` raises it to the power of the
+    horizon in years: past **thirty-four** of them ``(1 + 1e9) ** t`` leaves the
+    float range and the solver raised ``OverflowError`` before answering
+    anything. A ledger opened in 1990 is not a corner case, and the raise did
+    not stop at the rate — it travelled out of ``compute_account`` and took the
+    whole pass with it (the curves, the TWR, every account).
+
+    The reference is the closed form of the flows below: one payment in, one
+    value out, so ``(1 + r) ** t == 5``.
+    """
+    paid_in, terminal = date(1990, 1, 1), date(2026, 8, 31)
+    r = xirr([(paid_in, -1000.0), (terminal, 5000.0)])
+    years = (terminal - paid_in).days / 365.0
+    assert r == pytest.approx(5.0 ** (1.0 / years) - 1.0, abs=1e-6)
+
+
+def test_a_horizon_no_float_survives_is_an_absence_and_never_a_raise():
+    """A mistyped year is a missing rate, not a dead pass.
+
+    ``1902`` for ``2002`` is one keystroke, nothing in ``events/validator.py``
+    bounds a date, and ``_xirr_cashflows`` keeps every flow dated at or before
+    today. At that distance the *other* end of the bracket goes: ``(1 −
+    0.9999) ** 122`` underflows to zero and ``npv`` divided by it. The module
+    already answers ``None`` wherever no rate exists — an empty series, a zero
+    horizon, flows that never change sign — and a horizon no float survives is
+    the same answer, not an exception crossing the whole job.
+    """
+    assert xirr([(date(1902, 1, 1), -1000.0), (date(2026, 8, 31), 5000.0)]) is None
+
+
 # --------------------------------------------------------------------------- #
 # Daily valuation + TWR
 # --------------------------------------------------------------------------- #
@@ -195,6 +228,34 @@ def test_a_flow_dated_after_today_never_reaches_the_xirr():
     assert rate(mistyped) == pytest.approx(rate(base), abs=1e-9)
 
 
+def test_a_rate_that_cannot_be_computed_takes_nothing_else_with_it():
+    """An insoluble XIRR leaves every other figure written.
+
+    The deposit is dated 1902 — ``2002`` mistyped — and the flows it makes are
+    a horizon no float survives. Before the guard the raise came out of
+    ``compute_account`` itself, so ``perf_job`` never reached its transaction:
+    the pass was recorded ``PERF_FAILED`` and **no curve, no TWR and no gain**
+    were written for any account, replaying at every tick. The rate is the one
+    figure that is not computable here, so it is the only one missing.
+    """
+    events = [
+        Event(date(1902, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 1), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    price_at = _price_at({"AAPL": {date(2024, 1, 1): 100.0,
+                                   date(2024, 1, 2): 110.0}})
+
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at,
+                           start=date(2024, 1, 1), today=date(2024, 1, 2))
+
+    assert perf.xirr is None
+    assert [dp.twr_index for dp in perf.daily] == pytest.approx([100.0, 110.0])
+    assert [dp.total_value for dp in perf.daily] == pytest.approx([1000.0, 1100.0])
+    assert perf.gain_absolu == pytest.approx(100.0)
+
+
 def test_twr_neutral_to_external_flow():
     """A pure deposit (no price move) must not change the TWR index."""
     events = [
@@ -208,6 +269,42 @@ def test_twr_neutral_to_external_flow():
     # V0=1000 (anchor 100). V1=1500 but F1=+500 -> (1500-500)/1000 = 1.0 -> still 100.
     assert d0.twr_index == pytest.approx(100.0)
     assert d1.twr_index == pytest.approx(100.0)
+
+
+def test_a_day_with_no_value_suspends_the_chain_it_never_zeroes_it():
+    """The first launch's own day, and it used to cost the account everything.
+
+    Between the purchase landing in the ledger and the first price arriving,
+    the account holds ten shares worth nothing yet: cash 0, holdings 0, so
+    ``V = 0`` with no external flow. Chained, that day reads ``(0 − 0) / 1000``
+    and the index goes to **0** — then ``prev_v == 0`` skips the next day and
+    ``0 × x`` is 0 for ever after. The series was
+    ``[100, 0, 0, 0, …]`` against a ``total_value`` of ``[1000, 0, 1100, …]``,
+    and ADR-0019 rebases on that column: a healthy portfolio published at
+    **−100 %**, on the shape every install passes through on day one.
+
+    A day carrying no value is not a loss, it is a day with nothing to chain —
+    treated exactly like the ``prev_v == 0`` beside it: the index holds, and the
+    chain resumes on the first pair of days that both have a value. The price
+    move across the hole is not recovered, which is the same conservatism
+    ``account_horizon`` documents for a gap: a flow landing inside it would
+    otherwise be published as performance (#766).
+    """
+    events = [
+        Event(date(2024, 1, 1), EventType.DEPOSIT, amount=1000.0, account="PEA"),
+        Event(date(2024, 1, 2), EventType.BUY, "AAPL", "Apple", quantity=10,
+              unit_price=100.0, account="PEA"),
+    ]
+    tl = EventAggregator().replay(events)
+    # The purchase has landed; the quote has not. It arrives on the third day.
+    price_at = _price_at({"AAPL": {date(2024, 1, 3): 110.0}})
+
+    perf = compute_account(tl, PEA, {"AAPL"}, price_at,
+                           start=date(2024, 1, 1), today=date(2024, 1, 6))
+
+    assert [dp.total_value for dp in perf.daily] == pytest.approx(
+        [1000.0, 0.0, 1100.0, 1100.0, 1100.0, 1100.0])
+    assert [dp.twr_index for dp in perf.daily] == pytest.approx([100.0] * 6)
 
 
 # --------------------------------------------------------------------------- #

@@ -413,7 +413,16 @@ class Performance:
 #: per-call argument invites two figures for one portfolio — the annualised rate
 #: is the product's, not the caller's.
 _XIRR_LOW = -0.9999
-_XIRR_HIGH = 1e9
+#: 100 000 % a year, and the ceiling is chosen by the **arithmetic** rather
+#: than by what a rate could plausibly be: ``npv`` raises ``1 + rate`` to the
+#: power of the horizon in years, so a high bound of ``1e9`` — what this was —
+#: left the float range after **thirty-four** of them and the solver raised
+#: ``OverflowError`` instead of answering. At ``1e3`` that end holds for 103
+#: years, past the point where the *low* end underflows to zero (81), so the
+#: bracket has one limit rather than two and it is beyond any real ledger.
+#: Nothing plausible is lost: a rate between ``1e3`` and ``1e9`` is an
+#: ultra-short horizon annualised, which the docstring below already declines.
+_XIRR_HIGH = 1e3
 _XIRR_TOL = 1e-8
 _XIRR_MAX_ITER = 200
 
@@ -426,6 +435,19 @@ def xirr(cashflows: List[Tuple[date, float]]) -> Optional[float]:
     the flows span no time (nothing to annualize) or don't bracket a root within
     ``[_XIRR_LOW, _XIRR_HIGH]`` — including an ultra-short horizon whose
     annualized rate would blow past the bracket (gain_absolu guards that case).
+
+    **And None where the arithmetic itself gives out.** ``npv`` raises
+    ``1 + rate`` to the power of the horizon in years, and past a lifetime of
+    them neither end of the bracket survives a float: the high one overflows,
+    the low one underflows to zero and is divided by. Nothing bounds a date —
+    ``events/validator.py`` forbids no year, and ``_xirr_cashflows`` keeps every
+    flow dated at or before today — so a single mistyped ``1902`` for ``2002``
+    reached it. What that cost was **not** the rate: the raise travelled out of
+    :func:`compute_account`, past ``perf_job``'s transaction, and was recorded
+    as one ``PERF_FAILED`` — no curve, no TWR, no gain, for any account, replayed
+    at every tick. An absence is the answer this function already gives to every
+    other flow series no rate explains, and an unsolvable one is not a different
+    kind of question.
     """
     if not cashflows:
         return None
@@ -441,27 +463,52 @@ def xirr(cashflows: List[Tuple[date, float]]) -> Optional[float]:
         return sum(amt / (1.0 + rate) ** ((d - t0).days / 365.0)
                    for d, amt in cashflows)
 
-    f_low, f_high = npv(low), npv(high)
-    if f_low == 0:
-        return low
-    if f_low * f_high > 0:
-        return None  # not bracketed -> undefined
+    try:
+        f_low, f_high = npv(low), npv(high)
+        if f_low == 0:
+            return low
+        if f_low * f_high > 0:
+            return None  # not bracketed -> undefined
 
-    for _ in range(_XIRR_MAX_ITER):
-        mid = (low + high) / 2.0
-        f_mid = npv(mid)
-        if abs(f_mid) < _XIRR_TOL or (high - low) < _XIRR_TOL:
-            return mid
-        if f_low * f_mid < 0:
-            high, f_high = mid, f_mid
-        else:
-            low, f_low = mid, f_mid
+        for _ in range(_XIRR_MAX_ITER):
+            mid = (low + high) / 2.0
+            f_mid = npv(mid)
+            if abs(f_mid) < _XIRR_TOL or (high - low) < _XIRR_TOL:
+                return mid
+            if f_low * f_mid < 0:
+                high, f_high = mid, f_mid
+            else:
+                low, f_low = mid, f_mid
+    except (OverflowError, ZeroDivisionError):
+        return None  # no float carries this horizon -> undefined
     return (low + high) / 2.0
 
 
 def _fill_twr(daily: List[DailyPerf]) -> None:
     """Fill twr_index in place: base 100 anchored at the first day with value,
-    then compounded by r_D = (V_D - F_D) / V_{D-1} (flows land end-of-day)."""
+    then compounded by r_D = (V_D - F_D) / V_{D-1} (flows land end-of-day).
+
+    **A day worth nothing suspends the chain; it never enters it** — on either
+    side of the ratio, which is the whole of the guard. ``prev_v`` was already
+    read for its truth, so a zero *denominator* skipped the day; a zero
+    *numerator* was multiplied straight in, and it is an **absorbing** state:
+    ``twr`` goes to 0, the next day is skipped because ``prev_v`` is now 0, and
+    ``0 × x`` is 0 for every day after that, on a portfolio that has recovered.
+    ADR-0019 rebases the visible window on this column, so what the page draws
+    is **−100 %**.
+
+    That day is not exotic: it is the ordinary shape of the hours between a
+    purchase reaching the ledger and the first price reaching the store —
+    holdings valued at nothing while the cash has already been debited, so
+    ``V = 0`` with no external flow — which is to say the **first launch**.
+
+    Suspending is the same conservatism the ``prev_v`` half has always applied:
+    the index holds, and the chain resumes on the first pair of days that both
+    carry a value. The move across the hole is not recovered, and it is not
+    meant to be — chaining over a gap is what :func:`account_horizon` refuses at
+    length (#766), an external flow landing inside it being published as
+    performance.
+    """
     prev_v: Optional[float] = None
     twr: Optional[float] = None
     for dp in daily:
@@ -469,7 +516,7 @@ def _fill_twr(daily: List[DailyPerf]) -> None:
         if twr is None:
             if v != 0:
                 twr = 100.0  # anchor
-        elif prev_v:
+        elif prev_v and v:
             twr = twr * (v - dp.external_flow) / prev_v
         dp.twr_index = twr
         prev_v = v
