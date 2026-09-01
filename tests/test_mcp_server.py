@@ -309,17 +309,60 @@ def test_the_ledger_narrows_by_calendar_day(tmp_path):
     assert dates == ['2024-06-15', '2024-03-01', '2024-02-01']
 
 
-def test_the_ledger_reads_the_snapshot_and_therefore_survives_a_broken_store(tmp_path):
-    """``/api/events``' contract, inherited whole (ADR-0031).
+def test_the_ledgers_rows_come_from_the_snapshot_and_not_from_the_store(tmp_path):
+    """``/api/events``' contract for the rows, inherited whole (ADR-0031).
 
-    It answers from process memory, so it has no storage failure to report — and
-    that is a decision rather than an omission: the rows served are the ones the
-    aggregator ran on, so the ledger an agent sees is the ledger every other
-    figure was computed from.
+    The portfolio's tables are gone here and the ledger still answers, because
+    the rows are the ones the aggregator ran on rather than a fresh query — so
+    the ledger an agent sees is the ledger every other figure was computed from.
+
+    **The head is another matter**, and this test used to be named as though it
+    were not: the reporting currency is a setting, so this tool does open the
+    store for that one value and fails with it when it cannot. See the test
+    below.
     """
     runtime, _ = build_runtime(tmp_path, events=LEDGER, break_store=True)
 
     assert payload(call(runtime, 'list_events'))['total'] == len(LEDGER)
+
+
+def test_the_ledger_fails_like_the_rest_when_there_is_no_store_at_all(tmp_path):
+    """Because its head names a currency, and a currency is a setting.
+
+    The honest half of the test above. `/api/events` gains something real from
+    opening nothing — the shares page's chart markers survive a storage fault —
+    and there is no equivalent stake here, where a broken store has already
+    taken the other four tools with it.
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+    runtime.store = None
+
+    result = call(runtime, 'list_events')
+
+    assert result.is_error is True
+    assert 'not available' in _text(result)
+
+
+def test_a_storage_fault_arrives_in_words_and_not_as_a_bare_failure(tmp_path):
+    """The other half of the ``ToolError`` rule, and the half that was missing.
+
+    ``_store`` raised :class:`ToolError` for the store that is not there, which
+    made the *absent* store speak — but a store whose **query** fails raises
+    ``duckdb.Error``, and the SDK reports anything that is not a ``ToolError`` as
+    *"Error executing tool <name>"* with the cause discarded. So the one case an
+    owner is most likely to meet said the least, and this asserts on the words
+    rather than only on the flag (issue #877 review).
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER, break_store=True)
+
+    result = call(runtime, 'list_positions')
+
+    assert result.is_error is True
+    assert 'could not answer this read' in _text(result)
+    assert 'no figure to give' in _text(result)
+    # The exception's own text rides along: a DuckDB error names the table it
+    # could not read, which is what turns "something failed" into a bug report.
+    assert 'position' in _text(result).lower()
 
 
 # --------------------------------------------------------------------- #
@@ -360,13 +403,18 @@ def test_an_absent_store_says_so_in_words_the_caller_receives(tmp_path):
 
 
 @pytest.mark.parametrize('value', ['20240115', '2024-01-15T00:00:00Z',
-                                   'yesterday', '2024-1-15'])
+                                   'yesterday', '2024-1-15', '', '   '])
 def test_only_one_spelling_of_a_calendar_day_is_taken(tmp_path, value):
     """#764's rule, and the reason it is not ``date.fromisoformat`` alone.
 
     That function accepts several other spellings since 3.11 — a bare
     ``20260210``, a whole instant — and a bound that arrived as an instant is
     what silently drops the first day of every window.
+
+    **The empty string is in this list and not in the omitted case** (issue #877
+    review). The contract takes an absent argument or a calendar day; ``''`` is
+    neither, and reading it as *no bound* widens a window the caller meant to
+    narrow — which is the one wrong answer that looks like a right one.
     """
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
 

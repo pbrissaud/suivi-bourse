@@ -34,6 +34,8 @@ a model as an empty portfolio, which means the message has to survive.
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import duckdb
+
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -224,6 +226,32 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                 "a failure to read, not an empty portfolio")
         return runtime.store
 
+    def reading(work):
+        """Run a tool body, and let a storage fault arrive **in words**.
+
+        ``_store`` raises :class:`ToolError` for the store that is not there;
+        this is the other half, and without it the half above is decorative. A
+        query that fails raises ``duckdb.Error``, which is not a
+        :class:`ToolError` — so the SDK reports it as *"Error executing tool
+        <name>"* with the cause discarded, and a model cannot tell an unreadable
+        store from a malformed date. ADR-0040 asks for exactly that distinction
+        to survive, and it is this wrapper that makes it.
+
+        The message is the exception's own text and nothing constructed: a
+        DuckDB error names the table it could not read, which is the one thing
+        that turns *something failed* into a bug report.
+
+        A ``ToolError`` travels untouched — it is already the answer.
+        """
+        try:
+            return work()
+        except ToolError:
+            raise
+        except (store_module.StoreUnavailable, duckdb.Error) as exc:
+            raise ToolError(
+                f"the portfolio store could not answer this read, so there is "
+                f"no figure to give: {exc}") from exc
+
     def _snapshot():
         """The published configuration snapshot — the lock-free read (#658)."""
         return runtime.config_manager.current()
@@ -258,12 +286,14 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         price yet* from *no price ever*, and the substitute it reached for was a
         diagnostic counter.
         """
-        currency = _base_currency()
-        return {
-            'base_currency': currency,
-            'positions': portfolio_view.build_positions(
-                _reader().positions(), currency, _carried()),
-        }
+        def _body():
+            currency = _base_currency()
+            return {
+                'base_currency': currency,
+                'positions': portfolio_view.build_positions(
+                    _reader().positions(), currency, _carried()),
+            }
+        return reading(_body)
 
     @mcp.tool(description=GET_PORTFOLIO_TOTALS_DESCRIPTION)
     def get_portfolio_totals() -> Dict[str, Any]:
@@ -273,19 +303,21 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         on: on an install whose perf cache is empty they would each answer
         nothing, and asking is how a resource acquires queries it does not need.
         """
-        reader = _reader()
-        latest = reader.latest_totals()
+        def _body():
+            reader = _reader()
+            latest = reader.latest_totals()
 
-        totals = None
-        if latest is not None:
-            day = latest['day']
-            totals = portfolio_view.build_portfolio_totals(
-                latest,
-                reader.totals_on_or_before(portfolio_view.ytd_base_day(day)),
-                reader.twr_origin(),
-                reader.transfer_fees(day))
+            totals = None
+            if latest is not None:
+                day = latest['day']
+                totals = portfolio_view.build_portfolio_totals(
+                    latest,
+                    reader.totals_on_or_before(portfolio_view.ytd_base_day(day)),
+                    reader.twr_origin(),
+                    reader.transfer_fees(day))
 
-        return {'base_currency': _base_currency(), 'totals': totals}
+            return {'base_currency': _base_currency(), 'totals': totals}
+        return reading(_body)
 
     @mcp.tool(description=GET_PORTFOLIO_HISTORY_DESCRIPTION)
     def get_portfolio_history(from_day: Optional[str] = None,
@@ -296,22 +328,25 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         both and a rebasing is written once (ADR-0019).
         """
         start, stop = _window(from_day, to_day, DEFAULT_HISTORY_WINDOW)
-        return {
-            'base_currency': _base_currency(),
-            'from': start.isoformat(),
-            'to': stop.isoformat(),
-            'points': [
-                {
-                    'day': instants.iso(row.get('day')),
-                    'cash_balance': row.get('cash_balance'),
-                    'holdings_value': row.get('holdings_value'),
-                    'total_value': row.get('total_value'),
-                    'net_contributed': row.get('net_contributed'),
-                    'twr_index': row.get('twr_index'),
-                }
-                for row in _reader().totals_series(start, stop)
-            ],
-        }
+
+        def _body():
+            return {
+                'base_currency': _base_currency(),
+                'from': start.isoformat(),
+                'to': stop.isoformat(),
+                'points': [
+                    {
+                        'day': instants.iso(row.get('day')),
+                        'cash_balance': row.get('cash_balance'),
+                        'holdings_value': row.get('holdings_value'),
+                        'total_value': row.get('total_value'),
+                        'net_contributed': row.get('net_contributed'),
+                        'twr_index': row.get('twr_index'),
+                    }
+                    for row in _reader().totals_series(start, stop)
+                ],
+            }
+        return reading(_body)
 
     @mcp.tool(description=LIST_ACCOUNTS_DESCRIPTION)
     def list_accounts() -> Dict[str, Any]:
@@ -322,27 +357,32 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         capped in the past, and ADR-0018's identity only holds between terms
         measured at the same instant.
         """
-        accounts = _snapshot().accounts
-        declaration = (accounts.accounts if accounts is not None
-                       else [row for row in accounts_module.read_accounts(_store())
-                             if row.id == accounts_module.DEFAULT_ACCOUNT])
-        declaration = [accounts_module.as_declared(row) for row in declaration]
+        def _body():
+            accounts = _snapshot().accounts
+            declaration = (
+                accounts.accounts if accounts is not None
+                else [row for row in accounts_module.read_accounts(_store())
+                      if row.id == accounts_module.DEFAULT_ACCOUNT])
+            declaration = [accounts_module.as_declared(row)
+                           for row in declaration]
 
-        reader = _reader()
-        rows = reader.latest_account_metrics()
-        through = {
-            row['account']: row['day'] for row in rows
-            if row.get('account') is not None and row.get('day') is not None
-        }
-        return {
-            'base_currency': _base_currency(),
-            'declared': accounts is not None,
-            'accounts': [
-                summary.to_dict()
-                for summary in portfolio_view.build_accounts(
-                    declaration, rows, reader.transfer_fees_by_account(through))
-            ],
-        }
+            reader = _reader()
+            rows = reader.latest_account_metrics()
+            through = {
+                row['account']: row['day'] for row in rows
+                if row.get('account') is not None and row.get('day') is not None
+            }
+            return {
+                'base_currency': _base_currency(),
+                'declared': accounts is not None,
+                'accounts': [
+                    summary.to_dict()
+                    for summary in portfolio_view.build_accounts(
+                        declaration, rows,
+                        reader.transfer_fees_by_account(through))
+                ],
+            }
+        return reading(_body)
 
     @mcp.tool(description=LIST_EVENTS_DESCRIPTION)
     def list_events(symbol: Optional[str] = None,
@@ -351,12 +391,20 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                     limit: int = DEFAULT_EVENT_LIMIT) -> Dict[str, Any]:
         """The ledger, **bounded**, from the published snapshot (ADR-0031, ADR-0040).
 
-        **From the snapshot and not from the store**, which is ``/api/events``'
-        contract and is inherited whole: the rows served are the ones the
+        **The rows come from the snapshot and not from the store**, which is
+        ``/api/events``' contract and is inherited whole: they are the ones the
         aggregator actually ran on, so the ledger an agent sees is the ledger
-        every other figure was computed from. It follows that this tool has no
-        store failure to report — it opens nothing — and that is deliberate
-        rather than an omission.
+        every other figure was computed from.
+
+        **The head is not**, and the docstring used to claim otherwise. The
+        reporting currency is a setting, the snapshot does not carry one, and
+        every amount below — a unit price, a fee, an amount — is meaningless
+        without it: this tool therefore reads the store for exactly one value
+        and fails like any other when it cannot. What `/api/events` gains from
+        opening nothing is the shares page's chart markers surviving a storage
+        fault; there is no equivalent stake here, where a broken store has
+        already taken the other four tools with it. The resilience was copied
+        along with the rule, and it never transferred.
 
         **The bound is this surface's one departure from** ``/api`` and the
         reason is written on :data:`DEFAULT_EVENT_LIMIT`. ``total`` travels with
@@ -392,7 +440,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
                         reverse=True)[:limit]
 
         return {
-            'base_currency': _base_currency(),
+            'base_currency': reading(_base_currency),
             'total': total,
             'returned': len(newest),
             'events': [_event_to_dict(event) for event in newest],
@@ -435,7 +483,11 @@ def _day(value: Optional[str], field: str) -> Optional[date]:
     and never a midnight: a bound that arrived as an instant is what silently
     drops the first day of every window.
     """
-    if not value:
+    # ``is None`` and not falsiness: the contract takes an absent argument or a
+    # calendar day, and ``''`` is neither. Read as an omission it silently
+    # widens the window a caller meant to narrow — the one wrong answer that
+    # looks like a right one.
+    if value is None:
         return None
     text = value.strip()
     try:
