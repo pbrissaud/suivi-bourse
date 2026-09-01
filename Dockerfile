@@ -62,8 +62,56 @@ COPY pyproject.toml uv.lock ./
 # not downloaded again on the next local rebuild. `/root/.cache/uv` is uv's own
 # default location and this layer runs as root — naming it here rather than
 # moving it with UV_CACHE_DIR keeps one convention instead of two.
+# Two cuts, **in this RUN and not a later one**, which is the whole reason they
+# are written here in the middle of an install rather than in a tidy step of
+# their own: a layer only ever adds. Deleting these files further down was
+# measured at **+237 MB** — the removal lands in a new layer while every byte it
+# removed is still carried by the one below it. They have to happen before the
+# layer is written, so they happen here.
+#
+# * **The bundled test suites, 61 MB** — `pandas/tests` alone is 37 of them,
+#   then `numpy/_core/tests` and `pyarrow/tests`. They are a library's own
+#   fixtures, they are never imported by anything this app runs, and nothing in
+#   the image can invoke them.
+#
+#   `tests` and `test`, and **never `testing`**. `numpy.testing` is a *public
+#   API* that pandas imports at load; a pattern that matched it would produce an
+#   image that fails on its first `import pandas`, which is the difference
+#   between this line and a broken one.
+#
+# * **The debug symbols in the compiled extensions, 57 MB** — `_duckdb.so` is
+#   52 MB on its own before this, `curl_cffi` 29, OpenBLAS 25.
+#   `--strip-unneeded` keeps every dynamic symbol a linker or a runtime import
+#   resolves against, and removes what only a debugger reads. What is lost is a
+#   readable native backtrace out of a segfault inside DuckDB — which this
+#   project has met exactly once, on macOS, outside a container (ADR-0039), and
+#   which is investigated on a checkout rather than by attaching gdb to a
+#   production image.
+#
+# `binutils` is installed and purged inside the same RUN for the same reason the
+# deletions are here: kept, it would be a second thing to carry.
+#
+# **The purge runs `autoremove`, and APT cannot see an ELF dependency**: it knows
+# which *packages* need `libstdc++6`, never that `_duckdb.so` does. Today that
+# library ships with `python:*-slim` and is held by packages that stay, so
+# nothing is taken — but that is a property of a base image this project does not
+# own, and what it would produce is the bad kind of failure: not a red build, a
+# green one whose container dies on `import duckdb`. So the property is asserted
+# on the artefact rather than reasoned about here — `container-contract.sh`
+# assertion 11, which resolves **every** compiled extension and imports the
+# wheels the app boots on.
+#
+# Measured, on this Dockerfile: **645 MB -> 529 MB**.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-install-project
+    uv sync --locked --no-install-project \
+ && apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends binutils \
+ && find /opt/venv -type d -name tests -prune -print0 | xargs -0 rm -rf \
+ && find /opt/venv -type d -name test -prune -print0 | xargs -0 rm -rf \
+ && find /opt/venv -name "*.so*" -exec strip --strip-unneeded {} + \
+ && apt-get purge -y -qq binutils \
+ && apt-get autoremove -y -qq \
+ && rm -rf /var/lib/apt/lists/*
 
 # And the server's console script goes straight back out (ADR-0039). uvicorn is
 # called from `boot.py` as a library — `uvicorn.run(...)`, in process — and the

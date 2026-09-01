@@ -25,6 +25,8 @@ defended against, and the bind is one argument of :func:`boot.serve`.
 """
 
 import asyncio
+import contextlib
+import json
 import logging
 import os
 import threading
@@ -32,7 +34,9 @@ import time
 from datetime import date
 from types import SimpleNamespace
 
+import anyio
 import pytest
+from mcp.server import MCPServer
 
 from application import boot
 from application import boot_conditions
@@ -929,7 +933,8 @@ def test_the_boot_serves_although_the_market_edge_raises(
     monkeypatch.setattr(market.yf, "Ticker", _refuses)
     answered = {}
 
-    def _serve(app, environment, on_shutdown):
+    def _serve(app, environment, on_shutdown, mcp=None):
+        """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
 
     monkeypatch.setattr(boot, "serve", _serve)
@@ -952,7 +957,8 @@ def test_the_health_probe_answers_within_a_second_of_a_hung_market(
     _a_ledger_holding(tmp_path, "AAPL", "MSFT", "ALO.PA")
     answered = {}
 
-    def _serve(app, environment, on_shutdown):
+    def _serve(app, environment, on_shutdown, mcp=None):
+        """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
         answered["elapsed"] = time.monotonic() - started
 
@@ -1109,3 +1115,342 @@ def test_the_teardown_survives_being_asked_twice(mocker, tmp_path):
     main.shutdown_runtime(runtime)
 
     assert runtime.store is None
+
+
+# ---------------------------------------------------------------------------
+# The agent's interface, mounted on the one socket (ADR-0040, issue #749)
+# ---------------------------------------------------------------------------
+#
+# Two applications, one bind, no fork. The branch in ``Serving`` is the whole of
+# the mount — and it is **the only new code on every request's path**, the page's
+# as much as the agent's, which is why it is held here as routing rather than
+# only through the tools in ``test_mcp_server.py``.
+
+
+class _FakeSessionManager:
+    """The SDK's session manager, reduced to what the mount has to do with it.
+
+    An internal double, and the case CLAUDE.md keeps them for: *entered* and
+    *exited* leave no row and no payload to read. The alternative — a real
+    ``MCPServer`` — would test the SDK's own context management and tell us
+    nothing about whether this file enters it.
+    """
+
+    def __init__(self, trace, fail=False):
+        """``fail`` makes entering it raise, which is the startup this file asserts on."""
+        self.trace = trace
+        self.fail = fail
+
+    @contextlib.asynccontextmanager
+    async def _run(self):
+        """Record entry and exit, so the mount's ordering is readable in a list."""
+        if self.fail:
+            raise RuntimeError("the session manager refused to start")
+        self.trace.append("sessions.entered")
+        try:
+            yield self
+        finally:
+            self.trace.append("sessions.exited")
+
+    def run(self):
+        """The SDK's shape: a method returning the context, not the context itself."""
+        return self._run()
+
+
+class _FakeMcp:
+    """An ``MCPServer`` as ``Serving`` uses it: an app to mount, a manager to hold."""
+
+    def __init__(self, trace, fail=False):
+        """An MCPServer reduced to the two things the mount touches."""
+        self.trace = trace
+        self.session_manager = _FakeSessionManager(trace, fail)
+        self.path = None
+        self.security = "not passed"
+
+    def streamable_http_app(self, *, streamable_http_path,
+                            transport_security="not passed"):
+        """Record what the mount asked for, and hand back something routable."""
+        self.path = streamable_http_path
+        # Recorded rather than ignored: *not passing* this is what silently
+        # turns on a localhost-only host allowlist, so a default here would let
+        # the mount stop passing it with every test still green.
+        self.security = transport_security
+
+        async def _app(scope, receive, send):
+            """Note that this branch ran, and which path reached it."""
+            self.trace.append(f"mcp:{scope['path']}")
+        return _app
+
+
+def _reached(path, with_agent=True):
+    """Drive one HTTP scope through ``Serving`` and report which app answered.
+
+    The trace is the fake's own, so both branches write into one list and the
+    assertion reads which of the two ran — rather than which one a test
+    remembered to look at.
+    """
+    trace = []
+    serving = boot.Serving("the app", lambda: None,
+                           _FakeMcp(trace) if with_agent else None)
+
+    async def _wsgi(scope, receive, send):
+        """Stand in for the Flask half, and note that it was the one reached."""
+        trace.append(f"wsgi:{scope['path']}")
+    serving.wsgi = _wsgi
+
+    async def _receive():
+        """Nothing is read: the assertion is on which app was handed the scope."""
+        return {}
+
+    async def _send(message):
+        """Nothing is written, for the same reason."""
+
+    asyncio.run(serving({"type": "http", "path": path}, _receive, _send))
+    return trace
+
+
+def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch):
+    """The wiring in ``sequence``, which no routing test can see.
+
+    Every test below builds a ``Serving`` itself, so the mount would go on
+    passing with the boot handing it ``None`` — and the whole interface would be
+    absent from a real process with nothing red. This is the one assertion that
+    the fifth step is given what the third built.
+
+    What the surface *is* belongs to ``test_mcp_server.py`` and is asserted
+    there, through a client. Here it is only that there is one.
+    """
+    _a_ledger_holding(tmp_path, "AAPL")
+    handed = {}
+
+    def _serve(app, environment, on_shutdown, mcp=None):
+        """Keep what the boot handed over — the whole point of this test."""
+        handed["mcp"] = mcp
+
+    monkeypatch.setattr(boot, "serve", _serve)
+
+    boot.sequence({})
+
+    assert isinstance(handed["mcp"], MCPServer)
+
+
+def test_the_agents_path_reaches_the_agents_application():
+    """The branch exists and the agent's path is what takes it."""
+    assert _reached("/mcp") == ["mcp:/mcp"]
+
+
+def test_everything_else_reaches_the_front_unchanged():
+    """The page, the API and the health probe are not touched by the mount.
+
+    ``/api`` above all: a branch that swallowed it would take the whole front
+    down for a feature it reads nothing about.
+    """
+    for path in ("/", "/api/positions", "/health", "/assets/index.js"):
+        assert _reached(path) == [f"wsgi:{path}"]
+
+
+def test_a_path_that_merely_begins_with_the_prefix_is_not_the_agents():
+    """``/mcpsomething`` is an ordinary unknown path and belongs to the SPA.
+
+    A ``startswith`` without the separator is the classic way a mount quietly
+    annexes names nobody gave it — and here it would annex them from the
+    catch-all that answers them today.
+    """
+    assert _reached("/mcpsomething") == ["wsgi:/mcpsomething"]
+    assert _reached("/mcp/messages") == ["mcp:/mcp/messages"]
+
+
+def test_the_mounted_application_is_asked_for_the_path_it_is_reached_at():
+    """No prefix is stripped, so the sub-app must route on the full path.
+
+    The SDK's default happens to be ``/mcp`` — this pins that the two agree,
+    rather than leaving the mount working by coincidence.
+    """
+    mcp = _FakeMcp([])
+    boot.Serving("the app", lambda: None, mcp)
+    assert mcp.path == boot.MCP_PATH
+
+
+def test_the_mount_always_states_a_host_policy():
+    """Passing nothing is not *no policy*, so nothing is never passed.
+
+    The behavioural half is ``test_the_agents_interface_answers_under_any_host_name``
+    below; this is the structural half, and it is the one that stays legible
+    when a future SDK changes what its default does.
+    """
+    mcp = _FakeMcp([])
+    boot.Serving("the app", lambda: None, mcp)
+    assert mcp.security is boot.NO_HOST_ALLOWLIST
+    assert mcp.security.enable_dns_rebinding_protection is False
+
+
+def _drive(app, scope, body):
+    """Run one HTTP request through an ASGI app and return its status code.
+
+    Written once because it was written twice: the two tests below differ by a
+    header and by nothing else, and a second copy of the protocol plumbing is a
+    second place for it to drift.
+
+    Two details are what make it terminate. The receive channel yields the body
+    and then ``http.disconnect``: the MCP response is a ``text/event-stream``
+    that the app holds open for the life of a session, which is right in
+    production and a hang here. And the whole thing is bounded, because what is
+    under test is the **status**, which is sent first — how the stream ends
+    afterwards is the SDK's business, not this file's.
+    """
+    incoming = [{"type": "http.request", "body": body, "more_body": False}]
+    status = {}
+
+    async def receive():
+        """The body once, then a disconnect that closes the SSE stream."""
+        return incoming.pop(0) if incoming else {"type": "http.disconnect"}
+
+    async def send(message):
+        """Keep the response status and discard the stream that follows it."""
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+
+    async def _run():
+        """Hold the session manager open for the length of the request."""
+        async with app.session_manager.run():
+            await asyncio.wait_for(app.serving(scope, receive, send), timeout=10)
+
+    try:
+        asyncio.run(_run())
+    except (asyncio.TimeoutError, anyio.ClosedResourceError, RuntimeError):
+        pass
+    return status.get("code")
+
+
+def _mcp_scope(host, content_type):
+    """An HTTP scope aimed at the agent's interface, under ``host``."""
+    return {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "path": boot.MCP_PATH,
+        "raw_path": boot.MCP_PATH.encode(),
+        "query_string": b"", "root_path": "", "scheme": "http",
+        "headers": [(b"host", host.encode()),
+                    (b"content-type", content_type.encode()),
+                    (b"accept", b"application/json, text/event-stream")],
+        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
+    }
+
+
+def _mounted():
+    """A real ``MCPServer`` behind a real ``Serving``, with no store under it.
+
+    The **real** server rather than the fake used elsewhere in this section:
+    what is under test here is the SDK's own host policy, which a stand-in does
+    not have. No store is needed — every request asserted on is refused or
+    accepted before a tool runs.
+    """
+    from application import mcp_server
+    mcp = mcp_server.build_server(SimpleNamespace(store=None,
+                                                  config_manager=None))
+    mcp.serving = boot.Serving("the app", lambda: None, mcp)
+    return mcp
+
+
+def _initialize_body():
+    """The one MCP call every client makes before any other."""
+    return json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "t", "version": "1"}},
+    }).encode()
+
+
+def test_the_agents_interface_answers_under_any_host_name():
+    """The regression that a localhost client cannot see (issue #877 review).
+
+    Handing the SDK **no** ``transport_security`` is the one thing that does not
+    mean *no policy*: it reads its ``host`` argument, defaults it to
+    ``127.0.0.1``, and substitutes an allowlist of its own —
+
+        if transport_security is None and host in ("127.0.0.1", "localhost", "::1"):
+            transport_security = TransportSecuritySettings(
+                allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"], ...)
+
+    — which answers ``421 Invalid Host header`` to a LAN address, a container
+    name and a reverse proxy's domain alike. Every one of those is how this app
+    is actually reached; the exception is the one a developer tests from, which
+    is why every client in this suite and every hand check passed while the
+    container was unusable for the very thing its documentation page describes.
+
+    So the assertion is on a name that is **not** localhost, and it is the whole
+    point of the test.
+    """
+    for host in ("suivi.example.com", "192.168.1.50:8080", "my-container:8080"):
+        code = _drive(_mounted(), _mcp_scope(host, "application/json"),
+                      _initialize_body())
+        assert code == 200, host
+
+
+def test_a_localhost_host_is_not_a_special_case_either():
+    """The same answer, so the policy is *one* and not two."""
+    assert _drive(_mounted(), _mcp_scope("127.0.0.1:8080", "application/json"),
+                  _initialize_body()) == 200
+
+
+def test_a_post_that_is_not_json_is_still_refused():
+    """The structural defence the disabled host check leans on (ADR-0040).
+
+    ``Content-Type`` is validated **before** the DNS-rebinding setting is even
+    read, so it holds whatever that setting says — and it is what a browser
+    cannot satisfy cross-origin without a preflight this app answers no CORS
+    header to. If this ever stops being true, the argument for disabling the
+    host allowlist stops with it, which is why it is asserted here and not
+    merely written down in the record.
+    """
+    code = _drive(_mounted(), _mcp_scope("evil.example.com", "text/plain"),
+                  b"{}")
+
+    assert code == 400
+
+
+def test_the_lifespan_enters_the_session_manager_and_leaves_it_before_the_teardown():
+    """The SDK requires the **host** app to enter it: a mounted lifespan never runs.
+
+    And the order on the way out is not interchangeable. The teardown closes the
+    store, so a tool still in flight would meet a store that is no longer there —
+    the shape of defect #858, met from the other side.
+    """
+    trace = []
+    app = boot.Serving("the app", lambda: trace.append("teardown"),
+                       _FakeMcp(trace))
+
+    _lifespan(app, trace)
+
+    assert trace == ["sessions.entered", "lifespan.startup.complete",
+                     "sessions.exited", "teardown",
+                     "lifespan.shutdown.complete"]
+
+
+def test_a_startup_that_cannot_arm_the_interface_is_a_boot_that_failed():
+    """``lifespan.startup.failed``, rather than a hang or a silent half-boot.
+
+    uvicorn exits on it, which is the one non-zero exit ``run`` owns: a process
+    that cannot arm the agent's interface has failed to boot like any other.
+    """
+    trace = []
+    app = boot.Serving("the app", lambda: trace.append("teardown"),
+                       _FakeMcp(trace, fail=True))
+
+    _lifespan(app, trace)
+
+    assert trace == ["lifespan.startup.failed"]
+    assert "teardown" not in trace
+
+
+def test_without_an_agents_interface_the_lifespan_is_what_it_always_was():
+    """The mount is an argument, so a runtime without one changes nothing.
+
+    Which is what keeps the branch honest: it is reached, or it is not there.
+    """
+    trace = []
+    app = boot.Serving("the app", lambda: trace.append("teardown"))
+
+    _lifespan(app, trace)
+
+    assert trace == ["lifespan.startup.complete", "teardown",
+                     "lifespan.shutdown.complete"]

@@ -1,0 +1,109 @@
+---
+title: Connect your own agent
+description: The MCP server — what an AI agent can ask this app about your portfolio, and what it cannot
+---
+
+*Available from **5.1**. On 5.0 the address below answers nothing.*
+
+SuiviBourse speaks [MCP](https://modelcontextprotocol.io), so an AI agent — Claude
+Desktop, an editor's assistant, something you wrote yourself — can ask it about
+your portfolio and get real figures back rather than a guess.
+
+The app's own chat uses the very same tools. There is one surface, and pointing
+your own client at it gets you exactly what the built-in assistant sees.
+
+## The address
+
+The server is part of the app. There is no second container, no second port and
+nothing to start:
+
+```
+http://<your-host>:8080/mcp
+```
+
+Same host and same port as the page you already open in a browser. If you changed
+`SB_WEB_PORT`, change it here too.
+
+Most clients want that URL under a name. The shape varies, but it comes down to:
+
+```json
+{
+  "mcpServers": {
+    "suivibourse": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+## What it can answer
+
+Five tools, and your agent picks between them on its own:
+
+| Tool | What it answers |
+| --- | --- |
+| `list_positions` | what you hold right now — quantity, average cost, value, unrealised gain |
+| `get_portfolio_totals` | the whole portfolio on its most recent day: value, contributions, XIRR, TWR, and the gain in its four terms |
+| `get_portfolio_history` | value and return day by day, over a window you choose |
+| `list_accounts` | the split across your accounts — the one to ask about allocation |
+| `list_events` | your ledger: what you actually did, and when |
+
+They read the same figures the pages show, through the same code. An agent and a
+screen cannot disagree about what a holding is worth.
+
+## What it cannot do
+
+**It cannot change anything.** There is no tool that records an event, edits one,
+creates an account or turns a dial. Every one of the five reads. If an agent tells
+you it has recorded a purchase, it has not — type it in the app.
+
+**It cannot tell you what to buy.** The server is built for questions about
+strategy and allocation: how you are spread, what you have been contributing, how
+a decision has worked out. It publishes no research and no price series for a
+security you do not hold, so an agent asking it for a stock tip gets nothing to
+answer with.
+
+## Who can reach it
+
+**Anyone who can reach the port.** There is no password, no token and no login —
+exactly as there is none for the page itself. That is the app's whole security
+model: it is one person's application, and reaching its address *is* the
+permission.
+
+So the rule is the one that already applies to the app: **do not publish the port
+to the open internet**. On your own machine or your own network, nothing more is
+needed. If you want to reach it from outside, put it behind whatever you already
+use for that — a VPN, a reverse proxy with authentication, a tunnel — the same way
+you would for the page.
+
+If your client connects over anything but plain HTTP on your own network, be aware
+that this app terminates no TLS itself. That, too, belongs to the proxy in front
+of it.
+
+## Your figures leave your machine
+
+Worth saying plainly, because it is the whole point of the feature: an agent you
+connect will send what it reads to whatever model it runs on. If that model is a
+hosted one, **your positions and your ledger go to that provider.** Nothing in
+SuiviBourse redacts them, and nothing should — you asked for the connection.
+
+That is a choice you make once, per client, and it is yours. The app itself sends
+nothing anywhere.
+
+## These tool names are a promise
+
+Unlike the app's internal HTTP interface, which changes whenever the page it
+serves changes, **the five names above and the shape of what they return are held
+across 5.x**. Your client will not break under a patch release. A tool that has to
+change will be announced in the release notes.
+
+## When something is not there
+
+The figures an agent gets back are careful about absence, and the tools tell it
+so. A holding with no price is not worth zero — it is a holding the app has not
+priced, either because it has not fetched one yet or because none will ever come.
+A portfolio with no totals is one the app has not computed yet, usually because
+the reporting currency has not been answered.
+
+A good agent will repeat that distinction back to you. If yours reports a
+suspicious zero, that is the thing to double-check on the page.

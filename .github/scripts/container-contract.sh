@@ -374,4 +374,49 @@ for name in SOURCE_COMMIT RELEASE_VERSION; do
 done
 ok 'the build stamps itself, and the notice keeps quiet about it'
 
+assertion '11 — every native extension in the image resolves its libraries'
+# The image installs `binutils` to strip debug symbols out of the compiled
+# wheels and purges it in the same layer (#749 review). `apt-get autoremove`
+# runs in that purge, and APT cannot see an ELF dependency: it knows which
+# *packages* need `libstdc++6`, never that `_duckdb.so` does. Today those
+# libraries ship with `python:*-slim` and are held by packages that stay, so
+# nothing is taken — but that is a property of a base image this project does
+# not own, and the failure it would produce is the bad kind: not a red build, a
+# green one whose container dies on `import duckdb`.
+#
+# So the property is asserted where it is true or false — on the artefact — and
+# for **every** extension rather than for the two libraries somebody thought of:
+# the next dependency that needs a third is covered on the day it lands. `ldd`
+# prints `not found` per unresolved object and says nothing about a file that is
+# not an ELF at all.
+# **The scan reports its own health**, because an assertion written against a
+# silent failure must not have one. A blanket `|| true` around the whole
+# `docker run` was the first shape of this and it was the defect it exists to
+# catch: `bash`, `find` or `ldd` falling over left `unresolved` empty and the
+# assertion green. `set -euo pipefail` inside makes any of those a non-zero exit
+# the capture below sees; the only tolerated status is `grep`'s 1, which is the
+# **normal** case — nothing unresolved — and it is tolerated where it happens
+# rather than over the whole command.
+scan="$(docker run --rm --entrypoint bash "$IMAGE" -c '
+set -euo pipefail
+find /opt/venv -name "*.so*" -exec ldd {} + 2>/dev/null > /tmp/ldd.txt
+printf "scanned=%s\n" "$(wc -l < /tmp/ldd.txt)"
+grep "not found" /tmp/ldd.txt | sort -u || true
+')" || fail 'assertion 11: the native-extension scan could not run in the image'
+# And it says how much it looked at, which is the guard no exit code gives: a
+# scan that resolved *nothing* did not succeed, it failed to find the wheels.
+scanned="$(printf '%s\n' "$scan" | sed -n 's/^scanned=//p')"
+[ "${scanned:-0}" -gt 0 ] \
+    || fail 'assertion 11: the scan resolved no library at all — it did not run over /opt/venv'
+unresolved="$(printf '%s\n' "$scan" | grep 'not found' || true)"
+[ -z "$unresolved" ] \
+    || fail "assertion 11: a compiled extension is missing a shared library: $unresolved"
+# And the imports themselves, because a library that resolves is not yet one
+# that loads: this is the list of wheels the app cannot boot without.
+docker run --rm --entrypoint python "$IMAGE" \
+    -c 'import duckdb, pandas, numpy, numpy.testing, pyarrow, yfinance, cryptography, mcp' \
+    >/dev/null 2>&1 \
+    || fail 'assertion 11: the image cannot import the wheels the app boots on'
+ok 'the compiled wheels find what they link against, and load'
+
 printf '\nThe image honours its contract.\n'

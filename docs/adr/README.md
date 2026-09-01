@@ -50,6 +50,7 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0037](./0037-notifications-have-a-space-and-the-banner-has-none.md) | Notifications have a space, and the banner has none |
 | [0038](./0038-settings-leaves-the-data-page.md) | Settings leaves the data page, and the tabs leave with it |
 | [0039](./0039-the-app-stops-forking.md) | The app stops forking, and two guards go with it |
+| [0040](./0040-the-app-gets-a-second-reader-and-it-is-an-agent.md) | The app gets a second reader, and it is an agent |
 
 > These records describe **v5**, and which side wins an argument depends on the branch.
 >
