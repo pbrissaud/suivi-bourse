@@ -44,6 +44,15 @@ dependencies = [
     # that is how its multiprocess mode stays out of reach without a guard.
     "uvicorn==0.52.4",
     "a2wsgi==1.10.10",
+    # The agent's interface (ADR-0040, issue #749). It is mounted **inside** this
+    # process, on the one socket, beside the Flask app — so it adds a reader and
+    # not a service. It is the heaviest line here and the tail is worth naming:
+    # pydantic, starlette, sse-starlette, httpx2, jsonschema, pyjwt[crypto] and
+    # `opentelemetry-api`. That last one is a protocol library's transitive
+    # dependency and **not the Prometheus exporter coming back** (ADR-0033):
+    # nothing in this app emits a span or a metric, and the read that used to be
+    # a gauge is still the health body and the runtime tab.
+    "mcp>=2.1.0",
 ]
 
 # Development / test tooling — installed by `uv sync`, excluded in Docker via UV_NO_DEV.
