@@ -29,6 +29,7 @@ from typing import Callable, Mapping, Optional
 
 import uvicorn
 from a2wsgi import WSGIMiddleware
+from mcp.server.transport_security import TransportSecuritySettings
 
 from application import boot_env
 from application import main
@@ -45,6 +46,36 @@ WSGI_THREADS = 4
 #: It is the SDK's own default, which is why the mounted application needs no
 #: prefix stripped: it routes on the full path it is handed.
 MCP_PATH = '/mcp'
+
+#: The agent's interface answers under **any** host name, and that is explicit.
+#:
+#: It has to be passed, and passing nothing is the one thing that does not mean
+#: *no policy*. The SDK reads its ``host`` argument — ``127.0.0.1`` by default —
+#: and, finding no settings, **substitutes its own**::
+#:
+#:     if transport_security is None and host in ("127.0.0.1", "localhost", "::1"):
+#:         transport_security = TransportSecuritySettings(
+#:             allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"], ...)
+#:
+#: which answers ``421 Invalid Host header`` to a LAN address, a container name
+#: and a reverse proxy's domain alike — every way this app is actually reached
+#: except the one a developer tests from. Handing it settings of our own is what
+#: keeps that branch from firing.
+#:
+#: **What it defends is defended anyway, and structurally.** The check exists
+#: against DNS rebinding: a page in the owner's browser resolving a name to this
+#: socket and posting to it. The SDK enforces ``Content-Type: application/json``
+#: on every POST *whatever this setting says* — the one validation that runs
+#: before the disable — and a browser cannot send that cross-origin without a
+#: preflight this app answers no CORS header to. It is the same reasoning
+#: ``api``'s own origin guard records for why the JSON routes were never
+#: reachable that way.
+#:
+#: The alternative was an allowlist, and it is not available: this app cannot
+#: know the name it is reached under, and learning one would be a fourth boot
+#: variable (ADR-0033, ADR-0040 — the boot variables stay three).
+NO_HOST_ALLOWLIST = TransportSecuritySettings(
+    enable_dns_rebinding_protection=False)
 
 #: The levels uvicorn's own logger understands. ``LOG_LEVEL`` is an app-wide
 #: dial that predates any server (ADR-0014), so a value it does not recognise
@@ -100,19 +131,9 @@ class Serving:
         # Built once, at construction, so a failure to build is a failure to
         # boot rather than a 500 on the first agent that calls.
         #
-        # ``transport_security`` is left unset **on purpose**, which disables the
-        # SDK's DNS-rebinding check. Enabled, it validates ``Host`` against an
-        # allowlist that would have to be configured — and this app is reached
-        # under a LAN address, a container name or a reverse proxy's domain, none
-        # of which it can know, with no fourth boot variable to be told
-        # (ADR-0033, ADR-0040). What it would defend against is defended anyway,
-        # and structurally: the SDK enforces ``Content-Type: application/json``
-        # on every POST *whatever* this setting says, and a browser cannot send
-        # that cross-origin without a preflight this app answers no CORS headers
-        # to. It is the same reasoning ``api``'s own origin guard records for why
-        # the JSON routes were never reachable that way.
         self._mcp_app = (
-            mcp.streamable_http_app(streamable_http_path=MCP_PATH)
+            mcp.streamable_http_app(streamable_http_path=MCP_PATH,
+                                    transport_security=NO_HOST_ALLOWLIST)
             if mcp is not None else None)
         self._sessions: Optional[contextlib.AsyncExitStack] = None
 

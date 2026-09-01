@@ -26,6 +26,7 @@ defended against, and the bind is one argument of :func:`boot.serve`.
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import threading
@@ -33,6 +34,7 @@ import time
 from datetime import date
 from types import SimpleNamespace
 
+import anyio
 import pytest
 from mcp.server import MCPServer
 
@@ -1157,9 +1159,15 @@ class _FakeMcp:
         self.trace = trace
         self.session_manager = _FakeSessionManager(trace, fail)
         self.path = None
+        self.security = "not passed"
 
-    def streamable_http_app(self, *, streamable_http_path):
+    def streamable_http_app(self, *, streamable_http_path,
+                            transport_security="not passed"):
         self.path = streamable_http_path
+        # Recorded rather than ignored: *not passing* this is what silently
+        # turns on a localhost-only host allowlist, so a default here would let
+        # the mount stop passing it with every test still green.
+        self.security = transport_security
 
         async def _app(scope, receive, send):
             self.trace.append(f"mcp:{scope['path']}")
@@ -1249,6 +1257,147 @@ def test_the_mounted_application_is_asked_for_the_path_it_is_reached_at():
     mcp = _FakeMcp([])
     boot.Serving("the app", lambda: None, mcp)
     assert mcp.path == boot.MCP_PATH
+
+
+def test_the_mount_always_states_a_host_policy():
+    """Passing nothing is not *no policy*, so nothing is never passed.
+
+    The behavioural half is ``test_the_agents_interface_answers_under_any_host_name``
+    below; this is the structural half, and it is the one that stays legible
+    when a future SDK changes what its default does.
+    """
+    mcp = _FakeMcp([])
+    boot.Serving("the app", lambda: None, mcp)
+    assert mcp.security is boot.NO_HOST_ALLOWLIST
+    assert mcp.security.enable_dns_rebinding_protection is False
+
+
+def _post_mcp(host):
+    """POST an MCP `initialize` through a real mounted server under ``host``.
+
+    Drives the ASGI scope by hand rather than binding a socket, and it is the
+    **real** ``MCPServer`` rather than the fake above: what is under test is the
+    SDK's own host policy, which a stand-in would not have.
+    """
+    from application import mcp_server
+    mcp = mcp_server.build_server(SimpleNamespace(store=None,
+                                                  config_manager=None))
+    serving = boot.Serving("the app", lambda: None, mcp)
+
+    body = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "t", "version": "1"}},
+    }).encode()
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "path": boot.MCP_PATH, "raw_path": boot.MCP_PATH.encode(),
+        "query_string": b"", "root_path": "", "scheme": "http",
+        "headers": [
+            (b"host", host.encode()),
+            (b"content-type", b"application/json"),
+            (b"accept", b"application/json, text/event-stream"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
+    }
+    status = {}
+
+    incoming = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        # The stream closes after the body: the response is `text/event-stream`
+        # and the app would otherwise hold it open for the life of a session,
+        # which is right in production and a hang in a test.
+        return incoming.pop(0) if incoming else {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+
+    async def _run():
+        async with mcp.session_manager.run():
+            await asyncio.wait_for(serving(scope, receive, send), timeout=10)
+
+    try:
+        asyncio.run(_run())
+    except (asyncio.TimeoutError, anyio.ClosedResourceError, RuntimeError):
+        # The status is what is under test and it is sent first; how the stream
+        # ends afterwards is the SDK's business.
+        pass
+    return status.get("code")
+
+
+def test_the_agents_interface_answers_under_any_host_name():
+    """The regression that a localhost client cannot see (issue #877 review).
+
+    Handing the SDK **no** ``transport_security`` is the one thing that does not
+    mean *no policy*: it reads its ``host`` argument, defaults it to
+    ``127.0.0.1``, and substitutes an allowlist of its own —
+
+        if transport_security is None and host in ("127.0.0.1", "localhost", "::1"):
+            transport_security = TransportSecuritySettings(
+                allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"], ...)
+
+    — which answers ``421 Invalid Host header`` to a LAN address, a container
+    name and a reverse proxy's domain alike. Every one of those is how this app
+    is actually reached; the exception is the one a developer tests from, which
+    is why every client in this suite and every hand check passed while the
+    container was unusable for the very thing its documentation page describes.
+
+    So the assertion is on a name that is **not** localhost, and it is the whole
+    point of the test.
+    """
+    for host in ("suivi.example.com", "192.168.1.50:8080", "my-container:8080"):
+        assert _post_mcp(host) == 200, host
+
+
+def test_a_localhost_host_is_not_a_special_case_either():
+    """The same answer, so the policy is *one* and not two."""
+    assert _post_mcp("127.0.0.1:8080") == 200
+
+
+def test_a_post_that_is_not_json_is_still_refused():
+    """The structural defence the disabled check leans on (ADR-0040).
+
+    ``Content-Type`` is validated **before** the DNS-rebinding setting is even
+    read, so it holds whatever that setting says — and it is what a browser
+    cannot satisfy cross-origin without a preflight this app answers no CORS
+    header to. If this ever stops being true, the argument for disabling the
+    host allowlist stops with it.
+    """
+    from application import mcp_server
+    mcp = mcp_server.build_server(SimpleNamespace(store=None,
+                                                  config_manager=None))
+    serving = boot.Serving("the app", lambda: None, mcp)
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "path": boot.MCP_PATH, "raw_path": boot.MCP_PATH.encode(),
+        "query_string": b"", "root_path": "", "scheme": "http",
+        "headers": [(b"host", b"suivi.example.com"),
+                    (b"content-type", b"text/plain"),
+                    (b"content-length", b"2")],
+        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
+    }
+    status = {}
+    incoming = [{"type": "http.request", "body": b"{}", "more_body": False}]
+
+    async def receive():
+        return incoming.pop(0) if incoming else {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            status["code"] = message["status"]
+
+    async def _run():
+        async with mcp.session_manager.run():
+            await asyncio.wait_for(serving(scope, receive, send), timeout=10)
+
+    try:
+        asyncio.run(_run())
+    except (asyncio.TimeoutError, anyio.ClosedResourceError, RuntimeError):
+        pass
+    assert status.get("code") == 400
 
 
 def test_the_lifespan_enters_the_session_manager_and_leaves_it_before_the_teardown():

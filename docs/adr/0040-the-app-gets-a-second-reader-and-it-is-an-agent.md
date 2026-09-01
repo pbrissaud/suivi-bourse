@@ -96,6 +96,18 @@ operations"* and is wrong.
 - **A store that cannot answer is a tool error, never an empty payload.** `/api` already
   separates a failed request from an empty portfolio, and the stakes are higher here: an agent
   handed `[]` will report that the owner holds nothing.
+- **The interface answers under any host name, and that is passed explicitly.**
+  Handing the SDK no transport-security settings is the one thing that does not
+  mean *no policy*: it reads its `host` argument, defaults it to `127.0.0.1`,
+  and substitutes an allowlist of localhost names — which answers `421 Invalid
+  Host header` to a LAN address, a container name and a reverse proxy's domain
+  alike, every way this app is actually reached except the one a developer tests
+  from. The alternative, a real allowlist, is not available: the app cannot know
+  the name it is reached under, and learning one would be a fourth boot
+  variable. What the check defends is defended structurally instead — the SDK
+  enforces `Content-Type: application/json` on every POST whatever that setting
+  says, and a browser cannot send it cross-origin without a preflight this app
+  answers no CORS header to.
 - **The site gets its first machine-facing page**, in English only — `i18n/` holds `en/` alone
   and French arrives through Crowdin, never by hand.
 
