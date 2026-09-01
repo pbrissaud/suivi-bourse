@@ -934,6 +934,7 @@ def test_the_boot_serves_although_the_market_edge_raises(
     answered = {}
 
     def _serve(app, environment, on_shutdown, mcp=None):
+        """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
 
     monkeypatch.setattr(boot, "serve", _serve)
@@ -957,6 +958,7 @@ def test_the_health_probe_answers_within_a_second_of_a_hung_market(
     answered = {}
 
     def _serve(app, environment, on_shutdown, mcp=None):
+        """Stand in for the socket: ask the built app instead of binding one."""
         answered["status"] = app.test_client().get("/health").status_code
         answered["elapsed"] = time.monotonic() - started
 
@@ -1135,11 +1137,13 @@ class _FakeSessionManager:
     """
 
     def __init__(self, trace, fail=False):
+        """``fail`` makes entering it raise, which is the startup this file asserts on."""
         self.trace = trace
         self.fail = fail
 
     @contextlib.asynccontextmanager
     async def _run(self):
+        """Record entry and exit, so the mount's ordering is readable in a list."""
         if self.fail:
             raise RuntimeError("the session manager refused to start")
         self.trace.append("sessions.entered")
@@ -1149,6 +1153,7 @@ class _FakeSessionManager:
             self.trace.append("sessions.exited")
 
     def run(self):
+        """The SDK's shape: a method returning the context, not the context itself."""
         return self._run()
 
 
@@ -1156,6 +1161,7 @@ class _FakeMcp:
     """An ``MCPServer`` as ``Serving`` uses it: an app to mount, a manager to hold."""
 
     def __init__(self, trace, fail=False):
+        """An MCPServer reduced to the two things the mount touches."""
         self.trace = trace
         self.session_manager = _FakeSessionManager(trace, fail)
         self.path = None
@@ -1163,6 +1169,7 @@ class _FakeMcp:
 
     def streamable_http_app(self, *, streamable_http_path,
                             transport_security="not passed"):
+        """Record what the mount asked for, and hand back something routable."""
         self.path = streamable_http_path
         # Recorded rather than ignored: *not passing* this is what silently
         # turns on a localhost-only host allowlist, so a default here would let
@@ -1170,6 +1177,7 @@ class _FakeMcp:
         self.security = transport_security
 
         async def _app(scope, receive, send):
+            """Note that this branch ran, and which path reached it."""
             self.trace.append(f"mcp:{scope['path']}")
         return _app
 
@@ -1186,14 +1194,16 @@ def _reached(path, with_agent=True):
                            _FakeMcp(trace) if with_agent else None)
 
     async def _wsgi(scope, receive, send):
+        """Stand in for the Flask half, and note that it was the one reached."""
         trace.append(f"wsgi:{scope['path']}")
     serving.wsgi = _wsgi
 
     async def _receive():
+        """Nothing is read: the assertion is on which app was handed the scope."""
         return {}
 
     async def _send(message):
-        pass
+        """Nothing is written, for the same reason."""
 
     asyncio.run(serving({"type": "http", "path": path}, _receive, _send))
     return trace
@@ -1214,6 +1224,7 @@ def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch
     handed = {}
 
     def _serve(app, environment, on_shutdown, mcp=None):
+        """Keep what the boot handed over — the whole point of this test."""
         handed["mcp"] = mcp
 
     monkeypatch.setattr(boot, "serve", _serve)
@@ -1224,6 +1235,7 @@ def test_the_boot_hands_the_agents_interface_to_the_socket(tmp_path, monkeypatch
 
 
 def test_the_agents_path_reaches_the_agents_application():
+    """The branch exists and the agent's path is what takes it."""
     assert _reached("/mcp") == ["mcp:/mcp"]
 
 
@@ -1272,60 +1284,80 @@ def test_the_mount_always_states_a_host_policy():
     assert mcp.security.enable_dns_rebinding_protection is False
 
 
-def _post_mcp(host):
-    """POST an MCP `initialize` through a real mounted server under ``host``.
+def _drive(app, scope, body):
+    """Run one HTTP request through an ASGI app and return its status code.
 
-    Drives the ASGI scope by hand rather than binding a socket, and it is the
-    **real** ``MCPServer`` rather than the fake above: what is under test is the
-    SDK's own host policy, which a stand-in would not have.
+    Written once because it was written twice: the two tests below differ by a
+    header and by nothing else, and a second copy of the protocol plumbing is a
+    second place for it to drift.
+
+    Two details are what make it terminate. The receive channel yields the body
+    and then ``http.disconnect``: the MCP response is a ``text/event-stream``
+    that the app holds open for the life of a session, which is right in
+    production and a hang here. And the whole thing is bounded, because what is
+    under test is the **status**, which is sent first — how the stream ends
+    afterwards is the SDK's business, not this file's.
     """
-    from application import mcp_server
-    mcp = mcp_server.build_server(SimpleNamespace(store=None,
-                                                  config_manager=None))
-    serving = boot.Serving("the app", lambda: None, mcp)
-
-    body = json.dumps({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                   "clientInfo": {"name": "t", "version": "1"}},
-    }).encode()
-    scope = {
-        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-        "method": "POST", "path": boot.MCP_PATH, "raw_path": boot.MCP_PATH.encode(),
-        "query_string": b"", "root_path": "", "scheme": "http",
-        "headers": [
-            (b"host", host.encode()),
-            (b"content-type", b"application/json"),
-            (b"accept", b"application/json, text/event-stream"),
-            (b"content-length", str(len(body)).encode()),
-        ],
-        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
-    }
+    incoming = [{"type": "http.request", "body": body, "more_body": False}]
     status = {}
 
-    incoming = [{"type": "http.request", "body": body, "more_body": False}]
-
     async def receive():
-        # The stream closes after the body: the response is `text/event-stream`
-        # and the app would otherwise hold it open for the life of a session,
-        # which is right in production and a hang in a test.
+        """The body once, then a disconnect that closes the SSE stream."""
         return incoming.pop(0) if incoming else {"type": "http.disconnect"}
 
     async def send(message):
+        """Keep the response status and discard the stream that follows it."""
         if message["type"] == "http.response.start":
             status["code"] = message["status"]
 
     async def _run():
-        async with mcp.session_manager.run():
-            await asyncio.wait_for(serving(scope, receive, send), timeout=10)
+        """Hold the session manager open for the length of the request."""
+        async with app.session_manager.run():
+            await asyncio.wait_for(app.serving(scope, receive, send), timeout=10)
 
     try:
         asyncio.run(_run())
     except (asyncio.TimeoutError, anyio.ClosedResourceError, RuntimeError):
-        # The status is what is under test and it is sent first; how the stream
-        # ends afterwards is the SDK's business.
         pass
     return status.get("code")
+
+
+def _mcp_scope(host, content_type):
+    """An HTTP scope aimed at the agent's interface, under ``host``."""
+    return {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "path": boot.MCP_PATH,
+        "raw_path": boot.MCP_PATH.encode(),
+        "query_string": b"", "root_path": "", "scheme": "http",
+        "headers": [(b"host", host.encode()),
+                    (b"content-type", content_type.encode()),
+                    (b"accept", b"application/json, text/event-stream")],
+        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
+    }
+
+
+def _mounted():
+    """A real ``MCPServer`` behind a real ``Serving``, with no store under it.
+
+    The **real** server rather than the fake used elsewhere in this section:
+    what is under test here is the SDK's own host policy, which a stand-in does
+    not have. No store is needed — every request asserted on is refused or
+    accepted before a tool runs.
+    """
+    from application import mcp_server
+    mcp = mcp_server.build_server(SimpleNamespace(store=None,
+                                                  config_manager=None))
+    mcp.serving = boot.Serving("the app", lambda: None, mcp)
+    return mcp
+
+
+def _initialize_body():
+    """The one MCP call every client makes before any other."""
+    return json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "t", "version": "1"}},
+    }).encode()
 
 
 def test_the_agents_interface_answers_under_any_host_name():
@@ -1349,55 +1381,31 @@ def test_the_agents_interface_answers_under_any_host_name():
     point of the test.
     """
     for host in ("suivi.example.com", "192.168.1.50:8080", "my-container:8080"):
-        assert _post_mcp(host) == 200, host
+        code = _drive(_mounted(), _mcp_scope(host, "application/json"),
+                      _initialize_body())
+        assert code == 200, host
 
 
 def test_a_localhost_host_is_not_a_special_case_either():
     """The same answer, so the policy is *one* and not two."""
-    assert _post_mcp("127.0.0.1:8080") == 200
+    assert _drive(_mounted(), _mcp_scope("127.0.0.1:8080", "application/json"),
+                  _initialize_body()) == 200
 
 
 def test_a_post_that_is_not_json_is_still_refused():
-    """The structural defence the disabled check leans on (ADR-0040).
+    """The structural defence the disabled host check leans on (ADR-0040).
 
     ``Content-Type`` is validated **before** the DNS-rebinding setting is even
     read, so it holds whatever that setting says — and it is what a browser
     cannot satisfy cross-origin without a preflight this app answers no CORS
     header to. If this ever stops being true, the argument for disabling the
-    host allowlist stops with it.
+    host allowlist stops with it, which is why it is asserted here and not
+    merely written down in the record.
     """
-    from application import mcp_server
-    mcp = mcp_server.build_server(SimpleNamespace(store=None,
-                                                  config_manager=None))
-    serving = boot.Serving("the app", lambda: None, mcp)
-    scope = {
-        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-        "method": "POST", "path": boot.MCP_PATH, "raw_path": boot.MCP_PATH.encode(),
-        "query_string": b"", "root_path": "", "scheme": "http",
-        "headers": [(b"host", b"suivi.example.com"),
-                    (b"content-type", b"text/plain"),
-                    (b"content-length", b"2")],
-        "client": ("10.0.0.9", 51234), "server": ("0.0.0.0", 8080),
-    }
-    status = {}
-    incoming = [{"type": "http.request", "body": b"{}", "more_body": False}]
+    code = _drive(_mounted(), _mcp_scope("evil.example.com", "text/plain"),
+                  b"{}")
 
-    async def receive():
-        return incoming.pop(0) if incoming else {"type": "http.disconnect"}
-
-    async def send(message):
-        if message["type"] == "http.response.start":
-            status["code"] = message["status"]
-
-    async def _run():
-        async with mcp.session_manager.run():
-            await asyncio.wait_for(serving(scope, receive, send), timeout=10)
-
-    try:
-        asyncio.run(_run())
-    except (asyncio.TimeoutError, anyio.ClosedResourceError, RuntimeError):
-        pass
-    assert status.get("code") == 400
+    assert code == 400
 
 
 def test_the_lifespan_enters_the_session_manager_and_leaves_it_before_the_teardown():

@@ -287,6 +287,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         diagnostic counter.
         """
         def _body():
+            """The read itself, so :func:`reading` can wrap a fault around it."""
             currency = _base_currency()
             return {
                 'base_currency': currency,
@@ -304,6 +305,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         nothing, and asking is how a resource acquires queries it does not need.
         """
         def _body():
+            """The read itself, so :func:`reading` can wrap a fault around it."""
             reader = _reader()
             latest = reader.latest_totals()
 
@@ -330,6 +332,8 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         start, stop = _window(from_day, to_day, DEFAULT_HISTORY_WINDOW)
 
         def _body():
+            """The read itself; the window was parsed before it, so a bad day is
+            refused as a bad day and not as a storage fault."""
             return {
                 'base_currency': _base_currency(),
                 'from': start.isoformat(),
@@ -358,6 +362,7 @@ def build_server(runtime, name: str = "suivibourse") -> MCPServer:
         measured at the same instant.
         """
         def _body():
+            """The read itself, so :func:`reading` can wrap a fault around it."""
             accounts = _snapshot().accounts
             declaration = (
                 accounts.accounts if accounts is not None

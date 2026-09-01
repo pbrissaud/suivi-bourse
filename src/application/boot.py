@@ -125,6 +125,13 @@ class Serving:
     """
 
     def __init__(self, app, on_shutdown: Callable[[], None], mcp=None):
+        """Wrap the two applications, and build the agent's one **now**.
+
+        Building it here rather than on the first request is what makes a
+        server that cannot be built a failure to *boot* — one non-zero exit,
+        which is the whole of this file's failure handling — instead of a 500
+        met by the first agent to call.
+        """
         self.wsgi = WSGIMiddleware(app, workers=WSGI_THREADS)
         self._on_shutdown = on_shutdown
         self._mcp = mcp
@@ -138,6 +145,11 @@ class Serving:
         self._sessions: Optional[contextlib.AsyncExitStack] = None
 
     async def __call__(self, scope, receive, send) -> None:
+        """Three ways out: the lifespan, the agent's interface, the front.
+
+        The order matters only in that the lifespan is not a path and has to be
+        recognised before anything looks at one.
+        """
         if scope['type'] == 'lifespan':
             await self._lifespan(receive, send)
             return

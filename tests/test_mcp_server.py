@@ -61,9 +61,24 @@ def build_runtime(tmp_path, events=None, currency='EUR', break_store=False):
 def call(runtime, tool, arguments=None):
     """Call one tool through the in-memory client and hand back the result."""
     async def _run():
+        """One session per call: the surface holds no state between them."""
         async with Client(mcp_server.build_server(runtime)) as client:
             return await client.call_tool(tool, arguments or {})
     return asyncio.run(_run())
+
+
+def listed(runtime):
+    """The tools a client sees, which is the only copy that reaches a model.
+
+    Through the client and not through the server object: a description read off
+    a Python attribute would pass whatever the wire carries, and the wire is what
+    a tool description is *for* (ADR-0040).
+    """
+    async def _run():
+        """One session, opened and closed around the listing."""
+        async with Client(mcp_server.build_server(runtime)) as client:
+            return await client.list_tools()
+    return asyncio.run(_run()).tools
 
 
 def payload(result):
@@ -77,6 +92,7 @@ def payload(result):
 
 
 def _text(result):
+    """The words a caller actually receives — where a refusal has to be legible."""
     return result.content[0].text if result.content else ''
 
 
@@ -108,11 +124,7 @@ def test_the_surface_is_five_tools_and_nothing_else(tmp_path):
     """
     runtime, _ = build_runtime(tmp_path)
 
-    async def _run():
-        async with Client(mcp_server.build_server(runtime)) as client:
-            return await client.list_tools()
-
-    names = sorted(tool.name for tool in asyncio.run(_run()).tools)
+    names = sorted(tool.name for tool in listed(runtime))
     assert names == ['get_portfolio_history', 'get_portfolio_totals',
                      'list_accounts', 'list_events', 'list_positions']
 
@@ -128,11 +140,7 @@ def test_every_description_states_the_absence_rule(tmp_path):
     """
     runtime, _ = build_runtime(tmp_path)
 
-    async def _run():
-        async with Client(mcp_server.build_server(runtime)) as client:
-            return await client.list_tools()
-
-    for tool in asyncio.run(_run()).tools:
+    for tool in listed(runtime):
         description = tool.description or ''
         assert len(description) > 200, tool.name
         assert 'null' in description, tool.name
@@ -149,12 +157,8 @@ def test_the_positions_description_carries_both_terms_of_the_carrying_convention
     """
     runtime, _ = build_runtime(tmp_path)
 
-    async def _run():
-        async with Client(mcp_server.build_server(runtime)) as client:
-            return await client.list_tools()
-
     described = {tool.name: tool.description or ''
-                 for tool in asyncio.run(_run()).tools}['list_positions']
+                 for tool in listed(runtime)}['list_positions']
     assert 'terminal' in described
     assert 'not fetched a price yet' in described
     assert 'no price will ever come' in described
@@ -425,6 +429,7 @@ def test_only_one_spelling_of_a_calendar_day_is_taken(tmp_path, value):
 
 
 def test_an_inverted_window_is_refused_in_words(tmp_path):
+    """An empty window is a mistake to report, never an empty answer to return."""
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
 
     result = call(runtime, 'get_portfolio_history',
@@ -435,6 +440,7 @@ def test_an_inverted_window_is_refused_in_words(tmp_path):
 
 
 def test_a_negative_bound_is_refused_in_words(tmp_path):
+    """A negative slice would silently answer nothing, which reads as *you did nothing*."""
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
 
     result = call(runtime, 'list_events', {'limit': -1})
