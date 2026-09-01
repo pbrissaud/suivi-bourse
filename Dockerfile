@@ -91,6 +91,16 @@ COPY pyproject.toml uv.lock ./
 # `binutils` is installed and purged inside the same RUN for the same reason the
 # deletions are here: kept, it would be a second thing to carry.
 #
+# **The purge runs `autoremove`, and APT cannot see an ELF dependency**: it knows
+# which *packages* need `libstdc++6`, never that `_duckdb.so` does. Today that
+# library ships with `python:*-slim` and is held by packages that stay, so
+# nothing is taken — but that is a property of a base image this project does not
+# own, and what it would produce is the bad kind of failure: not a red build, a
+# green one whose container dies on `import duckdb`. So the property is asserted
+# on the artefact rather than reasoned about here — `container-contract.sh`
+# assertion 11, which resolves **every** compiled extension and imports the
+# wheels the app boots on.
+#
 # Measured, on this Dockerfile: **645 MB -> 529 MB**.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project \
