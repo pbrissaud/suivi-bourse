@@ -238,6 +238,34 @@ typed. It ends when they have been traversed, and the memory of that is the brow
 alone, so the state stays derived on the server and a wiped store asks again.
 _Avoid_: onboarding (as a phase), setup, installation wizard, first boot
 
+### The app talking to an agent
+
+**Agent**:
+Something that reads the portfolio without a person watching each read. It reaches the app
+over its own interface, not the front's, and it only ever reads: the ledger has one writer
+and it is reached by a gesture, never by a tool. Two of them are in view and they are the
+same shape — the chat inside the app, and whatever the owner has already built and wants
+their own figures in.
+_Avoid_: AI, bot, assistant, LLM
+
+**Tool**:
+A question the app has agreed to answer, named and described so that a model chooses it
+without being told to. Its **description is payload, not documentation**: what a page would
+explain with a convention note beside the figure, a tool has to carry in the text the model
+reads before calling — which of three absences a `null` is, that a quantity of zero is a
+sold position and not a mistake, that the currency is stated once for the whole answer.
+A tool whose description omits them returns figures a model will narrate wrongly and
+confidently.
+_Avoid_: endpoint, route, API method, function
+
+**Tool surface**:
+The set of them, and **the only promise this app makes to a machine** besides health. Names,
+arguments and payload shapes are held across a minor version, which the front's interface
+explicitly is not: an owner points their own client at this one, and a tool that renames
+itself breaks their setup in silence, with no screen anywhere to say so. It is documented
+for the same reason — a contract nobody can read is not one.
+_Avoid_: API, contract (on its own), integration
+
 ### On screen
 
 **Convention note**:
