@@ -62,6 +62,16 @@ External flows are the *contribution*; they are what a return is measured agains
 A movement inside the portfolio: a purchase, a sale, a dividend, a fee. Internal
 flows are the *performance*; they never change the contribution.
 
+**Investment rhythm**:
+How much the owner buys in a month, and how often they do it — the median amount of the
+months that carried a purchase over the last twelve, and how many of those months there
+were. Derived from the `BUY` events alone, so it measures what was *invested* rather than
+what was *funded*: an arbitrage — selling one holding to buy another — counts as rhythm.
+The two figures are never quoted apart, an amount without its coverage reading as a yearly
+total that was never contributed.
+_Avoid_: DCA, dollar-cost averaging, invested amount, cadence — *cadence* already names the
+scheduler's intervals on the settings page.
+
 ### Money
 
 **Base currency**:

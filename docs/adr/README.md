@@ -51,14 +51,14 @@ lives in [`CONTEXT.md`](../../CONTEXT.md) at the repo root.
 | [0038](./0038-settings-leaves-the-data-page.md) | Settings leaves the data page, and the tabs leave with it |
 | [0039](./0039-the-app-stops-forking.md) | The app stops forking, and two guards go with it |
 | [0040](./0040-the-app-gets-a-second-reader-and-it-is-an-agent.md) | The app gets a second reader, and it is an agent |
+| [0041](./0041-the-rhythm-is-measured-on-the-buys.md) | The rhythm is measured on the buys, and it describes without judging |
 
-> These records describe **v5**, and which side wins an argument depends on the branch.
+> These records describe **v5**, and v5 has landed: `master` carries it, so a record that
+> contradicts the code is no longer a plan — it is a **documentation defect**, and it is
+> the ADR that must be amended, never the code that must be bent back to it. Amend it by
+> writing why the decision changed, not only what it changed to: a record whose reason is
+> missing is a record the next reader will re-litigate.
 >
-> On **`master`** the code is still v4: a record that contradicts it is describing the
-> destination, and nothing there is a defect.
->
-> On **`preview/v5`** the tickets are merged. The code *is* v5, so a record that
-> contradicts it is no longer a plan — it is a **documentation defect**, and it is the
-> ADR that must be amended, never the code that must be bent back to it. Amend it by
-> writing why the decision changed, not only what it changed to: a record whose reason
-> is missing is a record the next reader will re-litigate.
+> **`preview/v5` is kept for its history alone** — the ticket-by-ticket commits that
+> reached `master` folded together. Nothing is written there any more, and it trails
+> `master`; this note used to say the opposite, back when it did not.
