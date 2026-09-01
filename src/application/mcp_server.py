@@ -515,8 +515,13 @@ def _window(from_day: Optional[str], to_day: Optional[str],
     start_day = _day(from_day, 'from_day')
     start = (datetime.combine(start_day, datetime.min.time(), timezone.utc)
              if start_day is not None else stop - default)
-    if start >= stop:
-        raise ToolError("from_day must be earlier than to_day")
+    # ``>`` and not ``>=``: two equal days are a **one-day window**, not an empty
+    # one. The store bounds a series inclusively at both ends
+    # (:func:`store_reads._window`), so ``from_day == to_day`` asks for exactly
+    # that day's point — and a tool that promises one point per calendar day
+    # cannot refuse to be asked for one of them (issue #877 review).
+    if start > stop:
+        raise ToolError("from_day must not be later than to_day")
     return start, stop
 
 

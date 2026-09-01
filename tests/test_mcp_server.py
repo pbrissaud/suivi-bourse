@@ -428,6 +428,23 @@ def test_only_one_spelling_of_a_calendar_day_is_taken(tmp_path, value):
     assert 'YYYY-MM-DD' in _text(result)
 
 
+def test_a_window_of_one_day_is_a_window(tmp_path):
+    """The narrowest question the tool exists to answer, and it was refused.
+
+    ``from_day == to_day`` used to raise. The store bounds a series inclusively
+    at both ends, so an equal pair asks for exactly that day's point — and a
+    tool whose whole unit is the calendar day cannot decline to be asked for one
+    of them (issue #877 review).
+    """
+    runtime, _ = build_runtime(tmp_path, events=LEDGER)
+
+    body = payload(call(runtime, 'get_portfolio_history',
+                        {'from_day': '2024-06-15', 'to_day': '2024-06-15'}))
+
+    assert body['from'].startswith('2024-06-15')
+    assert body['to'].startswith('2024-06-15')
+
+
 def test_an_inverted_window_is_refused_in_words(tmp_path):
     """An empty window is a mistake to report, never an empty answer to return."""
     runtime, _ = build_runtime(tmp_path, events=LEDGER)
@@ -436,7 +453,7 @@ def test_an_inverted_window_is_refused_in_words(tmp_path):
                   {'from_day': '2024-06-01', 'to_day': '2024-01-01'})
 
     assert result.is_error is True
-    assert 'earlier' in _text(result)
+    assert 'later' in _text(result)
 
 
 def test_a_negative_bound_is_refused_in_words(tmp_path):
