@@ -4,6 +4,7 @@
     "config:recommended"
   ],
   "ignorePresets": [":semanticPrefixFixDepsChoreOthers"],
+  "minimumReleaseAge": "3 days",
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
