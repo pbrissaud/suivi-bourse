@@ -13,6 +13,12 @@
  * It was eleven until `headless-gauges` went with `/metrics` (ADR-0033). The
  * thread lost an entry rather than gaining a rewritten one: there is one
  * interface now, so there is no second usage to give a page to.
+ *
+ * It is eleven again since ADR-0040, and the difference is the reason the first
+ * one left. `/metrics` was a second usage of the product; the agent's interface
+ * is the *same* usage reached by something other than a browser — and it is the
+ * first thing on this site that a machine reads, which is why a page that
+ * describes it is not the same kind of page as the one that went.
  */
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
@@ -26,6 +32,7 @@ const sidebars = {
     'install-without-docker',
     'rebuild-and-resolution',
     'how-prices-are-collected',
+    'connect-your-own-agent',
     'coming-from-v4',
     'release-notes',
   ],
