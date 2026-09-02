@@ -793,7 +793,7 @@ def test_a_window_on_an_account_series_keeps_it_too(store):
                   "VALUES ('pea', 'PEA', 'PEA')")
     for day in (date(2025, 8, 10), date(2025, 8, 11)):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
-            account='pea', account_type='PEA',
+            account='pea',
             day=day, cash_balance=1.0, holdings_value=1.0, total_value=1.0,
             net_contributed=1.0)])
     reader = store_reads.PortfolioReader(store)
@@ -865,7 +865,7 @@ def test_deleting_an_account_takes_its_cached_figures_with_it(store):
     store.execute("INSERT INTO account (id, type, label) "
                   "VALUES ('pea', 'PEA', 'PEA')")
     perf_series.write_account_metrics(store, [AccountMetricPoint(
-        account='pea', account_type='PEA',
+        account='pea',
         day=date(2024, 1, 1), cash_balance=1.0, holdings_value=1.0,
         total_value=1.0, net_contributed=1.0)])
 
@@ -901,7 +901,7 @@ def test_the_perf_write_rewrites_its_own_key_rather_than_appending(store, mocker
 
     for cycle in range(3):
         perf_series.write_account_metrics(store, [AccountMetricPoint(
-            account='pea', account_type='PEA',
+            account='pea',
             day=day, cash_balance=float(cycle), holdings_value=1.0,
             total_value=1.0, net_contributed=1.0) for day in days])
         perf_series.write_portfolio_totals(store, [PortfolioTotalPoint(

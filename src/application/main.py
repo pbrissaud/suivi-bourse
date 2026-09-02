@@ -44,8 +44,16 @@ from application.events.schemas import Portfolio
 LOG_LEVEL = boot_env.text(os.environ, boot_env.LOG_LEVEL,
                           boot_env.DEFAULT_LOG_LEVEL)
 app_logger = getLogger("suivi_bourse", level=LOG_LEVEL)
-scheduler_logger = getLogger("apscheduler.scheduler", level=LOG_LEVEL)
-yfinance_logger = getLogger("yfinance", level=LOG_LEVEL)
+
+# The two dependencies' loggers are **configured and not held** (#862). The call
+# is the whole of the point — ``logfmt_logger.getLogger`` sets the named logger's
+# level and attaches the formatter — and the names it used to be assigned to were
+# read nowhere: a module-level `scheduler_logger` reads as *"this is where
+# APScheduler is logged from"*, which is exactly what it is not. Nothing here
+# emits under those names; :data:`MANAGED_LOGGERS` below is what turns them
+# afterwards, and it names them as strings like every other.
+getLogger("apscheduler.scheduler", level=LOG_LEVEL)
+getLogger("yfinance", level=LOG_LEVEL)
 
 #: Every logger the app names, across all its modules. The list is explicit
 #: rather than a walk of ``logging.root.manager``, so turning the app to DEBUG

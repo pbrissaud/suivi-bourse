@@ -201,13 +201,20 @@ class Workloads:
     # The scrape's own state, seen from here (issue #847)
     # ------------------------------------------------------------------ #
     #
-    # The five attributes that left with the workload. A window and never a
+    # The three *memories* that left with the workload. A window and never a
     # second copy: a copy would be a second answer to "how many times has this
     # symbol failed", and the #617 back-off is the one guard that cannot afford
     # two. The ``info`` cache is here for one reason more: **two** workloads
     # hold it since #848, so the setter assigns both — one that moved only the
     # scrape's would split the memory under the one name that looks like it
     # cannot happen.
+    #
+    # The **two locks that guard them are not windowed** (#862). There were
+    # windows onto them, read by nobody, and the door was worse than shut: the
+    # facade is not where the synchronisation happens, and a name here saying
+    # ``_failure_counts_lock`` invited a caller to take the lock at the level
+    # above the state it guards. :mod:`scrape` takes its own locks, beside the
+    # dictionaries they stand for.
 
     @property
     def _share_info_cache(self) -> share_info.ShareInfoCache:
@@ -227,20 +234,12 @@ class Workloads:
         self._scrape.failure_counts = counts
 
     @property
-    def _failure_counts_lock(self):
-        return self._scrape.failure_counts_lock
-
-    @property
     def _sonde_state(self) -> Dict[str, scheduling.SondeState]:
         return self._scrape.sonde_state
 
     @_sonde_state.setter
     def _sonde_state(self, state: Dict[str, scheduling.SondeState]) -> None:
         self._scrape.sonde_state = state
-
-    @property
-    def _sonde_lock(self):
-        return self._scrape.sonde_lock
 
     # ------------------------------------------------------------------ #
     # The backfill's own state, seen from here (issue #848)

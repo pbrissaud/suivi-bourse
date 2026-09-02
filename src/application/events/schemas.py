@@ -234,12 +234,13 @@ class AccountMetricPoint:
     and never mixes them (spec #695 § 3), so the field says what it is and every
     reader stops having to un-stamp it.
 
-    ``account_type`` has **no column** — it was an InfluxDB tag, and the
-    declaration is where a page reads it from (ADR-0013). It survived on the
-    point for the exporter's account label alone, and that reader left with
-    ``/metrics`` (ADR-0033): the field is now carried and read by nobody.
-    Dropping it is a change to a typed seam that ADR-0033 does not ask for, so
-    it is written down here rather than done in passing.
+    ``account_type`` is **gone** (issue #862). It had no column — it was an
+    InfluxDB tag, and the declaration is where a page reads it from (ADR-0013) —
+    and it survived on the point for the exporter's account label alone, a
+    reader that left with ``/metrics`` (ADR-0033). It was then built on every
+    point of every account of every day, and read by nobody. A point of the
+    series says what the day is worth; what kind of account it is, is the
+    declaration's answer and stays there.
 
     ``account_currency`` is **gone** with ``Account.currency`` (issue #702,
     ADR-0002): an account has no currency of its own, there is one reporting
@@ -253,7 +254,6 @@ class AccountMetricPoint:
     ledger"* and *"a ledger at zero"* the same row.
     """
     account: str
-    account_type: str
     day: date
     cash_balance: Optional[float] = None
     holdings_value: Optional[float] = None
