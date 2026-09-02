@@ -64,6 +64,7 @@ import { Segmented } from '@/components/Segmented'
 import { Unreadable } from '@/components/Unreadable'
 import { AccountsCard } from '@/components/dashboard/AccountsCard'
 import { DashboardHead } from '@/components/dashboard/Head'
+import { InvestmentRhythm } from '@/components/dashboard/InvestmentRhythm'
 import { Movers } from '@/components/dashboard/Movers'
 import { PortfolioChart } from '@/components/dashboard/PortfolioChart'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
@@ -180,6 +181,17 @@ export default function DashboardPage() {
     enabled: state === 'portfolio',
   })
 
+  // The investment rhythm (#751, ADR-0041). Read once there is a portfolio, like
+  // the movers: it is derived from the ledger rather than from the perf series,
+  // so it answers on an install whose reconstruction has never run — but a
+  // dashboard that is not showing a portfolio is not showing this block either,
+  // and a read nothing renders is a request nobody asked for.
+  const rhythm = useQuery({
+    queryKey: ['investment-rhythm'],
+    queryFn: api.investmentRhythm,
+    enabled: state === 'portfolio',
+  })
+
   // **The two reads the page is made of**, and what they say when they fail:
   // the page is empty, and this is why. `oneFailure` keeps the first — an
   // unreadable store fails both at once, and one screen owes one sentence.
@@ -196,6 +208,7 @@ export default function DashboardPage() {
     readConditions({ errors: [perf.error, valuation.error] }),
   )
   const moversFailure = oneFailure(readConditions({ errors: [movers.error] }))
+  const rhythmFailure = oneFailure(readConditions({ errors: [rhythm.error] }))
   const accountsFailure = oneFailure(
     readConditions({ errors: [accounts.error, ...histories.map((one) => one.error)] }),
   )
@@ -324,6 +337,17 @@ export default function DashboardPage() {
               failure={accountsFailure}
             />
           </div>
+
+          {/* **A block and not a page** (ADR-0041). The sidebar's five entries
+              are argued as three and two, and a sixth would open a page holding
+              one block; the eventual home is a `Projections` page, created the
+              day #757 or #758 gives it a second occupant. It reads down rather
+              than being drawn, so it sits under the two lists — and it is full
+              width because what it holds is two figures, not a column.
+
+              `?? null` and never a shape assembled here: a read that has not
+              answered renders nothing at all, title included (ADR-0026). */}
+          <InvestmentRhythm rhythm={rhythm.data ?? null} failure={rhythmFailure} />
         </>
       )}
     </div>

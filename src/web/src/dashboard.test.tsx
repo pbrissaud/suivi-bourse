@@ -31,6 +31,7 @@ import {
   aPortfolioHistory,
   aPositionsPayload,
   aRebuilding,
+  aRhythm,
   aRuntime,
   aTotals,
   aTotalsPayload,
@@ -1190,6 +1191,95 @@ describe('the movers', () => {
     // The **reference**, never the cut: naming the cut announced a session that
     // had not happened yet.
     expect(await screen.findAllByText(/Depuis la clôture du 1 mars 2026/)).toHaveLength(1)
+  })
+})
+
+describe('the investment rhythm', () => {
+  it('never says the amount without the coverage', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // **One group, two figures** (#751, ADR-0041). The coverage is inside the
+    // amount's own group rather than beside it, which is what makes *500 €*
+    // impossible to read on its own — and *500 € a month* is what a reader
+    // turns into *6 000 € a year* when half of that never went in.
+    const amount = await screen.findByRole('group', { name: 'Acheté par mois' })
+    expect(amount).toHaveTextContent(/500,00/)
+    expect(amount).toHaveTextContent('Sur 6 des 12 derniers mois')
+  })
+
+  it('states the dispersion without judging it', async () => {
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    // A coefficient of variation, read as a percentage of the months' own
+    // average. And **no label anywhere**: not *régulier*, not *mensuel* — the
+    // threshold that would produce one is a setting nobody asked for
+    // (ADR-0036), and the reading belongs to the reader.
+    expect(await screen.findByRole('group', { name: 'D’un mois à l’autre' }))
+      .toHaveTextContent(/18,00/)
+    expect(screen.queryByText(/régulier/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/irrégulier/i)).not.toBeInTheDocument()
+  })
+
+  it('says no purchase rather than a rhythm of zero', async () => {
+    // The absence the record names: a null amount with a coverage of zero is
+    // *nobody bought anything*, and rendering it as `0,00 €` would state a
+    // habit of buying nothing every month.
+    server.use(
+      http.get(ROUTES.investmentRhythm, () =>
+        HttpResponse.json(
+          aRhythm({ monthly_amount: null, months_covered: 0, dispersion: null, accounts: [] }),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    expect(
+      await screen.findByText('Aucun achat sur les 12 derniers mois'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Acheté par mois' })).not.toBeInTheDocument()
+  })
+
+  it('withholds the spread when one month is all there is to spread over', async () => {
+    // The population deviation of a single value is `0`, and the server
+    // publishes it: over the one month lived, the amount did not vary. Drawn on
+    // screen it reads *held perfectly steady* from one purchase — a claim about
+    // a habit nobody has had time to have, on the first-run screen. The pair
+    // above it survives, which is the figure that is actually true.
+    server.use(
+      http.get(ROUTES.investmentRhythm, () =>
+        HttpResponse.json(
+          aRhythm({ months_covered: 1, months_observed: 1, dispersion: 0 }),
+        ),
+      ),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+
+    const amount = await screen.findByRole('group', { name: 'Acheté par mois' })
+    // And the coverage says *the one month observed* rather than counting one
+    // out of one, which is a sentence with the same number twice in it.
+    expect(amount).toHaveTextContent('Sur le seul mois observé')
+    expect(screen.queryByRole('group', { name: 'D’un mois à l’autre' })).not.toBeInTheDocument()
+  })
+
+  it('renders nothing at all — title included — while the read is in flight', async () => {
+    // ADR-0026, asserted on this block's own title: the net in
+    // `readsInFlight.test.tsx` observes the empty states and the phrases, and a
+    // heading standing over nothing is neither.
+    server.use(
+      http.get(ROUTES.investmentRhythm, async () => {
+        await delay('infinite')
+        return HttpResponse.json(aRhythm())
+      }),
+    )
+    renderApp()
+    await screen.findByRole('group', { name: 'Gain total' })
+    await screen.findByRole('list', { name: 'Mouvements' })
+
+    expect(screen.queryByText('Rythme d’investissement')).not.toBeInTheDocument()
   })
 })
 

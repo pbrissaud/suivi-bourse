@@ -257,7 +257,7 @@ def test_the_serialization_guard_reads_the_shape_and_not_the_name():
 #: break*: **no store, no yfinance, `now` injected**. What that costs is
 #: measurable at the import, which is the one form of it a test can hold.
 _PURE = ('scheduling', 'performance', 'carrying', 'retention', 'fx',
-         'boot_env', 'mounts', 'market_info', 'build_info')
+         'boot_env', 'mounts', 'market_info', 'build_info', 'rhythm')
 
 #: The edges a pure module must not reach — the store, the market, and the two
 #: file readers. There was a fifth, and it is how the violation was found:

@@ -444,6 +444,8 @@ src/application/
 ├── settings_registry.py / settings.py   # the one list of dials, and the write path
 ├── installation_facts.py  # the three facts: predicate in code, the table holds the ack
 ├── advisories.py       # what the data says about itself: derived per read, the ack expires
+├── rhythm.py           # pure: the investment rhythm — the buys' median month and
+│                       #   its coverage, derived per read and stored nowhere
 ├── runtime_state.py / runtime_view.py   # the jobs' last-pass records, and how they read
 ├── store_reads.py / portfolio_view.py   # the UI read primitives, and their page shapes
 └── events/             # schemas · loader · export · validator · aggregator

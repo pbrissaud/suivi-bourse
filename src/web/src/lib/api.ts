@@ -156,6 +156,15 @@ export const ROUTES = {
    * name for a **different** payload, and this is the same one.
    */
   movers: '/api/portfolio/movers',
+  /**
+   * How much the owner buys in a month, and how often (#751, ADR-0041).
+   *
+   * Derived on every read and stored nowhere, like {@link ROUTES.advisories}:
+   * there is no table behind it and no id to come back to. It is served from
+   * the published snapshot, so the rhythm and every other figure on the page
+   * describe one ledger.
+   */
+  investmentRhythm: '/api/investment-rhythm',
 } as const
 
 export type RouteName = keyof typeof ROUTES
@@ -651,6 +660,48 @@ export interface MoversResponse {
    */
   reference: string | null
   movers: Mover[]
+}
+
+/**
+ * One investment rhythm — the portfolio's, or one account's (#751, ADR-0041).
+ *
+ * **`monthly_amount` and `months_covered` are one figure in two members**, and
+ * nothing on any surface may show the first without the second: `500 €` alone
+ * is read as `6 000 €` a year when half of that never went in. The amount is
+ * the **median of the months that carried a purchase** — months with none are
+ * not averaged in as zeros, which is why the coverage is what makes it honest.
+ *
+ * `months_observed` is twelve, bounded by the age of the ledger and counted
+ * from its first event of any kind. A month with no purchase is observed and
+ * uncovered, never unobserved: that is how a stop in investing stays visible.
+ *
+ * `monthly_amount: null` with `months_covered: 0` is **no purchase in the
+ * window** — never a rhythm of zero. With `months_observed: 0` as well, nothing
+ * has been observed at all. `dispersion` is the coefficient of variation of the
+ * covered months' amounts, `null` when there is nothing to disperse.
+ */
+export interface RhythmFigures {
+  monthly_amount: number | null
+  months_covered: number
+  months_observed: number
+  dispersion: number | null
+}
+
+/** The same four members, for one account — `default` included. */
+export interface AccountRhythm extends RhythmFigures {
+  account: string
+}
+
+export interface InvestmentRhythmResponse extends RhythmFigures {
+  base_currency: string | null
+  /**
+   * The breakdown, **by account and never by symbol** (ADR-0041). No block
+   * renders it today: the dashboard states the habit at the portfolio grain,
+   * and the breakdown is what the MCP tool reaches over the same route — the
+   * surface being a contract in which a field is added safely and removed
+   * never (ADR-0040).
+   */
+  accounts: AccountRhythm[]
 }
 
 // ------------------------------------------------------------------------- //
@@ -1541,6 +1592,7 @@ export const api = {
     get<PortfolioTotalsHistoryResponse>(portfolioTotalsHistoryPath()),
   positionsHistory: () => get<PositionsHistoryResponse>(positionsHistoryPath()),
   movers: () => get<MoversResponse>(ROUTES.movers),
+  investmentRhythm: () => get<InvestmentRhythmResponse>(ROUTES.investmentRhythm),
   prices: (symbol: string, window: ChartWindow) =>
     get<PriceSeriesResponse>(pricesPath(symbol, window)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),

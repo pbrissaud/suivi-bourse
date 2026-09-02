@@ -40,6 +40,7 @@ from application import portfolio_view
 from application import positions as positions_module
 from application import quotes
 from application import reassignment
+from application import rhythm
 from application import runtime_view
 from application import settings as settings_module
 from application import settings_registry
@@ -2217,6 +2218,44 @@ def acknowledge_advisory(key: str):
     return jsonify({
         **advisory.to_dict(),
         'acknowledged_until': acknowledged.to_dict()['expires_at'],
+    })
+
+
+# --------------------------------------------------------------------- #
+# The investment rhythm (issue #751, ADR-0041)
+# --------------------------------------------------------------------- #
+
+@api_bp.get('/investment-rhythm')
+def get_investment_rhythm():
+    """How much the owner buys in a month, and how often — derived, never stored.
+
+    **Derived on every read** like the advisories next door, and for the reason
+    that module already gives: there is nothing a row could know that the
+    figures do not. The DDL runs with ``IF NOT EXISTS`` and there is no
+    migration machinery, so a table added now would exist on no store created
+    before it — and twelve months of buys is a cheap replay.
+
+    **Served from the published snapshot**, which is ``/api/events``' own
+    contract inherited whole: the rows are the ones the aggregator actually ran
+    on, so the rhythm and every other figure on the page describe one ledger.
+    What it costs is nothing this resource can afford to lose — a rhythm read
+    off the store would show a ledger the app is not computing anything from
+    whenever a build raised.
+
+    ``base_currency`` rides along because ``monthly_amount`` is money and
+    ADR-0002 states the unit once for the whole payload. It is the one thing
+    read from the store here, which is why this route has a ``503`` where
+    ``/api/events`` deliberately has none: an amount labelled with nothing is
+    the figure this resource exists to keep from being misread.
+
+    ``200`` on an empty ledger, with a null amount and a coverage of zero out of
+    zero. There is no ``404``: a portfolio that has bought nothing is a portfolio
+    with a rhythm to state, not a missing resource.
+    """
+    return jsonify({
+        'base_currency': _base_currency(),
+        **rhythm.measure(_snapshot().events,
+                         datetime.now(timezone.utc)).to_dict(),
     })
 
 

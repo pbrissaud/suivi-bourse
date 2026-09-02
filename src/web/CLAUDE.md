@@ -750,7 +750,8 @@ src/
 │   ├── Notifications          # the bell and its panel: health · facts · advisories
 │   ├── Palette                # ⌘K: five sections, three of them optional reads
 │   ├── AppSidebar (the navigation, and nothing else since #829)
-│   ├── dashboard/  # the hero head, the chart, the movers, the accounts card
+│   ├── dashboard/  # the hero head, the chart, the movers, the accounts card,
+│   │               # the investment rhythm (#751)
 │   ├── shares/     # the allocation, the head, the table, the fold of closed lines,
 │   │               # the chart, the sheet
 │   ├── data/       # the ledger, its facets, the create form, the drop zone,

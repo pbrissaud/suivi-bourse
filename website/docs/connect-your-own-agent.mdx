@@ -38,7 +38,7 @@ Most clients want that URL under a name. The shape varies, but it comes down to:
 
 ## What it can answer
 
-Five tools, and your agent picks between them on its own:
+Six tools, and your agent picks between them on its own:
 
 | Tool | What it answers |
 | --- | --- |
@@ -47,6 +47,7 @@ Five tools, and your agent picks between them on its own:
 | `get_portfolio_history` | value and return day by day, over a window you choose |
 | `list_accounts` | the split across your accounts — the one to ask about allocation |
 | `list_events` | your ledger: what you actually did, and when |
+| `get_investment_rhythm` | how much you buy in a month and how often — measured on your purchases over the last twelve months |
 
 They read the same figures the pages show, through the same code. An agent and a
 screen cannot disagree about what a holding is worth.
@@ -54,7 +55,7 @@ screen cannot disagree about what a holding is worth.
 ## What it cannot do
 
 **It cannot change anything.** There is no tool that records an event, edits one,
-creates an account or turns a dial. Every one of the five reads. If an agent tells
+creates an account or turns a dial. Every one of the six reads. If an agent tells
 you it has recorded a purchase, it has not — type it in the app.
 
 **It cannot tell you what to buy.** The server is built for questions about
@@ -93,7 +94,7 @@ nothing anywhere.
 ## These tool names are a promise
 
 Unlike the app's internal HTTP interface, which changes whenever the page it
-serves changes, **the five names above and the shape of what they return are held
+serves changes, **the six names above and the shape of what they return are held
 across 5.x**. Your client will not break under a patch release. A tool that has to
 change will be announced in the release notes.
 
