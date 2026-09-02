@@ -39,8 +39,9 @@ It is the reason the surface is documented on the site: ADR-0033 counted *"nothi
 site describes an API"* as an economy, and this is the first thing there that describes a
 machine interface. A contract nobody can read is not one.
 
-**It reads, and it does not write.** `entries.py` remains the ledger's one writer
-([ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md)), reached by a person's gesture.
+**It reads, and it does not write.** The ledger's writers stay where they were — `entries.py`
+([ADR-0032](./0032-the-import-is-a-gesture-not-a-mount.md)) and the named exception of
+`reassignment.py` — and each of them is reached by a person's gesture.
 This is not caution for its own sake — it is what makes the access model honest. The
 `before_request` guard refuses a *foreign origin*, which is a statement about browsers; a
 client with no `Origin` at all is not refused, and never will be, because that is the rule's
